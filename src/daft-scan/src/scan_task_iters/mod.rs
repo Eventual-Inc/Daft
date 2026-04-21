@@ -322,7 +322,7 @@ pub fn split_and_merge_pass(
     if scan_tasks.iter().any(|st| {
         matches!(
             st.source_config.as_ref(),
-            SourceConfig::File(FileFormatConfig::Warc(_))
+            SourceConfig::File(FileFormatConfig::Warc(_) | FileFormatConfig::Blob(_))
         )
     }) {
         return Ok(scan_tasks);

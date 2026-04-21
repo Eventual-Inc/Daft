@@ -20,6 +20,7 @@ pub enum FileFormatConfig {
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
     Text(TextSourceConfig),
+    Blob(BlobSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -42,6 +43,7 @@ impl FileFormatConfig {
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
             Self::Text(_) => "Text".to_string(),
+            Self::Blob(_) => "Blob".to_string(),
         }
     }
 
@@ -53,6 +55,7 @@ impl FileFormatConfig {
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
             Self::Text(source) => source.multiline_display(),
+            Self::Blob(source) => source.multiline_display(),
         }
     }
 }
@@ -65,6 +68,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Json(_) => Self::Json,
             FileFormatConfig::Warc(_) => Self::Warc,
             FileFormatConfig::Text(_) => Self::Text,
+            FileFormatConfig::Blob(_) => Self::Blob,
         }
     }
 }
@@ -507,3 +511,38 @@ impl Default for TextSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(TextSourceConfig);
+
+/// Configuration for a Blob data source.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct BlobSourceConfig {
+    pub buffer_size: Option<usize>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl BlobSourceConfig {
+    /// Create a config for a Blob data source.
+    #[new]
+    #[pyo3(signature = (buffer_size=None))]
+    fn new(buffer_size: Option<usize>) -> PyResult<Self> {
+        Ok(Self { buffer_size })
+    }
+}
+
+impl BlobSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(buffer_size) = self.buffer_size {
+            res.push(format!("Buffer size = {buffer_size}"));
+        }
+        res
+    }
+}
+
+impl_bincode_py_state_serialization!(BlobSourceConfig);

@@ -6,11 +6,11 @@ use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_raw::{TextConvertOptions, TextReadOptions};
+use daft_raw::{BlobConvertOptions, BlobReadOptions, TextConvertOptions, TextReadOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
-    ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
-    SourceConfig, TextSourceConfig,
+    BlobSourceConfig, ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig,
+    ParquetSourceConfig, ScanTask, SourceConfig, TextSourceConfig,
 };
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
@@ -73,6 +73,9 @@ pub(crate) async fn read_scan_task(
             FileFormatConfig::Warc(_) => read_warc(scan_task, url, io_client, io_stats).await,
             FileFormatConfig::Text(cfg) => {
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
+            }
+            FileFormatConfig::Blob(cfg) => {
+                read_blob(scan_task, cfg, url, io_client, io_stats).await
             }
         },
         #[cfg(feature = "python")]
@@ -264,6 +267,37 @@ async fn read_text(
     let text_chunk_size = cfg.chunk_size.or(Some(chunk_size));
     let read_options = TextReadOptions::new(cfg.buffer_size, text_chunk_size);
     daft_raw::text::read::stream_text(
+        url.to_string(),
+        convert_options,
+        read_options,
+        io_client,
+        Some(io_stats),
+    )
+    .await
+}
+
+async fn read_blob(
+    scan_task: &ScanTask,
+    cfg: &BlobSourceConfig,
+    url: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let source = scan_task.sources.first().unwrap();
+    let required_columns = scan_task
+        .pushdowns
+        .columns
+        .as_ref()
+        .map(|cols| cols.as_ref().clone());
+    let convert_options = BlobConvertOptions {
+        schema: Some(scan_task.schema.clone()),
+        limit: scan_task.pushdowns.limit,
+        required_columns,
+        size: source.size_bytes.and_then(|s| i64::try_from(s).ok()),
+        last_modified: source.last_modified,
+    };
+    let read_options = BlobReadOptions::new(cfg.buffer_size);
+    daft_raw::blob::read::stream_blob(
         url.to_string(),
         convert_options,
         read_options,

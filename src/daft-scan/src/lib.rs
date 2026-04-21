@@ -25,8 +25,8 @@ pub mod source;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig,
+    BlobSourceConfig, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig,
 };
 pub mod glob;
 mod hive;
@@ -631,6 +631,7 @@ impl ScanTask {
                                     1.0
                                 }
                             }
+                            FileFormatConfig::Blob(_) => 1.0,
                         },
                         #[cfg(feature = "python")]
                         SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,

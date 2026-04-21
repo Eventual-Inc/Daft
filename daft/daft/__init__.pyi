@@ -339,10 +339,24 @@ class TextSourceConfig:
         chunk_size: int | None,
     ): ...
 
+class BlobSourceConfig:
+    """Configuration of a blob data source."""
+
+    buffer_size: int | None
+
+    def __init__(self, buffer_size: int | None = None): ...
+
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | WarcSourceConfig
+        | TextSourceConfig
+        | BlobSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -367,6 +381,11 @@ class FileFormatConfig:
     @staticmethod
     def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
         """Create a Text file format config."""
+        ...
+
+    @staticmethod
+    def from_blob_config(config: BlobSourceConfig) -> FileFormatConfig:
+        """Create a Blob file format config."""
         ...
 
     def file_format(self) -> FileFormat:

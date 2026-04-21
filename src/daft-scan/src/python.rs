@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
 
 use crate::{
-    CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig, JsonSourceConfig,
-    ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig, TextSourceConfig,
-    WarcSourceConfig, source::ShimSourceTask, storage_config::StorageConfig,
+    BlobSourceConfig, CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig,
+    JsonSourceConfig, ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig,
+    TextSourceConfig, WarcSourceConfig, source::ShimSourceTask, storage_config::StorageConfig,
 };
 
 /// A Rust [`DataSource`] exposed as a Python object.
@@ -184,6 +184,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Text(config)))
     }
 
+    /// Create a Blob file format config.
+    #[staticmethod]
+    fn from_blob_config(config: BlobSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Blob(config)))
+    }
+
     /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
@@ -205,6 +211,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Blob(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),

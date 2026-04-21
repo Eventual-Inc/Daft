@@ -249,6 +249,7 @@ impl Source for ScanTaskSource {
                     FileFormatConfig::Json(_) => "Read JSON".into(),
                     FileFormatConfig::Warc(_) => "Read WARC".into(),
                     FileFormatConfig::Text(_) => "Read Text".into(),
+                    FileFormatConfig::Blob(_) => "Read Blob".into(),
                 },
                 #[cfg(feature = "python")]
                 SourceConfig::Database(_) => "Read Database".into(),

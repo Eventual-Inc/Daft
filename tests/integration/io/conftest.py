@@ -10,7 +10,13 @@ import uuid
 from collections.abc import Generator
 from typing import TypeAlias, TypeVar
 
+import boto3
+import numpy as np
 import pytest
+import s3fs
+from botocore.config import Config
+from google.cloud import bigtable
+from PIL import Image
 
 import daft
 
@@ -130,14 +136,12 @@ def bigtable_emulator_config() -> dict[str, str]:
 @contextlib.contextmanager
 def minio_create_bucket(
     minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
-) -> YieldFixture[tuple[list[str], str]]:
+) -> YieldFixture[tuple[s3fs.S3FileSystem, str]]:
     """Creates a bucket in MinIO.
 
     Yields a tuple of (s3fs FileSystem, bucket_name).
     If bucket_name is not provided, generates a unique one using UUID.
     """
-    import s3fs
-
     # Generate unique bucket name if not provided to avoid conflicts in parallel test execution
     if bucket_name is None:
         bucket_name = f"bucket-{uuid.uuid4()}"
@@ -161,9 +165,7 @@ def minio_create_bucket(
 
 
 @contextlib.contextmanager
-def minio_create_public_bucket(
-    minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
-) -> YieldFixture[list[str]]:
+def minio_create_public_bucket(minio_io_config: daft.io.IOConfig, bucket_name: str | None = None) -> YieldFixture[str]:
     """Creates a public bucket in MinIO.
 
     Yields the bucket name.
@@ -174,9 +176,6 @@ def minio_create_public_bucket(
         bucket_name = f"public-bucket-{uuid.uuid4()}"
 
     # Create authenticated S3 client to set up the bucket.
-    import boto3
-    from botocore.config import Config
-
     s3_client = boto3.client(
         "s3",
         endpoint_url=minio_io_config.s3.endpoint_url,
@@ -282,8 +281,6 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
 def bigtable_emulator_setup(bigtable_emulator_config: dict[str, str]):
     """Context manager to set up Bigtable emulator for testing."""
     try:
-        from google.cloud import bigtable
-
         # Set emulator host environment variable.
         os.environ["BIGTABLE_EMULATOR_HOST"] = bigtable_emulator_config["emulator_host"]
 
@@ -325,11 +322,8 @@ def bigtable_emulator_setup(bigtable_emulator_config: dict[str, str]):
 
 
 @pytest.fixture(scope="session")
-def image_data() -> YieldFixture[bytes]:
+def image_data() -> bytes:
     """Bytes of a small image."""
-    import numpy as np
-    from PIL import Image
-
     bio = io.BytesIO()
     image = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     image.save(bio, format="JPEG")
@@ -337,7 +331,7 @@ def image_data() -> YieldFixture[bytes]:
 
 
 @pytest.fixture(scope="function")
-def image_data_folder(image_data, tmpdir) -> YieldFixture[str]:
+def image_data_folder(image_data, tmpdir) -> YieldFixture[pathlib.Path]:
     """Dumps 10 small JPEG files into a tmpdir."""
     tmpdir = pathlib.Path(tmpdir)
 

@@ -326,6 +326,9 @@ impl GlobScanOperator {
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
+                FileFormatConfig::Blob(..) => {
+                    return Err(DaftError::ValueError("Blob schema is fixed".to_string()));
+                }
             };
 
             let schema = match user_provided_schema {
