@@ -1149,22 +1149,42 @@ jobs:
 
   integration-test-ray:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    needs: [skipcheck, integration-test-build]
+    timeout-minutes: 60
+    needs: [skipcheck]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
     steps:
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
     - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
-    - name: Download built wheels
-      uses: actions/download-artifact@v8
+    - uses: moonrepo/setup-rust@v1
       with:
-        pattern: wheels-*
-        merge-multiple: true
-        path: dist
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ubuntu-coverage"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+      with:
+        tool: cargo-llvm-cov@0.7.1
+    - name: Install llvm tools
+      run: rustup component add llvm-tools-preview
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1175,7 +1195,7 @@ jobs:
       run: |
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-    - name: Install Daft and dev dependencies
+    - name: Install dev dependencies
       uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
@@ -1184,13 +1204,13 @@ jobs:
         command: |
           source .venv/bin/activate
           uv sync --no-install-project --all-extras --all-groups
-          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-          rm -rf daft
 
-    - name: Run Ray Integration Tests
+    - name: Build instrumented library and run Ray Integration Tests
       run: |
         set -o pipefail
         source .venv/bin/activate
+        cargo llvm-cov clean --workspace
+        maturin develop --uv
         # Note: These tests are run sequentially (one at a time) to avoid Ray cluster conflicts
         # Each test spins up its own Ray cluster, so parallel execution may cause issues
         test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
@@ -1198,8 +1218,23 @@ jobs:
           echo "Running $test..."
           pytest -m integration $test --durations=0
         done
+        mkdir -p report-output
+        cargo llvm-cov report --lcov --output-path report-output/rust-coverage-integration-ray.lcov
       env:
+        # Mirror the unit-test coverage env block.
+        RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
+        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        CARGO_LLVM_COV: 1
+        CARGO_LLVM_COV_SHOW_ENV: 1
+        CARGO_LLVM_COV_TARGET_DIR: ./target
+        CARGO_TARGET_DIR: ./target
         DAFT_RUNNER: ray
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-reports-integration-ray
+        path: ./report-output
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v3.0.1
@@ -1527,6 +1562,7 @@ jobs:
     needs:
     - unit-test
     - rust-tests-platform
+    - integration-test-ray
     steps:
     - uses: actions/checkout@v6
     - uses: actions/download-artifact@v8
