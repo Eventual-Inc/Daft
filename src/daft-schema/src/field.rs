@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
 const ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
+const ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME: &str = "arrow.fixed_shape_tensor";
 
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
@@ -249,6 +250,51 @@ impl TryFrom<&arrow_schema::Field> for Field {
                     name: Arc::from(field.name().as_str()),
                     dtype: DataType::Uuid,
                     metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME) => {
+                // Arrow canonical extension type for fixed-shape tensors.
+                // Metadata is JSON: {"shape": [d1, d2, ...], ...}
+                let metadata_str = field.extension_type_metadata().ok_or_else(|| {
+                    DaftError::TypeError(format!(
+                        "{ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME} missing metadata"
+                    ))
+                })?;
+                let parsed: serde_json::Value = serde_json::from_str(metadata_str)
+                    .map_err(|e| DaftError::TypeError(format!("Invalid tensor metadata: {e}")))?;
+                let shape = parsed
+                    .get("shape")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| DaftError::TypeError("tensor metadata missing 'shape'".into()))?
+                    .iter()
+                    .map(|v| {
+                        v.as_u64()
+                            .ok_or_else(|| DaftError::TypeError("invalid shape value".into()))
+                    })
+                    .collect::<DaftResult<Vec<u64>>>()?;
+
+                // The storage type is FixedSizeList<value_type>[product(shape)].
+                // Extract the value type from the storage type's inner field.
+                let value_dtype = match field.data_type() {
+                    arrow_schema::DataType::FixedSizeList(inner, _) => {
+                        DataType::try_from(inner.data_type())?
+                    }
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Expected FixedSizeList storage for fixed_shape_tensor, got {:?}",
+                            field.data_type()
+                        )));
+                    }
+                };
+
+                let mut field_metadata = field.metadata().clone();
+                field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::FixedShapeTensor(Box::new(value_dtype), shape),
+                    metadata: Arc::new(field_metadata.into_iter().collect()),
                 })
             }
             Some(extension_name) => {

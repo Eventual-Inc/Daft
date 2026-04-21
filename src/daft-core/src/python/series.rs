@@ -165,6 +165,32 @@ impl PySeries {
         self.series.to_pyarrow(py)
     }
 
+    pub fn __arrow_c_schema__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let target_field = self.series.field().to_arrow()?;
+        common_arrow_ffi::field_to_pycapsule(py, &target_field)
+    }
+
+    #[pyo3(signature = (requested_schema=None))]
+    pub fn __arrow_c_array__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, pyo3::types::PyCapsule>>,
+    ) -> PyResult<Py<PyAny>> {
+        let array = self.series.to_arrow()?;
+        let target_field = if let Some(capsule) = requested_schema.as_ref() {
+            common_arrow_ffi::field_from_requested_schema(capsule)?
+        } else {
+            self.series.field().to_arrow()?
+        };
+        let array = if array.data_type() != target_field.data_type() {
+            arrow::compute::cast(&array, target_field.data_type()).map_err(DaftError::from)?
+        } else {
+            array
+        };
+        let data = array.to_data();
+        common_arrow_ffi::array_to_pycapsules(py, &data, &target_field)
+    }
+
     pub fn __iter__(&self) -> PySeriesIterator {
         PySeriesIterator::new(self.series.clone())
     }
