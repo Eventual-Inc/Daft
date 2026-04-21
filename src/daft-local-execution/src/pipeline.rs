@@ -1458,7 +1458,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            schema,
             backend,
             repartition_spec,
             stats_state,
@@ -1471,7 +1470,6 @@ fn physical_plan_to_pipeline(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
-                        schema.clone(),
                     )),
                     child_node,
                     stats_state.clone(),
