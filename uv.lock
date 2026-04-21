@@ -1443,6 +1443,7 @@ all = [
     { name = "pyarrow" },
     { name = "pyiceberg" },
     { name = "pylance" },
+    { name = "pypaimon" },
     { name = "ray", extra = ["client", "data"] },
     { name = "requests" },
     { name = "sentence-transformers" },
@@ -1499,6 +1500,9 @@ openai = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "openai" },
     { name = "pillow" },
+]
+paimon = [
+    { name = "pypaimon" },
 ]
 pandas = [
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
@@ -1640,7 +1644,7 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = "<0.12.0" },
     { name = "connectorx", marker = "extra == 'postgres'", specifier = ">=0.4.4,<0.5.0" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "paimon", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
     { name = "datasets", marker = "extra == 'huggingface'", specifier = "<4.6.0" },
     { name = "deltalake", marker = "extra == 'deltalake'", specifier = ">=1.5.0,<1.6.0" },
     { name = "deltalake", marker = "extra == 'unity'", specifier = ">=1.5.0,<1.6.0" },
@@ -1665,6 +1669,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'hudi'", specifier = ">=8.0.0,<22.1.0" },
     { name = "pyiceberg", marker = "extra == 'iceberg'", specifier = ">=0.7.0,!=0.9.1,!=0.10.0,<=0.11.0" },
     { name = "pylance", marker = "extra == 'lance'", specifier = "<0.40.0" },
+    { name = "pypaimon", marker = "extra == 'paimon'", specifier = ">=0.2.0,<1.4.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform == 'win32' and extra == 'ray'", specifier = ">=2.10.0,<2.54.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform != 'win32' and extra == 'ray'", specifier = ">=2.0.0,<2.54.0" },
     { name = "requests", marker = "extra == 'gravitino'", specifier = ">=2.28.0,<3.0.0" },
@@ -1681,7 +1686,7 @@ requires-dist = [
     { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'", specifier = "<0.2.0" },
 ]
-provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
+provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "paimon", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -6654,6 +6659,15 @@ wheels = [
 ]
 
 [[package]]
+name = "py4j"
+version = "0.10.9.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/f2/b34255180c72c36ff7097f7c2cdca02abcbd89f5eebf7c7c41262a9a0637/py4j-0.10.9.7.tar.gz", hash = "sha256:0b6e5315bb3ada5cf62ac651d107bb2ebc02def3dee9d9548e3baac644ea8dbb", size = 1508234, upload-time = "2022-08-12T22:49:09.792Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/30/a58b32568f1623aaad7db22aa9eafc4c6c194b429ff35bdc55ca2726da47/py4j-0.10.9.7-py2.py3-none-any.whl", hash = "sha256:85defdfd2b2376eb3abf5ca6474b51ab7e0de341c75a02f46dc9b5976f5a5c1b", size = 200481, upload-time = "2022-08-12T22:49:07.05Z" },
+]
+
+[[package]]
 name = "pyarrow"
 version = "22.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -7260,6 +7274,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/c7/ee98c62050de4aa8bafb6eb1e11b95e0b0c898bd5930137c6dc776e06a9b/pyodbc-5.3.0-cp314-cp314t-win_amd64.whl", hash = "sha256:bfeb3e34795d53b7d37e66dd54891d4f9c13a3889a8f5fe9640e56a82d770955", size = 79452, upload-time = "2025-10-17T18:03:54.664Z" },
     { url = "https://files.pythonhosted.org/packages/4b/8f/d8889efd96bbe8e5d43ff9701f6b1565a8e09c3e1f58c388d550724f777b/pyodbc-5.3.0-cp314-cp314t-win_arm64.whl", hash = "sha256:13656184faa3f2d5c6f19b701b8f247342ed581484f58bf39af7315c054e69db", size = 70142, upload-time = "2025-10-17T18:03:55.551Z" },
 ]
+
+[[package]]
+name = "pypaimon"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "py4j" },
+    { name = "pyarrow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1d/fd/397b04ac950a75ce71ecf613b9ee1a247e9da1b633b6ccf1847b513979d4/pypaimon-0.2.0.tar.gz", hash = "sha256:43ac684779841da17528b5f241ede6149bcdab4d16f3cd80f713262f6ed04720", size = 39469331, upload-time = "2024-12-19T07:37:07.501Z" }
 
 [[package]]
 name = "pyparsing"
