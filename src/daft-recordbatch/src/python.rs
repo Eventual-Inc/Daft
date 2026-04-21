@@ -551,6 +551,27 @@ impl PyRecordBatch {
         })
     }
 
+    pub fn __arrow_c_schema__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let arrow_schema = self.record_batch.schema.to_arrow()?;
+        common_arrow_ffi::schema_to_pycapsule(py, &arrow_schema)
+    }
+
+    #[pyo3(signature = (requested_schema=None))]
+    pub fn __arrow_c_array__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, pyo3::types::PyCapsule>>,
+    ) -> PyResult<Py<PyAny>> {
+        let mut arrow_rb = ffi::record_batch_to_arrow_rs(&self.record_batch)?;
+        if let Some(capsule) = requested_schema.as_ref() {
+            let requested_field = common_arrow_ffi::field_from_requested_schema(capsule)?;
+            if let arrow::datatypes::DataType::Struct(fields) = requested_field.data_type() {
+                arrow_rb = ffi::cast_record_batch_to_schema(&arrow_rb, fields)?;
+            }
+        }
+        common_arrow_ffi::record_batch_to_pycapsules(py, &arrow_rb)
+    }
+
     #[staticmethod]
     #[pyo3(signature = (schema=None))]
     pub fn empty(schema: Option<PySchema>) -> Self {

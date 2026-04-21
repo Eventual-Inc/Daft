@@ -3055,9 +3055,11 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-array",
  "arrow-ipc",
  "bincode",
+ "common-arrow-ffi",
  "common-error",
  "common-partitioning",
  "common-runtime",

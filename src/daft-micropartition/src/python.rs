@@ -165,6 +165,28 @@ impl PyMicroPartition {
         Ok(MicroPartition::new_loaded(schema.schema.clone(), Arc::new(tables), None).into())
     }
 
+    #[staticmethod]
+    pub fn from_arrow_stream(py: Python, obj: Bound<PyAny>) -> PyResult<Self> {
+        let (arrow_schema, arrow_batches) = common_arrow_ffi::stream_from_python(&obj)?;
+
+        py.detach(|| {
+            let daft_schema = daft_core::prelude::Schema::try_from(arrow_schema.as_ref())?;
+            let daft_schema: SchemaRef = Arc::new(daft_schema);
+            let target_fields = daft_schema.to_arrow()?.fields().clone();
+
+            let daft_batches: Vec<RecordBatch> = arrow_batches
+                .into_iter()
+                .map(|rb| {
+                    let cast_rb =
+                        daft_recordbatch::ffi::cast_record_batch_to_schema(&rb, &target_fields)?;
+                    RecordBatch::from_arrow(daft_schema.clone(), cast_rb.columns().to_vec())
+                })
+                .collect::<common_error::DaftResult<_>>()?;
+
+            Ok(MicroPartition::new_loaded(daft_schema, Arc::new(daft_batches), None).into())
+        })
+    }
+
     // Export Methods
     pub fn to_record_batch(&self, py: Python) -> PyResult<PyRecordBatch> {
         let concatted = py.detach(|| self.inner.concat_or_get())?;
@@ -172,6 +194,41 @@ impl PyMicroPartition {
             None => Ok(PyRecordBatch::empty(Some(self.schema()?))),
             Some(record_batch) => Ok(PyRecordBatch { record_batch }),
         }
+    }
+
+    pub fn __arrow_c_schema__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let arrow_schema = self.inner.schema().to_arrow()?;
+        common_arrow_ffi::schema_to_pycapsule(py, &arrow_schema)
+    }
+
+    #[pyo3(signature = (requested_schema=None))]
+    pub fn __arrow_c_stream__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, pyo3::types::PyCapsule>>,
+    ) -> PyResult<Py<PyAny>> {
+        let target_schema = if let Some(capsule) = requested_schema.as_ref() {
+            Arc::new(common_arrow_ffi::schema_from_requested_schema(capsule)?)
+        } else {
+            Arc::new(self.inner.schema().to_arrow()?)
+        };
+
+        let target_fields = target_schema.fields().clone();
+        let chunks = self.inner.record_batches();
+        let arrow_batches: Vec<Result<arrow::record_batch::RecordBatch, arrow::error::ArrowError>> =
+            chunks
+                .iter()
+                .map(|rb| {
+                    let arrow_rb = daft_recordbatch::ffi::record_batch_to_arrow_rs(rb)
+                        .map_err(|e| arrow::error::ArrowError::ExternalError(Box::new(e)))?;
+                    daft_recordbatch::ffi::cast_record_batch_to_schema(&arrow_rb, &target_fields)
+                        .map_err(|e| arrow::error::ArrowError::ExternalError(Box::new(e)))
+                })
+                .collect();
+
+        let reader = arrow::array::RecordBatchIterator::new(arrow_batches, target_schema);
+        let boxed: Box<dyn arrow::array::RecordBatchReader + Send> = Box::new(reader);
+        common_arrow_ffi::reader_to_stream_pycapsule(py, boxed)
     }
 
     // Compute Methods
