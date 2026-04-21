@@ -96,6 +96,40 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
+def _install_coverage_flush() -> None:
+    """Ensure LLVM profile counters are written before a Ray actor is torn down.
+
+    In coverage-instrumented builds this calls `__llvm_profile_write_file` on clean
+    interpreter exit and on SIGTERM (Ray's pre-SIGKILL signal), so per-actor profraw
+    files actually hit disk. In non-coverage builds `flush_llvm_profile` is a no-op,
+    so installing the handlers is essentially free.
+    """
+    import signal
+
+    try:
+        from daft.daft import flush_llvm_profile  # type: ignore[attr-defined]
+    except ImportError:
+        return
+
+    def _flush() -> None:
+        try:
+            flush_llvm_profile()
+        except Exception:
+            pass
+
+    atexit.register(_flush)
+
+    def _sigterm(signum: int, _frame: object) -> None:
+        _flush()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _sigterm)
+    except (ValueError, OSError):
+        pass
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -110,6 +144,7 @@ class RaySwordfishActor:
         is_head: bool = False,
         event_log_dir: str | None = None,
     ) -> None:
+        _install_coverage_flush()
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
 
         if event_log_dir:
@@ -402,6 +437,7 @@ class RemoteFlotillaRunner:
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
     ) -> None:
+        _install_coverage_flush()
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:

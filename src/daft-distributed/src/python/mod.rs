@@ -267,6 +267,23 @@ impl PyDistributedPhysicalPlanRunner {
     }
 }
 
+// Coverage-only hook for flushing LLVM profile counters from Ray actor processes
+// before Ray's SIGKILL teardown loses them. No-op in non-coverage builds so there
+// is no runtime overhead outside of coverage-instrumented CI.
+#[cfg(coverage)]
+unsafe extern "C" {
+    fn __llvm_profile_write_file() -> i32;
+}
+
+#[pyfunction]
+fn flush_llvm_profile() -> PyResult<()> {
+    #[cfg(coverage)]
+    unsafe {
+        __llvm_profile_write_file();
+    }
+    Ok(())
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
@@ -274,5 +291,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
+    parent.add_function(wrap_pyfunction!(flush_llvm_profile, parent)?)?;
     Ok(())
 }

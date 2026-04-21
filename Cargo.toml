@@ -403,6 +403,13 @@ version = "0.13"
 features = ["derive", "rc"]
 version = "1.0.228"
 
+[workspace.lints.rust]
+unexpected_cfgs = {level = "warn", check-cfg = [
+  "cfg(coverage)",
+  "cfg(coverage_nightly)",
+  "cfg(trybuild_no_target)"
+]}
+
 [workspace.lints.clippy]
 as_conversions = "allow"
 cast-sign-loss = "allow"
