@@ -160,7 +160,16 @@ def assert_frame_equal(
     col_names = expected_col_names if not check_column_order else actual_col_names
 
     if not check_row_order:
-        sort_cols = sort_by if sort_by else col_names
+        if sort_by:
+            invalid = [c for c in sort_by if c not in col_names]
+            if invalid:
+                raise AssertionError(
+                    f"sort_by references column(s) not present in the DataFrames: {invalid}.\n"
+                    f"  Available columns: {col_names}"
+                )
+            sort_cols = list(sort_by)
+        else:
+            sort_cols = col_names
         # Build sort keys as tuples
         def _row_key(pydict: dict, idx: int) -> tuple:
             return tuple(
