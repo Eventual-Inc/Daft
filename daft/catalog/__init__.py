@@ -407,7 +407,7 @@ class Catalog(ABC):
 
             return PaimonCatalog._from_obj(catalog, name=name)
         except ImportError:
-            raise ImportError("pypaimon is required: pip install pypaimon")
+            raise ImportError("pypaimon is required: pip install daft[paimon]")
 
     @staticmethod
     def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
@@ -985,7 +985,7 @@ class Table(ABC):
 
             return PaimonTable._from_obj(table)
         except ImportError:
-            raise ImportError("pypaimon is required: pip install pypaimon")
+            raise ImportError("pypaimon is required: pip install daft[paimon]")
 
     @staticmethod
     def from_gravitino(table: object) -> Table:

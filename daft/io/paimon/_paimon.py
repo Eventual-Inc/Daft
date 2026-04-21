@@ -133,7 +133,7 @@ def read_paimon(
     try:
         import pypaimon  # noqa: F401
     except ImportError:
-        raise ImportError("pypaimon is required to use read_paimon. Install it with: `pip install pypaimon`")
+        raise ImportError("pypaimon is required to use read_paimon. Install it with: `pip install daft[paimon]`")
 
     from daft.io.paimon.paimon_scan import PaimonDataSource
 
