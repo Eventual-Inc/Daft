@@ -62,45 +62,33 @@ function StripBar({
   label,
   fill,
   value,
-  sub,
   color,
 }: {
   label: string;
   fill: number;
   value: string;
-  sub?: string;
   color: string;
 }) {
   const pct = Math.max(0, Math.min(1, fill)) * 100;
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-2 text-[10px]">
-        <span
-          className={`${main.className} uppercase tracking-wider text-zinc-500 w-8 shrink-0`}
-        >
-          {label}
-        </span>
-        <div className="flex-1 h-1.5 rounded-sm bg-zinc-800/80 overflow-hidden min-w-0">
-          <div
-            className="h-full rounded-sm"
-            style={{ width: `${pct}%`, backgroundColor: color }}
-          />
-        </div>
-        <span
-          className={`${main.className} text-xs text-zinc-300 font-mono tabular-nums
-            w-20 shrink-0 text-right whitespace-nowrap`}
-        >
-          {value}
-        </span>
-      </div>
-      {sub && (
+    <div className="flex items-center gap-2 text-[10px]">
+      <span
+        className={`${main.className} uppercase tracking-wider text-zinc-500 w-12 shrink-0`}
+      >
+        {label}
+      </span>
+      <div className="flex-1 h-1.5 rounded-sm bg-zinc-800/80 overflow-hidden min-w-0">
         <div
-          className={`${main.className} pl-10 text-[10px] text-zinc-500 font-mono
-            whitespace-nowrap overflow-hidden text-ellipsis`}
-        >
-          {sub}
-        </div>
-      )}
+          className="h-full rounded-sm"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+      <span
+        className={`${main.className} text-xs text-zinc-300 font-mono tabular-nums
+          w-20 shrink-0 text-right whitespace-nowrap`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -119,8 +107,10 @@ export default function SpillStrips({ operator }: { operator?: OperatorInfo }) {
     ? statNumericValue(operator.stats[SPILL_FILES_RESIDENT_STAT_KEY])
     : 0;
 
-  const diskHeld = Math.max(0, bytesWritten - bytesRead);
-  const maxSeen = Math.max(memBytes, diskHeld, 1);
+  // Disk bars share a scale so the gap between `wrote` and `read` visually
+  // represents the currently-held spill (written but not yet read back).
+  const diskScale = Math.max(bytesWritten, bytesRead, 1);
+  const memScale = Math.max(memBytes, 1);
 
   const writeRate = useSpillWriteRate(
     bytesWritten,
@@ -129,15 +119,13 @@ export default function SpillStrips({ operator }: { operator?: OperatorInfo }) {
 
   if (!operator) return null;
 
-  // Don't render the block at all until there's something to show —
-  // keeps streaming ops (that never touch the buffer gauge) visually clean.
   const hasAny = memBytes > 0 || bytesWritten > 0 || filesResident > 0;
   if (!hasAny) return null;
 
   const rateStr = formatByteRate(writeRate);
   const diskSub = [
     filesResident > 0 ? `${filesResident.toLocaleString()} files` : null,
-    rateStr ? `+${rateStr}` : null,
+    rateStr ? `w +${rateStr}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -146,17 +134,37 @@ export default function SpillStrips({ operator }: { operator?: OperatorInfo }) {
     <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1.5">
       <StripBar
         label="mem"
-        fill={memBytes / maxSeen}
+        fill={memBytes / memScale}
         value={formatBytes(memBytes)}
         color="rgb(217, 70, 219)"
       />
-      <StripBar
-        label="disk"
-        fill={diskHeld / maxSeen}
-        value={formatBytes(diskHeld)}
-        sub={diskSub || undefined}
-        color="rgb(120, 50, 110)"
-      />
+      <div className="pt-1 space-y-1">
+        <div
+          className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500`}
+        >
+          disk
+        </div>
+        <StripBar
+          label="▲ wrote"
+          fill={bytesWritten / diskScale}
+          value={formatBytes(bytesWritten)}
+          color="rgb(217, 70, 219)"
+        />
+        <StripBar
+          label="▼ read"
+          fill={bytesRead / diskScale}
+          value={formatBytes(bytesRead)}
+          color="rgb(120, 50, 110)"
+        />
+        {diskSub && (
+          <div
+            className={`${main.className} pl-12 text-[10px] text-zinc-500 font-mono
+              whitespace-nowrap overflow-hidden text-ellipsis`}
+          >
+            {diskSub}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
