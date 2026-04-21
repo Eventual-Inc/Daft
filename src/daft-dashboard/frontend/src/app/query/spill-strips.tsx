@@ -14,13 +14,17 @@ import {
 } from "./stats-utils";
 
 /**
- * Node types that are global aggregates. Only these render spill strips
- * for now — other stateful sinks (Repartition, Sort, Join, TopN) will be
- * added once the aggregate case is validated.
+ * Node types that behave as global aggregates — blocking sinks that
+ * accumulate all input before emitting and can spill their working set
+ * to disk. Keep in sync with the Rust side: any sink using `SpillReporter`
+ * + `set_in_memory_buffer_bytes` should be listed here.
  */
 export const GLOBAL_AGG_NODE_TYPES = new Set<string>([
   "Aggregate",
   "GroupedAggregate",
+  "Repartition",
+  "Sort",
+  "TopN",
 ]);
 
 export function hasSpillStrips(nodeType: string | undefined): boolean {
