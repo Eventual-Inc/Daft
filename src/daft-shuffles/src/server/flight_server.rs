@@ -293,46 +293,89 @@ impl FlightService for ShuffleFlightServer {
         let ticket = request.into_inner();
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
-        let (file_paths, schema) = self
-            .get_shuffle_file_paths(
-                ticket.shuffle_id,
-                ticket.partition_idx,
-                ticket.cache_ids.as_deref(),
-            )
-            .await
-            .ok_or_else(|| {
+        // Per-cache iteration so each cache's spill reporter gets credited
+        // with its own reads. Mirrors `get_partition_local`.
+        let per_cache = {
+            let caches = self.shuffle_caches.lock().await;
+            let shuffle_caches = caches.get(&ticket.shuffle_id).cloned().ok_or_else(|| {
                 Status::not_found(format!(
                     "Shuffle cache not found for id: {}",
                     ticket.shuffle_id
                 ))
             })?;
+            let filtered: Vec<Arc<ShuffleCache>> = if let Some(ids) = ticket.cache_ids.as_deref() {
+                shuffle_caches
+                    .into_iter()
+                    .filter(|cache| {
+                        cache
+                            .cache_id()
+                            .parse::<u32>()
+                            .map(|cid| ids.contains(&cid))
+                            .unwrap_or(false)
+                    })
+                    .collect()
+            } else {
+                shuffle_caches
+            };
+            filtered
+        };
 
-        let file_path_stream = futures::stream::iter(file_paths);
-        let flight_data_stream = file_path_stream
-            .then(|file_path| async move {
-                let file = tokio::fs::File::open(file_path)
-                    .await
-                    .map_err(|e| Status::internal(format!("Error opening file: {}", e)))?;
-                let reader = FlightDataStreamReader::try_new(BufReader::new(file))
-                    .await
-                    .map_err(|e| {
-                        Status::internal(format!("Error creating flight data reader: {}", e))
-                    })?;
-                Ok::<_, Status>(
-                    reader
-                        .into_stream()
-                        .map_err(|e| Status::internal(e.to_string())),
-                )
-            })
-            .try_flatten();
+        let schema = per_cache
+            .first()
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "No caches for shuffle {} after filtering",
+                    ticket.shuffle_id
+                ))
+            })?
+            .schema();
+
+        let mut streams: Vec<BoxStream<'static, Result<FlightData, Status>>> =
+            Vec::with_capacity(per_cache.len());
+        for cache in per_cache {
+            let files = cache.file_paths_for_partition(ticket.partition_idx);
+            let file_sizes = cache.bytes_per_file_for_partition(ticket.partition_idx);
+            let cache_for_stream = cache.clone();
+            let per_cache_stream = futures::stream::iter(files.into_iter().zip(file_sizes))
+                .then(move |(file_path, file_size)| {
+                    let cache = cache_for_stream.clone();
+                    async move {
+                        let read_start = Instant::now();
+                        let file = tokio::fs::File::open(&file_path).await.map_err(|e| {
+                            Status::internal(format!("Error opening file: {}", e))
+                        })?;
+                        let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                            .await
+                            .map_err(|e| {
+                                Status::internal(format!(
+                                    "Error creating flight data reader: {}",
+                                    e
+                                ))
+                            })?;
+                        cache.report_file_read(
+                            file_size as u64,
+                            read_start.elapsed().as_nanos() as u64,
+                        );
+                        Ok::<_, Status>(
+                            reader
+                                .into_stream()
+                                .map_err(|e| Status::internal(e.to_string())),
+                        )
+                    }
+                })
+                .try_flatten()
+                .boxed();
+            streams.push(per_cache_stream);
+        }
 
         let options = IpcWriteOptions::default();
         let arrow_schema = schema
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+        let merged_reads = futures::stream::iter(streams).flatten();
         let flight_data =
-            futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
+            futures::stream::once(async { Ok(flight_schema) }).chain(merged_reads);
 
         Ok(Response::new(Box::pin(flight_data)))
     }
