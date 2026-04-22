@@ -48,7 +48,7 @@ pub(crate) trait WorkerManager: Send + Sync {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use std::sync::{Mutex, atomic::AtomicBool};
 
     use super::*;

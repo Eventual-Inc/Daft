@@ -12,7 +12,7 @@ use super::as_arrow::AsArrow;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, UuidArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
         ops::arrow::sort::primitive::{
             common::multi_column_idx_sort, indices::indices_sorted_unstable_by, sort::sort_by,
         },
@@ -558,6 +558,12 @@ impl MapArray {
 impl StructArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for StructArray")
+    }
+}
+
+impl UnionArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for UnionArray")
     }
 }
 

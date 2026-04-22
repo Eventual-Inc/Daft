@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
+import os
+import queue
+import socket
+import threading
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -33,9 +38,13 @@ from daft.subscribers.abc import Subscriber
 if TYPE_CHECKING:
     from daft.daft import QueryEndState
 
+logger = logging.getLogger(__name__)
+
 _EVENT_LOG_ALIAS = "_daft_event_log"
 _DEFAULT_EVENT_LOG_DIR = Path("~/.daft/events").expanduser()
 _EVENT_LOG_ATEXIT_REGISTERED = False
+
+_REMOTE_DRAIN_TIMEOUT_SEC = 30.0
 
 
 def _json_default(obj: object) -> object:
@@ -61,9 +70,18 @@ class EventLogSubscriber(Subscriber):
     one JSON object per line with ``event``, ``ts``, and event-specific fields.
     """
 
-    def __init__(self, log_dir: str | Path) -> None:
+    def __init__(
+        self,
+        log_dir: str | Path,
+        component: str | None = None,
+        node_role: str | None = None,
+    ) -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._init_subscriber_state(component=component, node_role=node_role)
+
+    def _init_subscriber_state(self, component: str | None, node_role: str | None) -> None:
+        """Initialize all non-log-dir state shared by this class and subclasses."""
         self._closed = False
         self._query_files: dict[str, TextIOWrapper] = {}
 
@@ -72,6 +90,14 @@ class EventLogSubscriber(Subscriber):
         self._optimization_starts: dict[str, float] = {}
         self._exec_starts: dict[str, float] = {}
         self._operator_starts: dict[tuple[str, int], float] = {}
+
+        # Per-process identity tags. Only meaningful in distributed setups —
+        # when provided, attached to every record so consumers can demultiplex
+        # interleaved output from driver + workers.
+        self._component = component
+        self._node_role = node_role
+        self._hostname = socket.gethostname()
+        self._pid = os.getpid()
 
     def _clear_query_state(self, query_id: str) -> None:
         """Remove any leftover timing state for the given query."""
@@ -124,15 +150,25 @@ class EventLogSubscriber(Subscriber):
         )
 
     def _write_event(self, query_id: str, event_name: str, payload: dict[str, Any]) -> None:
-        query_file = self._get_query_file(query_id)
-        if query_file is None:
-            return
         record: dict[str, Any] = {
             "event": event_name,
             "timestamp": _epoch_now(),
             "query_id": query_id,
+            "hostname": self._hostname,
+            "pid": self._pid,
         }
+        if self._component is not None:
+            record["component"] = self._component
+        if self._node_role is not None:
+            record["node_role"] = self._node_role
         record.update(payload)
+        self._emit_record(query_id, record)
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        """Write a record to its sink. Default: per-query JSONL file. Subclasses override."""
+        query_file = self._get_query_file(query_id)
+        if query_file is None:
+            return
         try:
             query_file.write(json.dumps(record, default=_json_default) + "\n")
         except OSError:
@@ -225,13 +261,15 @@ class EventLogSubscriber(Subscriber):
         query_id = event.query_id
         node_id = event.node_id
         self._operator_starts[(query_id, node_id)] = _mono_ms()
+
+        payload: dict[str, Any] = {"node_id": node_id, "name": event.name}
+        if event.origin_node_id is not None:
+            payload["origin_node_id"] = event.origin_node_id
+
         self._write_event(
             query_id,
             "operator_started",
-            {
-                "node_id": node_id,
-                "name": event.name,
-            },
+            payload,
         )
 
     def on_stats(self, event: Stats) -> None:
@@ -264,6 +302,9 @@ class EventLogSubscriber(Subscriber):
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
+        if event.origin_node_id is not None:
+            payload["origin_node_id"] = event.origin_node_id
+
         self._write_event(query_id, "operator_ended", payload)
 
     def on_execution_finished(self, event: ExecutionFinished) -> None:
@@ -277,6 +318,61 @@ class EventLogSubscriber(Subscriber):
             payload["duration_ms"] = round(duration_ms)
 
         self._write_event(event.query_id, "execution_ended", payload)
+
+
+class RemoteEventLogSubscriber(EventLogSubscriber):
+    """Event log subscriber that ships records to a centralized Ray actor sink.
+
+    instead of writing to a local file.
+
+    Used on flotilla workers (and optionally the driver) to aggregate events
+    from every process into a single per-query JSONL file on the head node.
+
+    The Subscriber framework is blocking/synchronous; this class offloads all
+    remote calls to a background thread via an unbounded queue so logging
+    never stalls query execution.
+    """
+
+    def __init__(
+        self,
+        sink_actor: Any,
+        component: str | None = None,
+        node_role: str | None = None,
+    ) -> None:
+        # Skip parent __init__ — no log_dir to create — but reuse the shared
+        # state init so future fields added there apply here automatically.
+        self._log_dir = None  # type: ignore[assignment]
+        self._init_subscriber_state(component=component, node_role=node_role)
+        self._sink = sink_actor
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._worker = threading.Thread(
+            target=self._drain_loop,
+            name="daft-event-log-remote",
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        if self._closed:
+            return
+        self._queue.put(record)
+
+    def _drain_loop(self) -> None:
+        while True:
+            record = self._queue.get()
+            if record is None:
+                return
+            try:
+                self._sink.append.remote(record)
+            except Exception as e:
+                logger.warning("RemoteEventLogSubscriber: failed to ship record: %s", e)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._queue.put(None)
+        self._worker.join(timeout=_REMOTE_DRAIN_TIMEOUT_SEC)
 
 
 def query_state_str(state: QueryEndState) -> str:

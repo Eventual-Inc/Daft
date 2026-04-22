@@ -12,8 +12,9 @@ use std::{
 };
 
 pub use agg_ops::{
-    try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
-    try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
+    try_mean_aggregation_supertype, try_percentile_aggregation_supertype, try_product_supertype,
+    try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+    try_variance_aggregation_supertype,
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -31,7 +32,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -241,6 +242,7 @@ impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
+impl_nested_datatype!(UnionType, UnionArray);
 
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);

@@ -238,8 +238,10 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
                     }
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("Build join should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "BuildExecutionContext should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {

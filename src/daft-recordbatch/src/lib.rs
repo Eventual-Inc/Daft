@@ -47,7 +47,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
-pub use ops::{get_column_by_name, get_columns_by_name};
+pub use ops::{build_left_to_right_map, get_column_by_name, get_columns_by_name};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]
@@ -702,6 +702,10 @@ impl RecordBatch {
                 }
             }
             AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
+            AggExpr::Median(expr) => self.eval_agg_child(expr)?.percentile(groups, 0.5),
+            AggExpr::Percentile(expr, percentile) => {
+                self.eval_agg_child(expr)?.percentile(groups, percentile.0)
+            }
             AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),

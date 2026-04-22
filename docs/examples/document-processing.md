@@ -794,8 +794,8 @@ Reformat the text boxes structured objects (the ParsedPdf pydantic class instanc
 ```python
 df = (
     df.explode("processed_raw")
-    .with_column("page_index", col("processed_raw").struct.get("page_index"))
-    .with_column("indexed_texts", col("processed_raw").struct.get("indexed_texts"))
+    .with_column("page_index", col("processed_raw").get("page_index"))
+    .with_column("indexed_texts", col("processed_raw").get("indexed_texts"))
     .explode("indexed_texts")
     .exclude("processed_raw")
 )
@@ -804,9 +804,9 @@ print(df.schema())
 
 #### Explaining Structure Access Expressions
 
-Note that we're using `col("indexed_texts")["text"]` to construct an expression that allows Daft to extract individual field values from our complex document structure.
+Note that we're using `col("indexed_texts").get("text")` to construct an expression that allows Daft to extract individual field values from our complex document structure.
 
-When we write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
+When we write `col("text_blocks").get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `.get("x")` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
 
 The last part of our text box processing step is to extract the text and bounding box coordinates into their own columns. We also want to preserve the reading order index as its own column too.
 

@@ -26,6 +26,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_partition_refs::FlightPartitionRef;
 use daft_scan::ScanTaskRef;
 use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
@@ -46,7 +47,6 @@ use crate::{
     join::{
         AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
     },
-    shuffle_metadata::ShuffleMetadata,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -83,9 +83,9 @@ pub enum PipelineMessage {
         input_id: InputId,
         partition: MicroPartition,
     },
-    ShuffleMetadata {
+    FlightPartitionRef {
         input_id: InputId,
-        metadata: ShuffleMetadata,
+        partition_ref: FlightPartitionRef,
     },
     /// Flush signal for a specific input_id - indicates that input is finished
     Flush(InputId),
@@ -98,7 +98,7 @@ pub(crate) enum PipelineEvent<TaskResult> {
         input_id: InputId,
         partition: MicroPartition,
     },
-    ShuffleMetadata,
+    FlightPartitionRef,
     Flush(InputId),
     InputClosed,
 }
@@ -120,8 +120,8 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
                 Some(PipelineMessage::Morsel { input_id, partition }) => {
                     Ok(Some(PipelineEvent::Morsel { input_id, partition }))
                 }
-                Some(PipelineMessage::ShuffleMetadata { .. }) => {
-                    Ok(Some(PipelineEvent::ShuffleMetadata))
+                Some(PipelineMessage::FlightPartitionRef { .. }) => {
+                    Ok(Some(PipelineEvent::FlightPartitionRef))
                 }
                 Some(PipelineMessage::Flush(input_id)) => {
                     Ok(Some(PipelineEvent::Flush(input_id)))
@@ -319,7 +319,7 @@ impl BuilderContext {
         // Keep a unique local runtime node id (`id`), but preserve the originating
         // distributed plan node id (`node_origin_id`) when available so metrics/stats
         // from local execution can be attributed back to the distributed node.
-        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+        let node_origin_id = node_context.origin_node_id;
 
         NodeInfo {
             name,
@@ -1458,7 +1458,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            schema,
             backend,
             repartition_spec,
             stats_state,
@@ -1471,7 +1470,6 @@ fn physical_plan_to_pipeline(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
-                        schema.clone(),
                     )),
                     child_node,
                     stats_state.clone(),
@@ -1484,7 +1482,7 @@ fn physical_plan_to_pipeline(
                     shuffle_dirs,
                     compression,
                 } => {
-                    let (shuffle_server, _) = ctx
+                    let (shuffle_server, shuffle_address) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
                     let repartition_sink = RepartitionSink::try_new_flight(
@@ -1494,6 +1492,7 @@ fn physical_plan_to_pipeline(
                         shuffle_dirs.clone(),
                         compression.clone(),
                         shuffle_server,
+                        shuffle_address,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
@@ -1530,27 +1529,14 @@ fn physical_plan_to_pipeline(
                 )
                 .boxed()
             }
-            ShuffleReadBackend::Flight {
-                shuffle_id,
-                server_cache_mapping,
-            } => {
-                let (shuffle_server, shuffle_address) = ctx
-                    .shuffle_server()
-                    .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+            ShuffleReadBackend::Flight => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = ShuffleReadSource::try_new(
-                    rx,
-                    *shuffle_id,
-                    server_cache_mapping.clone(),
-                    shuffle_server,
-                    shuffle_address,
-                    schema.clone(),
-                    cfg,
-                )
-                .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+                let (local_server, local_address) = ctx.shuffle_server().expect(
+                    "Flight shuffle server must be initialized for Flight shuffle read plans",
+                );
+                let source =
+                    ShuffleReadSource::new(rx, local_server, local_address, schema.clone(), cfg);
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

@@ -386,8 +386,8 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         );
                     }
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("Probe join should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!("Probe join should not receive flight partition refs from child")
                 }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {
