@@ -33,7 +33,7 @@ impl TaskLifecycleEventSubscriber {
 
 impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
-        let result = match event {
+        match event {
             TaskEvent::Submitted { context, .. } => {
                 let submit_event = Event::TaskSubmit(TaskSubmitEvent {
                     header: event_header(self.query_id.clone()),
@@ -87,8 +87,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 self.dispatch_event(&end_event)
             }
             _ => Ok(()),
-        };
-        result
+        }
     }
 }
 
