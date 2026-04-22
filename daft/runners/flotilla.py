@@ -130,6 +130,21 @@ def _install_coverage_flush() -> None:
         pass
 
 
+def _coverage_runtime_env_vars() -> dict[str, str]:
+    """Return env vars that must propagate to Ray actor processes under coverage.
+
+    Ray actors start fresh subprocesses and do not inherit arbitrary env vars from
+    the driver. The LLVM profile runtime reads `LLVM_PROFILE_FILE` at .so load time
+    to decide where to write profraw; without it, actors write to `default.profraw`
+    in their cwd (typically /tmp/ray/session_*) where cargo-llvm-cov never looks.
+    Forwarding the driver's value via Ray `runtime_env` pins actor profraw into the
+    workspace target dir so the merge step picks them up.
+    """
+    keys = ("LLVM_PROFILE_FILE",)
+    env = {k: os.environ[k] for k in keys if k in os.environ}
+    return env
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -382,11 +397,13 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             # `node:__internal_head__` is Ray's internal resource key tagging the head node;
             # not in public Ray docs but stable and relied on by Ray's own autoscaler/GCS code.
             is_head = node["Resources"].get("node:__internal_head__", 0) == 1
+            worker_env_vars = _coverage_runtime_env_vars()
             actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
                 ),
+                runtime_env=({"env_vars": worker_env_vars} if worker_env_vars else None),
             ).remote(
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
@@ -577,7 +594,7 @@ class FlotillaRunner:
             create_or_get_sink(event_log_dir, sink_job_id, head_node_id)
             atexit.register(teardown_sink, sink_job_id)
 
-        runner_env_vars: dict[str, str] = {}
+        runner_env_vars: dict[str, str] = _coverage_runtime_env_vars()
         if dashboard_url:
             runner_env_vars["DAFT_DASHBOARD_URL"] = dashboard_url
 
