@@ -527,6 +527,9 @@ impl Subscriber for DashboardSubscriber {
                     self.on_result_out(e.header.query_id.clone(), result.clone())?;
                 }
             }
+            // TODO: hook up with dashboard server
+            Event::TaskEnd(_) => {}
+            Event::TaskSubmit(_) => {}
         }
         Ok(())
     }

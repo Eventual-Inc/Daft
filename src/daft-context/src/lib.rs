@@ -241,6 +241,10 @@ impl DaftContext {
         self.dispatch_event(&event, "notify exec emit stats")
     }
 
+    pub fn notify_event(&self, event: &Event) -> DaftResult<()> {
+        self.dispatch_event(event, "notify event")
+    }
+
     fn dispatch_event(&self, event: &Event, err_context: &'static str) -> DaftResult<()> {
         let subscribers = self.with_state(|state| {
             state

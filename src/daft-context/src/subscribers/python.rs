@@ -26,9 +26,10 @@ pub struct PySubscriberWrapper(pub(crate) Py<PyAny>);
 impl Subscriber for PySubscriberWrapper {
     fn on_event(&self, event: Event) -> DaftResult<()> {
         Python::attach(|py| {
-            let py_event = build_py_event(py, event)?;
-            self.0
-                .call_method1(py, intern!(py, "on_event"), (py_event,))?;
+            if let Some(py_event) = build_py_event(py, event)? {
+                self.0
+                    .call_method1(py, intern!(py, "on_event"), (py_event,))?;
+            }
             Ok(())
         })
     }
@@ -167,19 +168,21 @@ fn build_result_produced(py: Python<'_>, event: &ResultOutEvent) -> PyResult<Py<
         .map(Into::into)
 }
 
-fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Py<PyAny>> {
+fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
     match event {
-        Event::QueryStart(event) => build_query_started(py, &event),
-        Event::QueryHeartbeat(event) => build_query_heartbeat(py, &event),
-        Event::QueryEnd(event) => build_query_finished(py, &event),
-        Event::OptimizationStart(event) => build_optimization_started(py, &event),
-        Event::OptimizationComplete(event) => build_optimization_completed(py, &event),
-        Event::ExecStart(event) => build_execution_started(py, &event),
-        Event::ExecEnd(event) => build_execution_finished(py, &event),
-        Event::OperatorStart(event) => build_operator_started(py, &event),
-        Event::OperatorEnd(event) => build_operator_finished(py, &event),
-        Event::Stats(event) => build_stats(py, &event),
-        Event::ProcessStats(event) => build_process_stats(py, &event),
-        Event::ResultOut(event) => build_result_produced(py, &event),
+        Event::QueryStart(event) => build_query_started(py, &event).map(Some),
+        Event::QueryHeartbeat(event) => build_query_heartbeat(py, &event).map(Some),
+        Event::QueryEnd(event) => build_query_finished(py, &event).map(Some),
+        Event::OptimizationStart(event) => build_optimization_started(py, &event).map(Some),
+        Event::OptimizationComplete(event) => build_optimization_completed(py, &event).map(Some),
+        Event::ExecStart(event) => build_execution_started(py, &event).map(Some),
+        Event::ExecEnd(event) => build_execution_finished(py, &event).map(Some),
+        Event::OperatorStart(event) => build_operator_started(py, &event).map(Some),
+        Event::OperatorEnd(event) => build_operator_finished(py, &event).map(Some),
+        Event::Stats(event) => build_stats(py, &event).map(Some),
+        Event::ProcessStats(event) => build_process_stats(py, &event).map(Some),
+        Event::ResultOut(event) => build_result_produced(py, &event).map(Some),
+        Event::TaskSubmit(_event) => Ok(None),
+        Event::TaskEnd(_event) => Ok(None),
     }
 }

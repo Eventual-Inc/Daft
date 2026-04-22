@@ -91,6 +91,7 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             TaskEvent::Completed {
                 context: task_ctx,
                 stats: _,
+                worker_id: _,
             } => {
                 // Read smart-aggregated stats from RuntimeNodeManagers
                 // (already updated by StatisticsManager before this subscriber runs)

@@ -284,6 +284,7 @@ pub(super) mod tests {
             let event = TaskEvent::Completed {
                 context: TaskContext::new(0, 42, 1, vec![42], 0),
                 stats: ExecutionStats::new("".into(), vec![(local_node_info, local_snapshot)]),
+                worker_id: "worker-1".into(),
             };
 
             manager.handle_task_event(&event);
