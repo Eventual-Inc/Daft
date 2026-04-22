@@ -126,6 +126,7 @@ impl ShuffleReadSource {
     fn spawn_flight_shuffle_processor(
         self,
         output_sender: Sender<PipelineMessage>,
+        stats_provider: StatsProvider,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let mut receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
@@ -154,11 +155,13 @@ impl ShuffleReadSource {
                         input.partition_idx,
                         schema.clone(),
                     ).await?;
+                    let spill = stats_provider.get_or_create(input_id).spill;
                     task_set.spawn(forward_partition_stream(
                         stream,
                         schema.clone(),
                         output_sender.clone(),
                         input_id,
+                        spill,
                     ));
                 }
 
@@ -218,9 +221,11 @@ async fn forward_partition_stream(
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
+    spill: common_metrics::SpillReporter,
 ) -> DaftResult<InputId> {
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
+        spill.record_bytes_read(mp.size_bytes() as u64);
         if sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -261,26 +266,12 @@ impl Source for ShuffleReadSource {
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
-        let processor_task = self.spawn_flight_shuffle_processor(output_sender);
+        let processor_task =
+            self.spawn_flight_shuffle_processor(output_sender, stats_provider);
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
-        // Count bytes per morsel against the per-input `SpillReporter` so they
-        // surface as `spill.bytes.read` on the Repartition distributed node
-        // (alongside the spill.bytes.written emitted from the write side).
-        // Resolving per morsel (keyed on `input_id`) keeps each task's counter
-        // isolated — no cross-task cumulative leakage.
-        let metered_stream = combined_stream.map(move |msg| {
-            if let Ok(PipelineMessage::Morsel { input_id, partition }) = &msg {
-                stats_provider
-                    .get_or_create(*input_id)
-                    .spill
-                    .record_bytes_read(partition.size_bytes() as u64);
-            }
-            msg
-        });
-
-        Ok(Box::pin(metered_stream))
+        Ok(Box::pin(combined_stream))
     }
 }

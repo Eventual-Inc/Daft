@@ -136,7 +136,6 @@ mod tests {
     fn snapshot_reports_spill_after_reporter_is_used() {
         let stats = make_stats();
         stats.spill().record_bytes_written(1024);
-        stats.spill().record_write_duration_ns(2_000_000);
         stats.spill().record_file_created();
 
         let StatSnapshot::Default(snap) = stats.snapshot() else {
@@ -145,7 +144,6 @@ mod tests {
         let spill = snap.spill.expect("spill metrics should be present");
         assert_eq!(spill.source, SpillSource::Native);
         assert_eq!(spill.bytes_written, 1024);
-        assert_eq!(spill.write_duration_ns, 2_000_000);
         assert_eq!(spill.file_count, 1);
         assert_eq!(spill.files_resident, 1);
     }

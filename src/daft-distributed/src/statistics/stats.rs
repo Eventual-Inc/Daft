@@ -106,8 +106,6 @@ impl RuntimeNodeManager {
 pub(crate) struct SpillRollupCounters {
     spill_bytes_written: Counter,
     spill_bytes_read: Counter,
-    spill_write_duration_ns: Counter,
-    spill_read_duration_ns: Counter,
     spill_file_count: Counter,
     // Gauge-like: peak in-memory buffer observed across any worker task.
     // Atomic is owned by us; we take `fetch_max` rather than sum, since buffer
@@ -124,10 +122,6 @@ impl SpillRollupCounters {
         Self {
             spill_bytes_written: meter.u64_counter(common_metrics::SPILL_BYTES_WRITTEN_STAT_KEY),
             spill_bytes_read: meter.u64_counter(common_metrics::SPILL_BYTES_READ_STAT_KEY),
-            spill_write_duration_ns: meter
-                .u64_counter(common_metrics::SPILL_WRITE_DURATION_NS_STAT_KEY),
-            spill_read_duration_ns: meter
-                .u64_counter(common_metrics::SPILL_READ_DURATION_NS_STAT_KEY),
             spill_file_count: meter.u64_counter(common_metrics::SPILL_FILE_COUNT_STAT_KEY),
             max_in_memory_buffer_bytes: AtomicU64::new(0),
             spill_files_resident: AtomicU64::new(0),
@@ -143,10 +137,6 @@ impl SpillRollupCounters {
                 .add(spill.bytes_written, self.node_kv.as_slice());
             self.spill_bytes_read
                 .add(spill.bytes_read, self.node_kv.as_slice());
-            self.spill_write_duration_ns
-                .add(spill.write_duration_ns, self.node_kv.as_slice());
-            self.spill_read_duration_ns
-                .add(spill.read_duration_ns, self.node_kv.as_slice());
             self.spill_file_count
                 .add(spill.file_count, self.node_kv.as_slice());
             // Task-final resident count; summing gives total outstanding files
@@ -160,30 +150,20 @@ impl SpillRollupCounters {
         }
     }
 
-    /// Produce a `SpillMetrics` from the accumulated counters, or `None` if
+    /// Produce a `SpillSnapshot` from the accumulated counters, or `None` if
     /// nothing has been recorded.
     pub fn export_spill(&self) -> Option<SpillSnapshot> {
         let bytes_written = self.spill_bytes_written.load(Ordering::Relaxed);
         let bytes_read = self.spill_bytes_read.load(Ordering::Relaxed);
-        let write_duration_ns = self.spill_write_duration_ns.load(Ordering::Relaxed);
-        let read_duration_ns = self.spill_read_duration_ns.load(Ordering::Relaxed);
         let file_count = self.spill_file_count.load(Ordering::Relaxed);
         let files_resident = self.spill_files_resident.load(Ordering::Relaxed);
-        if bytes_written == 0
-            && bytes_read == 0
-            && write_duration_ns == 0
-            && read_duration_ns == 0
-            && file_count == 0
-            && files_resident == 0
-        {
+        if bytes_written == 0 && bytes_read == 0 && file_count == 0 && files_resident == 0 {
             return None;
         }
         Some(SpillSnapshot {
             source: SpillSource::Native,
             bytes_written,
             bytes_read,
-            write_duration_ns,
-            read_duration_ns,
             file_count,
             files_resident,
         })
@@ -291,8 +271,8 @@ impl RuntimeStats for DefaultRuntimeStats {
             // is intentionally dropped here — spilled-read bytes flow through
             // the variant-agnostic spill rollup above (spill.bytes.read).
             StatSnapshot::Source(snapshot) => {
-                self.base.add_rows_out(snapshot.rows_out);
-                self.base.add_bytes_out(snapshot.bytes_out);
+                self.base.add_rows_out(snapshot.rows_in);
+                self.base.add_bytes_out(snapshot.bytes_in);
             }
             _ => {}
         }

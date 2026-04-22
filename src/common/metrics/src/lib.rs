@@ -133,8 +133,6 @@ pub const IN_MEMORY_BUFFER_BYTES_KEY: &str = "bytes.in_memory_buffer";
 pub const SPILL_SOURCE_KEY: &str = "spill.source";
 pub const SPILL_BYTES_WRITTEN_STAT_KEY: &str = "spill.bytes.written";
 pub const SPILL_BYTES_READ_STAT_KEY: &str = "spill.bytes.read";
-pub const SPILL_WRITE_DURATION_NS_STAT_KEY: &str = "spill.write.duration_ns";
-pub const SPILL_READ_DURATION_NS_STAT_KEY: &str = "spill.read.duration_ns";
 pub const SPILL_FILE_COUNT_STAT_KEY: &str = "spill.files.created";
 pub const SPILL_FILES_RESIDENT_STAT_KEY: &str = "spill.files.resident";
 

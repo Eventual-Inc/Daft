@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, OnceLock},
-    time::Instant,
-};
+use std::sync::{Arc, OnceLock};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::SpillReporter;
@@ -277,7 +274,6 @@ async fn writer_task(
         let bytes = partition.size_bytes();
         total_rows_written += rows;
         total_bytes_written += bytes;
-        let write_start = Instant::now();
         writer = io_runtime
             .spawn(async move {
                 writer.write(partition).await?;
@@ -286,16 +282,9 @@ async fn writer_task(
             .await??;
         if let Some(reporter) = spill.get() {
             reporter.record_bytes_written(bytes as u64);
-            reporter.record_write_duration_ns(write_start.elapsed().as_nanos() as u64);
         }
     }
-    // IPC writer buffers and flushes on close — record close time under the
-    // same write-duration counter so the counter reflects actual disk I/O.
-    let close_start = Instant::now();
     let file_path_tables = writer.close().await?;
-    if let Some(reporter) = spill.get() {
-        reporter.record_write_duration_ns(close_start.elapsed().as_nanos() as u64);
-    }
 
     let file_paths = file_path_tables
         .into_iter()

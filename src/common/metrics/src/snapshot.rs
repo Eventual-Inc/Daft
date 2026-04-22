@@ -12,8 +12,7 @@ use crate::{
     IN_MEMORY_BUFFER_BYTES_KEY, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
     JOIN_PROBE_BYTES_OUT_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
     SPILL_BYTES_READ_STAT_KEY, SPILL_BYTES_WRITTEN_STAT_KEY, SPILL_FILE_COUNT_STAT_KEY,
-    SPILL_FILES_RESIDENT_STAT_KEY, SPILL_READ_DURATION_NS_STAT_KEY,
-    SPILL_WRITE_DURATION_NS_STAT_KEY, Stat, Stats,
+    SPILL_FILES_RESIDENT_STAT_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -54,8 +53,6 @@ pub struct SpillSnapshot {
     pub source: SpillSource,
     pub bytes_written: u64,
     pub bytes_read: u64,
-    pub write_duration_ns: u64,
-    pub read_duration_ns: u64,
     pub file_count: u64,
     pub files_resident: u64,
 }
@@ -66,8 +63,6 @@ impl SpillSnapshot {
             source: self.source,
             bytes_written: self.bytes_written + other.bytes_written,
             bytes_read: self.bytes_read + other.bytes_read,
-            write_duration_ns: self.write_duration_ns + other.write_duration_ns,
-            read_duration_ns: self.read_duration_ns + other.read_duration_ns,
             file_count: self.file_count + other.file_count,
             files_resident: self.files_resident + other.files_resident,
         }
@@ -91,14 +86,6 @@ fn push_spill_stats(
     entries.push((
         SPILL_BYTES_READ_STAT_KEY.into(),
         Stat::Bytes(spill.bytes_read),
-    ));
-    entries.push((
-        SPILL_WRITE_DURATION_NS_STAT_KEY.into(),
-        Stat::Duration(Duration::from_nanos(spill.write_duration_ns)),
-    ));
-    entries.push((
-        SPILL_READ_DURATION_NS_STAT_KEY.into(),
-        Stat::Duration(Duration::from_nanos(spill.read_duration_ns)),
     ));
     entries.push((
         SPILL_FILE_COUNT_STAT_KEY.into(),
