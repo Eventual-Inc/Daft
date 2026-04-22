@@ -1717,7 +1717,6 @@ dependencies = [
 name = "common-checkpoint-config"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-io-config",
  "pyo3",
  "serde",
@@ -2364,7 +2363,6 @@ dependencies = [
  "common-runtime",
  "daft-checkpoint",
  "daft-core",
- "daft-dsl",
  "daft-io",
  "daft-scan",
  "daft-schema",
@@ -2376,7 +2374,6 @@ dependencies = [
  "snafu",
  "tempfile",
  "tokio",
- "uuid",
 ]
 
 [[package]]
