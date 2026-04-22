@@ -4,7 +4,6 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-hash = {workspace = true}
 arrow-array = {workspace = true}
-itertools = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 typetag = {workspace = true}

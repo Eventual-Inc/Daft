@@ -1,6 +1,5 @@
 use daft_core::prelude::{Float64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
-use itertools::izip;
 
 const EARTH_RADIUS_M: f64 = 6_371_000.0;
 
@@ -47,13 +46,19 @@ impl ScalarUDF for GreatCircleDistance {
         let lat2 = lat2.f64().expect("type should have been validated already");
         let lon2 = lon2.f64().expect("type should have been validated already");
 
-        let result = izip!(lat1, lon1, lat2, lon2)
-            .map(|(lat1, lon1, lat2, lon2)| match (lat1, lon1, lat2, lon2) {
-                (Some(lat1), Some(lon1), Some(lat2), Some(lon2)) => {
-                    Some(haversine_meters(lat1, lon1, lat2, lon2))
-                }
-                _ => None,
-            })
+        let result = lat1
+            .into_iter()
+            .zip(lon1)
+            .zip(lat2)
+            .zip(lon2)
+            .map(
+                |(((lat1, lon1), lat2), lon2)| match (lat1, lon1, lat2, lon2) {
+                    (Some(lat1), Some(lon1), Some(lat2), Some(lon2)) => {
+                        Some(haversine_meters(lat1, lon1, lat2, lon2))
+                    }
+                    _ => None,
+                },
+            )
             .collect::<Float64Array>()
             .rename(self.name());
 
