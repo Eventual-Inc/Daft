@@ -18,8 +18,8 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::{
-            create_range_repartition_tasks, create_sample_tasks,
-            get_partition_boundaries_from_samples,
+            create_range_repartition_tasks, create_range_repartition_tasks_with_sentinels,
+            create_sample_tasks, get_partition_boundaries_from_samples,
         },
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -246,8 +246,6 @@ impl AsofJoinNode {
         )?;
 
         // --- Phase 4: Range repartition right side (N+1 partitions, with sentinels) ---
-        // TODO: Step 2d — create_range_repartition_tasks_with_sentinels for right side
-        // For now, use normal range repartition (sentinel support added in later steps)
         let right_boundary_names = right_composite_key
             .iter()
             .map(|expr| {
@@ -266,7 +264,7 @@ impl AsofJoinNode {
                 .collect::<Vec<_>>(),
         )?;
 
-        let right_partition_tasks = create_range_repartition_tasks(
+        let right_partition_tasks = create_range_repartition_tasks_with_sentinels(
             right_materialized,
             self.right.config().schema.clone(),
             right_composite_key,
