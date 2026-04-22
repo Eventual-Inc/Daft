@@ -271,8 +271,8 @@ impl RuntimeStats for DefaultRuntimeStats {
             // is intentionally dropped here — spilled-read bytes flow through
             // the variant-agnostic spill rollup above (spill.bytes.read).
             StatSnapshot::Source(snapshot) => {
-                self.base.add_rows_out(snapshot.rows_in);
-                self.base.add_bytes_out(snapshot.bytes_in);
+                self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_out(snapshot.bytes_out);
             }
             _ => {}
         }
