@@ -6,7 +6,7 @@ use std::{
 
 use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -198,36 +198,30 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     fn encode_file_metadata(
         partitions: &[MicroPartition],
         file_format: daft_checkpoint::FileFormat,
-    ) -> Vec<daft_checkpoint::FileMetadata> {
+    ) -> DaftResult<Vec<daft_checkpoint::FileMetadata>> {
+        let ipc_err = |e: arrow_schema::ArrowError| DaftError::InternalError(e.to_string());
         partitions
             .iter()
             .flat_map(|mp| {
                 mp.record_batches().iter().map(move |rb| {
                     let mut buf = Vec::new();
-                    let schema = rb
-                        .schema
-                        .to_arrow()
-                        .expect("failed to convert schema to arrow");
+                    let schema = rb.schema.to_arrow()?;
                     let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buf, &schema)
-                        .expect("failed to create IPC writer");
+                        .map_err(ipc_err)?;
                     let arrow_arrays: Vec<arrow_array::ArrayRef> = rb
                         .columns()
                         .iter()
-                        .map(|c| {
-                            c.as_materialized_series()
-                                .to_arrow()
-                                .expect("failed to convert column to arrow")
-                        })
-                        .collect();
+                        .map(|c| c.as_materialized_series().to_arrow())
+                        .collect::<DaftResult<_>>()?;
                     let batch = arrow_array::RecordBatch::try_new(
                         std::sync::Arc::new(schema),
                         arrow_arrays,
                     )
-                    .expect("failed to create arrow RecordBatch");
-                    writer.write(&batch).expect("failed to write IPC batch");
-                    writer.finish().expect("failed to finish IPC writer");
+                    .map_err(ipc_err)?;
+                    writer.write(&batch).map_err(ipc_err)?;
+                    writer.finish().map_err(ipc_err)?;
                     drop(writer);
-                    daft_checkpoint::FileMetadata::new(file_format, buf)
+                    Ok(daft_checkpoint::FileMetadata::new(file_format, buf))
                 })
             })
             .collect()
@@ -257,8 +251,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 BlockingSinkOutput::Partitions(partitions) => {
                     // Stage write results as file metadata before sending.
                     if let Some((ref store, _, file_format)) = checkpoint {
-                        let file_metadata: Vec<daft_checkpoint::FileMetadata> =
-                            Self::encode_file_metadata(&partitions, file_format);
+                        let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
                         if !file_metadata.is_empty() {
                             store
                                 .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)

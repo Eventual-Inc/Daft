@@ -76,8 +76,16 @@ impl PyCheckpointStore {
         let store = self.store.clone();
         let checkpoint_ids: Vec<crate::CheckpointId> = ids
             .into_iter()
-            .map(crate::CheckpointId::from_string)
-            .collect();
+            .map(|s| {
+                if !crate::CheckpointId::is_valid(&s) {
+                    Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "invalid CheckpointId: {s:?}"
+                    )))
+                } else {
+                    Ok(crate::CheckpointId::from_string(s))
+                }
+            })
+            .collect::<PyResult<_>>()?;
         py.detach(|| {
             let rt = common_runtime::get_io_runtime(true);
             rt.block_on_current_thread(async { store.mark_committed(&checkpoint_ids).await })

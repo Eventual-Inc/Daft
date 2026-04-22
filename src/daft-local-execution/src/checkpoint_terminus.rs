@@ -7,7 +7,6 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_checkpoint::CheckpointStoreRef;
-use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 
@@ -18,19 +17,19 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
 
-/// Passthrough node that stages source keys and finalizes the checkpoint per
-/// input when the plan has no native write sink (e.g. external side-effects
-/// via UDFs followed by `.collect()`).
+/// Passthrough node that seals per-input checkpoints when a plan has no
+/// native write sink (e.g. external side-effects via UDFs followed by
+/// `.collect()`).
 ///
-/// For each morsel: extract the key column, call `store.stage_keys(id, keys)`,
-/// forward the morsel unchanged. On `PipelineMessage::Flush(input_id)`, call
-/// `store.checkpoint(id)` to mark that task's keys visible to future runs,
-/// then forward the flush.
+/// Key staging is handled upstream by `StageCheckpointKeysOperator` (inserted
+/// unconditionally by the `rewrite_checkpoint_source` rule). This node forwards
+/// morsels unchanged and, on `PipelineMessage::Flush(input_id)`, calls
+/// `store.checkpoint(id)` to mark that task's staged keys visible to future
+/// runs.
 pub struct CheckpointTerminusNode {
     child: Box<dyn PipelineNode>,
     store: CheckpointStoreRef,
     id_map: CheckpointIdMap,
-    key_expr: BoundExpr,
     meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
@@ -42,7 +41,6 @@ impl CheckpointTerminusNode {
         child: Box<dyn PipelineNode>,
         store: CheckpointStoreRef,
         id_map: CheckpointIdMap,
-        key_expr: BoundExpr,
         plan_stats: StatsState,
         ctx: &BuilderContext,
         context: &LocalNodeContext,
@@ -58,7 +56,6 @@ impl CheckpointTerminusNode {
             child,
             store,
             id_map,
-            key_expr,
             meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement: MorselSizeRequirement::default(),
@@ -86,7 +83,7 @@ impl TreeDisplay for CheckpointTerminusNode {
                 writeln!(display, "CheckpointTerminus").unwrap();
             }
             _ => {
-                writeln!(display, "CheckpointTerminus: key={}", self.key_expr).unwrap();
+                writeln!(display, "CheckpointTerminus").unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
@@ -158,7 +155,6 @@ impl PipelineNode for CheckpointTerminusNode {
         let node_info = self.node_info.clone();
         let store = self.store.clone();
         let id_map = self.id_map.clone();
-        let key_expr = self.key_expr.clone();
 
         runtime_handle.spawn(
             async move {
@@ -177,13 +173,9 @@ impl PipelineNode for CheckpointTerminusNode {
                             partition,
                             input_id,
                         } => {
-                            runtime_stats.add_rows_in(partition.len() as u64);
-                            let checkpoint_id = id_map.get_or_generate(input_id);
-                            for rb in partition.record_batches() {
-                                let key_series = rb.eval_expression(&key_expr)?;
-                                store.stage_keys(&checkpoint_id, key_series).await?;
-                            }
-                            runtime_stats.add_rows_out(partition.len() as u64);
+                            let rows = partition.len() as u64;
+                            runtime_stats.add_rows_in(rows);
+                            runtime_stats.add_rows_out(rows);
                             if output_sender
                                 .send(PipelineMessage::Morsel {
                                     partition,
@@ -206,9 +198,15 @@ impl PipelineNode for CheckpointTerminusNode {
                                 break;
                             }
                         }
-                        PipelineMessage::ShuffleMetadata { input_id, metadata } => {
+                        PipelineMessage::FlightPartitionRef {
+                            input_id,
+                            partition_ref,
+                        } => {
                             if output_sender
-                                .send(PipelineMessage::ShuffleMetadata { input_id, metadata })
+                                .send(PipelineMessage::FlightPartitionRef {
+                                    input_id,
+                                    partition_ref,
+                                })
                                 .await
                                 .is_err()
                             {

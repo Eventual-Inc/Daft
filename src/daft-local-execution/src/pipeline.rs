@@ -410,12 +410,11 @@ pub fn translate_physical_plan_to_pipeline(
     #[cfg(feature = "python")]
     let root_is_write_sink =
         root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
-    if !root_is_write_sink && let Some((store, id_map, key_expr)) = ctx.checkpoint() {
+    if !root_is_write_sink && let Some((store, id_map, _key_expr)) = ctx.checkpoint() {
         pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
             pipeline_node,
             store,
             id_map,
-            key_expr,
             physical_plan.get_stats_state().clone(),
             ctx,
             physical_plan.context(),

@@ -263,6 +263,43 @@ def test_checkpoint_s3_sinkless_collect(minio_io_config):
         )
 
 
+def test_checkpoint_s3_sinkless_stages_once_per_morsel(minio_io_config):
+    """Regression: CheckpointTerminusNode must not re-stage what SCKO already staged.
+
+    SCKO (the optimizer-inserted StageCheckpointKeys node) stages keys on every
+    morsel. CheckpointTerminusNode wraps sink-less plans and its sole job is to
+    seal via store.checkpoint(id) on Flush. An earlier version also called
+    store.stage_keys on every morsel, duplicating SCKO's work and producing 2x
+    the keys/*.parquet files. This guards against that recurring.
+    """
+    import s3fs
+
+    with minio_create_bucket(minio_io_config) as bucket:
+        input_path = f"s3://{bucket}/input"
+        ckpt_prefix = f"s3://{bucket}/checkpoints"
+
+        daft.from_pydict({"file_id": ["a", "b", "c"], "value": [1, 2, 3]}).write_parquet(
+            input_path, io_config=minio_io_config
+        )
+
+        ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
+        _ = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).to_pydict()
+
+        fs = s3fs.S3FileSystem(
+            key=minio_io_config.s3.key_id,
+            password=minio_io_config.s3.access_key,
+            client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
+        )
+        checkpoints = ckpt.list_checkpoints()
+        assert len(checkpoints) > 0, "Expected >=1 checkpoint entry"
+        for c in checkpoints:
+            key_files = fs.ls(f"{bucket}/checkpoints/{c.id}/keys/")
+            assert len(key_files) == 1, (
+                f"Expected 1 keys/*.parquet per id (SCKO stages once, Terminus does not stage); "
+                f"got {len(key_files)} for id={c.id}. Double-staging regression?"
+            )
+
+
 def test_checkpoint_s3_unknown_key_column(minio_io_config):
     """Fail at plan build time if `on=` names a column that doesn't exist.
 
