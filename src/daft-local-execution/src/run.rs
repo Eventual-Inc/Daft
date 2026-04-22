@@ -671,6 +671,95 @@ pub async fn execute_local_plan(
     Ok((LocalPlanOutput::Partitions(partitions), stats))
 }
 
+/// Run multiple batches of inputs through a **single, shared** pipeline and
+/// return each batch's `ExecutionStats` snapshot.
+///
+/// This mirrors how `NativeExecutor::run` handles tasks with identical
+/// `plan_fingerprint`s: one pipeline is constructed and reused across all
+/// inputs, with each batch tagged by a distinct `InputId`. It is intended for
+/// tests that need to exercise the plan-sharing path (e.g. verifying that
+/// per-input stats reported via `take_input_snapshot` do not double-count
+/// shared source state such as `IOStats`).
+///
+/// Must be called from within a tokio runtime context.
+pub async fn execute_local_plan_shared(
+    plan: &LocalPhysicalPlanRef,
+    config: std::sync::Arc<DaftExecutionConfig>,
+    batches: Vec<(daft_local_plan::InputId, HashMap<SourceId, Input>)>,
+) -> DaftResult<Vec<(daft_local_plan::InputId, ExecutionStats)>> {
+    use tokio::runtime::Handle;
+
+    use crate::pipeline::{BuilderContext, PipelineMessage};
+
+    let handle = Handle::current();
+    let query_id = QueryID::from("");
+
+    let ctx = BuilderContext::new();
+    let (pipeline, input_senders) =
+        crate::pipeline::translate_physical_plan_to_pipeline(plan, &config, &ctx)?;
+
+    let stats_manager = RuntimeStatsManager::try_new(
+        &handle,
+        &pipeline,
+        vec![],
+        query_id,
+        false, // not a flotilla worker
+    )?;
+    let stats_handle = stats_manager.handle();
+
+    // Send each batch on its own InputId, then drop senders to signal EOF.
+    let mut input_ids: Vec<daft_local_plan::InputId> = Vec::with_capacity(batches.len());
+    for (input_id, inputs) in batches {
+        input_ids.push(input_id);
+        for (key, plan_input) in inputs {
+            if let Some(sender) = input_senders.get(&key) {
+                let _ = sender.send(input_id, plan_input);
+            }
+        }
+    }
+    drop(input_senders);
+
+    let memory_manager = get_or_init_memory_manager();
+    let mut runtime_handle =
+        ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
+    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
+
+    // Drain pipeline output until completion (discarding partitions — tests
+    // that need data should use `execute_local_plan` per-input).
+    loop {
+        tokio::select! {
+            Some(join_result) = runtime_handle.join_next() => {
+                join_result?;
+            }
+            msg = output_receiver.recv() => {
+                match msg {
+                    Some(PipelineMessage::Morsel { .. })
+                    | Some(PipelineMessage::FlightPartitionRef { .. })
+                    | Some(PipelineMessage::Flush(_)) => {}
+                    None => {
+                        runtime_handle.shutdown().await?;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    stats_manager
+        .finish(common_metrics::QueryEndState::Finished)
+        .await;
+
+    let mut per_input_stats = Vec::with_capacity(input_ids.len());
+    for input_id in input_ids {
+        let stats = stats_handle
+            .take_input_snapshot(input_id)
+            .await
+            .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
+        per_input_stats.push((input_id, stats));
+    }
+    Ok(per_input_stats)
+}
+
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
 }

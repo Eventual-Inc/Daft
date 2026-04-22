@@ -18,7 +18,9 @@ use daft_schema::{
 use futures::StreamExt;
 
 use crate::{
-    pipeline_node::{DistributedPipelineNode, FilterNode, InMemorySourceNode, SortNode},
+    pipeline_node::{
+        DistributedPipelineNode, FilterNode, InMemorySourceNode, ScanSourceNode, SortNode,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::{
         local_worker::LocalSwordfishWorkerManager,
@@ -409,6 +411,233 @@ async fn test_filter_stats_multi_partition() -> DaftResult<()> {
         }
         other => panic!("Expected Filter snapshot, got: {:?}", other),
     }
+
+    Ok(())
+}
+
+/// Write a single-column Int64 CSV file with the given values and return the
+/// number of bytes on disk. Uses the `x` column from `test_schema()`.
+///
+/// CSV is used here rather than parquet because daft-io's local parquet read
+/// path doesn't increment `bytes_read` (local files skip the `CountingReader`
+/// wrapper), while daft-csv's local reader calls `io_stats.mark_bytes_read`
+/// on every buffer fill.
+fn write_csv_file(path: &std::path::Path, values: &[i64]) -> u64 {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path).expect("create csv file");
+    writeln!(file, "x").expect("write header");
+    for v in values {
+        writeln!(file, "{v}").expect("write row");
+    }
+    file.sync_all().expect("sync");
+    drop(file);
+    std::fs::metadata(path).expect("metadata").len()
+}
+
+/// Build a Flotilla pipeline with a `ScanSourceNode` over the given CSV files,
+/// one `ScanTaskRef` per file.
+fn build_scan_pipeline(
+    file_paths: &[std::path::PathBuf],
+    meter: &Meter,
+) -> DistributedPipelineNode {
+    use daft_scan::{
+        CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+        ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    };
+
+    let schema = test_schema();
+    let csv_cfg = CsvSourceConfig {
+        delimiter: None,
+        has_headers: true,
+        double_quote: true,
+        quote: None,
+        escape_char: None,
+        comment: None,
+        allow_variable_columns: false,
+        buffer_size: None,
+        chunk_size: None,
+    };
+    let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
+    let storage_config = Arc::new(StorageConfig::new_internal(false, None));
+    let pushdowns = Pushdowns::default();
+
+    let scan_tasks: Vec<ScanTaskRef> = file_paths
+        .iter()
+        .map(|path| {
+            let size = std::fs::metadata(path).expect("file metadata").len();
+            Arc::new(ScanTask::new(
+                vec![ScanSource {
+                    size_bytes: Some(size),
+                    metadata: None,
+                    statistics: None,
+                    partition_spec: None,
+                    kind: ScanSourceKind::File {
+                        path: path.to_string_lossy().into_owned(),
+                        chunk_spec: None,
+                        iceberg_delete_files: None,
+                        parquet_metadata: None,
+                    },
+                }],
+                source_config.clone(),
+                schema.clone(),
+                storage_config.clone(),
+                pushdowns.clone(),
+                None,
+            ))
+        })
+        .collect();
+
+    let plan_config = test_plan_config();
+    let scan_source_node = ScanSourceNode::new(
+        0,
+        &plan_config,
+        pushdowns,
+        Arc::new(scan_tasks),
+        schema,
+    );
+
+    DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
+}
+
+/// Repro: Flotilla overreports `bytes_read` when a scan has multiple files.
+///
+/// Originally observed when reading from S3. The same overreporting reproduces
+/// locally with CSV files because daft-csv's local reader calls
+/// `io_stats.mark_bytes_read` on every buffer fill (daft-parquet's local path
+/// skips the counting reader, so parquet can't reproduce it without S3).
+///
+/// Root cause (to be fixed): in Flotilla production, `NativeExecutor::run`
+/// caches local pipelines by `plan_fingerprint` and reuses a single pipeline
+/// across tasks with identical plans. All scan tasks produced by a single
+/// `ScanSourceNode` share the same fingerprint, so they share one
+/// `SourceNode` — which owns a single `IOStatsRef` shared across per-input_id
+/// `SourceStats`. Every `SourceStats::build_snapshot` reads the same atomic
+/// counter, so `take_input_snapshot(input_id=N)` for each of N scan tasks
+/// returns the cumulative bytes read by *all* tasks so far. When Flotilla's
+/// `StatisticsManager` sums those per-task snapshots it reports ~N× the true
+/// bytes read.
+///
+/// This test exercises that exact path via `execute_local_plan_shared`, which
+/// mirrors `NativeExecutor::run` by driving multiple scan inputs through one
+/// pipeline.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
+    let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
+
+    // Write N distinct CSV files to a fresh temp directory.
+    let tmpdir = std::env::temp_dir().join(format!(
+        "daft_flotilla_bytes_read_repro_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&tmpdir).expect("create tmpdir");
+
+    let num_files: usize = 5;
+    let rows_per_file: usize = 1_000;
+    let mut file_paths = Vec::with_capacity(num_files);
+    let mut total_bytes_on_disk: u64 = 0;
+    for i in 0..num_files {
+        let path = tmpdir.join(format!("file_{i}.csv"));
+        let values: Vec<i64> =
+            (0..rows_per_file).map(|j| (i * rows_per_file + j) as i64).collect();
+        total_bytes_on_disk += write_csv_file(&path, &values);
+        file_paths.push(path);
+    }
+
+    let pipeline = build_scan_pipeline(&file_paths, &meter);
+
+    let stats_manager = StatisticsManager::from_pipeline_node(&pipeline, vec![], &meter)?;
+    let tasks = extract_tasks(&pipeline, &stats_manager).await?;
+    assert_eq!(
+        tasks.len(),
+        num_files,
+        "expected one SwordfishTask per file (ScanTaskRef)"
+    );
+
+    // All tasks from a single ScanSourceNode share the same plan fingerprint,
+    // so in production Flotilla they would share one NativeExecutor pipeline.
+    // We simulate that via `execute_local_plan_shared`: one pipeline, N inputs,
+    // each on a distinct InputId — matching NativeExecutor's plan-sharing path.
+    let first = &tasks[0];
+    let plan = first.plan();
+    let config = first.config().clone();
+    let shared_fingerprint = first.task_context().plan_fingerprint;
+    for (i, t) in tasks.iter().enumerate() {
+        assert_eq!(
+            t.task_context().plan_fingerprint,
+            shared_fingerprint,
+            "task {i} has a different plan_fingerprint from task 0; shared-pipeline test \
+             assumption broken — Flotilla would not share a pipeline across these tasks"
+        );
+    }
+
+    let batches: Vec<(daft_local_plan::InputId, HashMap<SourceId, Input>)> = tasks
+        .iter()
+        .enumerate()
+        .map(|(i, task)| {
+            let inputs = task.inputs().clone();
+            let input_id = i as daft_local_plan::InputId;
+            (input_id, inputs)
+        })
+        .collect();
+
+    let per_input_stats =
+        daft_local_execution::testing::execute_local_plan_shared(&plan, config, batches)
+            .await?;
+
+    let mut per_task_bytes_read: Vec<u64> = Vec::with_capacity(tasks.len());
+    for (i, task) in tasks.iter().enumerate() {
+        let stats = per_input_stats
+            .iter()
+            .find(|(iid, _)| *iid as usize == i)
+            .map(|(_, s)| s.clone())
+            .expect("per-input_id stats should be present");
+        let mut task_bytes_read: u64 = 0;
+        for (_info, snapshot) in &stats.nodes {
+            if let StatSnapshot::Source(s) = snapshot {
+                task_bytes_read += s.bytes_read;
+            }
+        }
+        per_task_bytes_read.push(task_bytes_read);
+        feed_stats_to_manager(&stats_manager, task, stats)?;
+    }
+
+    let swordfish_sum: u64 = per_task_bytes_read.iter().sum();
+
+    let exported = stats_manager.export_metrics();
+    let source_stats = exported
+        .nodes
+        .iter()
+        .find(|(info, _)| info.node_origin_id == 0)
+        .expect("scan source node stats should be present");
+
+    let flotilla_bytes_read = match &source_stats.1 {
+        StatSnapshot::Source(s) => s.bytes_read,
+        other => panic!("expected Source snapshot for scan source, got: {:?}", other),
+    };
+
+    // Cleanup before any assertion may fail.
+    let _ = std::fs::remove_dir_all(&tmpdir);
+
+    eprintln!(
+        "total_bytes_on_disk = {total_bytes_on_disk}, \
+         per-task bytes_read (as Flotilla sees them) = {per_task_bytes_read:?} \
+         (sum = {swordfish_sum}), \
+         flotilla aggregated bytes_read = {flotilla_bytes_read}"
+    );
+
+    // Flotilla aggregated bytes_read is a sum of per-task snapshots, so by
+    // construction it equals `swordfish_sum`. The real assertion is that this
+    // sum is close to the actual bytes on disk — not a large multiple of it.
+    assert!(
+        flotilla_bytes_read <= total_bytes_on_disk * 3,
+        "Flotilla bytes_read ({flotilla_bytes_read}) is more than 3x total file size \
+         ({total_bytes_on_disk}) — bytes.read is being overreported. Per-task \
+         bytes_read = {per_task_bytes_read:?}"
+    );
 
     Ok(())
 }
