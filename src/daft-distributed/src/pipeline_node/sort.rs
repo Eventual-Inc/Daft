@@ -7,9 +7,7 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{
-    LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend, SamplingMethod,
-};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleBackend};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -250,7 +248,7 @@ pub(crate) fn create_range_repartition_tasks(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                RepartitionWriteBackend::Ray,
+                ShuffleBackend::Ray,
                 RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),

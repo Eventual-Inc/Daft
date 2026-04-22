@@ -363,16 +363,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )?
                 }
             },
-            LogicalPlan::IntoPartitions(into_partitions) => DistributedPipelineNode::new(
-                Arc::new(IntoPartitionsNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    into_partitions.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )),
-                &self.meter,
-            ),
+            LogicalPlan::IntoPartitions(into_partitions) => {
+                let backend = self.select_backend();
+                DistributedPipelineNode::new(
+                    Arc::new(IntoPartitionsNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        into_partitions.num_partitions,
+                        node.schema(),
+                        backend,
+                        self.curr_node.pop().unwrap(),
+                    )),
+                    &self.meter,
+                )
+            }
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;

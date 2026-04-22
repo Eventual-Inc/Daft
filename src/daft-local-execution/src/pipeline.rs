@@ -18,12 +18,12 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GatherWrite, GatherWriteBackend, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
-    Limit, LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan,
-    PhysicalWrite, Pivot, Project, RepartitionWrite, RepartitionWriteBackend, Sample,
-    ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate,
-    Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
+    LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite,
+    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, Sort,
+    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -1555,17 +1555,48 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
             context,
+            backend,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let into_partitions_op = IntoPartitionsSink::new(*num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(into_partitions_op),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            match backend {
+                daft_local_plan::ShuffleBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(IntoPartitionsSink::new_ray(*num_partitions, schema.clone())),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                daft_local_plan::ShuffleBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let (shuffle_server, shuffle_address) = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight into_partitions plans when using flight_shuffle algorithm");
+                    let into_partitions_sink = IntoPartitionsSink::try_new_flight(
+                        *num_partitions,
+                        schema.clone(),
+                        *shuffle_id,
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                        shuffle_address,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+                    BlockingSinkNode::new(
+                        Arc::new(into_partitions_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
         }
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
@@ -1578,7 +1609,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                RepartitionWriteBackend::Ray => BlockingSinkNode::new(
+                ShuffleBackend::Ray => BlockingSinkNode::new(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
@@ -1589,7 +1620,7 @@ fn physical_plan_to_pipeline(
                     context,
                 )
                 .boxed(),
-                RepartitionWriteBackend::Flight {
+                ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,
                     compression,
@@ -1630,7 +1661,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                GatherWriteBackend::Ray => BlockingSinkNode::new(
+                ShuffleBackend::Ray => BlockingSinkNode::new(
                     Arc::new(GatherSink::new_ray()),
                     child_node,
                     stats_state.clone(),
@@ -1638,7 +1669,7 @@ fn physical_plan_to_pipeline(
                     context,
                 )
                 .boxed(),
-                GatherWriteBackend::Flight {
+                ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,
                     compression,

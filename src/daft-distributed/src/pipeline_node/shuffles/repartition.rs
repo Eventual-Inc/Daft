@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_logical_plan::partitioning::RepartitionSpec;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -112,12 +113,24 @@ impl PipelineNodeImpl for RepartitionNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         self.shuffle_backend.register_cleanup(plan_context);
-        let local_shuffle_write_node = self.shuffle_backend.build_repartition_write_stage(
-            self.clone(),
-            input_node,
-            self.num_partitions,
-            self.repartition_spec.clone(),
-        );
+
+        let schema = self.shuffle_backend.schema().clone();
+        let node_id = self.shuffle_backend.node_id();
+        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        let num_partitions = self.num_partitions;
+        let repartition_spec = self.repartition_spec.clone();
+        let local_shuffle_write_node =
+            input_node.pipeline_instruction(self.clone(), move |input| {
+                LocalPhysicalPlan::repartition_write(
+                    input,
+                    num_partitions,
+                    schema.clone(),
+                    local_shuffle_backend.clone(),
+                    repartition_spec.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            });
 
         let (result_tx, result_rx) = create_channel(1);
 
