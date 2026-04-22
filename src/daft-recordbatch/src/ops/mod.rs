@@ -3,7 +3,7 @@ mod bench_agg;
 mod explode;
 mod groups;
 pub mod hash;
-mod inline_agg;
+pub mod inline_agg;
 mod joins;
 mod partition;
 mod pivot;

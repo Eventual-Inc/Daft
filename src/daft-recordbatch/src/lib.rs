@@ -47,7 +47,10 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
-pub use ops::{build_left_to_right_map, get_column_by_name, get_columns_by_name};
+pub use ops::{
+    build_left_to_right_map, get_column_by_name, get_columns_by_name,
+    inline_agg::{InlineAggState, can_inline_agg_with_schema},
+};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]
