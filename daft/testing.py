@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """
 Testing utilities for Daft DataFrames and Schemas.
 
 These helpers make it easier to write unit tests that verify DataFrame
 contents and structure without boilerplate.
 """
+
+from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional, Sequence
 
@@ -198,7 +198,9 @@ def assert_frame_equal(
             break
 
     if mismatches:
+        # Exclude the truncation sentinel from the reported count
+        n = sum(1 for m in mismatches if not m.startswith("  ..."))
         raise AssertionError(
-            f"DataFrame content mismatch ({len(mismatches)} difference(s)):\n"
+            f"DataFrame content mismatch ({n} difference(s)):\n"
             + "\n".join(mismatches)
         )
