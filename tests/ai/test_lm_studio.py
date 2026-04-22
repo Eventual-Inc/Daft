@@ -13,7 +13,56 @@ from openai.types.create_embedding_response import CreateEmbeddingResponse
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
 from daft.ai.lm_studio.provider import LMStudioProvider
-from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
+from daft.ai.protocols import TextEmbedder
+
+
+def test_lm_studio_dimension_validation():
+    """Test that invalid dimensions are rejected."""
+    with patch("openai.resources.embeddings.Embeddings.create"):
+        provider = LMStudioProvider()
+        with pytest.raises(ValueError, match="Embedding dimensions must be a positive integer"):
+            provider.get_text_embedder_descriptor(model="test-model", dimensions=-1)
+
+        with pytest.raises(ValueError, match="Embedding dimensions must be a positive integer"):
+            provider.get_text_embedder_descriptor(model="test-model", dimensions=0)
+
+
+def test_lm_studio_supports_overriding_dimensions():
+    """Test that supports_overriding_dimensions is set when dimensions are provided."""
+    from openai.types.create_embedding_response import CreateEmbeddingResponse
+    from openai.types.embedding import Embedding as OpenAIEmbedding
+
+    with patch("openai.resources.embeddings.Embeddings.create") as mock_embed:
+        mock_embed.return_value = CreateEmbeddingResponse(
+            data=[OpenAIEmbedding(embedding=[0.1] * 768, index=0, object="embedding")],
+            model="test-model",
+            object="list",
+            usage={"prompt_tokens": 0, "total_tokens": 0},
+        )
+        provider = LMStudioProvider()
+        descriptor = provider.get_text_embedder_descriptor(model="test-model", dimensions=256)
+
+        assert descriptor.get("embed_options", {}).get("supports_overriding_dimensions") is True
+        assert descriptor["dimensions"].size == 256
+
+
+def test_lm_studio_embed_text_returns_expression():
+    """Test that embed_text() returns a Daft Expression."""
+    from openai.types.create_embedding_response import CreateEmbeddingResponse
+    from openai.types.embedding import Embedding as OpenAIEmbedding
+
+    import daft
+
+    with patch("openai.resources.embeddings.Embeddings.create") as mock_embed:
+        mock_embed.return_value = CreateEmbeddingResponse(
+            data=[OpenAIEmbedding(embedding=[0.1] * 768, index=0, object="embedding")],
+            model="test-model",
+            object="list",
+            usage={"prompt_tokens": 0, "total_tokens": 0},
+        )
+        provider = LMStudioProvider()
+        expr = provider.embed_text(daft.col("text"), model="test-model")
+        assert isinstance(expr, daft.Expression)
 
 
 @pytest.mark.parametrize(
@@ -63,13 +112,13 @@ def test_lm_studio_text_embedder(model, embedding_dim):
             )
             mock_openai_async.return_value = mock_async_client
 
-            descriptor = LMStudioProvider().get_text_embedder(model=model)
-            assert isinstance(descriptor, TextEmbedderDescriptor)
-            assert descriptor.get_provider() == "lm_studio"
-            assert descriptor.get_model() == model
-            assert descriptor.get_dimensions().size == embedding_dim
+            provider = LMStudioProvider()
+            descriptor = provider.get_text_embedder_descriptor(model=model)
+            assert descriptor["provider"] == "lm_studio"
+            assert descriptor["model"] == model
+            assert descriptor["dimensions"].size == embedding_dim
 
-            embedder = descriptor.instantiate()
+            embedder = provider.get_text_embedder(descriptor)
             assert isinstance(embedder, TextEmbedder)
             embeddings = asyncio.run(embedder.embed_text(text_data))
             assert len(embeddings) == len(text_data)
