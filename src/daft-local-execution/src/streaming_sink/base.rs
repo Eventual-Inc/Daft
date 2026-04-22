@@ -382,8 +382,10 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     self.try_complete_input(input_id)?;
                     ControlFlow::Continue(())
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("StreamingSinkNode should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "StreamingSinkNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     self.batch_manager.set_all_pending_flush();

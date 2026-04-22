@@ -99,10 +99,17 @@ impl RuntimeNodeManager {
                 let mut originated_here = false;
                 for (node_info, snapshot) in &stats.nodes {
                     // Local nodes are associated to this node through the node_origin_id
-                    if self.node_info.node_origin_id == node_info.node_origin_id {
-                        originated_here = true;
-                        self.runtime_stats
-                            .handle_worker_node_stats(node_info, snapshot);
+                    if let Some(node_origin_id) = node_info.node_origin_id {
+                        if self.node_info.id == node_origin_id {
+                            originated_here = true;
+                            self.runtime_stats
+                                .handle_worker_node_stats(node_info, snapshot);
+                        }
+                    } else {
+                        tracing::debug!(
+                            "local node stats missing `origin_node_id`, skipping attribution: {:?}",
+                            node_info
+                        );
                     }
                 }
                 if originated_here {
@@ -220,7 +227,12 @@ impl RuntimeStats for DefaultRuntimeStats {
 
 #[cfg(test)]
 mod tests {
-    use common_metrics::{Meter, ops::NodeInfo};
+    use std::collections::HashMap;
+
+    use common_metrics::{
+        Meter, NodeID,
+        ops::{NodeCategory, NodeInfo, NodeType},
+    };
     use daft_local_plan::ExecutionStats;
 
     use super::*;
@@ -259,7 +271,7 @@ mod tests {
         let meter = Meter::test_scope("runtime_node_manager_num_tasks");
         let node_info = Arc::new(NodeInfo {
             id: node_origin_id,
-            node_origin_id,
+            node_origin_id: Some(node_origin_id),
             ..Default::default()
         });
         let runtime_stats = Arc::new(DefaultRuntimeStats::new(&meter, &context()));
@@ -272,7 +284,7 @@ mod tests {
             .map(|&origin| {
                 (
                     Arc::new(NodeInfo {
-                        node_origin_id: origin,
+                        node_origin_id: Some(origin),
                         ..Default::default()
                     }),
                     StatSnapshot::Default(DefaultSnapshot {
@@ -355,5 +367,113 @@ mod tests {
         mgr.handle_task_event(&failed_event());
         assert_eq!(mgr.active_task_count(), 0);
         assert_eq!(mgr.failed_task_count(), 1);
+    }
+
+    #[test]
+    fn test_runtime_stats_origin_node_id() {
+        struct Case {
+            name: &'static str,
+            node_id: usize,
+            origin_node_id: usize,
+            expected_cpu_us: u64,
+            expected_rows_in: u64,
+            expected_rows_out: u64,
+            expected_bytes_in: u64,
+            expected_bytes_out: u64,
+        }
+
+        let distributed_node_id: NodeID = 42;
+
+        let cases = [
+            Case {
+                name: "matching",
+                node_id: distributed_node_id,
+                origin_node_id: distributed_node_id,
+                expected_cpu_us: 100,
+                expected_rows_in: 10,
+                expected_rows_out: 5,
+                expected_bytes_in: 1000,
+                expected_bytes_out: 500,
+            },
+            Case {
+                name: "non_matching",
+                node_id: distributed_node_id,
+                origin_node_id: 99,
+                expected_cpu_us: 0,
+                expected_rows_in: 0,
+                expected_rows_out: 0,
+                expected_bytes_in: 0,
+                expected_bytes_out: 0,
+            },
+        ];
+
+        for case in cases {
+            let distributed_node_info = Arc::new(NodeInfo {
+                id: case.node_id,
+                name: "parent".into(),
+                node_origin_id: None,
+                node_type: NodeType::Filter,
+                node_category: NodeCategory::Intermediate,
+                node_phase: None,
+                context: HashMap::new(),
+            });
+
+            let distributed_ctx = PipelineNodeContext::new(
+                0,
+                "q".into(),
+                case.node_id as u32,
+                "distributed-filter".into(),
+                NodeType::Filter,
+                NodeCategory::Intermediate,
+            );
+
+            let meter = Meter::test_scope("runtime-stats-test");
+            let runtime_stats = Arc::new(DefaultRuntimeStats::new(&meter, &distributed_ctx));
+            let manager = RuntimeNodeManager::new(&meter, runtime_stats, distributed_node_info);
+
+            let local_node_info = Arc::new(NodeInfo {
+                id: 7,
+                node_origin_id: Some(case.origin_node_id),
+                ..Default::default()
+            });
+
+            let local_snapshot = StatSnapshot::Default(DefaultSnapshot {
+                cpu_us: 100,
+                rows_in: 10,
+                rows_out: 5,
+                bytes_in: 1000,
+                bytes_out: 500,
+                num_tasks: 0,
+            });
+
+            let event = TaskEvent::Completed {
+                context: TaskContext::new(0, 42, 1, vec![42], 0),
+                stats: ExecutionStats::new("".into(), vec![(local_node_info, local_snapshot)]),
+            };
+
+            manager.handle_task_event(&event);
+
+            let (_info, actual) = manager.export_snapshot();
+            let StatSnapshot::Default(got) = &actual else {
+                panic!("{}: expected StatSnapshot::Default", case.name);
+            };
+            assert_eq!(got.cpu_us, case.expected_cpu_us, "{}: cpu_us", case.name);
+            assert_eq!(got.rows_in, case.expected_rows_in, "{}: rows_in", case.name);
+            assert_eq!(
+                got.rows_out, case.expected_rows_out,
+                "{}: rows_out",
+                case.name
+            );
+            assert_eq!(
+                got.bytes_in, case.expected_bytes_in,
+                "{}: bytes_in",
+                case.name
+            );
+            assert_eq!(
+                got.bytes_out, case.expected_bytes_out,
+                "{}: bytes_out",
+                case.name
+            );
+        }
     }
 }

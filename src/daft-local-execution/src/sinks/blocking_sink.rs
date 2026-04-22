@@ -15,6 +15,7 @@ use daft_checkpoint::{CheckpointId, CheckpointStoreRef};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use tracing::info_span;
 
 use crate::{
@@ -26,14 +27,13 @@ use crate::{
     },
     resource_manager::MemoryManager,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
-    shuffle_metadata::ShuffleMetadata,
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
 pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
-    ShuffleMetadata(ShuffleMetadata),
+    FlightPartitionRefs(Vec<FlightPartitionRef>),
 }
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 
@@ -212,10 +212,15 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             .await;
                     }
                 }
-                BlockingSinkOutput::ShuffleMetadata(metadata) => {
-                    let _ = output_tx
-                        .send(PipelineMessage::ShuffleMetadata { input_id, metadata })
-                        .await;
+                BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
+                    for partition_ref in partition_refs {
+                        let _ = output_tx
+                            .send(PipelineMessage::FlightPartitionRef {
+                                input_id,
+                                partition_ref,
+                            })
+                            .await;
+                    }
                 }
             }
             if let Some((store, id)) = &checkpoint {
@@ -327,8 +332,10 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("BlockingSinkNode should not receive shuffle metadata from child")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "BlockingSinkNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::Flush(input_id) => {
                     if let Some(p) = inputs.get_mut(&input_id) {

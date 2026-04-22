@@ -10,11 +10,12 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use daft_partition_refs::RayPartitionRef;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{FlightShufflePartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -24,8 +25,8 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
-    statistics::{StatisticsManagerRef, StatisticsSubscriber},
+    python::ray::RayTaskResult,
+    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
@@ -239,8 +240,26 @@ impl PyDistributedPhysicalPlanRunner {
             )));
         }
 
-        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
-        let statistics_manager = plan_result.statistics_manager.clone();
+        let query_idx = plan.plan.idx();
+        let query_id = plan.plan.query_id();
+        let logical_plan = plan.plan.logical_plan().clone();
+
+        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
+
+        let pipeline_node = logical_plan_to_pipeline_node(
+            (&plan.plan).into(),
+            logical_plan,
+            Arc::new(psets),
+            &meter,
+        )?;
+
+        let statistics_manager =
+            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
+
+        let plan_result =
+            self.runner
+                .run_plan(query_idx, pipeline_node, statistics_manager.clone())?;
+
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
             statistics_manager,
@@ -253,8 +272,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
-    parent.add_class::<RayPartitionRef>()?;
-    parent.add_class::<FlightShufflePartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

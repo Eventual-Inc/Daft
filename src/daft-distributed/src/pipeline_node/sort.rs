@@ -22,8 +22,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, TaskOutput,
-        shuffles::partition_groups::ray_partition_groups_from_outputs,
+        PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -34,7 +33,10 @@ use crate::{
         RuntimeStats,
         stats::{BaseCounters, RuntimeStatsRef},
     },
-    utils::channel::{Sender, create_channel},
+    utils::{
+        channel::{Sender, create_channel},
+        transpose::transpose_materialized_outputs_from_vec,
+    },
 };
 
 const SAMPLE_PHASE: &str = "sample";
@@ -379,8 +381,7 @@ impl SortNode {
             .await?
             .into_iter()
             .flatten()
-            .map(TaskOutput::into_materialized)
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<Vec<_>>();
 
         // Compute partition boundaries from samples
         let boundaries = get_partition_boundaries_from_samples(
@@ -410,21 +411,18 @@ impl SortNode {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
-        let partition_groups =
-            ray_partition_groups_from_outputs(partitioned_outputs, num_partitions)?;
 
-        for partition_group in partition_groups {
-            let total_size_bytes = partition_group
-                .iter()
-                .map(|partition| partition.size_bytes())
-                .sum();
-            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                self.node_id(),
-                self.config.schema.clone(),
-                total_size_bytes,
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
-            );
+        let transposed_outputs =
+            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
+
+        for partition_group in transposed_outputs {
+            let (in_memory_source_plan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    partition_group,
+                    self.config.schema.clone(),
+                    self.node_id(),
+                    FINAL_SORT_PHASE,
+                );
             let plan = LocalPhysicalPlan::sort(
                 in_memory_source_plan,
                 self.sort_by.clone(),
@@ -434,7 +432,7 @@ impl SortNode {
                 LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
             );
             let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                .with_psets(self.node_id(), partition_group);
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())

@@ -24,9 +24,8 @@ impl LogicalPlanToPipelineNodeTranslator {
     ) -> DaftResult<DistributedPipelineNode> {
         let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
             DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
-                shuffle_id: 0,
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
-                compression: None,
+                ..Default::default()
             })
         } else {
             DistributedShuffleBackend::Ray

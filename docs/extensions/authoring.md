@@ -1,10 +1,11 @@
-# Daft Extensions
+# Authoring Guide
 
 !!! warning "Experimental"
 
     Native extensions are experimental and may change in future releases.
 
 > Please see the [prompt](#prompt) if you want help generating an extension.
+> Looking for extensions you can install today? See [Community Extensions](community.md).
 
 This document is a guide for authoring Daft native extensions in Rust.
 Daft supports native Rust extensions by leveraging a stable C ABI based on the
@@ -390,7 +391,7 @@ Create a Daft native extension called `<extension_name>` with the following scal
 
 <describe each function: name, arguments with types, return type, and behavior>
 
-Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a summary of the key conventions:
+Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here is a summary of the key conventions:
 
 ## Project structure
 

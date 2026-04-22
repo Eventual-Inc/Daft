@@ -58,9 +58,11 @@ impl DashboardStatisticsSubscriber {
                     TASK_CANCELLED_KEY.into(),
                     Stat::Count(mgr.cancelled_task_count()),
                 ));
-                (info.node_origin_id, stats)
+                // use `id` here because it's a distributed node
+                // these nodes do not have an `origin_node_id`
+                (info.id, stats)
             })
-            .filter(|(node_origin_id, _)| task_ctx.node_ids.contains(&(*node_origin_id as u32)))
+            .filter(|(node_id, _)| task_ctx.node_ids.contains(&(*node_id as u32)))
             .collect::<Vec<_>>();
 
         if !relevant_stats.is_empty()

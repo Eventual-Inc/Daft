@@ -248,8 +248,10 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                     self.try_dispatch()?;
                     self.try_flush_input(input_id).await?
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("IntermediateNode should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "IntermediateNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     self.batch_manager.set_all_pending_flush();
