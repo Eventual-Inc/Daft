@@ -319,7 +319,7 @@ impl BuilderContext {
         // Keep a unique local runtime node id (`id`), but preserve the originating
         // distributed plan node id (`node_origin_id`) when available so metrics/stats
         // from local execution can be attributed back to the distributed node.
-        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+        let node_origin_id = node_context.origin_node_id;
 
         NodeInfo {
             name,
@@ -1458,7 +1458,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            schema,
             backend,
             repartition_spec,
             stats_state,
@@ -1471,7 +1470,6 @@ fn physical_plan_to_pipeline(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
-                        schema.clone(),
                     )),
                     child_node,
                     stats_state.clone(),
