@@ -438,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_roundtrip() {
+    fn test_serde_roundtrip_no_module_loaded() {
         let (ffi, module) = make_mock_handle();
         let udf = ScalarFunctionHandle::new(ffi, module);
 
@@ -457,6 +457,54 @@ mod tests {
             err.to_string().contains("not loaded"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn test_serde_roundtrip_with_module_loaded() {
+        // Simulate a worker environment: the plan has been serialized by the
+        // driver and arrives here to be deserialized. The worker process has
+        // already loaded the extension (e.g. via the Ray actor init hook),
+        // which in a real flow populates FUNCTION_REGISTRY. We populate it
+        // directly here with a unique path so the test doesn't interact with
+        // other tests that might register "increment".
+        let (ffi, module) = make_mock_handle();
+        let path =
+            std::path::PathBuf::from("/mock/test_serde_roundtrip_with_module_loaded/mock_module");
+        // Override the module's path for this test by constructing a fresh
+        // ModuleHandle with the same FFI_Module but our unique path.
+        let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path.clone()));
+        let live_handle = ScalarFunctionHandle::new(ffi, module);
+        register_function(path.clone(), "increment".to_string(), live_handle.clone());
+
+        // Driver: serialize.
+        let json = serde_json::to_string(&live_handle).unwrap();
+        assert!(json.contains("increment"));
+        assert!(json.contains(path.to_str().unwrap()));
+
+        // Worker: deserialize. Since FUNCTION_REGISTRY has a match,
+        // `inner` should be populated.
+        let deser: ScalarFunctionHandle = serde_json::from_str(&json).unwrap();
+        assert_eq!(ScalarUDF::name(&deser), "increment");
+        assert!(
+            deser.inner.is_some(),
+            "expected inner to be re-attached from FUNCTION_REGISTRY"
+        );
+
+        // And calls should actually work.
+        let arrow_arr: arrow_array::ArrayRef = Arc::new(Int32Array::from(vec![10, 20, 30]));
+        let series = Series::from_arrow(Field::new("x", DataType::Int32), arrow_arr).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![series]);
+        let ctx = EvalContext { row_count: 3 };
+        let result = deser.call(args, &ctx).unwrap();
+
+        let result_int = result
+            .to_arrow()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .clone();
+        assert_eq!(result_int.values().as_ref(), &[11, 21, 31]);
     }
 
     #[test]
