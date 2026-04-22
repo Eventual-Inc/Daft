@@ -24,6 +24,7 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
 };
 use daft_partition_refs::FlightPartitionRef;
+use daft_recordbatch::RecordBatch;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -838,6 +839,7 @@ impl LocalPhysicalPlan {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        right_sentinel: Option<RecordBatch>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -849,6 +851,7 @@ impl LocalPhysicalPlan {
             right_by,
             left_on,
             right_on,
+            right_sentinel,
             schema,
             stats_state,
             context,
@@ -1773,6 +1776,7 @@ impl LocalPhysicalPlan {
                     right_by,
                     left_on,
                     right_on,
+                    right_sentinel,
                     schema,
                     stats_state,
                     context,
@@ -1784,6 +1788,7 @@ impl LocalPhysicalPlan {
                     right_by.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    right_sentinel.clone(),
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -2131,6 +2136,7 @@ pub struct AsofJoin {
     pub right_by: Vec<BoundExpr>,
     pub left_on: BoundExpr,
     pub right_on: BoundExpr,
+    pub right_sentinel: Option<RecordBatch>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
