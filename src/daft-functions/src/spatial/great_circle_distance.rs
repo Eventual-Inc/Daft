@@ -90,7 +90,7 @@ impl ScalarUDF for GreatCircleDistance {
             );
         }
 
-        Ok(Field::new("great_circle_distance", DataType::Float64))
+        Ok(Field::new(self.name(), DataType::Float64))
     }
 
     fn docstring(&self) -> &'static str {
