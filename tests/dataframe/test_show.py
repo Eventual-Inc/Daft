@@ -268,7 +268,8 @@ def test_native_runner_close_does_not_log_missing_event_loop(capsys):
     assert "Exception ignored in: <async_generator object NativeExecutor.run.<locals>.stream_results" not in captured.err
 
 
-def test_collect_emits_query_id(capsys):
+def test_collect_emits_query_id(monkeypatch, capsys):
+    monkeypatch.setenv("DAFT_SHOW_QUERY_ID", "1")
     _ = capsys.readouterr()
     df = daft.from_pydict({"x": [1]}).collect()
     captured = capsys.readouterr()
@@ -279,6 +280,15 @@ def test_collect_emits_query_id(capsys):
 
 def test_collect_does_not_emit_query_id_when_disabled(monkeypatch, capsys):
     monkeypatch.setenv("DAFT_SHOW_QUERY_ID", "0")
+    _ = capsys.readouterr()
+
+    daft.from_pydict({"x": [1]}).collect()
+    captured = capsys.readouterr()
+
+    assert "Daft Query ID:" not in captured.err
+
+
+def test_collect_does_not_emit_query_id_by_default_in_non_interactive_context(capsys):
     _ = capsys.readouterr()
 
     daft.from_pydict({"x": [1]}).collect()
