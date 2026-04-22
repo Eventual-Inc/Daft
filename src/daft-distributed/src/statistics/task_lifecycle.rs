@@ -15,11 +15,13 @@ use crate::{
     statistics::{StatisticsSubscriber, TaskEvent},
 };
 
+#[allow(dead_code)]
 pub(crate) struct TaskLifecycleEventSubscriber {
     context: DaftContext,
     query_id: QueryID,
 }
 
+#[allow(dead_code)]
 impl TaskLifecycleEventSubscriber {
     pub fn new(query_id: QueryID) -> Self {
         let context = get_context();
@@ -91,6 +93,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     }
 }
 
+#[allow(dead_code)]
 fn task_meta_from_context(context: &TaskContext) -> Arc<TaskMeta> {
     let meta = TaskMeta {
         id: context.task_id,
