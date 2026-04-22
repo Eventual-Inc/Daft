@@ -34,7 +34,7 @@ pub use run::ExecutionEngineResult;
 /// Used by distributed execution tests (e.g. `LocalSwordfishWorker` in
 /// `daft-distributed`) to exercise real local execution without Ray.
 pub mod testing {
-    pub use super::run::{LocalPlanOutput, execute_local_plan, execute_local_plan_shared};
+    pub use super::run::{LocalPlanOutput, NativeExecutor, execute_local_plan};
 }
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};

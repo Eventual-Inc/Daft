@@ -510,16 +510,15 @@ fn build_scan_pipeline(
 /// caches local pipelines by `plan_fingerprint` and reuses a single pipeline
 /// across tasks with identical plans. All scan tasks produced by a single
 /// `ScanSourceNode` share the same fingerprint, so they share one
-/// `SourceNode` — which owns a single `IOStatsRef` shared across per-input_id
+/// `SourceNode` — which owns a single `IOStatsRef` shared across per-InputId
 /// `SourceStats`. Every `SourceStats::build_snapshot` reads the same atomic
 /// counter, so `take_input_snapshot(input_id=N)` for each of N scan tasks
 /// returns the cumulative bytes read by *all* tasks so far. When Flotilla's
 /// `StatisticsManager` sums those per-task snapshots it reports ~N× the true
 /// bytes read.
 ///
-/// This test exercises that exact path via `execute_local_plan_shared`, which
-/// mirrors `NativeExecutor::run` by driving multiple scan inputs through one
-/// pipeline.
+/// This test exercises the real production path via `NativeExecutor::run` /
+/// `NativeExecutor::try_finish` — the same calls Flotilla workers use.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
     let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
@@ -558,43 +557,55 @@ async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
     );
 
     // All tasks from a single ScanSourceNode share the same plan fingerprint,
-    // so in production Flotilla they would share one NativeExecutor pipeline.
-    // We simulate that via `execute_local_plan_shared`: one pipeline, N inputs,
-    // each on a distinct InputId — matching NativeExecutor's plan-sharing path.
-    let first = &tasks[0];
-    let plan = first.plan();
-    let config = first.config().clone();
-    let shared_fingerprint = first.task_context().plan_fingerprint;
+    // so in production Flotilla they share one NativeExecutor pipeline.
+    let shared_fp = tasks[0].task_context().plan_fingerprint;
     for (i, t) in tasks.iter().enumerate() {
         assert_eq!(
-            t.task_context().plan_fingerprint,
-            shared_fingerprint,
-            "task {i} has a different plan_fingerprint from task 0; shared-pipeline test \
+            t.task_context().plan_fingerprint, shared_fp,
+            "task {i} has a different plan_fingerprint from task 0; shared-pipeline \
              assumption broken — Flotilla would not share a pipeline across these tasks"
         );
     }
 
-    let batches: Vec<(daft_local_plan::InputId, HashMap<SourceId, Input>)> = tasks
-        .iter()
-        .enumerate()
-        .map(|(i, task)| {
-            let inputs = task.inputs().clone();
-            let input_id = i as daft_local_plan::InputId;
-            (input_id, inputs)
-        })
-        .collect();
+    // Drive tasks through the real `NativeExecutor` that production uses.
+    // First enqueue every task on its own InputId, then call `try_finish` on
+    // each to harvest the per-task `ExecutionStats` — exactly as Flotilla's
+    // worker loop does when running multiple same-plan tasks concurrently.
+    let mut executor = daft_local_execution::testing::NativeExecutor::new(false, "");
 
-    let per_input_stats =
-        daft_local_execution::testing::execute_local_plan_shared(&plan, config, batches)
-            .await?;
+    let mut enqueued: Vec<(u64, daft_local_plan::InputId, _)> = Vec::with_capacity(tasks.len());
+    for (i, task) in tasks.iter().enumerate() {
+        let input_id = i as daft_local_plan::InputId;
+        let (fingerprint, run_fut) = executor.run(
+            &task.plan(),
+            task.config().clone(),
+            vec![], // subscribers
+            Some(task.context().clone()),
+            task.inputs().clone(),
+            input_id,
+            true, // maintain_order
+        )?;
+        let result = run_fut.await?;
+        enqueued.push((fingerprint, input_id, result));
+    }
+
+    // Sanity: every task's fingerprint is the same in the executor's plan cache.
+    let executor_fp = enqueued[0].0;
+    for (fp, _, _) in &enqueued {
+        assert_eq!(
+            *fp, executor_fp,
+            "NativeExecutor reported different fingerprints for same-plan tasks"
+        );
+    }
 
     let mut per_task_bytes_read: Vec<u64> = Vec::with_capacity(tasks.len());
-    for (i, task) in tasks.iter().enumerate() {
-        let stats = per_input_stats
-            .iter()
-            .find(|(iid, _)| *iid as usize == i)
-            .map(|(_, s)| s.clone())
-            .expect("per-input_id stats should be present");
+    for (fp, input_id, result) in enqueued {
+        // Match the production Python flow: drain all output partitions for
+        // this input_id before calling `try_finish`, so the pipeline has
+        // actually finished reading bytes before stats are harvested.
+        result.drain_for_testing().await;
+        let stats_fut = executor.try_finish(fp, input_id)?;
+        let stats = stats_fut.await?;
         let mut task_bytes_read: u64 = 0;
         for (_info, snapshot) in &stats.nodes {
             if let StatSnapshot::Source(s) = snapshot {
@@ -602,10 +613,11 @@ async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
             }
         }
         per_task_bytes_read.push(task_bytes_read);
+        let task = &tasks[input_id as usize];
         feed_stats_to_manager(&stats_manager, task, stats)?;
     }
 
-    let swordfish_sum: u64 = per_task_bytes_read.iter().sum();
+    let per_task_sum: u64 = per_task_bytes_read.iter().sum();
 
     let exported = stats_manager.export_metrics();
     let source_stats = exported
@@ -625,12 +637,12 @@ async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
     eprintln!(
         "total_bytes_on_disk = {total_bytes_on_disk}, \
          per-task bytes_read (as Flotilla sees them) = {per_task_bytes_read:?} \
-         (sum = {swordfish_sum}), \
+         (sum = {per_task_sum}), \
          flotilla aggregated bytes_read = {flotilla_bytes_read}"
     );
 
     // Flotilla aggregated bytes_read is a sum of per-task snapshots, so by
-    // construction it equals `swordfish_sum`. The real assertion is that this
+    // construction it equals `per_task_sum`. The real assertion is that this
     // sum is close to the actual bytes on disk — not a large multiple of it.
     assert!(
         flotilla_bytes_read <= total_bytes_on_disk * 3,
