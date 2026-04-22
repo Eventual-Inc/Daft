@@ -52,6 +52,14 @@ import daft.functions
             id="one_degree_along_equator",
         ),
         pytest.param(
+            [0.0000001],
+            [0.0],
+            [-0.0000001],
+            [179.9999999],
+            [math.pi * 6_371_000.0],
+            id="near_antipodal_does_not_nan",
+        ),
+        pytest.param(
             [None, 10.0, None],
             [0.0, None, 20.0],
             [1.0, 11.0, 21.0],

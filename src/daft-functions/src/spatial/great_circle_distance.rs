@@ -19,7 +19,7 @@ fn haversine_meters(lat1_deg: f64, lon1_deg: f64, lat2_deg: f64, lon2_deg: f64) 
     let a = sin_half_delta_lat * sin_half_delta_lat
         + lat1_rad.cos() * lat2_rad.cos() * sin_half_delta_lon * sin_half_delta_lon;
 
-    let central_angle = 2.0 * a.sqrt().asin();
+    let central_angle = 2.0 * a.sqrt().min(1.0).asin();
     EARTH_RADIUS_M * central_angle
 }
 
