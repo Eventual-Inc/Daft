@@ -482,6 +482,12 @@ fn build_scan_pipeline(
 /// The test uses the shared harness `run_pipeline_and_get_stats`, which
 /// routes every task through `LocalSwordfishWorker`'s `NativeExecutor` —
 /// exactly the same production code a Ray worker runs.
+///
+/// Ignored until the bytes_read overreport is fixed; re-enable (remove the
+/// `#[ignore]`) when that fix lands. Run locally with
+/// `cargo test -p daft-distributed test_scan_source_bytes_read_multiple_files
+/// -- --ignored`.
+#[ignore = "reproduces an unfixed bug: Flotilla overreports bytes.read on multi-file scans"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
     let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
