@@ -480,7 +480,7 @@ fn build_scan_pipeline(
 /// `#[ignore]`) when that fix lands. Run locally with
 /// `cargo test -p daft-distributed test_scan_source_bytes_read_multiple_files
 /// -- --ignored`.
-#[ignore = "reproduces an unfixed bug: Flotilla overreports bytes.read on multi-file scans"]
+#[ignore = "reproduces unfixed bug #6761: Flotilla overreports bytes.read on multi-file scans"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
     let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
