@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU32, Ordering},
-};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
@@ -39,7 +36,6 @@ struct FlightShared {
     local_server: Arc<ShuffleFlightServer>,
     shuffle_address: String,
     target_in_memory_size_per_partition: usize,
-    next_partition_ref_id: AtomicU32,
 }
 
 pub(crate) struct FlightGatherState {
@@ -51,8 +47,7 @@ pub(crate) struct FlightGatherState {
 impl FlightGatherState {
     async fn push(&mut self, input: MicroPartition) -> DaftResult<()> {
         let shared = &self.shared;
-        let idx = shared.next_partition_ref_id.fetch_add(1, Ordering::Relaxed);
-        let partition_ref_id = partition_ref_id(self.input_id, idx as usize);
+        let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
             &shared.shuffle_dirs,
@@ -85,6 +80,9 @@ pub(crate) enum GatherState {
 
 impl GatherState {
     async fn push(&mut self, input: MicroPartition) -> DaftResult<()> {
+        if input.is_empty() {
+            return Ok(());
+        }
         match self {
             Self::Ray(state) => {
                 state.push(input);
@@ -164,7 +162,6 @@ impl GatherSink {
                 local_server,
                 shuffle_address,
                 target_in_memory_size_per_partition: TARGET_IN_MEMORY_SIZE_BYTES,
-                next_partition_ref_id: AtomicU32::new(0),
             })),
         })
     }
