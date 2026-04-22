@@ -4,14 +4,13 @@ name = "common-checkpoint-config"
 version = {workspace = true}
 
 [dependencies]
-common-error = {path = "../error", default-features = false}
 common-io-config = {path = "../io-config", default-features = false}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 uuid = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-io-config/python"]
+python = ["dep:pyo3", "common-io-config/python"]
 
 [lints]
 workspace = true

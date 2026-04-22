@@ -14,7 +14,6 @@ common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
@@ -23,7 +22,6 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 snafu = {workspace = true}
-uuid = {workspace = true}
 
 [dependencies.daft-io]
 optional = true
@@ -31,7 +29,7 @@ path = "../daft-io"
 default-features = false
 
 [features]
-python = ["dep:pyo3", "common-checkpoint-config/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-checkpoint-config/python"]
 s3 = ["daft-io"]
 test-utils = []
 
