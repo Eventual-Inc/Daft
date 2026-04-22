@@ -203,6 +203,7 @@ from .partition import (
     partition_iceberg_bucket,
     partition_iceberg_truncate,
 )
+from .spatial import great_circle_distance
 from .str import (
     deserialize,
     try_deserialize,
@@ -358,6 +359,7 @@ __all__ = [
     "format",
     "from_unixtime",
     "get",
+    "great_circle_distance",
     "guess_mime_type",
     "hash",
     "hour",

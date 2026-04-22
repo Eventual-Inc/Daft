@@ -171,6 +171,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::MiscFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
+        functions_registry.register::<daft_functions::spatial::SpatialFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
         functions_registry.register::<daft_functions::random::RandomFunctions>();
 

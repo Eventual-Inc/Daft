@@ -16,6 +16,7 @@ pub mod python;
 pub mod random;
 pub mod similarity;
 pub mod slice;
+pub mod spatial;
 pub mod to_struct;
 pub mod uuid;
 pub mod vector_utils;
