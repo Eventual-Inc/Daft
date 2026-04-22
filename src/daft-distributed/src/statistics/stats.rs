@@ -277,15 +277,25 @@ impl RuntimeStats for DefaultRuntimeStats {
         // Spill/buffer rollup is variant-agnostic (uses trait methods).
         self.base.absorb_spill_and_buffer(snapshot);
 
-        let StatSnapshot::Default(snapshot) = snapshot else {
-            // TODO: Return immediately for now, but ideally should error
-            return;
-        };
-
-        self.base.add_rows_in(snapshot.rows_in);
-        self.base.add_rows_out(snapshot.rows_out);
-        self.base.add_bytes_in(snapshot.bytes_in);
-        self.base.add_bytes_out(snapshot.bytes_out);
+        match snapshot {
+            StatSnapshot::Default(snapshot) => {
+                self.base.add_rows_in(snapshot.rows_in);
+                self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_in(snapshot.bytes_in);
+                self.base.add_bytes_out(snapshot.bytes_out);
+            }
+            // ShuffleRead worker tasks emit `Source`-variant snapshots keyed
+            // on the Repartition distributed node_id. Absorb their rows_out /
+            // bytes_out so they surface on the Repartition card alongside the
+            // write-side bytes_in / rows_in from RepartitionSink. `bytes_read`
+            // is intentionally dropped here — spilled-read bytes flow through
+            // the variant-agnostic spill rollup above (spill.bytes.read).
+            StatSnapshot::Source(snapshot) => {
+                self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_out(snapshot.bytes_out);
+            }
+            _ => {}
+        }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
