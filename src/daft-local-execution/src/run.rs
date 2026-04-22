@@ -69,7 +69,18 @@ fn get_global_runtime() -> &'static Handle {
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
-    unimplemented!("get_global_runtime is not implemented without python feature");
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build global tokio runtime for NativeExecutor");
+        let handle = rt.handle().clone();
+        // Keep the runtime alive for the duration of the process.
+        std::thread::spawn(move || {
+            rt.block_on(futures::future::pending::<()>());
+        });
+        handle
+    })
 }
 
 /// Message sent to the execution task to enqueue inputs
@@ -359,7 +370,7 @@ async fn run_execution_loop(
     result
 }
 
-pub(crate) struct NativeExecutor {
+pub struct NativeExecutor {
     cancel: CancellationToken,
     is_flotilla_worker: bool,
     shuffle_server: Option<Arc<ShuffleFlightServer>>,
@@ -580,97 +591,6 @@ impl Drop for NativeExecutor {
     }
 }
 
-/// Result of running a local plan.
-/// Used by distributed execution test infrastructure (LocalSwordfishWorker).
-pub enum LocalPlanOutput {
-    /// Output partitions (from any operator — scan, filter, sort, repartition, etc.).
-    Partitions(Vec<daft_micropartition::MicroPartition>),
-}
-
-/// Execute a local physical plan in-process and return results + execution statistics.
-///
-/// Used by distributed execution test infrastructure (LocalSwordfishWorker) to run
-/// SwordfishTask local plans without Ray. Must be called from within a tokio runtime
-/// context (e.g. `#[tokio::test]`).
-///
-/// Returns the output partitions and execution statistics.
-pub async fn execute_local_plan(
-    plan: &LocalPhysicalPlanRef,
-    config: std::sync::Arc<DaftExecutionConfig>,
-    inputs: HashMap<SourceId, Input>,
-) -> DaftResult<(LocalPlanOutput, ExecutionStats)> {
-    use tokio::runtime::Handle;
-
-    use crate::pipeline::{BuilderContext, PipelineMessage};
-
-    let handle = Handle::current();
-    let query_id = QueryID::from("");
-
-    let ctx = BuilderContext::new();
-    let (pipeline, input_senders) =
-        crate::pipeline::translate_physical_plan_to_pipeline(plan, &config, &ctx)?;
-
-    let stats_manager = RuntimeStatsManager::try_new(
-        &handle,
-        &pipeline,
-        vec![],
-        query_id,
-        false, // not a flotilla worker
-    )?;
-    let stats_handle = stats_manager.handle();
-
-    let input_id: daft_local_plan::InputId = 0;
-
-    // Send inputs to the pipeline sources.
-    for (key, plan_input) in inputs {
-        if let Some(sender) = input_senders.get(&key) {
-            let _ = sender.send(input_id, plan_input);
-        }
-    }
-    // Drop senders to signal EOF.
-    drop(input_senders);
-
-    // Start the pipeline.
-    let memory_manager = get_or_init_memory_manager();
-    let mut runtime_handle =
-        ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
-    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
-
-    // Collect output partitions.
-    let mut partitions = Vec::new();
-    loop {
-        tokio::select! {
-            Some(join_result) = runtime_handle.join_next() => {
-                join_result?;
-            }
-            msg = output_receiver.recv() => {
-                match msg {
-                    Some(PipelineMessage::Morsel { partition, .. }) => {
-                        partitions.push(partition);
-                    }
-                    Some(PipelineMessage::FlightPartitionRef { .. }) => {}
-                    Some(PipelineMessage::Flush(_)) => {}
-                    None => {
-                        // Pipeline finished.
-                        runtime_handle.shutdown().await?;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    stats_manager
-        .finish(common_metrics::QueryEndState::Finished)
-        .await;
-
-    let stats = stats_handle
-        .take_input_snapshot(input_id)
-        .await
-        .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
-    Ok((LocalPlanOutput::Partitions(partitions), stats))
-}
-
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
 }
@@ -678,6 +598,22 @@ pub struct ExecutionEngineResult {
 impl ExecutionEngineResult {
     async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
         self.receiver.recv().await
+    }
+
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
+            }
+        }
+        out
     }
 }
 

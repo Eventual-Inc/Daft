@@ -6,7 +6,7 @@ use common_metrics::{Meter, QueryID, StatSnapshot};
 use common_partitioning::PartitionRef;
 use common_runtime::JoinSet;
 use daft_dsl::expr::{BoundColumn, Expr, bound_expr::BoundExpr};
-use daft_local_plan::{ExecutionStats, Input, SourceId};
+use daft_local_plan::ExecutionStats;
 use daft_logical_plan::InMemoryInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -18,14 +18,12 @@ use daft_schema::{
 use futures::StreamExt;
 
 use crate::{
-    pipeline_node::{DistributedPipelineNode, FilterNode, InMemorySourceNode, SortNode},
-    plan::{PlanConfig, PlanExecutionContext},
-    scheduling::{
-        local_worker::LocalSwordfishWorkerManager,
-        scheduler::spawn_scheduler_actor,
-        task::{SwordfishTask, Task},
+    pipeline_node::{
+        DistributedPipelineNode, FilterNode, InMemorySourceNode, ScanSourceNode, SortNode,
     },
-    statistics::{StatisticsManager, TaskEvent},
+    plan::{PlanConfig, PlanExecutionContext, RunningPlan},
+    scheduling::{local_worker::LocalSwordfishWorkerManager, scheduler::spawn_scheduler_actor},
+    statistics::StatisticsManager,
 };
 
 /// Create a simple test schema with one Int64 column named "x".
@@ -171,101 +169,65 @@ fn build_filter_pipeline(
     DistributedPipelineNode::new(Arc::new(filter_node), meter)
 }
 
-/// Extract SwordfishTasks from a DistributedPipelineNode by calling produce_tasks().
+/// End-to-end test harness: drive a `DistributedPipelineNode` to completion
+/// via the same scheduler + worker path Ray Flotilla uses, and return the
+/// aggregated `ExecutionStats`.
 ///
-/// Creates a scheduler to satisfy PlanExecutionContext requirements. For non-blocking
-/// nodes (Filter, Project, etc.) the scheduler is not used during task production.
-/// For blocking nodes (Sort, etc.), the scheduler actually executes intermediate tasks.
+/// The pipeline is produced into a task stream, submitted to a real
+/// `SchedulerActor`, and dispatched to a `LocalSwordfishWorker` whose
+/// `NativeExecutor` matches what each Ray worker process owns. The dispatcher
+/// feeds `TaskEvent`s into the `StatisticsManager` exactly as in production;
+/// the test just awaits completion and reads the final snapshot. This is the
+/// canonical harness — new operator tests should use it.
 ///
-/// The `stats_manager` is passed to the scheduler so that intermediate task completions
-/// can be routed to RuntimeNodeManagers without panicking.
-async fn extract_tasks(
-    pipeline: &DistributedPipelineNode,
-    stats_manager: &crate::statistics::StatisticsManagerRef,
-) -> DaftResult<Vec<SwordfishTask>> {
-    let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
-    let mut joinset = JoinSet::new();
-    let scheduler_handle =
-        spawn_scheduler_actor(worker_manager, &mut joinset, stats_manager.clone());
-
-    let mut plan_context = PlanExecutionContext::new(0, scheduler_handle.clone());
-    let task_stream = pipeline.clone().produce_tasks(&mut plan_context);
-
-    let task_id_counter = plan_context.task_id_counter();
-    let mut tasks = Vec::new();
-    tokio::pin!(task_stream);
-    while let Some(builder) = task_stream.next().await {
-        let submittable = builder.build(0, &task_id_counter);
-        tasks.push(submittable.into_task());
-    }
-
-    // Clean up: drop the handle and abort the scheduler.
-    drop(scheduler_handle);
-    joinset.abort_all();
-
-    Ok(tasks)
-}
-
-/// Run a SwordfishTask's local plan and return the ExecutionStats.
-async fn run_task_locally(task: &SwordfishTask) -> DaftResult<ExecutionStats> {
-    let plan = task.plan();
-    let config = task.config().clone();
-    let psets = task.psets().clone();
-
-    // Convert psets (PartitionRef = Arc<MicroPartition>) to Input::InMemory
-    let mut inputs: HashMap<SourceId, Input> = task.inputs().clone();
-    for (source_id, partition_refs) in psets {
-        let micro_partitions: Vec<Arc<MicroPartition>> = partition_refs
-            .into_iter()
-            .map(|pr| {
-                pr.as_any()
-                    .downcast_ref::<MicroPartition>()
-                    .map(|mp| Arc::new(mp.clone()))
-                    .ok_or_else(|| {
-                        common_error::DaftError::InternalError(
-                            "PartitionRef is not a MicroPartition".into(),
-                        )
-                    })
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        inputs.insert(source_id, Input::InMemory(micro_partitions));
-    }
-
-    let (_partitions, stats) =
-        daft_local_execution::testing::execute_local_plan(&plan, config, inputs).await?;
-    Ok(stats)
-}
-
-/// Feed ExecutionStats from a task into a StatisticsManager.
-fn feed_stats_to_manager(
-    stats_manager: &StatisticsManager,
-    task: &SwordfishTask,
-    exec_stats: ExecutionStats,
-) -> DaftResult<()> {
-    let event = TaskEvent::Completed {
-        context: task.task_context(),
-        stats: exec_stats,
-    };
-    stats_manager.handle_event(event)
-}
-
-/// End-to-end test helper: build pipeline, extract tasks via produce_tasks(),
-/// run each task locally, feed stats to StatisticsManager, export and return.
+/// Differences from a real Ray Flotilla run (all inherent to running without
+/// a Ray cluster):
+/// - Single process, single tokio runtime — no serialization boundary, no
+///   network hops, no worker-death scenarios.
+/// - One worker by default (`single_worker`). Callers that want to spread
+///   tasks across multiple per-worker `NativeExecutor`s can assemble their own
+///   `LocalSwordfishWorkerManager` and call `run_pipeline_with_manager`.
 async fn run_pipeline_and_get_stats(
     pipeline: &DistributedPipelineNode,
     meter: &Meter,
 ) -> DaftResult<Vec<(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)>> {
+    let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
+    run_pipeline_with_manager(pipeline, meter, worker_manager)
+        .await
+        .map(|stats| stats.nodes)
+}
+
+async fn run_pipeline_with_manager(
+    pipeline: &DistributedPipelineNode,
+    meter: &Meter,
+    worker_manager: Arc<LocalSwordfishWorkerManager>,
+) -> DaftResult<ExecutionStats> {
     let stats_manager = StatisticsManager::from_pipeline_node(pipeline, vec![], meter)?;
 
-    let tasks = extract_tasks(pipeline, &stats_manager).await?;
+    let mut scheduler_joinset = JoinSet::new();
+    let scheduler_handle = spawn_scheduler_actor(
+        worker_manager,
+        &mut scheduler_joinset,
+        stats_manager.clone(),
+    );
 
-    for task in &tasks {
-        let exec_stats = run_task_locally(task).await?;
-        feed_stats_to_manager(&stats_manager, task, exec_stats)?;
+    let mut plan_context = PlanExecutionContext::new(0, scheduler_handle.clone());
+    let task_stream = pipeline.clone().produce_tasks(&mut plan_context);
+    let running_plan = RunningPlan::new(task_stream, plan_context);
+
+    // Drive the real materialization path: every task flows through the
+    // scheduler → dispatcher → worker → NativeExecutor, and per-task stats
+    // are fed to `stats_manager` by the dispatcher via `handle_task_event`.
+    let mut materialized = running_plan.materialize(scheduler_handle.clone());
+    while let Some(result) = materialized.next().await {
+        // Discard output partitions; tests read the aggregated stats instead.
+        let _ = result?;
     }
 
-    let exported = stats_manager.export_metrics();
-    Ok(exported.nodes)
+    drop(scheduler_handle);
+    scheduler_joinset.abort_all();
+
+    Ok(stats_manager.export_metrics())
 }
 
 /// Test: Single-partition sort produces correct aggregated stats.
@@ -409,6 +371,173 @@ async fn test_filter_stats_multi_partition() -> DaftResult<()> {
         }
         other => panic!("Expected Filter snapshot, got: {:?}", other),
     }
+
+    Ok(())
+}
+
+/// Write a single-column Int64 CSV file with the given values and return the
+/// number of bytes on disk. Uses the `x` column from `test_schema()`.
+///
+/// CSV is used here rather than parquet because daft-io's local parquet read
+/// path doesn't increment `bytes_read` (local files skip the `CountingReader`
+/// wrapper), while daft-csv's local reader calls `io_stats.mark_bytes_read`
+/// on every buffer fill.
+fn write_csv_file(path: &std::path::Path, values: &[i64]) -> u64 {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path).expect("create csv file");
+    writeln!(file, "x").expect("write header");
+    for v in values {
+        writeln!(file, "{v}").expect("write row");
+    }
+    file.sync_all().expect("sync");
+    drop(file);
+    std::fs::metadata(path).expect("metadata").len()
+}
+
+/// Build a Flotilla pipeline with a `ScanSourceNode` over the given CSV files,
+/// one `ScanTaskRef` per file.
+fn build_scan_pipeline(
+    file_paths: &[std::path::PathBuf],
+    meter: &Meter,
+) -> DistributedPipelineNode {
+    use daft_scan::{
+        CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+        ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    };
+
+    let schema = test_schema();
+    let csv_cfg = CsvSourceConfig {
+        delimiter: None,
+        has_headers: true,
+        double_quote: true,
+        quote: None,
+        escape_char: None,
+        comment: None,
+        allow_variable_columns: false,
+        buffer_size: None,
+        chunk_size: None,
+    };
+    let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
+    let storage_config = Arc::new(StorageConfig::new_internal(false, None));
+    let pushdowns = Pushdowns::default();
+
+    let scan_tasks: Vec<ScanTaskRef> = file_paths
+        .iter()
+        .map(|path| {
+            let size = std::fs::metadata(path).expect("file metadata").len();
+            Arc::new(ScanTask::new(
+                vec![ScanSource {
+                    size_bytes: Some(size),
+                    metadata: None,
+                    statistics: None,
+                    partition_spec: None,
+                    kind: ScanSourceKind::File {
+                        path: path.to_string_lossy().into_owned(),
+                        chunk_spec: None,
+                        iceberg_delete_files: None,
+                        parquet_metadata: None,
+                    },
+                }],
+                source_config.clone(),
+                schema.clone(),
+                storage_config.clone(),
+                pushdowns.clone(),
+                None,
+            ))
+        })
+        .collect();
+
+    let plan_config = test_plan_config();
+    let scan_source_node =
+        ScanSourceNode::new(0, &plan_config, pushdowns, Arc::new(scan_tasks), schema);
+
+    DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
+}
+
+/// Repro: Flotilla overreports `bytes_read` when a scan has multiple files.
+///
+/// Originally observed when reading from S3. The same overreporting reproduces
+/// locally with CSV files because daft-csv's local reader calls
+/// `io_stats.mark_bytes_read` on every buffer fill (daft-parquet's local path
+/// skips the counting reader, so parquet can't reproduce it without S3).
+///
+/// Root cause (to be fixed): on a real Ray Flotilla worker, `NativeExecutor`
+/// caches local Swordfish pipelines by `plan_fingerprint` and reuses them
+/// across tasks with identical plans. All scan tasks produced by a single
+/// `ScanSourceNode` share the same fingerprint, so they share one
+/// `SourceNode` — which owns a single `IOStatsRef` shared across per-InputId
+/// `SourceStats`. Every `SourceStats::build_snapshot` reads the same atomic
+/// counter, so `take_input_snapshot(input_id=N)` for each of N scan tasks
+/// returns the cumulative bytes read by *all* tasks so far. When Flotilla's
+/// `StatisticsManager` sums those per-task snapshots it reports ~N× the true
+/// bytes read.
+///
+/// The test uses the shared harness `run_pipeline_and_get_stats`, which
+/// routes every task through `LocalSwordfishWorker`'s `NativeExecutor` —
+/// exactly the same production code a Ray worker runs.
+///
+/// Ignored until the bytes_read overreport is fixed; re-enable (remove the
+/// `#[ignore]`) when that fix lands. Run locally with
+/// `cargo test -p daft-distributed test_scan_source_bytes_read_multiple_files
+/// -- --ignored`.
+#[ignore = "reproduces an unfixed bug: Flotilla overreports bytes.read on multi-file scans"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
+    let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
+
+    // Write N distinct CSV files to a fresh temp directory.
+    let tmpdir = std::env::temp_dir().join(format!(
+        "daft_flotilla_bytes_read_repro_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&tmpdir).expect("create tmpdir");
+
+    let num_files: usize = 5;
+    let rows_per_file: usize = 1_000;
+    let mut file_paths = Vec::with_capacity(num_files);
+    let mut total_bytes_on_disk: u64 = 0;
+    for i in 0..num_files {
+        let path = tmpdir.join(format!("file_{i}.csv"));
+        let values: Vec<i64> = (0..rows_per_file)
+            .map(|j| (i * rows_per_file + j) as i64)
+            .collect();
+        total_bytes_on_disk += write_csv_file(&path, &values);
+        file_paths.push(path);
+    }
+
+    let pipeline = build_scan_pipeline(&file_paths, &meter);
+
+    let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+    let source_stats = stats
+        .iter()
+        .find(|(info, _)| info.node_origin_id == 0)
+        .expect("scan source node stats should be present");
+
+    let flotilla_bytes_read = match &source_stats.1 {
+        StatSnapshot::Source(s) => s.bytes_read,
+        other => panic!("expected Source snapshot for scan source, got: {:?}", other),
+    };
+
+    // Cleanup before any assertion may fail.
+    let _ = std::fs::remove_dir_all(&tmpdir);
+
+    eprintln!(
+        "total_bytes_on_disk = {total_bytes_on_disk}, \
+         flotilla aggregated bytes_read = {flotilla_bytes_read}"
+    );
+
+    // Allow up to 3x slack for read-planner coalescing / footer re-reads.
+    // When the bug is present, bytes_read comes out as ~N × total_bytes_on_disk.
+    assert!(
+        flotilla_bytes_read <= total_bytes_on_disk * 3,
+        "Flotilla bytes_read ({flotilla_bytes_read}) is more than 3x total file size \
+         ({total_bytes_on_disk}) — bytes.read is being overreported."
+    );
 
     Ok(())
 }
