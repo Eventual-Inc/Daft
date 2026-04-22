@@ -1,4 +1,4 @@
-"""Distance functions for vector inputs."""
+"""Spatial functions for vector inputs."""
 
 from __future__ import annotations
 
