@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { ListChecks } from "lucide-react";
+import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
@@ -256,10 +256,16 @@ export default function PhysicalPlanTree({
   exec_state,
   highlightedNodeId,
   onViewTasks,
+  tasksOpen,
+  onOpenTasks,
 }: {
   exec_state: ExecutingState;
   highlightedNodeId?: number | null;
   onViewTasks?: (nodeId: number) => void;
+  /** Whether the tasks sidebar is currently open. Flotilla only. */
+  tasksOpen?: boolean;
+  /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
+  onOpenTasks?: () => void;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -346,6 +352,17 @@ export default function PhysicalPlanTree({
             }`}
           >
             JSON
+          </button>
+        )}
+        {onOpenTasks && !tasksOpen && (
+          <button
+            onClick={onOpenTasks}
+            className={`${main.className} ml-auto flex items-center gap-1 text-xs px-3 py-1 rounded-md
+              text-zinc-400 hover:text-zinc-200 transition-colors`}
+            title="Show tasks sidebar"
+          >
+            <PanelRightOpen size={13} />
+            Tasks
           </button>
         )}
       </div>

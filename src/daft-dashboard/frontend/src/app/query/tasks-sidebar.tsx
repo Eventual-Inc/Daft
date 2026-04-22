@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus } from "./types";
 import {
@@ -19,19 +19,20 @@ import {
 } from "./mock-tasks";
 
 /**
- * Tasks tab — a table of swordfish task "types" (fused local-plan pipelines
- * grouped by origin distributed-plan node). Rows are expandable to the
- * individual task level.
+ * Tasks sidebar — a collapsible panel docked inside the Execution tab that
+ * shows swordfish task "types" (fused local-plan pipelines grouped by origin
+ * distributed-plan node). Rows are expandable to the individual task level.
  *
  * Mocked today: tasks are synthesized from the live operator list. Replace
  * `generateMockTasks` with a real backend feed when available.
  */
-export default function TasksTab({
+export default function TasksSidebar({
   exec_state,
   queryId,
   originFilter,
   onClearFilter,
   onSelectOrigin,
+  onClose,
 }: {
   exec_state: ExecutingState;
   queryId: string;
@@ -39,8 +40,10 @@ export default function TasksTab({
   originFilter: number | null;
   /** Called when the user clears the origin filter. */
   onClearFilter: () => void;
-  /** Called when the user clicks an origin node name — navigates to Execution tab + highlight. */
+  /** Called when the user clicks an origin node name — highlights the plan node. */
   onSelectOrigin: (nodeId: number) => void;
+  /** Called when the user closes the sidebar. */
+  onClose: () => void;
 }) {
   const { operators, exec_start_sec } = exec_state.exec_info;
 
@@ -67,19 +70,24 @@ export default function TasksTab({
   return (
     <div className="bg-zinc-900 h-full flex flex-col">
       <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2 border-b border-zinc-800">
-        <div className={`${main.className} text-xs text-zinc-400 flex items-center gap-2`}>
-          <span className="text-zinc-500">Mock data —</span>
+        <div className={`${main.className} text-xs text-zinc-400 flex items-center gap-2 min-w-0`}>
+          <span className={`${main.className} text-sm font-bold text-zinc-200`}>
+            Tasks
+          </span>
+          <span className="text-zinc-500">— mock data,</span>
           <span>
-            {rows.length} task type{rows.length === 1 ? "" : "s"} across{" "}
+            {rows.length} type{rows.length === 1 ? "" : "s"},{" "}
             {rows.reduce((a, r) => a + r.task_count, 0)} task
             {rows.reduce((a, r) => a + r.task_count, 0) === 1 ? "" : "s"}
           </span>
           {originFilter != null && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-fuchsia-950/50 border border-fuchsia-800 text-fuchsia-200">
-              origin: {filteredOriginName} (#{originFilter})
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-fuchsia-950/50 border border-fuchsia-800 text-fuchsia-200 truncate">
+              <span className="truncate">
+                origin: {filteredOriginName} (#{originFilter})
+              </span>
               <button
                 onClick={onClearFilter}
-                className="hover:text-white"
+                className="hover:text-white flex-shrink-0"
                 aria-label="Clear origin filter"
               >
                 <X size={12} />
@@ -87,6 +95,15 @@ export default function TasksTab({
             </span>
           )}
         </div>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-zinc-400
+            hover:text-white hover:bg-zinc-800 transition-colors flex-shrink-0"
+          title="Close tasks sidebar"
+          aria-label="Close tasks sidebar"
+        >
+          <PanelRightClose size={14} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-auto">
