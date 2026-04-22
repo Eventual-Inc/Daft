@@ -1,6 +1,8 @@
 use std::{
+    collections::HashMap,
     ffi::{CStr, c_char},
-    sync::Arc,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -58,6 +60,33 @@ impl Drop for Inner {
 // SAFETY: The FFI_ScalarFunction is already Send + Sync; ModuleHandle is Send + Sync.
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
+
+/// Process-global registry of loaded extension functions.
+///
+/// Populated during `Session::load_and_init_extension`, consulted by
+/// `ScalarFunctionHandle::deserialize` to re-attach the FFI vtable on
+/// processes where the plan was deserialized (e.g. Ray workers).
+///
+/// Keyed by `(module_path, function_name)`. Handles are stored by value;
+/// clones are cheap (the inner state is `Arc`-shared).
+static FUNCTION_REGISTRY: OnceLock<Mutex<HashMap<(PathBuf, String), ScalarFunctionHandle>>> =
+    OnceLock::new();
+
+/// Register a function handle in the process-global registry. Idempotent —
+/// re-registering the same `(path, name)` overwrites the previous entry.
+pub fn register_function(path: PathBuf, name: String, handle: ScalarFunctionHandle) {
+    let mut reg = FUNCTION_REGISTRY
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("FUNCTION_REGISTRY lock poisoned");
+    reg.insert((path, name), handle);
+}
+
+/// Look up a registered function by module path and function name.
+pub fn lookup_function(path: &Path, name: &str) -> Option<ScalarFunctionHandle> {
+    let reg = FUNCTION_REGISTRY.get()?.lock().ok()?;
+    reg.get(&(path.to_path_buf(), name.to_string())).cloned()
+}
 
 /// Wraps an `FFI_ScalarFunction` vtable (from a loaded extension module)
 /// into Daft's `ScalarUDF` and `ScalarFunctionFactory` traits.
@@ -545,5 +574,17 @@ mod tests {
             METADATA_SEEN.load(Ordering::SeqCst),
             "extension metadata was not preserved in the FFI schema"
         );
+    }
+
+    #[test]
+    fn function_registry_roundtrip() {
+        let (ffi, module) = make_mock_handle();
+        let path = module.path().to_path_buf();
+        let handle = ScalarFunctionHandle::new(ffi, module);
+        register_function(path.clone(), "increment".to_string(), handle);
+
+        let found = lookup_function(&path, "increment").expect("should find registered function");
+        assert_eq!(ScalarUDF::name(&found), "increment");
+        assert!(found.inner.is_some());
     }
 }
