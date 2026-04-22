@@ -436,6 +436,30 @@ impl SwordfishTaskBuilder {
         (self, notify_rx)
     }
 
+    /// Estimate the number of output rows based on scan task metadata.
+    ///
+    /// Used by LimitNode to compute initial task concurrency without waiting for
+    /// the first task to complete. Returns `None` if no scan task inputs exist
+    /// or if row estimation is not possible (e.g. non-Parquet sources without metadata).
+    pub fn estimated_num_rows(&self) -> Option<usize> {
+        let mut total = 0usize;
+        let mut found_any = false;
+        for input in self.inputs.values() {
+            if let Input::ScanTasks(scan_tasks) = input {
+                for st in scan_tasks {
+                    if let Some(n) = st.num_rows() {
+                        total = total.saturating_add(n);
+                        found_any = true;
+                    } else if let Some(approx) = st.approx_num_rows(Some(self.config.as_ref())) {
+                        total = total.saturating_add(approx as usize);
+                        found_any = true;
+                    }
+                }
+            }
+        }
+        found_any.then_some(total)
+    }
+
     /// Build the SubmittableTask directly, which can be submitted to the scheduler.
     /// The task_id is assigned from the provided task_id_counter at build time.
     pub fn build(
@@ -783,6 +807,130 @@ pub(super) mod tests {
                 let _ = cancel_notifier.send(());
             }
         }
+    }
+
+    /// Helper to create a ScanTask with optional exact row count metadata.
+    fn make_scan_task_with_metadata(num_rows: Option<usize>) -> ScanTaskRef {
+        use daft_scan::{
+            FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+            SourceConfig, storage_config::StorageConfig,
+        };
+        use daft_schema::schema::Schema;
+
+        let metadata = num_rows.map(|n| daft_stats::TableMetadata { length: n });
+        let source = ScanSource {
+            size_bytes: None,
+            metadata,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        };
+        Arc::new(ScanTask::new(
+            vec![source],
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig::default(),
+            ))),
+            Arc::new(Schema::empty()),
+            Arc::new(StorageConfig::default()),
+            Pushdowns::default(),
+            None,
+        ))
+    }
+
+    /// Helper to create a ScanTask with only file size (no exact metadata).
+    fn make_scan_task_with_size(size_bytes: u64) -> ScanTaskRef {
+        use daft_scan::{
+            FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+            SourceConfig, storage_config::StorageConfig,
+        };
+        use daft_schema::{dtype::DataType, field::Field, schema::Schema};
+
+        let source = ScanSource {
+            size_bytes: Some(size_bytes),
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        };
+        // Need a non-empty schema so estimate_row_size_bytes > 0 for approx_num_rows
+        let schema = Arc::new(Schema::new(vec![Field::new("col", DataType::Int64)]));
+        Arc::new(ScanTask::new(
+            vec![source],
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig::default(),
+            ))),
+            schema,
+            Arc::new(StorageConfig::default()),
+            Pushdowns::default(),
+            None,
+        ))
+    }
+
+    #[test]
+    fn test_estimated_num_rows_no_inputs() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1);
+        assert_eq!(builder.estimated_num_rows(), None);
+    }
+
+    #[test]
+    fn test_estimated_num_rows_with_exact_metadata() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![make_scan_task_with_metadata(Some(5000))]);
+        assert_eq!(builder.estimated_num_rows(), Some(5000));
+    }
+
+    #[test]
+    fn test_estimated_num_rows_multiple_scan_tasks() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1).with_scan_tasks(
+            1,
+            vec![
+                make_scan_task_with_metadata(Some(3000)),
+                make_scan_task_with_metadata(Some(7000)),
+            ],
+        );
+        assert_eq!(builder.estimated_num_rows(), Some(10000));
+    }
+
+    #[test]
+    fn test_estimated_num_rows_no_metadata() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        // Scan task with no metadata and no size_bytes => can't estimate
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![make_scan_task_with_metadata(None)]);
+        assert_eq!(builder.estimated_num_rows(), None);
+    }
+
+    #[test]
+    fn test_estimated_num_rows_approx_from_size() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![make_scan_task_with_size(1_000_000)]);
+        let est = builder.estimated_num_rows();
+        assert!(est.is_some());
+        assert!(est.unwrap() > 0);
     }
 
     #[test]

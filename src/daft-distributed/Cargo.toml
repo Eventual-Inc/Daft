@@ -48,6 +48,9 @@ python = [
   "daft-context/python"
 ]
 
+[dev-dependencies]
+daft-stats = {path = "../daft-stats", default-features = false}
+
 [lints]
 workspace = true
 
