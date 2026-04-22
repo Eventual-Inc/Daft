@@ -304,12 +304,19 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
 /// Create a [`ScalarFunctionFactory`] from an `FFI_ScalarFunction` vtable.
 ///
 /// Called by the extension loader when a module invokes `define_function`
-/// during initialization.
+/// during initialization. As a side effect, this also registers the function
+/// in the process-global `FUNCTION_REGISTRY` so that deserialized handles in
+/// other parts of the process (or on Ray workers after they load the same
+/// `.so`) can re-attach their FFI vtable.
 pub fn into_scalar_function_factory(
     ffi: FFI_ScalarFunction,
     module: Arc<ModuleHandle>,
 ) -> Arc<dyn ScalarFunctionFactory> {
-    Arc::new(ScalarFunctionHandle::new(ffi, module))
+    let path = module.path().to_path_buf();
+    let handle = ScalarFunctionHandle::new(ffi, module);
+    let name = handle.name.to_string();
+    register_function(path, name, handle.clone());
+    Arc::new(handle)
 }
 
 #[cfg(test)]
