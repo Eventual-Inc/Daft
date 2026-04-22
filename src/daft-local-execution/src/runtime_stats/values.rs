@@ -28,6 +28,12 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn add_bytes_in(&self, bytes: u64);
     fn add_bytes_out(&self, bytes: u64);
     /// Record that one more task contributed work to this node's stats.
+    /// The unit of "task" is per-operator: intermediate operators fire this
+    /// once per processed batch; streaming sinks fire once per dispatched
+    /// `op.execute` future that returns; blocking sinks fire once per sink
+    /// future plus once more at finalize (N+1 for N batches). Values are
+    /// not directly comparable across operator kinds — interpret relative
+    /// to the operator's own scale.
     fn increment_num_tasks(&self);
 }
 

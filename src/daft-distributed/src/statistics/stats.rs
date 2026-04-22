@@ -18,6 +18,13 @@ pub trait RuntimeStats: Send + Sync + 'static {
     /// Returns the accumulated stats.
     fn export_snapshot(&self) -> StatSnapshot;
     /// Record that one more task contributed work to this node's stats.
+    /// The unit of "task" is per-operator: in the distributed node manager
+    /// this fires once per Ray task whose worker snapshots attributed work
+    /// here; in local-execution operators it fires once per processed batch
+    /// future. Blocking sinks intentionally count each per-batch sink future
+    /// plus the per-input finalize future (N+1 for N batches), so values are
+    /// not directly comparable across operator kinds — interpret relative
+    /// to the operator's own scale.
     fn increment_num_tasks(&self);
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
