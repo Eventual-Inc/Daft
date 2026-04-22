@@ -97,6 +97,7 @@ impl AsofJoinNode {
         partition_idx: u32,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
+        right_sentinel: Option<RecordBatch>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
@@ -132,6 +133,7 @@ impl AsofJoinNode {
             self.right_by.clone(),
             self.left_on.clone(),
             self.right_on.clone(),
+            right_sentinel,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),
@@ -159,7 +161,7 @@ impl AsofJoinNode {
 
         if num_partitions == 1 {
             return self
-                .create_and_submit_join_task(0, left_materialized, right_materialized, result_tx)
+                .create_and_submit_join_task(0, left_materialized, right_materialized, None, result_tx)
                 .await;
         }
 
@@ -313,14 +315,12 @@ impl AsofJoinNode {
             .zip(right_partition_groups)
             .enumerate()
         {
-            let _sentinel = if i == 0 {
+            let sentinel = if i == 0 {
                 None
             } else {
                 sentinels[i - 1].clone()
             };
-            // TODO: Pass sentinel to create_and_submit_join_task once AsofJoin plan
-            // node supports right_sentinel (Step 6).
-            self.create_and_submit_join_task(i as u32, left_group, right_group, result_tx)
+            self.create_and_submit_join_task(i as u32, left_group, right_group, sentinel, result_tx)
                 .await?;
         }
 
@@ -361,7 +361,7 @@ impl AsofJoinNode {
 
         if right_materialized.is_empty() {
             return self
-                .create_and_submit_join_task(0, left_materialized, vec![], &result_tx)
+                .create_and_submit_join_task(0, left_materialized, vec![], None, &result_tx)
                 .await;
         }
 
