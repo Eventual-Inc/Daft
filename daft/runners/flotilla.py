@@ -96,6 +96,32 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
+def _load_extensions_from_env() -> None:
+    """Load every extension listed in the `DAFT_EXTENSION_PATHS` env var.
+
+    The env var holds a JSON-encoded list of absolute paths. Set by the driver
+    when it creates Ray actors, so workers dlopen the same `.so`s the driver
+    has and can re-attach FFI handles when plans deserialize.
+    """
+    paths_json = os.environ.get("DAFT_EXTENSION_PATHS")
+    if not paths_json:
+        return
+    import json
+
+    import daft
+
+    try:
+        paths = json.loads(paths_json)
+    except json.JSONDecodeError:
+        logger.warning("DAFT_EXTENSION_PATHS is set but not valid JSON: %r", paths_json)
+        return
+    for path in paths:
+        try:
+            daft.load_extension(path)
+        except Exception as e:
+            logger.warning("Failed to load extension %s on worker: %s", path, e)
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -123,6 +149,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        _load_extensions_from_env()
 
         self.ip = ray.util.get_node_ip_address()
         self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
@@ -402,6 +429,7 @@ class RemoteFlotillaRunner:
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
     ) -> None:
+        _load_extensions_from_env()
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:
