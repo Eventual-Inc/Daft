@@ -1,4 +1,5 @@
 pub(crate) mod stats;
+pub(crate) mod task_lifecycle;
 
 use std::{
     collections::HashMap,
@@ -13,7 +14,10 @@ pub use stats::RuntimeStats;
 
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    scheduling::task::{TaskContext, TaskName, TaskStatus},
+    scheduling::{
+        task::{TaskContext, TaskName, TaskStatus},
+        worker::WorkerId,
+    },
     statistics::stats::RuntimeNodeManager,
 };
 
@@ -26,17 +30,19 @@ pub(crate) enum TaskEvent {
         context: TaskContext,
         name: TaskName,
     },
-
     Scheduled {
         context: TaskContext,
     },
     Completed {
         context: TaskContext,
         stats: ExecutionStats,
+        worker_id: WorkerId,
     },
     Failed {
         context: TaskContext,
         reason: String,
+        worker_id: Option<WorkerId>,
+        retryable: bool,
     },
     Cancelled {
         context: TaskContext,
@@ -55,31 +61,45 @@ impl TaskEvent {
     }
 }
 
-impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
-    fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
+impl From<(TaskContext, &DaftResult<TaskStatus>, WorkerId)> for TaskEvent {
+    fn from(
+        (context, task_result, worker_id): (TaskContext, &DaftResult<TaskStatus>, WorkerId),
+    ) -> Self {
         match task_result {
             Ok(task_status) => match task_status {
                 TaskStatus::Success { stats, .. } => Self::Completed {
                     context,
                     stats: stats.clone(),
+                    worker_id,
                 },
                 TaskStatus::Failed { error } => Self::Failed {
                     context,
                     reason: error.to_string(),
+                    worker_id: Some(worker_id),
+                    retryable: false,
                 },
                 TaskStatus::Cancelled => Self::Cancelled { context },
+                // WorkerDied and WorkerUnavailable are the only
+                // task statuses that get retried in the dispatcher
+                // src/daft-distributed/src/scheduling/dispatcher.rs
                 TaskStatus::WorkerDied => Self::Failed {
                     context,
                     reason: "Worker died".to_string(),
+                    worker_id: None,
+                    retryable: true,
                 },
                 TaskStatus::WorkerUnavailable => Self::Failed {
                     context,
                     reason: "Worker unavailable".to_string(),
+                    worker_id: None,
+                    retryable: true,
                 },
             },
             Err(error) => Self::Failed {
                 context,
                 reason: error.to_string(),
+                worker_id: None,
+                retryable: false,
             },
         }
     }

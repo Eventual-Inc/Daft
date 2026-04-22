@@ -102,8 +102,9 @@ impl<W: Worker> Dispatcher<W> {
                 // Always mark the task as finished regardless of the result
                 worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
                 // Send the event to the statistics manager
-                self.statistics_manager
-                    .handle_event((task.task_context(), &task_result).into())?;
+
+                let event = (task.task_context(), &task_result, worker_id.clone()).into();
+                self.statistics_manager.handle_event(event)?;
 
                 match task_result {
                     Ok(task_status) => match task_status {
