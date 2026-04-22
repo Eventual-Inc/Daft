@@ -119,7 +119,7 @@ pub(crate) struct RunningPlan {
 }
 
 impl RunningPlan {
-    fn new(task_stream: TaskBuilderStream, plan_context: PlanExecutionContext) -> Self {
+    pub(crate) fn new(task_stream: TaskBuilderStream, plan_context: PlanExecutionContext) -> Self {
         Self {
             task_stream,
             plan_context,

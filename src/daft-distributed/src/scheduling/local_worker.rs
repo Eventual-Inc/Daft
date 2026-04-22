@@ -1,17 +1,28 @@
 //! Test-only worker that executes `SwordfishTask`s in-process via the local
 //! execution pipeline, producing real `ExecutionStats` without needing Ray.
 //!
+//! Each `LocalSwordfishWorker` owns one `NativeExecutor` — the same type a
+//! real Ray Flotilla worker process owns — so tasks with matching
+//! `plan_fingerprint`s routed to the same worker share a pipeline,
+//! `IOStatsRef`, and `RuntimeStatsManager`. This matches production Flotilla's
+//! per-worker plan-sharing behavior and is the reason tests using this worker
+//! can catch bugs in shared-state accounting (e.g. bytes_read counters).
+//!
 //! This module is `#[cfg(test)]` at the parent `scheduling/mod.rs`.
 
 use std::{
     collections::HashMap,
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::{ExecutionStats, Input, SourceId};
+use daft_local_execution::testing::NativeExecutor;
+use daft_local_plan::{ExecutionStats, Input, InputId, SourceId};
 use daft_micropartition::MicroPartition;
 
 use super::{
@@ -24,23 +35,70 @@ use super::{
 };
 use crate::pipeline_node::MaterializedOutput;
 
-/// A worker that executes `SwordfishTask`s in-process via the local execution pipeline.
+/// A worker that executes `SwordfishTask`s in-process via a real `NativeExecutor`.
 ///
-/// This avoids the need for a Ray cluster while still exercising the real local execution
-/// code path, producing genuine `ExecutionStats` with real `StatSnapshot` data.
-#[derive(Debug, Clone)]
+/// One `NativeExecutor` is owned per worker — matching real Ray Flotilla, where
+/// each worker process has its own executor with a pipeline cache keyed by
+/// `plan_fingerprint`. Tasks with matching fingerprints routed to this worker
+/// share a local Swordfish pipeline (and all the state hanging off it).
+#[derive(Clone)]
 pub struct LocalSwordfishWorker {
     worker_id: WorkerId,
     total_num_cpus: f64,
     active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
+    /// Shared executor; all tasks routed to this worker run through it, so
+    /// same-fingerprint tasks share a pipeline exactly as they would on a real
+    /// Ray worker.
+    executor: Arc<Mutex<NativeExecutor>>,
+    /// Fresh `InputId` generator. Each task submitted gets a unique input_id so
+    /// multiple same-fingerprint tasks can run concurrently on one pipeline.
+    input_id_counter: Arc<AtomicU32>,
+}
+
+impl std::fmt::Debug for LocalSwordfishWorker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalSwordfishWorker")
+            .field("worker_id", &self.worker_id)
+            .field("total_num_cpus", &self.total_num_cpus)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LocalSwordfishWorker {
+    /// Create a new worker with its own `NativeExecutor`.
+    ///
+    /// Defaults to enough CPUs that the scheduler will dispatch tasks
+    /// concurrently — matching what a multi-core Ray worker does. Without
+    /// this, single-CPU serialization would prevent same-fingerprint tasks
+    /// from sharing a live pipeline in the executor's plan cache (the first
+    /// `try_finish` tears the plan down before the next `run` starts), which
+    /// would hide classes of shared-state bugs that the production path can
+    /// exhibit.
+    ///
+    /// `is_flotilla_worker` mirrors the real `NativeExecutor::new` flag. When
+    /// `true`, the executor starts a `ShuffleFlightServer` bound to `ip`
+    /// (default `127.0.0.1:0`) — set this for tests that exercise shuffles.
+    /// When `false`, no server is started, which is sufficient for tests that
+    /// only need plan-sharing realism (the common case).
     pub fn new(worker_id: WorkerId) -> Self {
+        Self::with_flotilla_mode(worker_id, 8.0, false, "")
+    }
+
+    /// Create a new worker, explicitly controlling CPU count and whether the
+    /// underlying `NativeExecutor` starts a shuffle server (as real Ray
+    /// workers do).
+    pub fn with_flotilla_mode(
+        worker_id: WorkerId,
+        total_num_cpus: f64,
+        is_flotilla_worker: bool,
+        ip: &str,
+    ) -> Self {
         Self {
             worker_id,
-            total_num_cpus: 1.0,
+            total_num_cpus,
             active_task_details: Arc::new(Mutex::new(HashMap::new())),
+            executor: Arc::new(Mutex::new(NativeExecutor::new(is_flotilla_worker, ip))),
+            input_id_counter: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -56,6 +114,10 @@ impl LocalSwordfishWorker {
             .lock()
             .unwrap()
             .remove(&task_context);
+    }
+
+    fn next_input_id(&self) -> InputId {
+        self.input_id_counter.fetch_add(1, Ordering::Relaxed)
     }
 }
 
@@ -99,14 +161,22 @@ impl LocalSwordfishWorker {
     }
 }
 
-/// Task result handle that executes the SwordfishTask's local plan in-process.
+/// Task result handle that runs a task through the worker's shared `NativeExecutor`.
 pub struct LocalSwordfishTaskResultHandle {
     task: SwordfishTask,
+    worker_id: WorkerId,
+    executor: Arc<Mutex<NativeExecutor>>,
+    input_id: InputId,
 }
 
 impl LocalSwordfishTaskResultHandle {
-    pub fn new(task: SwordfishTask) -> Self {
-        Self { task }
+    fn new(task: SwordfishTask, worker: &LocalSwordfishWorker) -> Self {
+        Self {
+            task,
+            worker_id: worker.worker_id.clone(),
+            executor: worker.executor.clone(),
+            input_id: worker.next_input_id(),
+        }
     }
 }
 
@@ -120,10 +190,18 @@ impl TaskResultHandle for LocalSwordfishTaskResultHandle {
         let config = self.task.config().clone();
         let inputs = self.task.inputs().clone();
         let psets = self.task.psets().clone();
+        let context = self.task.context().clone();
         let task_id = self.task.task_context().task_id;
+        let worker_id = self.worker_id.clone();
+        let executor = self.executor.clone();
+        let input_id = self.input_id;
 
         async move {
-            match execute_swordfish_task_locally(plan, config, inputs, psets, task_id).await {
+            match execute_swordfish_task_on_executor(
+                executor, plan, config, context, inputs, psets, input_id, task_id, worker_id,
+            )
+            .await
+            {
                 Ok((output, stats)) => TaskStatus::Success {
                     result: output,
                     stats,
@@ -138,19 +216,25 @@ impl TaskResultHandle for LocalSwordfishTaskResultHandle {
     }
 }
 
-/// Execute a SwordfishTask's local plan in-process.
+/// Run a `SwordfishTask` through a shared `NativeExecutor` — the same path a
+/// real Ray Flotilla worker takes.
 ///
-/// Converts the task's psets (partition refs containing MicroPartitions) into
-/// `Input::InMemory` entries and runs the plan via the local execution pipeline.
-async fn execute_swordfish_task_locally(
+/// Converts `psets` (`PartitionRef`s wrapping `MicroPartition`s) into
+/// `Input::InMemory` entries, then enqueues the task on the executor keyed by
+/// `plan_fingerprint` (carried in `context`), drains the output stream, and
+/// harvests per-input_id stats via `try_finish`.
+#[allow(clippy::too_many_arguments)]
+async fn execute_swordfish_task_on_executor(
+    executor: Arc<Mutex<NativeExecutor>>,
     plan: daft_local_plan::LocalPhysicalPlanRef,
     config: Arc<common_daft_config::DaftExecutionConfig>,
+    context: HashMap<String, String>,
     task_inputs: HashMap<SourceId, Input>,
     psets: HashMap<SourceId, Vec<PartitionRef>>,
+    input_id: InputId,
     task_id: u32,
+    worker_id: WorkerId,
 ) -> DaftResult<(MaterializedOutput, ExecutionStats)> {
-    use daft_local_execution::testing::LocalPlanOutput;
-
     // Merge psets into inputs. Psets contain PartitionRefs that are Arc<MicroPartition>
     // in local execution. Convert them to Input::InMemory.
     let mut inputs = task_inputs;
@@ -172,25 +256,40 @@ async fn execute_swordfish_task_locally(
         inputs.insert(source_id, Input::InMemory(micro_partitions));
     }
 
-    let (output, stats) =
-        daft_local_execution::testing::execute_local_plan(&plan, config, inputs).await?;
+    let (fingerprint, run_fut) = {
+        let mut exec = executor.lock().unwrap();
+        exec.run(
+            &plan,
+            config,
+            vec![], // subscribers
+            Some(context),
+            inputs,
+            input_id,
+            true, // maintain_order
+        )?
+    };
+    let result = run_fut.await?;
+    // Mirror the production Python flow: drain this input_id's output so the
+    // pipeline has finished reading bytes before stats are harvested.
+    let partitions = result.collect_partitions_for_testing().await;
 
-    let LocalPlanOutput::Partitions(partitions) = output;
+    let stats = {
+        let mut exec = executor.lock().unwrap();
+        exec.try_finish(fingerprint, input_id)?
+    }
+    .await?;
+
     let partition_refs: Vec<PartitionRef> = partitions
         .into_iter()
         .map(|mp| Arc::new(mp) as PartitionRef)
         .collect();
-    let materialized = MaterializedOutput::new(
-        partition_refs,
-        "local-worker".into(),
-        String::new(),
-        task_id,
-    );
+    let materialized =
+        MaterializedOutput::new(partition_refs, worker_id, String::new(), task_id);
 
     Ok((materialized, stats))
 }
 
-/// A worker manager for LocalSwordfishWorkers.
+/// A worker manager for `LocalSwordfishWorker`s.
 #[derive(Clone)]
 pub struct LocalSwordfishWorkerManager {
     workers: Arc<Mutex<HashMap<WorkerId, LocalSwordfishWorker>>>,
@@ -220,12 +319,16 @@ impl WorkerManager for LocalSwordfishWorkerManager {
         tasks_per_worker: HashMap<WorkerId, Vec<SwordfishTask>>,
     ) -> DaftResult<Vec<LocalSwordfishTaskResultHandle>> {
         let mut result = Vec::new();
+        let workers = self.workers.lock().unwrap();
         for (worker_id, tasks) in tasks_per_worker {
+            let worker = workers.get(&worker_id).ok_or_else(|| {
+                common_error::DaftError::InternalError(format!(
+                    "LocalSwordfishWorkerManager: unknown worker_id {worker_id}"
+                ))
+            })?;
             for task in tasks {
-                if let Some(worker) = self.workers.lock().unwrap().get(&worker_id) {
-                    worker.add_active_task(&task);
-                }
-                result.push(LocalSwordfishTaskResultHandle::new(task));
+                worker.add_active_task(&task);
+                result.push(LocalSwordfishTaskResultHandle::new(task, worker));
             }
         }
         Ok(result)

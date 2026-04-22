@@ -21,7 +21,7 @@ use crate::{
 };
 
 mod runner;
-pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
+pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, RunningPlan, TaskIDCounter};
 
 /// Internal scheduler counter for the # of queries executed so far.
 static QUERY_IDX_COUNTER: AtomicU16 = AtomicU16::new(0);

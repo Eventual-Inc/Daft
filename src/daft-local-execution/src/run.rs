@@ -691,12 +691,20 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    /// Consume all pipeline output for this input_id until EOF. Intended for
-    /// tests that exercise `NativeExecutor` and don't care about partition
-    /// contents but need the pipeline to finish producing output before
-    /// `try_finish` is called.
-    pub async fn drain_for_testing(mut self) {
-        while self.receiver.recv().await.is_some() {}
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
+            }
+        }
+        out
     }
 }
 
