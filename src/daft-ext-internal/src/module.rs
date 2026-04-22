@@ -134,6 +134,20 @@ fn resolve_module(library: &Library, path: &Path) -> DaftResult<FFI_Module> {
     Ok(module)
 }
 
+/// Return all paths currently in the process-global `MODULES` cache.
+///
+/// Order is unspecified. Intended for propagating the driver's loaded
+/// extension set to Ray workers.
+pub fn loaded_module_paths() -> Vec<PathBuf> {
+    let Some(modules) = MODULES.get() else {
+        return Vec::new();
+    };
+    let Ok(guard) = modules.lock() else {
+        return Vec::new();
+    };
+    guard.keys().cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::c_int;

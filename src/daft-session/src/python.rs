@@ -215,7 +215,16 @@ impl PySession {
     }
 }
 
+#[pyo3::pyfunction]
+pub fn get_loaded_extension_paths() -> Vec<String> {
+    daft_ext_internal::module::loaded_module_paths()
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PySession>()?;
+    parent.add_function(pyo3::wrap_pyfunction!(get_loaded_extension_paths, parent)?)?;
     Ok(())
 }
