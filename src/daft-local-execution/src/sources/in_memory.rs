@@ -14,7 +14,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{InputId, NodeName, PipelineMessage},
-    sources::source::SourceStream,
+    sources::source::{IOStatsProvider, SourceStream},
 };
 
 pub struct InMemorySource {
@@ -40,6 +40,7 @@ impl InMemorySource {
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<PipelineMessage>,
         schema: SchemaRef,
+        io_stats_provider: IOStatsProvider,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -52,11 +53,13 @@ impl InMemorySource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((input_id, partitions)) => {
+                                let io_stats = io_stats_provider.get_or_create(input_id);
                                 task_set.spawn(forward_partition_batch(
                                     partitions,
                                     schema.clone(),
                                     output_sender.clone(),
                                     input_id,
+                                    io_stats,
                                 ));
                             }
                             None => {
@@ -88,6 +91,7 @@ async fn forward_partition_batch(
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
+    io_stats: IOStatsRef,
 ) -> DaftResult<()> {
     if partitions.is_empty() {
         let empty = MicroPartition::empty(Some(schema));
@@ -100,6 +104,7 @@ async fn forward_partition_batch(
     } else {
         for partition in partitions {
             let owned = Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone());
+            io_stats.mark_bytes_read(owned.size_bytes());
             if sender
                 .send(PipelineMessage::Morsel {
                     input_id,
@@ -122,15 +127,18 @@ impl Source for InMemorySource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats: IOStatsRef,
+        io_stats_provider: IOStatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        io_stats.mark_bytes_read(self.size_bytes);
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver;
 
-        let processor_task =
-            Self::spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
+        let processor_task = Self::spawn_partition_set_processor(
+            input_receiver,
+            output_sender,
+            self.schema.clone(),
+            io_stats_provider,
+        );
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
