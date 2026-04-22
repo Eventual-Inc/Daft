@@ -278,8 +278,6 @@ impl AsofJoinNode {
         )?;
 
         // --- Phase 5: Await both sides, transpose outputs ---
-        // TODO: Steps 2e/2f — transpose with N+1, pop sentinels, reduce
-        // For now, use normal N-partition transpose (sentinel support added in later steps)
         let (left_partitioned_outputs, right_partitioned_outputs) = futures::try_join!(
             try_join_all(left_partition_tasks),
             try_join_all(right_partition_tasks)
@@ -299,17 +297,29 @@ impl AsofJoinNode {
                 left_partitioned_outputs,
                 num_partitions,
             );
-        let right_partition_groups =
+
+        let mut right_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
                 right_partitioned_outputs,
-                num_partitions,
+                num_partitions + 1,
             );
+
+        // The last group is the sentinel group
+        let sentinel_group = right_partition_groups.pop().unwrap();
+        let sentinels = reduce_sentinels(sentinel_group, num_partitions)?;
 
         for (i, (left_group, right_group)) in left_partition_groups
             .into_iter()
             .zip(right_partition_groups)
             .enumerate()
         {
+            let _sentinel = if i == 0 {
+                None
+            } else {
+                sentinels[i - 1].clone()
+            };
+            // TODO: Pass sentinel to create_and_submit_join_task once AsofJoin plan
+            // node supports right_sentinel (Step 6).
             self.create_and_submit_join_task(i as u32, left_group, right_group, result_tx)
                 .await?;
         }
@@ -416,4 +426,31 @@ impl PipelineNodeImpl for AsofJoinNode {
         ));
         TaskBuilderStream::from(result_rx)
     }
+}
+
+/// Reduces sentinel MaterializedOutputs from all workers into one `Option<RecordBatch>` per partition.
+///
+/// Each worker's sentinel partition contains N rows — one max row per bucket index.
+/// This function:
+/// 1. Fetches the sentinel data from workers (small — N rows each)
+/// 2. Concatenates all workers' sentinel tables
+/// 3. Groups by bucket index and takes the max composite-key row per group
+/// 4. Forward-fills: if bucket j has no sentinel, inherit from bucket j-1
+///
+/// Returns `Vec<Option<RecordBatch>>` of length `num_partitions`.
+fn reduce_sentinels(
+    _sentinel_group: Vec<MaterializedOutput>,
+    num_partitions: usize,
+) -> DaftResult<Vec<Option<RecordBatch>>> {
+    // TODO: Fetch sentinel partition data from workers and reduce.
+    // The sentinel_group contains one MaterializedOutput per worker, each holding
+    // a PartitionRef to that worker's sentinel table. We need to:
+    //   1. ray.get() each partition to obtain RecordBatches
+    //   2. Concatenate all sentinel tables
+    //   3. For each bucket index 0..N, find the max composite-key row
+    //   4. Forward-fill None entries from previous partition
+    //
+    // This will be implemented once the sentinel sink (Step 4) is in place
+    // and we know the exact schema of the sentinel table.
+    Ok(vec![None; num_partitions])
 }
