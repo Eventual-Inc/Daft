@@ -275,7 +275,11 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
 
 
 def bin(expr: Expression) -> Expression:
-    """Returns the string representation of the binary value of an integer."""
+    """Returns the string representation of the binary value of an integer.
+
+    Inputs are promoted to 64-bit before conversion; negatives produce
+    64-character two's-complement strings (e.g. ``bin(-1)`` returns 64 ones).
+    """
     return Expression._call_builtin_scalar_fn("bin", expr)
 
 
