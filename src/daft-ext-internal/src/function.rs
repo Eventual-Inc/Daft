@@ -250,7 +250,10 @@ impl Serialize for ScalarFunctionHandle {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("ScalarFunctionHandle", 2)?;
         s.serialize_field("name", self.name)?;
-        s.serialize_field("module_path", &self.module_path)?;
+        // Serialize as Option<PathBuf> so that the Deserialize side (which uses
+        // Option<PathBuf> for forward-compat) sees the same wire layout with
+        // non-self-describing formats like bincode.
+        s.serialize_field("module_path", &Some(&self.module_path))?;
         s.end()
     }
 }
