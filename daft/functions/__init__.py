@@ -77,6 +77,11 @@ from .datetime import (
     timestamp_millis,
     timestamp_micros,
     from_unixtime,
+    last_day,
+    make_date,
+    make_timestamp,
+    make_timestamp_ltz,
+    next_day,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -369,6 +374,7 @@ __all__ = [
     "jaccard_similarity",
     "jq",
     "lag",
+    "last_day",
     "lead",
     "left",
     "length",
@@ -398,6 +404,9 @@ __all__ = [
     "lower",
     "lpad",
     "lstrip",
+    "make_date",
+    "make_timestamp",
+    "make_timestamp_ltz",
     "map_get",
     "max",
     "mean",
@@ -411,6 +420,7 @@ __all__ = [
     "month",
     "nanosecond",
     "negate",
+    "next_day",
     "normalize",
     "not_nan",
     "not_null",
