@@ -93,6 +93,7 @@ pub fn lookup_function(path: &Path, name: &str) -> Option<ScalarFunctionHandle> 
 #[derive(Clone)]
 pub struct ScalarFunctionHandle {
     name: &'static str,
+    module_path: PathBuf,
     inner: Option<Arc<Inner>>,
 }
 
@@ -107,8 +108,10 @@ impl ScalarFunctionHandle {
                 .to_owned()
                 .into_boxed_str(),
         );
+        let module_path = module.path().to_path_buf();
         Self {
             name,
+            module_path,
             inner: Some(Arc::new(Inner { ffi, module })),
         }
     }
@@ -245,8 +248,9 @@ impl ScalarUDF for ScalarFunctionHandle {
 impl Serialize for ScalarFunctionHandle {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 1)?;
+        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 2)?;
         s.serialize_field("name", self.name)?;
+        s.serialize_field("module_path", &self.module_path)?;
         s.end()
     }
 }
@@ -256,10 +260,28 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
         #[derive(Deserialize)]
         struct Helper {
             name: String,
+            // Optional for forward-compat with older serialized plans that
+            // predate this field.
+            #[serde(default)]
+            module_path: Option<PathBuf>,
         }
         let h = Helper::deserialize(deserializer)?;
+
+        // If the module is loaded in this process, return the live handle
+        // directly so `inner` is populated and FFI calls work.
+        if let Some(path) = &h.module_path
+            && let Some(existing) = lookup_function(path, &h.name)
+        {
+            return Ok(existing);
+        }
+
+        // Fall back to a handle with `inner: None`. Calls will error with
+        // `extension function 'X' is not loaded`, which is the correct
+        // behavior when the worker hasn't loaded the extension.
+        let name: &'static str = Box::leak(h.name.into_boxed_str());
         Ok(Self {
-            name: Box::leak(h.name.into_boxed_str()),
+            name,
+            module_path: h.module_path.unwrap_or_default(),
             inner: None,
         })
     }
@@ -439,8 +461,20 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip_no_module_loaded() {
-        let (ffi, module) = make_mock_handle();
-        let udf = ScalarFunctionHandle::new(ffi, module);
+        // Use a path that is never registered in any other test so the
+        // registry lookup always misses and `inner` stays `None`.
+        use daft_ext::abi::FFI_Module;
+        let unregistered_module = Arc::new(ModuleHandle::new(
+            FFI_Module {
+                daft_abi_version: daft_ext::abi::DAFT_ABI_VERSION,
+                name: c"mock_module".as_ptr(),
+                init: mock_init,
+                free_string: mock_free_string,
+            },
+            std::path::PathBuf::from("/mock/test_serde_roundtrip_no_module_loaded/mock_module"),
+        ));
+        let (ffi, _module) = make_mock_handle();
+        let udf = ScalarFunctionHandle::new(ffi, unregistered_module);
 
         let json = serde_json::to_string(&udf).unwrap();
         assert!(json.contains("increment"));
