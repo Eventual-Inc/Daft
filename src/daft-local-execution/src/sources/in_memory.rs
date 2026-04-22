@@ -14,7 +14,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{InputId, NodeName, PipelineMessage},
-    sources::source::{IOStatsProvider, SourceStream},
+    sources::source::{SourceStream, StatsProvider},
 };
 
 pub struct InMemorySource {
@@ -40,7 +40,7 @@ impl InMemorySource {
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<PipelineMessage>,
         schema: SchemaRef,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -53,7 +53,7 @@ impl InMemorySource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((input_id, partitions)) => {
-                                let io_stats = io_stats_provider.get_or_create(input_id);
+                                let io_stats = stats_provider.get_or_create(input_id).io_stats;
                                 task_set.spawn(forward_partition_batch(
                                     partitions,
                                     schema.clone(),
@@ -127,7 +127,7 @@ impl Source for InMemorySource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -137,7 +137,7 @@ impl Source for InMemorySource {
             input_receiver,
             output_sender,
             self.schema.clone(),
-            io_stats_provider,
+            stats_provider,
         );
 
         let result_stream = output_receiver.into_stream().map(Ok);

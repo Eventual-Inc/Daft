@@ -26,7 +26,7 @@ use crate::{
     pipeline::{InputId, NodeName, PipelineMessage},
     sources::{
         scan_task_reader,
-        source::{IOStatsProvider, Source, SourceStream},
+        source::{Source, SourceStream, StatsProvider},
     },
 };
 
@@ -65,7 +65,7 @@ impl ScanTaskSource {
         num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<PipelineMessage>,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
@@ -110,7 +110,7 @@ impl ScanTaskSource {
                     };
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
-                        io_stats_provider.get_or_create(input_id),
+                        stats_provider.get_or_create(input_id).io_stats,
                         delete_map,
                         maintain_order,
                         chunk_size,
@@ -218,7 +218,7 @@ impl Source for ScanTaskSource {
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -229,7 +229,7 @@ impl Source for ScanTaskSource {
             num_parallel_tasks,
             input_receiver,
             output_sender,
-            io_stats_provider,
+            stats_provider,
             chunk_size,
             self.schema.clone(),
             maintain_order,

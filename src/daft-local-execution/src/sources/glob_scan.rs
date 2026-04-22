@@ -22,7 +22,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{InputId, NodeName, PipelineMessage},
-    sources::source::{IOStatsProvider, SourceStream},
+    sources::source::{SourceStream, StatsProvider},
 };
 
 pub struct GlobScanSource {
@@ -51,7 +51,7 @@ impl GlobScanSource {
     fn spawn_glob_path_processor(
         mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
         output_sender: Sender<PipelineMessage>,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         chunk_size: usize,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -62,7 +62,7 @@ impl GlobScanSource {
         io_runtime.spawn(async move {
             let io_client = get_io_client(true, Arc::new(io_config.unwrap_or_default()))?;
             while let Some((input_id, glob_paths)) = receiver.recv().await {
-                let io_stats = io_stats_provider.get_or_create(input_id);
+                let io_stats = stats_provider.get_or_create(input_id).io_stats;
                 let remaining_rows = Arc::new(AsyncMutex::new(pushdowns.limit));
                 let seen_paths = Arc::new(DashSet::new());
 
@@ -205,7 +205,7 @@ impl Source for GlobScanSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -217,7 +217,7 @@ impl Source for GlobScanSource {
         let processor_task = Self::spawn_glob_path_processor(
             input_receiver,
             output_sender,
-            io_stats_provider,
+            stats_provider,
             chunk_size,
             pushdowns,
             schema,

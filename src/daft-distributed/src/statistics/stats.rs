@@ -7,7 +7,7 @@ use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
     TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
     ops::NodeInfo,
-    snapshot::{DefaultSnapshot, SpillMetrics, SpillSource, StatSnapshotImpl as _},
+    snapshot::{DefaultSnapshot, SpillSnapshot, SpillSource, StatSnapshotImpl as _},
 };
 use opentelemetry::KeyValue;
 
@@ -162,7 +162,7 @@ impl SpillRollupCounters {
 
     /// Produce a `SpillMetrics` from the accumulated counters, or `None` if
     /// nothing has been recorded.
-    pub fn export_spill(&self) -> Option<SpillMetrics> {
+    pub fn export_spill(&self) -> Option<SpillSnapshot> {
         let bytes_written = self.spill_bytes_written.load(Ordering::Relaxed);
         let bytes_read = self.spill_bytes_read.load(Ordering::Relaxed);
         let write_duration_ns = self.spill_write_duration_ns.load(Ordering::Relaxed);
@@ -178,7 +178,7 @@ impl SpillRollupCounters {
         {
             return None;
         }
-        Some(SpillMetrics {
+        Some(SpillSnapshot {
             source: SpillSource::Native,
             bytes_written,
             bytes_read,

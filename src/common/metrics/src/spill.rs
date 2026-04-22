@@ -12,7 +12,7 @@ use crate::{
         SPILL_READ_DURATION_NS_KEY, SPILL_WRITE_DURATION_NS_KEY,
     },
     ops::NodeInfo,
-    snapshot::{SpillMetrics, SpillSource},
+    snapshot::{SpillSnapshot, SpillSource},
 };
 
 /// Records per-operator spill I/O. Shared (via `Arc`) between the sink that
@@ -111,7 +111,7 @@ impl SpillReporter {
 
     /// Produce a snapshot of the recorded metrics. Returns `None` for the no-op
     /// reporter and when no spill activity has been recorded.
-    pub fn snapshot(&self, ordering: Ordering) -> Option<SpillMetrics> {
+    pub fn snapshot(&self, ordering: Ordering) -> Option<SpillSnapshot> {
         let inner = self.inner.as_ref()?;
         let bytes_written = inner.bytes_written.load(ordering);
         let bytes_read = inner.bytes_read.load(ordering);
@@ -130,7 +130,7 @@ impl SpillReporter {
             return None;
         }
 
-        Some(SpillMetrics {
+        Some(SpillSnapshot {
             source: inner.source,
             bytes_written,
             bytes_read,

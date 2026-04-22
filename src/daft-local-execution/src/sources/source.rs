@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, Meter, StatSnapshot,
+    Counter, Meter, SpillReporter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::SourceSnapshot,
+    snapshot::{SourceSnapshot, SpillSource},
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -31,27 +31,46 @@ use crate::{
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
-/// Per-input-id `IOStatsRef` registry shared between a `Source` implementation
-/// and the `SourceNode` that owns it. Sources resolve the right counter for
-/// each morsel via `get_or_create`, and the matching per-input `SourceStats`
-/// reads from the same entry — so bytes_read naturally scopes to one input_id
-/// rather than accumulating across every task that runs on a reused pipeline.
-#[derive(Clone, Default)]
-pub(crate) struct IOStatsProvider {
-    inner: Arc<Mutex<HashMap<InputId, IOStatsRef>>>,
+/// Per-input stats handle bundling the counters that sources record against.
+/// Both fields are `Arc`-cheap to clone; every holder of the same `InputStats`
+/// shares the same counters.
+#[derive(Clone)]
+pub(crate) struct InputStats {
+    pub io_stats: IOStatsRef,
+    pub spill: SpillReporter,
 }
 
-impl IOStatsProvider {
-    pub(crate) fn new() -> Self {
-        Self::default()
+/// Per-input-id `InputStats` registry shared between a `Source` implementation
+/// and the `SourceNode` that owns it. Sources resolve the right counters for
+/// each morsel via `get_or_create`, and the matching per-input `SourceStats`
+/// reads from the same entry — so bytes_read and spill metrics naturally scope
+/// to one input_id rather than accumulating across every task that runs on a
+/// reused pipeline.
+#[derive(Clone)]
+pub(crate) struct StatsProvider {
+    inner: Arc<Mutex<HashMap<InputId, InputStats>>>,
+    meter: Meter,
+    node_info: Arc<NodeInfo>,
+}
+
+impl StatsProvider {
+    pub(crate) fn new(meter: Meter, node_info: Arc<NodeInfo>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+            meter,
+            node_info,
+        }
     }
 
-    pub(crate) fn get_or_create(&self, input_id: InputId) -> IOStatsRef {
+    pub(crate) fn get_or_create(&self, input_id: InputId) -> InputStats {
         self.inner
             .lock()
-            .expect("IOStatsProvider mutex poisoned")
+            .expect("StatsProvider mutex poisoned")
             .entry(input_id)
-            .or_insert_with(IOStatsRef::default)
+            .or_insert_with(|| InputStats {
+                io_stats: IOStatsRef::default(),
+                spill: SpillReporter::new(&self.meter, &self.node_info, SpillSource::Native),
+            })
             .clone()
     }
 }
@@ -60,18 +79,17 @@ pub(crate) struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
     bytes_out: Counter,
-    io_stats: IOStatsRef,
-
+    input_stats: InputStats,
     node_kv: Vec<KeyValue>,
 }
 
 impl SourceStats {
-    fn with_io_stats(meter: &Meter, node_info: &NodeInfo, io_stats: IOStatsRef) -> Self {
+    fn with_input_stats(meter: &Meter, node_info: &NodeInfo, input_stats: InputStats) -> Self {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
             bytes_out: meter.bytes_out_metric(),
-            io_stats,
+            input_stats,
             node_kv: node_info.to_key_values(),
         }
     }
@@ -79,18 +97,23 @@ impl SourceStats {
 
 impl RuntimeStats for SourceStats {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        Self::with_io_stats(meter, node_info, IOStatsRef::default())
+        let input_stats = InputStats {
+            io_stats: IOStatsRef::default(),
+            spill: SpillReporter::new(meter, node_info, SpillSource::Native),
+        };
+        Self::with_input_stats(meter, node_info, input_stats)
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
-        let bytes_read = self.io_stats.load_bytes_read() as u64;
+        let bytes_read = self.input_stats.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
             cpu_us,
             rows_out,
             bytes_read,
             bytes_out: self.bytes_out.load(ordering),
+            spill: self.input_stats.spill.snapshot(ordering),
         })
     }
 
@@ -123,7 +146,7 @@ pub trait Source: Send + Sync {
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
@@ -236,13 +259,13 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
-        let io_stats_provider = IOStatsProvider::new();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let schema = self.source.schema().clone();
         let name = self.name();
         let meter = self.meter.clone();
         let node_info = self.node_info.clone();
+        let stats_provider = StatsProvider::new(meter.clone(), node_info.clone());
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -252,7 +275,7 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats_provider.clone(), chunk_size.into())
+            .get_data(maintain_order, stats_provider.clone(), chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
@@ -282,7 +305,7 @@ impl PipelineNode for SourceNode {
                                 *input_id,
                                 &meter,
                                 &node_info,
-                                &io_stats_provider,
+                                &stats_provider,
                                 &stats_manager,
                                 node_id,
                             );
@@ -313,7 +336,7 @@ impl PipelineNode for SourceNode {
                         0,
                         &meter,
                         &node_info,
-                        &io_stats_provider,
+                        &stats_provider,
                         &stats_manager,
                         node_id,
                     );
@@ -352,15 +375,15 @@ fn get_or_create_source_stats(
     input_id: InputId,
     meter: &Meter,
     node_info: &NodeInfo,
-    io_stats_provider: &IOStatsProvider,
+    stats_provider: &StatsProvider,
     stats_manager: &RuntimeStatsManagerHandle,
     node_id: usize,
 ) -> Arc<SourceStats> {
     per_input_stats
         .entry(input_id)
         .or_insert_with(|| {
-            let io_stats = io_stats_provider.get_or_create(input_id);
-            let stats = Arc::new(SourceStats::with_io_stats(meter, node_info, io_stats));
+            let input_stats = stats_provider.get_or_create(input_id);
+            let stats = Arc::new(SourceStats::with_input_stats(meter, node_info, input_stats));
             stats_manager.register_runtime_stats(node_id, input_id, stats.clone());
             stats
         })
@@ -374,29 +397,33 @@ mod tests {
     use super::*;
     use crate::runtime_stats::RuntimeStats;
 
-    #[test]
-    fn provider_returns_same_arc_for_same_input_id() {
-        let provider = IOStatsProvider::new();
-        let a = provider.get_or_create(5);
-        let b = provider.get_or_create(5);
-        assert!(Arc::ptr_eq(&a, &b));
+    fn make_provider(name: &'static str) -> StatsProvider {
+        StatsProvider::new(Meter::test_scope(name), Arc::new(NodeInfo::default()))
     }
 
     #[test]
-    fn provider_returns_distinct_arcs_for_distinct_input_ids() {
-        let provider = IOStatsProvider::new();
+    fn provider_returns_same_io_stats_for_same_input_id() {
+        let provider = make_provider("provider_returns_same_io_stats_for_same_input_id");
+        let a = provider.get_or_create(5);
+        let b = provider.get_or_create(5);
+        assert!(Arc::ptr_eq(&a.io_stats, &b.io_stats));
+    }
+
+    #[test]
+    fn provider_returns_distinct_io_stats_for_distinct_input_ids() {
+        let provider = make_provider("provider_returns_distinct_io_stats_for_distinct_input_ids");
         let a = provider.get_or_create(5);
         let b = provider.get_or_create(6);
-        assert!(!Arc::ptr_eq(&a, &b));
+        assert!(!Arc::ptr_eq(&a.io_stats, &b.io_stats));
     }
 
     #[test]
     fn provider_clone_shares_underlying_map() {
-        let provider_a = IOStatsProvider::new();
+        let provider_a = make_provider("provider_clone_shares_underlying_map");
         let provider_b = provider_a.clone();
         let from_a = provider_a.get_or_create(1);
         let from_b = provider_b.get_or_create(1);
-        assert!(Arc::ptr_eq(&from_a, &from_b));
+        assert!(Arc::ptr_eq(&from_a.io_stats, &from_b.io_stats));
     }
 
     /// Regression test for the bytes.read N× inflation bug.
@@ -407,25 +434,26 @@ mod tests {
     /// accumulated those cumulatives → N×/triangular inflation.
     ///
     /// Post-refactor, each per-input `SourceStats` resolves its own
-    /// `IOStatsRef` via the provider. Bytes recorded against one input_id
+    /// `InputStats` via the provider. Bytes recorded against one input_id
     /// must not surface in another input_id's snapshot.
     #[test]
     fn per_input_source_stats_are_isolated() {
         let meter = Meter::test_scope("per_input_source_stats_are_isolated");
         let node_info = NodeInfo::default();
-        let provider = IOStatsProvider::new();
+        let provider =
+            StatsProvider::new(meter.clone(), Arc::new(node_info.clone()));
 
         let stats_a =
-            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(1));
+            SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(1));
         let stats_b =
-            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(2));
+            SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(2));
         let stats_c =
-            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(3));
+            SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(3));
 
         // Each input "reads" 100 MB independently.
-        provider.get_or_create(1).mark_bytes_read(100_000_000);
-        provider.get_or_create(2).mark_bytes_read(100_000_000);
-        provider.get_or_create(3).mark_bytes_read(100_000_000);
+        provider.get_or_create(1).io_stats.mark_bytes_read(100_000_000);
+        provider.get_or_create(2).io_stats.mark_bytes_read(100_000_000);
+        provider.get_or_create(3).io_stats.mark_bytes_read(100_000_000);
 
         // Without the fix each snapshot would report the cumulative
         // 100M / 200M / 300M (all equal to the shared counter's current value).

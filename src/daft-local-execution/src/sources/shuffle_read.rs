@@ -16,7 +16,7 @@ use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleF
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
-use super::source::{IOStatsProvider, Source, SourceStream};
+use super::source::{Source, SourceStream, StatsProvider};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{NodeName, PipelineMessage},
@@ -257,7 +257,7 @@ impl Source for ShuffleReadSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats_provider: IOStatsProvider,
+        stats_provider: StatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -266,15 +266,17 @@ impl Source for ShuffleReadSource {
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
-        // Count bytes per morsel against the per-input `IOStatsRef` so bytes_read
-        // surfaces on `SourceSnapshot.bytes_read` and rolls up to the Repartition
-        // distributed node. Resolving per morsel (keyed on `input_id`) keeps each
-        // task's counter isolated — no cross-task cumulative leakage.
+        // Count bytes per morsel against the per-input `SpillReporter` so they
+        // surface as `spill.bytes.read` on the Repartition distributed node
+        // (alongside the spill.bytes.written emitted from the write side).
+        // Resolving per morsel (keyed on `input_id`) keeps each task's counter
+        // isolated — no cross-task cumulative leakage.
         let metered_stream = combined_stream.map(move |msg| {
             if let Ok(PipelineMessage::Morsel { input_id, partition }) = &msg {
-                io_stats_provider
+                stats_provider
                     .get_or_create(*input_id)
-                    .mark_bytes_read(partition.size_bytes());
+                    .spill
+                    .record_bytes_read(partition.size_bytes() as u64);
             }
             msg
         });

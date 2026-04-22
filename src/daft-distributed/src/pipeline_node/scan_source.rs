@@ -67,6 +67,8 @@ impl RuntimeStats for SourceStats {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            spill: None,
+            
         })
     }
 }
