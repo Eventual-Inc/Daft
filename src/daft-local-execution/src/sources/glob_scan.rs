@@ -6,7 +6,7 @@ use common_io_config::IOConfig;
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{IOStatsRef, get_io_client};
+use daft_io::get_io_client;
 // InputId now comes from pipeline_message module
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -22,7 +22,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{InputId, NodeName, PipelineMessage},
-    sources::source::SourceStream,
+    sources::source::{IOStatsProvider, SourceStream},
 };
 
 pub struct GlobScanSource {
@@ -51,7 +51,7 @@ impl GlobScanSource {
     fn spawn_glob_path_processor(
         mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
         output_sender: Sender<PipelineMessage>,
-        io_stats: IOStatsRef,
+        io_stats_provider: IOStatsProvider,
         chunk_size: usize,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -62,6 +62,7 @@ impl GlobScanSource {
         io_runtime.spawn(async move {
             let io_client = get_io_client(true, Arc::new(io_config.unwrap_or_default()))?;
             while let Some((input_id, glob_paths)) = receiver.recv().await {
+                let io_stats = io_stats_provider.get_or_create(input_id);
                 let remaining_rows = Arc::new(AsyncMutex::new(pushdowns.limit));
                 let seen_paths = Arc::new(DashSet::new());
 
@@ -204,7 +205,7 @@ impl Source for GlobScanSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats: IOStatsRef,
+        io_stats_provider: IOStatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -216,7 +217,7 @@ impl Source for GlobScanSource {
         let processor_task = Self::spawn_glob_path_processor(
             input_receiver,
             output_sender,
-            io_stats,
+            io_stats_provider,
             chunk_size,
             pushdowns,
             schema,

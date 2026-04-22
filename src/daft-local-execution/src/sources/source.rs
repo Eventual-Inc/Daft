@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, atomic::Ordering},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Instant,
 };
 
@@ -30,6 +30,31 @@ use crate::{
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
+
+/// Per-input-id `IOStatsRef` registry shared between a `Source` implementation
+/// and the `SourceNode` that owns it. Sources resolve the right counter for
+/// each morsel via `get_or_create`, and the matching per-input `SourceStats`
+/// reads from the same entry — so bytes_read naturally scopes to one input_id
+/// rather than accumulating across every task that runs on a reused pipeline.
+#[derive(Clone, Default)]
+pub(crate) struct IOStatsProvider {
+    inner: Arc<Mutex<HashMap<InputId, IOStatsRef>>>,
+}
+
+impl IOStatsProvider {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn get_or_create(&self, input_id: InputId) -> IOStatsRef {
+        self.inner
+            .lock()
+            .expect("IOStatsProvider mutex poisoned")
+            .entry(input_id)
+            .or_insert_with(IOStatsRef::default)
+            .clone()
+    }
+}
 
 pub(crate) struct SourceStats {
     duration_us: Counter,
@@ -98,7 +123,7 @@ pub trait Source: Send + Sync {
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats: IOStatsRef,
+        io_stats_provider: IOStatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
@@ -211,7 +236,7 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
-        let io_stats = IOStatsRef::default();
+        let io_stats_provider = IOStatsProvider::new();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let schema = self.source.schema().clone();
@@ -227,7 +252,7 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats.clone(), chunk_size.into())
+            .get_data(maintain_order, io_stats_provider.clone(), chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
@@ -257,7 +282,7 @@ impl PipelineNode for SourceNode {
                                 *input_id,
                                 &meter,
                                 &node_info,
-                                &io_stats,
+                                &io_stats_provider,
                                 &stats_manager,
                                 node_id,
                             );
@@ -288,7 +313,7 @@ impl PipelineNode for SourceNode {
                         0,
                         &meter,
                         &node_info,
-                        &io_stats,
+                        &io_stats_provider,
                         &stats_manager,
                         node_id,
                     );
@@ -327,20 +352,88 @@ fn get_or_create_source_stats(
     input_id: InputId,
     meter: &Meter,
     node_info: &NodeInfo,
-    io_stats: &IOStatsRef,
+    io_stats_provider: &IOStatsProvider,
     stats_manager: &RuntimeStatsManagerHandle,
     node_id: usize,
 ) -> Arc<SourceStats> {
     per_input_stats
         .entry(input_id)
         .or_insert_with(|| {
-            let stats = Arc::new(SourceStats::with_io_stats(
-                meter,
-                node_info,
-                io_stats.clone(),
-            ));
+            let io_stats = io_stats_provider.get_or_create(input_id);
+            let stats = Arc::new(SourceStats::with_io_stats(meter, node_info, io_stats));
             stats_manager.register_runtime_stats(node_id, input_id, stats.clone());
             stats
         })
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{Meter, ops::NodeInfo};
+
+    use super::*;
+    use crate::runtime_stats::RuntimeStats;
+
+    #[test]
+    fn provider_returns_same_arc_for_same_input_id() {
+        let provider = IOStatsProvider::new();
+        let a = provider.get_or_create(5);
+        let b = provider.get_or_create(5);
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn provider_returns_distinct_arcs_for_distinct_input_ids() {
+        let provider = IOStatsProvider::new();
+        let a = provider.get_or_create(5);
+        let b = provider.get_or_create(6);
+        assert!(!Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn provider_clone_shares_underlying_map() {
+        let provider_a = IOStatsProvider::new();
+        let provider_b = provider_a.clone();
+        let from_a = provider_a.get_or_create(1);
+        let from_b = provider_b.get_or_create(1);
+        assert!(Arc::ptr_eq(&from_a, &from_b));
+    }
+
+    /// Regression test for the bytes.read N× inflation bug.
+    ///
+    /// Before this refactor every `SourceStats` on a reused worker pipeline
+    /// shared one `IOStatsRef`, so each per-input snapshot reported the shared
+    /// counter's cumulative value. Across N tasks, the driver's `Counter::add`
+    /// accumulated those cumulatives → N×/triangular inflation.
+    ///
+    /// Post-refactor, each per-input `SourceStats` resolves its own
+    /// `IOStatsRef` via the provider. Bytes recorded against one input_id
+    /// must not surface in another input_id's snapshot.
+    #[test]
+    fn per_input_source_stats_are_isolated() {
+        let meter = Meter::test_scope("per_input_source_stats_are_isolated");
+        let node_info = NodeInfo::default();
+        let provider = IOStatsProvider::new();
+
+        let stats_a =
+            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(1));
+        let stats_b =
+            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(2));
+        let stats_c =
+            SourceStats::with_io_stats(&meter, &node_info, provider.get_or_create(3));
+
+        // Each input "reads" 100 MB independently.
+        provider.get_or_create(1).mark_bytes_read(100_000_000);
+        provider.get_or_create(2).mark_bytes_read(100_000_000);
+        provider.get_or_create(3).mark_bytes_read(100_000_000);
+
+        // Without the fix each snapshot would report the cumulative
+        // 100M / 200M / 300M (all equal to the shared counter's current value).
+        for stats in [&stats_a, &stats_b, &stats_c] {
+            let StatSnapshot::Source(snapshot) = stats.flush() else {
+                panic!("expected Source snapshot");
+            };
+            assert_eq!(snapshot.bytes_read, 100_000_000);
+        }
+    }
 }
