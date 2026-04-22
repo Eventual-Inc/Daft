@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -46,6 +48,37 @@ def _make_query_metadata() -> PyQueryMetadata:
         ray_dashboard_url=None,
         entrypoint="pytest",
     )
+
+
+def test_default_event_log_dir_uses_temp_dir(monkeypatch):
+    monkeypatch.delenv("DAFT_EVENT_LOG_DIR", raising=False)
+    assert subscriber_event_log.default_event_log_dir() == Path(tempfile.gettempdir()) / "daft" / "events"
+
+
+def test_maybe_enable_event_log_attaches_by_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAFT_EVENT_LOG_DIR", str(tmp_path))
+    monkeypatch.delenv("DAFT_ENABLE_EVENT_LOG", raising=False)
+
+    subscriber_event_log.maybe_enable_event_log()
+    subscriber = subscriber_event_log._EVENT_LOG_SUBSCRIBER
+    assert subscriber is not None
+    assert subscriber._log_dir == tmp_path.resolve()
+
+    daft.from_pydict({"x": [1, 2, 3]}).collect()
+
+    event_logs = list(tmp_path.rglob("events.jsonl"))
+    assert len(event_logs) == 1
+
+
+def test_maybe_enable_event_log_respects_opt_out(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAFT_EVENT_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("DAFT_ENABLE_EVENT_LOG", "0")
+
+    subscriber_event_log.maybe_enable_event_log()
+    assert subscriber_event_log._EVENT_LOG_SUBSCRIBER is None
+
+    daft.from_pydict({"x": [1, 2, 3]}).collect()
+    assert list(tmp_path.rglob("events.jsonl")) == []
 
 
 def test_no_files_created_without_query(tmp_path):

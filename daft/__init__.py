@@ -151,6 +151,7 @@ from daft.io import (
 )
 from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
+from daft.subscribers.event_log import maybe_enable_event_log
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
@@ -162,6 +163,9 @@ from daft import io
 from daft import runners
 from daft import datasets
 from daft import functions
+
+# Enable event logs by default for easier diagnostics.
+maybe_enable_event_log()
 
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.

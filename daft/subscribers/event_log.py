@@ -6,6 +6,7 @@ import logging
 import os
 import queue
 import socket
+import tempfile
 import threading
 import time
 from datetime import timedelta
@@ -30,8 +31,6 @@ if TYPE_CHECKING:
         Stats,
     )
 
-from typing import TYPE_CHECKING
-
 from daft.context import get_context
 from daft.subscribers.abc import Subscriber
 
@@ -41,8 +40,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _EVENT_LOG_ALIAS = "_daft_event_log"
-_DEFAULT_EVENT_LOG_DIR = Path("~/.daft/events").expanduser()
+_DEFAULT_EVENT_LOG_DIR = Path(tempfile.gettempdir()) / "daft" / "events"
 _EVENT_LOG_ATEXIT_REGISTERED = False
+_EVENT_LOG_ENABLED_ENV = "DAFT_ENABLE_EVENT_LOG"
+_EVENT_LOG_DIR_ENV = "DAFT_EVENT_LOG_DIR"
 
 _REMOTE_DRAIN_TIMEOUT_SEC = 30.0
 
@@ -382,6 +383,19 @@ def query_state_str(state: QueryEndState) -> str:
 _EVENT_LOG_SUBSCRIBER: EventLogSubscriber | None = None
 
 
+def _is_truthy_env(value: str | None) -> bool:
+    if value is None:
+        return True
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def default_event_log_dir() -> Path:
+    env_dir = os.environ.get(_EVENT_LOG_DIR_ENV)
+    if env_dir:
+        return Path(env_dir).expanduser()
+    return _DEFAULT_EVENT_LOG_DIR
+
+
 def enable_event_log(log_dir: str | Path | None = None) -> None:
     """Experimental helper that attaches an event-log subscriber.
 
@@ -395,7 +409,7 @@ def enable_event_log(log_dir: str | Path | None = None) -> None:
         atexit.register(disable_event_log)
         _EVENT_LOG_ATEXIT_REGISTERED = True
 
-    subscriber = EventLogSubscriber(log_dir or _DEFAULT_EVENT_LOG_DIR)
+    subscriber = EventLogSubscriber(log_dir or default_event_log_dir())
     try:
         get_context().attach_subscriber(_EVENT_LOG_ALIAS, subscriber)
     except Exception:
@@ -418,4 +432,16 @@ def disable_event_log() -> None:
     subscriber.close()
 
 
-__all__ = ["EventLogSubscriber", "disable_event_log", "enable_event_log"]
+def maybe_enable_event_log() -> None:
+    """Enable local event logging unless explicitly disabled via env var."""
+    if not _is_truthy_env(os.environ.get(_EVENT_LOG_ENABLED_ENV)):
+        return
+    if _EVENT_LOG_SUBSCRIBER is not None:
+        return
+    try:
+        enable_event_log(default_event_log_dir())
+    except Exception as e:
+        logger.warning("Failed to enable default event logging: %s", e)
+
+
+__all__ = ["EventLogSubscriber", "disable_event_log", "enable_event_log", "maybe_enable_event_log"]
