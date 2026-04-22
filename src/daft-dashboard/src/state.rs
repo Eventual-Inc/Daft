@@ -44,6 +44,36 @@ pub(crate) struct OperatorInfo {
 
 pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
+pub(crate) enum TaskStatus {
+    Pending,
+    Finished,
+    Failed { message: Option<String> },
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TaskInfo {
+    pub task_id: u32,
+    pub origin_node_id: NodeID,
+    pub node_ids: Vec<NodeID>,
+    pub plan_fingerprint: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub status: TaskStatus,
+    pub submit_sec: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    pub cpu_us: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct PlanInfo {
     pub plan_start_sec: f64,
@@ -56,6 +86,10 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
+    /// Per-task lifecycle info for Flotilla queries. Keyed by task_id. Empty
+    /// for Swordfish (local) queries. Populated from TaskSubmit/TaskEnd events.
+    #[serde(default)]
+    pub tasks: HashMap<u32, TaskInfo>,
     // TODO: Logs
 }
 

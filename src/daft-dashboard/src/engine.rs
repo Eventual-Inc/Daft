@@ -25,7 +25,7 @@ pub(crate) fn secs_from_epoch() -> f64 {
 
 use crate::state::{
     DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
-    QueryInfo, QueryState,
+    QueryInfo, QueryState, TaskInfo, TaskStatus,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -275,6 +275,7 @@ pub(crate) fn apply_exec_start(
                     exec_start_sec: args.exec_start_sec,
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
+                    tasks: HashMap::new(),
                 },
             };
 
@@ -703,6 +704,7 @@ pub(crate) fn apply_query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
+                        tasks: HashMap::new(),
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
@@ -792,6 +794,199 @@ pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
     }
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[serde(tag = "status")]
+pub enum TaskOutcomeArgs {
+    Success,
+    Failed { message: String },
+    Cancelled,
+}
+
+#[derive(Clone, Deserialize, Serialize, Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskTotals {
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    pub cpu_us: u64,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskSubmitArgs {
+    pub submit_sec: f64,
+    pub task_id: u32,
+    pub origin_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskEndArgs {
+    pub end_sec: f64,
+    pub task_id: u32,
+    pub origin_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
+    pub outcome: TaskOutcomeArgs,
+    pub totals: TaskTotals,
+}
+
+async fn task_submit(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskSubmitArgs>,
+) -> StatusCode {
+    apply_task_submit(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_submit(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskSubmitArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_submit", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        // Task events may arrive before exec_start or after exec_end; that's ok.
+        return StatusCode::OK;
+    };
+
+    let entry = exec_info.tasks.entry(args.task_id).or_insert(TaskInfo {
+        task_id: args.task_id,
+        origin_node_id: args.origin_node_id,
+        node_ids: args.node_ids.clone(),
+        plan_fingerprint: args.plan_fingerprint,
+        name: args.name.clone(),
+        status: TaskStatus::Pending,
+        submit_sec: args.submit_sec,
+        end_sec: None,
+        worker_id: None,
+        rows_in: 0,
+        rows_out: 0,
+        bytes_in: 0,
+        bytes_out: 0,
+        cpu_us: 0,
+    });
+
+    // If a prior submit is replayed or arrives out of order, keep the earliest
+    // submit_sec and ensure identifying fields stay in sync.
+    entry.origin_node_id = args.origin_node_id;
+    entry.node_ids = args.node_ids;
+    entry.plan_fingerprint = args.plan_fingerprint;
+    if args.name.is_some() {
+        entry.name = args.name;
+    }
+    if args.submit_sec < entry.submit_sec {
+        entry.submit_sec = args.submit_sec;
+    }
+
+    // Task updates modify exec_info; pinging `query_update` delivers the full
+    // QueryInfo (including `exec_info.tasks`) to single-query SSE subscribers.
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_end(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskEndArgs>,
+) -> StatusCode {
+    apply_task_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskEndArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_end", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    let status = match &args.outcome {
+        TaskOutcomeArgs::Success => TaskStatus::Finished,
+        TaskOutcomeArgs::Failed { message } => TaskStatus::Failed {
+            message: Some(message.clone()),
+        },
+        TaskOutcomeArgs::Cancelled => TaskStatus::Cancelled,
+    };
+
+    let task = exec_info
+        .tasks
+        .entry(args.task_id)
+        .or_insert_with(|| TaskInfo {
+            task_id: args.task_id,
+            origin_node_id: args.origin_node_id,
+            node_ids: args.node_ids.clone(),
+            plan_fingerprint: args.plan_fingerprint,
+            name: None,
+            status: TaskStatus::Pending,
+            // No submit event was seen; use the end time so duration renders as 0.
+            submit_sec: args.end_sec,
+            end_sec: None,
+            worker_id: None,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            cpu_us: 0,
+        });
+
+    task.origin_node_id = args.origin_node_id;
+    if !args.node_ids.is_empty() {
+        task.node_ids = args.node_ids;
+    }
+    task.plan_fingerprint = args.plan_fingerprint;
+    task.status = status;
+    task.end_sec = Some(args.end_sec);
+    task.worker_id = args.worker_id;
+    task.rows_in = args.totals.rows_in;
+    task.rows_out = args.totals.rows_out;
+    task.bytes_in = args.totals.bytes_in;
+    task.bytes_out = args.totals.bytes_out;
+    task.cpu_us = args.totals.cpu_us;
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+/// Returns the `ExecInfo` for any state where task events are meaningful. Task
+/// events are ignored outside of these states (pre-exec or terminal-no-exec).
+fn active_exec_info_mut(state: &mut QueryState) -> Option<&mut ExecInfo> {
+    match state {
+        QueryState::Executing { exec_info, .. }
+        | QueryState::Finalizing { exec_info, .. }
+        | QueryState::Finished { exec_info, .. } => Some(exec_info),
+        QueryState::Failed {
+            exec_info: Some(exec_info),
+            ..
+        }
+        | QueryState::Canceled {
+            exec_info: Some(exec_info),
+            ..
+        }
+        | QueryState::Dead {
+            exec_info: Some(exec_info),
+            ..
+        } => Some(exec_info),
+        _ => None,
+    }
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         // Query lifecycle
@@ -805,5 +1000,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/{op_id}/end", post(exec_op_end))
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
+        .route("/query/{query_id}/task/submit", post(task_submit))
+        .route("/query/{query_id}/task/end", post(task_end))
         .route("/query/{query_id}/end", post(query_end))
 }

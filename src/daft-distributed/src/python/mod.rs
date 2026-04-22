@@ -26,7 +26,10 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
+    statistics::{
+        StatisticsManager, StatisticsManagerRef, StatisticsSubscriber,
+        task_lifecycle::TaskLifecycleEventSubscriber,
+    },
 };
 
 #[pyclass(frozen)]
@@ -239,6 +242,12 @@ impl PyDistributedPhysicalPlanRunner {
                 plan.plan.query_id(),
             )));
         }
+
+        // Forward per-task lifecycle events to DaftContext subscribers (debug,
+        // dashboard, etc.) so the dashboard UI can render per-task progress.
+        subscribers.push(Box::new(TaskLifecycleEventSubscriber::new(
+            plan.plan.query_id(),
+        )));
 
         let query_idx = plan.plan.idx();
         let query_id = plan.plan.query_id();

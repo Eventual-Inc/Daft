@@ -56,10 +56,43 @@ export type PhysicalPlanNode = {
   children?: PhysicalPlanNode[];
 };
 
+/**
+ * Task lifecycle info pushed by the Flotilla scheduler.
+ *
+ * A Flotilla task is a fused chain of local plan nodes dispatched to a
+ * Swordfish worker. Tasks originate at a specific distributed plan node
+ * (`origin_node_id`) and tasks with the same fused pipeline share a
+ * `plan_fingerprint`, so the UI groups by (origin_node_id, plan_fingerprint).
+ */
+export type TaskStatus =
+  | { status: "Pending" }
+  | { status: "Finished" }
+  | { status: "Failed"; message: string | null }
+  | { status: "Cancelled" };
+
+export type TaskInfo = {
+  task_id: number;
+  origin_node_id: number;
+  node_ids: number[];
+  plan_fingerprint: number;
+  name?: string;
+  status: TaskStatus;
+  submit_sec: number;
+  end_sec?: number;
+  worker_id?: string;
+  rows_in: number;
+  rows_out: number;
+  bytes_in: number;
+  bytes_out: number;
+  cpu_us: number;
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
+  /** Per-task info keyed by task_id. Populated from TaskSubmit/TaskEnd events. */
+  tasks?: Record<number, TaskInfo>;
   // TODO: Logs
 };
 

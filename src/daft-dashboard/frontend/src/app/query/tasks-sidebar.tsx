@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorStatus } from "./types";
+import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
 import {
   formatBytes,
   formatDuration,
@@ -12,30 +12,27 @@ import {
   getStatusText,
 } from "./stats-utils";
 import {
-  generateMockTasks,
   groupTasks,
-  SwordfishTask,
+  taskDisplayStatus,
   TaskTypeRow,
-} from "./mock-tasks";
+} from "./tasks-grouping";
 
 /**
  * Tasks sidebar — a collapsible panel docked inside the Execution tab that
- * shows swordfish task "types" (fused local-plan pipelines grouped by origin
- * distributed-plan node). Rows are expandable to the individual task level.
+ * shows Flotilla task "types" (fused pipelines grouped by origin distributed-
+ * plan node). Rows are expandable to individual task level.
  *
- * Mocked today: tasks are synthesized from the live operator list. Replace
- * `generateMockTasks` with a real backend feed when available.
+ * Tasks are populated from the backend via `exec_info.tasks`, pushed by the
+ * distributed scheduler as TaskSubmit / TaskEnd events.
  */
 export default function TasksSidebar({
   exec_state,
-  queryId,
   originFilter,
   onClearFilter,
   onSelectOrigin,
   onClose,
 }: {
   exec_state: ExecutingState;
-  queryId: string;
   /** If set, only show rows whose origin_node_id matches. */
   originFilter: number | null;
   /** Called when the user clears the origin filter. */
@@ -45,11 +42,11 @@ export default function TasksSidebar({
   /** Called when the user closes the sidebar. */
   onClose: () => void;
 }) {
-  const { operators, exec_start_sec } = exec_state.exec_info;
+  const { operators, tasks } = exec_state.exec_info;
 
-  const allTasks = useMemo(
-    () => generateMockTasks(operators, exec_start_sec, queryId),
-    [operators, exec_start_sec, queryId],
+  const allTasks = useMemo<TaskInfo[]>(
+    () => (tasks ? Object.values(tasks) : []),
+    [tasks],
   );
 
   const allRows = useMemo(() => groupTasks(allTasks, operators), [allTasks, operators]);
@@ -74,7 +71,6 @@ export default function TasksSidebar({
           <span className={`${main.className} text-sm font-bold text-zinc-200`}>
             Tasks
           </span>
-          <span className="text-zinc-500">— mock data,</span>
           <span>
             {rows.length} type{rows.length === 1 ? "" : "s"},{" "}
             {rows.reduce((a, r) => a + r.task_count, 0)} task
@@ -110,7 +106,11 @@ export default function TasksSidebar({
         {rows.length === 0 ? (
           <div className="p-8 text-center">
             <p className={`${main.className} text-zinc-400`}>
-              No tasks for this filter.
+              {originFilter != null
+                ? "No tasks for this filter."
+                : allTasks.length === 0
+                  ? "No tasks reported yet."
+                  : "No tasks match."}
             </p>
           </div>
         ) : (
@@ -335,10 +335,12 @@ function StatusSummary({
 // ---------------------------------------------------------------------------
 // Expanded task-level sub-table.
 // ---------------------------------------------------------------------------
+// Removed the Context column since the backend does not yet surface per-task
+// context (filename, partition id, etc.). See TODO below.
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_120px_110px_100px_110px_110px_110px_110px_100px_1fr]";
+  "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_100px_110px_110px_110px_110px_100px]";
 
-function ExpandedTaskList({ tasks }: { tasks: SwordfishTask[] }) {
+function ExpandedTaskList({ tasks }: { tasks: TaskInfo[] }) {
   return (
     <div className="bg-zinc-950/40 border-l-2 border-fuchsia-900/70 pl-0">
       {/* sub-header */}
@@ -355,7 +357,6 @@ function ExpandedTaskList({ tasks }: { tasks: SwordfishTask[] }) {
         <SubHeader align="right">Bytes In</SubHeader>
         <SubHeader align="right">Bytes Out</SubHeader>
         <SubHeader align="right">CPU</SubHeader>
-        <SubHeader align="left">Context</SubHeader>
       </div>
       {[...tasks]
         .sort((a, b) => a.task_id - b.task_id)
@@ -388,35 +389,34 @@ function SubHeader({
   );
 }
 
-function TaskSubRow({ task }: { task: SwordfishTask }) {
+function TaskSubRow({ task }: { task: TaskInfo }) {
+  const displayStatus = taskDisplayStatus(task);
   const duration =
     task.end_sec != null
-      ? formatDuration(task.end_sec - task.start_sec)
-      : task.status === "Executing"
-        ? formatDuration(Date.now() / 1000 - task.start_sec) + "…"
+      ? formatDuration(task.end_sec - task.submit_sec)
+      : displayStatus === "Executing"
+        ? formatDuration(Date.now() / 1000 - task.submit_sec) + "…"
         : "—";
-
-  const contextParts = Object.entries(task.context);
-  const contextStr = contextParts.map(([k, v]) => `${k}=${v}`).join("  ");
+  const cpuSec = task.cpu_us / 1_000_000;
 
   return (
     <div
       className={`grid ${SUB_GRID_COLS} gap-0 items-center min-h-[36px] hover:bg-zinc-800/40 transition-colors`}
     >
       <div className="flex items-center justify-center">
-        {getStatusIcon(task.status)}
+        {getStatusIcon(displayStatus)}
       </div>
       <div className={`${main.className} px-3 text-xs text-zinc-400 font-mono`}>
         {task.task_id}
       </div>
       <div
         className={`${main.className} px-3 text-xs text-zinc-300 font-mono truncate`}
-        title={`${task.worker_id} (${task.ip_address})`}
+        title={task.worker_id ?? ""}
       >
-        {task.worker_id}
+        {task.worker_id ?? "—"}
       </div>
-      <div className={`${main.className} px-3 text-xs font-mono ${getStatusColor(task.status)}`}>
-        {getStatusText(task.status)}
+      <div className={`${main.className} px-3 text-xs font-mono ${getStatusColor(displayStatus)}`}>
+        {getStatusText(displayStatus)}
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {duration}
@@ -434,13 +434,7 @@ function TaskSubRow({ task }: { task: SwordfishTask }) {
         {formatBytes(task.bytes_out)}
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {formatDuration(task.cpu_sec)}
-      </div>
-      <div
-        className={`${main.className} px-3 text-xs text-zinc-400 font-mono truncate`}
-        title={contextStr}
-      >
-        {contextStr || "—"}
+        {formatDuration(cpuSec)}
       </div>
     </div>
   );

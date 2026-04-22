@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan};
+use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
 };
 
 const TOTAL_ROWS: usize = 10;
@@ -459,6 +459,95 @@ impl DashboardSubscriber {
         );
         Ok(())
     }
+
+    fn on_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        self.enqueue_json(
+            format!("engine/query/{}/task/submit", query_id),
+            "task_submit",
+            &daft_dashboard::engine::TaskSubmitArgs {
+                submit_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                origin_node_id: task.origin_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                name: task.name.as_deref().map(str::to_string),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+
+        // Aggregate per-node stats into task-level totals. Tasks fuse multiple
+        // local plan nodes, so rows.in from the head and rows.out from the tail
+        // represent the task's external I/O.
+        let mut totals = daft_dashboard::engine::TaskTotals::default();
+        for (_, snapshot) in &event.stats {
+            let stats = snapshot.to_stats();
+            for (name, stat) in stats.iter() {
+                match (name, stat) {
+                    (common_metrics::ROWS_IN_KEY, common_metrics::Stat::Count(v)) => {
+                        totals.rows_in += v;
+                    }
+                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(v)) => {
+                        totals.rows_out += v;
+                    }
+                    (common_metrics::BYTES_IN_KEY, common_metrics::Stat::Bytes(v)) => {
+                        totals.bytes_in += v;
+                    }
+                    (common_metrics::BYTES_OUT_KEY, common_metrics::Stat::Bytes(v)) => {
+                        totals.bytes_out += v;
+                    }
+                    (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) => {
+                        totals.cpu_us += d.as_micros() as u64;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let outcome = match &event.outcome {
+            crate::subscribers::events::TaskOutcome::Success => {
+                daft_dashboard::engine::TaskOutcomeArgs::Success
+            }
+            crate::subscribers::events::TaskOutcome::Failed { message } => {
+                daft_dashboard::engine::TaskOutcomeArgs::Failed {
+                    message: message.clone(),
+                }
+            }
+            crate::subscribers::events::TaskOutcome::Cancelled => {
+                daft_dashboard::engine::TaskOutcomeArgs::Cancelled
+            }
+        };
+
+        self.enqueue_json(
+            format!("engine/query/{}/task/end", query_id),
+            "task_end",
+            &daft_dashboard::engine::TaskEndArgs {
+                end_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                origin_node_id: task.origin_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
+                outcome,
+                totals,
+            },
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -527,9 +616,12 @@ impl Subscriber for DashboardSubscriber {
                     self.on_result_out(e.header.query_id.clone(), result.clone())?;
                 }
             }
-            // TODO: hook up with dashboard server
-            Event::TaskEnd(_) => {}
-            Event::TaskSubmit(_) => {}
+            Event::TaskSubmit(e) => {
+                self.on_task_submit(&e)?;
+            }
+            Event::TaskEnd(e) => {
+                self.on_task_end(&e)?;
+            }
         }
         Ok(())
     }
