@@ -17,8 +17,8 @@ pub trait RuntimeStats: Send + Sync + 'static {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
     /// Returns the accumulated stats.
     fn export_snapshot(&self) -> StatSnapshot;
-    /// Increment the number of tasks originated from this distributed node's `origin_node_id`.
-    fn add_num_tasks(&self, num_tasks: u64);
+    /// Record that one more task contributed work to this node's stats.
+    fn increment_num_tasks(&self);
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
@@ -62,6 +62,12 @@ impl RuntimeNodeManager {
     /// Returns the accumulated stats for this node as (NodeInfo, StatSnapshot) for export to the driver.
     pub fn export_snapshot(&self) -> (Arc<NodeInfo>, StatSnapshot) {
         (self.node_info.clone(), self.runtime_stats.export_snapshot())
+    }
+
+    /// The distributed node id (cheap accessor — avoids snapshotting when a
+    /// caller only needs to route by id).
+    pub fn node_id(&self) -> usize {
+        self.node_info.id
     }
 
     /// Number of tasks currently in flight for this node. Clamped at 0 —
@@ -113,7 +119,7 @@ impl RuntimeNodeManager {
                     }
                 }
                 if originated_here {
-                    self.runtime_stats.add_num_tasks(1);
+                    self.runtime_stats.increment_num_tasks();
                 }
             }
             TaskEvent::Failed { .. } => {
@@ -173,8 +179,8 @@ impl BaseCounters {
         self.bytes_out.add(v, self.node_kv.as_slice());
     }
 
-    pub fn add_num_tasks(&self, v: u64) {
-        self.num_tasks.add(v, self.node_kv.as_slice());
+    pub fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 
     pub fn export_default_snapshot(&self) -> StatSnapshot {
@@ -220,8 +226,8 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.base.export_default_snapshot()
     }
 
-    fn add_num_tasks(&self, num_tasks: u64) {
-        self.base.add_num_tasks(num_tasks);
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
     }
 }
 
@@ -262,8 +268,9 @@ mod tests {
     fn base_counters_num_tasks_round_trips_via_snapshot() {
         let meter = Meter::test_scope("base_counters_num_tasks");
         let base = BaseCounters::new(&meter, &context());
-        base.add_num_tasks(3);
-        base.add_num_tasks(4);
+        for _ in 0..7 {
+            base.increment_num_tasks();
+        }
         assert_eq!(default_num_tasks(&base.export_default_snapshot()), 7);
     }
 

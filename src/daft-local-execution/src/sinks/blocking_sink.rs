@@ -196,7 +196,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) {
         tasks.spawn(async move {
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
-            per_input.runtime_stats.add_num_tasks(1);
+            per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
                     for partition in partitions {
@@ -282,7 +282,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input
                         .runtime_stats
                         .add_duration_us(elapsed.as_micros() as u64);
-                    per_input.runtime_stats.add_num_tasks(1);
+                    per_input.runtime_stats.increment_num_tasks();
                     per_input.states.push(state);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
 

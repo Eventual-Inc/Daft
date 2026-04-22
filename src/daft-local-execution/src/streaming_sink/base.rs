@@ -213,7 +213,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     .await??;
                 let elapsed = now.elapsed();
                 runtime_stats.add_duration_us(elapsed.as_micros() as u64);
-                runtime_stats.add_num_tasks(1);
+                runtime_stats.increment_num_tasks();
 
                 let (mp, finished) = match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
@@ -287,7 +287,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         per_input
             .runtime_stats
             .add_duration_us(elapsed.as_micros() as u64);
-        per_input.runtime_stats.add_num_tasks(1);
+        per_input.runtime_stats.increment_num_tasks();
 
         let (mp, finished) = match output {
             StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),

@@ -126,7 +126,7 @@ impl RuntimeStats for JoinStats {
         unreachable!("Join Nodes shouldn't receive bytes. Use add_probe_bytes_out instead.")
     }
 
-    fn add_num_tasks(&self, num_tasks: u64) {
-        self.num_tasks.add(num_tasks, self.node_kv.as_slice());
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }

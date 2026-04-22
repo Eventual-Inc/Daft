@@ -73,8 +73,8 @@ impl RuntimeStats for LimitStats {
         self.base.export_default_snapshot()
     }
 
-    fn add_num_tasks(&self, num_tasks: u64) {
-        self.base.add_num_tasks(num_tasks);
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
     }
 }
 

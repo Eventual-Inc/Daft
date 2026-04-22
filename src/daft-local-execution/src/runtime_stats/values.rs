@@ -27,7 +27,8 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn add_duration_us(&self, duration_us: u64);
     fn add_bytes_in(&self, bytes: u64);
     fn add_bytes_out(&self, bytes: u64);
-    fn add_num_tasks(&self, num_tasks: u64);
+    /// Record that one more task contributed work to this node's stats.
+    fn increment_num_tasks(&self);
 }
 
 pub struct DefaultRuntimeStats {
@@ -85,7 +86,7 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
     }
 
-    fn add_num_tasks(&self, num_tasks: u64) {
-        self.num_tasks.add(num_tasks, self.node_kv.as_slice());
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }

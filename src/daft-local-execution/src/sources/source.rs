@@ -92,8 +92,8 @@ impl RuntimeStats for SourceStats {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
     }
 
-    fn add_num_tasks(&self, num_tasks: u64) {
-        self.num_tasks.add(num_tasks, self.node_kv.as_slice());
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -271,7 +271,7 @@ impl PipelineNode for SourceNode {
                             stats.add_duration_us(elapsed);
                             stats.add_rows_out(partition.len() as u64);
                             stats.add_bytes_out(partition.size_bytes() as u64);
-                            stats.add_num_tasks(1);
+                            stats.increment_num_tasks();
                         }
                         PipelineMessage::Flush(input_id) => {
                             if let Some(stats) = per_input_stats.get(input_id) {

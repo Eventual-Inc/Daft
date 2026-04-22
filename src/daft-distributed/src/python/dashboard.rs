@@ -39,8 +39,12 @@ impl DashboardStatisticsSubscriber {
         let Some(managers) = &self.runtime_node_managers else {
             return;
         };
+        // Filter by participating node first so we only snapshot + build
+        // Stats for managers this task actually touched — O(participating)
+        // rather than O(all managers) per event.
         let relevant_stats = managers
             .values()
+            .filter(|mgr| task_ctx.node_ids.contains(&(mgr.node_id() as u32)))
             .map(|mgr| {
                 let (info, snapshot) = mgr.export_snapshot();
                 let mut stats = snapshot.to_stats();
@@ -62,7 +66,6 @@ impl DashboardStatisticsSubscriber {
                 // these nodes do not have an `origin_node_id`
                 (info.id, stats)
             })
-            .filter(|(node_id, _)| task_ctx.node_ids.contains(&(*node_id as u32)))
             .collect::<Vec<_>>();
 
         if !relevant_stats.is_empty()
