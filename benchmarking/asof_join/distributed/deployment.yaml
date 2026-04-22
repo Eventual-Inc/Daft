@@ -1,0 +1,68 @@
+cluster_name: daft-cpu-a7f3e1
+
+provider:
+  type: aws
+  region: us-west-2
+  cache_stopped_nodes: false
+
+auth:
+  ssh_user: ec2-user
+
+max_workers: 4
+upscaling_speed: 1.0
+
+available_node_types:
+  ray.head.default:
+    resources: {"CPU": 0}
+    node_config:
+      InstanceType: r7i.xlarge
+      ImageId: ami-0250adf05ecc45684
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+      TagSpecifications:
+      - ResourceType: instance
+        Tags:
+        - Key: owner
+          Value: euan
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: 100
+          VolumeType: gp3
+          DeleteOnTermination: true
+
+  ray.worker.default:
+    min_workers: 4
+    max_workers: 4
+    node_config:
+      InstanceType: r7i.xlarge
+      ImageId: ami-0250adf05ecc45684
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+      TagSpecifications:
+      - ResourceType: instance
+        Tags:
+        - Key: owner
+          Value: euan
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: 100
+          VolumeType: gp3
+          DeleteOnTermination: true
+
+setup_commands:
+- sudo dnf install -y python3.11 python3.11-pip tmux
+- sudo ln -sf /usr/bin/python3.11 /usr/bin/python
+- python -m pip install --upgrade pip
+- python -m pip install 'ray[default]' 'daft[ray,aws]'
+
+head_setup_commands: []
+
+head_start_ray_commands:
+- ray stop
+- ulimit -n 65536; ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
+
+worker_start_ray_commands:
+- ray stop
+- ulimit -n 65536; ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076

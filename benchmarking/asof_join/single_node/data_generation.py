@@ -9,16 +9,22 @@ Usage (one-time offline step):
     python -m benchmarking.asof_join.data_generation --scale small --local_output_dir /tmp/asof_data
     python -m benchmarking.asof_join.data_generation --all --local_output_dir /tmp/asof_data
 
-Files written to S3:
-    s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/left.parquet
-    s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/right.parquet
+Files written to S3 (one directory per side, partitioned into multiple files):
+    s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/left/part-00000.parquet
+    s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/left/part-00001.parquet
+    ...
+    s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/right/part-00000.parquet
+    ...
 
 Design choices:
+- Partitioned output: each side is written as a directory of ~256 MB Parquet files so
+  that Daft (and other engines) can parallelize reads across partitions. Use
+  daft.read_parquet("s3://.../left/") to read.
 - Clustered timestamps: timestamps are generated around 1,000 cluster centers with
   jitter, mimicking real-world bursty time-series data.
 - Skewed entity distribution (SKEW = 1.0 Zipf exponent): some entities are much more
   common than others, stressing join implementations that don't handle skew well.
-- Fixed seed (SEED = 42): results are reproducible.
+- Fixed seed (SEED = 42): results are reproducible across partitions.
 """
 
 from __future__ import annotations
@@ -47,13 +53,14 @@ TS_MAX = 10**12
 N_CLUSTERS = 1_000
 CLUSTER_WIDTH = 10**6  # jitter ± around each cluster centre
 SKEW = 1.0  # Zipf exponent for entity frequency
+ROWS_PER_FILE = 5_000_000  # ~256 MB per file;
 
 ENTITY_LABELS = np.array([f"e{i:05d}" for i in range(N_ENTITIES)], dtype=object)
 
-S3_PATHS: dict[str, dict[str, str]] = {
+S3_PREFIXES: dict[str, dict[str, str]] = {
     scale: {
-        "left": f"s3://{S3_BUCKET}/{S3_PREFIX}/{scale}/left.parquet",
-        "right": f"s3://{S3_BUCKET}/{S3_PREFIX}/{scale}/right.parquet",
+        "left": f"s3://{S3_BUCKET}/{S3_PREFIX}/{scale}/left",
+        "right": f"s3://{S3_BUCKET}/{S3_PREFIX}/{scale}/right",
     }
     for scale in SCALES
 }
@@ -94,6 +101,10 @@ def _generate_table(n_rows: int, seed: int) -> pa.Table:
     )
 
 
+def _n_files(n_rows: int) -> int:
+    return max(1, round(n_rows / ROWS_PER_FILE))
+
+
 def _upload_table_to_s3(table: pa.Table, s3_path: str) -> None:
     """Write a PyArrow table to an S3 path as a Snappy-compressed Parquet file."""
     assert s3_path.startswith("s3://"), f"Expected s3:// path, got: {s3_path}"
@@ -106,29 +117,36 @@ def _upload_table_to_s3(table: pa.Table, s3_path: str) -> None:
 
     s3 = boto3.client("s3")
     s3.upload_fileobj(buf, bucket, key)
-    print(f"    uploaded to {s3_path}  ({buf.tell() / 1e9:.2f} GB)")
+    print(f"      uploaded {s3_path}  ({buf.tell() / 1e9:.2f} GB)")
 
 
 def generate_scale(scale: str, output_dir: Path | None = None) -> None:
-    """Generate left and right tables for a given scale."""
+    """Generate left and right tables for a given scale, partitioned into multiple files."""
     cfg = SCALES[scale]
 
     for side, n_rows, seed_offset in [
         ("right", cfg["right_rows"], 0),
         ("left", cfg["left_rows"], 1),
     ]:
-        print(f"  generating {side} ({n_rows:,} rows) ...", flush=True)
-        table = _generate_table(n_rows=n_rows, seed=SEED + seed_offset)
+        n_files = _n_files(n_rows)
+        base_rows = n_rows // n_files
+        print(f"  generating {side} ({n_rows:,} rows → {n_files} files) ...", flush=True)
 
-        if output_dir is not None:
-            scale_dir = output_dir / scale
-            scale_dir.mkdir(parents=True, exist_ok=True)
-            out_path = scale_dir / f"{side}.parquet"
-            pq.write_table(table, out_path, compression="snappy")
-            print(f"    wrote {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB on disk)")
-        else:
-            s3_path = S3_PATHS[scale][side]
-            _upload_table_to_s3(table, s3_path)
+        for i in range(n_files):
+            # Last file absorbs the remainder so total row count is exact.
+            chunk_rows = base_rows if i < n_files - 1 else n_rows - base_rows * (n_files - 1)
+            table = _generate_table(n_rows=chunk_rows, seed=SEED + seed_offset + i)
+            filename = f"part-{i:05d}.parquet"
+
+            if output_dir is not None:
+                side_dir = output_dir / scale / side
+                side_dir.mkdir(parents=True, exist_ok=True)
+                out_path = side_dir / filename
+                pq.write_table(table, out_path, compression="snappy")
+                print(f"      wrote {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB on disk)")
+            else:
+                s3_path = f"{S3_PREFIXES[scale][side]}/{filename}"
+                _upload_table_to_s3(table, s3_path)
 
 
 def main() -> None:
@@ -139,7 +157,7 @@ def main() -> None:
     parser.add_argument(
         "--local_output_dir",
         default=None,
-        help="Write to local directory instead of S3. Files are written to <dir>/<scale>/left.parquet and right.parquet.",
+        help="Write to local directory instead of S3. Files are written to <dir>/<scale>/left/ and <dir>/<scale>/right/.",
     )
     args = parser.parse_args()
 
