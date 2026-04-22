@@ -348,7 +348,10 @@ mod tests {
             init: mock_init,
             free_string: mock_free_string,
         };
-        Arc::new(ModuleHandle::new(module))
+        Arc::new(ModuleHandle::new(
+            module,
+            std::path::PathBuf::from("/mock/mock_module"),
+        ))
     }
 
     fn make_mock_handle() -> (FFI_ScalarFunction, Arc<ModuleHandle>) {
