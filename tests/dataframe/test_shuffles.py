@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import random
 import tempfile
 from collections.abc import Callable
@@ -222,3 +223,108 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
 
         assert base_df.to_arrow().sort_by("ids") == df.to_arrow().sort_by("ids")
         assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize("input_partitions", [1, 8, 32])
+def test_flight_gather(flight_shuffle_ctx, input_partitions):
+    """Gather is triggered by top_n and ungrouped agg on multi-partition inputs.
+
+    Under `shuffle_algorithm="flight_shuffle"` this exercises the GatherWrite
+    blocking sink → ShuffleRead path (rather than the in-memory-scan shortcut).
+    """
+    rows = 1000
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": list(range(rows))}).into_partitions(input_partitions)
+
+        agg_df = df.sum("x")
+        top_df = df.sort("x", desc=True).limit(5)
+
+        # Plan-shape assertion: a regression that routes around GatherNode (or
+        # trips the num_partitions==1 short-circuit when it shouldn't) would
+        # still produce correct values, so verify the plan explicitly.
+        for plan_df in (agg_df, top_df):
+            buf = io.StringIO()
+            plan_df.explain(show_all=True, file=buf)
+            plan = buf.getvalue()
+            if input_partitions > 1:
+                assert "FlightGather" in plan, f"expected FlightGather in plan:\n{plan}"
+            else:
+                assert "Gather" not in plan, f"unexpected Gather for single-partition input:\n{plan}"
+
+        # UnGroupedAggregate → gather
+        total = agg_df.collect().to_pydict()["x"]
+        assert total == [sum(range(rows))]
+
+        # TopN → gather
+        top = top_df.collect().to_pydict()["x"]
+        assert top == [rows - 1, rows - 2, rows - 3, rows - 4, rows - 5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed gather tests require the ray runner",
+)
+@pytest.mark.parametrize("input_partitions", [1, 8, 32])
+def test_ray_gather(input_partitions):
+    """Gather over the Ray backend (no flight_shuffle_ctx).
+
+    Mirrors test_flight_gather but exercises GatherSink::Ray → emit_read_tasks.
+    """
+    rows = 1000
+    df = daft.from_pydict({"x": list(range(rows))}).into_partitions(input_partitions)
+
+    agg_df = df.sum("x")
+    top_df = df.sort("x", desc=True).limit(5)
+
+    for plan_df in (agg_df, top_df):
+        buf = io.StringIO()
+        plan_df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        if input_partitions > 1:
+            assert "Gather" in plan, f"expected Gather in plan:\n{plan}"
+            assert "FlightGather" not in plan, f"expected Ray gather, got Flight:\n{plan}"
+        else:
+            assert "Gather" not in plan, f"unexpected Gather for single-partition input:\n{plan}"
+
+    total = agg_df.collect().to_pydict()["x"]
+    assert total == [sum(range(rows))]
+
+    top = top_df.collect().to_pydict()["x"]
+    assert top == [rows - 1, rows - 2, rows - 3, rows - 4, rows - 5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_gather_mixed_empty_inputs(flight_shuffle_ctx):
+    """Gather handles a mix of empty and non-empty input partitions.
+
+    Exercises the FlightGatherState empty-input short-circuit: some input
+    partitions have rows after the filter, others don't. Regressions in
+    the short-circuit would either miscount refs or skip data.
+
+    Note: the all-empty case (every partition filtered away) hangs in the
+    downstream ShuffleRead today and is intentionally not covered here.
+    """
+    rows = 1000
+    input_partitions = 8
+    filter_threshold = 500  # roughly half the data survives
+    with flight_shuffle_ctx():
+        df = (
+            daft.from_pydict({"x": list(range(rows))})
+            .into_partitions(input_partitions)
+            .filter(daft.col("x") < filter_threshold)
+        )
+
+        expected_rows = [v for v in range(rows) if v < filter_threshold]
+
+        total = df.sum("x").collect().to_pydict()["x"]
+        assert total == [sum(expected_rows)]
+
+        top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
+        assert top == sorted(expected_rows, reverse=True)[:5]
