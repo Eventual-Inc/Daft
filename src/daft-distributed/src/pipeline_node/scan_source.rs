@@ -70,6 +70,11 @@ impl RuntimeStats for SourceStats {
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
             num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            files_opened: 0,
+            files_fully_pruned: 0,
+            row_groups_total: 0,
+            row_groups_pruned: 0,
+            rows_scanned: 0,
         })
     }
 

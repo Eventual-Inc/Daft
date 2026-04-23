@@ -132,6 +132,13 @@ pub const JOIN_PROBE_ROWS_OUT_KEY: &str = "rows.join.probe_out";
 pub const JOIN_PROBE_BYTES_IN_KEY: &str = "bytes.join.probe_in";
 pub const JOIN_PROBE_BYTES_OUT_KEY: &str = "bytes.join.probe_out";
 
+// Scan / Parquet reader metrics
+pub const SCAN_FILES_OPENED_KEY: &str = "scan.files_opened";
+pub const SCAN_FILES_FULLY_PRUNED_KEY: &str = "scan.files_fully_pruned";
+pub const SCAN_ROW_GROUPS_TOTAL_KEY: &str = "scan.row_groups_total";
+pub const SCAN_ROW_GROUPS_PRUNED_KEY: &str = "scan.row_groups_pruned";
+pub const SCAN_ROWS_SCANNED_KEY: &str = "scan.rows_scanned";
+
 // Task metrics
 pub const TASK_ACTIVE_KEY: &str = "task.active";
 pub const TASK_COMPLETED_KEY: &str = "task.completed";

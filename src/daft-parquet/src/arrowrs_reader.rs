@@ -394,8 +394,12 @@ pub async fn read_parquet_single_arrowrs(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<RecordBatch> {
     // 1. Create the async file reader and fetch metadata.
-    let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
+    let mut reader =
+        DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats.clone(), metadata, None);
     let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+    if let Some(ref s) = io_stats {
+        s.mark_parquet_files_opened(1);
+    }
 
     // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
     if let Some(ref mapping) = field_id_mapping {
@@ -468,8 +472,24 @@ pub async fn read_parquet_single_arrowrs(
         &read_daft_schema,
         uri,
     )?;
+    {
+        let total_rgs = parquet_metadata.num_row_groups();
+        let pruned = total_rgs.saturating_sub(rg_indices.len());
+        let rows_in_selected: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        if let Some(ref s) = io_stats {
+            s.mark_row_groups_total(total_rgs);
+            s.mark_row_groups_pruned(pruned);
+            s.mark_rows_scanned_pre_filter(rows_in_selected);
+        }
+    }
 
     if rg_indices.is_empty() {
+        if let Some(ref s) = io_stats {
+            s.mark_parquet_files_fully_pruned(1);
+        }
         return Ok(RecordBatch::empty(Some(Arc::new(return_daft_schema))));
     }
 
@@ -688,6 +708,7 @@ pub(crate) fn local_parquet_setup(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<&ExprRef>,
+    io_stats: Option<&IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
@@ -700,6 +721,9 @@ pub(crate) fn local_parquet_setup(
             path, e
         ))
     })?;
+    if let Some(s) = io_stats {
+        s.mark_parquet_files_opened(1);
+    }
 
     let arrow_reader_metadata =
         ArrowReaderMetadata::load(&file, ArrowReaderOptions::new().with_page_index(true))
@@ -768,8 +792,24 @@ pub(crate) fn local_parquet_setup(
         &read_daft_schema,
         path,
     )?;
+    {
+        let total_rgs = parquet_metadata.num_row_groups();
+        let pruned = total_rgs.saturating_sub(rg_indices.len());
+        let rows_in_selected: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        if let Some(s) = io_stats {
+            s.mark_row_groups_total(total_rgs);
+            s.mark_row_groups_pruned(pruned);
+            s.mark_rows_scanned_pre_filter(rows_in_selected);
+        }
+    }
 
     if rg_indices.is_empty() {
+        if let Some(s) = io_stats {
+            s.mark_parquet_files_fully_pruned(1);
+        }
         return Ok(LocalParquetSetup {
             arrow_reader_metadata: Arc::new(arrow_reader_metadata),
             arrow_schema: Arc::new(arrow_schema),
@@ -944,6 +984,7 @@ pub fn local_parquet_read_arrowrs(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
+    io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
@@ -956,6 +997,7 @@ pub fn local_parquet_read_arrowrs(
         num_rows,
         row_groups,
         predicate.as_ref(),
+        io_stats.as_ref(),
         schema_infer_options,
         batch_size,
         field_id_mapping,
@@ -1028,6 +1070,7 @@ pub async fn local_parquet_stream_arrowrs(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
+    io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
@@ -1042,6 +1085,7 @@ pub async fn local_parquet_stream_arrowrs(
         num_rows,
         row_groups,
         predicate.as_ref(),
+        io_stats.as_ref(),
         schema_infer_options,
         batch_size,
         field_id_mapping,
@@ -1182,8 +1226,12 @@ pub async fn stream_parquet_single_arrowrs(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     // 1. Create the async file reader and fetch metadata.
-    let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
+    let mut reader =
+        DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats.clone(), metadata, None);
     let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+    if let Some(ref s) = io_stats {
+        s.mark_parquet_files_opened(1);
+    }
 
     // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
     if let Some(ref mapping) = field_id_mapping {
@@ -1252,8 +1300,24 @@ pub async fn stream_parquet_single_arrowrs(
         &read_daft_schema,
         uri,
     )?;
+    {
+        let total_rgs = parquet_metadata.num_row_groups();
+        let pruned = total_rgs.saturating_sub(rg_indices.len());
+        let rows_in_selected: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        if let Some(ref s) = io_stats {
+            s.mark_row_groups_total(total_rgs);
+            s.mark_row_groups_pruned(pruned);
+            s.mark_rows_scanned_pre_filter(rows_in_selected);
+        }
+    }
 
     if rg_indices.is_empty() {
+        if let Some(ref s) = io_stats {
+            s.mark_parquet_files_fully_pruned(1);
+        }
         return Ok(futures::stream::empty().boxed());
     }
 
@@ -1923,6 +1987,7 @@ mod tests {
             None,
             None,
             Some(val_gt_3_predicate()),
+            None,
             ParquetSchemaInferenceOptions::default(),
             None,
             None,
@@ -1949,6 +2014,7 @@ mod tests {
             Some(2),
             None,
             Some(val_gt_3_predicate()),
+            None,
             ParquetSchemaInferenceOptions::default(),
             None,
             None,

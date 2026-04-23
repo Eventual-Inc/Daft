@@ -42,7 +42,6 @@ from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
-    MaterializedResult,
     PartitionCacheEntry,
     PartitionSet,
     PartitionT,
@@ -180,10 +179,9 @@ class DataFrame:
 
     @property
     def metrics(self) -> RecordBatch | None:
-        if self._result_cache is None:
-            raise ValueError("Metrics are not available until the DataFrame has been materialized")
-        else:
-            return self._metadata.to_recordbatch() if self._metadata else None
+        if self._metadata is not None:
+            return self._metadata.to_recordbatch()
+        return None
 
     def pipe(
         self,
@@ -643,11 +641,15 @@ class DataFrame:
 
         else:
             # Execute the dataframe in a streaming fashion.
-            results_iter: Iterator[MaterializedResult[Any]] = get_or_create_runner().run_iter(
-                self._builder, results_buffer_size=results_buffer_size
-            )
-            for result in results_iter:
-                yield result.partition()
+            # Use an explicit next() loop (not `for`) so we can capture the
+            # generator's return value (ExecutionMetadata) from StopIteration.value.
+            results_iter = get_or_create_runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
+            try:
+                while True:
+                    result = next(results_iter)
+                    yield result.partition()
+            except StopIteration as e:
+                self._metadata = e.value
 
     def _populate_preview(self) -> None:
         """Populates the preview of the DataFrame, if it is not already populated."""

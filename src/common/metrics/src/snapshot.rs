@@ -10,7 +10,9 @@ use smallvec::SmallVec;
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
     JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
-    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, SCAN_FILES_FULLY_PRUNED_KEY,
+    SCAN_FILES_OPENED_KEY, SCAN_ROW_GROUPS_PRUNED_KEY, SCAN_ROW_GROUPS_TOTAL_KEY,
+    SCAN_ROWS_SCANNED_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -88,6 +90,16 @@ pub struct SourceSnapshot {
     pub bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    #[serde(default)]
+    pub files_opened: u64,
+    #[serde(default)]
+    pub files_fully_pruned: u64,
+    #[serde(default)]
+    pub row_groups_total: u64,
+    #[serde(default)]
+    pub row_groups_pruned: u64,
+    #[serde(default)]
+    pub rows_scanned: u64,
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
@@ -102,6 +114,11 @@ impl StatSnapshotImpl for SourceSnapshot {
             BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
             NUM_TASKS_KEY; Stat::Count(self.num_tasks),
+            SCAN_FILES_OPENED_KEY; Stat::Count(self.files_opened),
+            SCAN_FILES_FULLY_PRUNED_KEY; Stat::Count(self.files_fully_pruned),
+            SCAN_ROW_GROUPS_TOTAL_KEY; Stat::Count(self.row_groups_total),
+            SCAN_ROW_GROUPS_PRUNED_KEY; Stat::Count(self.row_groups_pruned),
+            SCAN_ROWS_SCANNED_KEY; Stat::Count(self.rows_scanned),
         ]
     }
 
@@ -122,6 +139,11 @@ impl SourceSnapshot {
             bytes_read: self.bytes_read + other.bytes_read,
             bytes_out: self.bytes_out + other.bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            files_opened: self.files_opened + other.files_opened,
+            files_fully_pruned: self.files_fully_pruned + other.files_fully_pruned,
+            row_groups_total: self.row_groups_total + other.row_groups_total,
+            row_groups_pruned: self.row_groups_pruned + other.row_groups_pruned,
+            rows_scanned: self.rows_scanned + other.rows_scanned,
         }
     }
 }
@@ -514,6 +536,11 @@ mod tests {
                     rows_out: 0,
                     bytes_read: 0,
                     bytes_out: 0,
+                    files_opened: 0,
+                    files_fully_pruned: 0,
+                    row_groups_total: 0,
+                    row_groups_pruned: 0,
+                    rows_scanned: 0,
                 }),
                 StatSnapshot::Source(SourceSnapshot {
                     num_tasks: 3,
@@ -521,6 +548,11 @@ mod tests {
                     rows_out: 0,
                     bytes_read: 0,
                     bytes_out: 0,
+                    files_opened: 0,
+                    files_fully_pruned: 0,
+                    row_groups_total: 0,
+                    row_groups_pruned: 0,
+                    rows_scanned: 0,
                 }),
                 4,
             ),

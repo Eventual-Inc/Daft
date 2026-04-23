@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import warnings
 from typing import TYPE_CHECKING
 
@@ -36,6 +38,28 @@ if TYPE_CHECKING:
     from pyiceberg.typedef import Record
 
 logger = logging.getLogger(__name__)
+
+# Thread-local storage for planning-phase scan metrics.
+# Populated by _create_regular_scan_tasks() / _create_count_scan_task().
+_tls: threading.local = threading.local()
+
+
+def reset_iceberg_scan_metrics() -> None:
+    """Clear planning-phase metrics accumulated since the last reset."""
+    _tls.last_scan_metrics = {}
+
+
+def get_iceberg_scan_metrics() -> dict[str, int | float]:
+    """Return a copy of the planning-phase metrics from the most recent scan.
+
+    Keys:
+        files_listed_by_catalog  – files returned by plan_files() before pruning
+        tasks_after_pruning      – ScanTasks created after catalog_scan_task() filtering
+        planning_time_ms         – wall-clock ms spent in plan_files() + task creation
+        bytes_scheduled          – sum of file_size_in_bytes across surviving tasks
+        count_pushdown_used      – 1 if the metadata-only count path fired, else 0
+    """
+    return dict(getattr(_tls, "last_scan_metrics", {}))
 
 
 def _iceberg_count_result_function(total_count: int, field_name: str) -> Iterator[PyRecordBatch]:
@@ -202,7 +226,10 @@ class IcebergScanOperator(ScanOperator):
     def _create_regular_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         limit = pushdowns.limit
-        iceberg_tasks = self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files()
+
+        _t0 = time.perf_counter()
+        iceberg_tasks = list(self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files())
+        _files_listed = len(iceberg_tasks)
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
@@ -213,6 +240,7 @@ class IcebergScanOperator(ScanOperator):
                 self.partitioning_keys(),
             )
         scan_tasks = []
+        _bytes_scheduled = 0
 
         if limit is not None:
             rows_left = limit
@@ -252,7 +280,16 @@ class IcebergScanOperator(ScanOperator):
             if st is None:
                 continue
             rows_left -= record_count
+            _bytes_scheduled += file.file_size_in_bytes or 0
             scan_tasks.append(st)
+
+        _tls.last_scan_metrics = {
+            "files_listed_by_catalog": _files_listed,
+            "tasks_after_pruning": len(scan_tasks),
+            "planning_time_ms": (time.perf_counter() - _t0) * 1000.0,
+            "bytes_scheduled": _bytes_scheduled,
+            "count_pushdown_used": 0,
+        }
         return iter(scan_tasks)
 
     def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
@@ -269,6 +306,13 @@ class IcebergScanOperator(ScanOperator):
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
 
             logger.info("Created Iceberg count pushdown task with total_count=%d for field=%s", total_count, field_name)
+            _tls.last_scan_metrics = {
+                "files_listed_by_catalog": 0,
+                "tasks_after_pruning": 0,
+                "planning_time_ms": 0.0,
+                "bytes_scheduled": 0,
+                "count_pushdown_used": 1,
+            }
             yield ScanTask.python_factory_func_scan_task(
                 module=_iceberg_count_result_function.__module__,
                 func_name=_iceberg_count_result_function.__name__,

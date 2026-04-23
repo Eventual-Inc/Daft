@@ -69,6 +69,11 @@ impl RuntimeStats for SourceStats {
             bytes_read,
             bytes_out: self.bytes_out.load(ordering),
             num_tasks: self.num_tasks.load(ordering),
+            files_opened: self.io_stats.load_parquet_files_opened() as u64,
+            files_fully_pruned: self.io_stats.load_parquet_files_fully_pruned() as u64,
+            row_groups_total: self.io_stats.load_row_groups_total() as u64,
+            row_groups_pruned: self.io_stats.load_row_groups_pruned() as u64,
+            rows_scanned: self.io_stats.load_rows_scanned_pre_filter() as u64,
         })
     }
 

@@ -18,6 +18,13 @@ pub struct IOStatsContext {
     num_delete_requests: atomic::AtomicUsize,
     bytes_read: atomic::AtomicUsize,
     bytes_uploaded: atomic::AtomicUsize,
+    // Parquet scan instrumentation
+    num_parquet_files_opened: atomic::AtomicUsize,
+    // Files opened but with all row groups pruned by parquet stats (zero rows scanned).
+    num_parquet_files_fully_pruned: atomic::AtomicUsize,
+    num_row_groups_total: atomic::AtomicUsize,
+    num_row_groups_pruned: atomic::AtomicUsize,
+    num_rows_scanned_pre_filter: atomic::AtomicUsize,
 }
 
 impl Drop for IOStatsContext {
@@ -60,6 +67,11 @@ impl IOStatsContext {
             num_delete_requests: atomic::AtomicUsize::new(0),
             bytes_read: atomic::AtomicUsize::new(0),
             bytes_uploaded: atomic::AtomicUsize::new(0),
+            num_parquet_files_opened: atomic::AtomicUsize::new(0),
+            num_parquet_files_fully_pruned: atomic::AtomicUsize::new(0),
+            num_row_groups_total: atomic::AtomicUsize::new(0),
+            num_row_groups_pruned: atomic::AtomicUsize::new(0),
+            num_rows_scanned_pre_filter: atomic::AtomicUsize::new(0),
         })
     }
 
@@ -138,6 +150,64 @@ impl IOStatsContext {
     #[inline]
     pub fn load_bytes_uploaded(&self) -> usize {
         self.bytes_uploaded.load(atomic::Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn mark_parquet_files_opened(&self, n: usize) {
+        self.num_parquet_files_opened
+            .fetch_add(n, atomic::Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_parquet_files_opened(&self) -> usize {
+        self.num_parquet_files_opened
+            .load(atomic::Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn mark_parquet_files_fully_pruned(&self, n: usize) {
+        self.num_parquet_files_fully_pruned
+            .fetch_add(n, atomic::Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_parquet_files_fully_pruned(&self) -> usize {
+        self.num_parquet_files_fully_pruned
+            .load(atomic::Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn mark_row_groups_total(&self, n: usize) {
+        self.num_row_groups_total
+            .fetch_add(n, atomic::Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_row_groups_total(&self) -> usize {
+        self.num_row_groups_total.load(atomic::Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn mark_row_groups_pruned(&self, n: usize) {
+        self.num_row_groups_pruned
+            .fetch_add(n, atomic::Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_row_groups_pruned(&self) -> usize {
+        self.num_row_groups_pruned.load(atomic::Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn mark_rows_scanned_pre_filter(&self, n: usize) {
+        self.num_rows_scanned_pre_filter
+            .fetch_add(n, atomic::Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_rows_scanned_pre_filter(&self) -> usize {
+        self.num_rows_scanned_pre_filter
+            .load(atomic::Ordering::Acquire)
     }
 }
 
