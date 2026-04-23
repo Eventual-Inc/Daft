@@ -1708,12 +1708,12 @@ fn physical_plan_to_pipeline(
             daft_local_plan::RepartitionWriteWithSentinel {
                 input,
                 num_partitions,
-                schema,
                 backend,
                 repartition_spec,
                 sentinel_sort_keys,
                 stats_state,
                 context,
+                ..
             },
         ) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
@@ -1734,9 +1734,7 @@ fn physical_plan_to_pipeline(
                     .boxed()
                 }
                 RepartitionWriteBackend::Flight { .. } => {
-                    unimplemented!(
-                        "RepartitionWriteWithSentinel does not support Flight backend"
-                    )
+                    unimplemented!("RepartitionWriteWithSentinel does not support Flight backend")
                 }
             }
         }
