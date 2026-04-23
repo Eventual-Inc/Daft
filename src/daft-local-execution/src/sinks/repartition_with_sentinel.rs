@@ -1,15 +1,12 @@
-use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::{
-    array::ops::build_multi_array_compare,
-    prelude::{Series, UInt64Array},
-};
+use daft_core::prelude::Series;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
+use daft_recordbatch::{RecordBatch, record_batch_max_composite};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
@@ -60,34 +57,6 @@ impl RepartitionWithSentinelSink {
             sentinel_sort_keys,
         }
     }
-}
-
-/// Find the single row with the lexicographically maximum composite key in `batch`.
-/// Returns `None` if `batch` is empty.
-fn record_batch_max_composite(
-    batch: &RecordBatch,
-    composite_keys: &[BoundExpr],
-) -> DaftResult<Option<RecordBatch>> {
-    if batch.is_empty() {
-        return Ok(None);
-    }
-
-    let cols: Vec<_> = composite_keys
-        .iter()
-        .map(|k| batch.eval_expression(k))
-        .collect::<DaftResult<_>>()?;
-    let descending = vec![false; composite_keys.len()];
-    let nulls_first = vec![true; composite_keys.len()];
-    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
-    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
-        if cmp(i, best) == Ordering::Greater {
-            i
-        } else {
-            best
-        }
-    });
-    let idx = UInt64Array::from_vec("idx", vec![max_idx as u64]);
-    Ok(Some(batch.take(&idx)?))
 }
 
 /// Compute the max composite-key row across all record batches in a partition.

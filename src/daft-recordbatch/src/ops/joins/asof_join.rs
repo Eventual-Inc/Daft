@@ -2,12 +2,41 @@ use std::cmp::Ordering;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::full::FullNull,
+    array::ops::{build_multi_array_compare, full::FullNull},
     datatypes::{DataType, Field, UInt64Array},
     kernels::search_sorted::build_partial_compare_with_nulls,
 };
+use daft_dsl::expr::bound_expr::BoundExpr;
 
 use crate::RecordBatch;
+
+/// Find the row with the maximum composite key value in a record batch.
+/// Returns `None` if the batch is empty.
+pub fn record_batch_max_composite(
+    batch: &RecordBatch,
+    composite_keys: &[BoundExpr],
+) -> DaftResult<Option<RecordBatch>> {
+    if batch.is_empty() {
+        return Ok(None);
+    }
+
+    let cols: Vec<_> = composite_keys
+        .iter()
+        .map(|k| batch.eval_expression(k))
+        .collect::<DaftResult<_>>()?;
+    let descending = vec![false; composite_keys.len()];
+    let nulls_first = vec![true; composite_keys.len()];
+    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
+    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
+        if cmp(i, best) == Ordering::Greater {
+            i
+        } else {
+            best
+        }
+    });
+    let idx = UInt64Array::from_vec("idx", vec![max_idx as u64]);
+    Ok(Some(batch.take(&idx)?))
+}
 
 pub fn asof_join_backward(
     left: &RecordBatch,
