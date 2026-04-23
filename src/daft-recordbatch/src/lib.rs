@@ -121,14 +121,15 @@ fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResu
 fn dispatch_per_group(
     inputs: Vec<Series>,
     groups: Option<&GroupIndices>,
-    f: impl Fn(Vec<Series>) -> DaftResult<Vec<Literal>>,
+    f: impl Fn(Vec<Series>) -> DaftResult<Vec<Literal>> + Sync,
 ) -> DaftResult<Vec<Series>> {
     use daft_core::series::from_lit::series_from_literals_iter;
+    use rayon::prelude::*;
 
     let group_lits: Vec<Vec<Literal>> = match groups {
         None => vec![f(inputs)?],
         Some(groups) => groups
-            .iter()
+            .par_iter()
             .map(|indices| {
                 let idx = UInt64Array::from_vec("", indices.iter().copied().collect());
                 let group_inputs: Vec<Series> = inputs

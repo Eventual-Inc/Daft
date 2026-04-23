@@ -985,13 +985,8 @@ impl AggExpr {
                     .collect::<DaftResult<_>>()?;
                 let input_types: Vec<DataType> =
                     input_fields.iter().map(|f| f.dtype.clone()).collect();
-                let inputs_str = input_fields
-                    .iter()
-                    .map(|f| f.name.as_ref())
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 Ok(Field::new(
-                    format!("{}({})", handle.name(), inputs_str),
+                    input_fields[0].name.clone(),
                     handle.return_dtype(&input_types)?,
                 ))
             }

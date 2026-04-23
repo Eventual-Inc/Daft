@@ -496,7 +496,7 @@ mod tests {
     use daft_dsl::{
         AggExpr,
         expr::bound_expr::BoundAggExpr,
-        functions::{AggFn, AggFnHandle},
+        functions::{AggFn, AggFnHandle, State},
         unresolved_col,
     };
     use daft_micropartition::MicroPartition;
@@ -521,17 +521,17 @@ mod tests {
             Ok(vec![Field::new("sum", DataType::Int64)])
         }
 
-        fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<Literal>> {
+        fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<State>> {
             let sum: i64 = inputs[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
             Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<Literal>> {
+        fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<State>> {
             let sum: i64 = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
             Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_finalize(&self, state: Vec<Literal>) -> DaftResult<Literal> {
+        fn call_agg_finalize(&self, state: Vec<State>) -> DaftResult<State> {
             Ok(state.into_iter().next().unwrap_or(Literal::Null))
         }
     }

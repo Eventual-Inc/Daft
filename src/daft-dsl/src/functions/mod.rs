@@ -18,7 +18,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
-pub use agg_fn::{AggFn, AggFnHandle};
+pub use agg_fn::{AggFn, AggFnHandle, State};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};

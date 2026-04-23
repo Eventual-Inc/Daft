@@ -342,13 +342,8 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     .collect::<DaftResult<Vec<_>>>()?;
                 let input_types: Vec<DataType> =
                     input_fields.iter().map(|f| f.dtype.clone()).collect();
-                let inputs_str = input_fields
-                    .iter()
-                    .map(|f| f.name.as_ref())
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 let return_field = Field::new(
-                    format!("{}({})", handle.name(), inputs_str),
+                    input_fields[0].name.clone(),
                     handle.return_dtype(&input_types)?,
                 );
 

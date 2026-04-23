@@ -3149,6 +3149,7 @@ dependencies = [
  "num-traits",
  "pyo3",
  "rand 0.9.2",
+ "rayon",
  "serde",
  "serde_json",
  "smallvec",
