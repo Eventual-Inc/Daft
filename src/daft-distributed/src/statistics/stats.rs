@@ -19,12 +19,12 @@ pub trait RuntimeStats: Send + Sync + 'static {
     fn export_snapshot(&self) -> StatSnapshot;
     /// Record that one more task contributed work to this node's stats.
     /// The unit of "task" is per-operator: in the distributed node manager
-    /// this fires once per Ray task whose worker snapshots attributed work
-    /// here; in local-execution operators it fires once per processed batch
-    /// future. Blocking sinks intentionally count each per-batch sink future
-    /// plus the per-input finalize future (N+1 for N batches), so values are
-    /// not directly comparable across operator kinds — interpret relative
-    /// to the operator's own scale.
+    /// this fires once per distributed task whose worker snapshots
+    /// attributed work here; in local-execution operators it fires once
+    /// per processed batch future. Blocking sinks intentionally count each
+    /// per-batch sink future plus the per-input finalize future (N+1 for
+    /// N batches), so values are not directly comparable across operator
+    /// kinds — interpret relative to the operator's own scale.
     fn increment_num_tasks(&self);
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
@@ -76,6 +76,17 @@ impl RuntimeNodeManager {
     pub fn node_id(&self) -> usize {
         self.node_info.id
     }
+
+    // The four counters below are scheduler-lifecycle state: they track
+    // every task whose `context.node_ids` touches this node, incremented
+    // by `handle_task_event` regardless of whether the task's workers
+    // produced snapshots attributed to this node. That makes them
+    // different from `task.count` (the per-operator counter exported via
+    // `RuntimeStats::export_snapshot` / `to_stats`), which only counts
+    // tasks that actually contributed work here. So at any point
+    // `completed_task_count() >= task.count` for the same node, and
+    // active + completed + failed + cancelled is the total lifecycle
+    // throughput for tasks routed through this node.
 
     /// Number of tasks currently in flight for this node. Clamped at 0 —
     /// increments and decrements are paired through `handle_task_event`,

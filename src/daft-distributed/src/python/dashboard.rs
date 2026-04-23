@@ -50,12 +50,13 @@ impl DashboardStatisticsSubscriber {
                 let mut stats = snapshot.to_stats();
                 // `task.count` is already in `stats` via `snapshot.to_stats()`:
                 // it's the per-operator attributed work counter (incremented
-                // once per Ray task whose worker snapshots matched this node's
-                // origin). The four `task.*` counters appended below are
-                // distinct — they are scheduler-lifecycle state on the manager,
-                // incremented for every task whose `context.node_ids` includes
-                // this node regardless of origin attribution. So
-                // `task.completed >= task.count` at any given node.
+                // once per distributed task whose worker snapshots matched
+                // this node's origin). The four `task.*` counters appended
+                // below are distinct — they are scheduler-lifecycle state
+                // on the manager, incremented for every task whose
+                // `context.node_ids` includes this node regardless of origin
+                // attribution. So `task.completed >= task.count` at any
+                // given node.
                 stats
                     .0
                     .push((TASK_ACTIVE_KEY.into(), Stat::Count(mgr.active_task_count())));
