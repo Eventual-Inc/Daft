@@ -110,8 +110,8 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
-GatherWrite(GatherWrite),
-RepartitionWriteWithSentinel(RepartitionWriteWithSentinel),
+    GatherWrite(GatherWrite),
+    RepartitionWriteWithSentinel(RepartitionWriteWithSentinel),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     AsofJoin(AsofJoin),
@@ -169,8 +169,11 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
-| Self::GatherWrite(GatherWrite { stats_state, .. })
-| Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { stats_state, .. })
+            | Self::GatherWrite(GatherWrite { stats_state, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                stats_state,
+                ..
+            })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -222,8 +225,10 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
-| Self::GatherWrite(GatherWrite { context, .. })
-| Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                context, ..
+            })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -1140,8 +1145,10 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
-Self::GatherWrite(GatherWrite { schema, .. }) => schema,
-Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { schema, .. }) => schema,
+            Self::GatherWrite(GatherWrite { schema, .. }) => schema,
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { schema, .. }) => {
+                schema
+            }
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1226,8 +1233,10 @@ Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { schema, .. }) 
             }
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
-Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
-Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { input, .. }) => vec![input.clone()],
+            Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { input, .. }) => {
+                vec![input.clone()]
+            }
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
