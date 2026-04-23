@@ -328,10 +328,7 @@ pub(crate) fn create_range_repartition_tasks_with_sentinels(
                     node_id,
                     REPARTITION_PHASE,
                 );
-            // TODO: Replace with LocalPhysicalPlan::repartition_write_with_sentinel
-            // once the plan node and sink are implemented (Steps 3 & 4).
-            // For now, use normal repartition_write as a placeholder.
-            let plan = LocalPhysicalPlan::repartition_write(
+            let plan = LocalPhysicalPlan::repartition_write_with_sentinel(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
@@ -342,6 +339,7 @@ pub(crate) fn create_range_repartition_tasks_with_sentinels(
                     partition_by.clone(),
                     descending.clone(),
                 )),
+                partition_by.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)).with_phase(REPARTITION_PHASE),
             );
