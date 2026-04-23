@@ -19,7 +19,7 @@ import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
 import ResultPreview from "./result-preview";
-import TasksTab from "./tasks-tab";
+import TasksSidebar from "./tasks-sidebar";
 
 /**
  * Query detail page component
@@ -36,12 +36,15 @@ function QueryPageInner() {
   const engine = query ? getEngineName(query.runner) : null;
   const isFlotilla = engine === "Flotilla";
 
-  // Tab + cross-linking state is URL-driven so both tasks→plan and plan→tasks
-  // navigations are deep-linkable and survive reload.
+  // Tab + tasks-sidebar state is URL-driven so deep links survive reload.
+  // - `tab`: active tab id
+  // - `tasks=open`: tasks sidebar visible (Flotilla + Execution tab only)
+  // - `origin`: node id used as sidebar filter and/or plan highlight
   const urlTab = searchParams.get("tab");
   const urlOrigin = searchParams.get("origin");
   const originParam = urlOrigin != null ? Number(urlOrigin) : null;
   const activeTab = urlTab ?? "progress-table";
+  const tasksOpen = searchParams.get("tasks") === "open";
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -57,25 +60,35 @@ function QueryPageInner() {
 
   const handleTabChange = useCallback(
     (next: string) => {
-      // Switching tabs clears the cross-link hint: a bare "Plan" click
-      // shouldn't leave a stale origin filter behind.
+      // Leaving the Execution tab clears the origin hint so a fresh return
+      // doesn't carry a stale filter/highlight. Sidebar open-state persists.
       updateParams({ tab: next, origin: null });
     },
     [updateParams],
   );
 
-  // Plan node -> Tasks tab filtered to that origin.
+  // Plan node -> open tasks sidebar, filtered to that origin.
   const handleViewTasksForNode = useCallback(
     (nodeId: number) => {
-      updateParams({ tab: "tasks", origin: String(nodeId) });
+      updateParams({ tasks: "open", origin: String(nodeId) });
     },
     [updateParams],
   );
 
-  // Task row -> Execution tab, highlight origin node.
+  // Toolbar button -> open tasks sidebar, no filter.
+  const handleOpenTasks = useCallback(() => {
+    updateParams({ tasks: "open" });
+  }, [updateParams]);
+
+  const handleCloseTasks = useCallback(() => {
+    // Closing the sidebar also clears the filter so reopening starts fresh.
+    updateParams({ tasks: null, origin: null });
+  }, [updateParams]);
+
+  // Task row origin link -> highlight the plan node (sidebar stays open).
   const handleSelectOrigin = useCallback(
     (nodeId: number) => {
-      updateParams({ tab: "progress-table", origin: String(nodeId) });
+      updateParams({ origin: String(nodeId) });
     },
     [updateParams],
   );
@@ -293,15 +306,7 @@ function QueryPageInner() {
           onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList
-            className={`grid w-full flex-shrink-0 ${
-              engine === "Swordfish"
-                ? "grid-cols-4"
-                : isFlotilla
-                  ? "grid-cols-4"
-                  : "grid-cols-3"
-            }`}
-          >
+          <TabsList className={`grid w-full flex-shrink-0 ${engine === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -312,17 +317,6 @@ function QueryPageInner() {
             >
               Execution
             </TabsTrigger>
-            {/* Tasks tab: Flotilla-only. Shows per-worker swordfish task types. */}
-            {isFlotilla && (
-              <TabsTrigger
-                value="tasks"
-                disabled={
-                  !("exec_info" in query.state && query.state.exec_info)
-                }
-              >
-                Tasks
-              </TabsTrigger>
-            )}
             <TabsTrigger
               value="optimized-plan"
               disabled={!("plan_info" in query.state && query.state.plan_info)}
@@ -343,19 +337,35 @@ function QueryPageInner() {
 
           <TabsContent
             value="progress-table"
-            className="mt-4 flex-1 overflow-auto"
+            className="mt-4 flex-1 overflow-hidden"
           >
-            <div className="bg-zinc-900 h-full">
+            <div className="bg-zinc-900 h-full flex">
               {"exec_info" in query.state && query.state.exec_info !== null ? (
-                <PhysicalPlanTree
-                  exec_state={query.state as ExecutingState}
-                  highlightedNodeId={
-                    activeTab === "progress-table" ? originParam : null
-                  }
-                  onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
-                />
+                <>
+                  <div className="flex-1 min-w-0 h-full">
+                    <PhysicalPlanTree
+                      exec_state={query.state as ExecutingState}
+                      highlightedNodeId={originParam}
+                      onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
+                      tasksOpen={isFlotilla && tasksOpen}
+                      onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
+                    />
+                  </div>
+                  {isFlotilla && tasksOpen && queryId && (
+                    <div className="w-1/2 min-w-[480px] max-w-[900px] flex-shrink-0 border-l border-zinc-800 h-full">
+                      <TasksSidebar
+                        exec_state={query.state as ExecutingState}
+                        queryId={queryId}
+                        originFilter={originParam}
+                        onClearFilter={handleClearOrigin}
+                        onSelectOrigin={handleSelectOrigin}
+                        onClose={handleCloseTasks}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="p-8 text-center">
+                <div className="p-8 text-center w-full">
                   <p className={`${main.className} text-zinc-400`}>
                     No execution data available
                   </p>
@@ -363,30 +373,6 @@ function QueryPageInner() {
               )}
             </div>
           </TabsContent>
-
-          {isFlotilla && (
-            <TabsContent value="tasks" className="mt-4 flex-1 overflow-auto">
-              <div className="bg-zinc-900 h-full">
-                {"exec_info" in query.state &&
-                query.state.exec_info !== null &&
-                queryId ? (
-                  <TasksTab
-                    exec_state={query.state as ExecutingState}
-                    queryId={queryId}
-                    originFilter={activeTab === "tasks" ? originParam : null}
-                    onClearFilter={handleClearOrigin}
-                    onSelectOrigin={handleSelectOrigin}
-                  />
-                ) : (
-                  <div className="p-8 text-center">
-                    <p className={`${main.className} text-zinc-400`}>
-                      No execution data available
-                    </p>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          )}
 
           <TabsContent
             value="optimized-plan"
