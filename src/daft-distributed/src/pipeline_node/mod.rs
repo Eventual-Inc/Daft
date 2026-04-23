@@ -60,6 +60,7 @@ mod scan_source;
 mod shuffles;
 mod sink;
 mod sort;
+mod stage_checkpoint_keys;
 mod top_n;
 mod translate;
 mod udf;

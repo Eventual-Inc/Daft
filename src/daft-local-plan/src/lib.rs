@@ -13,9 +13,9 @@ pub use plan::{
     IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project,
     RepartitionWrite, RepartitionWriteBackend, Sample, SamplingMethod, ShuffleRead,
-    ShuffleReadBackend, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    ShuffleReadBackend, Sort, SortMergeJoin, StageCheckpointKeys, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};

@@ -9,7 +9,6 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use daft_core::series::Series;
 use daft_io::{IOClient, IOConfig, get_io_client};
-use daft_recordbatch::RecordBatch;
 use futures::{
     StreamExt, TryStreamExt,
     future::{join_all, try_join_all},
@@ -86,7 +85,7 @@ impl StagedEntry {
 /// {prefix}/
 ///   {checkpoint_id}/
 ///     keys/
-///       0000.ipc          ← Arrow IPC; one file per stage_keys() call
+///       0000.parquet      ← one file per stage_keys() call
 ///       ...
 ///     files/
 ///       0000.bin          ← FileMetadata blob; one file per stage_files() call
@@ -122,7 +121,7 @@ impl S3CheckpointStore {
     }
 
     fn key_path(&self, id: &CheckpointId, idx: usize) -> String {
-        format!("{}/{}/keys/{:04}.ipc", self.prefix, id, idx)
+        format!("{}/{}/keys/{:04}.parquet", self.prefix, id, idx)
     }
 
     fn file_path(&self, id: &CheckpointId, idx: usize) -> String {
@@ -134,9 +133,8 @@ impl S3CheckpointStore {
     }
 
     async fn put_bytes(&self, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
-        // Tests run against a local filesystem backend (`file://`), which requires
-        // parent directories to be created before writing — S3 does not.
-        #[cfg(any(test, feature = "test-utils"))]
+        // Local filesystem backend (`file://`) requires parent directories
+        // to exist before writing — S3 does not.
         if let Some(local) = path.strip_prefix("file://")
             && let Some(parent) = std::path::Path::new(local).parent()
         {
@@ -178,31 +176,6 @@ impl S3CheckpointStore {
                 message: format!("glob {pattern} failed: {e}"),
             }),
         }
-    }
-
-    fn series_to_ipc(series: &Series) -> CheckpointResult<Vec<u8>> {
-        let batch = RecordBatch::from_nonempty_columns(vec![series.clone()]).map_err(|e| {
-            CheckpointError::Internal {
-                message: format!("failed to build RecordBatch from Series: {e}"),
-            }
-        })?;
-        batch
-            .to_ipc_stream()
-            .map_err(|e| CheckpointError::Internal {
-                message: format!("failed to serialize Series to IPC: {e}"),
-            })
-    }
-
-    fn ipc_to_series(bytes: &[u8]) -> CheckpointResult<Series> {
-        let batch = RecordBatch::from_ipc_stream(bytes).map_err(|e| CheckpointError::Internal {
-            message: format!("failed to deserialize Series from IPC: {e}"),
-        })?;
-        if batch.num_columns() == 0 {
-            return Err(CheckpointError::Internal {
-                message: "IPC batch has no columns".to_string(),
-            });
-        }
-        Ok(batch.get_column(0).clone())
     }
 
     /// Packs all `files` into a single blob written by one `stage_files()` call.
@@ -444,12 +417,24 @@ impl S3CheckpointStore {
                 .buffer_unordered(16),
         )
     }
+
+    /// Enumerate paths of sealed (checkpointed or committed) key parquet files.
+    pub async fn sealed_file_paths(&self) -> CheckpointResult<Vec<String>> {
+        let sealed = self.sealed_manifests().await?;
+        let mut paths: Vec<String> = Vec::new();
+        for (id, manifest) in sealed.iter() {
+            for i in 0..manifest.num_key_files {
+                paths.push(self.key_path(id, i));
+            }
+        }
+        Ok(paths)
+    }
 }
 
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
-        let ipc = Self::series_to_ipc(&keys)?;
+        let parquet_bytes = super::keys_codec::write_series_as_parquet(&keys)?;
         let idx = self
             .reserve_slots(id, |e| {
                 let i = e.num_key_files;
@@ -457,7 +442,7 @@ impl CheckpointStore for S3CheckpointStore {
                 i
             })
             .await?;
-        self.put_bytes(&self.key_path(id, idx), ipc).await
+        self.put_bytes(&self.key_path(id, idx), parquet_bytes).await
     }
 
     async fn stage_files(
@@ -540,7 +525,7 @@ impl CheckpointStore for S3CheckpointStore {
         Ok(Self::fetch_paths(
             Arc::clone(&self.client),
             key_paths,
-            Self::ipc_to_series,
+            super::keys_codec::read_series_from_parquet,
         ))
     }
 
@@ -817,7 +802,7 @@ mod tests {
         let id_str = id.to_string();
         assert_eq!(
             store.key_path(&id, 3),
-            format!("s3://bucket/prefix/{id_str}/keys/0003.ipc")
+            format!("s3://bucket/prefix/{id_str}/keys/0003.parquet")
         );
         assert_eq!(
             store.file_path(&id, 0),
