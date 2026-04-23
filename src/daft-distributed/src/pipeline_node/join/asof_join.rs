@@ -575,7 +575,8 @@ async fn reduce_sentinels(
     // 5. Forward-fill: if bucket j has no valid sentinel, inherit from bucket j-1.
     for j in 1..num_partitions {
         if sentinels[j].is_none() {
-            sentinels[j] = sentinels[j - 1].clone();
+            let prev = sentinels[j - 1].clone();
+            sentinels[j] = prev;
         }
     }
 
