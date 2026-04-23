@@ -269,6 +269,20 @@ impl LimitNode {
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
 
+        // Try to estimate initial concurrency from scan task metadata (e.g. Parquet row counts).
+        // This avoids the bottleneck of running one task sequentially just to measure output size.
+        let mut buffered_first = if let Some(first) = input.next().await {
+            if let Some(est_rows) = first.estimated_num_rows()
+                && est_rows > 0
+            {
+                max_concurrent_tasks = limit_state.total_remaining().div_ceil(est_rows);
+            }
+            Some(first)
+        } else {
+            input_exhausted = true;
+            None
+        };
+
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
             let mut local_limits = VecDeque::new();
@@ -276,7 +290,11 @@ impl LimitNode {
 
             // Submit tasks until we have max_concurrent_tasks or we run out of input
             for _ in 0..max_concurrent_tasks {
-                if let Some(builder) = input.next().await {
+                let maybe_builder = match buffered_first.take() {
+                    Some(b) => Some(b),
+                    None => input.next().await,
+                };
+                if let Some(builder) = maybe_builder {
                     let builder_with_limit = builder
                         .map_plan(self.as_ref(), move |input| {
                             LocalPhysicalPlan::limit(
