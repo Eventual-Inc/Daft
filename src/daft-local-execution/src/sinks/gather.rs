@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
@@ -36,6 +37,7 @@ struct FlightShared {
     local_server: Arc<ShuffleFlightServer>,
     shuffle_address: String,
     target_in_memory_size_per_partition: usize,
+    schema: SchemaRef,
 }
 
 pub(crate) struct FlightGatherState {
@@ -50,6 +52,7 @@ impl FlightGatherState {
         let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
+            shared.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
             shared.target_in_memory_size_per_partition,
@@ -144,6 +147,7 @@ impl GatherSink {
     }
 
     pub fn try_new_flight(
+        schema: SchemaRef,
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
@@ -162,6 +166,7 @@ impl GatherSink {
                 local_server,
                 shuffle_address,
                 target_in_memory_size_per_partition: TARGET_IN_MEMORY_SIZE_BYTES,
+                schema,
             })),
         })
     }

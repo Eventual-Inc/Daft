@@ -71,6 +71,7 @@ impl FlightIntoPartitionsState {
             let partition_ref_id = partition_ref_id(input_id, partition_idx);
             let cache = InProgressShuffleCache::try_new(
                 partition_ref_id,
+                shared.schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,
                 shared.target_in_memory_size_per_partition,
@@ -163,6 +164,7 @@ struct FlightShared {
     local_server: Arc<ShuffleFlightServer>,
     shuffle_address: String,
     target_in_memory_size_per_partition: usize,
+    schema: SchemaRef,
 }
 
 // Mirrors the pattern in `sinks/gather.rs::GatherBackend` and
@@ -170,14 +172,14 @@ struct FlightShared {
 // between the Ray path and the Flight path and carries Flight's runtime handles.
 #[derive(Clone)]
 enum IntoPartitionsBackend {
-    Ray,
+    Ray { schema: SchemaRef },
     Flight(Arc<FlightShared>),
 }
 
 impl IntoPartitionsBackend {
     fn name(&self) -> &'static str {
         match self {
-            Self::Ray => "Ray",
+            Self::Ray { .. } => "Ray",
             Self::Flight(_) => "Flight",
         }
     }
@@ -185,7 +187,6 @@ impl IntoPartitionsBackend {
 
 pub struct IntoPartitionsSink {
     num_partitions: usize,
-    schema: SchemaRef,
     backend: IntoPartitionsBackend,
 }
 
@@ -193,8 +194,7 @@ impl IntoPartitionsSink {
     pub fn new_ray(num_partitions: usize, schema: SchemaRef) -> Self {
         Self {
             num_partitions,
-            schema,
-            backend: IntoPartitionsBackend::Ray,
+            backend: IntoPartitionsBackend::Ray { schema },
         }
     }
 
@@ -216,7 +216,6 @@ impl IntoPartitionsSink {
         .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
         Ok(Self {
             num_partitions,
-            schema,
             backend: IntoPartitionsBackend::Flight(Arc::new(FlightShared {
                 shuffle_id,
                 shuffle_dirs,
@@ -224,6 +223,7 @@ impl IntoPartitionsSink {
                 local_server,
                 shuffle_address,
                 target_in_memory_size_per_partition,
+                schema,
             })),
         })
     }
@@ -259,13 +259,12 @@ impl BlockingSink for IntoPartitionsSink {
     ) -> BlockingSinkFinalizeResult {
         let backend = self.backend.clone();
         let num_partitions = self.num_partitions;
-        let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
                     match backend {
-                        IntoPartitionsBackend::Ray => {
+                        IntoPartitionsBackend::Ray { schema } => {
                             let ray_states = states
                                 .into_iter()
                                 .map(|s| match s {
@@ -322,9 +321,11 @@ impl BlockingSink for IntoPartitionsSink {
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         match &self.backend {
-            IntoPartitionsBackend::Ray => Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
-                partitions: Vec::new(),
-            })),
+            IntoPartitionsBackend::Ray { .. } => {
+                Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
+                    partitions: Vec::new(),
+                }))
+            }
             IntoPartitionsBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
                 FlightIntoPartitionsState::try_new(shared.clone(), input_id, self.num_partitions)?,
             )),

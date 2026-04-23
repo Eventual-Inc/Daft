@@ -1601,11 +1601,11 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
+            schema,
             backend,
             repartition_spec,
             stats_state,
             context,
-            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
@@ -1630,6 +1630,7 @@ fn physical_plan_to_pipeline(
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
+                        schema.clone(),
                         *shuffle_id,
                         repartition_spec.clone(),
                         shuffle_dirs.clone(),
@@ -1654,10 +1655,10 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::GatherWrite(GatherWrite {
             input,
+            schema,
             backend,
             stats_state,
             context,
-            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
@@ -1678,6 +1679,7 @@ fn physical_plan_to_pipeline(
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight gather plans when using flight_shuffle algorithm");
                     let gather_sink = GatherSink::try_new_flight(
+                        schema.clone(),
                         *shuffle_id,
                         shuffle_dirs.clone(),
                         compression.clone(),
