@@ -65,7 +65,7 @@ impl ScalarUDF for ListFilter {
 
         let input_field = input.to_field(schema)?;
         ensure!(
-            input_field.dtype.is_list() || input_field.dtype.is_fixed_size_list(),
+            input_field.dtype.is_list(),
             TypeError: "list_filter expects a list input, got {}",
             input_field.dtype
         );
@@ -77,11 +77,6 @@ impl ScalarUDF for ListFilter {
             expr_field.dtype
         );
 
-        // Result is always a variable-length list of the inner type, even if input was fixed-size.
-        let inner = input_field.to_exploded_field()?;
-        Ok(Field::new(
-            input_field.name,
-            DataType::List(Box::new(inner.dtype)),
-        ))
+        Ok(input_field.to_exploded_field()?.to_list_field())
     }
 }
