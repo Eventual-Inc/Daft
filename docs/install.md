@@ -34,14 +34,6 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
-        <input type="checkbox" id="sentence-transformers" data-extra="sentence-transformers">
-        <span class="checkmark"></span>
-        <div class="checkbox-content">
-          <strong>Sentence Transformers</strong> <code>sentence-transformers</code>
-        </div>
-      </label>
-
-      <label class="checkbox-item">
         <input type="checkbox" id="transformers" data-extra="transformers">
         <span class="checkmark"></span>
         <div class="checkbox-content">
