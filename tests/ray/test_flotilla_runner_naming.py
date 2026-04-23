@@ -12,8 +12,8 @@ NODE_ID = "1" * 56
 FAKE_ADDRESS = "grpc://10.0.0.1:9999"
 
 
-def _fake_node(node_id: str = NODE_ID) -> dict:
-    return {"NodeID": node_id, "Resources": {"CPU": 4, "memory": 1024, "GPU": 1}}
+def _fake_node(node_id: str = NODE_ID, *, alive: bool = True) -> dict:
+    return {"NodeID": node_id, "Alive": alive, "Resources": {"CPU": 4, "memory": 1024, "GPU": 1}}
 
 
 class _RemoteMethod:
@@ -105,6 +105,15 @@ def test_start_ray_workers_returns_ready_immediately(monkeypatch):
     assert workers[0]["num_gpus"] == 1
     assert workers[0]["memory"] == 1024
     assert workers[0]["ip_address"] == FAKE_ADDRESS
+    assert len(flotilla._pending_actors) == 0
+
+
+def test_start_ray_workers_skips_dead_nodes(monkeypatch):
+    _patch_flotilla(monkeypatch, nodes=[_fake_node(alive=False)])
+
+    workers = flotilla.start_ray_workers(existing_worker_ids=[])
+
+    assert workers == []
     assert len(flotilla._pending_actors) == 0
 
 

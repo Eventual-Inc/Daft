@@ -405,7 +405,8 @@ _pending_actors: dict[str, _PendingActor] = {}
 
 def _is_eligible_node(node: dict[str, Any]) -> bool:
     return (
-        "Resources" in node
+        node.get("Alive", True)
+        and "Resources" in node
         and "CPU" in node["Resources"]
         and "memory" in node["Resources"]
         and node["Resources"]["CPU"] > 0
@@ -433,9 +434,10 @@ atexit.register(clear_pending_ray_workers)
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     worker_startup_timeout = _get_worker_startup_timeout()
     now = time.monotonic()
+    all_nodes = ray.nodes()
 
     # Prune pending actors whose nodes no longer exist
-    current_node_ids = {node["NodeID"] for node in ray.nodes() if _is_eligible_node(node)}
+    current_node_ids = {node["NodeID"] for node in all_nodes if _is_eligible_node(node)}
     for nid in [nid for nid in _pending_actors if nid not in current_node_ids]:
         pending = _pending_actors.pop(nid)
         logger.warning("Node %s disappeared while actor was pending startup; cleaning up", nid)
@@ -443,7 +445,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
 
     # Spawn actors for new nodes (not already tracked or existing)
     skip_ids = set(existing_worker_ids) | set(_pending_actors.keys())
-    for node in ray.nodes():
+    for node in all_nodes:
         node_id = node["NodeID"]
         if node_id not in skip_ids and _is_eligible_node(node):
             actor = RaySwordfishActor.options(  # type: ignore
