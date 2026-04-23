@@ -334,7 +334,6 @@ mod tests {
     ///
     /// Ignored until the bug is fixed. Run with `cargo test -p daft-distributed
     /// scan_source::tests::test_bytes_read_multiple_files -- --ignored`.
-    #[ignore = "reproduces unfixed bug #6761: Flotilla overreports bytes.read on multi-file scans"]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_bytes_read_multiple_files() -> DaftResult<()> {
         let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
