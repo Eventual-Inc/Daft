@@ -15,7 +15,7 @@ use hash_join::hash_semi_anti_join;
 
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 use crate::RecordBatch;
-mod asof_join;
+pub mod asof_join;
 mod hash_join;
 mod merge_join;
 

@@ -1,15 +1,14 @@
-use std::{cmp::Ordering, future, sync::Arc};
+use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
-use daft_core::{array::ops::build_multi_array_compare, prelude::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
-use daft_recordbatch::RecordBatch;
+use daft_recordbatch::{RecordBatch, record_batch_max_composite};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
@@ -439,34 +438,6 @@ impl PipelineNodeImpl for AsofJoinNode {
         ));
         TaskBuilderStream::from(result_rx)
     }
-}
-
-/// Find the single row with the lexicographically maximum composite key in `batch`.
-/// Returns `None` if `batch` is empty.
-fn record_batch_max_composite(
-    batch: &RecordBatch,
-    composite_keys: &[BoundExpr],
-) -> DaftResult<Option<RecordBatch>> {
-    if batch.is_empty() {
-        return Ok(None);
-    }
-
-    let cols: Vec<_> = composite_keys
-        .iter()
-        .map(|k| batch.eval_expression(k))
-        .collect::<DaftResult<_>>()?;
-    let descending = vec![false; composite_keys.len()];
-    let nulls_first = vec![true; composite_keys.len()];
-    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
-    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
-        if cmp(i, best) == Ordering::Greater {
-            i
-        } else {
-            best
-        }
-    });
-    let idx = UInt64Array::from_vec("idx", vec![max_idx as u64]);
-    Ok(Some(batch.take(&idx)?))
 }
 
 fn row_is_all_null(batch: &RecordBatch) -> bool {
