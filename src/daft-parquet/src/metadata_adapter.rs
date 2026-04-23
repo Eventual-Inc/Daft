@@ -213,6 +213,11 @@ impl DaftRowGroupMetaData {
     pub fn compressed_size(&self) -> usize {
         self.inner.compressed_size() as usize
     }
+
+    /// Total uncompressed (encoded) size of this row group in bytes.
+    pub fn total_byte_size(&self) -> usize {
+        self.inner.total_byte_size() as usize
+    }
 }
 
 #[cfg(test)]
