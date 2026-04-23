@@ -83,6 +83,10 @@ impl RuntimeStats for StageCheckpointKeysStats {
     fn export_snapshot(&self) -> common_metrics::StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 impl PipelineNodeImpl for StageCheckpointKeysNode {
