@@ -15,7 +15,7 @@ available_node_types:
   ray.head.default:
     resources: {"CPU": 0}
     node_config:
-      InstanceType: r7i.xlarge
+      InstanceType: m7i.large
       ImageId: ami-0250adf05ecc45684
       IamInstanceProfile:
         Name: ray-autoscaler-v1
@@ -35,7 +35,7 @@ available_node_types:
     min_workers: 4
     max_workers: 4
     node_config:
-      InstanceType: r7i.xlarge
+      InstanceType: r7i.4xlarge
       ImageId: ami-0250adf05ecc45684
       IamInstanceProfile:
         Name: ray-autoscaler-v1
