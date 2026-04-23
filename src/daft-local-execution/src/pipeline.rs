@@ -1703,6 +1703,14 @@ fn physical_plan_to_pipeline(
                 }
             }
         }
+        LocalPhysicalPlan::RepartitionWriteWithSentinel(
+            daft_local_plan::RepartitionWriteWithSentinel { .. },
+        ) => {
+            // TODO: Step 4 — wire up RepartitionWithSentinelSink here.
+            unimplemented!(
+                "RepartitionWriteWithSentinel pipeline node not yet implemented"
+            )
+        }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,
             backend,
