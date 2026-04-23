@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use arrow::buffer::NullBuffer;
 use daft_core::prelude::{Float64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 
@@ -46,21 +49,35 @@ impl ScalarUDF for GreatCircleDistance {
         let lat2 = lat2.f64().expect("type should have been validated already");
         let lon2 = lon2.f64().expect("type should have been validated already");
 
-        let result = lat1
+        let len = lat1.len();
+
+        let nulls = [lat1.nulls(), lon1.nulls(), lat2.nulls(), lon2.nulls()]
             .into_iter()
-            .zip(lon1)
-            .zip(lat2)
-            .zip(lon2)
-            .map(
-                |(((lat1, lon1), lat2), lon2)| match (lat1, lon1, lat2, lon2) {
-                    (Some(lat1), Some(lon1), Some(lat2), Some(lon2)) => {
-                        Some(haversine_meters(lat1, lon1, lat2, lon2))
-                    }
-                    _ => None,
-                },
-            )
-            .collect::<Float64Array>()
-            .rename(self.name());
+            .fold(None, |acc, next| NullBuffer::union(acc.as_ref(), next));
+
+        let lat1_v = lat1.values();
+        let lon1_v = lon1.values();
+        let lat2_v = lat2.values();
+        let lon2_v = lon2.values();
+
+        let mut values = Vec::with_capacity(len);
+
+        if let Some(nulls) = &nulls {
+            for i in 0..len {
+                if nulls.is_null(i) {
+                    values.push(0.0);
+                } else {
+                    values.push(haversine_meters(lat1_v[i], lon1_v[i], lat2_v[i], lon2_v[i]));
+                }
+            }
+        } else {
+            for i in 0..len {
+                values.push(haversine_meters(lat1_v[i], lon1_v[i], lat2_v[i], lon2_v[i]));
+            }
+        }
+        let field = Arc::new(Field::new(self.name(), DataType::Float64));
+        let result =
+            Float64Array::from_field_and_values(field, values.into_iter()).with_nulls(nulls)?;
 
         Ok(result.into_series())
     }
