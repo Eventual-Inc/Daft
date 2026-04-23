@@ -68,6 +68,7 @@ pub struct DaftPlanningConfig {
     /// Enable the DP-ccp join ordering algorithm (experimental).
     /// When true, uses DP-ccp instead of brute force and raises the
     /// max relations limit from 7 to 12.
+    /// See https://github.com/Eventual-Inc/Daft/issues/6765 for the path to enabling by default.
     pub enable_dp_ccp_join_ordering: bool,
 }
 
