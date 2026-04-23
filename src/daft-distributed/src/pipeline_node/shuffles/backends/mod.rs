@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
+use daft_local_plan::{
+    GatherWriteBackend, LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend,
+};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -70,7 +72,7 @@ impl ShuffleBackend {
         }
     }
 
-    pub(crate) fn build_write_stage(
+    pub(crate) fn build_repartition_write_stage(
         &self,
         producer: Arc<dyn PipelineNodeImpl>,
         input_node: TaskBuilderStream,
@@ -94,6 +96,32 @@ impl ShuffleBackend {
                 schema.clone(),
                 repartition_backend.clone(),
                 repartition_spec.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        })
+    }
+
+    pub(crate) fn build_gather_write_stage(
+        &self,
+        producer: Arc<dyn PipelineNodeImpl>,
+        input_node: TaskBuilderStream,
+    ) -> TaskBuilderStream {
+        let schema = self.schema.clone();
+        let node_id = self.node_id;
+        let gather_backend = match self.backend.clone() {
+            DistributedShuffleBackend::Ray => GatherWriteBackend::Ray,
+            DistributedShuffleBackend::Flight(backend) => GatherWriteBackend::Flight {
+                shuffle_id: backend.shuffle_id,
+                shuffle_dirs: backend.shuffle_dirs.clone(),
+                compression: backend.compression,
+            },
+        };
+        input_node.pipeline_instruction(producer, move |input| {
+            LocalPhysicalPlan::gather_write(
+                input,
+                schema.clone(),
+                gather_backend.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             )

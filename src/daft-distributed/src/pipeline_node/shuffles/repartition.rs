@@ -112,7 +112,7 @@ impl PipelineNodeImpl for RepartitionNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         self.shuffle_backend.register_cleanup(plan_context);
-        let local_shuffle_write_node = self.shuffle_backend.build_write_stage(
+        let local_shuffle_write_node = self.shuffle_backend.build_repartition_write_stage(
             self.clone(),
             input_node,
             self.num_partitions,

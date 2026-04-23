@@ -115,7 +115,7 @@ impl StatisticsManager {
             let node_info = Arc::new(NodeInfo {
                 name: node.name(),
                 id: node.node_id() as usize,
-                node_origin_id: node.node_id() as usize,
+                node_origin_id: None,
                 node_type: node.context().node_type.clone(),
                 node_category: node.context().node_category.clone(),
                 node_phase: None,

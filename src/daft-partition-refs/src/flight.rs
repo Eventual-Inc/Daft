@@ -3,7 +3,7 @@ use std::any::Any;
 use common_partitioning::Partition;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightPartitionRef {
     pub shuffle_id: u64,
     pub server_address: String,

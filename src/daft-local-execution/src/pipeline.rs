@@ -18,11 +18,12 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
-    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    GatherWrite, GatherWriteBackend, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
+    Limit, LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan,
+    PhysicalWrite, Pivot, Project, RepartitionWrite, RepartitionWriteBackend, Sample,
+    ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate,
+    Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -52,6 +53,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
+        gather::GatherSink,
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
@@ -319,7 +321,7 @@ impl BuilderContext {
         // Keep a unique local runtime node id (`id`), but preserve the originating
         // distributed plan node id (`node_origin_id`) when available so metrics/stats
         // from local execution can be attributed back to the distributed node.
-        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+        let node_origin_id = node_context.origin_node_id;
 
         NodeInfo {
             name,
@@ -1458,7 +1460,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            schema,
             backend,
             repartition_spec,
             stats_state,
@@ -1471,7 +1472,6 @@ fn physical_plan_to_pipeline(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
-                        schema.clone(),
                     )),
                     child_node,
                     stats_state.clone(),
@@ -1502,6 +1502,53 @@ fn physical_plan_to_pipeline(
 
                     BlockingSinkNode::new(
                         Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
+        }
+        LocalPhysicalPlan::GatherWrite(GatherWrite {
+            input,
+            backend,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            match backend {
+                GatherWriteBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(GatherSink::new_ray()),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                GatherWriteBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let (shuffle_server, shuffle_address) = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight gather plans when using flight_shuffle algorithm");
+                    let gather_sink = GatherSink::try_new_flight(
+                        *shuffle_id,
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                        shuffle_address,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+
+                    BlockingSinkNode::new(
+                        Arc::new(gather_sink),
                         child_node,
                         stats_state.clone(),
                         ctx,
