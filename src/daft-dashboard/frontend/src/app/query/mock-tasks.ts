@@ -100,7 +100,7 @@ const randInt = (rng: () => number, lo: number, hi: number) =>
 // Each physical plan node type maps to one or more plausible fused pipelines.
 // Returning multiple pipelines lets a single origin produce multiple rows in
 // the task-types table (e.g. a ScanSource that emits both a cold-read pipeline
-// and a re-used pipeline from the metadata cache).
+// and a reused pipeline from the metadata cache).
 // ---------------------------------------------------------------------------
 function pipelinesForNode(name: string, category: string): string[][] {
   const n = name || "";
