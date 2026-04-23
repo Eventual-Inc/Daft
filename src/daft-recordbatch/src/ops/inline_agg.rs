@@ -9,7 +9,6 @@ use daft_core::{
     array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     count_mode::CountMode,
     datatypes::*,
-    prelude::AsArrow,
     series::{IntoSeries, Series},
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
