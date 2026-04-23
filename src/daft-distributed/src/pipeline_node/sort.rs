@@ -514,3 +514,98 @@ impl PipelineNodeImpl for SortNode {
         TaskBuilderStream::from(result_rx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+    use daft_micropartition::MicroPartition;
+
+    use super::*;
+    use crate::pipeline_node::test_helpers::{
+        bound_col_x, build_in_memory_source, make_partition, run_pipeline_and_get_stats,
+        test_schema,
+    };
+
+    fn build_sort_pipeline(
+        partitions: Vec<Arc<MicroPartition>>,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let (source, plan_config) = build_in_memory_source(0, partitions, meter);
+        let sort_node = SortNode::new(
+            1,
+            &plan_config,
+            vec![bound_col_x()],
+            vec![false],
+            vec![false],
+            test_schema(),
+            source,
+        );
+        DistributedPipelineNode::new(Arc::new(sort_node), meter)
+    }
+
+    /// Single-partition sort: exercises the FINAL_SORT_PHASE-only path.
+    /// SortStats should count rows only from the Default snapshot with
+    /// phase "final-sort", ignoring the Source snapshot from in_memory_scan.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_single_partition_stats() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_sort_stats");
+        let pipeline = build_sort_pipeline(vec![make_partition(&[5, 3, 1, 4, 2])], &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("sort node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => {
+                assert_eq!(s.rows_in, 5);
+                assert_eq!(s.rows_out, 5);
+                assert!(s.cpu_us > 0);
+            }
+            other => panic!("expected Default snapshot for sort, got: {other:?}"),
+        }
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 0)
+            .expect("source node stats");
+        assert!(matches!(snapshot, StatSnapshot::Source(_)));
+
+        Ok(())
+    }
+
+    /// Multi-partition sort: exercises all three phases (sample, repartition,
+    /// final-sort). SortStats should aggregate duration from all phases but
+    /// count rows only from final-sort Default snapshots.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_multi_partition_stats() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_sort_multi");
+        let pipeline = build_sort_pipeline(
+            vec![
+                make_partition(&[5, 3, 1]),
+                make_partition(&[4, 2, 6]),
+                make_partition(&[9, 7, 8]),
+            ],
+            &meter,
+        );
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("sort node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => {
+                assert_eq!(s.rows_in, 9);
+                assert_eq!(s.rows_out, 9);
+                assert!(s.cpu_us > 0);
+            }
+            other => panic!("expected Default snapshot for sort, got: {other:?}"),
+        }
+
+        Ok(())
+    }
+}

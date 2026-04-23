@@ -451,13 +451,7 @@ impl Stream for TaskBuilderStream {
 }
 
 #[cfg(test)]
-pub(crate) use filter::FilterNode;
-#[cfg(test)]
-pub(crate) use in_memory_source::InMemorySourceNode;
-#[cfg(test)]
-pub(crate) use scan_source::ScanSourceNode;
-#[cfg(test)]
-pub(crate) use sort::SortNode;
+pub(crate) mod test_helpers;
 
 #[cfg(test)]
 pub(crate) mod tests {
