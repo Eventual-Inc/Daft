@@ -155,17 +155,18 @@ def test_hive_daft_roundtrip(tmpdir, partition_by, file_format, filter):
             hive_partitioning=True,
         )
         # TODO(desmond): Daft has an inconsistency with handling null string columns when using
-        # `from_arrow` vs `read_csv`. For now we read back an unpartitioned CSV table to check the
-        # result against.
-        plain_filepath = f"{tmpdir}-plain"
-        source.write_csv(plain_filepath)
-        source = daft.read_csv(
-            f"{plain_filepath}/**",
-            schema={
-                "nullable_str": daft.DataType.string(),
-                "nullable_int": daft.DataType.int64(),
-            },
-        )
+        # `from_arrow` vs `read_csv`. Only applies when nullable_str goes through CSV body;
+        # as a partition col it round-trips correctly via hive directory names.
+        if "nullable_str" not in partition_by:
+            plain_filepath = f"{tmpdir}-plain"
+            source.write_csv(plain_filepath)
+            source = daft.read_csv(
+                f"{plain_filepath}/**",
+                schema={
+                    "nullable_str": daft.DataType.string(),
+                    "nullable_int": daft.DataType.int64(),
+                },
+            )
     if file_format == "json":
         source.write_json(filepath, partition_cols=[daft.col(col) for col in partition_by])
         target = daft.read_json(
@@ -192,3 +193,93 @@ def test_hive_daft_roundtrip(tmpdir, partition_by, file_format, filter):
         source = source.where(daft.col(first_col) == sample_value)
         target = target.where(daft.col(first_col) == sample_value)
     assert_tables_equal(target.to_arrow(), source.to_arrow())
+
+
+# Regression tests for https://github.com/Eventual-Inc/Daft/issues/2111:
+# partition values must live only in directory paths (Hive), not duplicated
+# in file bodies, so pandas/pyarrow can read the dataset.
+
+
+def _issue_2111_sample_pydict():
+    import datetime
+
+    return {
+        "first_name": ["Ernesto", "Sari", "Wolfgang", "Jackie", "Zoya"],
+        "last_name": ["Evergreen", "Salama", "Winter", "Jale", "Zee"],
+        "age": [34, 57, 23, 62, 40],
+        "DoB": [
+            datetime.date(1990, 4, 3),
+            datetime.date(1967, 1, 2),
+            datetime.date(2001, 2, 12),
+            datetime.date(1962, 3, 24),
+            datetime.date(1984, 4, 7),
+        ],
+        "country": ["Canada", "United Kingdom", "Germany", "Canada", "United Kingdom"],
+        "has_dog": [True, True, False, True, True],
+    }
+
+
+def test_partition_cols_not_duplicated_in_parquet_file_bodies(tmpdir):
+    import pyarrow.parquet as pq
+
+    daft.from_pydict(_issue_2111_sample_pydict()).write_parquet(str(tmpdir), partition_cols=["country"])
+
+    written_files = [
+        os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".parquet")
+    ]
+    assert written_files, "expected at least one written parquet file"
+
+    for file_path in written_files:
+        schema_names = pq.read_schema(file_path).names
+        assert "country" not in schema_names, (
+            f"partition column 'country' must not appear in {file_path} (found {schema_names})"
+        )
+
+
+def test_pandas_can_read_daft_partitioned_parquet(tmpdir):
+    pd = pytest.importorskip("pandas")
+
+    sample = _issue_2111_sample_pydict()
+    daft.from_pydict(sample).write_parquet(str(tmpdir), partition_cols=["country"])
+
+    result = pd.read_parquet(str(tmpdir)).sort_values("first_name").reset_index(drop=True)
+    expected = pd.DataFrame(sample).sort_values("first_name").reset_index(drop=True)
+    assert set(result["country"]) == set(expected["country"])
+    assert result["first_name"].tolist() == expected["first_name"].tolist()
+
+
+def test_pyarrow_dataset_can_read_daft_partitioned_parquet(tmpdir):
+    sample = _issue_2111_sample_pydict()
+    daft.from_pydict(sample).write_parquet(str(tmpdir), partition_cols=["country"])
+
+    pa_ds = ds.dataset(str(tmpdir), format="parquet", partitioning="hive")
+    table = pa_ds.to_table()
+    assert "country" in table.schema.names
+    assert set(table.column("country").to_pylist()) == set(sample["country"])
+
+
+def test_partition_cols_not_duplicated_in_csv_file_bodies(tmpdir):
+    daft.from_pydict(_issue_2111_sample_pydict()).write_csv(str(tmpdir), partition_cols=["country"])
+
+    written_files = [os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".csv")]
+    assert written_files, "expected at least one written csv file"
+
+    for file_path in written_files:
+        with open(file_path) as fh:
+            header = fh.readline().strip().split(",")
+        assert "country" not in header, (
+            f"partition column 'country' must not appear in {file_path} header (found {header})"
+        )
+
+
+def test_partition_by_all_columns_falls_back(tmpdir):
+    # Stripping would leave zero-column files; fall back to keeping columns in bodies.
+    import pyarrow.parquet as pq
+
+    daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_parquet(str(tmpdir), partition_cols=["a", "b"])
+    written_files = [
+        os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".parquet")
+    ]
+    assert written_files
+    schema = pq.read_schema(written_files[0])
+    assert set(schema.names) == {"a", "b"}
