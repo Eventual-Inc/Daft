@@ -59,6 +59,7 @@ use crate::{
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
+        repartition_with_sentinel::RepartitionWithSentinelSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1704,12 +1705,40 @@ fn physical_plan_to_pipeline(
             }
         }
         LocalPhysicalPlan::RepartitionWriteWithSentinel(
-            daft_local_plan::RepartitionWriteWithSentinel { .. },
+            daft_local_plan::RepartitionWriteWithSentinel {
+                input,
+                num_partitions,
+                schema,
+                backend,
+                repartition_spec,
+                sentinel_sort_keys,
+                stats_state,
+                context,
+            },
         ) => {
-            // TODO: Step 4 — wire up RepartitionWithSentinelSink here.
-            unimplemented!(
-                "RepartitionWriteWithSentinel pipeline node not yet implemented"
-            )
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            match backend {
+                RepartitionWriteBackend::Ray => {
+                    let sink = RepartitionWithSentinelSink::new_ray(
+                        repartition_spec.clone(),
+                        *num_partitions,
+                        sentinel_sort_keys.clone(),
+                    );
+                    BlockingSinkNode::new(
+                        Arc::new(sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+                RepartitionWriteBackend::Flight { .. } => {
+                    unimplemented!(
+                        "RepartitionWriteWithSentinel does not support Flight backend"
+                    )
+                }
+            }
         }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,
