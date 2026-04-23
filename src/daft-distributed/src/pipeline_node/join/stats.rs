@@ -22,6 +22,7 @@ pub(crate) struct BasicJoinStats {
     build_bytes_inserted: Counter,
     probe_bytes_in: Counter,
     probe_bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -60,6 +61,7 @@ impl BasicJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_BYTES)),
             ),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -96,6 +98,11 @@ impl RuntimeStats for BasicJoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
+            num_tasks: self.num_tasks.load(Ordering::SeqCst),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }

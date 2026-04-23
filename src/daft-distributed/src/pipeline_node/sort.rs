@@ -77,6 +77,10 @@ impl RuntimeStats for SortStats {
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 /// Computes partition boundaries from sampled data for range partitioning.
