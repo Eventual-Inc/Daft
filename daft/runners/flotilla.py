@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import os
 import shutil
@@ -412,6 +413,23 @@ def _is_eligible_node(node: dict[str, Any]) -> bool:
     )
 
 
+def _kill_actor(actor: ray.actor.ActorHandle) -> None:
+    try:
+        ray.kill(actor)
+    except Exception:
+        pass
+
+
+def clear_pending_ray_workers() -> None:
+    for node_id, pending in list(_pending_actors.items()):
+        logger.info("Cleaning up pending actor on node %s", node_id)
+        _pending_actors.pop(node_id, None)
+        _kill_actor(pending.actor)
+
+
+atexit.register(clear_pending_ray_workers)
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     worker_startup_timeout = _get_worker_startup_timeout()
     now = time.monotonic()
@@ -421,10 +439,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
     for nid in [nid for nid in _pending_actors if nid not in current_node_ids]:
         pending = _pending_actors.pop(nid)
         logger.warning("Node %s disappeared while actor was pending startup; cleaning up", nid)
-        try:
-            ray.kill(pending.actor)
-        except Exception:
-            pass
+        _kill_actor(pending.actor)
 
     # Spawn actors for new nodes (not already tracked or existing)
     skip_ids = set(existing_worker_ids) | set(_pending_actors.keys())
@@ -462,6 +477,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
     # Collect ready workers
     ready_workers: list[RaySwordfishWorker] = []
     resolved_node_ids: list[str] = []
+    failed_node_ids: list[str] = []
 
     for node_id, pending in pending_items:
         if pending.address_ref not in ready_ref_set:
@@ -481,20 +497,35 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             )
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError) as e:
             logger.warning("Pending actor on node %s died during startup: %s", node_id, e)
+            failed_node_ids.append(node_id)
+            _kill_actor(pending.actor)
         except Exception as e:
             logger.warning("Unexpected error getting address for node %s: %s", node_id, e)
+            failed_node_ids.append(node_id)
+            _kill_actor(pending.actor)
 
     for nid in resolved_node_ids:
         _pending_actors.pop(nid, None)
 
     # Expire actors that exceeded the startup timeout
+    timed_out_node_ids: list[str] = []
     for nid in [nid for nid, p in _pending_actors.items() if now - p.spawn_time > worker_startup_timeout]:
         pending = _pending_actors.pop(nid)
+        timed_out_node_ids.append(nid)
         logger.warning("Actor on node %s failed to start within %ds; killing actor", nid, worker_startup_timeout)
-        try:
-            ray.kill(pending.actor)
-        except Exception:
-            pass
+        _kill_actor(pending.actor)
+
+    if (
+        not existing_worker_ids
+        and not ready_workers
+        and not _pending_actors
+        and (failed_node_ids or timed_out_node_ids)
+    ):
+        failed_nodes = ", ".join(sorted({*failed_node_ids, *timed_out_node_ids}))
+        raise RuntimeError(
+            f"Failed to start any Ray workers within {worker_startup_timeout} seconds; "
+            f"startup failed or timed out on nodes: {failed_nodes}"
+        )
 
     return ready_workers
 
@@ -647,6 +678,9 @@ class FlotillaRunner:
                 else None
             ),
         ).remote(dashboard_url=dashboard_url)
+
+    def __del__(self) -> None:
+        clear_pending_ray_workers()
 
     def stream_plan(
         self,
