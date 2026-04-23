@@ -281,6 +281,11 @@ impl BlockingSink for IntoPartitionsSink {
                             Ok(BlockingSinkOutput::Partitions(outputs))
                         }
                         IntoPartitionsBackend::Flight(_) => {
+                            debug_assert_eq!(
+                                states.len(),
+                                1,
+                                "IntoPartitionsSink Flight expects a single state (max_concurrency == 1)"
+                            );
                             let flight_state = states
                                 .into_iter()
                                 .map(|s| match s {

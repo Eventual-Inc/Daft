@@ -323,6 +323,48 @@ def test_flight_into_partitions_mixed_empty_inputs(flight_shuffle_ctx):
     get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
+def test_flight_into_partitions_rotation_balance(flight_shuffle_ctx):
+    """Test that flight into partitions rotation is balanced.
+
+    Per-push `div_ceil` slicing front-loads early buckets; the rotation
+    offset in `FlightIntoPartitionsState::push` spreads that bias across
+    output buckets over many pushes.
+    With `rows_per_input=5` and `output_partitions=3`, each push distributes
+    rows as [2, 2, 1]. Without rotation (offset stuck at 0) the last bucket
+    consistently gets the short chunk, so 30 pushes yield [60, 60, 30] — a
+    30-row spread. With rotation the short chunk rotates and counts balance
+    to [50, 50, 50].
+    """
+    rows_per_input = 5
+    input_partitions = 30
+    output_partitions = 3
+    total_rows = rows_per_input * input_partitions
+
+    import ray
+
+    with flight_shuffle_ctx():
+        df = (
+            daft.from_pydict({"x": list(range(total_rows))})
+            .into_partitions(input_partitions)
+            .into_partitions(output_partitions)
+            .collect()
+        )
+
+        counts = [len(ray.get(p)) for p in df.iter_partitions()]
+        assert sum(counts) == total_rows
+        assert len(counts) == output_partitions
+
+        # Tight enough to catch the [60, 60, 30] failure mode, loose enough
+        # to tolerate scheduler variance in push ordering and MP fusion.
+        tolerance = rows_per_input * 2
+        spread = max(counts) - min(counts)
+        assert spread <= tolerance, f"rotation unbalanced: {counts} (spread={spread})"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
 @pytest.mark.parametrize("input_partitions", [1, 8, 32])
 def test_flight_gather(flight_shuffle_ctx, input_partitions):
     """Gather is triggered by top_n and ungrouped agg on multi-partition inputs.
