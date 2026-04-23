@@ -20,7 +20,8 @@ def emit_query_id(query_id: str) -> None:
         show = sys.stderr.isatty()
     else:
         parsed_show = _parse_show_query_id_env(show_env)
-        show = parsed_show if parsed_show is not None else True
+        # If explicitly configured but unrecognized (e.g. empty string), default to disabled.
+        show = parsed_show if parsed_show is not None else False
 
     if not show:
         return
