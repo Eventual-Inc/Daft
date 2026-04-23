@@ -972,6 +972,7 @@ impl LocalPhysicalPlan {
     pub fn into_partitions(
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
+        backend: ShuffleBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -980,6 +981,7 @@ impl LocalPhysicalPlan {
             input,
             num_partitions,
             schema,
+            backend,
             stats_state,
             context,
         })
@@ -1012,7 +1014,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
         schema: SchemaRef,
-        backend: RepartitionWriteBackend,
+        backend: ShuffleBackend,
         repartition_spec: RepartitionSpec,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -1032,7 +1034,7 @@ impl LocalPhysicalPlan {
     pub fn gather_write(
         input: LocalPhysicalPlanRef,
         schema: SchemaRef,
-        backend: GatherWriteBackend,
+        backend: ShuffleBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -1634,11 +1636,13 @@ impl LocalPhysicalPlan {
                 ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
+                    backend,
                     context,
                     ..
                 }) => Self::into_partitions(
                     new_child.clone(),
                     *num_partitions,
+                    backend.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2263,8 +2267,19 @@ pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShuffleBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2280,16 +2295,6 @@ pub struct VLLMProject {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum RepartitionWriteBackend {
-    Ray,
-    Flight {
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-    },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
     Flight,
@@ -2300,27 +2305,17 @@ pub struct RepartitionWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
-    pub backend: RepartitionWriteBackend,
+    pub backend: ShuffleBackend,
     pub repartition_spec: RepartitionSpec,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum GatherWriteBackend {
-    Ray,
-    Flight {
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GatherWrite {
     pub input: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
-    pub backend: GatherWriteBackend,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
