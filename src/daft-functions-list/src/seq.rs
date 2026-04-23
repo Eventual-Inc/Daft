@@ -90,10 +90,7 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
 
     let values_array = Int64Array::from_values("item", values).into_series();
 
-    let field = Field::new(
-        input.name(),
-        DataType::List(Box::new(DataType::Int64)),
-    );
+    let field = Field::new(input.name(), DataType::List(Box::new(DataType::Int64)));
 
     let validity = input.nulls().cloned();
 
@@ -114,8 +111,7 @@ pub fn list_seq(n: ExprRef) -> ExprRef {
 
 #[cfg(test)]
 mod tests {
-    use daft_core::prelude::Int64Array;
-    use daft_core::series::IntoSeries;
+    use daft_core::{prelude::Int64Array, series::IntoSeries};
     use daft_dsl::functions::scalar::EvalContext;
 
     use super::*;
