@@ -27,6 +27,14 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn add_duration_us(&self, duration_us: u64);
     fn add_bytes_in(&self, bytes: u64);
     fn add_bytes_out(&self, bytes: u64);
+    /// Record that one more task contributed work to this node's stats.
+    /// The unit of "task" is per-operator: intermediate operators fire this
+    /// once per processed batch; streaming sinks fire once per dispatched
+    /// `op.execute` future that returns; blocking sinks fire once per sink
+    /// future plus once more at finalize (N+1 for N batches). Values are
+    /// not directly comparable across operator kinds — interpret relative
+    /// to the operator's own scale.
+    fn increment_num_tasks(&self);
 }
 
 pub struct DefaultRuntimeStats {
@@ -35,6 +43,7 @@ pub struct DefaultRuntimeStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -47,6 +56,7 @@ impl RuntimeStats for DefaultRuntimeStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -58,6 +68,7 @@ impl RuntimeStats for DefaultRuntimeStats {
             rows_out: self.rows_out.load(ordering),
             bytes_in: self.bytes_in.load(ordering),
             bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -79,5 +90,9 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn add_bytes_out(&self, bytes: u64) {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }

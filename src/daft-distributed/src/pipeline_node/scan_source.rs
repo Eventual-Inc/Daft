@@ -26,6 +26,7 @@ pub struct SourceStats {
     rows_out: Counter,
     bytes_read: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -41,6 +42,7 @@ impl SourceStats {
                 Some(UNIT_BYTES.into()),
             ),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -67,7 +69,12 @@ impl RuntimeStats for SourceStats {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -325,16 +332,12 @@ mod tests {
         DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
     }
 
-    /// Repro: Flotilla overreports `bytes_read` when a scan has multiple files.
+    /// Regression test: Flotilla correctly reports `bytes_read` on multi-file scans.
     ///
-    /// Root cause: `NativeExecutor` caches pipelines by `plan_fingerprint`.
-    /// All scan tasks from one `ScanSourceNode` share the same fingerprint,
-    /// so they share one `SourceNode` with a single `IOStatsRef`. Each
-    /// `take_input_snapshot` reads the cumulative counter, causing N× overcount.
-    ///
-    /// Ignored until the bug is fixed. Run with `cargo test -p daft-distributed
-    /// scan_source::tests::test_bytes_read_multiple_files -- --ignored`.
-    #[ignore = "reproduces unfixed bug #6761: Flotilla overreports bytes.read on multi-file scans"]
+    /// Previously (issue #6761), `NativeExecutor`'s plan-sharing caused an N×
+    /// overcount: all scan tasks from one `ScanSourceNode` shared a single
+    /// `IOStatsRef`, so each `take_input_snapshot` read the cumulative counter.
+    /// This test guards against that regression.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_bytes_read_multiple_files() -> DaftResult<()> {
         let meter = Meter::test_scope("test_scan_bytes_read_multi_file");

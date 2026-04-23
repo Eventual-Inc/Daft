@@ -7,7 +7,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions::random::random_int_expr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -162,7 +162,7 @@ impl PipelineNodeImpl for RandomShuffleNode {
                 input,
                 num_partitions,
                 schema.clone(),
-                RepartitionWriteBackend::Ray,
+                ShuffleBackend::Ray,
                 daft_logical_plan::partitioning::RepartitionSpec::Random(
                     RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
                 ),

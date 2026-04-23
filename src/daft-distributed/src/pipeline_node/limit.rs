@@ -72,6 +72,10 @@ impl RuntimeStats for LimitStats {
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 /// Keeps track of the remaining skip and take.

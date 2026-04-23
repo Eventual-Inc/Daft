@@ -229,6 +229,142 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
     get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    # Equal, coalesce (N > M), split (N < M), and single-output coalesce.
+    [(4, 4), (8, 2), (2, 8), (7, 1)],
+)
+def test_flight_into_partitions(flight_shuffle_ctx, input_partitions, output_partitions):
+    """Exercises IntoPartitionsNode under `shuffle_algorithm="flight_shuffle"`.
+
+    Verifies that both upstream materialized outputs (FlightPartitionRefs) are
+    consumed and downstream outputs are re-emitted as FlightPartitionRefs, across
+    the equal / coalesce / split branches.
+    """
+    rows = 1000
+    with flight_shuffle_ctx():
+        df = (
+            daft.from_pydict({"x": list(range(rows))})
+            .into_partitions(input_partitions)
+            .into_partitions(output_partitions)
+        )
+
+        # Plan-shape assertion: a regression that routes around IntoPartitionsNode
+        # or silently falls back to Ray would still yield correct row counts, so
+        # verify the Flight variant is in the plan explicitly.
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "IntoPartitions(Flight)" in plan, f"expected IntoPartitions(Flight) in plan:\n{plan}"
+        assert "IntoPartitions(Ray)" not in plan, f"unexpected Ray IntoPartitions in plan:\n{plan}"
+
+        collected = df.collect()
+        # The core contract of into_partitions: exactly N output partitions.
+        assert len(list(collected.iter_partitions())) == output_partitions
+        assert sorted(collected.to_pydict()["x"]) == list(range(rows))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed IntoPartitions tests require the ray runner",
+)
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    [(4, 4), (8, 2), (2, 8), (7, 1)],
+)
+def test_ray_into_partitions(input_partitions, output_partitions):
+    """IntoPartitions over the Ray backend (no flight_shuffle_ctx).
+
+    Mirrors test_flight_into_partitions but exercises the Ray IntoPartitionsNode
+    path and RayIntoPartitionsState finalize.
+    """
+    rows = 1000
+    df = daft.from_pydict({"x": list(range(rows))}).into_partitions(input_partitions).into_partitions(output_partitions)
+
+    buf = io.StringIO()
+    df.explain(show_all=True, file=buf)
+    plan = buf.getvalue()
+    assert "IntoPartitions(Ray)" in plan, f"expected IntoPartitions(Ray) in plan:\n{plan}"
+    assert "IntoPartitions(Flight)" not in plan, f"unexpected Flight IntoPartitions in plan:\n{plan}"
+
+    collected = df.collect()
+    assert len(list(collected.iter_partitions())) == output_partitions
+    assert sorted(collected.to_pydict()["x"]) == list(range(rows))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_into_partitions_mixed_empty_inputs(flight_shuffle_ctx):
+    """IntoPartitions (Flight) must still emit exactly N output partitions when some pre-filter partitions are empty.
+
+    FlightIntoPartitionsState opens N caches in `make_state` and `push` short-
+    circuits on empty inputs. As long as the rotation distributes surviving rows
+    across every cache, close() succeeds and we get N FlightPartitionRefs.
+    """
+    rows = 1000
+    input_partitions = 8
+    output_partitions = 5
+    filter_threshold = 500  # roughly half the data survives
+    with flight_shuffle_ctx():
+        partial = (
+            daft.from_pydict({"x": list(range(rows))})
+            .into_partitions(input_partitions)
+            .filter(daft.col("x") < filter_threshold)
+            .into_partitions(output_partitions)
+            .collect()
+        )
+        assert len(list(partial.iter_partitions())) == output_partitions
+        assert sorted(partial.to_pydict()["x"]) == list(range(filter_threshold))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_into_partitions_rotation_balance(flight_shuffle_ctx):
+    """Test that flight into partitions rotation is balanced.
+
+    Per-push `div_ceil` slicing front-loads early buckets; the rotation
+    offset in `FlightIntoPartitionsState::push` spreads that bias across
+    output buckets over many pushes.
+    With `rows_per_input=5` and `output_partitions=3`, each push distributes
+    rows as [2, 2, 1]. Without rotation (offset stuck at 0) the last bucket
+    consistently gets the short chunk, so 30 pushes yield [60, 60, 30] — a
+    30-row spread. With rotation the short chunk rotates and counts balance
+    to [50, 50, 50].
+    """
+    rows_per_input = 5
+    input_partitions = 30
+    output_partitions = 3
+    total_rows = rows_per_input * input_partitions
+
+    import ray
+
+    with flight_shuffle_ctx():
+        df = (
+            daft.from_pydict({"x": list(range(total_rows))})
+            .into_partitions(input_partitions)
+            .into_partitions(output_partitions)
+            .collect()
+        )
+
+        counts = [len(ray.get(p)) for p in df.iter_partitions()]
+        assert sum(counts) == total_rows
+        assert len(counts) == output_partitions
+
+        # Tight enough to catch the [60, 60, 30] failure mode, loose enough
+        # to tolerate scheduler variance in push ordering and MP fusion.
+        tolerance = rows_per_input * 2
+        spread = max(counts) - min(counts)
+        assert spread <= tolerance, f"rotation unbalanced: {counts} (spread={spread})"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
 @pytest.mark.parametrize("input_partitions", [1, 8, 32])
 def test_flight_gather(flight_shuffle_ctx, input_partitions):
     """Gather is triggered by top_n and ungrouped agg on multi-partition inputs.

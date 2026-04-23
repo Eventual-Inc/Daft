@@ -71,6 +71,7 @@ mod test {
                     clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 })),
                 stats_state: StatsState::NotMaterialized,
+                checkpoint: None,
             })
             .arced(),
         )

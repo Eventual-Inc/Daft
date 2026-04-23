@@ -101,6 +101,55 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
+fn unpack_struct_state(struct_series: &Series) -> DaftResult<Vec<Series>> {
+    let DataType::Struct(fields) = struct_series.data_type() else {
+        return Err(DaftError::InternalError(format!(
+            "Expected Struct series for AggFn state, got {}",
+            struct_series.data_type()
+        )));
+    };
+    fields
+        .iter()
+        .map(|f| struct_series.struct_get(&f.name))
+        .collect()
+}
+
+fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResult<Series> {
+    Ok(StructArray::new(struct_field, state_series, None).into_series())
+}
+
+fn dispatch_per_group(
+    inputs: Vec<Series>,
+    groups: Option<&GroupIndices>,
+    f: impl Fn(Vec<Series>) -> DaftResult<Vec<Literal>> + Sync,
+) -> DaftResult<Vec<Series>> {
+    use daft_core::series::from_lit::series_from_literals_iter;
+    use rayon::prelude::*;
+
+    let group_lits: Vec<Vec<Literal>> = match groups {
+        None => vec![f(inputs)?],
+        Some(groups) => groups
+            .par_iter()
+            .map(|indices| {
+                let idx = UInt64Array::from_vec("", indices.iter().copied().collect());
+                let group_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|s| s.take(&idx))
+                    .collect::<DaftResult<_>>()?;
+                f(group_inputs)
+            })
+            .collect::<DaftResult<_>>()?,
+    };
+
+    if group_lits.is_empty() {
+        return Ok(vec![]);
+    }
+    let num_fields = group_lits[0].len();
+    (0..num_fields)
+        .map(|fi| series_from_literals_iter(group_lits.iter().map(|g| Ok(g[fi].clone())), None))
+        .collect()
+}
+
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -648,6 +697,35 @@ impl RecordBatch {
         }
     }
 
+    /// Like [`eval_agg_expression`] but stops before `call_agg_finalize` for
+    /// [`AggExpr::AggFnReduce`], keeping the Struct column type.  Output schema
+    /// matches stage-1 (`AggFnMap`) output — valid input for a subsequent full `agg()`.
+    pub(crate) fn eval_agg_expression_combine_only(
+        &self,
+        agg_expr: &BoundAggExpr,
+        groups: Option<&GroupIndices>,
+    ) -> DaftResult<Series> {
+        if let AggExpr::AggFnReduce {
+            handle, partial, ..
+        } = agg_expr.as_ref()
+        {
+            let struct_series = self.eval_agg_child(partial)?;
+            let struct_field = struct_series.field().clone();
+            let state_series = unpack_struct_state(&struct_series)?;
+            let field_names: Vec<String> =
+                state_series.iter().map(|s| s.name().to_string()).collect();
+            let merged = dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+            let merged: Vec<Series> = merged
+                .into_iter()
+                .zip(field_names.iter())
+                .map(|(s, n)| s.rename(n))
+                .collect();
+            pack_struct_state(struct_field, merged)
+        } else {
+            self.eval_agg_expression(agg_expr, groups)
+        }
+    }
+
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,
@@ -724,6 +802,65 @@ impl RecordBatch {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
+            AggExpr::AggFn { .. } => Err(DaftError::InternalError(
+                "AggFn must be decomposed into AggFnMap + AggFnReduce by the planner \
+                 before execution; do not call eval_agg_expression with a raw AggFn"
+                    .to_string(),
+            )),
+            AggExpr::AggFnMap { handle, inputs } => {
+                let evaled_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|e| self.eval_agg_child(e))
+                    .collect::<DaftResult<_>>()?;
+                let input_fields: Vec<Field> =
+                    evaled_inputs.iter().map(|s| s.field().clone()).collect();
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let expected_name = format!("{}({})", handle.name(), inputs_str);
+                let state_fields = handle.state_fields(&input_fields)?;
+                let state_series =
+                    dispatch_per_group(evaled_inputs, groups, |g| handle.call_agg_block(g))?;
+                let state_series: Vec<Series> = state_series
+                    .into_iter()
+                    .zip(state_fields.iter())
+                    .map(|(s, f)| s.rename(&f.name))
+                    .collect();
+                let struct_field = Field::new(expected_name, DataType::Struct(state_fields));
+                Ok(StructArray::new(struct_field, state_series, None).into_series())
+            }
+            AggExpr::AggFnReduce {
+                handle,
+                partial,
+                return_field,
+            } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                use daft_core::series::from_lit::series_from_literals_iter;
+                let n_groups = merged.first().map_or(0, Series::len);
+                let final_lits: Vec<Literal> = (0..n_groups)
+                    .map(|i| {
+                        let state: Vec<Literal> = merged.iter().map(|s| s.get_lit(i)).collect();
+                        handle.call_agg_finalize(state)
+                    })
+                    .collect::<DaftResult<_>>()?;
+                series_from_literals_iter(
+                    final_lits.into_iter().map(Ok),
+                    Some(return_field.dtype.clone()),
+                )
+                .map(|s| s.rename(&return_field.name))
+            }
         }
     }
 
