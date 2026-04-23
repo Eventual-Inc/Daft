@@ -252,7 +252,7 @@ async fn test_sort_single_partition_stats() -> DaftResult<()> {
     // Find the sort node's stats (node_id = 1)
     let sort_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 1)
+        .find(|(info, _)| info.id == 1)
         .expect("Sort node stats should be present");
 
     match &sort_stats.1 {
@@ -274,7 +274,7 @@ async fn test_sort_single_partition_stats() -> DaftResult<()> {
     // Source node (node_id = 0) should also have stats
     let source_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 0)
+        .find(|(info, _)| info.id == 0)
         .expect("Source node stats should be present");
 
     match &source_stats.1 {
@@ -302,7 +302,7 @@ async fn test_filter_stats_aggregation() -> DaftResult<()> {
     // Find the filter node's stats (node_id = 1)
     let filter_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 1)
+        .find(|(info, _)| info.id == 1)
         .expect("Filter node stats should be present");
 
     match &filter_stats.1 {
@@ -347,7 +347,7 @@ async fn test_filter_stats_multi_partition() -> DaftResult<()> {
 
     let filter_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 1)
+        .find(|(info, _)| info.id == 1)
         .expect("Filter node stats should be present");
 
     match &filter_stats.1 {
@@ -515,7 +515,7 @@ async fn test_scan_source_bytes_read_multiple_files() -> DaftResult<()> {
 
     let source_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 0)
+        .find(|(info, _)| info.id == 0)
         .expect("scan source node stats should be present");
 
     let flotilla_bytes_read = match &source_stats.1 {
@@ -572,7 +572,7 @@ async fn test_sort_multi_partition_stats() -> DaftResult<()> {
     // Find the sort node's stats (node_id = 1).
     let sort_stats = stats
         .iter()
-        .find(|(info, _)| info.node_origin_id == 1)
+        .find(|(info, _)| info.id == 1)
         .expect("Sort node stats should be present");
 
     match &sort_stats.1 {
