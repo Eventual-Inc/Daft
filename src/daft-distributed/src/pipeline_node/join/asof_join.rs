@@ -1,10 +1,11 @@
-use std::{future, sync::Arc};
+use std::{cmp::Ordering, future, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
+use daft_core::{array::ops::build_multi_array_compare, prelude::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
@@ -161,7 +162,13 @@ impl AsofJoinNode {
 
         if num_partitions == 1 {
             return self
-                .create_and_submit_join_task(0, left_materialized, right_materialized, None, result_tx)
+                .create_and_submit_join_task(
+                    0,
+                    left_materialized,
+                    right_materialized,
+                    None,
+                    result_tx,
+                )
                 .await;
         }
 
@@ -247,7 +254,6 @@ impl AsofJoinNode {
             Some(0),
         )?;
 
-        // --- Phase 4: Range repartition right side (N+1 partitions, with sentinels) ---
         let right_boundary_names = right_composite_key
             .iter()
             .map(|expr| {
@@ -269,7 +275,7 @@ impl AsofJoinNode {
         let right_partition_tasks = create_range_repartition_tasks_with_sentinels(
             right_materialized,
             self.right.config().schema.clone(),
-            right_composite_key,
+            right_composite_key.clone(),
             descending,
             right_partition_boundaries,
             num_partitions,
@@ -279,7 +285,6 @@ impl AsofJoinNode {
             Some(1),
         )?;
 
-        // --- Phase 5: Await both sides, transpose outputs ---
         let (left_partitioned_outputs, right_partitioned_outputs) = futures::try_join!(
             try_join_all(left_partition_tasks),
             try_join_all(right_partition_tasks)
@@ -306,9 +311,11 @@ impl AsofJoinNode {
                 num_partitions + 1,
             );
 
-        // The last group is the sentinel group
+        // The last group is the sentinel group — one MaterializedOutput per worker
         let sentinel_group = right_partition_groups.pop().unwrap();
-        let sentinels = reduce_sentinels(sentinel_group, num_partitions)?;
+
+        let sentinels =
+            reduce_sentinels(sentinel_group, num_partitions, &right_composite_key).await?;
 
         for (i, (left_group, right_group)) in left_partition_groups
             .into_iter()
@@ -320,8 +327,14 @@ impl AsofJoinNode {
             } else {
                 sentinels[i - 1].clone()
             };
-            self.create_and_submit_join_task(i as u32, left_group, right_group, sentinel, result_tx)
-                .await?;
+            self.create_and_submit_join_task(
+                i as u32,
+                left_group,
+                right_group,
+                sentinel,
+                result_tx,
+            )
+            .await?;
         }
 
         Ok(())
@@ -428,29 +441,141 @@ impl PipelineNodeImpl for AsofJoinNode {
     }
 }
 
+/// Find the single row with the lexicographically maximum composite key in `batch`.
+/// Returns `None` if `batch` is empty.
+fn record_batch_max_composite(
+    batch: &RecordBatch,
+    composite_keys: &[BoundExpr],
+) -> DaftResult<Option<RecordBatch>> {
+    if batch.is_empty() {
+        return Ok(None);
+    }
+
+    let cols: Vec<_> = composite_keys
+        .iter()
+        .map(|k| batch.eval_expression(k))
+        .collect::<DaftResult<_>>()?;
+    let descending = vec![false; composite_keys.len()];
+    let nulls_first = vec![true; composite_keys.len()];
+    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
+    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
+        if cmp(i, best) == Ordering::Greater {
+            i
+        } else {
+            best
+        }
+    });
+    let idx = UInt64Array::from_vec("idx", vec![max_idx as u64]);
+    Ok(Some(batch.take(&idx)?))
+}
+
+/// Returns true if every column in a single-row RecordBatch is null.
+fn row_is_all_null(batch: &RecordBatch) -> bool {
+    debug_assert_eq!(batch.len(), 1);
+    (0..batch.num_columns()).all(|i| !batch.get_column(i).is_valid(0))
+}
+
 /// Reduces sentinel MaterializedOutputs from all workers into one `Option<RecordBatch>` per partition.
 ///
 /// Each worker's sentinel partition contains N rows — one max row per bucket index.
+/// Empty buckets are represented as all-null rows.
+///
 /// This function:
-/// 1. Fetches the sentinel data from workers (small — N rows each)
-/// 2. Concatenates all workers' sentinel tables
-/// 3. Groups by bucket index and takes the max composite-key row per group
-/// 4. Forward-fills: if bucket j has no sentinel, inherit from bucket j-1
+/// 1. Fetches the sentinel data from workers via ray.get() (small — N rows each)
+/// 2. For each bucket index, collects that row from every worker and finds the max
+/// 3. Forward-fills: if bucket j has no valid sentinel, inherit from bucket j-1
 ///
 /// Returns `Vec<Option<RecordBatch>>` of length `num_partitions`.
-fn reduce_sentinels(
+#[cfg(feature = "python")]
+async fn reduce_sentinels(
+    sentinel_group: Vec<MaterializedOutput>,
+    num_partitions: usize,
+    composite_keys: &[BoundExpr],
+) -> DaftResult<Vec<Option<RecordBatch>>> {
+    use pyo3::prelude::*;
+
+    if sentinel_group.is_empty() {
+        return Ok(vec![None; num_partitions]);
+    }
+
+    // 1. Extract ray partition refs from the sentinel group.
+    let ray_partition_refs = sentinel_group
+        .into_iter()
+        .flat_map(|mo| mo.into_inner().0)
+        .map(|pr| {
+            use crate::python::ray::RayPartitionRef;
+
+            let ray_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
+                common_error::DaftError::InternalError(
+                    "Failed to downcast sentinel partition ref".to_string(),
+                ),
+            )?;
+            Ok(ray_ref.clone())
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    // 2. Fetch all sentinel MicroPartitions from workers via ray.get().
+    //    Each is a small table of N rows.
+    let sentinel_mps = common_runtime::python::execute_python_coroutine::<
+        _,
+        Vec<daft_micropartition::python::PyMicroPartition>,
+    >(move |py| {
+        let ray = py.import(pyo3::intern!(py, "ray"))?;
+        let object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
+        ray.call_method1("get", (object_refs,))
+    })
+    .await?;
+
+    // 3. Concat each MicroPartition down to a single RecordBatch per worker.
+    let worker_batches: Vec<RecordBatch> = sentinel_mps
+        .into_iter()
+        .filter_map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
+        .collect();
+
+    if worker_batches.is_empty() {
+        return Ok(vec![None; num_partitions]);
+    }
+
+    // 4. For each bucket index, collect that row from every worker and find the max.
+    let mut sentinels: Vec<Option<RecordBatch>> = Vec::with_capacity(num_partitions);
+    for bucket_idx in 0..num_partitions {
+        let mut candidates = Vec::new();
+        for batch in &worker_batches {
+            if bucket_idx < batch.len() {
+                let row = batch.slice(bucket_idx, bucket_idx + 1)?;
+                if !row_is_all_null(&row) {
+                    candidates.push(row);
+                }
+            }
+        }
+        if candidates.is_empty() {
+            sentinels.push(None);
+        } else if candidates.len() == 1 {
+            sentinels.push(Some(candidates.into_iter().next().unwrap()));
+        } else {
+            let combined = RecordBatch::concat(&candidates.iter().collect::<Vec<_>>())?;
+            sentinels.push(record_batch_max_composite(&combined, composite_keys)?);
+        }
+    }
+
+    // 5. Forward-fill: if bucket j has no valid sentinel, inherit from bucket j-1.
+    for j in 1..num_partitions {
+        if sentinels[j].is_none() {
+            sentinels[j] = sentinels[j - 1].clone();
+        }
+    }
+
+    Ok(sentinels)
+}
+
+#[cfg(not(feature = "python"))]
+async fn reduce_sentinels(
     _sentinel_group: Vec<MaterializedOutput>,
     num_partitions: usize,
+    _composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
-    // TODO: Fetch sentinel partition data from workers and reduce.
-    // The sentinel_group contains one MaterializedOutput per worker, each holding
-    // a PartitionRef to that worker's sentinel table. We need to:
-    //   1. ray.get() each partition to obtain RecordBatches
-    //   2. Concatenate all sentinel tables
-    //   3. For each bucket index 0..N, find the max composite-key row
-    //   4. Forward-fill None entries from previous partition
-    //
-    // This will be implemented once the sentinel sink (Step 4) is in place
-    // and we know the exact schema of the sentinel table.
-    Ok(vec![None; num_partitions])
+    unimplemented!("Distributed asof join sentinel reduction requires Python feature to be enabled")
 }
