@@ -39,6 +39,12 @@ def test_list_filter_null_list_row():
     assert actual == [[1, 3], None, [4]]
 
 
+def test_list_filter_null_element():
+    df = daft.from_pydict({"xs": [[1, None, 3], [None, None], [2]]})
+    actual = df.select(daft.col("xs").list_filter(daft.element() != 2)).to_pydict()["xs"]
+    assert actual == [[1, 3], [], []]
+
+
 def test_list_filter_chain_with_map():
     df = daft.from_pydict({"text": [["hello", "world"], ["goodbye", "world"]]})
     actual = df.select(
