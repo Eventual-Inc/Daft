@@ -523,8 +523,9 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
     ):
         failed_nodes = ", ".join(sorted({*failed_node_ids, *timed_out_node_ids}))
         raise RuntimeError(
-            f"Failed to start any Ray workers within {worker_startup_timeout} seconds; "
-            f"startup failed or timed out on nodes: {failed_nodes}"
+            "Failed to start any Ray workers: "
+            f"startup failed or timed out within {worker_startup_timeout} seconds "
+            f"on nodes: {failed_nodes}"
         )
 
     return ready_workers
@@ -678,9 +679,6 @@ class FlotillaRunner:
                 else None
             ),
         ).remote(dashboard_url=dashboard_url)
-
-    def __del__(self) -> None:
-        clear_pending_ray_workers()
 
     def stream_plan(
         self,

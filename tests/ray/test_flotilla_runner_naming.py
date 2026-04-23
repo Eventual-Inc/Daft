@@ -148,7 +148,10 @@ def test_start_ray_workers_raises_after_timeout_if_no_workers_exist(monkeypatch)
     )
 
     with execution_config_ctx(worker_startup_timeout=60):
-        with pytest.raises(RuntimeError, match="Failed to start any Ray workers within 60 seconds"):
+        with pytest.raises(
+            RuntimeError,
+            match="Failed to start any Ray workers: startup failed or timed out within 60 seconds",
+        ):
             flotilla.start_ray_workers(existing_worker_ids=[])
 
     assert len(flotilla._pending_actors) == 0
@@ -191,10 +194,58 @@ def test_start_ray_workers_raises_if_all_candidates_die_before_startup(monkeypat
 
     monkeypatch.setattr(flotilla.ray, "get", _raise_actor_died)
 
-    with pytest.raises(RuntimeError, match="Failed to start any Ray workers within 120 seconds"):
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to start any Ray workers: startup failed or timed out within 120 seconds",
+    ):
         flotilla.start_ray_workers(existing_worker_ids=[])
 
     assert len(flotilla._pending_actors) == 0
+
+
+def test_start_ray_workers_returns_ready_subset_when_another_node_fails(monkeypatch):
+    """A failed node should not prevent startup if at least one worker becomes ready."""
+    ready_node_id = NODE_ID
+    failed_node_id = "2" * 56
+    _patch_flotilla(monkeypatch, nodes=[_fake_node(ready_node_id), _fake_node(failed_node_id)])
+
+    killed_actors: list[object] = []
+    monkeypatch.setattr(flotilla.ray, "kill", lambda actor: killed_actors.append(actor))
+
+    ready_actor = _FakeActor()
+    failed_actor = _FakeActor()
+    ready_ref = "ready-ref"
+    failed_ref = "failed-ref"
+    flotilla._pending_actors[ready_node_id] = flotilla._PendingActor(
+        node=_fake_node(ready_node_id),
+        actor=ready_actor,
+        address_ref=ready_ref,
+        spawn_time=time.monotonic(),
+    )
+    flotilla._pending_actors[failed_node_id] = flotilla._PendingActor(
+        node=_fake_node(failed_node_id),
+        actor=failed_actor,
+        address_ref=failed_ref,
+        spawn_time=time.monotonic(),
+    )
+
+    monkeypatch.setattr(flotilla.ray, "wait", lambda refs, num_returns, timeout: (refs, []))
+
+    def _get_result(ref):
+        if ref == ready_ref:
+            return FAKE_ADDRESS
+        raise ray.exceptions.ActorDiedError()
+
+    monkeypatch.setattr(flotilla.ray, "get", _get_result)
+
+    workers = flotilla.start_ray_workers(existing_worker_ids=[])
+
+    assert len(workers) == 1
+    assert workers[0]["node_id"] == ready_node_id
+    assert workers[0]["ip_address"] == FAKE_ADDRESS
+    assert len(flotilla._pending_actors) == 0
+    assert failed_actor in killed_actors
+    assert ready_actor not in killed_actors
 
 
 def test_clear_pending_ray_workers_kills_all_pending_actors(monkeypatch):
