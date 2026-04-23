@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import gc
+import re
 
 import daft
 from daft.dataframe import DataFrame
@@ -271,11 +272,12 @@ def test_native_runner_close_does_not_log_missing_event_loop(capsys):
 def test_collect_emits_query_id(monkeypatch, capsys):
     monkeypatch.setenv("DAFT_SHOW_QUERY_ID", "1")
     _ = capsys.readouterr()
-    df = daft.from_pydict({"x": [1]}).collect()
+    daft.from_pydict({"x": [1]}).collect()
     captured = capsys.readouterr()
 
-    assert df._metadata is not None
-    assert f"Daft Query ID: {df._metadata.query_id}" in captured.err
+    query_id_lines = [line for line in captured.err.splitlines() if line.startswith("Daft Query ID: ")]
+    assert len(query_id_lines) == 1
+    assert re.fullmatch(r"Daft Query ID: [a-z]+-[a-z]+-[0-9a-f]{6}", query_id_lines[0]) is not None
 
 
 def test_collect_does_not_emit_query_id_when_disabled(monkeypatch, capsys):
