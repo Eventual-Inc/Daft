@@ -30,7 +30,7 @@ You may also choose to pass these values into your Daft I/O function calls using
     ```python
     from daft.io import IOConfig, S3Config
 
-    # Supply actual values for the S3 secret key
+    # Supply actual values: key_id is the AWS Access Key ID, access_key is the AWS Secret Access Key
     io_config = IOConfig(s3=S3Config(key_id="key_id", session_token="session_token", access_key="access_key"))
 
     # Globally set the default IOConfig for any subsequent I/O calls
