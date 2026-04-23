@@ -9,7 +9,6 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
@@ -131,7 +130,6 @@ impl ShuffleReadSource {
     fn spawn_flight_shuffle_processor(
         self,
         output_sender: Sender<PipelineMessage>,
-        stats_provider: StatsProvider,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let mut receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
@@ -152,8 +150,7 @@ impl ShuffleReadSource {
                     && let Some((input_id, input)) = pending_tasks.pop_front()
                 {
                     let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, input.refs, schema.clone()).await?;
-                    let io_stats = stats_provider.get_or_create(input_id).io_stats;
-                    task_set.spawn(forward_partition_stream(stream, schema.clone(), output_sender.clone(), input_id, io_stats));
+                    task_set.spawn(forward_partition_stream(stream, schema.clone(), output_sender.clone(), input_id));
                 }
 
                 tokio::select! {
@@ -212,11 +209,9 @@ async fn forward_partition_stream(
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
-    io_stats: IOStatsRef,
 ) -> DaftResult<InputId> {
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
-        io_stats.mark_bytes_read(mp.size_bytes());
         if sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -253,11 +248,11 @@ impl Source for ShuffleReadSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        stats_provider: StatsProvider,
+        _stats_provider: StatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
-        let processor_task = self.spawn_flight_shuffle_processor(output_sender, stats_provider);
+        let processor_task = self.spawn_flight_shuffle_processor(output_sender);
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
