@@ -5,10 +5,6 @@ Usage (one-time offline step):
     python -m benchmarking.asof_join.data_generation --scale medium
     python -m benchmarking.asof_join.data_generation --all
 
-    # Write to a local directory instead of S3:
-    python -m benchmarking.asof_join.data_generation --scale small --local_output_dir /tmp/asof_data
-    python -m benchmarking.asof_join.data_generation --all --local_output_dir /tmp/asof_data
-
 Files written to S3 (one directory per side, partitioned into multiple files):
     s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/left/part-00000.parquet
     s3://eventual-dev-benchmarking-fixtures/asof-join/<scale>/left/part-00001.parquet
@@ -31,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import io
-from pathlib import Path
 
 import boto3
 import numpy as np
@@ -120,7 +115,7 @@ def _upload_table_to_s3(table: pa.Table, s3_path: str) -> None:
     print(f"      uploaded {s3_path}  ({buf.tell() / 1e9:.2f} GB)")
 
 
-def generate_scale(scale: str, output_dir: Path | None = None) -> None:
+def generate_scale(scale: str) -> None:
     """Generate left and right tables for a given scale, partitioned into multiple files."""
     cfg = SCALES[scale]
 
@@ -137,16 +132,8 @@ def generate_scale(scale: str, output_dir: Path | None = None) -> None:
             chunk_rows = base_rows if i < n_files - 1 else n_rows - base_rows * (n_files - 1)
             table = _generate_table(n_rows=chunk_rows, seed=SEED + seed_offset + i)
             filename = f"part-{i:05d}.parquet"
-
-            if output_dir is not None:
-                side_dir = output_dir / scale / side
-                side_dir.mkdir(parents=True, exist_ok=True)
-                out_path = side_dir / filename
-                pq.write_table(table, out_path, compression="snappy")
-                print(f"      wrote {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB on disk)")
-            else:
-                s3_path = f"{S3_PREFIXES[scale][side]}/{filename}"
-                _upload_table_to_s3(table, s3_path)
+            s3_path = f"{S3_PREFIXES[scale][side]}/{filename}"
+            _upload_table_to_s3(table, s3_path)
 
 
 def main() -> None:
@@ -154,19 +141,13 @@ def main() -> None:
     scale_group = parser.add_mutually_exclusive_group(required=True)
     scale_group.add_argument("--scale", choices=list(SCALES), help="Generate a single scale.")
     scale_group.add_argument("--all", action="store_true", help="Generate all scales.")
-    parser.add_argument(
-        "--local_output_dir",
-        default=None,
-        help="Write to local directory instead of S3. Files are written to <dir>/<scale>/left/ and <dir>/<scale>/right/.",
-    )
     args = parser.parse_args()
 
-    output_dir = Path(args.local_output_dir) if args.local_output_dir else None
     scales = list(SCALES) if args.all else [args.scale]
 
     for scale in scales:
         print(f"\n=== {scale} ===")
-        generate_scale(scale, output_dir=output_dir)
+        generate_scale(scale)
 
     print("\nDone.")
 
