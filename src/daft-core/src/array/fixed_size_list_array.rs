@@ -337,7 +337,7 @@ mod tests {
             arrow_arr.data_type(),
             &arrow::datatypes::DataType::FixedSizeList(
                 Arc::new(arrow::datatypes::Field::new(
-                    "foo",
+                    "item",
                     arrow::datatypes::DataType::Int32,
                     true
                 )),
