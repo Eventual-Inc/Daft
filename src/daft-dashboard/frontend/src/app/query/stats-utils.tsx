@@ -7,6 +7,26 @@ export const BYTES_IN_STAT_KEY = "bytes.in";
 export const BYTES_OUT_STAT_KEY = "bytes.out";
 export const DURATION_US_STAT_KEY = "duration";
 
+export const IN_MEMORY_BUFFER_BYTES_STAT_KEY = "bytes.in_memory_buffer";
+export const SPILL_BYTES_WRITTEN_STAT_KEY = "spill.bytes.written";
+export const SPILL_BYTES_READ_STAT_KEY = "spill.bytes.read";
+export const SPILL_FILES_CREATED_STAT_KEY = "spill.files.created";
+export const SPILL_FILES_RESIDENT_STAT_KEY = "spill.files.resident";
+
+// Keys rendered by SpillStrips — filter these out of the extra-stats list.
+export const SPILL_STRIP_STAT_KEYS: readonly string[] = [
+  IN_MEMORY_BUFFER_BYTES_STAT_KEY,
+  SPILL_BYTES_WRITTEN_STAT_KEY,
+  SPILL_BYTES_READ_STAT_KEY,
+  SPILL_FILES_CREATED_STAT_KEY,
+  SPILL_FILES_RESIDENT_STAT_KEY,
+];
+
+export const formatByteRate = (bytesPerSec: number): string => {
+  if (!isFinite(bytesPerSec) || bytesPerSec <= 0) return "";
+  return `${formatBytes(bytesPerSec)}/s`;
+};
+
 export const statNumericValue = (stat: Stat | undefined): number => {
   if (!stat) return 0;
   if (stat.type === "Duration") {
