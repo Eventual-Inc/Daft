@@ -123,6 +123,7 @@ from .list import (
     explode,
     list_append,
     list_contains,
+    seq,
     to_list,
 )
 from .llm import llm_generate
@@ -465,6 +466,7 @@ __all__ = [
     "run_process",
     "sec",
     "second",
+    "seq",
     "serialize",
     "shift_left",
     "shift_right",
