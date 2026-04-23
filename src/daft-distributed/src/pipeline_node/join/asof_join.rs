@@ -469,7 +469,6 @@ fn record_batch_max_composite(
     Ok(Some(batch.take(&idx)?))
 }
 
-/// Returns true if every column in a single-row RecordBatch is null.
 fn row_is_all_null(batch: &RecordBatch) -> bool {
     debug_assert_eq!(batch.len(), 1);
     (0..batch.num_columns()).all(|i| !batch.get_column(i).is_valid(0))
@@ -498,36 +497,48 @@ async fn reduce_sentinels(
         return Ok(vec![None; num_partitions]);
     }
 
-    // 1. Extract ray partition refs from the sentinel group.
+    // 1. Extract partition refs from sentinel group.
     let ray_partition_refs = sentinel_group
         .into_iter()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
             use crate::python::ray::RayPartitionRef;
 
-            let ray_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
+            let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
                 common_error::DaftError::InternalError(
-                    "Failed to downcast sentinel partition ref".to_string(),
+                    "Failed to downcast partition ref".to_string(),
                 ),
             )?;
-            Ok(ray_ref.clone())
+            Ok(ray_partition_ref.clone())
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    // 2. Fetch all sentinel MicroPartitions from workers via ray.get().
-    //    Each is a small table of N rows.
-    let sentinel_mps = common_runtime::python::execute_python_coroutine::<
-        _,
-        Vec<daft_micropartition::python::PyMicroPartition>,
-    >(move |py| {
-        let ray = py.import(pyo3::intern!(py, "ray"))?;
-        let object_refs = ray_partition_refs
-            .into_iter()
-            .map(|pr| pr.get_object_ref(py))
-            .collect::<Vec<_>>();
-        ray.call_method1("get", (object_refs,))
+    // 2. Fetch all sentinel MicroPartitions via ray.get().
+    //    ray.get() is synchronous, so we run it on a blocking thread.
+    let sentinel_mps = tokio::task::spawn_blocking(move || {
+        Python::attach(|py| {
+            let ray = py.import(pyo3::intern!(py, "ray"))?;
+            let py_object_refs = ray_partition_refs
+                .into_iter()
+                .map(|pr| pr.get_object_ref(py))
+                .collect::<Vec<_>>();
+            let results = ray.call_method1("get", (py_object_refs,))?;
+            let mut mps = Vec::new();
+            for item in results.try_iter()? {
+                let item = item?;
+                // Ray returns Python MicroPartition wrappers; unwrap to inner PyMicroPartition
+                let inner = item.getattr("_micropartition").unwrap_or(item);
+                let mp: daft_micropartition::python::PyMicroPartition =
+                    inner.extract().map_err(pyo3::PyErr::from)?;
+                mps.push(mp);
+            }
+            Ok::<_, pyo3::PyErr>(mps)
+        })
     })
-    .await?;
+    .await
+    .map_err(|e| {
+        common_error::DaftError::InternalError(format!("Join error in spawn_blocking: {e}"))
+    })??;
 
     // 3. Concat each MicroPartition down to a single RecordBatch per worker.
     let worker_batches: Vec<RecordBatch> = sentinel_mps
