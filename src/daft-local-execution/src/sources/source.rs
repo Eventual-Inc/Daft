@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
@@ -17,6 +17,7 @@ use daft_io::IOStatsRef;
 use daft_local_plan::{InputId, LocalNodeContext};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use dashmap::DashMap;
 // MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::KeyValue;
@@ -47,20 +48,18 @@ pub(crate) struct InputStats {
 /// reused pipeline.
 #[derive(Clone)]
 pub(crate) struct StatsProvider {
-    inner: Arc<Mutex<HashMap<InputId, InputStats>>>,
+    inner: Arc<DashMap<InputId, InputStats>>,
 }
 
 impl StatsProvider {
     pub(crate) fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(HashMap::new())),
+            inner: Arc::new(DashMap::new()),
         }
     }
 
     pub(crate) fn get_or_create(&self, input_id: InputId) -> InputStats {
         self.inner
-            .lock()
-            .expect("StatsProvider mutex poisoned")
             .entry(input_id)
             .or_insert_with(|| InputStats {
                 io_stats: IOStatsRef::default(),
