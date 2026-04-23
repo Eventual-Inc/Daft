@@ -62,9 +62,9 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
 
     let mut offsets = Vec::with_capacity(n_array.len() + 1);
     offsets.push(0i64);
+    let mut values: Vec<i64> = Vec::new();
     let mut current_offset = 0i64;
 
-    let mut total_values = 0usize;
     for i in 0..n_array.len() {
         if let Some(n) = n_array.get(i) {
             if n < 0 {
@@ -73,19 +73,12 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
                     n
                 )));
             }
-            total_values += n as usize;
-            current_offset += n;
-        }
-        offsets.push(current_offset);
-    }
-
-    let mut values = Vec::with_capacity(total_values);
-    for i in 0..n_array.len() {
-        if let Some(n) = n_array.get(i) {
             for j in 0..n {
                 values.push(j);
             }
+            current_offset += n;
         }
+        offsets.push(current_offset);
     }
 
     let values_array = Int64Array::from_values("item", values).into_series();
