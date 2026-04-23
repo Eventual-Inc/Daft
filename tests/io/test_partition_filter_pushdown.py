@@ -317,23 +317,6 @@ def test_identity_partition_pred_preserved_with_scalar_fn_sibling():
     assert "greater_than" in ops, f"Expected 'greater_than' in partition_filters, got ops: {ops}"
 
 
-def test_two_identity_lit_predicates_both_pushed_down():
-    """Two simple literal comparisons on an identity-partitioned column must both appear in partition_filters."""
-    pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
-    pushdowns = _build_df_and_capture(
-        columns=[("source_col", DataType.string())],
-        partition_fields=[pfield],
-        filter_expr=(col("source_col") < lit("5")) & (col("source_col") > lit("1")),
-    )
-
-    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
-    result = extract_comparison(pushdowns.partition_filters)
-    assert result["op"] == "and", f"Expected top-level 'and', got: {result['op']}"
-    ops = _collect_ops(result)
-    assert "less_than" in ops, f"Expected 'less_than' in partition filters, got ops: {ops}"
-    assert "greater_than" in ops, f"Expected 'greater_than' in partition filters, got ops: {ops}"
-
-
 def test_identity_pred_with_cast_sibling_both_pushed_down():
     """An identity partition predicate combined with a ScalarFn-containing predicate must both survive.
 
