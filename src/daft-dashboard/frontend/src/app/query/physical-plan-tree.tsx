@@ -13,6 +13,12 @@ import {
   BYTES_IN_STAT_KEY,
   BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
+  TASK_ACTIVE_STAT_KEY,
+  TASK_COMPLETED_STAT_KEY,
+  TASK_CANCELLED_STAT_KEY,
+  TASK_FAILED_STAT_KEY,
+  TASK_COUNT_STAT_KEY,
+  TASK_STAT_KEYS,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
@@ -109,6 +115,106 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
   return formatDuration(Math.max(0, end - operator.start_sec));
 }
 
+function allocatePct(counts: number[]): number[] {
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (total === 0) return counts.map(() => 0);
+  const MIN_VISIBLE_PCT = 2;
+  const raw = counts.map(c => (c / total) * 100);
+  const result = raw.slice();
+  let stolen = 0;
+  for (let i = 0; i < result.length; i++) {
+    if (counts[i] > 0 && result[i] < MIN_VISIBLE_PCT) {
+      stolen += MIN_VISIBLE_PCT - result[i];
+      result[i] = MIN_VISIBLE_PCT;
+    }
+  }
+  if (stolen > 0) {
+    const donors = result
+      .map((v, i) => ({ i, v }))
+      .filter(d => d.v > MIN_VISIBLE_PCT)
+      .sort((a, b) => b.v - a.v);
+    const totalDonor = donors.reduce((a, d) => a + d.v, 0);
+    if (totalDonor > 0) {
+      for (const d of donors) {
+        result[d.i] -= stolen * (d.v / totalDonor);
+      }
+    }
+  }
+  return result;
+}
+
+function TasksPanel({ stats }: { stats: Record<string, OperatorInfo["stats"][string]> }) {
+  const active = statNumericValue(stats[TASK_ACTIVE_STAT_KEY]);
+  const completed = statNumericValue(stats[TASK_COMPLETED_STAT_KEY]);
+  const cancelled = statNumericValue(stats[TASK_CANCELLED_STAT_KEY]);
+  const failed = statNumericValue(stats[TASK_FAILED_STAT_KEY]);
+  const attributed = Math.min(
+    statNumericValue(stats[TASK_COUNT_STAT_KEY]),
+    completed,
+  );
+  const routed = active + completed + cancelled + failed;
+
+  if (routed === 0 && attributed === 0) return null;
+
+  const completedUnattributed = Math.max(0, completed - attributed);
+
+  const segs = [
+    { key: "attributed", n: attributed, bg: "bg-zinc-100" },
+    { key: "completed-other", n: completedUnattributed, bg: "bg-zinc-600" },
+    { key: "cancelled", n: cancelled, bg: "bg-zinc-700" },
+    { key: "failed", n: failed, bg: "bg-red-900" },
+    { key: "active", n: active, bg: "bg-zinc-400" },
+  ];
+
+  const pcts = allocatePct(segs.map(s => s.n));
+
+  const row = (label: string, value: number, labelColor = "text-zinc-500") => (
+    <div key={label} className="flex items-center justify-between gap-2">
+      <span className={`${main.className} text-[10px] uppercase tracking-wider ${labelColor}`}>
+        {label}
+      </span>
+      <span className={`${main.className} text-xs text-zinc-300 font-mono`}>
+        {value.toLocaleString()}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`${main.className} text-xs uppercase tracking-wider text-zinc-300`}>
+          tasks
+        </span>
+        <span className={`${main.className} text-xs text-zinc-300 font-mono`}>
+          {routed.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex h-4 border border-zinc-700 bg-zinc-900">
+        {segs.map((s, i) =>
+          pcts[i] > 0 ? (
+            <div
+              key={s.key}
+              className={s.bg}
+              style={{ width: `${pcts[i]}%` }}
+              title={`${s.key} ${s.n.toLocaleString()}`}
+            />
+          ) : null,
+        )}
+      </div>
+      {completed > 0 && (
+        <div className={`${main.className} text-[10px] text-zinc-500 tracking-wider`}>
+          └ <span className="text-zinc-100">{attributed.toLocaleString()}</span> ATTRIBUTED / <span className="text-zinc-400">{completed.toLocaleString()}</span> COMPLETED
+        </div>
+      )}
+      <div className="space-y-0.5 pt-0.5">
+        {cancelled > 0 && row("cancelled", cancelled)}
+        {failed > 0 && row("failed", failed, "text-red-700")}
+        {active > 0 && row("active", active)}
+      </div>
+    </div>
+  );
+}
+
 function PhysicalNodeCard({
   node,
   operator,
@@ -128,15 +234,19 @@ function PhysicalNodeCard({
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
 
   const cpuTimeStat = operator?.stats[DURATION_US_STAT_KEY];
+  const hasTaskStats = operator
+    ? TASK_STAT_KEYS.some(k => operator.stats[k] !== undefined)
+    : false;
   const extraStats = operator
     ? Object.entries(operator.stats)
         .filter(
           ([key]) =>
-            ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key),
+            ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key) &&
+            !TASK_STAT_KEYS.includes(key),
         )
         .sort(([a], [b]) => a.localeCompare(b))
     : [];
-  const hasExpandable = extraStats.length > 0 || cpuTimeStat;
+  const hasExpandable = extraStats.length > 0 || cpuTimeStat || hasTaskStats;
 
   return (
     <div
@@ -184,6 +294,14 @@ function PhysicalNodeCard({
       {/* Extra stats + CPU time — expandable */}
       {expanded && hasExpandable && (
         <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1">
+          {hasTaskStats && operator && (
+            <>
+              <TasksPanel stats={operator.stats} />
+              {(cpuTimeStat || extraStats.length > 0) && (
+                <div className="my-2 border-t border-zinc-700/50" />
+              )}
+            </>
+          )}
           {cpuTimeStat && (
             <div className="flex justify-between gap-2">
               <span

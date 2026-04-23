@@ -6,6 +6,19 @@ export const ROWS_OUT_STAT_KEY = "rows.out";
 export const BYTES_IN_STAT_KEY = "bytes.in";
 export const BYTES_OUT_STAT_KEY = "bytes.out";
 export const DURATION_US_STAT_KEY = "duration";
+export const TASK_ACTIVE_STAT_KEY = "task.active";
+export const TASK_COMPLETED_STAT_KEY = "task.completed";
+export const TASK_CANCELLED_STAT_KEY = "task.cancelled";
+export const TASK_FAILED_STAT_KEY = "task.failed";
+export const TASK_COUNT_STAT_KEY = "task.count";
+
+export const TASK_STAT_KEYS = [
+  TASK_ACTIVE_STAT_KEY,
+  TASK_COMPLETED_STAT_KEY,
+  TASK_CANCELLED_STAT_KEY,
+  TASK_FAILED_STAT_KEY,
+  TASK_COUNT_STAT_KEY,
+];
 
 export const statNumericValue = (stat: Stat | undefined): number => {
   if (!stat) return 0;
