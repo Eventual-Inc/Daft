@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import pytest
 
 import daft
@@ -195,38 +196,31 @@ def test_hive_daft_roundtrip(tmpdir, partition_by, file_format, filter):
     assert_tables_equal(target.to_arrow(), source.to_arrow())
 
 
-# Regression tests for https://github.com/Eventual-Inc/Daft/issues/2111:
-# partition values must live only in directory paths (Hive), not duplicated
-# in file bodies, so pandas/pyarrow can read the dataset.
-
-
-def _issue_2111_sample_pydict():
-    import datetime
-
+def _owners_sample_pydict():
     return {
         "first_name": ["Ernesto", "Sari", "Wolfgang", "Jackie", "Zoya"],
         "last_name": ["Evergreen", "Salama", "Winter", "Jale", "Zee"],
         "age": [34, 57, 23, 62, 40],
         "DoB": [
-            datetime.date(1990, 4, 3),
-            datetime.date(1967, 1, 2),
-            datetime.date(2001, 2, 12),
-            datetime.date(1962, 3, 24),
-            datetime.date(1984, 4, 7),
+            date(1990, 4, 3),
+            date(1967, 1, 2),
+            date(2001, 2, 12),
+            date(1962, 3, 24),
+            date(1984, 4, 7),
         ],
         "country": ["Canada", "United Kingdom", "Germany", "Canada", "United Kingdom"],
         "has_dog": [True, True, False, True, True],
     }
 
 
+def _walk_files(root, suffix):
+    return [os.path.join(r, f) for r, _, files in os.walk(root) for f in files if f.endswith(suffix)]
+
+
 def test_partition_cols_not_duplicated_in_parquet_file_bodies(tmpdir):
-    import pyarrow.parquet as pq
+    daft.from_pydict(_owners_sample_pydict()).write_parquet(str(tmpdir), partition_cols=["country"])
 
-    daft.from_pydict(_issue_2111_sample_pydict()).write_parquet(str(tmpdir), partition_cols=["country"])
-
-    written_files = [
-        os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".parquet")
-    ]
+    written_files = _walk_files(tmpdir, ".parquet")
     assert written_files, "expected at least one written parquet file"
 
     for file_path in written_files:
@@ -239,7 +233,7 @@ def test_partition_cols_not_duplicated_in_parquet_file_bodies(tmpdir):
 def test_pandas_can_read_daft_partitioned_parquet(tmpdir):
     pd = pytest.importorskip("pandas")
 
-    sample = _issue_2111_sample_pydict()
+    sample = _owners_sample_pydict()
     daft.from_pydict(sample).write_parquet(str(tmpdir), partition_cols=["country"])
 
     result = pd.read_parquet(str(tmpdir)).sort_values("first_name").reset_index(drop=True)
@@ -249,7 +243,7 @@ def test_pandas_can_read_daft_partitioned_parquet(tmpdir):
 
 
 def test_pyarrow_dataset_can_read_daft_partitioned_parquet(tmpdir):
-    sample = _issue_2111_sample_pydict()
+    sample = _owners_sample_pydict()
     daft.from_pydict(sample).write_parquet(str(tmpdir), partition_cols=["country"])
 
     pa_ds = ds.dataset(str(tmpdir), format="parquet", partitioning="hive")
@@ -259,9 +253,9 @@ def test_pyarrow_dataset_can_read_daft_partitioned_parquet(tmpdir):
 
 
 def test_partition_cols_not_duplicated_in_csv_file_bodies(tmpdir):
-    daft.from_pydict(_issue_2111_sample_pydict()).write_csv(str(tmpdir), partition_cols=["country"])
+    daft.from_pydict(_owners_sample_pydict()).write_csv(str(tmpdir), partition_cols=["country"])
 
-    written_files = [os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".csv")]
+    written_files = _walk_files(tmpdir, ".csv")
     assert written_files, "expected at least one written csv file"
 
     for file_path in written_files:
@@ -273,13 +267,8 @@ def test_partition_cols_not_duplicated_in_csv_file_bodies(tmpdir):
 
 
 def test_partition_by_all_columns_falls_back(tmpdir):
-    # Stripping would leave zero-column files; fall back to keeping columns in bodies.
-    import pyarrow.parquet as pq
-
     daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_parquet(str(tmpdir), partition_cols=["a", "b"])
-    written_files = [
-        os.path.join(root, f) for root, _, files in os.walk(tmpdir) for f in files if f.endswith(".parquet")
-    ]
+    written_files = _walk_files(tmpdir, ".parquet")
     assert written_files
     schema = pq.read_schema(written_files[0])
     assert set(schema.names) == {"a", "b"}
