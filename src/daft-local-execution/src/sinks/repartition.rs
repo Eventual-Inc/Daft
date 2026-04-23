@@ -149,11 +149,21 @@ impl BlockingSink for RepartitionSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
         let num_partitions = self.num_partitions;
+
+        // Attach the sink's spill reporter to each per-input cache so writer
+        // tasks bump `spill.bytes.written` / `spill.files.created` against our
+        // runtime stats. `set_spill_reporter` is idempotent, so calling on
+        // every sink() is cheap after the first attach.
+        if let RepartitionState::Flight(FlightRepartitionState { partitions }) = &state {
+            for cache in partitions.iter() {
+                cache.set_spill_reporter(runtime_stats.spill().clone());
+            }
+        }
 
         spawner
             .spawn(

@@ -9,8 +9,10 @@ use smallvec::SmallVec;
 
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
-    JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
-    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    IN_MEMORY_BUFFER_BYTES_KEY, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
+    JOIN_PROBE_BYTES_OUT_KEY, NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
+    SPILL_BYTES_READ_STAT_KEY, SPILL_BYTES_WRITTEN_STAT_KEY, SPILL_FILE_COUNT_STAT_KEY,
+    SPILL_FILES_RESIDENT_STAT_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -26,9 +28,102 @@ pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
     fn duration_us(&self) -> u64;
     fn to_stats(&self) -> Stats;
     fn to_message(&self) -> String;
+    /// Spill metrics, when the operator participates in spill accounting.
+    /// Variant-agnostic: lets rollup code pick up spill from any snapshot
+    /// without matching on the enum.
+    fn spill_metrics(&self) -> Option<SpillSnapshot> {
+        None
+    }
+    /// Current high-water in-memory buffer size (bytes), when the operator
+    /// tracks one (blocking sinks that buffer before spilling). `None` when
+    /// inapplicable.
+    fn in_memory_buffer_bytes(&self) -> Option<u64> {
+        None
+    }
 }
 
-#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+/// Source of spill I/O. Future variants (e.g. `RayObjectStore`) can be added
+/// without schema churn since `SpillSnapshot` is optional on each snapshot.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+pub enum SpillSource {
+    #[default]
+    Native,
+}
+
+/// Per-operator spill metrics
+///
+/// attached to snapshot variants whose operators
+/// can spill (shuffle, sort, aggregate, joins, ...). Absent on operators that
+/// never spill; zero-valued reporters should emit `None` so the field is
+/// skipped on serialization and doesn't light up the dashboard.
+#[derive(Debug, Clone, Default, Encode, Decode, Serialize, Deserialize)]
+pub struct SpillSnapshot {
+    pub source: SpillSource,
+    pub bytes_written: u64,
+    pub bytes_read: u64,
+    pub file_count: u64,
+    pub files_resident: u64,
+}
+
+impl SpillSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            source: self.source,
+            bytes_written: self.bytes_written + other.bytes_written,
+            bytes_read: self.bytes_read + other.bytes_read,
+            file_count: self.file_count + other.file_count,
+            files_resident: self.files_resident + other.files_resident,
+        }
+    }
+}
+
+/// Flatten a `SpillSnapshot` into `Stats` entries so subscribers (Python,
+/// dashboard, event-log) that consume the `to_stats()` key-value stream
+/// pick up spill observability without special-casing each snapshot variant.
+fn push_spill_stats(
+    entries: &mut smallvec::SmallVec<[(Arc<str>, Stat); 7]>,
+    spill: Option<&SpillSnapshot>,
+) {
+    let Some(spill) = spill else {
+        return;
+    };
+    entries.push((
+        SPILL_BYTES_WRITTEN_STAT_KEY.into(),
+        Stat::Bytes(spill.bytes_written),
+    ));
+    entries.push((
+        SPILL_BYTES_READ_STAT_KEY.into(),
+        Stat::Bytes(spill.bytes_read),
+    ));
+    entries.push((
+        SPILL_FILE_COUNT_STAT_KEY.into(),
+        Stat::Count(spill.file_count),
+    ));
+    entries.push((
+        SPILL_FILES_RESIDENT_STAT_KEY.into(),
+        Stat::Count(spill.files_resident),
+    ));
+}
+
+fn merge_spill(a: Option<SpillSnapshot>, b: Option<&SpillSnapshot>) -> Option<SpillSnapshot> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.merge(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b.clone()),
+        (None, None) => None,
+    }
+}
+
+fn merge_buffer_bytes(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+#[derive(Debug, Clone, Default, Encode, Decode, Serialize, Deserialize)]
 pub struct DefaultSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -39,6 +134,10 @@ pub struct DefaultSnapshot {
     pub bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    #[serde(default)]
+    pub spill: Option<SpillSnapshot>,
+    #[serde(default)]
+    pub in_memory_buffer_bytes: Option<u64>,
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
@@ -47,14 +146,22 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            ROWS_IN_KEY; Stat::Count(self.rows_in),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
-            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
-            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
-        ]
+        let mut entries: smallvec::SmallVec<[(Arc<str>, Stat); 7]> = smallvec::smallvec![
+            (
+                DURATION_KEY.into(),
+                Stat::Duration(Duration::from_micros(self.cpu_us))
+            ),
+            (ROWS_IN_KEY.into(), Stat::Count(self.rows_in)),
+            (ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)),
+            (BYTES_IN_KEY.into(), Stat::Bytes(self.bytes_in)),
+            (BYTES_OUT_KEY.into(), Stat::Bytes(self.bytes_out)),
+            (NUM_TASKS_KEY.into(), Stat::Count(self.num_tasks)),
+        ];
+        if let Some(buffer_bytes) = self.in_memory_buffer_bytes {
+            entries.push((IN_MEMORY_BUFFER_BYTES_KEY.into(), Stat::Bytes(buffer_bytes)));
+        }
+        push_spill_stats(&mut entries, self.spill.as_ref());
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
@@ -63,6 +170,14 @@ impl StatSnapshotImpl for DefaultSnapshot {
             HumanCount(self.rows_in),
             HumanCount(self.rows_out),
         )
+    }
+
+    fn spill_metrics(&self) -> Option<SpillSnapshot> {
+        self.spill.clone()
+    }
+
+    fn in_memory_buffer_bytes(&self) -> Option<u64> {
+        self.in_memory_buffer_bytes
     }
 }
 
@@ -75,11 +190,16 @@ impl DefaultSnapshot {
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            spill: merge_spill(self.spill, other.spill.as_ref()),
+            in_memory_buffer_bytes: merge_buffer_bytes(
+                self.in_memory_buffer_bytes,
+                other.in_memory_buffer_bytes,
+            ),
         }
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Encode, Decode, Serialize, Deserialize)]
 pub struct SourceSnapshot {
     pub cpu_us: u64,
     pub rows_out: u64,
@@ -88,6 +208,8 @@ pub struct SourceSnapshot {
     pub bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    #[serde(default)]
+    pub spill: Option<SpillSnapshot>,
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
@@ -96,13 +218,18 @@ impl StatSnapshotImpl for SourceSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
-            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
-            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
-        ]
+        let mut entries: smallvec::SmallVec<[(Arc<str>, Stat); 7]> = smallvec::smallvec![
+            (
+                DURATION_KEY.into(),
+                Stat::Duration(Duration::from_micros(self.cpu_us))
+            ),
+            (ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)),
+            (BYTES_READ_KEY.into(), Stat::Bytes(self.bytes_read)),
+            (BYTES_OUT_KEY.into(), Stat::Bytes(self.bytes_out)),
+            (NUM_TASKS_KEY.into(), Stat::Count(self.num_tasks)),
+        ];
+        push_spill_stats(&mut entries, self.spill.as_ref());
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
@@ -111,6 +238,10 @@ impl StatSnapshotImpl for SourceSnapshot {
             HumanCount(self.rows_out),
             HumanBytes(self.bytes_read),
         )
+    }
+
+    fn spill_metrics(&self) -> Option<SpillSnapshot> {
+        self.spill.clone()
     }
 }
 
@@ -122,6 +253,7 @@ impl SourceSnapshot {
             bytes_read: self.bytes_read + other.bytes_read,
             bytes_out: self.bytes_out + other.bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            spill: merge_spill(self.spill, other.spill.as_ref()),
         }
     }
 }
@@ -328,7 +460,7 @@ impl UdfSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Encode, Decode, Serialize, Deserialize)]
 pub struct JoinSnapshot {
     pub cpu_us: u64,
     pub build_rows_inserted: u64,
@@ -342,6 +474,8 @@ pub struct JoinSnapshot {
     pub probe_bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    #[serde(default)]
+    pub spill: Option<SpillSnapshot>,
 }
 
 impl StatSnapshotImpl for JoinSnapshot {
@@ -350,16 +484,33 @@ impl StatSnapshotImpl for JoinSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            "build rows inserted"; Stat::Count(self.build_rows_inserted),
-            "probe rows in"; Stat::Count(self.probe_rows_in),
-            "probe rows out"; Stat::Count(self.probe_rows_out),
-            JOIN_BUILD_BYTES_INSERTED_KEY; Stat::Bytes(self.build_bytes_inserted),
-            JOIN_PROBE_BYTES_IN_KEY; Stat::Bytes(self.probe_bytes_in),
-            JOIN_PROBE_BYTES_OUT_KEY; Stat::Bytes(self.probe_bytes_out),
-            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
-        ]
+        let mut entries: smallvec::SmallVec<[(Arc<str>, Stat); 7]> = smallvec::smallvec![
+            (
+                DURATION_KEY.into(),
+                Stat::Duration(Duration::from_micros(self.cpu_us))
+            ),
+            (
+                "build rows inserted".into(),
+                Stat::Count(self.build_rows_inserted)
+            ),
+            ("probe rows in".into(), Stat::Count(self.probe_rows_in)),
+            ("probe rows out".into(), Stat::Count(self.probe_rows_out)),
+            (
+                JOIN_BUILD_BYTES_INSERTED_KEY.into(),
+                Stat::Bytes(self.build_bytes_inserted)
+            ),
+            (
+                JOIN_PROBE_BYTES_IN_KEY.into(),
+                Stat::Bytes(self.probe_bytes_in)
+            ),
+            (
+                JOIN_PROBE_BYTES_OUT_KEY.into(),
+                Stat::Bytes(self.probe_bytes_out)
+            ),
+            (NUM_TASKS_KEY.into(), Stat::Count(self.num_tasks)),
+        ];
+        push_spill_stats(&mut entries, self.spill.as_ref());
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
@@ -369,6 +520,10 @@ impl StatSnapshotImpl for JoinSnapshot {
             HumanCount(self.probe_rows_in),
             HumanCount(self.probe_rows_out),
         )
+    }
+
+    fn spill_metrics(&self) -> Option<SpillSnapshot> {
+        self.spill.clone()
     }
 }
 
@@ -383,6 +538,7 @@ impl JoinSnapshot {
             probe_bytes_in: self.probe_bytes_in + other.probe_bytes_in,
             probe_bytes_out: self.probe_bytes_out + other.probe_bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            spill: merge_spill(self.spill, other.spill.as_ref()),
         }
     }
 }
@@ -491,36 +647,22 @@ mod tests {
             (
                 StatSnapshot::Default(DefaultSnapshot {
                     num_tasks: 2,
-                    cpu_us: 0,
-                    rows_in: 0,
-                    rows_out: 0,
-                    bytes_in: 0,
-                    bytes_out: 0,
+                    ..Default::default()
                 }),
                 StatSnapshot::Default(DefaultSnapshot {
                     num_tasks: 5,
-                    cpu_us: 0,
-                    rows_in: 0,
-                    rows_out: 0,
-                    bytes_in: 0,
-                    bytes_out: 0,
+                    ..Default::default()
                 }),
                 7,
             ),
             (
                 StatSnapshot::Source(SourceSnapshot {
                     num_tasks: 1,
-                    cpu_us: 0,
-                    rows_out: 0,
-                    bytes_read: 0,
-                    bytes_out: 0,
+                    ..Default::default()
                 }),
                 StatSnapshot::Source(SourceSnapshot {
                     num_tasks: 3,
-                    cpu_us: 0,
-                    rows_out: 0,
-                    bytes_read: 0,
-                    bytes_out: 0,
+                    ..Default::default()
                 }),
                 4,
             ),
@@ -590,23 +732,11 @@ mod tests {
             (
                 StatSnapshot::Join(JoinSnapshot {
                     num_tasks: 3,
-                    cpu_us: 0,
-                    build_rows_inserted: 0,
-                    probe_rows_in: 0,
-                    probe_rows_out: 0,
-                    build_bytes_inserted: 0,
-                    probe_bytes_in: 0,
-                    probe_bytes_out: 0,
+                    ..Default::default()
                 }),
                 StatSnapshot::Join(JoinSnapshot {
                     num_tasks: 8,
-                    cpu_us: 0,
-                    build_rows_inserted: 0,
-                    probe_rows_in: 0,
-                    probe_rows_out: 0,
-                    build_bytes_inserted: 0,
-                    probe_bytes_in: 0,
-                    probe_bytes_out: 0,
+                    ..Default::default()
                 }),
                 11,
             ),

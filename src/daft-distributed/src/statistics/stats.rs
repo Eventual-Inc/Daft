@@ -1,10 +1,13 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
     TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
     ops::NodeInfo,
-    snapshot::{DefaultSnapshot, StatSnapshotImpl as _},
+    snapshot::{DefaultSnapshot, SpillSnapshot, SpillSource, StatSnapshotImpl as _},
 };
 use opentelemetry::KeyValue;
 
@@ -153,6 +156,79 @@ impl RuntimeNodeManager {
     }
 }
 
+/// Shared spill + in-memory-buffer rollup counters. Rolls worker-side snapshots
+/// up to the distributed pipeline node so `spill.*` metrics and
+/// `bytes.in_memory_buffer` appear on the exported snapshot alongside the
+/// rows/bytes base counters.
+pub(crate) struct SpillRollupCounters {
+    spill_bytes_written: Counter,
+    spill_bytes_read: Counter,
+    spill_file_count: Counter,
+    /// Peak in-memory buffer observed across any worker task. `fetch_max`
+    /// rather than sum — buffer size is instantaneous, not cumulative.
+    max_in_memory_buffer_bytes: AtomicU64,
+    /// Sum of resident-files counts reported from workers. Each task reports
+    /// its own still-resident count at task end; summed gives cluster-wide
+    /// residency.
+    spill_files_resident: AtomicU64,
+    node_kv: Vec<KeyValue>,
+}
+
+impl SpillRollupCounters {
+    pub fn new(meter: &Meter, node_kv: Vec<KeyValue>) -> Self {
+        Self {
+            spill_bytes_written: meter.u64_counter(common_metrics::SPILL_BYTES_WRITTEN_STAT_KEY),
+            spill_bytes_read: meter.u64_counter(common_metrics::SPILL_BYTES_READ_STAT_KEY),
+            spill_file_count: meter.u64_counter(common_metrics::SPILL_FILE_COUNT_STAT_KEY),
+            max_in_memory_buffer_bytes: AtomicU64::new(0),
+            spill_files_resident: AtomicU64::new(0),
+            node_kv,
+        }
+    }
+
+    /// Pull spill + buffer fields off an incoming worker snapshot and fold
+    /// them into the rollup counters. Variant-agnostic — any snapshot whose
+    /// `spill_metrics()` / `in_memory_buffer_bytes()` return `Some` contributes.
+    pub fn absorb(&self, snapshot: &StatSnapshot) {
+        if let Some(spill) = snapshot.spill_metrics() {
+            self.spill_bytes_written
+                .add(spill.bytes_written, self.node_kv.as_slice());
+            self.spill_bytes_read
+                .add(spill.bytes_read, self.node_kv.as_slice());
+            self.spill_file_count
+                .add(spill.file_count, self.node_kv.as_slice());
+            self.spill_files_resident
+                .fetch_add(spill.files_resident, Ordering::Relaxed);
+        }
+        if let Some(buf) = snapshot.in_memory_buffer_bytes() {
+            self.max_in_memory_buffer_bytes
+                .fetch_max(buf, Ordering::Relaxed);
+        }
+    }
+
+    pub fn export_spill(&self) -> Option<SpillSnapshot> {
+        let bytes_written = self.spill_bytes_written.load(Ordering::Relaxed);
+        let bytes_read = self.spill_bytes_read.load(Ordering::Relaxed);
+        let file_count = self.spill_file_count.load(Ordering::Relaxed);
+        let files_resident = self.spill_files_resident.load(Ordering::Relaxed);
+        if bytes_written == 0 && bytes_read == 0 && file_count == 0 && files_resident == 0 {
+            return None;
+        }
+        Some(SpillSnapshot {
+            source: SpillSource::Native,
+            bytes_written,
+            bytes_read,
+            file_count,
+            files_resident,
+        })
+    }
+
+    pub fn export_buffer(&self) -> Option<u64> {
+        let v = self.max_in_memory_buffer_bytes.load(Ordering::Relaxed);
+        (v > 0).then_some(v)
+    }
+}
+
 pub struct BaseCounters {
     duration_us: Counter,
     rows_in: Counter,
@@ -160,6 +236,7 @@ pub struct BaseCounters {
     bytes_in: Counter,
     bytes_out: Counter,
     num_tasks: Counter,
+    spill: SpillRollupCounters,
     node_kv: Vec<KeyValue>,
 }
 
@@ -173,8 +250,16 @@ impl BaseCounters {
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
             num_tasks: meter.num_tasks_metric(),
+            spill: SpillRollupCounters::new(meter, node_kv.clone()),
             node_kv,
         }
+    }
+
+    /// Fold spill + buffer fields from an incoming worker snapshot into the
+    /// distributed-node rollup. Variant-agnostic; callers invoke this
+    /// alongside the existing `add_*` row/byte methods.
+    pub fn absorb_spill_and_buffer(&self, snapshot: &StatSnapshot) {
+        self.spill.absorb(snapshot);
     }
 
     pub fn add_duration_us(&self, v: u64) {
@@ -209,6 +294,8 @@ impl BaseCounters {
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
             num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            spill: self.spill.export_spill(),
+            in_memory_buffer_bytes: self.spill.export_buffer(),
         })
     }
 }
@@ -228,16 +315,31 @@ impl DefaultRuntimeStats {
 impl RuntimeStats for DefaultRuntimeStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         self.base.add_duration_us(snapshot.duration_us());
+        // Spill + in-memory buffer rollup is variant-agnostic — any snapshot
+        // that carries spill or buffer metrics contributes regardless of kind.
+        self.base.absorb_spill_and_buffer(snapshot);
 
-        let StatSnapshot::Default(snapshot) = snapshot else {
-            // TODO: Return immediately for now, but ideally should error
-            return;
-        };
-
-        self.base.add_rows_in(snapshot.rows_in);
-        self.base.add_rows_out(snapshot.rows_out);
-        self.base.add_bytes_in(snapshot.bytes_in);
-        self.base.add_bytes_out(snapshot.bytes_out);
+        match snapshot {
+            StatSnapshot::Default(snapshot) => {
+                self.base.add_rows_in(snapshot.rows_in);
+                self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_in(snapshot.bytes_in);
+                self.base.add_bytes_out(snapshot.bytes_out);
+            }
+            // ShuffleRead worker tasks emit `Source`-variant snapshots keyed
+            // on the Repartition distributed node_id. Absorb their rows_out /
+            // bytes_out so they surface on the Repartition card alongside the
+            // write-side bytes_in / rows_in from RepartitionSink. `bytes_read`
+            // is intentionally dropped here — spilled-read bytes flow through
+            // the variant-agnostic spill rollup above as `spill.bytes.read`.
+            StatSnapshot::Source(snapshot) => {
+                self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_out(snapshot.bytes_out);
+            }
+            _ => {
+                // TODO: Return immediately for now, but ideally should error
+            }
+        }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -312,14 +414,7 @@ mod tests {
                         node_origin_id: Some(origin),
                         ..Default::default()
                     }),
-                    StatSnapshot::Default(DefaultSnapshot {
-                        cpu_us: 0,
-                        rows_in: 0,
-                        rows_out: 0,
-                        bytes_in: 0,
-                        bytes_out: 0,
-                        num_tasks: 0,
-                    }),
+                    StatSnapshot::Default(DefaultSnapshot::default()),
                 )
             })
             .collect();
@@ -469,6 +564,8 @@ mod tests {
                 bytes_in: 1000,
                 bytes_out: 500,
                 num_tasks: 0,
+                spill: None,
+                in_memory_buffer_bytes: None,
             });
 
             let event = TaskEvent::Completed {
