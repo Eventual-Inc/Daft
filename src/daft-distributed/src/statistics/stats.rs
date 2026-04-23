@@ -326,6 +326,7 @@ mod tests {
         TaskEvent::Completed {
             context: TaskContext::default(),
             stats: ExecutionStats::new("q".into(), nodes),
+            worker_id: "worker-1".into(),
         }
     }
 
@@ -358,6 +359,8 @@ mod tests {
         TaskEvent::Failed {
             context: TaskContext::default(),
             reason: "boom".into(),
+            worker_id: None,
+            retryable: false,
         }
     }
 
