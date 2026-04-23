@@ -4,14 +4,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
-use daft_checkpoint::{CheckpointId, CheckpointStoreRef};
+use daft_checkpoint::CheckpointStoreRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -150,7 +151,11 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
     meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
-    checkpoint_store: Option<CheckpointStoreRef>,
+    checkpoint: Option<(
+        CheckpointStoreRef,
+        CheckpointIdMap,
+        daft_checkpoint::FileFormat,
+    )>,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
@@ -169,20 +174,57 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(node_info),
-            checkpoint_store: None,
+            checkpoint: None,
         }
     }
 
     /// Set the checkpoint context for this sink node. When present, the store's
-    /// `checkpoint()` method is called after finalize completes.
-    #[allow(dead_code)]
-    pub(crate) fn with_checkpoint_store(mut self, store: CheckpointStoreRef) -> Self {
-        self.checkpoint_store = Some(store);
+    /// `checkpoint()` method is called after each input finalizes, using a
+    /// per-input `CheckpointId` derived from the shared `CheckpointIdMap`.
+    pub(crate) fn with_checkpoint(
+        mut self,
+        store: CheckpointStoreRef,
+        id_map: CheckpointIdMap,
+        file_format: daft_checkpoint::FileFormat,
+    ) -> Self {
+        self.checkpoint = Some((store, id_map, file_format));
         self
     }
 
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
+    }
+
+    fn encode_file_metadata(
+        partitions: &[MicroPartition],
+        file_format: daft_checkpoint::FileFormat,
+    ) -> DaftResult<Vec<daft_checkpoint::FileMetadata>> {
+        let ipc_err = |e: arrow_schema::ArrowError| DaftError::InternalError(e.to_string());
+        partitions
+            .iter()
+            .flat_map(|mp| {
+                mp.record_batches().iter().map(move |rb| {
+                    let mut buf = Vec::new();
+                    let schema = rb.schema.to_arrow()?;
+                    let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buf, &schema)
+                        .map_err(ipc_err)?;
+                    let arrow_arrays: Vec<arrow_array::ArrayRef> = rb
+                        .columns()
+                        .iter()
+                        .map(|c| c.as_materialized_series().to_arrow())
+                        .collect::<DaftResult<_>>()?;
+                    let batch = arrow_array::RecordBatch::try_new(
+                        std::sync::Arc::new(schema),
+                        arrow_arrays,
+                    )
+                    .map_err(ipc_err)?;
+                    writer.write(&batch).map_err(ipc_err)?;
+                    writer.finish().map_err(ipc_err)?;
+                    drop(writer);
+                    Ok(daft_checkpoint::FileMetadata::new(file_format, buf))
+                })
+            })
+            .collect()
     }
 
     fn spawn_finalize(
@@ -192,13 +234,31 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_tx: Sender<PipelineMessage>,
         tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
-        checkpoint: Option<(CheckpointStoreRef, CheckpointId)>,
+        checkpoint: Option<(
+            CheckpointStoreRef,
+            CheckpointIdMap,
+            daft_checkpoint::FileFormat,
+        )>,
     ) {
         tasks.spawn(async move {
+            let checkpoint_id = checkpoint
+                .as_ref()
+                .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
+
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
+                    // Stage write results as file metadata before sending.
+                    if let Some((ref store, _, file_format)) = checkpoint {
+                        let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
+                        if !file_metadata.is_empty() {
+                            store
+                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
+                                .await?;
+                        }
+                    }
+
                     for partition in partitions {
                         per_input.runtime_stats.add_rows_out(partition.len() as u64);
                         per_input
@@ -223,8 +283,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
                 }
             }
-            if let Some((store, id)) = &checkpoint {
-                store.checkpoint(id).await?;
+            if let Some((store, _, _)) = &checkpoint {
+                store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
             Ok(TaskResult::Finalized)
@@ -240,16 +300,13 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         stats_manager: RuntimeStatsManagerHandle,
         meter: Meter,
         node_info: Arc<NodeInfo>,
-        checkpoint_store: Option<CheckpointStoreRef>,
+        checkpoint: Option<(
+            CheckpointStoreRef,
+            CheckpointIdMap,
+            daft_checkpoint::FileFormat,
+        )>,
     ) -> DaftResult<()> {
         let node_id = node_info.id;
-        let checkpoint = checkpoint_store.and_then(|store| {
-            let id = node_info
-                .context
-                .get("checkpoint_id")
-                .map(|s| CheckpointId::from_string(s.clone()))?;
-            Some((store, id))
-        });
         let max_concurrency = op.max_concurrency();
         let compute_runtime = get_compute_runtime();
         let task_spawner = ExecutionTaskSpawner::new(
@@ -466,7 +523,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             child,
             meter,
             node_info,
-            checkpoint_store,
+            checkpoint,
             ..
         } = *self;
         let name: Arc<str> = node_info.name.clone();
@@ -485,7 +542,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     stats_manager,
                     meter,
                     node_info,
-                    checkpoint_store,
+                    checkpoint,
                 )
                 .await
             },
