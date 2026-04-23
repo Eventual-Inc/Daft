@@ -1,6 +1,7 @@
 mod detect_monotonic_id;
 mod drop_into_batches;
 mod drop_repartition;
+mod eliminate_common_subplans;
 mod eliminate_cross_join;
 mod eliminate_offsets;
 mod eliminate_subquery_alias;
@@ -31,6 +32,7 @@ mod unnest_subquery;
 pub use detect_monotonic_id::DetectMonotonicId;
 pub use drop_into_batches::DropIntoBatches;
 pub use drop_repartition::DropRepartition;
+pub use eliminate_common_subplans::EliminateCommonSubplans;
 pub use eliminate_cross_join::EliminateCrossJoin;
 pub use eliminate_offsets::EliminateOffsets;
 pub use eliminate_subquery_alias::EliminateSubqueryAliasRule;

@@ -7,14 +7,14 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
-        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
-        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCommonSubplans,
+        EliminateCrossJoin, EliminateOffsets, EliminateSubqueryAliasRule, EnrichWithStats,
+        ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans,
+        OptimizerRule, PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter,
+        PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
+        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
+        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
+        SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -133,6 +133,7 @@ impl OptimizerBuilder {
                     Box::new(EliminateSubqueryAliasRule::new()),
                     Box::new(ExtractWindowFunction::new()),
                     Box::new(SplitExplodeFromProject::new()),
+                    Box::new(EliminateCommonSubplans::new()),
                 ],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
@@ -406,8 +407,10 @@ mod tests {
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
         LogicalPlan,
-        ops::{Filter, Project, UDFProject},
-        optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
+        ops::{Filter, Project, SetQuantifier, UDFProject, Union, UnionStrategy},
+        optimization::rules::{
+            EliminateCommonSubplans, EnrichWithStats, MaterializeScans, OptimizerRule,
+        },
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
             dummy_scan_operator_for_aggregation,
@@ -883,6 +886,228 @@ mod tests {
             opt_plan.repr_ascii(false),
             expected.repr_ascii(false)
         );
+        Ok(())
+    }
+
+    /// Test that common subplan elimination works correctly when no duplicates exist.
+    #[test]
+    fn eliminate_common_subplans_no_duplicates() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan = dummy_scan_node(scan_op).build();
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(scan)?;
+
+        assert!(!result.transformed, "single scan should not be transformed");
+        Ok(())
+    }
+
+    /// Test that duplicate scans in a Union are shared via Arc.
+    #[test]
+    fn eliminate_common_subplans_union_scan() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        let scan1 = dummy_scan_node(scan_op.clone()).build();
+        let scan2 = dummy_scan_node(scan_op).build();
+
+        // Before optimization, these should be equal but not pointer-equal
+        assert_eq!(scan1, scan2);
+        assert!(!Arc::ptr_eq(&scan1, &scan2));
+
+        let union = Union::try_new(scan1, scan2, SetQuantifier::All, UnionStrategy::Positional)?;
+        let plan = Arc::new(LogicalPlan::Union(union));
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(plan)?;
+
+        assert!(
+            result.transformed,
+            "union with duplicate scans should be transformed"
+        );
+
+        // After optimization, both sides should share the same Arc
+        match result.data.as_ref() {
+            LogicalPlan::Union(u) => {
+                assert!(
+                    Arc::ptr_eq(&u.lhs, &u.rhs),
+                    "Union sides should share the same Arc after optimization"
+                );
+            }
+            _ => panic!("expected Union"),
+        }
+        Ok(())
+    }
+
+    /// Test that duplicate nested subplans are eliminated (e.g. Union(Filter(Scan), Filter(Scan))).
+    #[test]
+    fn eliminate_common_subplans_nested() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        // Create: Union(Filter(Scan), Filter(Scan))
+        let scan1 = dummy_scan_node(scan_op.clone()).build();
+        let scan2 = dummy_scan_node(scan_op).build();
+        let filter1 = Filter::try_new(scan1, resolved_col("a").gt(lit(0)))?;
+        let filter2 = Filter::try_new(scan2, resolved_col("a").gt(lit(0)))?;
+
+        let union = Union::try_new(
+            Arc::new(LogicalPlan::Filter(filter1)),
+            Arc::new(LogicalPlan::Filter(filter2)),
+            SetQuantifier::All,
+            UnionStrategy::Positional,
+        )?;
+        let plan = Arc::new(LogicalPlan::Union(union));
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(plan)?;
+
+        assert!(
+            result.transformed,
+            "union with duplicate filters should be transformed"
+        );
+
+        // After optimization, both Filter children should share the same Arc
+        match result.data.as_ref() {
+            LogicalPlan::Union(u) => {
+                if let (LogicalPlan::Filter(f1), LogicalPlan::Filter(f2)) =
+                    (u.lhs.as_ref(), u.rhs.as_ref())
+                {
+                    assert!(
+                        Arc::ptr_eq(&f1.input, &f2.input),
+                        "Filter inputs should share the same Arc after optimization"
+                    );
+                } else {
+                    panic!("expected Filter children");
+                }
+            }
+            _ => panic!("expected Union"),
+        }
+        Ok(())
+    }
+
+    /// Test that duplicate Project subplans are eliminated.
+    #[test]
+    fn eliminate_common_subplans_project() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        let scan1 = dummy_scan_node(scan_op.clone()).build();
+        let scan2 = dummy_scan_node(scan_op).build();
+        let proj1 = Project::try_new(scan1, vec![resolved_col("a")])?;
+        let proj2 = Project::try_new(scan2, vec![resolved_col("a")])?;
+
+        let union = Union::try_new(
+            Arc::new(LogicalPlan::Project(proj1)),
+            Arc::new(LogicalPlan::Project(proj2)),
+            SetQuantifier::All,
+            UnionStrategy::Positional,
+        )?;
+        let plan = Arc::new(LogicalPlan::Union(union));
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(plan)?;
+
+        assert!(
+            result.transformed,
+            "union with duplicate projects should be transformed"
+        );
+
+        // After optimization, both Project inputs (scans) should share the same Arc
+        match result.data.as_ref() {
+            LogicalPlan::Union(u) => {
+                if let (LogicalPlan::Project(p1), LogicalPlan::Project(p2)) =
+                    (u.lhs.as_ref(), u.rhs.as_ref())
+                {
+                    assert!(
+                        Arc::ptr_eq(&p1.input, &p2.input),
+                        "Project inputs should share the same Arc after optimization"
+                    );
+                } else {
+                    panic!("expected Project children");
+                }
+            }
+            _ => panic!("expected Union"),
+        }
+        Ok(())
+    }
+
+    /// Test that structurally different plans are NOT eliminated.
+    /// This guards against hash collision bugs.
+    #[test]
+    fn eliminate_common_subplans_structurally_different() -> DaftResult<()> {
+        let scan_op1 = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let scan_op2 = dummy_scan_operator(vec![Field::new("b", DataType::Float64)]);
+
+        let scan1 = dummy_scan_node(scan_op1).build();
+        let scan2 = dummy_scan_node(scan_op2).build();
+
+        assert_ne!(
+            scan1, scan2,
+            "scans with different schemas should not be equal"
+        );
+
+        let union = Union::try_new(scan1, scan2, SetQuantifier::All, UnionStrategy::Positional)?;
+        let plan = Arc::new(LogicalPlan::Union(union));
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(plan)?;
+
+        assert!(
+            !result.transformed,
+            "structurally different plans should not be transformed"
+        );
+        Ok(())
+    }
+
+    /// Test that optimization is applied recursively (deep duplicates are eliminated).
+    #[test]
+    fn eliminate_common_subplans_deep_nested() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+
+        // Create: Union(Project(Filter(Scan)), Project(Filter(Scan)))
+        let scan1 = dummy_scan_node(scan_op.clone()).build();
+        let scan2 = dummy_scan_node(scan_op).build();
+        let filter1 = Filter::try_new(scan1, resolved_col("a").gt(lit(0)))?;
+        let filter2 = Filter::try_new(scan2, resolved_col("a").gt(lit(0)))?;
+        let proj1 = Project::try_new(filter1.into(), vec![resolved_col("a")])?;
+        let proj2 = Project::try_new(filter2.into(), vec![resolved_col("a")])?;
+
+        let union = Union::try_new(
+            Arc::new(LogicalPlan::Project(proj1)),
+            Arc::new(LogicalPlan::Project(proj2)),
+            SetQuantifier::All,
+            UnionStrategy::Positional,
+        )?;
+        let plan = Arc::new(LogicalPlan::Union(union));
+
+        let optimizer = EliminateCommonSubplans::new();
+        let result = optimizer.try_optimize(plan)?;
+
+        assert!(
+            result.transformed,
+            "deep nested duplicates should be eliminated"
+        );
+
+        // Verify both Project -> Filter -> Scan chain shares the same Scan Arc
+        match result.data.as_ref() {
+            LogicalPlan::Union(u) => {
+                if let (LogicalPlan::Project(p1), LogicalPlan::Project(p2)) =
+                    (u.lhs.as_ref(), u.rhs.as_ref())
+                {
+                    if let (LogicalPlan::Filter(f1), LogicalPlan::Filter(f2)) =
+                        (p1.input.as_ref(), p2.input.as_ref())
+                    {
+                        assert!(
+                            Arc::ptr_eq(&f1.input, &f2.input),
+                            "deep nested scans should share the same Arc"
+                        );
+                    } else {
+                        panic!("expected Filter children");
+                    }
+                } else {
+                    panic!("expected Project children");
+                }
+            }
+            _ => panic!("expected Union"),
+        }
         Ok(())
     }
 }
