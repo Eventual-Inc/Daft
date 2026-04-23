@@ -17,8 +17,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
-    resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
+    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -142,6 +142,25 @@ impl LogicalPlanBuilder {
 
     pub fn with_plan_id(&self, id: usize) -> Self {
         self.with_new_plan(self.plan.clone().with_plan_id(id))
+    }
+
+    /// Attach checkpoint configuration to the current plan's Source node.
+    ///
+    /// Panics if the current plan root is not a `LogicalPlan::Source`.
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::CheckpointConfig,
+    ) -> DaftResult<Self> {
+        match self.plan.as_ref() {
+            LogicalPlan::Source(source) => {
+                let new_source = source.clone().with_checkpoint(config);
+                Ok(self.with_new_plan(LogicalPlan::Source(new_source)))
+            }
+            other => Err(DaftError::ValueError(format!(
+                "with_checkpoint can only be called on a Source node, got: {}",
+                other.name()
+            ))),
+        }
     }
 
     pub fn in_memory_scan(
@@ -741,6 +760,57 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_asof<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_by: Vec<ExprRef>,
+        right_by: Vec<ExprRef>,
+        left_on: ExprRef,
+        right_on: ExprRef,
+        options: JoinOptions,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let right_cols_to_drop =
+            get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
+                match e.unwrap_alias().0.as_ref() {
+                    Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
+                }
+            });
+
+        let (right_plan, right_by, right_on) = ops::AsofJoin::deduplicate_asof_join_columns(
+            left_plan.clone(),
+            right_plan,
+            right_by,
+            right_on,
+            &right_cols_to_drop,
+            &options,
+        )?;
+
+        let expr_resolver = ExprResolver::default();
+        let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
+        let right_by = expr_resolver.resolve(right_by, right_plan.clone())?;
+        let left_on = expr_resolver.resolve_single(left_on, left_plan.clone())?;
+        let right_on = expr_resolver.resolve_single(right_on, right_plan.clone())?;
+
+        let logical_plan: LogicalPlan = ops::AsofJoin::try_new(
+            left_plan,
+            right_plan,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            right_cols_to_drop,
+        )?
+        .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -970,7 +1040,12 @@ impl LogicalPlanBuilder {
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(Some(execution_config.clone())),
+                    |builder| {
+                        let use_dp_ccp = cfg
+                            .as_ref()
+                            .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                        builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                    },
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -1040,7 +1115,12 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config.clone())),
+                |builder| {
+                    let use_dp_ccp = cfg
+                        .as_ref()
+                        .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                    builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                },
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1200,6 +1280,18 @@ impl PyLogicalPlanBuilder {
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
+    }
+
+    pub fn with_checkpoint(
+        &self,
+        store_config: common_checkpoint_config::python::PyCheckpointStoreConfig,
+        key_column: String,
+    ) -> PyResult<Self> {
+        let config = common_checkpoint_config::CheckpointConfig {
+            store: store_config.config,
+            key_column,
+        };
+        Ok(self.builder.with_checkpoint(config)?.into())
     }
 
     pub fn with_planning_config(
@@ -1509,6 +1601,30 @@ impl PyLogicalPlanBuilder {
         }
 
         Ok(result.into())
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, prefix, suffix))]
+    pub fn join_asof(
+        &self,
+        right: &Self,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        prefix: Option<String>,
+        suffix: Option<String>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .join_asof(
+                &right.builder,
+                pyexprs_to_exprs(left_by),
+                pyexprs_to_exprs(right_by),
+                left_on.into(),
+                right_on.into(),
+                JoinOptions { prefix, suffix },
+            )?
+            .into())
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {

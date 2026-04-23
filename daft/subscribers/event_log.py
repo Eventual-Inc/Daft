@@ -2,24 +2,49 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
+import os
+import queue
+import socket
+import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from io import TextIOWrapper
 
-    from daft.subscribers.events import OperatorFinished, OperatorStarted, Stats
+    from daft.subscribers.events import (
+        ExecutionFinished,
+        ExecutionStarted,
+        OperatorFinished,
+        OperatorStarted,
+        OptimizationCompleted,
+        OptimizationStarted,
+        ProcessStats,
+        QueryFinished,
+        QueryHeartbeat,
+        QueryStarted,
+        ResultProduced,
+        Stats,
+    )
+
+from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState, StatType
 from daft.subscribers.abc import Subscriber
+
+if TYPE_CHECKING:
+    from daft.daft import QueryEndState
+
+logger = logging.getLogger(__name__)
 
 _EVENT_LOG_ALIAS = "_daft_event_log"
 _DEFAULT_EVENT_LOG_DIR = Path("~/.daft/events").expanduser()
 _EVENT_LOG_ATEXIT_REGISTERED = False
+
+_REMOTE_DRAIN_TIMEOUT_SEC = 30.0
 
 
 def _json_default(obj: object) -> object:
@@ -29,8 +54,8 @@ def _json_default(obj: object) -> object:
     return str(obj)
 
 
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+def _epoch_now() -> float:
+    return time.time()
 
 
 def _mono_ms() -> float:
@@ -45,24 +70,40 @@ class EventLogSubscriber(Subscriber):
     one JSON object per line with ``event``, ``ts``, and event-specific fields.
     """
 
-    def __init__(self, log_dir: str | Path) -> None:
+    def __init__(
+        self,
+        log_dir: str | Path,
+        component: str | None = None,
+        node_role: str | None = None,
+    ) -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._init_subscriber_state(component=component, node_role=node_role)
+
+    def _init_subscriber_state(self, component: str | None, node_role: str | None) -> None:
+        """Initialize all non-log-dir state shared by this class and subclasses."""
         self._closed = False
         self._query_files: dict[str, TextIOWrapper] = {}
 
-        # Track start times for duration computation (monotonic ms).
-        # TODO update the framework to pass this information
+        # Track start times locally for events that do not carry durations.
         self._query_starts: dict[str, float] = {}
         self._optimization_starts: dict[str, float] = {}
         self._exec_starts: dict[str, float] = {}
         self._operator_starts: dict[tuple[str, int], float] = {}
 
+        # Per-process identity tags. Only meaningful in distributed setups —
+        # when provided, attached to every record so consumers can demultiplex
+        # interleaved output from driver + workers.
+        self._component = component
+        self._node_role = node_role
+        self._hostname = socket.gethostname()
+        self._pid = os.getpid()
+
     def _clear_query_state(self, query_id: str) -> None:
         """Remove any leftover timing state for the given query."""
+        self._query_starts.pop(query_id, None)
         self._optimization_starts.pop(query_id, None)
         self._exec_starts.pop(query_id, None)
-
         stale_operator_keys = [key for key in self._operator_starts if key[0] == query_id]
         for key in stale_operator_keys:
             self._operator_starts.pop(key, None)
@@ -109,11 +150,25 @@ class EventLogSubscriber(Subscriber):
         )
 
     def _write_event(self, query_id: str, event_name: str, payload: dict[str, Any]) -> None:
+        record: dict[str, Any] = {
+            "event": event_name,
+            "timestamp": _epoch_now(),
+            "query_id": query_id,
+            "hostname": self._hostname,
+            "pid": self._pid,
+        }
+        if self._component is not None:
+            record["component"] = self._component
+        if self._node_role is not None:
+            record["node_role"] = self._node_role
+        record.update(payload)
+        self._emit_record(query_id, record)
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        """Write a record to its sink. Default: per-query JSONL file. Subclasses override."""
         query_file = self._get_query_file(query_id)
         if query_file is None:
             return
-        record: dict[str, Any] = {"event": event_name, "ts": _iso_now(), "query_id": query_id}
-        record.update(payload)
         try:
             query_file.write(json.dumps(record, default=_json_default) + "\n")
         except OSError:
@@ -132,80 +187,89 @@ class EventLogSubscriber(Subscriber):
 
     # Query lifecycle
 
-    def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
-        self._query_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "query_started", {})
-        self._write_event(query_id, "plan_unoptimized", {"plan": metadata.unoptimized_plan})
+    def on_query_started(self, event: QueryStarted) -> None:
+        self._query_starts[event.query_id] = _mono_ms()
+        payload = {
+            "plan": event.metadata.unoptimized_plan,
+            "runner": event.metadata.runner,
+            "entrypoint": event.metadata.entrypoint,
+            "daft_version": event.metadata.daft_version,
+            "python_version": event.metadata.python_version,
+        }
+        if event.metadata.ray_version is not None:
+            payload["runner_version"] = event.metadata.ray_version
 
-    def on_query_end(self, query_id: str, result: PyQueryResult) -> None:
-        start = self._query_starts.pop(query_id, None)
-        duration_ms = round(_mono_ms() - start) if start is not None else None
+        self._write_event(
+            event.query_id,
+            "query_started",
+            payload,
+        )
+
+    def on_query_heartbeat(self, event: QueryHeartbeat) -> None:
+        """Don't log out heartbeats, too verbose."""
+        pass
+
+    def on_query_finished(self, event: QueryFinished) -> None:
+        duration_ms = event.duration_ms
+        if duration_ms is None:
+            start = self._query_starts.pop(event.query_id, None)
+            duration_ms = _mono_ms() - start if start is not None else None
 
         payload: dict[str, Any] = {}
         if duration_ms is not None:
-            payload["duration_ms"] = duration_ms
+            payload["duration_ms"] = round(duration_ms)
+        payload["state"] = query_state_str(event.result.end_state)
 
-        if result.end_state == QueryEndState.Finished:
-            payload["status"] = "ok"
-        elif result.end_state == QueryEndState.Failed:
-            payload["status"] = "failed"
-            if result.error_message:
-                payload["error_message"] = result.error_message
-        elif result.end_state == QueryEndState.Canceled:
-            payload["status"] = "canceled"
-        else:
-            payload["status"] = "dead"
-
-        self._write_event(query_id, "query_ended", payload)
-        self._clear_query_state(query_id)
-        self._close_query_file(query_id)
+        self._write_event(event.query_id, "query_ended", payload)
+        self._clear_query_state(event.query_id)
+        self._close_query_file(event.query_id)
 
     # Result
 
-    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+    def on_result_produced(self, event: ResultProduced) -> None:
         self._write_event(
-            query_id,
-            "result_out",
+            event.query_id,
+            "result_produced",
             {
-                "rows": len(result),
+                "rows": event.num_rows,
             },
         )
 
     # Optimization
 
-    def on_optimization_start(self, query_id: str) -> None:
-        self._optimization_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "optimization_started", {})
+    def on_optimization_started(self, event: OptimizationStarted) -> None:
+        self._optimization_starts[event.query_id] = _mono_ms()
+        self._write_event(event.query_id, "optimization_started", {})
 
-    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
-        start = self._optimization_starts.pop(query_id, None)
+    def on_optimization_completed(self, event: OptimizationCompleted) -> None:
+        start = self._optimization_starts.pop(event.query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
-        payload: dict[str, Any] = {}
+        payload: dict[str, Any] = {"plan": event.optimized_plan}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event(query_id, "optimization_ended", payload)
-        self._write_event(query_id, "plan_optimized", {"plan": optimized_plan})
+        self._write_event(event.query_id, "optimization_ended", payload)
 
     # Execution
 
-    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
-        self._exec_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "execution_started", {})
-        self._write_event(query_id, "plan_physical", {"plan": physical_plan})
+    def on_execution_started(self, event: ExecutionStarted) -> None:
+        self._exec_starts[event.query_id] = _mono_ms()
+        self._write_event(event.query_id, "execution_started", {"physical_plan": event.physical_plan})
 
     def on_operator_start(self, event: OperatorStarted) -> None:
         query_id = event.query_id
         node_id = event.node_id
         self._operator_starts[(query_id, node_id)] = _mono_ms()
+
+        payload: dict[str, Any] = {"node_id": node_id, "name": event.name}
+        if event.origin_node_id is not None:
+            payload["origin_node_id"] = event.origin_node_id
+
         self._write_event(
             query_id,
             "operator_started",
-            {
-                "node_id": node_id,
-                "name": event.name,
-            },
+            payload,
         )
 
     def on_stats(self, event: Stats) -> None:
@@ -222,11 +286,11 @@ class EventLogSubscriber(Subscriber):
                 },
             )
 
-    def on_process_stats(self, query_id: str, stats: Mapping[str, tuple[StatType, Any]]) -> None:
+    def on_process_stats(self, event: ProcessStats) -> None:
         metrics: dict[str, Any] = {}
-        for name, (_stat_type, value) in stats.items():
+        for name, (_stat_type, value) in event.stats.items():
             metrics[name] = value
-        self._write_event(query_id, "process_stats", {"metrics": metrics})
+        self._write_event(event.query_id, "process_stats", {"metrics": metrics})
 
     def on_operator_end(self, event: OperatorFinished) -> None:
         query_id = event.query_id
@@ -238,17 +302,81 @@ class EventLogSubscriber(Subscriber):
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event(query_id, "operator_finished", payload)
+        if event.origin_node_id is not None:
+            payload["origin_node_id"] = event.origin_node_id
 
-    def on_exec_end(self, query_id: str) -> None:
-        start = self._exec_starts.pop(query_id, None)
-        duration_ms = round(_mono_ms() - start) if start is not None else None
+        self._write_event(query_id, "operator_ended", payload)
+
+    def on_execution_finished(self, event: ExecutionFinished) -> None:
+        duration_ms = event.duration_ms
+        if duration_ms is None:
+            start = self._exec_starts.pop(event.query_id, None)
+            duration_ms = _mono_ms() - start if start is not None else None
 
         payload: dict[str, Any] = {}
         if duration_ms is not None:
-            payload["duration_ms"] = duration_ms
+            payload["duration_ms"] = round(duration_ms)
 
-        self._write_event(query_id, "execution_ended", payload)
+        self._write_event(event.query_id, "execution_ended", payload)
+
+
+class RemoteEventLogSubscriber(EventLogSubscriber):
+    """Event log subscriber that ships records to a centralized Ray actor sink.
+
+    instead of writing to a local file.
+
+    Used on flotilla workers (and optionally the driver) to aggregate events
+    from every process into a single per-query JSONL file on the head node.
+
+    The Subscriber framework is blocking/synchronous; this class offloads all
+    remote calls to a background thread via an unbounded queue so logging
+    never stalls query execution.
+    """
+
+    def __init__(
+        self,
+        sink_actor: Any,
+        component: str | None = None,
+        node_role: str | None = None,
+    ) -> None:
+        # Skip parent __init__ — no log_dir to create — but reuse the shared
+        # state init so future fields added there apply here automatically.
+        self._log_dir = None  # type: ignore[assignment]
+        self._init_subscriber_state(component=component, node_role=node_role)
+        self._sink = sink_actor
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._worker = threading.Thread(
+            target=self._drain_loop,
+            name="daft-event-log-remote",
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        if self._closed:
+            return
+        self._queue.put(record)
+
+    def _drain_loop(self) -> None:
+        while True:
+            record = self._queue.get()
+            if record is None:
+                return
+            try:
+                self._sink.append.remote(record)
+            except Exception as e:
+                logger.warning("RemoteEventLogSubscriber: failed to ship record: %s", e)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._queue.put(None)
+        self._worker.join(timeout=_REMOTE_DRAIN_TIMEOUT_SEC)
+
+
+def query_state_str(state: QueryEndState) -> str:
+    return state.__str__().removeprefix("QueryEndState.")
 
 
 _EVENT_LOG_SUBSCRIBER: EventLogSubscriber | None = None

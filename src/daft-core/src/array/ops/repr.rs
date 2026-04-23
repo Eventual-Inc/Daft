@@ -4,7 +4,7 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
@@ -472,12 +472,35 @@ impl StructArray {
         }
     }
 }
+
+impl UnionArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
+
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         Ok(self.get_lit(idx).to_string())
+    }
+}
+
+impl UuidArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.physical.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(bytes) => {
+                if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
+                    Ok(uuid.to_string())
+                } else {
+                    Ok("invalid-uuid".to_string())
+                }
+            }
+        }
     }
 }
 
@@ -535,6 +558,7 @@ impl_array_html_value!(BooleanArray);
 impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
 impl_array_html_value!(FixedSizeBinaryArray);
+impl_array_html_value!(UuidArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(MapArray);
@@ -547,6 +571,7 @@ impl_array_html_value!(DurationArray);
 impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(UnionArray);
 
 #[cfg(feature = "python")]
 impl PythonArray {

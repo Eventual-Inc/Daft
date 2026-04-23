@@ -25,6 +25,8 @@ pub struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
     bytes_read: Counter,
+    bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -39,6 +41,8 @@ impl SourceStats {
                 None,
                 Some(UNIT_BYTES.into()),
             ),
+            bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -55,6 +59,8 @@ impl RuntimeStats for SourceStats {
             .add(snapshot.rows_out, self.node_kv.as_slice());
         self.bytes_read
             .add(snapshot.bytes_read, self.node_kv.as_slice());
+        self.bytes_out
+            .add(snapshot.bytes_out, self.node_kv.as_slice());
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -62,7 +68,13 @@ impl RuntimeStats for SourceStats {
             cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
+            bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 

@@ -118,6 +118,7 @@ pub mod pylib {
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
+        daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
@@ -132,6 +133,7 @@ pub mod pylib {
         daft_local_plan::register_modules(m)?;
         daft_logical_plan::register_modules(m)?;
         daft_parquet::register_modules(m)?;
+        daft_partition_refs::register_modules(m)?;
         daft_micropartition::register_modules(m)?;
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
@@ -174,6 +176,7 @@ pub mod pylib {
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
+        functions_registry.add_fn(daft_file::FilePath);
         functions_registry.add_fn(daft_file::Size);
         functions_registry.add_fn(daft_file::VideoFile);
         functions_registry.add_fn(daft_file::AudioFile);

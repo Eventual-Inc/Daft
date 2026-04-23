@@ -57,39 +57,31 @@ impl ShuffleFlightClient {
     pub async fn get_partition(
         &mut self,
         shuffle_id: u64,
-        partition_idx: usize,
-        cache_ids: &[u32],
+        partition_ref_ids: &[u64],
         schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let cache_ids_str = cache_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
         let ticket = Ticket::new(format!(
-            "{}:{}:{}",
-            shuffle_id, partition_idx, cache_ids_str
+            "{}:{}",
+            shuffle_id,
+            partition_ref_ids
+                .iter()
+                .map(|partition_ref_id| partition_ref_id.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         ));
         let (address, client) = self.connect().await?;
         let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(
                 format!(
-                    "Error fetching partition: {} from shuffle {} at {} with cache_ids [{}]. {}",
-                    partition_idx, shuffle_id, address, cache_ids_str, e
+                    "Error fetching partition refs {:?} from shuffle {} at {}. {}",
+                    partition_ref_ids, shuffle_id, address, e
                 )
                 .into(),
             )
         })?;
-        Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
-            stream,
-            done: false,
-            schema: schema.clone(),
-            fields: schema
-                .fields()
-                .iter()
-                .map(|f| Arc::new(f.clone()))
-                .collect(),
-        })
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(
+            stream, schema,
+        ))
     }
 }
 
@@ -98,6 +90,21 @@ pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     done: bool,
     schema: SchemaRef,
     fields: Vec<FieldRef>,
+}
+
+impl FlightRecordBatchStreamToDaftRecordBatchStream {
+    pub fn new(stream: FlightRecordBatchStream, schema: SchemaRef) -> Self {
+        Self {
+            stream,
+            done: false,
+            schema: schema.clone(),
+            fields: schema
+                .fields()
+                .iter()
+                .map(|f| Arc::new(f.clone()))
+                .collect(),
+        }
+    }
 }
 
 impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {

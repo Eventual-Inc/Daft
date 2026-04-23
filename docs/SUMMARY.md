@@ -19,10 +19,11 @@
         * [Files and URLs](modalities/files.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
-    * Scale Custom Python Code
-        * [New UDF Overview](custom-code/index.md)
+    * User Defined Functions
+        * [Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
+        * [Working with GPUs](custom-code/gpu.md)
         * [Legacy UDF Migration Guide](custom-code/migration.md)
         * [Legacy UDFs](custom-code/udfs.md)
     * Common Use Cases
@@ -34,22 +35,30 @@
         * [Custom Connectors](connectors/custom.md)
         * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
+        * [AWS S3](connectors/aws.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
         * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
+        * [Bigtable](connectors/bigtable.md)
+        * [ClickHouse](connectors/clickhouse.md)
         * [Delta Lake](connectors/delta_lake.md)
-        * [Lance](connectors/lance.md)
+        * [Files](connectors/files.md)
+        * [Google Cloud Storage](connectors/gcs.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
+        * [Lance](connectors/lance.md)
+        * [MCAP](connectors/mcap.md)
+        * [Apache Paimon](connectors/paimon.md)
         * [Postgres](connectors/postgres.md)
-        * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
+        * [Text Files](connectors/text.md)
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
-        * [Extensions](extensions/index.md)
+        * [Community Extensions](extensions/community.md)
+        * [Authoring Guide](extensions/authoring.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)
@@ -84,6 +93,7 @@
     * [UDF Patterns](examples/udf-patterns.md)
     * [Window Functions](examples/window-functions.md)
     * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
+    * [Document Processing](examples/document-processing.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)
@@ -110,25 +120,14 @@
     * [SQL Reference](sql/index.md)
     * Statements
         * [SELECT](sql/statements/select.md)
+        * [DESCRIBE](sql/statements/describe.md)
         * [SHOW](sql/statements/show.md)
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
+    * [Identifiers](sql/identifiers.md)
     * [Window Functions](sql/window_functions.md)
 * Contributing
     * [Overview](contributing/overview.md)
     * [Development Guide](contributing/development.md)
     * [Contributing AI Functions](contributing/contributing-ai-functions.md)
 * [Daft Skills](skills.md)
-
-<!--
-TODO
-        * [Custom Connectors](connectors/custom.md)
-        * [CSV](connectors/csv.md)
-        * [Google Cloud Storage (GCS)](connectors/gcs.md)
-        * [HTTP](connectors/http.md)
-        * [JSON](connectors/json.md)
-        * [Lance](connectors/lance.md)
-        * [Parquet](connectors/parquet.md)
-        * [Turbopuffer](connectors/turbopuffer.md)
-        * [WARC (Web ARChive)](connectors/warc.md)
--->

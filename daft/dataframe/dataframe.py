@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.checkpoint import CheckpointStore
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -380,7 +382,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
             ╭─────────────┬────────╮
-            │ column_name ┆ type   │
+            │ Column Name ┆ DType  │
             ╞═════════════╪════════╡
             │ x           ┆ Int64  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1212,6 +1214,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1353,6 +1356,13 @@ class DataFrame:
 
             merge.commit()
 
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
+
         with_operations = {
             "operation": pa.array(operations, type=pa.string()),
             "rows": pa.array(rows, type=pa.int64()),
@@ -1425,6 +1435,7 @@ class DataFrame:
         dynamo_table_name: str | None = None,
         allow_unsafe_rename: bool = False,
         io_config: IOConfig | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1626,7 +1637,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = pa.record_batch(table.get_add_actions())
+                old_actions = pa.table(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
@@ -1649,6 +1660,13 @@ class DataFrame:
                     metadata_param,
                 )
             table.update_incremental()
+
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
 
         with_operations = from_pydict(
             {
@@ -3417,6 +3435,113 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def join_asof(
+        self,
+        other: "DataFrame",
+        *,
+        on: ColumnInputType | None = None,
+        left_on: ColumnInputType | None = None,
+        right_on: ColumnInputType | None = None,
+        by: list[ColumnInputType] | ColumnInputType | None = None,
+        left_by: list[ColumnInputType] | ColumnInputType | None = None,
+        right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        strategy: Literal["backward"] = "backward",
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> "DataFrame":
+        """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
+
+        Args:
+            other: Right-hand DataFrame (e.g. feature table).
+            on: Asof key column when it has the same name on both sides. Exactly one column.
+            left_on: Asof key on the left when names differ. Exactly one column; use with ``right_on``.
+            right_on: Asof key on the right when names differ. Exactly one column; use with ``left_on``.
+            by: Equality key column(s) with the same name on both sides (entity / group columns).
+            left_by: Equality keys on the left when names differ; use with ``right_by``.
+            right_by: Equality keys on the right when names differ; use with ``left_by``.
+            strategy: Match strategy. Currently only ``"backward"`` is supported.
+
+        Returns:
+            DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
+
+        Raises:
+            ValueError: if ``on`` is set and ``left_on`` or ``right_on`` is not None.
+            ValueError: if ``on`` is None but ``left_on`` or ``right_on`` is missing.
+            ValueError: if both ``by`` and ``left_by`` / ``right_by`` are set.
+            ValueError: if only one of ``left_by`` and ``right_by`` is set.
+            ValueError: if ``left_by`` and ``right_by`` have different lengths.
+
+        Examples:
+            >>> import daft
+            >>> left = daft.from_pydict({"entity": ["A", "A", "B"], "timestamp": [10, 11, 10]})
+            >>> right = daft.from_pydict(
+            ...     {
+            ...         "entity": ["A", "A", "A", "B", "B"],
+            ...         "timestamp": [9, 10, 11, 9, 11],
+            ...         "value": [1.0, 2.0, 3.0, 5.0, 6.0],
+            ...     }
+            ... )
+            >>> left.join_asof(right, on="timestamp", by="entity").sort(["entity", "timestamp"]).show()
+            ╭────────┬───────────┬─────────╮
+            │ entity ┆ timestamp ┆ value   │
+            │ ---    ┆ ---       ┆ ---     │
+            │ String ┆ Int64     ┆ Float64 │
+            ╞════════╪═══════════╪═════════╡
+            │ A      ┆ 10        ┆ 2       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ A      ┆ 11        ┆ 3       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ B      ┆ 10        ┆ 5       │
+            ╰────────┴───────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        if on is not None:
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is set then `left_on` and `right_on` must be None")
+            left_on_expr = column_input_to_expression(on)
+            right_on_expr = column_input_to_expression(on)
+        else:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must be set")
+            left_on_expr = column_input_to_expression(left_on)
+            right_on_expr = column_input_to_expression(right_on)
+
+        if by is not None:
+            if left_by is not None or right_by is not None:
+                raise ValueError("Cannot specify both `by` and `left_by`/`right_by`")
+            by_tuple = tuple(by) if isinstance(by, list) else (by,)
+            left_by_exprs = column_inputs_to_expressions(by_tuple)
+            right_by_exprs = column_inputs_to_expressions(by_tuple)
+        else:
+            if left_by is None and right_by is None:
+                left_by_exprs = []
+                right_by_exprs = []
+            elif left_by is None or right_by is None:
+                raise ValueError("Specify both `left_by` and `right_by`, or neither")
+            else:
+                left_by_tuple = tuple(left_by) if isinstance(left_by, list) else (left_by,)
+                right_by_tuple = tuple(right_by) if isinstance(right_by, list) else (right_by,)
+                left_by_exprs = column_inputs_to_expressions(left_by_tuple)
+                right_by_exprs = column_inputs_to_expressions(right_by_tuple)
+                if len(left_by_exprs) != len(right_by_exprs):
+                    raise ValueError(
+                        "left_by and right_by must have the same number of columns, got "
+                        f"{len(left_by_exprs)} and {len(right_by_exprs)}"
+                    )
+
+        builder = self._builder.join_asof(
+            other._builder,
+            left_by=left_by_exprs,
+            right_by=right_by_exprs,
+            left_on=left_on_expr,
+            right_on=right_on_expr,
+            prefix=prefix,
+            suffix=suffix,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
         """Concatenates two DataFrames together in a "vertical" concatenation.
 
@@ -3916,6 +4041,8 @@ class DataFrame:
             return expr.string_agg()
         elif op == "skew":
             return expr.skew()
+        elif op == "product":
+            return expr.product()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -4048,6 +4175,67 @@ class DataFrame:
 
         """
         return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
+
+    @DataframePublicAPI
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global skew on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute skewness for
+
+        Returns:
+            DataFrame: Globally aggregated skewness. Should be a single row.
+
+        Note:
+            Daft uses the **biased (population) skewness** formula, which is equivalent to
+            ``scipy.stats.skew(bias=True)``. This differs from pandas' default ``DataFrame.skew()``,
+            which uses the adjusted Fisher-Pearson (sample) formula. For small samples, the two
+            formulas can produce meaningfully different results.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4, 5]})
+            >>> df = df.skew("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 0       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(Expression.skew, cols)
+
+    @DataframePublicAPI
+    def product(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global product on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: Globally aggregated products. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.product("col_a")
+            >>> df.show()
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        return self._apply_agg_fn(Expression.product, cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -5521,6 +5709,36 @@ class GroupedDataFrame:
             DataFrame: DataFrame with the grouped skew per column.
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
+
+    def product(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped product on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: DataFrame with grouped products.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [1, 2, 3, 100]})
+            >>> df = df.groupby("keys").product()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬───────╮
+            │ keys   ┆ col_a │
+            │ ---    ┆ ---   │
+            │ String ┆ Int64 │
+            ╞════════╪═══════╡
+            │ a      ┆ 6     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b      ┆ 100   │
+            ╰────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(Expression.product, cols, self.group_by)
 
     def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.

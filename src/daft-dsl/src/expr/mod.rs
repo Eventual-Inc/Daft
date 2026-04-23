@@ -20,9 +20,9 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        InferDataType, try_mean_aggregation_supertype, try_product_supertype,
-        try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
-        try_variance_aggregation_supertype,
+        InferDataType, try_mean_aggregation_supertype, try_percentile_aggregation_supertype,
+        try_product_supertype, try_skew_aggregation_supertype, try_stddev_aggregation_supertype,
+        try_sum_supertype, try_variance_aggregation_supertype,
     },
     join::JoinSide,
     lit::Literal,
@@ -37,8 +37,8 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
-        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
-        function_display_without_formatter, function_semantic_id,
+        AggFnHandle, BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
+        FunctionEvaluator, function_display_without_formatter, function_semantic_id,
         python::{LegacyPythonUDF, RuntimePyObject},
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -391,6 +391,7 @@ impl MapGroupsFn {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
@@ -418,6 +419,9 @@ pub enum AggExpr {
 
     #[display("mean({_0})")]
     Mean(ExprRef),
+
+    #[display("percentile({_0}, percentile={_1:?})")]
+    Percentile(ExprRef, FloatWrapper<f64>),
 
     #[display("stddev({_0}, ddof={_1})")]
     Stddev(ExprRef, usize),
@@ -449,6 +453,9 @@ pub enum AggExpr {
     #[display("concat({_0}, delimiter={_1:?})")]
     Concat(ExprRef, Option<String>),
 
+    #[display("median({_0})")]
+    Median(ExprRef),
+
     #[display("skew({_0}")]
     Skew(ExprRef),
 
@@ -456,6 +463,29 @@ pub enum AggExpr {
     MapGroups {
         func: MapGroupsFn,
         inputs: Vec<ExprRef>,
+    },
+
+    #[display("{handle}({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFn {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal step 1: produces a Struct column of typed
+    /// accumulator states (one per group) from one input block.
+    #[display("{handle}.__map({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFnMap {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal step 2: folds the Struct partial states from
+    /// `AggFnMap` per group and produces the final typed output.
+    #[display("{handle}.__reduce({partial})")]
+    AggFnReduce {
+        handle: AggFnHandle,
+        partial: ExprRef,
+        return_field: Field,
     },
 }
 
@@ -545,6 +575,7 @@ impl AggExpr {
             Self::ApproxSketch(_, _) => "Approx Sketch",
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
+            Self::Percentile(_, _) => "Percentile",
             Self::Stddev(_, _) => "Stddev",
             Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
@@ -555,8 +586,12 @@ impl AggExpr {
             Self::List(_) => "List",
             Self::Set(_) => "Set",
             Self::Concat(_, _) => "Concat",
+            Self::Median(_) => "Median",
             Self::Skew(_) => "Skew",
             Self::MapGroups { .. } => "Map Groups",
+            Self::AggFn { .. } => "Extension Agg",
+            Self::AggFnMap { .. } => "Extension Agg (Map)",
+            Self::AggFnReduce { .. } => "Extension Agg (Reduce)",
         }
     }
 
@@ -571,6 +606,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Percentile(expr, _)
             | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
@@ -581,8 +617,12 @@ impl AggExpr {
             | Self::List(expr)
             | Self::Set(expr)
             | Self::Concat(expr, _)
+            | Self::Median(expr)
             | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
+            Self::AggFn { handle, .. }
+            | Self::AggFnMap { handle, .. }
+            | Self::AggFnReduce { handle, .. } => handle.name(),
         }
     }
 
@@ -635,6 +675,13 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
+            Self::Percentile(expr, percentile) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_percentile(percentile={})",
+                    percentile.0
+                ))
+            }
             Self::Stddev(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev(ddof={ddof})"))
@@ -677,11 +724,37 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat(delimiter={delimiter:?})"))
             }
+            Self::Median(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_median()"))
+            }
             Self::Skew(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_skew()"))
             }
             Self::MapGroups { func, inputs } => func.semantic_id(inputs, schema),
+            Self::AggFn { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFn_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnMap { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFnMap_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnReduce {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnReduce_{}({partial_id})", handle.name()))
+            }
         }
     }
 
@@ -696,6 +769,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Percentile(expr, _)
             | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
@@ -706,13 +780,19 @@ impl AggExpr {
             | Self::List(expr)
             | Self::Set(expr)
             | Self::Concat(expr, _)
+            | Self::Median(expr)
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
+            Self::AggFn { inputs, .. } | Self::AggFnMap { inputs, .. } => inputs.clone(),
+            Self::AggFnReduce { partial, .. } => vec![partial.clone()],
         }
     }
 
     pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
-        if let Self::MapGroups { func: _, inputs } = &self {
+        if let Self::MapGroups { func: _, inputs }
+        | Self::AggFn { inputs, .. }
+        | Self::AggFnMap { inputs, .. } = &self
+        {
             assert_eq!(children.len(), inputs.len());
         } else {
             assert_eq!(children.len(), 1);
@@ -724,6 +804,7 @@ impl AggExpr {
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
+            Self::Percentile(_, percentile) => Self::Percentile(first_child(), percentile.clone()),
             &Self::Stddev(_, ddof) => Self::Stddev(first_child(), ddof),
             &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
@@ -734,10 +815,28 @@ impl AggExpr {
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_, delimiter) => Self::Concat(first_child(), delimiter.clone()),
+            Self::Median(_) => Self::Median(first_child()),
             Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.with_new_children(children.clone()),
                 inputs: children,
+            },
+            Self::AggFn { handle, inputs: _ } => Self::AggFn {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnMap { handle, inputs: _ } => Self::AggFnMap {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnReduce {
+                handle,
+                partial: _,
+                return_field,
+            } => Self::AggFnReduce {
+                handle: handle.clone(),
+                partial: children.remove(0),
+                return_field: return_field.clone(),
             },
             Self::ApproxPercentile(ApproxPercentileParams {
                 percentiles,
@@ -858,6 +957,13 @@ impl AggExpr {
                     try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
+            Self::Percentile(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_ref(),
+                    try_percentile_aggregation_supertype(&field.dtype)?,
+                ))
+            }
             Self::Stddev(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
@@ -907,6 +1013,14 @@ impl AggExpr {
                 }
             }
 
+            Self::Median(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_ref(),
+                    try_percentile_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::Skew(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
@@ -916,6 +1030,37 @@ impl AggExpr {
             }
 
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema),
+            Self::AggFn { handle, inputs } => {
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<_>>()?;
+                let input_types: Vec<DataType> =
+                    input_fields.iter().map(|f| f.dtype.clone()).collect();
+                Ok(Field::new(
+                    input_fields[0].name.clone(),
+                    handle.return_dtype(&input_types)?,
+                ))
+            }
+            Self::AggFnMap { handle, inputs } => {
+                // Including input field names in the column name avoids collisions when
+                // the same handle is used on different columns (e.g. `my_agg(a), my_agg(b)`).
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let state_fields = handle.state_fields(&input_fields)?;
+                Ok(Field::new(
+                    format!("{}({})", handle.name(), inputs_str),
+                    DataType::Struct(state_fields),
+                ))
+            }
+            Self::AggFnReduce { return_field, .. } => Ok(return_field.clone()),
         }
     }
 }
@@ -1175,6 +1320,14 @@ impl Expr {
 
     pub fn mean(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Mean(self)).into()
+    }
+
+    pub fn median(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Median(self)).into()
+    }
+
+    pub fn percentile(self: ExprRef, percentage: f64) -> ExprRef {
+        Self::Agg(AggExpr::Percentile(self, FloatWrapper(percentage))).into()
     }
 
     pub fn stddev(self: ExprRef, ddof: usize) -> ExprRef {
@@ -2108,6 +2261,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
+                "uuid" => "",
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {

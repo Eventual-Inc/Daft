@@ -27,7 +27,6 @@ pub mod from_arrow;
 pub mod full;
 mod get;
 mod get_lit;
-pub(crate) mod groups;
 mod hash;
 mod hll_cardinality;
 mod hll_merge;
@@ -44,6 +43,7 @@ mod merge_sketch;
 mod minhash;
 mod null;
 mod pairwise;
+mod percentile;
 mod pow;
 mod product;
 mod repr;
@@ -69,7 +69,6 @@ mod variance;
 
 use std::hash::BuildHasher;
 
-use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
@@ -164,17 +163,8 @@ pub trait DaftMinHash {
     ) -> Self::Output;
 }
 
-pub type VecIndices = Vec<u64>;
+pub type VecIndices = smallvec::SmallVec<[u64; 2]>;
 pub type GroupIndices = Vec<VecIndices>;
-pub type GroupIndicesPair = (VecIndices, GroupIndices);
-
-pub trait IntoGroups {
-    fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
-}
-
-pub trait IntoUniqueIdxs {
-    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
-}
 
 pub trait DaftCountAggable {
     type Output;
@@ -216,6 +206,12 @@ pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftPercentileAggable {
+    type Output;
+    fn percentile(&self, percentage: f64) -> Self::Output;
+    fn grouped_percentile(&self, groups: &GroupIndices, percentage: f64) -> Self::Output;
 }
 
 pub trait DaftStddevAggable {

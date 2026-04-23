@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, NamedTuple
 
 from daft.context import get_context
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
-    FlightShufflePartitionRef,
+    FlightPartitionRef,
     Input,
     LocalPhysicalPlan,
     NativeExecutor,
@@ -28,16 +29,18 @@ from daft.daft import (
 from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
-from daft.runners.partitioning import (
-    PartitionMetadata,
-    PartitionSet,
-)
+from daft.runners.partitioning import PartitionMetadata, PartitionSet
 from daft.runners.profiler import profile
+from daft.subscribers.event_log import RemoteEventLogSubscriber
+from daft.subscribers.event_log_sink import (
+    create_or_get_sink,
+    get_sink,
+    teardown_sink,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
-    from daft.daft import ShuffleWriteInfo
     from daft.runners.ray_runner import RayMaterializedResult
 
 try:
@@ -47,26 +50,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-ShufflePlanMetadata = list[tuple[object | None, int, int]]
-ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes]
-ShuffleWriteInfoLike: TypeAlias = "ShuffleWriteInfo | tuple[str, int, int]"
-
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
     stats: bytes
-
-
-def _shuffle_write_backend(info: ShuffleWriteInfoLike) -> str:
-    if isinstance(info, tuple):
-        return info[0]
-    return info.backend
-
-
-def _shuffle_write_id(info: ShuffleWriteInfoLike) -> int:
-    if isinstance(info, tuple):
-        return info[1]
-    return info.shuffle_id
+    is_flight_shuffle: bool
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -115,8 +103,21 @@ class RaySwordfishActor:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self, num_cpus: int, num_gpus: int) -> None:
+    def __init__(
+        self,
+        num_cpus: int,
+        num_gpus: int,
+        is_head: bool = False,
+        event_log_dir: str | None = None,
+    ) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
+
+        if event_log_dir:
+            _attach_remote_event_log_subscriber(
+                component="swordfish_worker",
+                node_role="head" if is_head else "worker",
+            )
+
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
@@ -125,10 +126,12 @@ class RaySwordfishActor:
 
         self.ip = ray.util.get_node_ip_address()
         self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
-        self.port = self.native_executor.shuffle_port()
 
     def get_address(self) -> str:
-        return f"grpc://{self.ip}:{self.port}"
+        address = self.native_executor.shuffle_address()
+        if address is None:
+            raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
+        return address
 
     async def _resolve_inputs(
         self,
@@ -157,7 +160,7 @@ class RaySwordfishActor:
         **inputs: (
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
-    ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
+    ) -> AsyncGenerator[MicroPartition | FlightPartitionRef | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
@@ -177,52 +180,24 @@ class RaySwordfishActor:
                 False,
             )
             metas = []
+            is_flight_shuffle = False
             async for partition in result_handle:
-                if partition is None:
+                if isinstance(partition, FlightPartitionRef):
+                    is_flight_shuffle = True
+                    metas.append(PartitionMetadata.from_flight_partition_ref(partition))
+                    yield partition
+                elif isinstance(partition, PyMicroPartition):
+                    mp = MicroPartition._from_pymicropartition(partition)
+                    metas.append(PartitionMetadata.from_table(mp))
+                    yield mp
+                else:
                     break
-                mp = MicroPartition._from_pymicropartition(partition)
-                metas.append(PartitionMetadata.from_table(mp))
-                yield mp
 
             stats = await result_handle.try_finish()
-            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
-
-    async def run_shuffle_plan(
-        self,
-        plan: LocalPhysicalPlan,
-        exec_cfg: PyDaftExecutionConfig,
-        context: dict[str, str] | None,
-        **inputs: Input | list[ray.ObjectRef],
-    ) -> ShufflePlanResult:
-        from daft.daft import PyDaftContext
-
-        with profile():
-            resolved_inputs, task_id = await self._resolve_inputs(context, inputs)
-
-            ctx = PyDaftContext()
-            ctx._daft_execution_config = exec_cfg
-
-            backend_info = plan.shuffle_write_info()
-            if backend_info is None:
-                raise ValueError("run_shuffle_plan() requires a repartition write plan")
-            backend = _shuffle_write_backend(backend_info)
-
-            result_handle = await self.native_executor.run(
-                plan,
-                ctx,
-                task_id,
-                resolved_inputs,
-                context,
-                False,
-            )
-            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
-            if shuffle_metadata is None:
-                raise ValueError("Shuffle plan did not return shuffle metadata")
-
-            return (
-                backend,
-                [(object_ref, int(num_rows), int(size_bytes)) for object_ref, num_rows, size_bytes in shuffle_metadata],
-                stats.encode(),
+            yield SwordfishTaskMetadata(
+                partition_metadatas=metas,
+                stats=stats.encode(),
+                is_flight_shuffle=is_flight_shuffle,
             )
 
 
@@ -266,56 +241,21 @@ class RaySwordfishTaskHandle:
     """
 
     result_handle: ray.ObjectRef
-    actor_handle: ray.actor.ActorHandle
-    shuffle_write_info: ShuffleWriteInfoLike | None = None
-    cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
         try:
-            if self.shuffle_write_info is not None:
-                backend, refs, stats = await self.result_handle
-                if backend == "ray":
-                    ray_refs: list[RayPartitionRef] = []
-                    for object_ref, num_rows, size_bytes in refs:
-                        if object_ref is None:
-                            raise ValueError("Expected Ray shuffle metadata to include object refs")
-                        ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
-                    return RayTaskResult.ray_shuffle_success(
-                        ray_refs,
-                        stats,
-                    )
-                if backend == "flight":
-                    shuffle_id = _shuffle_write_id(self.shuffle_write_info)
-                    actor_address = await self.actor_handle.get_address.remote()
-                    cache_id = self.cache_id if self.cache_id is not None else 0
-                    flight_refs: list[FlightShufflePartitionRef] = []
-                    for partition_idx, (object_ref, num_rows, size_bytes) in enumerate(refs):
-                        if object_ref is not None:
-                            raise ValueError("Expected Flight shuffle metadata to not include object refs")
-                        flight_refs.append(
-                            FlightShufflePartitionRef(
-                                shuffle_id,
-                                partition_idx,
-                                actor_address,
-                                cache_id,
-                                num_rows,
-                                size_bytes,
-                            )
-                        )
-                    return RayTaskResult.flight_shuffle_success(
-                        flight_refs,
-                        stats,
-                    )
-                raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
-
             await self.result_handle.completed()
             results = [result for result in self.result_handle]
             metadata_ref = results.pop()
             task_metadata: SwordfishTaskMetadata = await metadata_ref
             assert len(results) == len(task_metadata.partition_metadatas)
 
-            return RayTaskResult.success(
+            if task_metadata.is_flight_shuffle:
+                flight_part_refs = await asyncio.gather(*results)
+                return RayTaskResult.success_flight(flight_part_refs, task_metadata.stats)
+
+            return RayTaskResult.success_ray(
                 [
                     RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
                     for result, metadata in zip(results, task_metadata.partition_metadatas)
@@ -353,32 +293,17 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         inputs: dict[str, Input | list[ray.ObjectRef]] = {}
-        plan = task.plan()
         for source_id, py_input in task.inputs().items():
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
-        shuffle_write_info = plan.shuffle_write_info()
-        if shuffle_write_info is None:
-            result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-                plan,
-                task.config(),
-                task.context(),
-                **inputs,
-            )
-        else:
-            result_handle = self.actor_handle.run_shuffle_plan.options(name=task.name()).remote(
-                plan,
-                task.config(),
-                task.context(),
-                **inputs,
-            )
-        return RaySwordfishTaskHandle(
-            result_handle,
-            self.actor_handle,
-            shuffle_write_info,
-            task.id(),
+        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
+            task.plan(),
+            task.config(),
+            task.context(),
+            **inputs,
         )
+        return RaySwordfishTaskHandle(result_handle)
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
@@ -388,7 +313,27 @@ def _get_worker_startup_timeout() -> int:
     return get_context().daft_execution_config.worker_startup_timeout
 
 
+def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
+    """Attach a RemoteEventLogSubscriber to this process's context.
+
+    Looks up the per-job event log sink actor and wires a subscriber that
+    ships events to it. No-op if the sink does not exist. Failures are logged
+    (not raised) so event-log setup cannot break actor initialization.
+    """
+    try:
+        sink = get_sink(_get_ray_job_id_for_actor_naming())
+        if sink is None:
+            return
+        get_context().attach_subscriber(
+            "_daft_event_log_remote",
+            RemoteEventLogSubscriber(sink, component=component, node_role=node_role),
+        )
+    except Exception as e:
+        logger.warning("Failed to attach remote event log subscriber: %s", e)
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+    event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
     actors = []
     for node in ray.nodes():
         if (
@@ -399,6 +344,9 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             and node["Resources"]["memory"] > 0
             and node["NodeID"] not in existing_worker_ids
         ):
+            # `node:__internal_head__` is Ray's internal resource key tagging the head node;
+            # not in public Ray docs but stable and relied on by Ray's own autoscaler/GCS code.
+            is_head = node["Resources"].get("node:__internal_head__", 0) == 1
             actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
@@ -407,6 +355,8 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             ).remote(
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
+                is_head=is_head,
+                event_log_dir=event_log_dir,
             )
             actors.append((node, actor))
 
@@ -447,7 +397,11 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
-    def __init__(self, dashboard_url: str | None = None) -> None:
+    def __init__(
+        self,
+        dashboard_url: str | None = None,
+        event_log_dir: str | None = None,
+    ) -> None:
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:
@@ -458,6 +412,12 @@ class RemoteFlotillaRunner:
                 pass
             except Exception:
                 pass
+
+        if event_log_dir:
+            _attach_remote_event_log_subscriber(
+                component="flotilla_runner",
+                node_role="head",
+            )
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
@@ -471,7 +431,10 @@ class RemoteFlotillaRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
-            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
+            k: [
+                RayPartitionRef(res.partition(), res.metadata().num_rows, res.metadata().size_bytes or 0)
+                for res in v.values()
+            ]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.idx()] = plan
@@ -571,11 +534,22 @@ class FlotillaRunner:
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
+
+        event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
+        if event_log_dir:
+            sink_job_id = _get_ray_job_id_for_actor_naming()
+            create_or_get_sink(event_log_dir, sink_job_id, head_node_id)
+            atexit.register(teardown_sink, sink_job_id)
+
+        runner_env_vars: dict[str, str] = {}
+        if dashboard_url:
+            runner_env_vars["DAFT_DASHBOARD_URL"] = dashboard_url
+
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            runtime_env=({"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None),
+            runtime_env=({"env_vars": runner_env_vars} if runner_env_vars else None),
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,
@@ -584,7 +558,7 @@ class FlotillaRunner:
                 if head_node_id
                 else None
             ),
-        ).remote(dashboard_url=dashboard_url)
+        ).remote(dashboard_url=dashboard_url, event_log_dir=event_log_dir)
 
     def stream_plan(
         self,

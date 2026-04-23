@@ -15,7 +15,6 @@ pub mod concat;
 pub mod downcast;
 pub mod filter;
 pub mod floor;
-pub mod groups;
 pub mod hash;
 pub mod hll_cardinality;
 pub mod if_else;

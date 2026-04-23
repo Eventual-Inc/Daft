@@ -38,6 +38,7 @@ pub mod scan_state;
 pub mod scan_task_iters;
 mod sharder;
 mod source_config;
+pub mod statistics;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
@@ -49,9 +50,10 @@ pub mod test_utils;
 
 // Re-export source module for DataSource and DataSourceTask traits.
 pub use source::{
-    DataSource, DataSourceRef, DataSourceStatistics, DataSourceTask, DataSourceTaskRef,
-    DataSourceTaskStream, Precision, ReadOptions, RecordBatchStream, ShimSourceTask,
+    DataSource, DataSourceRef, DataSourceTask, DataSourceTaskRef, DataSourceTaskStream,
+    ReadOptions, RecordBatchStream, ShimSourceTask,
 };
+pub use statistics::{ColumnStatistics, Precision, Statistics};
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -379,7 +381,7 @@ fn warc_column_sizes() -> &'static HashMap<&'static str, usize> {
     WARC_COLUMN_SIZES.get_or_init(|| {
         let mut m = HashMap::new();
         // Average sizes based on analysis of Common Crawl WARC files.
-        m.insert("WARC-Record-ID", 36); // UUID-style identifiers.
+        m.insert("WARC-Record-ID", 16); // UUID-style identifiers.
         m.insert("WARC-Type", 8); // e.g. "response".
         m.insert("WARC-Date", 8); // Timestamp stored as i64 nanoseconds.
         m.insert("Content-Length", 8); // i64.

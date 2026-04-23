@@ -1,7 +1,9 @@
 #![feature(associated_type_defaults)]
 
+mod batch_manager;
 mod buffer;
 mod channel;
+mod checkpoint_terminus;
 mod concat;
 mod dynamic_batching;
 mod input_sender;
@@ -11,7 +13,6 @@ mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
-mod shuffle_metadata;
 mod sinks;
 mod sources;
 mod streaming_sink;

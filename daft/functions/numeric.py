@@ -12,6 +12,11 @@ def abs(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("abs", expr)
 
 
+def e() -> Expression:
+    """Returns Euler's number (e = 2.71828...)."""
+    return Expression._call_builtin_scalar_fn("e")
+
+
 def ceil(expr: Expression) -> Expression:
     """The ceiling of a numeric expression."""
     return Expression._call_builtin_scalar_fn("ceil", expr)
@@ -193,6 +198,21 @@ def log1p(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log1p", expr)
 
 
+def factorial(expr: Expression) -> Expression:
+    """Returns the factorial of a non-negative integer."""
+    return Expression._call_builtin_scalar_fn("factorial", expr)
+
+
+def hypot(a: Expression, b: Expression) -> Expression:
+    """Returns sqrt(a^2 + b^2), the Euclidean norm."""
+    return Expression._call_builtin_scalar_fn("hypot", a, b)
+
+
+def pi() -> Expression:
+    """Returns the mathematical constant pi (3.14159...)."""
+    return Expression._call_builtin_scalar_fn("pi")
+
+
 def pow(base: Expression, expr: Expression) -> Expression:
     """The base^expr of a numeric expression."""
     return Expression._call_builtin_scalar_fn("pow", base, expr)
@@ -252,6 +272,15 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
     upper = Expression._to_expression(upper)
 
     return Expression._from_pyexpr(expr._expr.between(lower._expr, upper._expr))
+
+
+def bin(expr: Expression) -> Expression:
+    """Returns the string representation of the binary value of an integer.
+
+    Inputs are promoted to 64-bit before conversion; negatives produce
+    64-character two's-complement strings (e.g. ``bin(-1)`` returns 64 ones).
+    """
+    return Expression._call_builtin_scalar_fn("bin", expr)
 
 
 def is_nan(expr: Expression) -> Expression:

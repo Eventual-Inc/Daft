@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, atomic::Ordering},
+    time::Instant,
 };
 
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use daft_io::IOStatsRef;
 use daft_local_plan::{InputId, LocalNodeContext};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use dashmap::DashMap;
 // MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::KeyValue;
@@ -30,20 +32,59 @@ use crate::{
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
+/// Per-input stats handle bundling the counters that sources record against.
+/// Cheap to clone; every holder of the same `InputStats` shares the same
+/// underlying counters.
+#[derive(Clone)]
+pub(crate) struct InputStats {
+    pub io_stats: IOStatsRef,
+}
+
+/// Per-input-id `InputStats` registry shared between a `Source` implementation
+/// and the `SourceNode` that owns it. Sources resolve the right counters for
+/// each morsel via `get_or_create`, and the matching per-input `SourceStats`
+/// reads from the same entry — so `bytes_read` naturally scopes to one
+/// `input_id` rather than accumulating across every task that runs on a
+/// reused pipeline.
+#[derive(Clone)]
+pub(crate) struct StatsProvider {
+    inner: Arc<DashMap<InputId, InputStats>>,
+}
+
+impl StatsProvider {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(DashMap::new()),
+        }
+    }
+
+    pub(crate) fn get_or_create(&self, input_id: InputId) -> InputStats {
+        self.inner
+            .entry(input_id)
+            .or_insert_with(|| InputStats {
+                io_stats: IOStatsRef::default(),
+            })
+            .clone()
+    }
+}
+
 pub(crate) struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
-    io_stats: IOStatsRef,
-
+    bytes_out: Counter,
+    num_tasks: Counter,
+    input_stats: InputStats,
     node_kv: Vec<KeyValue>,
 }
 
 impl SourceStats {
-    fn with_io_stats(meter: &Meter, node_info: &NodeInfo, io_stats: IOStatsRef) -> Self {
+    fn with_input_stats(meter: &Meter, node_info: &NodeInfo, input_stats: InputStats) -> Self {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
-            io_stats,
+            bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
+            input_stats,
             node_kv: node_info.to_key_values(),
         }
     }
@@ -51,17 +92,22 @@ impl SourceStats {
 
 impl RuntimeStats for SourceStats {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        Self::with_io_stats(meter, node_info, IOStatsRef::default())
+        let input_stats = InputStats {
+            io_stats: IOStatsRef::default(),
+        };
+        Self::with_input_stats(meter, node_info, input_stats)
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
-        let bytes_read = self.io_stats.load_bytes_read() as u64;
+        let bytes_read = self.input_stats.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
             cpu_us,
             rows_out,
             bytes_read,
+            bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -76,6 +122,18 @@ impl RuntimeStats for SourceStats {
     fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
+
+    fn add_bytes_in(&self, _: u64) {
+        unreachable!("Source Nodes shouldn't receive bytes")
+    }
+
+    fn add_bytes_out(&self, bytes: u64) {
+        self.bytes_out.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
 }
 
 #[async_trait]
@@ -86,7 +144,7 @@ pub trait Source: Send + Sync {
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats: IOStatsRef,
+        stats_provider: StatsProvider,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
@@ -193,18 +251,19 @@ impl PipelineNode for SourceNode {
     ) {
         self.morsel_size_requirement = downstream_requirement;
     }
+
     fn start(
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
-        let io_stats = IOStatsRef::default();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let schema = self.source.schema().clone();
         let name = self.name();
         let meter = self.meter.clone();
         let node_info = self.node_info.clone();
+        let stats_provider = StatsProvider::new();
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -214,17 +273,24 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats.clone(), chunk_size.into())
+            .get_data(maintain_order, stats_provider.clone(), chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
+
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
                 let mut per_input_stats: HashMap<InputId, Arc<SourceStats>> = HashMap::new();
                 stats_manager.activate_node(node_id);
 
-                while let Some(msg) = source_stream.next().await {
+                let mut source_started = Instant::now();
+                loop {
+                    let next = source_stream.next().await;
+                    let elapsed = source_started.elapsed().as_micros() as u64;
+                    let Some(msg) = next else {
+                        break;
+                    };
                     has_data = true;
                     let msg = msg?;
                     match &msg {
@@ -237,23 +303,33 @@ impl PipelineNode for SourceNode {
                                 *input_id,
                                 &meter,
                                 &node_info,
-                                &io_stats,
+                                &stats_provider,
                                 &stats_manager,
                                 node_id,
                             );
+                            stats.add_duration_us(elapsed);
                             stats.add_rows_out(partition.len() as u64);
+                            stats.add_bytes_out(partition.size_bytes() as u64);
+                            stats.increment_num_tasks();
                         }
                         PipelineMessage::Flush(input_id) => {
+                            if let Some(stats) = per_input_stats.get(input_id) {
+                                stats.add_duration_us(elapsed);
+                            }
                             per_input_stats.remove(input_id);
                         }
-                        PipelineMessage::ShuffleMetadata { .. } => {
-                            unreachable!("SourceNode should not receive shuffle metadata")
+                        PipelineMessage::FlightPartitionRef { .. } => {
+                            unreachable!(
+                                "SourceNode should not receive flight partition refs from child"
+                            )
                         }
                     }
                     if destination_sender.send(msg).await.is_err() {
                         break;
                     }
+                    source_started = Instant::now();
                 }
+
                 if !has_data {
                     let empty = MicroPartition::empty(Some(schema.clone()));
                     let stats = get_or_create_source_stats(
@@ -261,7 +337,7 @@ impl PipelineNode for SourceNode {
                         0,
                         &meter,
                         &node_info,
-                        &io_stats,
+                        &stats_provider,
                         &stats_manager,
                         node_id,
                     );
@@ -300,20 +376,95 @@ fn get_or_create_source_stats(
     input_id: InputId,
     meter: &Meter,
     node_info: &NodeInfo,
-    io_stats: &IOStatsRef,
+    stats_provider: &StatsProvider,
     stats_manager: &RuntimeStatsManagerHandle,
     node_id: usize,
 ) -> Arc<SourceStats> {
     per_input_stats
         .entry(input_id)
         .or_insert_with(|| {
-            let stats = Arc::new(SourceStats::with_io_stats(
-                meter,
-                node_info,
-                io_stats.clone(),
-            ));
+            let input_stats = stats_provider.get_or_create(input_id);
+            let stats = Arc::new(SourceStats::with_input_stats(meter, node_info, input_stats));
             stats_manager.register_runtime_stats(node_id, input_id, stats.clone());
             stats
         })
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{Meter, ops::NodeInfo};
+
+    use super::*;
+    use crate::runtime_stats::RuntimeStats;
+
+    #[test]
+    fn provider_returns_same_io_stats_for_same_input_id() {
+        let provider = StatsProvider::new();
+        let a = provider.get_or_create(5);
+        let b = provider.get_or_create(5);
+        assert!(Arc::ptr_eq(&a.io_stats, &b.io_stats));
+    }
+
+    #[test]
+    fn provider_returns_distinct_io_stats_for_distinct_input_ids() {
+        let provider = StatsProvider::new();
+        let a = provider.get_or_create(5);
+        let b = provider.get_or_create(6);
+        assert!(!Arc::ptr_eq(&a.io_stats, &b.io_stats));
+    }
+
+    #[test]
+    fn provider_clone_shares_underlying_map() {
+        let provider_a = StatsProvider::new();
+        let provider_b = provider_a.clone();
+        let from_a = provider_a.get_or_create(1);
+        let from_b = provider_b.get_or_create(1);
+        assert!(Arc::ptr_eq(&from_a.io_stats, &from_b.io_stats));
+    }
+
+    /// Regression test for the bytes.read N× inflation bug.
+    ///
+    /// Before this refactor every `SourceStats` on a reused worker pipeline
+    /// shared one `IOStatsRef`, so each per-input snapshot reported the
+    /// shared counter's cumulative value. Across N tasks, the driver's
+    /// `Counter::add` accumulated those cumulatives → N×/triangular
+    /// inflation (500× observed in practice).
+    ///
+    /// Post-refactor each per-input `SourceStats` resolves its own
+    /// `InputStats` via the provider, so bytes recorded against one
+    /// `input_id` must not surface in another `input_id`'s snapshot.
+    #[test]
+    fn per_input_source_stats_are_isolated() {
+        let meter = Meter::test_scope("per_input_source_stats_are_isolated");
+        let node_info = NodeInfo::default();
+        let provider = StatsProvider::new();
+
+        let stats_a = SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(1));
+        let stats_b = SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(2));
+        let stats_c = SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(3));
+
+        // Each input "reads" 100 MB independently.
+        provider
+            .get_or_create(1)
+            .io_stats
+            .mark_bytes_read(100_000_000);
+        provider
+            .get_or_create(2)
+            .io_stats
+            .mark_bytes_read(100_000_000);
+        provider
+            .get_or_create(3)
+            .io_stats
+            .mark_bytes_read(100_000_000);
+
+        // Without the fix each snapshot would report the cumulative
+        // 300M (shared counter's current value).
+        for stats in [&stats_a, &stats_b, &stats_c] {
+            let StatSnapshot::Source(snapshot) = stats.flush() else {
+                panic!("expected Source snapshot");
+            };
+            assert_eq!(snapshot.bytes_read, 100_000_000);
+        }
+    }
 }

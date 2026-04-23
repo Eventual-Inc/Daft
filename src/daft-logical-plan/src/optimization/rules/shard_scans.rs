@@ -5,7 +5,7 @@ use common_treenode::{Transformed, TreeNode};
 use daft_scan::ScanState;
 
 use super::OptimizerRule;
-use crate::{LogicalPlan, SourceInfo, ops::Source};
+use crate::{LogicalPlan, SourceInfo};
 
 #[derive(Default, Debug)]
 pub struct ShardScans {}
@@ -35,8 +35,7 @@ impl ShardScans {
                             let new_scan_state = ScanState::Tasks(Arc::new(new_scan_tasks));
                             let new_physical_scan_info =
                                 physical_scan_info.with_scan_state(new_scan_state);
-                            let new_source = Source::new(
-                                source.output_schema.clone(),
+                            let new_source = source.clone().with_source_info(
                                 SourceInfo::Physical(new_physical_scan_info).into(),
                             );
                             Ok(Transformed::yes(LogicalPlan::Source(new_source).into()))
@@ -75,6 +74,7 @@ mod tests {
             num_scan_tasks,
             num_rows_per_task: Some(1000),
             supports_count_pushdown_flag: false,
+            stats: None,
         });
 
         let scan_tasks = scan_operator.to_scan_tasks(Pushdowns::default())?;

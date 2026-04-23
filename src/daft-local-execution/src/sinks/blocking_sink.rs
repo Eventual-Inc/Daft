@@ -4,16 +4,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
+use daft_checkpoint::CheckpointStoreRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use tracing::info_span;
 
 use crate::{
@@ -25,14 +28,13 @@ use crate::{
     },
     resource_manager::MemoryManager,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
-    shuffle_metadata::ShuffleMetadata,
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
 pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
-    ShuffleMetadata(ShuffleMetadata),
+    FlightPartitionRefs(Vec<FlightPartitionRef>),
 }
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 
@@ -149,6 +151,11 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
     meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
+    checkpoint: Option<(
+        CheckpointStoreRef,
+        CheckpointIdMap,
+        daft_checkpoint::FileFormat,
+    )>,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
@@ -167,11 +174,57 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(node_info),
+            checkpoint: None,
         }
+    }
+
+    /// Set the checkpoint context for this sink node. When present, the store's
+    /// `checkpoint()` method is called after each input finalizes, using a
+    /// per-input `CheckpointId` derived from the shared `CheckpointIdMap`.
+    pub(crate) fn with_checkpoint(
+        mut self,
+        store: CheckpointStoreRef,
+        id_map: CheckpointIdMap,
+        file_format: daft_checkpoint::FileFormat,
+    ) -> Self {
+        self.checkpoint = Some((store, id_map, file_format));
+        self
     }
 
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
+    }
+
+    fn encode_file_metadata(
+        partitions: &[MicroPartition],
+        file_format: daft_checkpoint::FileFormat,
+    ) -> DaftResult<Vec<daft_checkpoint::FileMetadata>> {
+        let ipc_err = |e: arrow_schema::ArrowError| DaftError::InternalError(e.to_string());
+        partitions
+            .iter()
+            .flat_map(|mp| {
+                mp.record_batches().iter().map(move |rb| {
+                    let mut buf = Vec::new();
+                    let schema = rb.schema.to_arrow()?;
+                    let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buf, &schema)
+                        .map_err(ipc_err)?;
+                    let arrow_arrays: Vec<arrow_array::ArrayRef> = rb
+                        .columns()
+                        .iter()
+                        .map(|c| c.as_materialized_series().to_arrow())
+                        .collect::<DaftResult<_>>()?;
+                    let batch = arrow_array::RecordBatch::try_new(
+                        std::sync::Arc::new(schema),
+                        arrow_arrays,
+                    )
+                    .map_err(ipc_err)?;
+                    writer.write(&batch).map_err(ipc_err)?;
+                    writer.finish().map_err(ipc_err)?;
+                    drop(writer);
+                    Ok(daft_checkpoint::FileMetadata::new(file_format, buf))
+                })
+            })
+            .collect()
     }
 
     fn spawn_finalize(
@@ -181,13 +234,36 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_tx: Sender<PipelineMessage>,
         tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+        checkpoint: Option<(
+            CheckpointStoreRef,
+            CheckpointIdMap,
+            daft_checkpoint::FileFormat,
+        )>,
     ) {
         tasks.spawn(async move {
+            let checkpoint_id = checkpoint
+                .as_ref()
+                .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
+
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
+            per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
+                    // Stage write results as file metadata before sending.
+                    if let Some((ref store, _, file_format)) = checkpoint {
+                        let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
+                        if !file_metadata.is_empty() {
+                            store
+                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
+                                .await?;
+                        }
+                    }
+
                     for partition in partitions {
                         per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                        per_input
+                            .runtime_stats
+                            .add_bytes_out(partition.size_bytes() as u64);
                         let _ = output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
@@ -196,11 +272,19 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             .await;
                     }
                 }
-                BlockingSinkOutput::ShuffleMetadata(metadata) => {
-                    let _ = output_tx
-                        .send(PipelineMessage::ShuffleMetadata { input_id, metadata })
-                        .await;
+                BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
+                    for partition_ref in partition_refs {
+                        let _ = output_tx
+                            .send(PipelineMessage::FlightPartitionRef {
+                                input_id,
+                                partition_ref,
+                            })
+                            .await;
+                    }
                 }
+            }
+            if let Some((store, _, _)) = &checkpoint {
+                store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
             Ok(TaskResult::Finalized)
@@ -216,6 +300,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         stats_manager: RuntimeStatsManagerHandle,
         meter: Meter,
         node_info: Arc<NodeInfo>,
+        checkpoint: Option<(
+            CheckpointStoreRef,
+            CheckpointIdMap,
+            daft_checkpoint::FileFormat,
+        )>,
     ) -> DaftResult<()> {
         let node_id = node_info.id;
         let max_concurrency = op.max_concurrency();
@@ -250,6 +339,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input
                         .runtime_stats
                         .add_duration_us(elapsed.as_micros() as u64);
+                    per_input.runtime_stats.increment_num_tasks();
                     per_input.states.push(state);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
 
@@ -261,6 +351,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            checkpoint.clone(),
                         );
                     }
                 }
@@ -292,11 +383,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         }
                     };
                     per_input.runtime_stats.add_rows_in(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_bytes_in(partition.size_bytes() as u64);
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("BlockingSinkNode should not receive shuffle metadata from child")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "BlockingSinkNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::Flush(input_id) => {
                     if let Some(p) = inputs.get_mut(&input_id) {
@@ -310,6 +406,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            checkpoint.clone(),
                         );
                     }
                 }
@@ -330,6 +427,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            checkpoint.clone(),
                         );
                     }
                 }
@@ -425,6 +523,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             child,
             meter,
             node_info,
+            checkpoint,
             ..
         } = *self;
         let name: Arc<str> = node_info.name.clone();
@@ -443,6 +542,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     stats_manager,
                     meter,
                     node_info,
+                    checkpoint,
                 )
                 .await
             },

@@ -68,6 +68,9 @@ class DaftContext:
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
 
+    def _notify_query_heartbeat(self, query_id: str) -> None:
+        self._ctx.notify_query_heartbeat(query_id)
+
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
         """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
         self._ctx.notify_query_end(query_id, query_result)
@@ -104,6 +107,51 @@ class DaftContext:
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""
     return DaftContext(_get_context())
+
+
+@contextlib.contextmanager
+def with_subscriber(alias: str, subscriber: Subscriber) -> Generator[None, None, None]:
+    """Context manager that attaches a subscriber to the current context, and detaches it afterwards.
+
+    Args:
+        alias (str): Alias of subscriber to attach
+        subscriber (Subscriber): Subscriber instance that will receive events
+
+    Examples:
+        >>> with daft.with_subscriber("my_subscriber", ...):
+        ...     df = daft.from_pydict({"x": [1, 2, 3]})
+        ...     df = df.with_column("y", df["x"] + 1)
+        ...     df = df.limit(5)
+        ...     df.collect()
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    try:
+        yield
+    finally:
+        ctx.detach_subscriber(alias)
+
+
+def attach_subscriber(alias: str, subscriber: Subscriber) -> DaftContext:
+    """Attaches a subscriber to the current context.
+
+    Args:
+        alias (str): Name-based alias for the subscriber
+        subscriber (Subscriber): Subscriber instance that will receive events
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    return ctx
+
+
+def detach_subscriber(alias: str) -> None:
+    """Detaches a subscriber from the current context.
+
+    Args:
+        alias (str): Alias of subscriber to detach
+    """
+    ctx = get_context()
+    ctx.detach_subscriber(alias)
 
 
 @contextlib.contextmanager
