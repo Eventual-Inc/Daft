@@ -18,11 +18,12 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
-    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
+    LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite,
+    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, Sort,
+    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -41,7 +42,8 @@ use crate::{
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
-        into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
+        into_batches::IntoBatchesOperator, project::ProjectOperator,
+        stage_checkpoint_keys::StageCheckpointKeysOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
     join::{
@@ -52,6 +54,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
+        gather::GatherSink,
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
@@ -263,6 +266,16 @@ pub struct BuilderContext {
     pub meter: Meter,
     context: HashMap<String, String>,
     shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
+    /// Checkpoint store + ID map, set by the PhysicalScan node when checkpoint
+    /// config is present. The `CheckpointIdMap` lazily generates a unique
+    /// `CheckpointId` per `InputId`, shared between SCKO and the sink.
+    checkpoint: std::cell::RefCell<
+        Option<(
+            daft_checkpoint::CheckpointStoreRef,
+            common_checkpoint_config::CheckpointIdMap,
+            daft_dsl::expr::bound_expr::BoundExpr,
+        )>,
+    >,
 }
 
 impl BuilderContext {
@@ -282,11 +295,31 @@ impl BuilderContext {
             meter,
             context,
             shuffle_server,
+            checkpoint: std::cell::RefCell::new(None),
         }
     }
 
     pub fn shuffle_server(&self) -> Option<(Arc<ShuffleFlightServer>, String)> {
         self.shuffle_server.clone()
+    }
+
+    pub fn set_checkpoint(
+        &self,
+        store: daft_checkpoint::CheckpointStoreRef,
+        id_map: common_checkpoint_config::CheckpointIdMap,
+        key_expr: daft_dsl::expr::bound_expr::BoundExpr,
+    ) {
+        *self.checkpoint.borrow_mut() = Some((store, id_map, key_expr));
+    }
+
+    pub fn checkpoint(
+        &self,
+    ) -> Option<(
+        daft_checkpoint::CheckpointStoreRef,
+        common_checkpoint_config::CheckpointIdMap,
+        daft_dsl::expr::bound_expr::BoundExpr,
+    )> {
+        self.checkpoint.borrow().clone()
     }
 
     pub fn next_id(&self) -> usize {
@@ -319,7 +352,7 @@ impl BuilderContext {
         // Keep a unique local runtime node id (`id`), but preserve the originating
         // distributed plan node id (`node_origin_id`) when available so metrics/stats
         // from local execution can be attributed back to the distributed node.
-        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+        let node_origin_id = node_context.origin_node_id;
 
         NodeInfo {
             name,
@@ -364,6 +397,31 @@ pub fn translate_physical_plan_to_pipeline(
 ) -> crate::Result<(Box<dyn PipelineNode>, HashMap<SourceId, InputSender>)> {
     let mut input_senders = HashMap::new();
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
+
+    // Sink-less checkpoint plans: if a checkpoint is configured but the root is
+    // not a native write sink (e.g. `.collect()` after UDFs with external side
+    // effects), wrap the pipeline in a CheckpointTerminusNode that stages keys
+    // and calls `store.checkpoint(id)` per input. Write-sink plans already
+    // handle this via SCKO + BlockingSinkNode::with_checkpoint.
+    let root_is_write_sink = matches!(
+        physical_plan,
+        LocalPhysicalPlan::PhysicalWrite(_) | LocalPhysicalPlan::CommitWrite(_)
+    );
+    #[cfg(feature = "python")]
+    let root_is_write_sink =
+        root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
+    if !root_is_write_sink && let Some((store, id_map, _key_expr)) = ctx.checkpoint() {
+        pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
+            pipeline_node,
+            store,
+            id_map,
+            physical_plan.get_stats_state().clone(),
+            ctx,
+            physical_plan.context(),
+        )
+        .boxed();
+    }
+
     pipeline_node.propagate_morsel_size_requirement(
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
@@ -388,6 +446,7 @@ fn physical_plan_to_pipeline(
             schema,
             stats_state,
             context,
+            ..
         }) => {
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
@@ -710,6 +769,42 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             IntermediateNode::new(
                 Arc::new(filter_op),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::StageCheckpointKeys(daft_local_plan::StageCheckpointKeys {
+            input,
+            checkpoint_config,
+            schema,
+            stats_state,
+            context,
+        }) => {
+            use daft_dsl::{expr::bound_expr::BoundExpr, unresolved_col};
+
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+
+            // Build runtime state: store + per-input id map + bound key expr.
+            // The id_map is shared with the downstream sink via `ctx.checkpoint()`
+            // so `BlockingSinkNode::with_checkpoint` / `CheckpointTerminusNode`
+            // mark the same ids committed after the write succeeds.
+            let store = daft_checkpoint::build_store(&checkpoint_config.store);
+            let id_map = common_checkpoint_config::CheckpointIdMap::new();
+            let key_expr_ref = unresolved_col(checkpoint_config.key_column.clone());
+            let key_expr = BoundExpr::try_new(key_expr_ref, schema).with_context(|_| {
+                PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                }
+            })?;
+
+            ctx.set_checkpoint(store.clone(), id_map.clone(), key_expr.clone());
+
+            let scko = StageCheckpointKeysOperator::new(key_expr, store, id_map);
+            IntermediateNode::new(
+                Arc::new(scko),
                 child_node,
                 stats_state.clone(),
                 ctx,
@@ -1283,6 +1378,7 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+
             let writer_factory = make_physical_writer_factory(file_info, input.schema(), cfg)
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
@@ -1302,14 +1398,17 @@ fn physical_plan_to_pipeline(
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(
+            let mut node = BlockingSinkNode::new(
                 Arc::new(write_sink),
                 child_node,
                 stats_state.clone(),
                 ctx,
                 context,
-            )
-            .boxed()
+            );
+            if let Some((store, id_map, _)) = ctx.checkpoint() {
+                node = node.with_checkpoint(store, id_map, daft_checkpoint::FileFormat::Parquet);
+            }
+            node.boxed()
         }
         LocalPhysicalPlan::CommitWrite(CommitWrite {
             input,
@@ -1343,6 +1442,7 @@ fn physical_plan_to_pipeline(
             use daft_logical_plan::CatalogType;
 
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+
             let (partition_by, write_format) = match catalog_type {
                 CatalogType::Iceberg(ic) => {
                     if !ic.partition_cols.is_empty() {
@@ -1368,6 +1468,15 @@ fn physical_plan_to_pipeline(
                 }
                 _ => panic!("Unsupported catalog type"),
             };
+            let ckpt_format = match &write_format {
+                WriteFormat::Iceberg | WriteFormat::PartitionedIceberg => {
+                    daft_checkpoint::FileFormat::Iceberg
+                }
+                WriteFormat::Deltalake | WriteFormat::PartitionedDeltalake => {
+                    daft_checkpoint::FileFormat::DeltaLake
+                }
+                _ => daft_checkpoint::FileFormat::Parquet,
+            };
             let writer_factory =
                 daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
             let write_sink = WriteSink::new(
@@ -1376,14 +1485,17 @@ fn physical_plan_to_pipeline(
                 partition_by,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(
+            let mut node = BlockingSinkNode::new(
                 Arc::new(write_sink),
                 child_node,
                 stats_state.clone(),
                 ctx,
                 context,
-            )
-            .boxed()
+            );
+            if let Some((store, id_map, _)) = ctx.checkpoint() {
+                node = node.with_checkpoint(store, id_map, ckpt_format);
+            }
+            node.boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::LanceWrite(daft_local_plan::LanceWrite {
@@ -1443,22 +1555,52 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
             context,
+            backend,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let into_partitions_op = IntoPartitionsSink::new(*num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(into_partitions_op),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            match backend {
+                daft_local_plan::ShuffleBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(IntoPartitionsSink::new_ray(*num_partitions, schema.clone())),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                daft_local_plan::ShuffleBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let (shuffle_server, shuffle_address) = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight into_partitions plans when using flight_shuffle algorithm");
+                    let into_partitions_sink = IntoPartitionsSink::try_new_flight(
+                        *num_partitions,
+                        schema.clone(),
+                        *shuffle_id,
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                        shuffle_address,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+                    BlockingSinkNode::new(
+                        Arc::new(into_partitions_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
         }
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            schema,
             backend,
             repartition_spec,
             stats_state,
@@ -1467,11 +1609,10 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                RepartitionWriteBackend::Ray => BlockingSinkNode::new(
+                ShuffleBackend::Ray => BlockingSinkNode::new(
                     Arc::new(RepartitionSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
-                        schema.clone(),
                     )),
                     child_node,
                     stats_state.clone(),
@@ -1479,7 +1620,7 @@ fn physical_plan_to_pipeline(
                     context,
                 )
                 .boxed(),
-                RepartitionWriteBackend::Flight {
+                ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,
                     compression,
@@ -1502,6 +1643,53 @@ fn physical_plan_to_pipeline(
 
                     BlockingSinkNode::new(
                         Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
+        }
+        LocalPhysicalPlan::GatherWrite(GatherWrite {
+            input,
+            backend,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            match backend {
+                ShuffleBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(GatherSink::new_ray()),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                ShuffleBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let (shuffle_server, shuffle_address) = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight gather plans when using flight_shuffle algorithm");
+                    let gather_sink = GatherSink::try_new_flight(
+                        *shuffle_id,
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                        shuffle_address,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+
+                    BlockingSinkNode::new(
+                        Arc::new(gather_sink),
                         child_node,
                         stats_state.clone(),
                         ctx,

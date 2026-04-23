@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.checkpoint import CheckpointStore
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -1212,6 +1214,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1353,6 +1356,13 @@ class DataFrame:
 
             merge.commit()
 
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
+
         with_operations = {
             "operation": pa.array(operations, type=pa.string()),
             "rows": pa.array(rows, type=pa.int64()),
@@ -1425,6 +1435,7 @@ class DataFrame:
         dynamo_table_name: str | None = None,
         allow_unsafe_rename: bool = False,
         io_config: IOConfig | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1649,6 +1660,13 @@ class DataFrame:
                     metadata_param,
                 )
             table.update_incremental()
+
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
 
         with_operations = from_pydict(
             {
@@ -4023,6 +4041,8 @@ class DataFrame:
             return expr.string_agg()
         elif op == "skew":
             return expr.skew()
+        elif op == "product":
+            return expr.product()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -4189,6 +4209,33 @@ class DataFrame:
 
         """
         return self._apply_agg_fn(Expression.skew, cols)
+
+    @DataframePublicAPI
+    def product(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global product on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: Globally aggregated products. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.product("col_a")
+            >>> df.show()
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        return self._apply_agg_fn(Expression.product, cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -5662,6 +5709,36 @@ class GroupedDataFrame:
             DataFrame: DataFrame with the grouped skew per column.
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
+
+    def product(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped product on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: DataFrame with grouped products.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [1, 2, 3, 100]})
+            >>> df = df.groupby("keys").product()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬───────╮
+            │ keys   ┆ col_a │
+            │ ---    ┆ ---   │
+            │ String ┆ Int64 │
+            ╞════════╪═══════╡
+            │ a      ┆ 6     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b      ┆ 100   │
+            ╰────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(Expression.product, cols, self.group_by)
 
     def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.

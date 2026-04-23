@@ -37,6 +37,7 @@ pub struct WriteStats {
     bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -57,6 +58,7 @@ impl WriteStats {
                 None,
                 Some(UNIT_BYTES.into()),
             ),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -85,7 +87,12 @@ impl RuntimeStats for WriteStats {
             rows_written: self.rows_written.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 

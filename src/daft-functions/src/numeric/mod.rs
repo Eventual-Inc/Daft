@@ -1,4 +1,5 @@
 pub mod abs;
+pub mod bin;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
@@ -17,6 +18,7 @@ pub mod sqrt;
 pub mod trigonometry;
 
 use abs::Abs;
+use bin::Bin;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
@@ -61,6 +63,7 @@ pub struct NumericFunctions;
 impl FunctionModule for NumericFunctions {
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);
+        parent.add_fn(Bin);
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);
         parent.add_fn(Clip);

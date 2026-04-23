@@ -274,6 +274,15 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
     return Expression._from_pyexpr(expr._expr.between(lower._expr, upper._expr))
 
 
+def bin(expr: Expression) -> Expression:
+    """Returns the string representation of the binary value of an integer.
+
+    Inputs are promoted to 64-bit before conversion; negatives produce
+    64-character two's-complement strings (e.g. ``bin(-1)`` returns 64 ones).
+    """
+    return Expression._call_builtin_scalar_fn("bin", expr)
+
+
 def is_nan(expr: Expression) -> Expression:
     """Checks if values are NaN (a special float value indicating not-a-number).
 
