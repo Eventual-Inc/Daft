@@ -38,8 +38,9 @@ struct SpillReporterInner {
     bytes_read: Counter,
     file_count: Counter,
     /// Plain atomic because `files_resident` can decrement (spill files are
-    /// read back and deleted). OTel instrumentation would need a gauge
-    /// callback rather than a monotonic counter.
+    /// read back and deleted). TODO: expose as an OTel gauge via an
+    /// observable callback so exporters (Prometheus, OTLP) can see residency
+    /// — right now it only surfaces in snapshot payloads.
     files_resident: AtomicU64,
     node_kv: Vec<KeyValue>,
 }
@@ -87,7 +88,11 @@ impl SpillReporter {
     /// `files_resident` will equal `file_count` in that case.
     pub fn record_file_removed(&self) {
         if let Some(inner) = &self.inner {
-            inner.files_resident.fetch_sub(1, Ordering::Relaxed);
+            let _ = inner
+                .files_resident
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                    Some(v.saturating_sub(1))
+                });
         }
     }
 
