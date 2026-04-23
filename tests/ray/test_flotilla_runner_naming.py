@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import time
 
+import pytest
+import ray
+
 import daft.runners.flotilla as flotilla
 from daft.context import execution_config_ctx
 
@@ -269,10 +272,3 @@ def test_start_ray_workers_skips_already_pending_nodes(monkeypatch):
     flotilla.start_ray_workers(existing_worker_ids=[])
     assert len(flotilla._pending_actors) == 1
     assert flotilla._pending_actors[NODE_ID] is first_pending
-
-
-try:
-    import pytest
-    import ray
-except ImportError:
-    pass
