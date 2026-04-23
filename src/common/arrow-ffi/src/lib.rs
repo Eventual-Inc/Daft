@@ -12,11 +12,14 @@ use std::{
 };
 
 use arrow::{
-    array::{ArrayData, RecordBatch, RecordBatchOptions, StructArray, make_array},
+    array::{
+        Array, ArrayData, RecordBatch, RecordBatchOptions, RecordBatchReader, StructArray,
+        make_array,
+    },
     ffi::{FFI_ArrowArray, FFI_ArrowSchema},
-    ffi_stream::FFI_ArrowArrayStream,
+    ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream},
 };
-use arrow_schema::{Field, Schema};
+use arrow_schema::{Field, Schema, SchemaRef};
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     ffi::Py_uintptr_t,
@@ -27,6 +30,7 @@ use pyo3::{
 };
 const ARROW_SCHEMA_CAPSULE_NAME: &CStr = c"arrow_schema";
 const ARROW_ARRAY_CAPSULE_NAME: &CStr = c"arrow_array";
+const ARROW_STREAM_CAPSULE_NAME: &CStr = c"arrow_array_stream";
 
 import_exception!(pyarrow, ArrowException);
 /// Represents an exception raised by PyArrow.
@@ -54,7 +58,7 @@ fn validate_class(expected: &str, value: &Bound<PyAny>) -> PyResult<()> {
     Ok(())
 }
 
-fn validate_pycapsule(capsule: &Bound<PyCapsule>, name: &str) -> PyResult<()> {
+fn validate_pycapsule(capsule: &Bound<PyCapsule>, name: &CStr) -> PyResult<()> {
     let capsule_name = capsule.name()?;
 
     if capsule_name.is_none() {
@@ -63,10 +67,12 @@ fn validate_pycapsule(capsule: &Bound<PyCapsule>, name: &str) -> PyResult<()> {
         ));
     }
 
-    let capsule_name = unsafe { capsule_name.unwrap().as_cstr().to_str()? };
+    let capsule_name = unsafe { capsule_name.unwrap().as_cstr() };
     if capsule_name != name {
         return Err(PyValueError::new_err(format!(
-            "Expected name '{name}' in PyCapsule, instead got '{capsule_name}'",
+            "Expected name '{}' in PyCapsule, instead got '{}'",
+            name.to_string_lossy(),
+            capsule_name.to_string_lossy(),
         )));
     }
 
@@ -126,8 +132,8 @@ impl FromPyArrow for RecordBatch {
             let array_capsule = tuple.get_item(1)?;
             let array_capsule = array_capsule.cast::<PyCapsule>()?;
 
-            validate_pycapsule(schema_capsule, "arrow_schema")?;
-            validate_pycapsule(array_capsule, "arrow_array")?;
+            validate_pycapsule(schema_capsule, ARROW_SCHEMA_CAPSULE_NAME)?;
+            validate_pycapsule(array_capsule, ARROW_ARRAY_CAPSULE_NAME)?;
 
             let schema_ptr = schema_capsule
                 .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
@@ -198,7 +204,7 @@ impl FromPyArrow for Schema {
         if value.hasattr("__arrow_c_schema__")? {
             let capsule = value.getattr("__arrow_c_schema__")?.call0()?;
             let capsule = capsule.cast::<PyCapsule>()?;
-            validate_pycapsule(capsule, "arrow_schema")?;
+            validate_pycapsule(capsule, ARROW_SCHEMA_CAPSULE_NAME)?;
 
             let schema_ptr = capsule
                 .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
@@ -315,8 +321,8 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
         let array_capsule = tuple.get_item(1)?;
         let array_capsule = array_capsule.cast::<PyCapsule>()?;
 
-        validate_pycapsule(schema_capsule, "arrow_schema")?;
-        validate_pycapsule(array_capsule, "arrow_array")?;
+        validate_pycapsule(schema_capsule, ARROW_SCHEMA_CAPSULE_NAME)?;
+        validate_pycapsule(array_capsule, ARROW_ARRAY_CAPSULE_NAME)?;
 
         let schema_ptr = schema_capsule
             .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
@@ -361,4 +367,118 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
     let field = arrow_schema::Field::try_from(&schema).map_err(to_py_err)?;
 
     Ok((data, field))
+}
+
+// ---------------------------------------------------------------------------
+// PyCapsule export helpers (Arrow PyCapsule Interface)
+// ---------------------------------------------------------------------------
+
+/// Extract an Arrow Field from a `requested_schema` PyCapsule argument.
+///
+/// Per the Arrow PyCapsule spec, `requested_schema` is a PyCapsule wrapping
+/// an FFI_ArrowSchema that the consumer wants the producer to cast to.
+pub fn field_from_requested_schema(capsule: &Bound<PyCapsule>) -> PyResult<Field> {
+    validate_pycapsule(capsule, ARROW_SCHEMA_CAPSULE_NAME)?;
+    let schema_ptr = capsule
+        .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
+        .cast::<FFI_ArrowSchema>();
+    unsafe { Field::try_from(schema_ptr.as_ref()).map_err(to_py_err) }
+}
+
+/// Extract an Arrow Schema from a `requested_schema` PyCapsule argument.
+pub fn schema_from_requested_schema(capsule: &Bound<PyCapsule>) -> PyResult<Schema> {
+    validate_pycapsule(capsule, ARROW_SCHEMA_CAPSULE_NAME)?;
+    let schema_ptr = capsule
+        .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
+        .cast::<FFI_ArrowSchema>();
+    unsafe { Schema::try_from(schema_ptr.as_ref()).map_err(to_py_err) }
+}
+
+/// Export an Arrow Schema as a PyCapsule wrapping FFI_ArrowSchema.
+pub fn schema_to_pycapsule(py: Python<'_>, schema: &Schema) -> PyResult<Py<PyAny>> {
+    let ffi_schema = FFI_ArrowSchema::try_from(schema).map_err(to_py_err)?;
+    Ok(
+        PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?
+            .into_any()
+            .unbind(),
+    )
+}
+
+/// Export an Arrow Field as a PyCapsule wrapping FFI_ArrowSchema.
+pub fn field_to_pycapsule(py: Python<'_>, field: &Field) -> PyResult<Py<PyAny>> {
+    let ffi_schema = FFI_ArrowSchema::try_from(field).map_err(to_py_err)?;
+    Ok(
+        PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?
+            .into_any()
+            .unbind(),
+    )
+}
+
+/// Export an Arrow array (ArrayData + Field) as a `(schema_capsule, array_capsule)` tuple.
+pub fn array_to_pycapsules(py: Python<'_>, data: &ArrayData, field: &Field) -> PyResult<Py<PyAny>> {
+    let ffi_schema = FFI_ArrowSchema::try_from(field).map_err(to_py_err)?;
+    let ffi_array = FFI_ArrowArray::new(data);
+    let schema_capsule = PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?;
+    let array_capsule = PyCapsule::new(py, ffi_array, Some(ARROW_ARRAY_CAPSULE_NAME.into()))?;
+    Ok(
+        PyTuple::new(py, [schema_capsule.into_any(), array_capsule.into_any()])?
+            .into_any()
+            .unbind(),
+    )
+}
+
+/// Export a RecordBatch as a `(schema_capsule, array_capsule)` PyCapsule tuple.
+///
+/// The RecordBatch is exported as a StructArray at the C level, per the Arrow spec.
+pub fn record_batch_to_pycapsules(py: Python<'_>, rb: &RecordBatch) -> PyResult<Py<PyAny>> {
+    let struct_array = StructArray::from(rb.clone());
+    let data = struct_array.to_data();
+
+    // Build a struct field that mirrors the record batch schema.
+    let struct_field = Field::new(
+        "",
+        arrow_schema::DataType::Struct(rb.schema().fields().clone()),
+        false,
+    );
+    array_to_pycapsules(py, &data, &struct_field)
+}
+
+/// Export a RecordBatchReader as a PyCapsule wrapping FFI_ArrowArrayStream.
+pub fn reader_to_stream_pycapsule(
+    py: Python<'_>,
+    reader: Box<dyn RecordBatchReader + Send>,
+) -> PyResult<Py<PyAny>> {
+    let stream = FFI_ArrowArrayStream::new(reader);
+    Ok(
+        PyCapsule::new(py, stream, Some(ARROW_STREAM_CAPSULE_NAME.into()))?
+            .into_any()
+            .unbind(),
+    )
+}
+
+/// Import Arrow data from a Python object implementing `__arrow_c_stream__`.
+///
+/// Returns the schema and collected record batches.
+pub fn stream_from_python(obj: &Bound<PyAny>) -> PyResult<(SchemaRef, Vec<RecordBatch>)> {
+    if !obj.hasattr("__arrow_c_stream__")? {
+        return Err(PyTypeError::new_err(
+            "Expected an object implementing __arrow_c_stream__",
+        ));
+    }
+
+    let capsule = obj.getattr("__arrow_c_stream__")?.call0()?;
+    let capsule = capsule.cast::<PyCapsule>()?;
+    validate_pycapsule(capsule, ARROW_STREAM_CAPSULE_NAME)?;
+
+    let stream_ptr = capsule
+        .pointer_checked(Some(ARROW_STREAM_CAPSULE_NAME))?
+        .cast::<FFI_ArrowArrayStream>();
+
+    let reader =
+        unsafe { ArrowArrayStreamReader::from_raw(stream_ptr.as_ptr()) }.map_err(to_py_err)?;
+
+    let schema = reader.schema();
+    let batches = reader.collect::<Result<Vec<_>, _>>().map_err(to_py_err)?;
+
+    Ok((schema, batches))
 }

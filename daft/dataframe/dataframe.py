@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.convert import ArrowStreamExportable
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -746,6 +747,12 @@ class DataFrame:
         return cls._from_micropartitions(*parts)
 
     @classmethod
+    def _from_arrow_stream(cls, data: "ArrowStreamExportable") -> "DataFrame":
+        """Creates a DataFrame from an object implementing the Arrow PyCapsule Interface (``__arrow_c_stream__``)."""
+        mp = MicroPartition.from_arrow_stream(data)
+        return cls._from_micropartitions(mp)
+
+    @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", list["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
@@ -1291,7 +1298,7 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-            for field in partitioning.keys():
+            for field in partitioning:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
@@ -1301,7 +1308,7 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-            for field in partitioning.keys():
+            for field in partitioning:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
@@ -1537,9 +1544,8 @@ class DataFrame:
 
                 if not allow_unsafe_rename:
                     warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
-        elif scheme == "file":
-            if allow_unsafe_rename:
-                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
+        elif scheme == "file" and allow_unsafe_rename:
+            storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
@@ -2550,9 +2556,8 @@ class DataFrame:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         if fraction is None and size is None:
             raise ValueError("Must specify either `fraction` or `size`")
-        if fraction is not None:
-            if fraction < 0.0 or fraction > 1.0:
-                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and (fraction < 0.0 or fraction > 1.0):
+            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
         if size is not None:
             if size < 0:
                 raise ValueError(f"size should be non-negative, but got {size}")
@@ -5005,12 +5010,10 @@ class DataFrame:
             preview,
             schema,
             format,
-            **{
-                "verbose": verbose,
-                "max_width": max_width,
-                "align": align,
-                "columns": columns,
-            },
+            verbose=verbose,
+            max_width=max_width,
+            align=align,
+            columns=columns,
         )
 
         try:
@@ -5020,14 +5023,14 @@ class DataFrame:
                 try:
                     interactive_html = preview_formatter._generate_interactive_html()
                     display(HTML(interactive_html), clear=True)
-                    return None
+                    return
                 except Exception:
                     pass
 
             display(preview_formatter, clear=True)
         except ImportError:
             print(preview_formatter)
-        return None
+        return
 
     def __len__(self) -> int:
         """Returns the count of rows when dataframe is materialized.
@@ -5140,6 +5143,20 @@ class DataFrame:
 
         arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
+
+    def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
+        """Export as an Arrow C stream (PyCapsule).
+
+        This triggers materialization of the DataFrame.
+        Enables ``pa.table(daft_df)`` and other Arrow PyCapsule consumers.
+        """
+        self.collect()
+        assert self._result is not None
+        mp = self._result._get_merged_micropartition(self.schema())
+        return mp._micropartition.__arrow_c_stream__(requested_schema)
+
+    def __arrow_c_schema__(self) -> Any:
+        return self.schema().to_pyarrow_schema().__arrow_c_schema__()
 
     @DataframePublicAPI
     def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:

@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
+use arrow::array::ArrayRef;
 use common_arrow_ffi::{FromPyArrow, ToPyArrow};
+use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use pyo3::prelude::*;
 
@@ -56,4 +60,57 @@ pub fn record_batch_to_arrow(
         .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.clone()))?;
 
     Ok(record.into())
+}
+
+/// Converts a Daft RecordBatch to an arrow-rs RecordBatch (no Python/PyArrow dependency).
+pub fn record_batch_to_arrow_rs(
+    table: &RecordBatch,
+) -> DaftResult<arrow::record_batch::RecordBatch> {
+    let arrow_schema = table.schema.to_arrow()?;
+
+    let arrays: Vec<ArrayRef> = (0..table.num_columns())
+        .map(|i| {
+            let s = table.get_column(i);
+            let array = s.to_arrow()?;
+            let target_field = s.field().to_arrow()?;
+            if array.data_type() != target_field.data_type() {
+                arrow::compute::cast(&array, target_field.data_type())
+                    .map_err(common_error::DaftError::from)
+            } else {
+                Ok(array)
+            }
+        })
+        .collect::<DaftResult<_>>()?;
+
+    arrow::record_batch::RecordBatch::try_new(Arc::new(arrow_schema), arrays)
+        .map_err(common_error::DaftError::from)
+}
+
+/// Cast an arrow-rs RecordBatch's columns to match the target schema fields.
+pub fn cast_record_batch_to_schema(
+    rb: &arrow::record_batch::RecordBatch,
+    target_fields: &arrow::datatypes::Fields,
+) -> DaftResult<arrow::record_batch::RecordBatch> {
+    let arrays: Vec<ArrayRef> = target_fields
+        .iter()
+        .map(|target_field| {
+            let idx = rb.schema().index_of(target_field.name()).map_err(|_| {
+                common_error::DaftError::ValueError(format!(
+                    "requested_schema field '{}' not found in record batch",
+                    target_field.name()
+                ))
+            })?;
+            let array = rb.column(idx);
+            if array.data_type() != target_field.data_type() {
+                arrow::compute::cast(array, target_field.data_type())
+                    .map_err(common_error::DaftError::from)
+            } else {
+                Ok(array.clone())
+            }
+        })
+        .collect::<DaftResult<_>>()?;
+
+    let target_schema = arrow::datatypes::Schema::new(target_fields.to_vec());
+    arrow::record_batch::RecordBatch::try_new(Arc::new(target_schema), arrays)
+        .map_err(common_error::DaftError::from)
 }
