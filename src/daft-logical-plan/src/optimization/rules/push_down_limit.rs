@@ -86,11 +86,8 @@ impl PushDownLimit {
                     // Push limit into source as a "local" limit.
                     //
                     // Limit-Source -> Limit-Source[with_limit]
-                    LogicalPlan::Source(LogicalSource {
-                        output_schema,
-                        source_info,
-                        ..
-                    }) => {
+                    LogicalPlan::Source(source) => {
+                        let LogicalSource { source_info, .. } = source;
                         let pushdown_limit = limit + offset.unwrap_or(0) as usize;
                         match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
@@ -106,11 +103,11 @@ impl PushDownLimit {
                                 let new_pushdowns =
                                     glob_info.pushdowns.with_limit(Some(pushdown_limit));
                                 let new_glob_info = glob_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(LogicalSource::new(
-                                    output_schema.clone(),
-                                    SourceInfo::GlobScan(new_glob_info).into(),
-                                ))
-                                .into();
+                                let new_source =
+                                    LogicalPlan::Source(source.clone().with_source_info(
+                                        SourceInfo::GlobScan(new_glob_info).into(),
+                                    ))
+                                    .into();
                                 // Set the GlobScanSource node as the child of the Limit node
                                 let limit_plan = plan.with_new_children(&[new_source]).into();
                                 Ok(Transformed::yes(limit_plan))
@@ -127,11 +124,11 @@ impl PushDownLimit {
                                 let new_pushdowns =
                                     external_info.pushdowns.with_limit(Some(pushdown_limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(LogicalSource::new(
-                                    output_schema.clone(),
-                                    SourceInfo::Physical(new_external_info).into(),
-                                ))
-                                .into();
+                                let new_source =
+                                    LogicalPlan::Source(source.clone().with_source_info(
+                                        SourceInfo::Physical(new_external_info).into(),
+                                    ))
+                                    .into();
                                 let out_plan =
                                     if external_info.scan_state.get_scan_op().0.can_absorb_limit()
                                         && offset.is_none()
@@ -222,7 +219,8 @@ impl PushDownLimit {
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Concat(_)
-                    | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::VLLMProject(..)
+                    | LogicalPlan::StageCheckpointKeys(..) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

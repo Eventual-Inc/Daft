@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
+use daft_local_plan::{
+    GatherWriteBackend, LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend,
+};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream},
+    pipeline_node::{
+        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+    },
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -16,7 +20,6 @@ mod flight;
 mod ray;
 
 pub(crate) use flight::FlightShuffleBackendConfig;
-use flight::FlightShuffleReadSpec;
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
@@ -28,17 +31,9 @@ pub(crate) enum DistributedShuffleBackend {
     Flight(FlightShuffleBackendConfig),
 }
 
-pub(crate) struct ShuffleBackendWriteConfig {
-    pub(crate) input_node: TaskBuilderStream,
-    pub(crate) producer: Arc<dyn PipelineNodeImpl>,
-    pub(crate) backend: RepartitionWriteBackend,
-    pub(crate) repartition_spec: RepartitionSpec,
-}
-
 pub(crate) struct ShuffleBackend {
     backend: DistributedShuffleBackend,
     schema: SchemaRef,
-    num_partitions: usize,
     node_id: NodeID,
 }
 
@@ -46,12 +41,10 @@ impl ShuffleBackend {
     pub(crate) fn new(
         context: &PipelineNodeContext,
         schema: SchemaRef,
-        num_partitions: usize,
         backend: DistributedShuffleBackend,
     ) -> Self {
         Self {
             schema,
-            num_partitions,
             node_id: context.node_id,
             backend: match backend {
                 DistributedShuffleBackend::Ray => DistributedShuffleBackend::Ray,
@@ -70,10 +63,6 @@ impl ShuffleBackend {
         &self.backend
     }
 
-    pub(crate) fn num_partitions(&self) -> usize {
-        self.num_partitions
-    }
-
     pub(crate) fn register_cleanup(&self, plan_context: &mut PlanExecutionContext) {
         match &self.backend {
             DistributedShuffleBackend::Ray => {}
@@ -83,33 +72,70 @@ impl ShuffleBackend {
         }
     }
 
-    pub(crate) fn build_write_stage(&self, config: ShuffleBackendWriteConfig) -> TaskBuilderStream {
-        let num_partitions = self.num_partitions;
+    pub(crate) fn build_repartition_write_stage(
+        &self,
+        producer: Arc<dyn PipelineNodeImpl>,
+        input_node: TaskBuilderStream,
+        num_partitions: usize,
+        repartition_spec: RepartitionSpec,
+    ) -> TaskBuilderStream {
         let schema = self.schema.clone();
         let node_id = self.node_id;
-        config
-            .input_node
-            .pipeline_instruction(config.producer, move |input| {
-                LocalPhysicalPlan::repartition_write(
-                    input,
-                    num_partitions,
-                    schema.clone(),
-                    config.backend.clone(),
-                    config.repartition_spec.clone(),
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                )
-            })
+        let repartition_backend = match self.backend.clone() {
+            DistributedShuffleBackend::Ray => RepartitionWriteBackend::Ray,
+            DistributedShuffleBackend::Flight(backend) => RepartitionWriteBackend::Flight {
+                shuffle_id: backend.shuffle_id,
+                shuffle_dirs: backend.shuffle_dirs.clone(),
+                compression: backend.compression,
+            },
+        };
+        input_node.pipeline_instruction(producer, move |input| {
+            LocalPhysicalPlan::repartition_write(
+                input,
+                num_partitions,
+                schema.clone(),
+                repartition_backend.clone(),
+                repartition_spec.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        })
+    }
+
+    pub(crate) fn build_gather_write_stage(
+        &self,
+        producer: Arc<dyn PipelineNodeImpl>,
+        input_node: TaskBuilderStream,
+    ) -> TaskBuilderStream {
+        let schema = self.schema.clone();
+        let node_id = self.node_id;
+        let gather_backend = match self.backend.clone() {
+            DistributedShuffleBackend::Ray => GatherWriteBackend::Ray,
+            DistributedShuffleBackend::Flight(backend) => GatherWriteBackend::Flight {
+                shuffle_id: backend.shuffle_id,
+                shuffle_dirs: backend.shuffle_dirs.clone(),
+                compression: backend.compression,
+            },
+        };
+        input_node.pipeline_instruction(producer, move |input| {
+            LocalPhysicalPlan::gather_write(
+                input,
+                schema.clone(),
+                gather_backend.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        })
     }
 
     pub(crate) async fn emit_read_tasks(
         &self,
-        read_spec: ShuffleBackendReadSpec,
+        partition_groups: Vec<Vec<MaterializedOutput>>,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        match (&self.backend, read_spec) {
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Ray { partition_groups }) => {
+        match &self.backend {
+            DistributedShuffleBackend::Ray => {
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -119,43 +145,16 @@ impl ShuffleBackend {
                 )
                 .await
             }
-            (
-                DistributedShuffleBackend::Flight(backend),
-                ShuffleBackendReadSpec::Flight {
-                    server_cache_mapping,
-                },
-            ) => {
-                let read_spec: FlightShuffleReadSpec =
-                    flight::read_spec_from_server_cache_mapping(backend, server_cache_mapping);
+            DistributedShuffleBackend::Flight(_) => {
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
-                    self.num_partitions,
-                    read_spec,
+                    partition_groups,
                     node,
                     result_tx,
                 )
                 .await
             }
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Flight { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Ray shuffle read spec".to_string(),
-                ))
-            }
-            (DistributedShuffleBackend::Flight(_), ShuffleBackendReadSpec::Ray { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Flight shuffle read spec".to_string(),
-                ))
-            }
         }
     }
-}
-
-pub(crate) enum ShuffleBackendReadSpec {
-    Ray {
-        partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
-    },
-    Flight {
-        server_cache_mapping: std::collections::HashMap<String, Vec<u32>>,
-    },
 }

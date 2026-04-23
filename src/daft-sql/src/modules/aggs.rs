@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::prelude::*;
+use common_hashable_float_wrapper::FloatWrapper;
+use daft_core::{prelude::*, utils::stats};
 use daft_dsl::{AggExpr, Expr, ExprRef, lit, unresolved_col};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
@@ -8,7 +9,7 @@ use super::SQLModule;
 use crate::{
     ensure,
     error::SQLPlannerResult,
-    functions::{SQLFunction, SQLFunctions},
+    functions::{SQLFunction, SQLFunctions, SQLLiteral},
     object_name_to_identifier,
     planner::SQLPlanner,
     table_not_found_err, unsupported_sql_err,
@@ -20,12 +21,15 @@ impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(Literal::Null));
+        let float_nil = FloatWrapper(0.0);
         parent.add_fn("count", AggExpr::Count(nil.clone(), CountMode::Valid));
         parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
         parent.add_fn("sum", AggExpr::Sum(nil.clone()));
         parent.add_fn("product", AggExpr::Product(nil.clone()));
         parent.add_fn("avg", AggExpr::Mean(nil.clone()));
         parent.add_fn("mean", AggExpr::Mean(nil.clone()));
+        parent.add_fn("percentile", AggExpr::Percentile(nil.clone(), float_nil));
+        parent.add_fn("median", AggExpr::Median(nil.clone()));
         parent.add_fn("min", AggExpr::Min(nil.clone()));
         parent.add_fn("max", AggExpr::Max(nil.clone()));
         parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
@@ -42,9 +46,10 @@ impl SQLModule for SQLModuleAggs {
 
 impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        // COUNT(*) needs a bit of extra handling, so we process that outside of `to_expr`
         if let Self::Count(_, _) = self {
             handle_count(inputs, planner)
+        } else if let Self::Percentile(_, _) = self {
+            handle_percentile(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
             to_expr(self, inputs.into_inner().as_slice())
@@ -58,6 +63,8 @@ impl SQLFunction for AggExpr {
             Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
             Self::Product(_) => static_docs::PRODUCT_DOCSTRING.to_string(),
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
+            Self::Median(_) => static_docs::MEDIAN_DOCSTRING.to_string(),
+            Self::Percentile(_, _) => static_docs::PERCENTILE_DOCSTRING.to_string(),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
             Self::Stddev(_, _) => static_docs::STDDEV_DOCSTRING.to_string(),
@@ -75,12 +82,14 @@ impl SQLFunction for AggExpr {
             | Self::Sum(_)
             | Self::Product(_)
             | Self::Mean(_)
+            | Self::Median(_)
             | Self::Min(_)
             | Self::Max(_)
             | Self::Stddev(_, _)
             | Self::Var(_, _)
             | Self::BoolAnd(_)
             | Self::BoolOr(_) => &["input"],
+            Self::Percentile(_, _) => &["input", "percentage"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -153,6 +162,22 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
+fn handle_percentile(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+    ensure!(
+        inputs.len() == 2,
+        "percentile takes exactly two arguments: percentile(input, percentage)"
+    );
+
+    let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+    let percentage_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+    let percentage = f64::from_expr(&percentage_expr)?;
+    ensure!(
+        stats::is_valid_percentile_percentage(percentage),
+        "percentile percentage must be between 0.0 and 1.0 inclusive"
+    );
+    Ok(input.percentile(percentage))
+}
+
 fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
@@ -176,6 +201,11 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
+        AggExpr::Median(_) => {
+            ensure!(args.len() == 1, "median takes exactly one argument");
+            Ok(args[0].clone().median())
+        }
+        AggExpr::Percentile(_, _) => unreachable!("percentile should be handled by this point"),
         AggExpr::Stddev(_, ddof) => {
             ensure!(args.len() == 1, "stddev takes exactly one argument");
             Ok(args[0].clone().stddev(*ddof))
@@ -406,6 +436,82 @@ Example:
     ╞═══════════╡
     │ 150.0     │
     ╰───────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const PERCENTILE_DOCSTRING: &str =
+        "Calculates the exact percentile of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT percentile(x, 0.5) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Float64 │
+    ╞═════════╡
+    │ 150.0   │
+    ╰─────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const MEDIAN_DOCSTRING: &str =
+        "Calculates the median (50th percentile) of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT median(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ x       │
+    │ ---     │
+    │ Float64 │
+    ╞═════════╡
+    │ 150.0   │
+    ╰─────────╯
     (Showing first 1 of 1 rows)";
 
     pub(crate) const MIN_DOCSTRING: &str =

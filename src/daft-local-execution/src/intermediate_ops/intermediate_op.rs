@@ -48,6 +48,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self>;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
@@ -125,7 +126,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             self.task_set.spawn(async move {
                 let now = Instant::now();
                 let (new_state, result) = op
-                    .execute(batch, state, runtime_stats, &task_spawner)
+                    .execute(batch, state, runtime_stats, &task_spawner, input_id)
                     .await??;
                 let elapsed = now.elapsed();
                 Ok(WorkerResult {
@@ -182,6 +183,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
 
         let runtime_stats = self.get_or_create_stats(input_id);
         runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+        runtime_stats.increment_num_tasks();
         self.batch_manager
             .record_completion(runtime_stats.as_ref(), result.len(), elapsed);
         runtime_stats.add_rows_out(result.len() as u64);
@@ -247,8 +249,10 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                     self.try_dispatch()?;
                     self.try_flush_input(input_id).await?
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("IntermediateNode should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "IntermediateNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     self.batch_manager.set_all_pending_flush();

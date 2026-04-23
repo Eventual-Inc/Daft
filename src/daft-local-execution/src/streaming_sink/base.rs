@@ -213,6 +213,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     .await??;
                 let elapsed = now.elapsed();
                 runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+                runtime_stats.increment_num_tasks();
 
                 let (mp, finished) = match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
@@ -286,6 +287,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         per_input
             .runtime_stats
             .add_duration_us(elapsed.as_micros() as u64);
+        per_input.runtime_stats.increment_num_tasks();
 
         let (mp, finished) = match output {
             StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
@@ -380,8 +382,10 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     self.try_complete_input(input_id)?;
                     ControlFlow::Continue(())
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("StreamingSinkNode should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "StreamingSinkNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     self.batch_manager.set_all_pending_flush();

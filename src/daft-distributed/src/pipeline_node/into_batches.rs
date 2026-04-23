@@ -64,6 +64,10 @@ impl RuntimeStats for IntoBatchesStats {
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 pub(crate) struct IntoBatchesNode {

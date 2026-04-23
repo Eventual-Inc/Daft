@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -13,6 +14,9 @@ from daft.daft import (
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
 from daft.io.common import get_tabular_files_scan
+
+if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointStore
 
 
 @PublicAPI
@@ -27,6 +31,8 @@ def read_parquet(
     coerce_int96_timestamp_unit: str | TimeUnit | None = None,
     _multithreaded_io: bool | None = None,
     _chunk_size: int | None = None,  # A hidden parameter for testing purposes.
+    checkpoint: "CheckpointStore | None" = None,
+    on: str | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
 
@@ -93,4 +99,22 @@ def read_parquet(
         file_path_column=file_path_column,
         hive_partitioning=hive_partitioning,
     )
+
+    # Attach checkpoint config to the source node for progress tracking.
+    if checkpoint is not None and on is not None:
+        # Checkpoint filtering requires the Ray runner.
+        runner_type = runners.get_or_infer_runner_type()
+        if runner_type == "native":
+            raise ValueError(
+                "checkpoint= is not supported on the native runner "
+                "(single-process, no distributed actor infrastructure). "
+                "Use the Ray runner: call daft.context.set_runner_ray() "
+                "or set DAFT_RUNNER=ray."
+            )
+        builder = builder.with_checkpoint(checkpoint.config, on)
+    elif checkpoint is not None:
+        raise ValueError("checkpoint= requires on= (the key column name)")
+    elif on is not None:
+        raise ValueError("on= requires checkpoint= (a CheckpointStore)")
+
     return DataFrame(builder)

@@ -35,6 +35,7 @@ pub(crate) struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     io_stats: IOStatsRef,
 
     node_kv: Vec<KeyValue>,
@@ -46,6 +47,7 @@ impl SourceStats {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             io_stats,
             node_kv: node_info.to_key_values(),
         }
@@ -66,6 +68,7 @@ impl RuntimeStats for SourceStats {
             rows_out,
             bytes_read,
             bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -87,6 +90,10 @@ impl RuntimeStats for SourceStats {
 
     fn add_bytes_out(&self, bytes: u64) {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -264,6 +271,7 @@ impl PipelineNode for SourceNode {
                             stats.add_duration_us(elapsed);
                             stats.add_rows_out(partition.len() as u64);
                             stats.add_bytes_out(partition.size_bytes() as u64);
+                            stats.increment_num_tasks();
                         }
                         PipelineMessage::Flush(input_id) => {
                             if let Some(stats) = per_input_stats.get(input_id) {
@@ -271,8 +279,10 @@ impl PipelineNode for SourceNode {
                             }
                             per_input_stats.remove(input_id);
                         }
-                        PipelineMessage::ShuffleMetadata { .. } => {
-                            unreachable!("SourceNode should not receive shuffle metadata")
+                        PipelineMessage::FlightPartitionRef { .. } => {
+                            unreachable!(
+                                "SourceNode should not receive flight partition refs from child"
+                            )
                         }
                     }
                     if destination_sender.send(msg).await.is_err() {

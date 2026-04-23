@@ -1,4 +1,4 @@
-# Daft Extensions
+# Authoring Guide
 
 !!! warning "Experimental"
 
@@ -391,7 +391,7 @@ Create a Daft native extension called `<extension_name>` with the following scal
 
 <describe each function: name, arguments with types, return type, and behavior>
 
-Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a summary of the key conventions:
+Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here is a summary of the key conventions:
 
 ## Project structure
 

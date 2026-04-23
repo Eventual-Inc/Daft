@@ -36,7 +36,7 @@ pub struct OperatorMeta {
     pub name: Arc<str>,
     pub node_type: NodeType,
     pub node_category: NodeCategory,
-    pub origin_node_id: NodeID,
+    pub origin_node_id: Option<NodeID>,
     pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
 }
@@ -50,7 +50,7 @@ impl OperatorMeta {
             name: Arc::from("unknown"),
             node_type: NodeType::default(),
             node_category: NodeCategory::default(),
-            origin_node_id: node_id,
+            origin_node_id: None,
             node_phase: None,
             context: HashMap::new(),
         }

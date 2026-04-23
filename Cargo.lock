@@ -1714,6 +1714,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-checkpoint-config"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-io-config",
+ "pyo3",
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2278,6 +2288,7 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
@@ -2341,21 +2352,28 @@ dependencies = [
 name = "daft-checkpoint"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema 57.3.0",
  "async-trait",
  "bytes",
  "chrono",
+ "common-checkpoint-config",
  "common-error",
+ "common-io-config",
+ "common-runtime",
  "daft-checkpoint",
  "daft-core",
  "daft-io",
- "daft-recordbatch",
+ "daft-scan",
+ "daft-schema",
  "futures",
+ "parquet",
+ "pyo3",
  "serde",
  "serde_json",
  "snafu",
  "tempfile",
  "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -2520,6 +2538,7 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2531,7 +2550,6 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
- "daft-checkpoint",
  "daft-context",
  "daft-dsl",
  "daft-functions",
@@ -2539,6 +2557,7 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
@@ -2725,6 +2744,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "chrono",
+ "chrono-tz",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2919,8 +2939,12 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-ipc",
+ "arrow-schema 57.3.0",
  "async-trait",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2948,6 +2972,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-shuffles",
@@ -2983,6 +3008,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema 57.3.0",
  "bincode",
+ "common-checkpoint-config",
  "common-error",
  "common-io-config",
  "common-metrics",
@@ -2995,6 +3021,7 @@ dependencies = [
  "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "indexmap",
@@ -3009,6 +3036,7 @@ dependencies = [
 name = "daft-logical-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3020,6 +3048,7 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-algebra",
+ "daft-checkpoint",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -3118,6 +3147,16 @@ dependencies = [
  "tango-bench",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "daft-partition-refs"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-partitioning",
+ "common-py-serde",
+ "pyo3",
+ "serde",
 ]
 
 [[package]]
@@ -3262,7 +3301,6 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
- "itertools 0.14.0",
  "tokio",
  "tonic",
 ]
@@ -3285,6 +3323,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-runtime",
  "daft-catalog",

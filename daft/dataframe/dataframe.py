@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.checkpoint import CheckpointStore
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -1212,6 +1214,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1353,6 +1356,13 @@ class DataFrame:
 
             merge.commit()
 
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
+
         with_operations = {
             "operation": pa.array(operations, type=pa.string()),
             "rows": pa.array(rows, type=pa.int64()),
@@ -1425,6 +1435,7 @@ class DataFrame:
         dynamo_table_name: str | None = None,
         allow_unsafe_rename: bool = False,
         io_config: IOConfig | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1626,7 +1637,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = pa.record_batch(table.get_add_actions())
+                old_actions = pa.table(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
@@ -1649,6 +1660,13 @@ class DataFrame:
                     metadata_param,
                 )
             table.update_incremental()
+
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
 
         with_operations = from_pydict(
             {

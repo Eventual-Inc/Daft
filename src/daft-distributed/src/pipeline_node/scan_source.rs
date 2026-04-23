@@ -26,6 +26,7 @@ pub struct SourceStats {
     rows_out: Counter,
     bytes_read: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -41,6 +42,7 @@ impl SourceStats {
                 Some(UNIT_BYTES.into()),
             ),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -67,7 +69,12 @@ impl RuntimeStats for SourceStats {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 

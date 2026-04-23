@@ -16,21 +16,25 @@ use crate::pipeline_node::{
 };
 
 impl LogicalPlanToPipelineNodeTranslator {
+    /// Pick the shuffle backend implied by the current execution config.
+    fn select_backend(&self) -> DistributedShuffleBackend {
+        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
+                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                ..Default::default()
+            })
+        } else {
+            DistributedShuffleBackend::Ray
+        }
+    }
+
     pub fn gen_repartition_node(
         &mut self,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
-        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
-                shuffle_id: 0,
-                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
-                compression: None,
-            })
-        } else {
-            DistributedShuffleBackend::Ray
-        };
+        let backend = self.select_backend();
         self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
     }
 
@@ -118,12 +122,15 @@ impl LogicalPlanToPipelineNodeTranslator {
             return input_node;
         }
 
+        let backend = self.select_backend();
+
         let node_id = self.get_next_pipeline_node_id();
         DistributedPipelineNode::new(
             Arc::new(GatherNode::new(
                 node_id,
                 &self.plan_config,
                 input_node.config().schema.clone(),
+                backend,
                 input_node,
             )),
             &self.meter,

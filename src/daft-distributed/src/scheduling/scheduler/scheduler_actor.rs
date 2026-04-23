@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use super::{PendingTask, Scheduler, default::DefaultScheduler, linear::LinearScheduler};
 use crate::{
-    pipeline_node::TaskOutput,
+    pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::Dispatcher,
         task::{Task, TaskID},
@@ -109,9 +109,16 @@ where
 
             self.scheduler.update_worker_state(&worker_snapshots);
 
-            // 1: Get all tasks that are ready to be scheduled
+            // 1: Send autoscaling request if needed
+            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand and not just the residual demand after scheduling.
+            if let Some(request) = self.scheduler.get_autoscaling_request() {
+                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
+                self.worker_manager.try_autoscale(request)?;
+            }
+
+            // 2: Get all tasks that are ready to be scheduled
             let scheduled_tasks = self.scheduler.schedule_tasks();
-            // 2: Dispatch tasks directly to the dispatcher
+            // 3: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
                 tracing::debug!(target: SCHEDULER_LOG_TARGET, scheduled_tasks = %format!("{:#?}", scheduled_tasks));
@@ -124,12 +131,6 @@ where
 
                 self.dispatcher
                     .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
-            }
-
-            // 3: Send autoscaling request if needed
-            if let Some(request) = self.scheduler.get_autoscaling_request() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
-                self.worker_manager.try_autoscale(request)?;
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
@@ -327,7 +328,7 @@ impl<T: Task> SubmittableTask<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     _task_id: TaskID,
-    result_rx: OneshotReceiver<DaftResult<Option<TaskOutput>>>,
+    result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
     notify_tokens: Vec<OneshotSender<()>>,
     finished: bool,
@@ -336,7 +337,7 @@ pub(crate) struct SubmittedTask {
 impl SubmittedTask {
     fn new(
         task_id: TaskID,
-        result_rx: OneshotReceiver<DaftResult<Option<TaskOutput>>>,
+        result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
         notify_tokens: Vec<OneshotSender<()>>,
     ) -> Self {
@@ -356,7 +357,7 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = DaftResult<Option<TaskOutput>>;
+    type Output = DaftResult<Option<MaterializedOutput>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
@@ -398,7 +399,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        pipeline_node::TaskOutput,
         scheduling::{
             scheduler::test_utils::setup_workers,
             task::tests::MockTaskFailure,
@@ -440,13 +440,6 @@ mod tests {
         }
     }
 
-    fn unwrap_materialized(result: Option<TaskOutput>) -> crate::pipeline_node::MaterializedOutput {
-        match result.expect("expected task output") {
-            TaskOutput::Materialized(materialized_output) => materialized_output,
-            TaskOutput::ShuffleWrite(_) => panic!("expected materialized output"),
-        }
-    }
-
     #[tokio::test]
     async fn test_scheduler_actor_basic_task() -> DaftResult<()> {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
@@ -459,7 +452,7 @@ mod tests {
 
         let result = submitted_task.await?;
         assert!(Arc::ptr_eq(
-            &unwrap_materialized(result).partitions()[0],
+            &result.unwrap().partitions()[0],
             &partition_ref
         ));
 
@@ -489,7 +482,7 @@ mod tests {
         let mut counter = 0;
         for submitted_task in submitted_tasks {
             let result = submitted_task.await?;
-            let partition = unwrap_materialized(result).partitions()[0].clone();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows(), 100 + counter);
             assert_eq!(partition.size_bytes(), 1024 + 1);
             counter += 1;
@@ -544,7 +537,7 @@ mod tests {
         drop(submitted_task_tx);
         while let Some((submitted_task, num_rows, num_bytes)) = submitted_task_rx.recv().await {
             let result = submitted_task.await?;
-            let partition = unwrap_materialized(result).partitions()[0].clone();
+            let partition = result.unwrap().partitions()[0].clone();
             assert_eq!(partition.num_rows(), num_rows);
             assert_eq!(partition.size_bytes(), num_bytes);
         }
@@ -640,7 +633,7 @@ mod tests {
                 cancel_receiver.await.unwrap();
             } else {
                 let result = submitted_task.await?;
-                let partition = unwrap_materialized(result).partitions()[0].clone();
+                let partition = result.unwrap().partitions()[0].clone();
                 assert_eq!(partition.num_rows(), num_rows);
                 assert_eq!(partition.size_bytes(), num_bytes);
             }
@@ -699,7 +692,7 @@ mod tests {
         let submittable_task = SubmittableTask::task_only(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await?;
-        assert_eq!(unwrap_materialized(result).partitions().len(), 1);
+        assert_eq!(result.unwrap().partitions().len(), 1);
 
         test_context.cleanup().await?;
         Ok(())
