@@ -11,8 +11,8 @@ use futures::StreamExt;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -27,6 +27,7 @@ pub(crate) struct IntoPartitionsNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     num_partitions: usize,
+    shuffle_backend: ShuffleBackend,
     child: DistributedPipelineNode,
 }
 
@@ -38,6 +39,7 @@ impl IntoPartitionsNode {
         plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
+        backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -49,15 +51,17 @@ impl IntoPartitionsNode {
             NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            schema.clone(),
             plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
         );
+        let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
 
         Self {
             config,
             context,
             num_partitions,
+            shuffle_backend,
             child,
         }
     }
@@ -121,19 +125,26 @@ impl IntoPartitionsNode {
         while let Some(result) = output_futures.join_next().await {
             // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
-            let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                materialized_outputs,
-                self.config.schema.clone(),
-                self.node_id(),
+            let partition_refs = materialized_outputs
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+
+            let node_id = self.node_id();
+            let shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+            let builder = self.shuffle_backend.build_refs_task_builder(
+                partition_refs,
+                self.as_ref(),
+                move |input| {
+                    LocalPhysicalPlan::into_partitions(
+                        input,
+                        1,
+                        shuffle_backend,
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                },
             );
-            let plan = LocalPhysicalPlan::into_partitions(
-                in_memory_scan,
-                1,
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)),
-            );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                .with_psets(self.node_id(), psets);
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -175,6 +186,7 @@ impl IntoPartitionsNode {
                 LocalPhysicalPlan::into_partitions(
                     plan,
                     num_outputs,
+                    self.shuffle_backend.local_shuffle_backend(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self.node_id() as usize)),
                 )
@@ -191,21 +203,17 @@ impl IntoPartitionsNode {
             output_futures.spawn(task);
         }
 
-        // Collect all the outputs and emit a new task for each output.
+        // Collect all the outputs and emit a new pass-through task for each output ref.
         while let Some(result) = output_futures.join_next().await {
             let materialized_outputs = result??;
             if let Some(output) = materialized_outputs {
                 for output in output.split_into_materialized_outputs() {
-                    let materialized_outputs = vec![output];
-                    let (in_memory_scan, psets) =
-                        MaterializedOutput::into_in_memory_scan_with_psets(
-                            materialized_outputs,
-                            self.config.schema.clone(),
-                            self.node_id(),
-                        );
-                    let builder =
-                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
-                            .with_psets(self.node_id(), psets);
+                    let partition_refs = output.into_inner().0;
+                    let builder = self.shuffle_backend.build_refs_task_builder(
+                        partition_refs,
+                        self.as_ref(),
+                        |input| input,
+                    );
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -240,6 +248,7 @@ impl IntoPartitionsNode {
                             LocalPhysicalPlan::into_partitions(
                                 plan,
                                 1,
+                                self.shuffle_backend.local_shuffle_backend(),
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(node_id as usize)),
                             )
@@ -291,8 +300,12 @@ impl PipelineNodeImpl for IntoPartitionsNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let backend_name = match self.shuffle_backend.backend() {
+            DistributedShuffleBackend::Ray => "Ray",
+            DistributedShuffleBackend::Flight(_) => "Flight",
+        };
         vec![
-            "IntoPartitions".to_string(),
+            format!("IntoPartitions({})", backend_name),
             format!("Num partitions = {}", self.num_partitions),
         ]
     }
@@ -301,6 +314,7 @@ impl PipelineNodeImpl for IntoPartitionsNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
+        self.shuffle_backend.register_cleanup(plan_context);
         let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
