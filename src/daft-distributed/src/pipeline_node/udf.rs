@@ -31,6 +31,7 @@ pub struct UdfStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
     meter: Meter,
     node_kv: Vec<KeyValue>,
@@ -45,6 +46,7 @@ impl UdfStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             meter: meter.clone(),
             node_kv,
@@ -92,7 +94,12 @@ impl RuntimeStats for UdfStats {
                 .collect(),
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 

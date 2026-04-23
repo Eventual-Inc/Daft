@@ -7,7 +7,7 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent,
+        QueryStartEvent, ResultOutEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent,
     },
 };
 
@@ -95,21 +95,21 @@ impl DebugSubscriber {
     }
 
     fn handle_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
-        if event.operator.origin_node_id == event.operator.node_id {
+        if let Some(origin_node_id) = event.operator.origin_node_id {
             eprintln!(
-                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
+                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
                 event.header.query_id,
                 event.operator.node_id,
+                origin_node_id,
                 event.operator.name,
                 event.operator.node_type,
                 event.operator.node_category,
             );
         } else {
             eprintln!(
-                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
+                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
                 event.header.query_id,
                 event.operator.node_id,
-                event.operator.origin_node_id,
                 event.operator.name,
                 event.operator.node_type,
                 event.operator.node_category,
@@ -119,18 +119,15 @@ impl DebugSubscriber {
     }
 
     fn handle_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
-        if event.operator.origin_node_id == event.operator.node_id {
+        if let Some(origin_node_id) = event.operator.origin_node_id {
             eprintln!(
-                "operator_end query_id={} node_id={} name=\"{}\"",
-                event.header.query_id, event.operator.node_id, event.operator.name,
+                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, origin_node_id, event.operator.name,
             );
         } else {
             eprintln!(
-                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
-                event.header.query_id,
-                event.operator.node_id,
-                event.operator.origin_node_id,
-                event.operator.name,
+                "operator_end query_id={} node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, event.operator.name,
             );
         }
         Ok(())
@@ -179,6 +176,56 @@ impl DebugSubscriber {
         );
         Ok(())
     }
+
+    fn handle_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
+        eprintln!(
+            "task_submit query_id={} task_id={} node_ids={:?}",
+            event.header.query_id, event.task.id, event.task.node_ids
+        );
+        Ok(())
+    }
+
+    fn handle_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
+        let rendered_stats = event
+            .stats
+            .iter()
+            .map(|(node_info, snapshot)| {
+                if let Some(origin_node_id) = node_info.node_origin_id {
+                    format!(
+                        "node_id={} origin_node_id={} stats={snapshot:?}",
+                        node_info.id, origin_node_id
+                    )
+                } else {
+                    format!("node_id={} stats={snapshot:?}", node_info.id)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        match (&event.worker_id, &event.outcome, rendered_stats.is_empty()) {
+            (Some(worker_id), outcome, true) => eprintln!(
+                "task_end query_id={} task_id={} worker_id={} outcome={outcome:?} node_ids={:?}",
+                event.header.query_id, event.task.id, worker_id, event.task.node_ids
+            ),
+            (None, outcome, true) => eprintln!(
+                "task_end query_id={} task_id={} outcome={outcome:?} node_ids={:?}",
+                event.header.query_id, event.task.id, event.task.node_ids
+            ),
+            (Some(worker_id), outcome, false) => eprintln!(
+                "task_end query_id={} task_id={} worker_id={} outcome={outcome:?} node_ids={:?} {}",
+                event.header.query_id,
+                event.task.id,
+                worker_id,
+                event.task.node_ids,
+                rendered_stats
+            ),
+            (None, outcome, false) => eprintln!(
+                "task_end query_id={} task_id={} outcome={outcome:?} node_ids={:?} {}",
+                event.header.query_id, event.task.id, event.task.node_ids, rendered_stats
+            ),
+        }
+        Ok(())
+    }
 }
 
 impl Subscriber for DebugSubscriber {
@@ -197,6 +244,8 @@ impl Subscriber for DebugSubscriber {
             Event::Stats(e) => self.handle_stats(&e)?,
             Event::ProcessStats(e) => self.handle_process_stats(&e)?,
             Event::ResultOut(e) => self.handle_result_out(&e)?,
+            Event::TaskSubmit(e) => self.handle_task_submit(&e)?,
+            Event::TaskEnd(e) => self.handle_task_end(&e)?,
         }
         Ok(())
     }

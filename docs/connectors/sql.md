@@ -73,7 +73,7 @@ You can also directly provide a SQL alchemy connection via a **connection factor
     from sqlalchemy import create_engine
 
     def create_connection():
-        return sqlalchemy.create_engine("sqlite:///example.db", echo=True).connect()
+        return create_engine("sqlite:///example.db", echo=True).connect()
 
     df = daft.read_sql("SELECT * FROM books", create_connection)
     ```

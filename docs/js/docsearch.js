@@ -1,4 +1,7 @@
 document.addEventListener('DOMContentLoaded', function () {
+  const versionMatch = window.location.pathname.match(/^\/en\/([^/]+)\//);
+  const currentVersion = versionMatch ? versionMatch[1] : 'stable';
+
   docsearch({
     container: '#docsearch',
     appId: 'CTX8NKR4GC',
@@ -6,5 +9,11 @@ document.addEventListener('DOMContentLoaded', function () {
     indexName: 'getdaft',
     debug: false,
     insights: true,
+    transformItems(items) {
+      return items.map((item) => ({
+        ...item,
+        url: item.url.replace('/en/stable/', `/en/${currentVersion}/`),
+      }));
+    },
   });
 });

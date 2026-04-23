@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import daft
@@ -64,8 +66,6 @@ def test_read_json_skip_multiple_empty_files_in_dir(tmp_path):
 
 
 def test_read_json_sparse_column_with_schema_hints(tmp_path):
-    import json
-
     file_path = tmp_path / "sparse_data.jsonl"
     with file_path.open("w") as f:
         for i in range(50000):
@@ -93,3 +93,38 @@ def test_read_json_sparse_column_with_schema_hints(tmp_path):
     res = df_with_hint.where(daft.col("sound").not_null()).collect()
     assert len(res) == 1
     assert res.to_pydict()["sound"][0] == "hello"
+
+
+def test_read_json_schema_hint_filter_with_count_rows(tmp_path):
+    file_path = tmp_path / "sparse_count.jsonl"
+    with file_path.open("w") as f:
+        for i in range(50000):
+            f.write(json.dumps({"name": f"Person{i}", "id": i}) + "\n")
+        f.write(json.dumps({"name": "Alice", "id": 50000, "sound": "hello"}) + "\n")
+        f.write(json.dumps({"name": "Bob", "id": 50001, "sound": "world"}) + "\n")
+
+    df_no_hint = daft.read_json(str(file_path))
+    assert "sound" not in df_no_hint.column_names
+
+    schema_hints = {"sound": daft.DataType.string()}
+    df = daft.read_json(str(file_path), schema=schema_hints)
+    assert "sound" in df.column_names
+
+    assert df.where(daft.col("sound").not_null()).count_rows() == 2
+    assert df.where(daft.col("sound").is_null()).count_rows() == 50000
+
+    res = df.where(daft.col("sound").not_null()).collect()
+    assert res.to_pydict()["sound"] == ["hello", "world"]
+
+    res = df.where(daft.col("sound").not_null()).select("name", "id").collect()
+    assert res.column_names == ["name", "id"]
+    assert res.to_pydict()["name"] == ["Alice", "Bob"]
+
+    res = df.select("name", "id").where(daft.col("id") > 50000).collect()
+    assert res.column_names == ["name", "id"]
+    assert res.to_pydict()["name"] == ["Bob"]
+
+    with pytest.raises(ValueError, match="FieldNotFound.*sound"):
+        # select() drops "sound" from the schema, so a subsequent filter
+        # referencing it must fail at plan construction time, not at execution.
+        df.select("name", "id").where(daft.col("sound").not_null()).collect()
