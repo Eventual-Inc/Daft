@@ -836,7 +836,18 @@ impl AggExpr {
                             )));
                         }
                     }
-                    SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
+                    SketchType::HyperLogLog => {
+                        if field.dtype == daft_core::array::ops::HLL_SKETCH_DTYPE {
+                            daft_core::array::ops::HLL_SKETCH_DTYPE
+                        } else {
+                            return Err(DaftError::TypeError(format!(
+                                "Expected input to merge_sketch() to be {} but received dtype {} for column \"{}\"",
+                                daft_core::array::ops::HLL_SKETCH_DTYPE,
+                                field.dtype,
+                                field.name,
+                            )));
+                        }
+                    }
                 };
                 Ok(Field::new(field.name, dtype))
             }
