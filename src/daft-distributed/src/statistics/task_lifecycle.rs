@@ -29,7 +29,7 @@ impl TaskLifecycleEventSubscriber {
     }
 
     fn dispatch_event(&self, event: &Event) -> DaftResult<()> {
-        self.context.notify_event(event)
+        self.context.notify(event)
     }
 }
 
