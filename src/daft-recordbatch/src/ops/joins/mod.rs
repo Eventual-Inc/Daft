@@ -85,22 +85,21 @@ impl RecordBatch {
         left_on: &BoundExpr,
         right_on: &BoundExpr,
     ) -> DaftResult<Self> {
-        let left = self.sort(std::slice::from_ref(left_on), &[false], &[false])?;
         let right = right.sort(std::slice::from_ref(right_on), &[false], &[false])?;
 
-        let left_key_table = left.eval_expression_list(std::slice::from_ref(left_on))?;
+        let left_key_table = self.eval_expression_list(std::slice::from_ref(left_on))?;
         let right_key_table = right.eval_expression_list(std::slice::from_ref(right_on))?;
         let (left_key_table, right_key_table) =
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
 
-        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, right_cols_to_drop)?;
+        let join_schema = infer_asof_join_schema(&self.schema, &right.schema, right_cols_to_drop)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());
 
-        for field in left.schema.as_ref() {
-            join_series.push(get_column_by_name(&left, &field.name)?.take(&lidx)?);
+        for field in self.schema.as_ref() {
+            join_series.push(get_column_by_name(self, &field.name)?.take(&lidx)?);
         }
         for field in right.schema.as_ref() {
             if !right_cols_to_drop.contains(field.name.as_ref()) {
