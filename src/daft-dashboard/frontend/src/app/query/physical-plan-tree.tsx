@@ -249,7 +249,7 @@ export default function PhysicalPlanTree({
 
   const renderEdge = useCallback(
     (
-      _parent: PhysicalPlanNode,
+      parent: PhysicalPlanNode,
       child: PhysicalPlanNode,
       position: "single" | "branch",
     ) => {
@@ -257,6 +257,27 @@ export default function PhysicalPlanTree({
       const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
       const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
       const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
+
+      if (parent.is_shuffle_boundary && parent.shuffle_info) {
+        const info = parent.shuffle_info;
+        return (
+          <div className="flex flex-col items-center">
+            <div className="h-2" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+            <div
+              className={`${main.className} my-1 px-2.5 py-1 rounded-md border border-dashed border-amber-500/50 bg-zinc-900/90 flex items-center gap-1.5`}
+            >
+              <span className="text-[10px] font-mono text-amber-400/80 whitespace-nowrap">
+                shuffle
+              </span>
+              <span className="text-[10px] font-mono text-zinc-500">
+                {info.strategy} → {info.num_partitions}p
+              </span>
+            </div>
+            <div className="h-2" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+          </div>
+        );
+      }
+
       return (
         <EdgeLabel
           bytes={bytesOut}

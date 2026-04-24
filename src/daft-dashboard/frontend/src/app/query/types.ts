@@ -48,12 +48,20 @@ export type OperatorInfo = {
   end_sec?: number;
 };
 
+export type ShuffleInfo = {
+  strategy: string;
+  num_partitions: number;
+  backend: string;
+};
+
 export type PhysicalPlanNode = {
   id: number;
   name: string;
   type: string;
   category: string;
   children?: PhysicalPlanNode[];
+  is_shuffle_boundary?: boolean;
+  shuffle_info?: ShuffleInfo;
 };
 
 export type ExecInfo = {
