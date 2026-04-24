@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import { DisplayNode, buildStageMap, buildDisplayTree } from "./stage-utils";
 import {
   getStatusIcon,
   formatStatValue,
@@ -219,10 +220,12 @@ function PhysicalNodeCard({
   node,
   operator,
   intensity,
+  showTasks = true,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
+  showTasks?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status = operator?.status ?? "Pending";
@@ -234,7 +237,7 @@ function PhysicalNodeCard({
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
 
   const cpuTimeStat = operator?.stats[DURATION_US_STAT_KEY];
-  const hasTaskStats = operator
+  const hasTaskStats = showTasks && operator
     ? TASK_STAT_KEYS.some(k => operator.stats[k] !== undefined)
     : false;
   const extraStats = operator
@@ -332,6 +335,48 @@ function PhysicalNodeCard({
   );
 }
 
+function StageCard({
+  displayNode,
+  operators,
+  maxCpuSec,
+}: {
+  displayNode: DisplayNode;
+  operators: Record<number, OperatorInfo>;
+  maxCpuSec: number;
+}) {
+  const stageOps = displayNode.operators;
+  const firstOp = operators[stageOps[0].id];
+
+  return (
+    <div className="border border-dashed border-zinc-600 rounded-xl bg-zinc-800/20 p-2 space-y-0">
+      {stageOps.map((node, i) => {
+        const op = operators[node.id];
+        const intensity = getBottleneckIntensity(op, node.type, maxCpuSec);
+        return (
+          <div key={node.id}>
+            {i > 0 && (
+              <div className="flex justify-center py-0.5">
+                <div className="w-px h-3 bg-zinc-600" />
+              </div>
+            )}
+            <PhysicalNodeCard
+              node={node}
+              operator={op}
+              intensity={intensity}
+              showTasks={false}
+            />
+          </div>
+        );
+      })}
+      {firstOp && (
+        <div className="mt-2 pt-2 border-t border-zinc-600/50 px-2">
+          <TasksPanel stats={firstOp.stats} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PhysicalPlanTree({
   exec_state,
 }: {
@@ -355,6 +400,16 @@ export default function PhysicalPlanTree({
     ...Object.values(operators).map(getCpuSec),
   );
 
+  const stageMap = useMemo(
+    () => buildStageMap(exec_state.exec_info.stage_groups ?? []),
+    [exec_state.exec_info.stage_groups],
+  );
+
+  const displayTree = useMemo(
+    () => (plan ? buildDisplayTree(plan, stageMap) : null),
+    [plan, stageMap],
+  );
+
   const maxBytes = useMemo(() => {
     let m = 0;
     for (const op of Object.values(operators)) {
@@ -366,13 +421,13 @@ export default function PhysicalPlanTree({
 
   const renderEdge = useCallback(
     (
-      _parent: PhysicalPlanNode,
-      child: PhysicalPlanNode,
+      _parent: DisplayNode,
+      child: DisplayNode,
       position: "single" | "branch",
     ) => {
-      const childOp = operators[child.id];
-      const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
-      const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
+      const topOp = operators[child.operators[0].id];
+      const bytesOut = topOp ? statNumericValue(topOp.stats[BYTES_OUT_STAT_KEY]) : 0;
+      const bytesIn = topOp ? statNumericValue(topOp.stats[BYTES_IN_STAT_KEY]) : 0;
       const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
       return (
         <EdgeLabel
@@ -428,12 +483,22 @@ export default function PhysicalPlanTree({
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {viewMode === "tree" && plan ? (
+        {viewMode === "tree" && displayTree ? (
           <div className="relative flex justify-center py-6 px-4 overflow-auto">
             <TreeLayout
-              node={plan}
-              getChildren={(node) => node.children ?? []}
-              renderNode={(node) => {
+              node={displayTree}
+              getChildren={(dn) => dn.children}
+              renderNode={(dn) => {
+                if (dn.operators.length > 1) {
+                  return (
+                    <StageCard
+                      displayNode={dn}
+                      operators={operators}
+                      maxCpuSec={maxCpuSec}
+                    />
+                  );
+                }
+                const node = dn.operators[0];
                 const op = operators[node.id];
                 const intensity = getBottleneckIntensity(
                   op,

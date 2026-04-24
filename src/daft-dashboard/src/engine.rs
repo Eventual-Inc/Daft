@@ -275,6 +275,7 @@ pub(crate) fn apply_exec_start(
                     exec_start_sec: args.exec_start_sec,
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
+                    stage_groups: Vec::new(),
                 },
             };
 
@@ -381,6 +382,8 @@ pub(crate) fn apply_operator_end(
 pub struct ExecEmitStatsArgsSend {
     pub source_id: String,
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage_group: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -388,6 +391,8 @@ pub struct ExecEmitStatsArgsSend {
 pub struct ExecEmitStatsArgsRecv {
     pub source_id: String,
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
+    #[serde(default)]
+    pub stage_group: Option<Vec<usize>>,
 }
 
 fn merge_stats_map(dst: &mut HashMap<String, Stat>, src: HashMap<String, Stat>) {
@@ -484,7 +489,12 @@ pub(crate) fn apply_emit_stats(
         return StatusCode::BAD_REQUEST;
     };
 
-    let ExecEmitStatsArgsRecv { source_id, stats } = args;
+    let ExecEmitStatsArgsRecv {
+        source_id,
+        stats,
+        stage_group,
+    } = args;
+    let mut new_stage_discovered = false;
     match &mut query_info.state {
         QueryState::Setup {
             pending_source_stats,
@@ -500,6 +510,7 @@ pub(crate) fn apply_emit_stats(
         QueryState::Executing { exec_info, .. }
         | QueryState::Finalizing { exec_info, .. }
         | QueryState::Finished { exec_info, .. } => {
+            new_stage_discovered = maybe_add_stage_group(exec_info, stage_group.as_ref());
             apply_exec_emit_stats(exec_info, &query_id, &source_id, stats);
         }
         QueryState::Failed {
@@ -510,6 +521,7 @@ pub(crate) fn apply_emit_stats(
             exec_info: Some(exec_info),
             ..
         } => {
+            maybe_add_stage_group(exec_info, stage_group.as_ref());
             apply_exec_emit_stats(exec_info, &query_id, &source_id, stats);
         }
         QueryState::Failed {
@@ -530,8 +542,32 @@ pub(crate) fn apply_emit_stats(
         }
     }
 
+    if new_stage_discovered {
+        state.ping_clients_on_query_update(query_info.value());
+    }
     state.ping_clients_on_operator_update(query_info.value());
     StatusCode::OK
+}
+
+fn maybe_add_stage_group(exec_info: &mut ExecInfo, stage_group: Option<&Vec<usize>>) -> bool {
+    let Some(group) = stage_group else {
+        return false;
+    };
+    if group.len() <= 1 {
+        return false;
+    }
+    let mut sorted = group.clone();
+    sorted.sort_unstable();
+    let already_exists = exec_info.stage_groups.iter().any(|existing| {
+        let mut existing_sorted = existing.clone();
+        existing_sorted.sort_unstable();
+        existing_sorted == sorted
+    });
+    if already_exists {
+        return false;
+    }
+    exec_info.stage_groups.push(group.clone());
+    true
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -703,6 +739,7 @@ pub(crate) fn apply_query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
+                        stage_groups: Vec::new(),
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,

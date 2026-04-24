@@ -60,6 +60,7 @@ export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
+  stage_groups?: number[][];
   // TODO: Logs
 };
 

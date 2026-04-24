@@ -56,6 +56,8 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stage_groups: Vec<Vec<usize>>,
     // TODO: Logs
 }
 

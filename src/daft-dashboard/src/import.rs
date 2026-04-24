@@ -176,6 +176,7 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
             ExecEmitStatsArgsRecv {
                 source_id: e.query_id.clone(),
                 stats: vec![(e.node_id, metrics_to_stats(&e.metrics))],
+                stage_group: None,
             },
         ),
         Event::ExecutionEnded(e) => apply_exec_end(

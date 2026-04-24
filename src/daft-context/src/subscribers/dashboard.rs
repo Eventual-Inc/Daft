@@ -421,6 +421,13 @@ impl DashboardSubscriber {
             .map(|id| id.clone())
             .unwrap_or_else(|| "unknown".to_string());
 
+        let node_ids: Vec<usize> = event.stats.iter().map(|(id, _)| *id).collect();
+        let stage_group = if node_ids.len() > 1 {
+            Some(node_ids)
+        } else {
+            None
+        };
+
         self.enqueue_json(
             format!("engine/query/{}/exec/emit_stats", query_id),
             "exec_emit_stats",
@@ -440,6 +447,7 @@ impl DashboardSubscriber {
                         )
                     })
                     .collect(),
+                stage_group,
             },
         );
         Ok(())
