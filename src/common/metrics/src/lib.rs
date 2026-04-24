@@ -4,6 +4,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod snapshot;
+pub mod spill;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 
@@ -19,6 +20,7 @@ use pyo3::{Bound, PyResult, pyclass};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 pub use snapshot::StatSnapshot;
+pub use spill::SpillReporter;
 
 /// Unique identifier for a query.
 // TODO: Make this global for all plans and executions
@@ -123,6 +125,14 @@ pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
+
+// In-memory buffer high-water mark for blocking sinks (pre-spill gauge).
+pub const IN_MEMORY_BUFFER_BYTES_KEY: &str = "bytes.in_memory_buffer";
+
+// Spill metrics (flat keys to match the rest of the naming convention).
+pub const SPILL_BYTES_WRITTEN_STAT_KEY: &str = "spill.bytes.written";
+pub const SPILL_BYTES_READ_STAT_KEY: &str = "spill.bytes.read";
+pub const SPILL_FILE_COUNT_STAT_KEY: &str = "spill.files.created";
 
 // Join metrics
 pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";

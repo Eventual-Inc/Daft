@@ -99,6 +99,7 @@ impl RuntimeStats for BasicJoinStats {
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
             num_tasks: self.num_tasks.load(Ordering::SeqCst),
+            spill: None,
         })
     }
 

@@ -3300,6 +3300,7 @@ dependencies = [
  "arrow-schema 57.3.0",
  "async-channel 2.5.0",
  "common-error",
+ "common-metrics",
  "common-runtime",
  "daft-core",
  "daft-io",

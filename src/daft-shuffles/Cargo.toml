@@ -4,6 +4,7 @@ arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
 async-channel = "2.5.0"
 common-error = {path = "../common/error", default-features = false}
+common-metrics = {path = "../common/metrics", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}

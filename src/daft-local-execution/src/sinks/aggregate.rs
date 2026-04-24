@@ -30,6 +30,13 @@ impl AggregateState {
         }
     }
 
+    fn buffer_bytes(&self) -> u64 {
+        match self {
+            Self::Accumulating(parts) => parts.iter().map(|p| p.size_bytes() as u64).sum(),
+            Self::Done => 0,
+        }
+    }
+
     fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
@@ -86,7 +93,7 @@ impl BlockingSink for AggregateSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.agg_sink_params.clone();
@@ -95,6 +102,7 @@ impl BlockingSink for AggregateSink {
                 async move {
                     let agged = input.agg(&params.sink_agg_exprs, &[])?;
                     state.push(agged);
+                    runtime_stats.set_in_memory_buffer_bytes(state.buffer_bytes());
                     Ok(state)
                 },
                 Span::current(),

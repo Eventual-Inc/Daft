@@ -70,6 +70,7 @@ impl RuntimeStats for SourceStats {
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
             num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            spill: None,
         })
     }
 

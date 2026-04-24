@@ -253,6 +253,23 @@ impl GroupedAggregateState {
         *self = Self::Done;
         res
     }
+
+    fn buffer_bytes(&self) -> u64 {
+        let Self::Accumulating { inner_states, .. } = self else {
+            return 0;
+        };
+        inner_states
+            .iter()
+            .flatten()
+            .map(|s| {
+                s.partially_aggregated
+                    .iter()
+                    .chain(s.unaggregated.iter())
+                    .map(|p| p.size_bytes() as u64)
+                    .sum::<u64>()
+            })
+            .sum()
+    }
 }
 
 struct GroupedAggregateParams {
@@ -356,7 +373,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
@@ -365,6 +382,7 @@ impl BlockingSink for GroupedAggregateSink {
             .spawn(
                 async move {
                     state.push(input, &params, &strategy_lock)?;
+                    runtime_stats.set_in_memory_buffer_bytes(state.buffer_bytes());
                     Ok(state)
                 },
                 Span::current(),

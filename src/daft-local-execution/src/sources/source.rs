@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, Meter, StatSnapshot,
+    Counter, Meter, SpillReporter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::SourceSnapshot,
+    snapshot::{SourceSnapshot, SpillSource},
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -38,23 +38,32 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 #[derive(Clone)]
 pub(crate) struct InputStats {
     pub io_stats: IOStatsRef,
+    pub spill: SpillReporter,
 }
 
 /// Per-input-id `InputStats` registry shared between a `Source` implementation
 /// and the `SourceNode` that owns it. Sources resolve the right counters for
 /// each morsel via `get_or_create`, and the matching per-input `SourceStats`
-/// reads from the same entry — so `bytes_read` naturally scopes to one
-/// `input_id` rather than accumulating across every task that runs on a
-/// reused pipeline.
+/// reads from the same entry — so `bytes_read` and spill metrics naturally
+/// scope to one `input_id` rather than accumulating across every task that
+/// runs on a reused pipeline.
+///
+/// The provider carries `meter` + `node_info` so `SpillReporter`s can be
+/// lazily constructed per-input — spill counters only materialize for inputs
+/// that actually spill.
 #[derive(Clone)]
 pub(crate) struct StatsProvider {
     inner: Arc<DashMap<InputId, InputStats>>,
+    meter: Meter,
+    node_info: Arc<NodeInfo>,
 }
 
 impl StatsProvider {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(meter: Meter, node_info: Arc<NodeInfo>) -> Self {
         Self {
             inner: Arc::new(DashMap::new()),
+            meter,
+            node_info,
         }
     }
 
@@ -63,6 +72,7 @@ impl StatsProvider {
             .entry(input_id)
             .or_insert_with(|| InputStats {
                 io_stats: IOStatsRef::default(),
+                spill: SpillReporter::new(&self.meter, &self.node_info, SpillSource::Native),
             })
             .clone()
     }
@@ -94,6 +104,7 @@ impl RuntimeStats for SourceStats {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let input_stats = InputStats {
             io_stats: IOStatsRef::default(),
+            spill: SpillReporter::new(meter, node_info, SpillSource::Native),
         };
         Self::with_input_stats(meter, node_info, input_stats)
     }
@@ -108,6 +119,7 @@ impl RuntimeStats for SourceStats {
             bytes_read,
             bytes_out: self.bytes_out.load(ordering),
             num_tasks: self.num_tasks.load(ordering),
+            spill: self.input_stats.spill.snapshot(ordering),
         })
     }
 
@@ -263,7 +275,7 @@ impl PipelineNode for SourceNode {
         let name = self.name();
         let meter = self.meter.clone();
         let node_info = self.node_info.clone();
-        let stats_provider = StatsProvider::new();
+        let stats_provider = StatsProvider::new(meter.clone(), node_info.clone());
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -398,9 +410,13 @@ mod tests {
     use super::*;
     use crate::runtime_stats::RuntimeStats;
 
+    fn make_provider(name: &'static str) -> StatsProvider {
+        StatsProvider::new(Meter::test_scope(name), Arc::new(NodeInfo::default()))
+    }
+
     #[test]
     fn provider_returns_same_io_stats_for_same_input_id() {
-        let provider = StatsProvider::new();
+        let provider = make_provider("provider_returns_same_io_stats_for_same_input_id");
         let a = provider.get_or_create(5);
         let b = provider.get_or_create(5);
         assert!(Arc::ptr_eq(&a.io_stats, &b.io_stats));
@@ -408,7 +424,7 @@ mod tests {
 
     #[test]
     fn provider_returns_distinct_io_stats_for_distinct_input_ids() {
-        let provider = StatsProvider::new();
+        let provider = make_provider("provider_returns_distinct_io_stats_for_distinct_input_ids");
         let a = provider.get_or_create(5);
         let b = provider.get_or_create(6);
         assert!(!Arc::ptr_eq(&a.io_stats, &b.io_stats));
@@ -416,7 +432,7 @@ mod tests {
 
     #[test]
     fn provider_clone_shares_underlying_map() {
-        let provider_a = StatsProvider::new();
+        let provider_a = make_provider("provider_clone_shares_underlying_map");
         let provider_b = provider_a.clone();
         let from_a = provider_a.get_or_create(1);
         let from_b = provider_b.get_or_create(1);
@@ -438,7 +454,7 @@ mod tests {
     fn per_input_source_stats_are_isolated() {
         let meter = Meter::test_scope("per_input_source_stats_are_isolated");
         let node_info = NodeInfo::default();
-        let provider = StatsProvider::new();
+        let provider = StatsProvider::new(meter.clone(), Arc::new(node_info.clone()));
 
         let stats_a = SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(1));
         let stats_b = SourceStats::with_input_stats(&meter, &node_info, provider.get_or_create(2));

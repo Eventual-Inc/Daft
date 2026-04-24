@@ -1,4 +1,7 @@
+use std::sync::{Arc, OnceLock};
+
 use common_error::{DaftError, DaftResult};
+use common_metrics::SpillReporter;
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
 use daft_micropartition::MicroPartition;
@@ -42,6 +45,12 @@ pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
     writer_sender_weak: async_channel::WeakSender<MicroPartition>,
     partition_ref_id: u64,
+    /// Set at most once by the owning sink after the cache is constructed.
+    /// The writer task holds an `Arc` clone and reads it on each write —
+    /// when unset, spill I/O isn't recorded. Allows eager cache construction
+    /// to stay cheap while `SpillReporter` attachment happens later in
+    /// `sink()` where `runtime_stats` is available.
+    spill: Arc<OnceLock<SpillReporter>>,
     schema: SchemaRef,
 }
 
@@ -90,7 +99,10 @@ impl InProgressShuffleCache {
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
         let (tx, rx) = async_channel::bounded(num_cpus * 2);
-        let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
+        let spill: Arc<OnceLock<SpillReporter>> = Arc::new(OnceLock::new());
+        let spill_for_task = spill.clone();
+        let task = get_io_runtime(true)
+            .spawn(async move { writer_task(rx, writer, spill_for_task).await });
 
         let writer_sender_weak = tx.downgrade();
 
@@ -102,8 +114,16 @@ impl InProgressShuffleCache {
             }),
             writer_sender_weak,
             partition_ref_id,
+            spill,
             schema,
         })
+    }
+
+    /// Attach a `SpillReporter` so subsequent writes are accounted for against
+    /// the owning operator's runtime stats. No-op if already attached (only
+    /// the first caller wins — later calls are silently ignored).
+    pub fn set_spill_reporter(&self, reporter: SpillReporter) {
+        let _ = self.spill.set(reporter);
     }
 
     /// Push single partition data to the writer.
@@ -179,19 +199,24 @@ impl InProgressShuffleCache {
 async fn writer_task(
     rx: async_channel::Receiver<MicroPartition>,
     mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
+    spill: Arc<OnceLock<SpillReporter>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
     while let Ok(partition) = rx.recv().await {
+        let bytes = partition.size_bytes();
         total_rows_written += partition.len();
-        total_bytes_written += partition.size_bytes();
+        total_bytes_written += bytes;
         writer = io_runtime
             .spawn(async move {
                 writer.write(partition).await?;
                 DaftResult::Ok(writer)
             })
             .await??;
+        if let Some(reporter) = spill.get() {
+            reporter.record_bytes_written(bytes as u64);
+        }
     }
     let file_path_tables = writer.close().await?;
 
@@ -212,6 +237,11 @@ async fn writer_task(
 
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
+    if let Some(reporter) = spill.get() {
+        for _ in 0..file_paths.len() {
+            reporter.record_file_created();
+        }
+    }
     Ok(WriterTaskResult {
         bytes_per_file,
         total_rows_written,
