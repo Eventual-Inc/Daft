@@ -13,7 +13,7 @@ Daft supports native Rust extensions by leveraging a stable C ABI based on the
 Extensions are **not coupled** to any particular Arrow library version. The ABI boundary uses
 plain C structs (`ArrowSchema`, `ArrowArray`) so your extension can use any arrow-rs version
 (or even a different Arrow implementation entirely). Today we support authoring native
-scalar functions(UDFs) and aggregate functions (UDAFs).
+scalar functions (UDFs) and aggregate functions (UDAFs).
 
 ## Example
 
@@ -292,8 +292,8 @@ impl DaftScalarFunction for Greet {
 Extensions can also register **aggregate functions** (UDAFs) alongside scalar functions.
 An aggregate function follows a three-stage pipeline:
 
-1. **Block Aggregation** (`agg_block`) — process input arrays into partial state
-2. **Combination** (`combine`) — merge partial states from different blocks
+1. **Aggregation** (`aggregate`) — process input arrays into partial state
+2. **Combination** (`combine`) — merge partial states
 3. **Finalization** (`finalize`) — produce the final output from merged state
 
 State is exchanged as `Vec<ArrowData>` — each element is one state field. The FFI layer
@@ -324,9 +324,9 @@ impl DaftAggregateFunction for MySum {
         ])
     }
 
-    /// Process a block of input arrays into partial state.
+    /// Process input arrays into partial state.
     /// Returns one ArrowData per state field (single-row each).
-    fn agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+    fn aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
         // inputs[0] is the column to sum
         // compute sum and count, return as two single-element arrays
         todo!()
@@ -506,7 +506,7 @@ Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here 
 - Each aggregate function is a struct implementing `DaftAggregateFunction` with:
   - `name`, `return_field` — same as scalar functions.
   - `state_fields(&self, args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>>` — intermediate state schema.
-  - `agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — partial aggregation.
+  - `aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — partial aggregation.
   - `combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — merge partial states.
   - `finalize(&self, states: Vec<ArrowData>) -> DaftResult<ArrowData>` — produce final result.
 

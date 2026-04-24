@@ -14,9 +14,9 @@ use crate::{
 /// The execution pipeline follows three stages:
 ///
 /// ```text
-/// Block Aggregation:  agg_block(inputs)  → Vec<ArrowData>   (partial state per block)
-/// Combination:        combine(states) → Vec<ArrowData>   (merge partial states)
-/// Finalization:       finalize(states) → ArrowData       (final output)
+/// Aggregation:   aggregate(inputs) → Vec<ArrowData>   (partial state)
+/// Combination:   combine(states)   → Vec<ArrowData>   (merge partial states)
+/// Finalization:  finalize(states)  → ArrowData         (final output)
 /// ```
 ///
 /// State is exchanged as individual `ArrowData` values (one per state field).
@@ -25,7 +25,7 @@ pub trait DaftAggregateFunction {
     fn name(&self) -> &CStr;
     fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>;
     fn state_fields(&self, args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>>;
-    fn agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>;
+    fn aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>;
     fn combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>;
     fn finalize(&self, states: Vec<ArrowData>) -> DaftResult<ArrowData>;
 }
@@ -40,7 +40,7 @@ pub fn into_ffi(func: DaftAggregateFunctionRef) -> FFI_AggregateFunction {
         name: ffi_name,
         get_return_field: ffi_get_return_field,
         get_state_schema: ffi_get_state_schema,
-        agg_block: ffi_agg_block,
+        aggregate: ffi_aggregate,
         combine: ffi_combine,
         finalize: ffi_finalize,
         fini: ffi_fini,
@@ -97,7 +97,7 @@ unsafe extern "C" fn ffi_get_state_schema(
 }
 
 #[rustfmt::skip]
-unsafe extern "C" fn ffi_agg_block(
+unsafe extern "C" fn ffi_aggregate(
     ctx:          *const c_void,
     args:         *const ArrowArray,
     args_schemas: *const ArrowSchema,
@@ -106,7 +106,7 @@ unsafe extern "C" fn ffi_agg_block(
     ret_schema:   *mut ArrowSchema,
     errmsg:       *mut *mut c_char,
 ) -> c_int {
-    unsafe { trampoline(errmsg, "panic in aggregate agg_block", || {
+    unsafe { trampoline(errmsg, "panic in aggregate", || {
         let ctx = &*ctx.cast::<DaftAggregateFunctionRef>();
         let mut inputs = Vec::with_capacity(args_count);
         for i in 0..args_count {
@@ -114,7 +114,7 @@ unsafe extern "C" fn ffi_agg_block(
             let schema = std::ptr::read(args_schemas.add(i));
             inputs.push(ArrowData { schema, array });
         }
-        let results = ctx.agg_block(inputs)?;
+        let results = ctx.aggregate(inputs)?;
         pack_struct_result(results, ret_array, ret_schema);
         Ok(())
     })}
@@ -289,7 +289,7 @@ mod tests {
             ])
         }
 
-        fn agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+        fn aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
             let values = read_int32(&inputs[0]);
             let sum: i32 = values.iter().sum();
             let count = values.len() as i64;
@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn vtable_agg_block() {
+    fn vtable_aggregate() {
         let vtable = into_ffi(Arc::new(SumAggFn));
         let input = make_int32(&[1, 2, 3, 4]);
 
@@ -410,7 +410,7 @@ mod tests {
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
-            (vtable.agg_block)(
+            (vtable.aggregate)(
                 vtable.ctx,
                 &raw const input.array,
                 &raw const input.schema,
@@ -443,8 +443,8 @@ mod tests {
             fn state_fields(&self, _: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>> {
                 Err(DaftError::TypeError("bad state".into()))
             }
-            fn agg_block(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
-                Err(DaftError::RuntimeError("block failed".into()))
+            fn aggregate(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+                Err(DaftError::RuntimeError("aggregate failed".into()))
             }
             fn combine(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
                 Err(DaftError::RuntimeError("combine failed".into()))
@@ -480,7 +480,7 @@ mod tests {
     fn vtable_combine() {
         let vtable = into_ffi(Arc::new(SumAggFn));
 
-        // First produce two partial states via agg_block
+        // First produce two partial states via aggregate
         let input1 = make_int32(&[1, 2, 3]);
         let input2 = make_int32(&[4, 5, 6]);
 
@@ -489,7 +489,7 @@ mod tests {
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
-            (vtable.agg_block)(
+            (vtable.aggregate)(
                 vtable.ctx,
                 &raw const input1.array,
                 &raw const input1.schema,
@@ -506,7 +506,7 @@ mod tests {
         errmsg = std::ptr::null_mut();
 
         let rc = unsafe {
-            (vtable.agg_block)(
+            (vtable.aggregate)(
                 vtable.ctx,
                 &raw const input2.array,
                 &raw const input2.schema,
@@ -576,14 +576,14 @@ mod tests {
     fn vtable_finalize() {
         let vtable = into_ffi(Arc::new(SumAggFn));
 
-        // Produce a partial state via agg_block
+        // Produce a partial state via aggregate
         let input = make_int32(&[10, 20, 30]);
         let mut state_array = ArrowArray::empty();
         let mut state_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
-            (vtable.agg_block)(
+            (vtable.aggregate)(
                 vtable.ctx,
                 &raw const input.array,
                 &raw const input.schema,
@@ -625,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn vtable_error_propagation_agg_block() {
+    fn vtable_error_propagation_aggregate() {
         struct FailAgg2;
         impl DaftAggregateFunction for FailAgg2 {
             fn name(&self) -> &CStr {
@@ -637,8 +637,8 @@ mod tests {
             fn state_fields(&self, _: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>> {
                 unreachable!()
             }
-            fn agg_block(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
-                Err(DaftError::RuntimeError("block exploded".into()))
+            fn aggregate(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+                Err(DaftError::RuntimeError("aggregate exploded".into()))
             }
             fn combine(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
                 Err(DaftError::RuntimeError("combine exploded".into()))
@@ -651,13 +651,13 @@ mod tests {
         let vtable = into_ffi(Arc::new(FailAgg2));
         let input = make_int32(&[1]);
 
-        // agg_block error
+        // aggregate error
         let mut ret_array = ArrowArray::empty();
         let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
-            (vtable.agg_block)(
+            (vtable.aggregate)(
                 vtable.ctx,
                 &raw const input.array,
                 &raw const input.schema,
@@ -670,7 +670,7 @@ mod tests {
         assert_ne!(rc, 0);
         assert!(!errmsg.is_null());
         let msg = unsafe { CStr::from_ptr(errmsg) }.to_str().unwrap();
-        assert!(msg.contains("block exploded"), "error: {msg}");
+        assert!(msg.contains("aggregate exploded"), "error: {msg}");
         unsafe { free_string(errmsg) };
 
         // combine error

@@ -17,7 +17,7 @@ use std::ffi::{c_char, c_int, c_void};
 pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 2;
+pub const DAFT_ABI_VERSION: u32 = 1;
 
 /// Symbol that every Daft module cdylib must export.
 ///
@@ -114,7 +114,7 @@ unsafe impl Sync for FFI_ScalarFunction {}
 
 /// Virtual function table for an aggregate function (UDAF).
 ///
-/// Follows a three-stage pipeline: Block Aggregation → Combination →
+/// Follows a three-stage pipeline: Aggregation → Combination →
 /// Finalization. Intermediate state is
 /// exchanged as a single Struct array at the FFI boundary — the children
 /// of the Struct are the individual state fields.
@@ -131,7 +131,7 @@ pub struct FFI_AggregateFunction {
         ctx: *const c_void,
         args: *const ArrowSchema,
         args_count: usize,
-        ret: *mut ArrowSchema,
+        ret_schema: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -143,13 +143,13 @@ pub struct FFI_AggregateFunction {
         ctx: *const c_void,
         args: *const ArrowSchema,
         args_count: usize,
-        ret: *mut ArrowSchema,
+        ret_schema: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
-    /// **Block aggregation.** Process input arrays and produce a single-row
+    /// **Aggregation.** Process input arrays and produce a single-row
     /// Struct array of partial state.
-    pub agg_block: unsafe extern "C" fn(
+    pub aggregate: unsafe extern "C" fn(
         ctx: *const c_void,
         args: *const ArrowArray,
         args_schemas: *const ArrowSchema,
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<FFI_ScalarFunction>(), 5 * ptr);
 
         // FFI_AggregateFunction: ctx + name + get_return_field + get_state_schema
-        //   + agg_block + combine + finalize + fini = 8 pointers
+        //   + aggregate + combine + finalize + fini = 8 pointers
         assert_eq!(std::mem::size_of::<FFI_AggregateFunction>(), 8 * ptr);
 
         // FFI_SessionContext: ctx + define_function + define_aggregate_function = 3 pointers
@@ -256,7 +256,7 @@ mod tests {
     fn constants() {
         // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
         // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
-        assert_eq!(DAFT_ABI_VERSION, 2);
+        assert_eq!(DAFT_ABI_VERSION, 1);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }

@@ -115,7 +115,7 @@ impl DaftAggregateFunction for StringCount {
         ))?])
     }
 
-    fn agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+    fn aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
         let data = inputs.into_iter().next().unwrap();
         let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
         let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();

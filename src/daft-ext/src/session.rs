@@ -247,7 +247,7 @@ mod tests {
             fn state_fields(&self, _: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>> {
                 Ok(vec![])
             }
-            fn agg_block(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+            fn aggregate(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
                 Ok(vec![])
             }
             fn combine(&self, _: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {

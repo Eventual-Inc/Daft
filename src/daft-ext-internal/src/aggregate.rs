@@ -242,7 +242,7 @@ impl AggFn for AggregateFunctionHandle {
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
-            (inner.ffi.agg_block)(
+            (inner.ffi.aggregate)(
                 inner.ffi.ctx,
                 ffi_arrays.as_ptr(),
                 ffi_schemas.as_ptr(),
@@ -252,7 +252,7 @@ impl AggFn for AggregateFunctionHandle {
                 &raw mut errmsg,
             )
         };
-        inner.check(rc, errmsg, "error in extension agg_block")?;
+        inner.check(rc, errmsg, "error in extension aggregate")?;
 
         Self::struct_ffi_to_literals(ret_array, ret_schema)
     }
@@ -390,7 +390,7 @@ mod tests {
         0
     }
 
-    unsafe extern "C" fn mock_agg_block(
+    unsafe extern "C" fn mock_aggregate(
         _ctx: *const c_void,
         args: *const ArrowArray,
         args_schemas: *const ArrowSchema,
@@ -560,7 +560,7 @@ mod tests {
             name: mock_name,
             get_return_field: mock_get_return_field,
             get_state_schema: mock_get_state_schema,
-            agg_block: mock_agg_block,
+            aggregate: mock_aggregate,
             combine: mock_combine,
             finalize: mock_finalize,
             fini: mock_fini,
