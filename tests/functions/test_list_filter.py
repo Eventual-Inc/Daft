@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 
 
@@ -59,6 +61,18 @@ def test_list_map_then_filter():
         "nums"
     ]
     assert actual == [[6], [8, 10]]
+
+
+def test_list_filter_non_boolean_predicate_raises():
+    df = daft.from_pydict({"nums": [[1, 2, 3]]})
+    with pytest.raises(Exception, match="(?i)boolean"):
+        df.select(daft.col("nums").list_filter(daft.element() * 2)).collect()
+
+
+def test_list_filter_nested_list():
+    df = daft.from_pydict({"xs": [[[1, 2], [3], [4, 5, 6]], [[], [7]]]})
+    actual = df.select(daft.col("xs").list_filter(daft.element().length() > 1)).to_pydict()["xs"]
+    assert actual == [[[1, 2], [4, 5, 6]], []]
 
 
 def test_list_filter_struct_field():
