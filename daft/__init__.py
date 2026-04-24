@@ -29,6 +29,7 @@ if "COV_CORE_SOURCE" in os.environ:
 from daft.daft import build_type as _build_type
 from daft.daft import version as _version
 from daft.daft import refresh_logger as _refresh_logger
+from daft.daft import get_loaded_extension_paths
 
 
 def get_version() -> str:
@@ -241,6 +242,7 @@ __all__ = [
     "get_catalog",
     "get_context",
     "get_function",
+    "get_loaded_extension_paths",
     "get_or_create_runner",
     "get_or_infer_runner_type",
     "get_provider",
