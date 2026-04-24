@@ -860,7 +860,7 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    let entry = exec_info.tasks.entry(args.task_id).or_insert(TaskInfo {
+    let entry = exec_info.tasks.entry(args.task_id).or_insert_with(|| TaskInfo {
         task_id: args.task_id,
         origin_node_id: args.origin_node_id,
         node_ids: args.node_ids.clone(),
