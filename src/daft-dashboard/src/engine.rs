@@ -860,22 +860,25 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    let entry = exec_info.tasks.entry(args.task_id).or_insert_with(|| TaskInfo {
-        task_id: args.task_id,
-        origin_node_id: args.origin_node_id,
-        node_ids: args.node_ids.clone(),
-        plan_fingerprint: args.plan_fingerprint,
-        name: args.name.clone(),
-        status: TaskStatus::Pending,
-        submit_sec: args.submit_sec,
-        end_sec: None,
-        worker_id: None,
-        rows_in: 0,
-        rows_out: 0,
-        bytes_in: 0,
-        bytes_out: 0,
-        cpu_us: 0,
-    });
+    let entry = exec_info
+        .tasks
+        .entry(args.task_id)
+        .or_insert_with(|| TaskInfo {
+            task_id: args.task_id,
+            origin_node_id: args.origin_node_id,
+            node_ids: args.node_ids.clone(),
+            plan_fingerprint: args.plan_fingerprint,
+            name: args.name.clone(),
+            status: TaskStatus::Pending,
+            submit_sec: args.submit_sec,
+            end_sec: None,
+            worker_id: None,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            cpu_us: 0,
+        });
 
     // If a prior submit is replayed or arrives out of order, keep the earliest
     // submit_sec and ensure identifying fields stay in sync.
