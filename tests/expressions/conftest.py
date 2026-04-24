@@ -89,22 +89,23 @@ def test_binary_expression():
         name: str,
         sql_name: str | None = None,
     ):
-        expr = getattr(col("c0"), name)(col("c1"))
+        expr = getattr(col("c0"), name)(col("c1")).alias("out")
         sql_name = sql_name or name
-        sql_expr = f"{sql_name}(c0, c1)"
 
         df = from_pydict({"c0": left, "c1": right})
 
-        df_res = df.select(expr.alias("out")).to_pydict()["out"]
-        rb_res = (
-            RecordBatch.from_pydict({"c0": left, "c1": right})
-            .eval_expression_list([expr.alias("out")])
-            .to_pydict()["out"]
-        )
-        sql_res = sql(f"select {sql_expr} as out from df").to_pydict()["out"]
+        df_res = df.select(expr).to_pydict()["out"]
+        rb_res = RecordBatch.from_pydict({"c0": left, "c1": right}).eval_expression_list([expr]).to_pydict()["out"]
+        sql_res = sql(f"select {sql_name}(c0, c1) as out from df").to_pydict()["out"]
+
+        left_series = Series.from_pylist(left)
+        right_series = Series.from_pylist(right)
+        series_res = left_series._eval_expressions(name, right_series)
+        series_res = series_res.rename("out").to_pylist()
 
         assert df_res == expected
         assert rb_res == expected
         assert sql_res == expected
+        assert series_res == expected
 
-    return _test_binary_expression
+    yield _test_binary_expression
