@@ -272,24 +272,11 @@ export default function PhysicalPlanTree({
 
       if (parent.is_shuffle_boundary && parent.shuffle_info) {
         const info = parent.shuffle_info;
-        const parentStage = nodeStageMap.get(parent.id);
-        const childStage = nodeStageMap.get(child.id);
         return (
-          <div className="flex flex-col items-center">
-            {/* Upper stage label */}
-            {parentStage && (
-              <div className="flex items-center gap-2 my-1">
-                <div className="w-8 h-px bg-zinc-700" />
-                <span className={`${main.className} text-[9px] font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap`}>
-                  {parentStage.name}
-                </span>
-                <div className="w-8 h-px bg-zinc-700" />
-              </div>
-            )}
-            <div className="h-1.5" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
-            {/* Shuffle badge */}
+          <div className="flex items-center gap-3 my-2">
+            <div className="flex-1 border-t border-dashed border-amber-500/40" />
             <div
-              className={`${main.className} my-0.5 px-2.5 py-1 rounded-md border border-dashed border-amber-500/50 bg-zinc-900/90 flex items-center gap-1.5`}
+              className={`${main.className} px-2.5 py-1 rounded-md border border-dashed border-amber-500/40 bg-zinc-900/90 flex items-center gap-1.5`}
             >
               <span className="text-[10px] font-mono text-amber-400/80 whitespace-nowrap">
                 shuffle
@@ -298,17 +285,7 @@ export default function PhysicalPlanTree({
                 {info.strategy} → {info.num_partitions}p
               </span>
             </div>
-            <div className="h-1.5" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
-            {/* Lower stage label */}
-            {childStage && childStage !== parentStage && (
-              <div className="flex items-center gap-2 my-1">
-                <div className="w-8 h-px bg-zinc-700" />
-                <span className={`${main.className} text-[9px] font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap`}>
-                  {childStage.name}
-                </span>
-                <div className="w-8 h-px bg-zinc-700" />
-              </div>
-            )}
+            <div className="flex-1 border-t border-dashed border-amber-500/40" />
           </div>
         );
       }
@@ -372,6 +349,7 @@ export default function PhysicalPlanTree({
             <TreeLayout
               node={plan}
               getChildren={(node) => node.children ?? []}
+              getNodeStage={stages.length > 0 ? (node) => nodeStageMap.get(node.id)?.id ?? null : undefined}
               renderNode={(node) => {
                 const op = operators[node.id];
                 const intensity = getBottleneckIntensity(
