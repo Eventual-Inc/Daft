@@ -75,11 +75,6 @@ def main():
         default=2,
         help="Number of Ray worker nodes to launch (default: 2)",
     )
-    parser.add_argument(
-        "--no-restart",
-        action="store_true",
-        help="Skip ray up if cluster is already running",
-    )
     args = parser.parse_args()
 
     wheel_url = None
@@ -101,8 +96,6 @@ def main():
         str(BENCHMARK_SCRIPT),
         "--start",
     ]
-    if args.no_restart:
-        cmd.append("--no-restart")
     cmd += ["--", "--scale", args.scale, "--n_runs", str(args.n_runs), "--workers", str(args.workers)]
 
     print(f"Running: {' '.join(cmd)}")

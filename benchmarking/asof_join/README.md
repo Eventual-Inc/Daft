@@ -46,4 +46,3 @@ python benchmarking/asof_join/distributed/run.py [--scale <small|medium|large>] 
 | `--n_runs` | `3` | Number of timed runs |
 | `--workers` | `2` | Number of Ray worker nodes to launch |
 | `--daft-index-url` | — | Install Daft from a custom build index URL |
-| `--no-restart` | false | Skip `ray up` if the cluster is already running |
