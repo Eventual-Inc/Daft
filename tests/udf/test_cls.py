@@ -391,3 +391,39 @@ def test_cls_gpus_one_point_five_is_rejected():
 
         BadRepeat(2)
     assert "num_gpus greater than 1 must be an integer" in str(excinfo.value)
+
+
+def test_cls_method_inherits_retry_and_on_error_from_class_defaults():
+    @daft.cls(max_retries=2, on_error="ignore")
+    class InheritDefaults:
+        @daft.method
+        def rowwise(self, x: int) -> int:
+            return x
+
+        @daft.method.batch(return_dtype=DataType.int64())
+        def batch(self, x: daft.Series) -> daft.Series:
+            return x
+
+    udf = InheritDefaults()
+    assert udf.rowwise.max_retries == 2
+    assert udf.rowwise.on_error == "ignore"
+    assert udf.batch.max_retries == 2
+    assert udf.batch.on_error == "ignore"
+
+
+def test_cls_method_overrides_retry_and_on_error_per_method():
+    @daft.cls(max_retries=0, on_error="raise")
+    class MethodOverrides:
+        @daft.method(max_retries=5, on_error="log")
+        def rowwise(self, x: int) -> int:
+            return x
+
+        @daft.method.batch(return_dtype=DataType.int64(), max_retries=3, on_error="ignore")
+        def batch(self, x: daft.Series) -> daft.Series:
+            return x
+
+    udf = MethodOverrides()
+    assert udf.rowwise.max_retries == 5
+    assert udf.rowwise.on_error == "log"
+    assert udf.batch.max_retries == 3
+    assert udf.batch.on_error == "ignore"
