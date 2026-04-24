@@ -27,6 +27,36 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
                 return property_value
         return None
 
+    # Some catalogs (e.g. Polaris) vend Azure credentials scoped to a storage
+    # account, so the key is `adls.sas-token.<account>.dfs.core.windows.net`
+    # instead of the plain `adls.sas-token`. See #6357.
+    _ADLS_ACCOUNT_SUFFIX = ".dfs.core.windows.net"
+
+    def get_adls_scoped_value(*property_names: str) -> tuple[str | None, str | None]:
+        """Look up an ADLS property that may be plain or account-scoped.
+
+        Returns (value, inferred_account). `inferred_account` is None when the
+        matching key was unscoped or no match was found.
+        """
+        nonlocal any_props_set
+        for name in property_names:
+            if value := props.get(name):
+                any_props_set = True
+                return value, None
+            prefix = name + "."
+            for key, value in props.items():
+                if key.startswith(prefix) and key.endswith(_ADLS_ACCOUNT_SUFFIX):
+                    account = key[len(prefix) : -len(_ADLS_ACCOUNT_SUFFIX)]
+                    if account:
+                        any_props_set = True
+                        return value, account
+        return None, None
+
+    access_key, access_key_account = get_adls_scoped_value("adls.account-key", "adlfs.account-key")
+    sas_token, sas_token_account = get_adls_scoped_value("adls.sas-token", "adlfs.sas-token")
+    explicit_account = get_first_property_value("adls.account-name", "adlfs.account-name")
+    storage_account = explicit_account or access_key_account or sas_token_account
+
     io_config = IOConfig(
         s3=S3Config(
             endpoint_url=get_first_property_value("s3.endpoint"),
@@ -36,9 +66,9 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
             session_token=get_first_property_value("s3.session-token", "client.session-token"),
         ),
         azure=AzureConfig(
-            storage_account=get_first_property_value("adls.account-name", "adlfs.account-name"),
-            access_key=get_first_property_value("adls.account-key", "adlfs.account-key"),
-            sas_token=get_first_property_value("adls.sas-token", "adlfs.sas-token"),
+            storage_account=storage_account,
+            access_key=access_key,
+            sas_token=sas_token,
             tenant_id=get_first_property_value("adls.tenant-id", "adlfs.tenant-id"),
             client_id=get_first_property_value("adls.client-id", "adlfs.client-id"),
             client_secret=get_first_property_value("adls.client-secret", "adlfs.client-secret"),
