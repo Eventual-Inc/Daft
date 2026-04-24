@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Usage: ./run_benchmark.sh --scale <small|medium|large> [--daft-index-url <url>] [benchmark flags]
+# Usage: ./run.sh --scale <small|medium|large> [--daft-index-url <url>] [benchmark flags]
 #
 # Examples:
-#   ./run_benchmark.sh --scale large --systems polars,daft_native
-#   ./run_benchmark.sh --scale small --daft-index-url https://ds0gqyebztuyf.cloudfront.net/builds/dev/598009e5587385c1fa95bf0e55c266b3e2ec1393
+#   ./run.sh --scale large --systems polars,daft_native
+#   ./run.sh --scale small --daft-index-url https://ds0gqyebztuyf.cloudfront.net/builds/dev/598009e5587385c1fa95bf0e55c266b3e2ec1393
 #
 # --daft-index-url installs daft from a custom build (--pre --extra-index-url).
 # All other flags are forwarded to __main__.py.

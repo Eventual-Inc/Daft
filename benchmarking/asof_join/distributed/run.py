@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 DEPLOYMENT_YAML = Path(__file__).parent / "deployment.yaml"
-BENCHMARK_SCRIPT = Path(__file__).parent / "run_benchmark.py"
+BENCHMARK_SCRIPT = Path(__file__).parent / "benchmark.py"
 
 
 def resolve_wheel_url(daft_index_url: str) -> str:

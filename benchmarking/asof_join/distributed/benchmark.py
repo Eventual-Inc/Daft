@@ -1,7 +1,7 @@
 """Run an asof-join benchmark on a Ray cluster with Daft.
 
 Usage (from the head node after `ray up deployment.yaml`):
-  python run_benchmark.py --scale small --n_runs 3 --workers 4
+  python benchmark.py --scale small --n_runs 3 --workers 4
 """
 
 from __future__ import annotations
