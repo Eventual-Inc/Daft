@@ -29,11 +29,13 @@ __all__ = [
     "attach_function",
     "attach_provider",
     "attach_table",
+    "attach_view",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
+    "create_temp_view",
     "current_catalog",
     "current_model",
     "current_namespace",
@@ -171,11 +173,11 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
+    def attach(self, object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
         """Attaches a known attachable object like a Catalog, Table or UDF.
 
         Args:
-            object (Catalog|Table|UDF): object which is attachable to a session
+            object (Catalog|Table|UDF|DataFrame): object which is attachable to a session
 
         Returns:
             None
@@ -188,6 +190,10 @@ class Session:
             self.attach_table(object, alias)
         elif isinstance(object, UDF):
             self.attach_function(object, alias)
+        elif isinstance(object, DataFrame):
+            if alias is None:
+                raise ValueError("Cannot attach a DataFrame without an alias. Please provide `alias`.")
+            self.attach_view(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -239,6 +245,14 @@ class Session:
         a = alias if alias else t.name
         self._session.attach_table(t, a)
         return t
+
+    def attach_view(self, view: DataFrame, alias: str) -> Table:
+        """Attaches a DataFrame as a non-materialized temporary view for SQL resolution.
+
+        Unlike ``attach_table(Table.from_df(...))``, this does not materialize data into a MemoryTable.
+        """
+        py_source = PyTableSource.from_pybuilder(view._builder._builder)
+        return self._session.create_temp_table(alias, py_source, replace=False)
 
     def detach_catalog(self, alias: str) -> None:
         """Detaches the catalog from this session or raises if the catalog does not exist.
@@ -408,6 +422,10 @@ class Session:
                 f"Unsupported create_temp_table source, {type(source)}, expected either Schema or DataFrame."
             )
         return self._session.create_temp_table(identifier, py_source, replace=True)
+
+    def create_temp_view(self, identifier: str, view: DataFrame) -> Table:
+        """Creates or replaces a non-materialized temporary view from a DataFrame."""
+        return self.create_temp_table(identifier, view)
 
     ###
     # drop_*
@@ -738,7 +756,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
+def attach(object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -761,6 +779,11 @@ def attach_provider(provider: Provider, alias: str | None = None) -> Provider:
 def attach_table(table: object | Table, alias: str | None = None) -> Table:
     """Attaches an external table to the current session."""
     return _session().attach_table(table, alias)
+
+
+def attach_view(view: DataFrame, alias: str) -> Table:
+    """Attaches a DataFrame as a non-materialized temporary view to the current session."""
+    return _session().attach_view(view, alias)
 
 
 def detach_catalog(alias: str) -> None:
@@ -811,6 +834,11 @@ def create_table_if_not_exists(identifier: Identifier | str, source: Schema | Da
 def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(identifier, source)
+
+
+def create_temp_view(identifier: str, view: DataFrame) -> Table:
+    """Creates or replaces a non-materialized temporary view in the current session."""
+    return _session().create_temp_view(identifier, view)
 
 
 ###
