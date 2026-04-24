@@ -2538,6 +2538,7 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "common-checkpoint-config",
  "common-daft-config",
  "common-display",
@@ -2551,9 +2552,11 @@ dependencies = [
  "common-runtime",
  "common-treenode",
  "daft-context",
+ "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-io",
+ "daft-local-execution",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
