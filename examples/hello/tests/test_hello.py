@@ -66,7 +66,7 @@ def test_string_count():
     with sess:
         result = df.agg(string_count(col("name"))).collect().to_pydict()
 
-    assert result["string_count"][0] == 3
+    assert result["name"][0] == 3
 
 
 def test_string_count_with_nulls():
@@ -78,7 +78,7 @@ def test_string_count_with_nulls():
     with sess:
         result = df.agg(string_count(col("name"))).collect().to_pydict()
 
-    assert result["string_count"][0] == 2
+    assert result["name"][0] == 2
 
 
 def test_aggregate_not_available_without_extension():
