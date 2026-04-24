@@ -881,7 +881,7 @@ impl S3LikeSource {
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
-    ) -> super::Result<usize> {
+    ) -> super::Result<(usize, Option<jiff::Timestamp>)> {
         log::debug!("S3 head at {uri} in region: {region}");
         let ObjectPath {
             scheme: _scheme,
@@ -909,10 +909,15 @@ impl S3LikeSource {
             let response = request.send().await;
 
             match response {
-                Ok(v) => match v.content_length() {
-                    Some(l) => Ok(l as usize),
-                    None => Err(Error::HeadObjectOutputEmpty { path: uri.into() }.into()),
-                },
+                Ok(v) => {
+                    let size = v.content_length().ok_or_else(|| {
+                        super::Error::from(Error::HeadObjectOutputEmpty { path: uri.into() })
+                    })? as usize;
+                    let last_modified = v.last_modified().and_then(|dt| {
+                        jiff::Timestamp::new(dt.secs(), dt.subsec_nanos() as i32).ok()
+                    });
+                    Ok((size, last_modified))
+                }
                 Err(SdkError::ServiceError(err)) => {
                     let bad_response = err.raw();
                     match bad_response.status().as_u16() {
@@ -1003,11 +1008,15 @@ impl S3LikeSource {
                         filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
                         size: None,
                         filetype: FileType::Directory,
+                        last_modified: None,
                     })
                     .chain(files.iter().map(|f| FileMetadata {
                         filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
                         size: f.size().map(|size| size as u64),
                         filetype: FileType::File,
+                        last_modified: f.last_modified().and_then(|dt| {
+                            jiff::Timestamp::new(dt.secs(), dt.subsec_nanos() as i32).ok()
+                        }),
                     }))
                     .collect();
 
@@ -1373,11 +1382,33 @@ impl ObjectSource for S3LikeSource {
             .acquire()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        let head_result = self.head_impl(permit, uri, &self.default_region).await?;
+        let (size, _) = self.head_impl(permit, uri, &self.default_region).await?;
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1);
         }
-        Ok(head_result)
+        Ok(size)
+    }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let (size, last_modified) = self.head_impl(permit, uri, &self.default_region).await?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(size as u64),
+            filetype: FileType::File,
+            last_modified,
+        })
     }
 
     async fn glob(

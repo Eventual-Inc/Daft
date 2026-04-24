@@ -40,7 +40,7 @@ def read_text(
             Has no effect when ``whole_text=True``.
 
     Returns:
-        DataFrame: A DataFrame with a single ``"text"`` column containing lines from the input files
+        DataFrame: A DataFrame with a single ``"content"`` column containing lines from the input files
             (when ``whole_text=False``) or entire file contents (when ``whole_text=True``).
 
     Examples:
@@ -77,7 +77,7 @@ def read_text(
     storage_config = StorageConfig(True, io_config)
 
     # Text schema is fixed
-    schema = {"text": DataType.string()}
+    schema = {"content": DataType.string()}
     builder = get_tabular_files_scan(
         path=path,
         infer_schema=False,

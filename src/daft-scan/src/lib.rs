@@ -25,8 +25,8 @@ pub mod source;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig,
+    BlobSourceConfig, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig,
 };
 pub mod glob;
 mod hive;
@@ -165,6 +165,7 @@ impl ChunkSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScanSource {
     pub size_bytes: Option<u64>,
+    pub last_modified: Option<jiff::Timestamp>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub partition_spec: Option<PartitionSpec>,
@@ -193,6 +194,7 @@ pub enum ScanSourceKind {
 impl Hash for ScanSource {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.size_bytes.hash(state);
+        self.last_modified.hash(state);
         self.metadata.hash(state);
         self.statistics.hash(state);
         self.partition_spec.hash(state);
@@ -631,6 +633,7 @@ impl ScanTask {
                                     1.0
                                 }
                             }
+                            FileFormatConfig::Blob(_) => 1.0,
                         },
                         #[cfg(feature = "python")]
                         SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,
@@ -890,6 +893,7 @@ mod test {
         let sources = (0..num_sources)
             .map(|i| ScanSource {
                 size_bytes: None,
+                last_modified: None,
                 metadata: None,
                 statistics: None,
                 partition_spec: None,
@@ -1039,6 +1043,7 @@ mod test {
     fn test_warc_memory_estimation_with_extremely_large_row_count() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
+            last_modified: None,
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
             }),
@@ -1083,7 +1088,8 @@ mod test {
     fn test_warc_memory_estimation_with_large_row_count_f64() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000_000_000), // 1TB file
-            metadata: None,                      // No metadata, will use file size estimation
+            last_modified: None,
+            metadata: None, // No metadata, will use file size estimation
             statistics: None,
             partition_spec: None,
             kind: ScanSourceKind::File {
@@ -1126,6 +1132,7 @@ mod test {
     fn test_warc_memory_estimation_valid_edge_case() {
         let sources = vec![ScanSource {
             size_bytes: Some(10_000_000), // 10MB
+            last_modified: None,
             metadata: Some(TableMetadata {
                 length: 1000, // 1000 rows
             }),
@@ -1169,6 +1176,7 @@ mod test {
     fn test_schema_row_size_estimation_with_extremely_large_row_count() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
+            last_modified: None,
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
             }),
@@ -1218,7 +1226,8 @@ mod test {
     fn test_schema_row_size_estimation_with_nested_schema() {
         let sources = vec![ScanSource {
             size_bytes: Some(100_000_000), // 100MB
-            metadata: None,                // Will use approx_num_rows
+            last_modified: None,
+            metadata: None, // Will use approx_num_rows
             statistics: None,
             partition_spec: None,
             kind: ScanSourceKind::File {
@@ -1268,6 +1277,7 @@ mod test {
     fn test_schema_row_size_estimation_with_large_file_no_metadata() {
         let sources = vec![ScanSource {
             size_bytes: Some(u64::MAX / 100), // Very large file
+            last_modified: None,
             metadata: None,
             statistics: None,
             partition_spec: None,
@@ -1314,6 +1324,7 @@ mod test {
     fn test_schema_row_size_estimation_valid_case() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
+            last_modified: None,
             metadata: Some(TableMetadata { length: 10_000 }),
             statistics: None,
             partition_spec: None,
@@ -1360,6 +1371,7 @@ mod test {
     fn test_overflow_protection_with_infinity() {
         let sources = vec![ScanSource {
             size_bytes: Some(u64::MAX), // Maximum possible file size
+            last_modified: None,
             metadata: None,
             statistics: None,
             partition_spec: None,

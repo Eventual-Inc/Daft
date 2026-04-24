@@ -516,7 +516,11 @@ impl TosSource {
         Ok(())
     }
 
-    async fn get_size_impl(&self, _permit: OwnedSemaphorePermit, uri: &str) -> Result<usize> {
+    async fn head_impl(
+        &self,
+        _permit: OwnedSemaphorePermit,
+        uri: &str,
+    ) -> Result<(usize, Option<jiff::Timestamp>)> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
 
         let uri_s = uri.to_string();
@@ -544,7 +548,15 @@ impl TosSource {
                 })
                 .await?;
 
-        Ok(response.content_length() as usize)
+        let last_modified = response.last_modified().and_then(|dt| {
+            jiff::Timestamp::new(dt.timestamp(), dt.timestamp_subsec_nanos() as i32).ok()
+        });
+        Ok((response.content_length() as usize, last_modified))
+    }
+
+    async fn get_size_impl(&self, permit: OwnedSemaphorePermit, uri: &str) -> Result<usize> {
+        let (size, _) = self.head_impl(permit, uri).await?;
+        Ok(size)
     }
 
     async fn list_impl(
@@ -608,11 +620,13 @@ impl TosSource {
                     filepath: format!("tos://{}/{}", bucket, prefix.prefix()),
                     size: None,
                     filetype: FileType::Directory,
+                    last_modified: None,
                 })
                 .chain(files.iter().map(|f| FileMetadata {
                     filepath: format!("tos://{}/{}", bucket, f.key()),
                     size: Some(f.size() as u64),
                     filetype: FileType::File,
+                    last_modified: None,
                 }))
                 .collect();
             let continuation_token = (!r.next_continuation_token().is_empty())
@@ -857,6 +871,30 @@ impl ObjectSource for TosSource {
             is.mark_head_requests(1);
         }
         Ok(ret)
+    }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> Result<FileMetadata> {
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let (size, last_modified) = self.head_impl(permit, uri).await?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(size as u64),
+            filetype: FileType::File,
+            last_modified,
+        })
     }
 
     async fn glob(

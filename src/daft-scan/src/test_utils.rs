@@ -72,6 +72,7 @@ impl ScanOperator for DummyScanOperator {
                 Arc::new(ScanTask::new(
                     vec![ScanSource {
                         size_bytes: None,
+                        last_modified: None,
                         metadata,
                         statistics: None,
                         partition_spec: None,
