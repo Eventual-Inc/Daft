@@ -56,10 +56,34 @@ export type PhysicalPlanNode = {
   children?: PhysicalPlanNode[];
 };
 
+// One group of tasks that share an identical local plan shape, produced by
+// the same chain of distributed pipeline nodes. Emitted by Flotilla once the
+// query has finished. `local_plan` is an opaque LocalPhysicalPlan tree that we
+// render via serde_json output.
+export type DistributedPhysicalPlanEntry = {
+  node_chain: number[];
+  plan_fingerprint: number;
+  count: number;
+  local_plan: unknown;
+  inputs: Record<number, DistributedPhysicalPlanInputSummary>;
+  psets: Record<number, number>;
+};
+
+export type DistributedPhysicalPlanInputSummary =
+  | { kind: "scan_tasks"; count: number }
+  | { kind: "glob_paths"; count: number }
+  | { kind: "flight_shuffle"; count: number }
+  | { kind: "in_memory"; count: number };
+
+export type DistributedPhysicalPlan = {
+  entries: DistributedPhysicalPlanEntry[];
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
+  distributed_physical_plan?: string;
   // TODO: Logs
 };
 

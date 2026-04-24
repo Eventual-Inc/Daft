@@ -25,7 +25,7 @@ use futures::StreamExt;
 
 use super::{DistributedPipelineNode, in_memory_source::InMemorySourceNode};
 use crate::{
-    plan::{PlanConfig, PlanExecutionContext, RunningPlan},
+    plan::{DistributedPhysicalPlanCollector, PlanConfig, PlanExecutionContext, RunningPlan},
     scheduling::{local_worker::LocalSwordfishWorkerManager, scheduler::spawn_scheduler_actor},
     statistics::StatisticsManager,
 };
@@ -155,7 +155,11 @@ pub async fn run_pipeline_with_manager(
 
     let mut plan_context = PlanExecutionContext::new(0, scheduler_handle.clone());
     let task_stream = pipeline.clone().produce_tasks(&mut plan_context);
-    let running_plan = RunningPlan::new(task_stream, plan_context);
+    let running_plan = RunningPlan::new(
+        task_stream,
+        plan_context,
+        DistributedPhysicalPlanCollector::new(),
+    );
 
     let mut materialized = running_plan.materialize(scheduler_handle.clone());
     while let Some(result) = materialized.next().await {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import DistributedPhysicalPlan
+from daft.daft import DistributedPipeline
 from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
@@ -76,10 +76,10 @@ class MermaidFormatter:
             output += "\n"
             if get_or_create_runner().name != "native":
                 daft_execution_config = execution_config
-                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                pipeline = DistributedPipeline.from_logical_plan_builder(
                     builder._builder, "<tmp>", daft_execution_config
                 )
-                output += distributed_plan.repr_mermaid(
+                output += pipeline.repr_mermaid(
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )
             else:

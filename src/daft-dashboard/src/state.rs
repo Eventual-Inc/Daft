@@ -54,8 +54,17 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
+    /// The distributed *pipeline* JSON (for Flotilla) or the local physical
+    /// plan JSON (for the native runner). Posted at exec start; historically
+    /// named `physical_plan` for frontend compatibility.
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
+    /// Aggregated `DistributedPhysicalPlan` — the local plans each distributed
+    /// pipeline node actually produced at runtime. Only set for Flotilla
+    /// queries and only after execution has finished. See
+    /// `daft-distributed::plan::distributed_physical_plan` for the schema.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distributed_physical_plan: Option<QueryPlan>,
     // TODO: Logs
 }
 

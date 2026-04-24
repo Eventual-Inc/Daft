@@ -275,6 +275,7 @@ pub(crate) fn apply_exec_start(
                     exec_start_sec: args.exec_start_sec,
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
+                    distributed_physical_plan: None,
                 },
             };
 
@@ -548,6 +549,60 @@ async fn exec_end(
     apply_exec_end(&state, query_id, args)
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ExecDistributedPhysicalPlanArgs {
+    pub distributed_physical_plan: QueryPlan,
+}
+
+async fn exec_distributed_physical_plan(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<ExecDistributedPhysicalPlanArgs>,
+) -> StatusCode {
+    apply_exec_distributed_physical_plan(&state, query_id, args)
+}
+
+/// Attach the aggregated distributed physical plan (local plans produced by
+/// each pipeline node during execution) to the active exec state. Flotilla
+/// posts this right before `exec_end`.
+pub(crate) fn apply_exec_distributed_physical_plan(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecDistributedPhysicalPlanArgs,
+) -> StatusCode {
+    tracing::info!(
+        "Received distributed_physical_plan for query {}",
+        query_id
+    );
+    let query_info = state.queries.get_mut(&query_id);
+    let Some(mut query_info) = query_info else {
+        tracing::error!(
+            "Query {} not found in exec_distributed_physical_plan",
+            query_id
+        );
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let exec_info = match &mut query_info.state {
+        QueryState::Executing { exec_info, .. }
+        | QueryState::Finalizing { exec_info, .. }
+        | QueryState::Finished { exec_info, .. } => exec_info,
+        other => {
+            tracing::debug!(
+                "Query {} is in state {:?}, ignoring distributed_physical_plan",
+                query_id,
+                other
+            );
+            return StatusCode::OK;
+        }
+    };
+    exec_info.distributed_physical_plan = Some(args.distributed_physical_plan);
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
 pub(crate) fn apply_exec_end(
     state: &DashboardState,
     query_id: QueryID,
@@ -703,6 +758,7 @@ pub(crate) fn apply_query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
+                        distributed_physical_plan: None,
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
@@ -804,6 +860,10 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/{op_id}/start", post(exec_op_start))
         .route("/query/{query_id}/exec/{op_id}/end", post(exec_op_end))
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
+        .route(
+            "/query/{query_id}/exec/distributed_physical_plan",
+            post(exec_distributed_physical_plan),
+        )
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/end", post(query_end))
 }

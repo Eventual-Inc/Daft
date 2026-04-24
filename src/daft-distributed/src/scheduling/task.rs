@@ -326,6 +326,29 @@ impl SwordfishTaskBuilder {
         self.plan_fingerprint
     }
 
+    /// Accessors used by observers (e.g. `DistributedPhysicalPlanCollector`) that want to
+    /// record each produced task's local plan without consuming the builder. These are
+    /// pre-`build()`: the fingerprint does not yet include `query_idx`.
+    pub fn plan(&self) -> &LocalPhysicalPlanRef {
+        &self.plan
+    }
+
+    pub fn pending_node_ids(&self) -> &[NodeID] {
+        &self.pending_node_ids
+    }
+
+    pub fn plan_fingerprint(&self) -> PlanFingerprint {
+        self.plan_fingerprint
+    }
+
+    pub fn inputs(&self) -> &HashMap<SourceId, Input> {
+        &self.inputs
+    }
+
+    pub fn psets(&self) -> &HashMap<SourceId, Vec<PartitionRef>> {
+        &self.psets
+    }
+
     /// Fold an additional value into the plan fingerprint.
     /// Use this when a node produces plans that differ by some parameter
     /// (e.g., limit value, partition offset).

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from daft.context import get_context
 from daft.daft import (
-    DistributedPhysicalPlan,
-    DistributedPhysicalPlanRunner,
+    DistributedPipeline,
+    DistributedPipelineRunner,
     FlightPartitionRef,
     Input,
     LocalPhysicalPlan,
@@ -419,15 +419,20 @@ class RemoteFlotillaRunner:
                 node_role="head",
             )
 
-        self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
+        self.curr_plans: dict[str, DistributedPipeline] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        # Populated at stream end in `get_next_partition`; drained by
+        # `take_distributed_physical_plan_json`. Holds the aggregate of local
+        # plans produced during execution (see Rust
+        # `DistributedPhysicalPlanCollector`).
+        self.curr_distributed_physical_plans: dict[str, str] = {}
+        self.plan_runner = DistributedPipelineRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
     def run_plan(
         self,
-        plan: DistributedPhysicalPlan,
+        plan: DistributedPipeline,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
@@ -452,7 +457,16 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            stats: PyExecutionStats = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
+            result_gen = self.curr_result_gens[plan_id]
+            stats: PyExecutionStats = result_gen.finish()  # type: ignore[attr-defined]
+            # Capture the real (aggregated) distributed physical plan before we
+            # drop the generator; the collector lives on the underlying stream.
+            try:
+                self.curr_distributed_physical_plans[plan_id] = (
+                    result_gen.distributed_physical_plan_json()  # type: ignore[attr-defined]
+                )
+            except Exception as e:
+                logger.warning("Failed to snapshot distributed physical plan: %s", e)
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
             return stats
@@ -466,6 +480,13 @@ class RemoteFlotillaRunner:
             metadata_idx=0,
         )
         return materialized_result
+
+    def take_distributed_physical_plan_json(self, plan_id: str) -> str | None:
+        """Return and clear the collected distributed physical plan JSON for the
+        given query. Only populated once the result stream has been fully
+        consumed (i.e. after `get_next_partition` has returned `PyExecutionStats`).
+        """
+        return self.curr_distributed_physical_plans.pop(plan_id, None)
 
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
@@ -562,14 +583,31 @@ class FlotillaRunner:
 
     def stream_plan(
         self,
-        plan: DistributedPhysicalPlan,
+        plan: DistributedPipeline,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
+    ) -> Generator[RayMaterializedResult, None, FlotillaStreamResult]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
             if isinstance(result, PyExecutionStats):
-                return result
+                distributed_physical_plan_json = ray.get(
+                    self.runner.take_distributed_physical_plan_json.remote(plan_id)
+                )
+                return FlotillaStreamResult(
+                    stats=result,
+                    distributed_physical_plan_json=distributed_physical_plan_json,
+                )
             yield result
+
+
+class FlotillaStreamResult(NamedTuple):
+    """Returned by `FlotillaRunner.stream_plan` as the generator's StopIteration value.
+
+    Exposes both the execution statistics and the aggregated distributed physical
+    plan collected across all pipeline nodes during the query.
+    """
+
+    stats: PyExecutionStats
+    distributed_physical_plan_json: str | None

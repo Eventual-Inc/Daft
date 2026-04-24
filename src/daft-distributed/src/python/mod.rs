@@ -24,7 +24,10 @@ use crate::{
         logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii,
         viz_distributed_pipeline_mermaid,
     },
-    plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
+    plan::{
+        DistributedPhysicalPlanCollector, DistributedPipeline, PlanConfig, PlanResultStream,
+        PlanRunner,
+    },
     python::ray::RayTaskResult,
     statistics::{
         StatisticsManager, StatisticsManagerRef, StatisticsSubscriber,
@@ -36,6 +39,7 @@ use crate::{
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
     statistics_manager: StatisticsManagerRef,
+    physical_plan_collector: DistributedPhysicalPlanCollector,
 }
 
 #[pymethods]
@@ -72,23 +76,31 @@ impl PythonPartitionRefStream {
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }
+
+    /// Serialize the aggregated `DistributedPhysicalPlan` (local plans produced
+    /// by every pipeline node during this query) to JSON for the dashboard.
+    /// Intended to be called once the stream has been fully consumed.
+    fn distributed_physical_plan_json(&self) -> PyResult<String> {
+        let snapshot = self.physical_plan_collector.snapshot();
+        serde_json::to_string(&snapshot).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
 }
 
-#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
+#[pyclass(module = "daft.daft", name = "DistributedPipeline", frozen)]
 #[derive(Serialize, Deserialize)]
-struct PyDistributedPhysicalPlan {
-    plan: DistributedPhysicalPlan,
+struct PyDistributedPipeline {
+    plan: DistributedPipeline,
 }
 
 #[pymethods]
-impl PyDistributedPhysicalPlan {
+impl PyDistributedPipeline {
     #[staticmethod]
     fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
         query_id: String,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
-        let plan = DistributedPhysicalPlan::from_logical_plan_builder(
+        let plan = DistributedPipeline::from_logical_plan_builder(
             &builder.builder,
             query_id.into(),
             config.config.clone(),
@@ -197,15 +209,15 @@ impl PyDistributedPhysicalPlan {
         Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
     }
 }
-impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
+impl_bincode_py_state_serialization!(PyDistributedPipeline);
 
-#[pyclass(module = "daft.daft", name = "DistributedPhysicalPlanRunner", frozen)]
-struct PyDistributedPhysicalPlanRunner {
+#[pyclass(module = "daft.daft", name = "DistributedPipelineRunner", frozen)]
+struct PyDistributedPipelineRunner {
     runner: Arc<PlanRunner<RaySwordfishWorker>>,
 }
 
 #[pymethods]
-impl PyDistributedPhysicalPlanRunner {
+impl PyDistributedPipelineRunner {
     #[new]
     fn new() -> PyResult<Self> {
         let worker_manager = RayWorkerManager::new();
@@ -217,7 +229,7 @@ impl PyDistributedPhysicalPlanRunner {
     fn run_plan(
         &self,
         py: Python,
-        plan: &PyDistributedPhysicalPlan,
+        plan: &PyDistributedPipeline,
         psets: HashMap<String, Vec<RayPartitionRef>>,
     ) -> PyResult<PythonPartitionRefStream> {
         let psets = psets
@@ -269,18 +281,20 @@ impl PyDistributedPhysicalPlanRunner {
         let plan_result =
             self.runner
                 .run_plan(query_idx, pipeline_node, statistics_manager.clone())?;
+        let physical_plan_collector = plan_result.physical_plan_collector();
 
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
             statistics_manager,
+            physical_plan_collector,
         };
         Ok(part_stream)
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyDistributedPhysicalPlan>()?;
-    parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
+    parent.add_class::<PyDistributedPipeline>()?;
+    parent.add_class::<PyDistributedPipelineRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;

@@ -17,7 +17,7 @@ import ray.experimental  # noqa: TID253
 
 import daft
 from daft.context import get_context
-from daft.daft import DistributedPhysicalPlan, PyExecutionStats, RayPartitionRef
+from daft.daft import DistributedPipeline, PyExecutionStats, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
@@ -604,7 +604,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             # Optimize the logical plan.
             builder = builder.optimize(daft_execution_config)
 
-            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+            distributed_pipeline = DistributedPipeline.from_logical_plan_builder(
                 builder._builder, query_id, daft_execution_config
             )
             # Build psets for repr_json so the pipeline tree structure matches run_plan.
@@ -618,7 +618,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ]
                 for k, v in all_partition_sets.items()
             }
-            physical_plan_json = distributed_plan.repr_json(repr_psets)
+            pipeline_json = distributed_pipeline.repr_json(repr_psets)
 
             # Only send notifications after we've successfully created the distributed plan
             try:
@@ -637,7 +637,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 )
                 ctx._notify_optimization_start(query_id)
                 ctx._notify_optimization_end(query_id, builder.repr_json())
-                ctx._notify_exec_start(query_id, physical_plan_json)
+                ctx._notify_exec_start(query_id, pipeline_json)
             except Exception as e:
                 logger.warning("Failed to send notifications: %s", e)
 
@@ -648,7 +648,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets()
+                distributed_pipeline, self._part_set_cache.get_all_partition_sets()
             )
 
             try:
@@ -658,11 +658,13 @@ class RayRunner(Runner[ray.ObjectRef]):
                         total_rows += result.metadata().num_rows
                     yield result
             except StopIteration as e:
-                stats: PyExecutionStats = e.value
+                stream_result = e.value
+                stats: PyExecutionStats = stream_result.stats
+                distributed_physical_plan_json = stream_result.distributed_physical_plan_json
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             try:
-                plan_dict = json.loads(physical_plan_json)
+                plan_dict = json.loads(pipeline_json)
 
                 def notify_end(node: dict[str, Any]) -> None:
                     if "children" in node:
@@ -674,6 +676,15 @@ class RayRunner(Runner[ray.ObjectRef]):
                 notify_end(plan_dict)
             except Exception as e:
                 logger.warning("Failed to send operator end notifications: %s", e)
+
+            # Ship the real distributed physical plan (aggregate of per-node
+            # local plans) to the dashboard. This lands as `distributed_physical_plan`
+            # on ExecInfo and sits alongside the pipeline visualization.
+            if distributed_physical_plan_json is not None:
+                try:
+                    ctx._notify_exec_distributed_physical_plan(query_id, distributed_physical_plan_json)
+                except Exception as e:
+                    logger.warning("Failed to send distributed physical plan notification: %s", e)
 
             try:
                 ctx._notify_exec_end(query_id)
@@ -705,7 +716,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         finally:
             heartbeat.stop()
 
-        return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
+        return ExecutionMetadata._from_runner_output(stats, query_id, pipeline_json)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

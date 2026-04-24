@@ -293,6 +293,21 @@ impl PyDaftContext {
         Ok(())
     }
 
+    pub fn notify_exec_distributed_physical_plan(
+        &self,
+        py: Python,
+        query_id: String,
+        distributed_physical_plan: String,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner.notify_exec_distributed_physical_plan(
+                query_id.into(),
+                distributed_physical_plan,
+            )
+        })?;
+        Ok(())
+    }
+
     pub fn notify_exec_operator_start(
         &self,
         py: Python,

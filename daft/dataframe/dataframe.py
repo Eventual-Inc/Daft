@@ -23,7 +23,7 @@ from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
     CheckpointStatus,
-    DistributedPhysicalPlan,
+    DistributedPipeline,
     FileFormat,
     IOConfig,
     JoinStrategy,
@@ -310,15 +310,15 @@ class DataFrame:
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                from daft.daft import DistributedPhysicalPlan
+                from daft.daft import DistributedPipeline
 
-                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                pipeline = DistributedPipeline.from_logical_plan_builder(
                     builder._builder, "<tmp>", execution_config
                 )
                 if format == "ascii":
-                    print_to_file(distributed_plan.repr_ascii(simple))
+                    print_to_file(pipeline.repr_ascii(simple))
                 elif format == "mermaid":
-                    print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                    print_to_file(pipeline.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
@@ -364,10 +364,10 @@ class DataFrame:
         else:
             execution_config = get_context().daft_execution_config
             optimized = self._builder.optimize(execution_config)
-            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+            pipeline = DistributedPipeline.from_logical_plan_builder(
                 optimized._builder, "<tmp>", execution_config
             )
-            return distributed_plan.num_partitions()
+            return pipeline.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:

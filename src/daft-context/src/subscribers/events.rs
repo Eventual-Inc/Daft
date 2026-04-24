@@ -16,6 +16,7 @@ pub enum Event {
     OptimizationStart(OptimizationStartEvent),
     OptimizationComplete(OptimizationCompleteEvent),
     ExecStart(ExecStartEvent),
+    ExecDistributedPhysicalPlan(ExecDistributedPhysicalPlanEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
     TaskEnd(TaskEndEvent),
@@ -130,6 +131,19 @@ pub struct OptimizationCompleteEvent {
 pub struct ExecStartEvent {
     pub header: EventHeader,
     pub physical_plan: QueryPlan,
+}
+
+/// Reports the aggregated `DistributedPhysicalPlan` for a query — the set of
+/// local physical plans that each distributed pipeline node actually produced
+/// during execution. Emitted for Flotilla queries once the stream has been
+/// fully consumed, just before `ExecEnd`.
+#[derive(Debug, Clone)]
+pub struct ExecDistributedPhysicalPlanEvent {
+    pub header: EventHeader,
+    /// JSON payload shaped like `{"entries": [{"node_chain": [...],
+    /// "plan_fingerprint": u32, "count": N, "local_plan": {...},
+    /// "inputs": {...}, "psets": {...}}]}`.
+    pub distributed_physical_plan: QueryPlan,
 }
 
 #[derive(Debug, Clone)]

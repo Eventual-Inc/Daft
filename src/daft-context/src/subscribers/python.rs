@@ -176,6 +176,9 @@ fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
         Event::OptimizationStart(event) => build_optimization_started(py, &event).map(Some),
         Event::OptimizationComplete(event) => build_optimization_completed(py, &event).map(Some),
         Event::ExecStart(event) => build_execution_started(py, &event).map(Some),
+        // No Python-side event type for the aggregated distributed physical plan —
+        // it flows directly to the dashboard subscriber.
+        Event::ExecDistributedPhysicalPlan(_event) => Ok(None),
         Event::ExecEnd(event) => build_execution_finished(py, &event).map(Some),
         Event::OperatorStart(event) => build_operator_started(py, &event).map(Some),
         Event::OperatorEnd(event) => build_operator_finished(py, &event).map(Some),

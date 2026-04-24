@@ -373,6 +373,28 @@ impl DashboardSubscriber {
         self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
     }
 
+    fn on_exec_distributed_physical_plan(
+        &self,
+        query_id: QueryID,
+        distributed_physical_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!(
+                "engine/query/{}/exec/distributed_physical_plan",
+                query_id
+            ),
+            "exec_distributed_physical_plan",
+            &daft_dashboard::engine::ExecDistributedPhysicalPlanArgs {
+                distributed_physical_plan,
+            },
+        );
+        Ok(())
+    }
+
     fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -508,6 +530,12 @@ impl Subscriber for DashboardSubscriber {
             }
             Event::ExecStart(e) => {
                 self.on_exec_start(e.header.query_id, e.physical_plan)?;
+            }
+            Event::ExecDistributedPhysicalPlan(e) => {
+                self.on_exec_distributed_physical_plan(
+                    e.header.query_id,
+                    e.distributed_physical_plan,
+                )?;
             }
             Event::ExecEnd(e) => {
                 self.on_exec_end(e.header.query_id)?;

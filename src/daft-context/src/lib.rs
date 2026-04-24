@@ -19,9 +19,9 @@ pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
 use crate::subscribers::{
     event_header,
     events::{
-        ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
-        OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent,
+        ExecDistributedPhysicalPlanEvent, ExecEndEvent, ExecStartEvent, OperatorEndEvent,
+        OperatorMeta, OperatorStartEvent, OptimizationCompleteEvent, OptimizationStartEvent,
+        QueryEndEvent, QueryHeartbeatEvent, QueryStartEvent, ResultOutEvent, StatsEvent,
     },
 };
 
@@ -211,6 +211,18 @@ impl DaftContext {
             duration_ms: None,
         });
         self.dispatch_event(&event, "notify exec end")
+    }
+
+    pub fn notify_exec_distributed_physical_plan(
+        &self,
+        query_id: QueryID,
+        distributed_physical_plan: String,
+    ) -> DaftResult<()> {
+        let event = Event::ExecDistributedPhysicalPlan(ExecDistributedPhysicalPlanEvent {
+            header: event_header(query_id),
+            distributed_physical_plan: distributed_physical_plan.into(),
+        });
+        self.dispatch_event(&event, "notify exec distributed physical plan")
     }
 
     pub fn notify_exec_operator_start(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {

@@ -2,7 +2,12 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import {
+  DistributedPhysicalPlanEntry,
+  ExecutingState,
+  OperatorInfo,
+  PhysicalPlanNode,
+} from "./types";
 import {
   getStatusIcon,
   formatStatValue,
@@ -18,6 +23,10 @@ import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
 import EdgeLabel from "./edge-label";
 import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
+import DistributedPhysicalPlanPanel, {
+  buildEntriesByTerminalNode,
+  parseDistributedPhysicalPlan,
+} from "./distributed-physical-plan";
 
 function getCpuSec(operator?: OperatorInfo): number {
   if (!operator) return 0;
@@ -113,16 +122,30 @@ function PhysicalNodeCard({
   node,
   operator,
   intensity,
+  localPlanEntries,
+  highlighted,
+  selected,
+  onSelect,
+  onHover,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
+  localPlanEntries: DistributedPhysicalPlanEntry[] | undefined;
+  highlighted: boolean;
+  selected: boolean;
+  onSelect: (id: number | null) => void;
+  onHover: (id: number | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status = operator?.status ?? "Pending";
   const wallClock = useWallClockDuration(operator);
   const cardStyle: React.CSSProperties =
     status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
+  const totalTasks = (localPlanEntries ?? []).reduce(
+    (sum, e) => sum + e.count,
+    0,
+  );
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
@@ -138,12 +161,20 @@ function PhysicalNodeCard({
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
+  const outlineClass = selected
+    ? "ring-2 ring-sky-400"
+    : highlighted
+    ? "ring-1 ring-sky-500/70"
+    : "";
+
   return (
     <div
-      className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
-        hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
+      className={`border-solid rounded-lg px-4 py-2.5 cursor-pointer
+        hover:brightness-125 transition-all min-w-[180px] max-w-[320px] ${outlineClass}`}
       style={cardStyle}
       onClick={() => setExpanded(!expanded)}
+      onMouseEnter={() => onHover(node.id)}
+      onMouseLeave={() => onHover(null)}
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
@@ -153,6 +184,25 @@ function PhysicalNodeCard({
         >
           {node.name}
         </span>
+        {localPlanEntries && localPlanEntries.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(selected ? null : node.id);
+            }}
+            title={`${localPlanEntries.length} plan shape${
+              localPlanEntries.length === 1 ? "" : "s"
+            }, ${totalTasks} task${totalTasks === 1 ? "" : "s"} (click to filter)`}
+            className={`${main.className} rounded-full px-2 py-0.5 text-[10px] font-mono border ${
+              selected
+                ? "border-sky-400 bg-sky-500/30 text-sky-100"
+                : "border-zinc-600 bg-zinc-900/60 text-zinc-300 hover:border-sky-400 hover:text-sky-200"
+            }`}
+          >
+            {localPlanEntries.length}×{totalTasks}
+          </button>
+        )}
         {hasExpandable && (
           <span className="text-zinc-500 text-xs ml-auto">
             {expanded ? "▾" : "▸"}
@@ -220,6 +270,11 @@ export default function PhysicalPlanTree({
   exec_state: ExecutingState;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
+  // Shared state between the pipeline tree and the distributed physical plan
+  // panel: selection is sticky (click to filter the panel), hover is transient
+  // (for cross-highlighting).
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<number | null>(null);
 
   let plan: PhysicalPlanNode | null = null;
   const planJson = exec_state.exec_info.physical_plan;
@@ -230,6 +285,29 @@ export default function PhysicalPlanTree({
       // fall through — will show table
     }
   }
+
+  const distributedPlan = useMemo(
+    () =>
+      parseDistributedPhysicalPlan(
+        exec_state.exec_info.distributed_physical_plan,
+      ),
+    [exec_state.exec_info.distributed_physical_plan],
+  );
+  const entriesByTerminal = useMemo(
+    () => buildEntriesByTerminalNode(distributedPlan),
+    [distributedPlan],
+  );
+  // node_ids that appear anywhere in a node_chain (for hover highlighting
+  // when the mouse is over a distributed-plan entry).
+  const hoveredChainNodeIds = useMemo(() => {
+    if (hoveredNodeId == null || !distributedPlan) return new Set<number>();
+    const out = new Set<number>();
+    for (const entry of distributedPlan.entries) {
+      if (!entry.node_chain.includes(hoveredNodeId)) continue;
+      for (const id of entry.node_chain) out.add(id);
+    }
+    return out;
+  }, [distributedPlan, hoveredNodeId]);
 
   const operators = exec_state.exec_info.operators;
   const maxCpuSec = Math.max(
@@ -308,39 +386,58 @@ export default function PhysicalPlanTree({
         )}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto">
-        {viewMode === "tree" && plan ? (
-          <div className="relative flex justify-center py-6 px-4 overflow-auto">
-            <TreeLayout
-              node={plan}
-              getChildren={(node) => node.children ?? []}
-              renderNode={(node) => {
-                const op = operators[node.id];
-                const intensity = getBottleneckIntensity(
-                  op,
-                  node.type,
-                  maxCpuSec,
-                );
-                return (
-                  <PhysicalNodeCard
-                    node={node}
-                    operator={op}
-                    intensity={intensity}
-                  />
-                );
-              }}
-              renderEdge={renderEdge}
+      {/* Content: tree on the left, distributed physical plan on the right
+          when Flotilla has posted one. */}
+      <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-auto">
+          {viewMode === "tree" && plan ? (
+            <div className="relative flex justify-center py-6 px-4 overflow-auto">
+              <TreeLayout
+                node={plan}
+                getChildren={(node) => node.children ?? []}
+                renderNode={(node) => {
+                  const op = operators[node.id];
+                  const intensity = getBottleneckIntensity(
+                    op,
+                    node.type,
+                    maxCpuSec,
+                  );
+                  return (
+                    <PhysicalNodeCard
+                      node={node}
+                      operator={op}
+                      intensity={intensity}
+                      localPlanEntries={entriesByTerminal.get(node.id)}
+                      highlighted={hoveredChainNodeIds.has(node.id)}
+                      selected={selectedNodeId === node.id}
+                      onSelect={setSelectedNodeId}
+                      onHover={setHoveredNodeId}
+                    />
+                  );
+                }}
+                renderEdge={renderEdge}
+              />
+            </div>
+          ) : viewMode === "json" && plan ? (
+            <pre
+              className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap p-4`}
+            >
+              {JSON.stringify(plan, null, 2)}
+            </pre>
+          ) : (
+            <ProgressTable exec_state={exec_state} />
+          )}
+        </div>
+        {distributedPlan && viewMode === "tree" && (
+          <div className="w-[480px] flex-shrink-0 border-l border-zinc-800 overflow-hidden">
+            <DistributedPhysicalPlanPanel
+              plan={distributedPlan}
+              pipelineRoot={plan}
+              selectedNodeId={selectedNodeId}
+              onHoverNode={setHoveredNodeId}
+              highlightedNodeId={hoveredNodeId}
             />
           </div>
-        ) : viewMode === "json" && plan ? (
-          <pre
-            className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap p-4`}
-          >
-            {JSON.stringify(plan, null, 2)}
-          </pre>
-        ) : (
-          <ProgressTable exec_state={exec_state} />
         )}
       </div>
     </div>

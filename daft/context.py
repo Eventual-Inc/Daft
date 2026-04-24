@@ -87,6 +87,11 @@ class DaftContext:
     def _notify_exec_end(self, query_id: str) -> None:
         self._ctx.notify_exec_end(query_id)
 
+    def _notify_exec_distributed_physical_plan(
+        self, query_id: str, distributed_physical_plan: str
+    ) -> None:
+        self._ctx.notify_exec_distributed_physical_plan(query_id, distributed_physical_plan)
+
     def _notify_exec_operator_start(self, query_id: str, node_id: int) -> None:
         self._ctx.notify_exec_operator_start(query_id, node_id)
 

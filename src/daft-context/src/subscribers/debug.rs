@@ -238,6 +238,9 @@ impl Subscriber for DebugSubscriber {
             Event::OptimizationStart(e) => self.handle_optimization_start(&e)?,
             Event::OptimizationComplete(e) => self.handle_optimization_complete(&e)?,
             Event::ExecStart(e) => self.handle_exec_start(&e)?,
+            // Not logged by debug subscriber — too verbose. The dashboard is
+            // the intended consumer.
+            Event::ExecDistributedPhysicalPlan(_) => (),
             Event::ExecEnd(e) => self.handle_exec_end(&e)?,
             Event::OperatorStart(e) => self.handle_operator_start(&e)?,
             Event::OperatorEnd(e) => self.handle_operator_end(&e)?,

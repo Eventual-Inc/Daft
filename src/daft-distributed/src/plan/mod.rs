@@ -20,7 +20,9 @@ use crate::{
     },
 };
 
+mod distributed_physical_plan;
 mod runner;
+pub(crate) use distributed_physical_plan::DistributedPhysicalPlanCollector;
 #[cfg(test)]
 pub(crate) use runner::RunningPlan;
 pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
@@ -31,15 +33,21 @@ static QUERY_IDX_COUNTER: AtomicU16 = AtomicU16::new(0);
 /// Lower indexes (aka earlier queries) should have priority in scheduling.
 pub(crate) type QueryIdx = u16;
 
+/// A `DistributedPipeline` describes the tree of distributed pipeline nodes that Flotilla
+/// will instantiate for a query. It is *not* the actual per-worker physical execution —
+/// each pipeline node produces its own local `LocalPhysicalPlan`s at runtime (one per task
+/// via `produce_tasks`). The aggregate of those local plans — the real distributed
+/// physical plan — is collected during execution into `DistributedPhysicalPlan`
+/// (see `distributed_physical_plan.rs`).
 #[derive(Serialize, Deserialize)]
-pub(crate) struct DistributedPhysicalPlan {
+pub(crate) struct DistributedPipeline {
     query_idx: QueryIdx,
     query_id: QueryID,
     logical_plan: Arc<LogicalPlan>,
     config: Arc<DaftExecutionConfig>,
 }
 
-impl DistributedPhysicalPlan {
+impl DistributedPipeline {
     pub fn from_logical_plan_builder(
         builder: &LogicalPlanBuilder,
         query_id: QueryID,
@@ -78,11 +86,27 @@ pub(crate) type PlanResultStream =
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
     rx: Receiver<MaterializedOutput>,
+    /// Handle to the real-physical-plan collector. Callers keep this alive past
+    /// stream consumption so they can call `snapshot()` once the query has
+    /// finished to retrieve the aggregated local plans.
+    physical_plan_collector: DistributedPhysicalPlanCollector,
 }
 
 impl PlanResult {
-    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<MaterializedOutput>) -> Self {
-        Self { joinset, rx }
+    fn new(
+        joinset: JoinSet<DaftResult<()>>,
+        rx: Receiver<MaterializedOutput>,
+        physical_plan_collector: DistributedPhysicalPlanCollector,
+    ) -> Self {
+        Self {
+            joinset,
+            rx,
+            physical_plan_collector,
+        }
+    }
+
+    pub fn physical_plan_collector(&self) -> DistributedPhysicalPlanCollector {
+        self.physical_plan_collector.clone()
     }
 
     pub fn into_stream(self) -> PlanResultStream {
