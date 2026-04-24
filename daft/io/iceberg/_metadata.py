@@ -1,27 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pyiceberg.io.pyarrow import schema_to_pyarrow
-from pyiceberg.schema import Schema as IcebergSchema
-from pyiceberg.table import Table as IcebergTable
-from pyiceberg.table import TableMetadata as IcebergTableMetadata
-from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
+from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.table import TableMetadata as IcebergTableMetadata
 from pyiceberg.types import IcebergType
-from pyiceberg.transforms import Transform as IcebergTransform
 from pyiceberg.transforms import (
     BucketTransform as IcebergBucketTransform,
     DayTransform as IcebergDayTransform,
     HourTransform as IcebergHourTransform,
     IdentityTransform as IcebergIdentityTransform,
     MonthTransform as IcebergMonthTransform,
+    Transform as IcebergTransform,
     TruncateTransform as IcebergTruncateTransform,
     YearTransform as IcebergYearTransform,
 )
 
 from daft.io.partitioning import PartitionField, PartitionTransform
-from daft.schema import Schema, Field, DataType
+from daft.schema import DataType, Field, Schema
 
 
 
@@ -51,18 +48,20 @@ def convert_iceberg_partition_field(schema: IcebergSchema, field: IcebergPartiti
     source_field = schema.find_field(source_id)
     source_name = source_field.name
     source_type = convert_iceberg_data_type(source_field.field_type)
-    transform, result_type = convert_iceberg_transform(field.transform)
+    transform, result_type = convert_iceberg_transform(field.transform, source_type)
     return PartitionField.create(
-        Field.create(source_name, result_type),
+        Field.create(field.name, result_type),
         Field.create(source_name, source_type),
         transform,
     )
 
 
-def convert_iceberg_transform(transform: IcebergTransform) -> (PartitionTransform, DataType):
+def convert_iceberg_transform(
+    transform: IcebergTransform, source_type: DataType
+) -> tuple[PartitionTransform, DataType]:
     """Converts a PyIceberg transform to a Daft partition transform."""
     if isinstance(transform, IcebergIdentityTransform):
-        return PartitionTransform.identity(), DataType.string()
+        return PartitionTransform.identity(), source_type
     elif isinstance(transform, IcebergYearTransform):
         return PartitionTransform.year(), DataType.int32()
     elif isinstance(transform, IcebergMonthTransform):
@@ -74,7 +73,7 @@ def convert_iceberg_transform(transform: IcebergTransform) -> (PartitionTransfor
     elif isinstance(transform, IcebergBucketTransform):
         return PartitionTransform.iceberg_bucket(transform.num_buckets), DataType.int32()
     elif isinstance(transform, IcebergTruncateTransform):
-        return PartitionTransform.iceberg_truncate(transform.width), DataType.string()
+        return PartitionTransform.iceberg_truncate(transform.width), source_type
     else:
         raise NotImplementedError(f"Unsupported partition transform: {transform}")
 
