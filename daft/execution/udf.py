@@ -7,7 +7,7 @@ import subprocess
 import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
-from multiprocessing.connection import Listener
+from multiprocessing.connection import Listener, wait
 from typing import IO, TYPE_CHECKING, cast
 
 import daft.pickle
@@ -97,6 +97,11 @@ class UdfHandle:
         self.handle_conn = self.listener.accept()
         self.transport = SharedMemoryTransport()
 
+        # Lines drained from the child's stdout pipe while eval_input was
+        # waiting on recv(). Consumed by trace_output() before falling back to
+        # reading more from the pipe. See issue #6762.
+        self._pending_lines: list[bytes] = []
+
         # Serialize and send the expression projection
         expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
         expr_projection_bytes = daft.pickle.dumps(expr_projection)
@@ -108,7 +113,10 @@ class UdfHandle:
     def trace_output(self) -> list[str]:
         lines = []
         while True:
-            line = cast("IO[bytes]", self.process.stdout).readline()
+            if self._pending_lines:
+                line = self._pending_lines.pop(0)
+            else:
+                line = cast("IO[bytes]", self.process.stdout).readline()
             # UDF process is expected to return the divider
             # after initialization and every iteration
             if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
@@ -124,8 +132,24 @@ class UdfHandle:
         shm_name, shm_size = self.transport.write_and_close(serialized)
         self.handle_conn.send((shm_name, shm_size))
 
+        # Drain the child's stdout concurrently with waiting for the response.
+        # Without this, a batch whose output exceeds the ~64 KiB OS pipe
+        # buffer would deadlock: the child blocks in write() before reaching
+        # conn.send, while the parent blocks in recv() and never drains the
+        # pipe. See issue #6762.
+        stdout_stream = cast("IO[bytes]", self.process.stdout)
+        stdout_fd = stdout_stream.fileno()
         try:
-            response = self.handle_conn.recv()
+            response = None
+            while response is None:
+                ready = wait([self.handle_conn, stdout_fd])
+                if self.handle_conn in ready:
+                    response = self.handle_conn.recv()
+                if stdout_fd in ready:
+                    line = stdout_stream.readline()
+                    if line == b"":
+                        raise EOFError()
+                    self._pending_lines.append(line)
         except EOFError:
             stdout = self.trace_output()
             raise RuntimeError(f"UDF process closed the connection unexpectedly (EOF reached), stdout: {stdout}")
