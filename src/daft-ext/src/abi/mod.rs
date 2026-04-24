@@ -17,7 +17,7 @@ use std::ffi::{c_char, c_int, c_void};
 pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 1;
+pub const DAFT_ABI_VERSION: u32 = 2;
 
 /// Symbol that every Daft module cdylib must export.
 ///
@@ -112,9 +112,86 @@ pub struct FFI_ScalarFunction {
 unsafe impl Send for FFI_ScalarFunction {}
 unsafe impl Sync for FFI_ScalarFunction {}
 
+/// Virtual function table for an aggregate function (UDAF).
+///
+/// Follows a three-stage pipeline: Block Aggregation → Combination →
+/// Finalization. Intermediate state is
+/// exchanged as a single Struct array at the FFI boundary — the children
+/// of the Struct are the individual state fields.
+#[repr(C)]
+pub struct FFI_AggregateFunction {
+    /// Opaque module-side context pointer.
+    pub ctx: *const c_void,
+
+    /// Return the function name as a null-terminated UTF-8 string.
+    pub name: unsafe extern "C" fn(ctx: *const c_void) -> *const c_char,
+
+    /// Compute the output field schema given input field schemas.
+    pub get_return_field: unsafe extern "C" fn(
+        ctx: *const c_void,
+        args: *const ArrowSchema,
+        args_count: usize,
+        ret: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int,
+
+    /// Return the intermediate state schema as a Struct schema.
+    ///
+    /// The returned `ArrowSchema` has format `"+s"` (Struct) whose children
+    /// are the individual state field schemas.
+    pub get_state_schema: unsafe extern "C" fn(
+        ctx: *const c_void,
+        args: *const ArrowSchema,
+        args_count: usize,
+        ret: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int,
+
+    /// **Block aggregation.** Process input arrays and produce a single-row
+    /// Struct array of partial state.
+    pub agg_block: unsafe extern "C" fn(
+        ctx: *const c_void,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
+        args_count: usize,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int,
+
+    /// **Combination.** Merge a multi-row Struct array of partial states
+    /// into a single-row Struct array.
+    pub combine: unsafe extern "C" fn(
+        ctx: *const c_void,
+        state_array: *const ArrowArray,
+        state_schema: *const ArrowSchema,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int,
+
+    /// **Finalization.** Produce the final output value from a single-row
+    /// Struct state array.
+    pub finalize: unsafe extern "C" fn(
+        ctx: *const c_void,
+        state_array: *const ArrowArray,
+        state_schema: *const ArrowSchema,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int,
+
+    /// Finalize the function, freeing all owned resources.
+    pub fini: unsafe extern "C" fn(ctx: *mut c_void),
+}
+
+// SAFETY: The vtable is function pointers plus an opaque ctx pointer.
+unsafe impl Send for FFI_AggregateFunction {}
+unsafe impl Sync for FFI_AggregateFunction {}
+
 /// Host-side session context passed to a module's `init` function.
 ///
-/// The module calls `define_function` to register extensions.
+/// The module calls `define_function` / `define_aggregate_function` to register extensions.
 #[repr(C)]
 pub struct FFI_SessionContext {
     /// Opaque host-side context pointer.
@@ -126,6 +203,13 @@ pub struct FFI_SessionContext {
     /// Returns 0 on success, non-zero on error.
     pub define_function:
         unsafe extern "C" fn(ctx: *mut c_void, function: FFI_ScalarFunction) -> c_int,
+
+    /// Register an aggregate function with the host session.
+    ///
+    /// The host takes ownership of `function` on success.
+    /// Returns 0 on success, non-zero on error.
+    pub define_aggregate_function:
+        unsafe extern "C" fn(ctx: *mut c_void, function: FFI_AggregateFunction) -> c_int,
 }
 
 // SAFETY: Function pointer plus opaque host pointer.
@@ -143,8 +227,12 @@ mod tests {
         // FFI_ScalarFunction: ctx + name + get_return_field + call + fini = 5 pointers
         assert_eq!(std::mem::size_of::<FFI_ScalarFunction>(), 5 * ptr);
 
-        // FFI_SessionContext: ctx + define_function = 2 pointers
-        assert_eq!(std::mem::size_of::<FFI_SessionContext>(), 2 * ptr);
+        // FFI_AggregateFunction: ctx + name + get_return_field + get_state_schema
+        //   + agg_block + combine + finalize + fini = 8 pointers
+        assert_eq!(std::mem::size_of::<FFI_AggregateFunction>(), 8 * ptr);
+
+        // FFI_SessionContext: ctx + define_function + define_aggregate_function = 3 pointers
+        assert_eq!(std::mem::size_of::<FFI_SessionContext>(), 3 * ptr);
 
         // FFI_Module: u32 (padded) + name + init + free_string
         // 64-bit: 4 + 4 pad + 8 + 8 + 8 = 32
@@ -159,6 +247,7 @@ mod tests {
     fn send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<FFI_ScalarFunction>();
+        assert_send_sync::<FFI_AggregateFunction>();
         assert_send_sync::<FFI_SessionContext>();
         assert_send_sync::<FFI_Module>();
     }
@@ -167,7 +256,7 @@ mod tests {
     fn constants() {
         // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
         // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
-        assert_eq!(DAFT_ABI_VERSION, 1);
+        assert_eq!(DAFT_ABI_VERSION, 2);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }

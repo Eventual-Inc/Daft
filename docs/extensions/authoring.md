@@ -13,7 +13,7 @@ Daft supports native Rust extensions by leveraging a stable C ABI based on the
 Extensions are **not coupled** to any particular Arrow library version. The ABI boundary uses
 plain C structs (`ArrowSchema`, `ArrowArray`) so your extension can use any arrow-rs version
 (or even a different Arrow implementation entirely). Today we support authoring native
-scalar functions, but are actively working on additional native extension features.
+scalar functions and aggregate functions (UDAFs).
 
 ## Example
 
@@ -163,7 +163,7 @@ setup(
 
 ### 2. Hello, World!
 
-An extension has two parts: a **module** (the entry point) and one or more **scalar functions**.
+An extension has two parts: a **module** (the entry point) and one or more **functions** (scalar or aggregate).
 
 ```bash
 cat src/lib.rs
@@ -287,7 +287,85 @@ impl DaftScalarFunction for Greet {
     Return `Err(DaftError::TypeError(...))` for schema violations in `return_field`,
     and `Err(DaftError::RuntimeError(...))` for execution failures in `call`.
 
-Now we define the python symbols for use in the Expression DSL; we link to rust via `daft.get_function`.
+### Aggregate Functions
+
+Extensions can also register **aggregate functions** (UDAFs) alongside scalar functions.
+An aggregate function follows a three-stage pipeline:
+
+1. **Block Aggregation** (`agg_block`) — process input arrays into partial state
+2. **Combination** (`combine`) — merge partial states from different blocks
+3. **Finalization** (`finalize`) — produce the final output from merged state
+
+State is exchanged as `Vec<ArrowData>` — each element is one state field. The FFI layer
+packs these into a Struct array transparently.
+
+```rust
+use std::ffi::CStr;
+use daft_ext::prelude::*;
+
+struct MySum;
+
+impl DaftAggregateFunction for MySum {
+    fn name(&self) -> &CStr {
+        c"my_sum"
+    }
+
+    /// Declare the output type given the input field schemas.
+    fn return_field(&self, _args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+        Ok(ArrowSchema::try_from(&Field::new("my_sum", DataType::Int64, true))?)
+    }
+
+    /// Declare intermediate state fields.
+    /// Each state field becomes a child of the Struct exchanged at the FFI boundary.
+    fn state_fields(&self, _args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>> {
+        Ok(vec![
+            ArrowSchema::try_from(&Field::new("sum", DataType::Int64, true))?,
+            ArrowSchema::try_from(&Field::new("count", DataType::Int64, false))?,
+        ])
+    }
+
+    /// Process a block of input arrays into partial state.
+    /// Returns one ArrowData per state field (single-row each).
+    fn agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+        // inputs[0] is the column to sum
+        // compute sum and count, return as two single-element arrays
+        todo!()
+    }
+
+    /// Merge multiple partial states into one.
+    /// states[i] is the i-th state field with multiple rows (one per partial).
+    fn combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
+        // states[0] = sums array, states[1] = counts array
+        // sum them up, return single-row arrays
+        todo!()
+    }
+
+    /// Produce the final scalar result from merged state.
+    fn finalize(&self, states: Vec<ArrowData>) -> DaftResult<ArrowData> {
+        // states[0] = sum (single value), states[1] = count (single value)
+        // return the final sum
+        todo!()
+    }
+}
+```
+
+Register aggregate functions in `install()` using `define_aggregate_function`:
+
+```rust
+impl DaftExtension for MyExtension {
+    fn install(session: &mut dyn DaftSession) {
+        session.define_function(Arc::new(MyScalarFn));
+        session.define_aggregate_function(Arc::new(MySum));
+    }
+}
+```
+
+!!! tip "State fields"
+
+    Keep state schemas simple and fixed — the `state_fields` implementation should not
+    depend on input types, because the finalize stage may call it with no input schemas.
+
+Now we define the python symbols for use in the Expression DSL; we link to rust via `daft.get_function` for scalars and `daft.get_aggregate_function` for aggregates.
 
 !!! note "Note"
 
@@ -313,9 +391,14 @@ if TYPE_CHECKING:
 def greet(name: Expression) -> Expression:
     """Greet someone by name."""
     return daft.get_function("greet", name)
+
+def string_count(name: Expression) -> Expression:
+    """Count non-null strings."""
+    return daft.get_aggregate_function("string_count", name)
 ```
 
-`daft.get_function` looks up a function registered with the current session by the name returned from `DaftScalarFunction::name()`.
+`daft.get_function` looks up a scalar function registered with the current session by the name returned from `DaftScalarFunction::name()`.
+`daft.get_aggregate_function` does the same for aggregate functions registered via `DaftAggregateFunction::name()`.
 
 Add an empty `hello/py.typed` marker if you want type-checker support.
 
@@ -387,9 +470,9 @@ pytest -v tests/
 You can paste this whole document and prompt into Claude Code to scaffold a Daft extension for you.
 
 ````markdown
-Create a Daft native extension called `<extension_name>` with the following scalar functions:
+Create a Daft native extension called `<extension_name>` with the following functions:
 
-<describe each function: name, arguments with types, return type, and behavior>
+<describe each function: name, scalar or aggregate, arguments with types, return type, and behavior>
 
 Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here is a summary of the key conventions:
 
@@ -404,7 +487,7 @@ Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here 
     __init__.py        # Python wrappers using daft.get_function("name", *args)
     py.typed           # empty PEP 561 marker
   src/
-    lib.rs             # #[daft_extension] struct + DaftScalarFunction impls
+    lib.rs             # #[daft_extension] struct + DaftScalarFunction / DaftAggregateFunction impls
   tests/
     test_<name>.py     # pytest tests using Session fixture
   .gitignore           # /target, *.so, *.dylib, *.dll, *.egg-info, __pycache__, dist/
@@ -417,17 +500,25 @@ Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here 
 - Import `arrow::array::Array` for `len()`/`is_null()` and `arrow::array::cast::AsArray` for downcasting.
 - Daft uses `LargeUtf8` (i64 offsets) for strings — downcast with `as_string::<i64>()`, never `i32`.
 - Apply `#[daft_extension]` to a struct implementing `DaftExtension`.
-- Register each function in `install()` via `session.define_function(Arc::new(MyFn))`.
-- Each function is a struct implementing `DaftScalarFunction` with:
+- Register scalar functions via `session.define_function(Arc::new(MyFn))`.
+- Register aggregate functions via `session.define_aggregate_function(Arc::new(MyAgg))`.
+- Each scalar function is a struct implementing `DaftScalarFunction` with:
   - `name(&self) -> &CStr` — use `c"<extension_name>_<fn_name>"` prefix to avoid collisions.
   - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — use `.as_raw()` to
     borrow as arrow-rs `FFI_ArrowSchema` for type checking, then `.into()` to return output.
   - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` then
     `.into()` to convert to arrow-rs FFI types, compute, then `.into()` to return the result.
+- Each aggregate function is a struct implementing `DaftAggregateFunction` with:
+  - `name`, `return_field` — same as scalar functions.
+  - `state_fields(&self, args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>>` — intermediate state schema.
+  - `agg_block(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — partial aggregation.
+  - `combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — merge partial states.
+  - `finalize(&self, states: Vec<ArrowData>) -> DaftResult<ArrowData>` — produce final result.
 
 ## Python conventions
 
-- Each function wrapper calls `daft.get_function("<extension_name>_<fn_name>", *args)`.
+- Each scalar function wrapper calls `daft.get_function("<extension_name>_<fn_name>", *args)`.
+- Each aggregate function wrapper calls `daft.get_aggregate_function("<extension_name>_<fn_name>", *args)`.
 - Use `TYPE_CHECKING` guard for `Expression` import.
 - Add type hints and a docstring to each wrapper.
 ````
