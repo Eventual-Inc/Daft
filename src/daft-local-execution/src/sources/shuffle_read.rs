@@ -210,8 +210,10 @@ async fn forward_partition_stream(
     sender: Sender<PipelineMessage>,
     input_id: InputId,
 ) -> DaftResult<InputId> {
+    let mut emitted_any = false;
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
+        emitted_any = true;
         if sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -220,8 +222,21 @@ async fn forward_partition_stream(
             .await
             .is_err()
         {
-            break;
+            return Ok(input_id);
         }
+    }
+    // If the stream produced no batches (all refs were zero-row / file-less),
+    // still emit a single empty `MicroPartition` so the downstream pipeline
+    // sees one output per input. Matches the `inputs.is_empty()` branch in
+    // `spawn_flight_shuffle_processor`.
+    if !emitted_any {
+        let empty = MicroPartition::empty(Some(schema.clone()));
+        let _ = sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: empty,
+            })
+            .await;
     }
     Ok(input_id)
 }

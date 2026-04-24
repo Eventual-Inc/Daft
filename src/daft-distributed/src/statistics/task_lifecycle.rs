@@ -15,6 +15,14 @@ use crate::{
     statistics::{StatisticsSubscriber, TaskEvent},
 };
 
+pub fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_TASK_EVENTS_ENABLED=true
+    }
+}
+
 pub(crate) struct TaskLifecycleEventSubscriber {
     context: DaftContext,
     query_id: QueryID,

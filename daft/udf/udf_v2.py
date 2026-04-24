@@ -147,6 +147,10 @@ class Func(Generic[P, T, C]):
         unnest = getattr(method, UNNEST_ATTR, False)
         is_batch = getattr(method, BATCH_ATTR, False)
         batch_size = getattr(method, BATCH_SIZE_ATTR, None)
+        method_max_retries = getattr(method, MAX_RETRIES_ATTR, None)
+        method_on_error = getattr(method, ON_ERROR_ATTR, None)
+        effective_max_retries = max_retries if method_max_retries is None else method_max_retries
+        effective_on_error = on_error if method_on_error is None else method_on_error
         return_dtype = getattr(method, RETURN_DTYPE_ATTR, None)
         return_dtype = cls._get_return_dtype(method, return_dtype, is_generator, is_batch)
         return cls(
@@ -161,8 +165,8 @@ class Func(Generic[P, T, C]):
             gpus,
             use_process,
             max_concurrency,
-            max_retries,
-            on_error,
+            effective_max_retries,
+            effective_on_error,
             return_dtype,
             name_override,
             ray_options,

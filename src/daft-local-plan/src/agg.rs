@@ -151,7 +151,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     approx_sketch_col,
                     SketchType::HyperLogLog
                 ));
-                final_stage(merge_sketch_col);
+                final_stage(merge_sketch_col.hll_cardinality());
             }
             AggExpr::Mean(expr) => {
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));

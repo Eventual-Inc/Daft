@@ -167,13 +167,6 @@ pub struct TaskSubmitEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct TaskStartEvent {
-    pub header: EventHeader,
-    pub task: Arc<TaskMeta>,
-    pub worker_id: Arc<str>,
-}
-
-#[derive(Debug, Clone)]
 pub struct TaskEndEvent {
     pub header: EventHeader,
     pub task: Arc<TaskMeta>,

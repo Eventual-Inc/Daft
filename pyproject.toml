@@ -48,8 +48,8 @@ pandas = ["pandas<2.4.0"]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.11.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]>=2.0.0,<2.54.0; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0,<2.54.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
+  'ray[data, client]>=2.0.0,<2.56.0; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0,<2.56.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
 transformers = ["transformers<5.2.0", "sentence-transformers<5.3.0", "torch<2.11.0", "torchvision<0.26.0", "pillow==12.1.1"]
 # connectorx 0.4.4 is needed for pgvector support.
@@ -106,7 +106,7 @@ dev = [
   "pyarrow >= 8.0.0,<24.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
-  "ray[data, client]==2.53.0",
+  "ray[data, client]==2.55.0",
   # Lance
   "pylance==0.39.0",
   # Iceberg

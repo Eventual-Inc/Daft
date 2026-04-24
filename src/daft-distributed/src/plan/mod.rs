@@ -21,6 +21,8 @@ use crate::{
 };
 
 mod runner;
+#[cfg(test)]
+pub(crate) use runner::RunningPlan;
 pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
 
 /// Internal scheduler counter for the # of queries executed so far.

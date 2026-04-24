@@ -28,7 +28,7 @@ use crate::{
     python::ray::RayTaskResult,
     statistics::{
         StatisticsManager, StatisticsManagerRef, StatisticsSubscriber,
-        task_lifecycle::TaskLifecycleEventSubscriber,
+        task_lifecycle::{TaskLifecycleEventSubscriber, task_events_enabled},
     },
 };
 
@@ -236,18 +236,19 @@ impl PyDistributedPhysicalPlanRunner {
         let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
+        // Add the TaskLifecycleEventSubscriber if task emitting enabled
+        if task_events_enabled() {
+            subscribers.push(Box::new(TaskLifecycleEventSubscriber::new(
+                plan.plan.query_id(),
+            )));
+        }
+
         // Only add DashboardStatisticsSubscriber if RAY_DISABLE_DASHBOARD is not set to "1"
         if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() != Ok("1") {
             subscribers.push(Box::new(DashboardStatisticsSubscriber::new(
                 plan.plan.query_id(),
             )));
         }
-
-        // Forward per-task lifecycle events to DaftContext subscribers (debug,
-        // dashboard, etc.) so the dashboard UI can render per-task progress.
-        subscribers.push(Box::new(TaskLifecycleEventSubscriber::new(
-            plan.plan.query_id(),
-        )));
 
         let query_idx = plan.plan.idx();
         let query_id = plan.plan.query_id();
