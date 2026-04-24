@@ -73,9 +73,7 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
                     n
                 )));
             }
-            for j in 0..n {
-                values.push(j as u64);
-            }
+            values.extend(0..n as u64);
             current_offset += n;
         }
         offsets.push(current_offset);
