@@ -7,6 +7,8 @@ use daft_schema::schema::SchemaRef;
 use daft_writers::{AsyncFileWriter, make_ipc_writer};
 use tokio::sync::Mutex;
 
+use crate::server::flight_server::ShuffleFlightServer;
+
 fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
     shuffle_dirs
         .iter()
@@ -17,10 +19,6 @@ fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
 fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64) -> String {
     let dir = &shuffle_dirs[(partition_ref_id as usize) % shuffle_dirs.len()];
     format!("{}/partition_ref_{}", dir, partition_ref_id)
-}
-
-pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
-    ((input_id as u64) << 32) | partition_idx as u64
 }
 
 // Result of a writer task
@@ -46,14 +44,18 @@ pub struct InProgressShuffleCache {
 }
 
 impl InProgressShuffleCache {
+    /// Construct a cache for a new partition. Mints a fresh `partition_ref_id`
+    /// from `server` so storage keys `(shuffle_id, partition_ref_id)` are
+    /// unique by construction — callers never choose the id themselves.
     pub fn try_new(
-        partition_ref_id: u64,
+        server: &ShuffleFlightServer,
         schema: SchemaRef,
         dirs: &[String],
         shuffle_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
     ) -> DaftResult<Self> {
+        let partition_ref_id = server.new_partition_ref_id();
         // Create the directories
         // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
         // And raise an error if we can't find any directories with space.

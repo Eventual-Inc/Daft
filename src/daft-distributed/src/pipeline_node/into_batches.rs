@@ -16,6 +16,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
+        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -74,6 +75,7 @@ pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     batch_size: usize,
+    shuffle_backend: ShuffleBackend,
     child: DistributedPipelineNode,
 }
 
@@ -93,6 +95,7 @@ impl IntoBatchesNode {
         plan_config: &PlanConfig,
         batch_size: usize,
         schema: SchemaRef,
+        backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -104,7 +107,7 @@ impl IntoBatchesNode {
             NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            schema.clone(),
             plan_config.config.clone(),
             Arc::new(
                 UnknownClusteringConfig::new(
@@ -113,12 +116,54 @@ impl IntoBatchesNode {
                 .into(),
             ),
         );
+        let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
         Self {
             config,
             context,
             batch_size,
+            shuffle_backend,
             child,
         }
+    }
+
+    /// Build the rebatch task for a group of materialized upstream outputs.
+    ///
+    /// Read side is backend-dispatched by `build_refs_task_builder`
+    /// (`shuffle_read(Ray) + with_psets` or `shuffle_read(Flight) +
+    /// with_flight_shuffle_reads`). The task's output is terminated with
+    /// `gather_write(backend)` so refs produced by this node always match the
+    /// configured backend — never a mix of Ray and Flight.
+    fn build_rebatch_task(
+        &self,
+        group: Vec<MaterializedOutput>,
+        group_size: usize,
+    ) -> SwordfishTaskBuilder {
+        let node_id = self.node_id();
+        let refs = group
+            .into_iter()
+            .flat_map(|output| output.into_inner().0)
+            .collect::<Vec<_>>();
+
+        let schema = self.shuffle_backend.schema().clone();
+        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+
+        self.shuffle_backend
+            .build_refs_task_builder(refs, self, move |read_plan| {
+                let rebatch = LocalPhysicalPlan::into_batches(
+                    read_plan,
+                    group_size,
+                    true,
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)).with_phase(REBATCH_PHASE),
+                );
+                LocalPhysicalPlan::gather_write(
+                    rebatch,
+                    schema,
+                    local_shuffle_backend,
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            })
     }
 
     async fn execute_into_batches(
@@ -145,24 +190,8 @@ impl IntoBatchesNode {
                 current_group_size += rows;
                 if current_group_size >= (self.batch_size as f64 * BATCH_SIZE_THRESHOLD) as usize {
                     let group_size = std::mem::take(&mut current_group_size);
-
                     let materialized_outputs = std::mem::take(&mut current_group);
-                    let (in_memory_scan, psets) =
-                        MaterializedOutput::into_in_memory_scan_with_psets(
-                            materialized_outputs,
-                            self.config.schema.clone(),
-                            self.node_id(),
-                        );
-                    let plan = LocalPhysicalPlan::into_batches(
-                        in_memory_scan,
-                        group_size,
-                        true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(self.node_id() as usize))
-                            .with_phase(REBATCH_PHASE),
-                    );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                        .with_psets(self.node_id(), psets);
+                    let builder = self.build_rebatch_task(materialized_outputs, group_size);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -171,20 +200,7 @@ impl IntoBatchesNode {
         }
 
         if !current_group.is_empty() {
-            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                current_group,
-                self.config.schema.clone(),
-                self.node_id(),
-            );
-            let plan = LocalPhysicalPlan::into_batches(
-                in_memory_source_plan,
-                current_group_size,
-                true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(REBATCH_PHASE),
-            );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                .with_psets(self.node_id(), psets);
+            let builder = self.build_rebatch_task(current_group, current_group_size);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
@@ -209,23 +225,44 @@ impl PipelineNodeImpl for IntoBatchesNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec![format!("IntoBatches: {}", self.batch_size)]
+        let backend_name = match self.shuffle_backend.backend() {
+            DistributedShuffleBackend::Ray => "Ray",
+            DistributedShuffleBackend::Flight(_) => "Flight",
+        };
+        vec![format!(
+            "IntoBatches({}): {}",
+            backend_name, self.batch_size
+        )]
     }
 
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
+        self.shuffle_backend.register_cleanup(plan_context);
         let input_node = self.child.clone().produce_tasks(plan_context);
         let node_id = self.node_id();
         let batch_size = self.batch_size;
+        let schema = self.shuffle_backend.schema().clone();
+        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        // Phase 1: initial per-task batching, then `gather_write(backend)` so
+        // each task's output is a single ref matching the configured backend.
+        // Keeping the ref type consistent here means phase-2 tasks always
+        // consume refs of the configured backend type — no Ray/Flight mix.
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
-            LocalPhysicalPlan::into_batches(
+            let batched = LocalPhysicalPlan::into_batches(
                 input,
                 batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)).with_phase(INITIAL_BATCH_PHASE),
+            );
+            LocalPhysicalPlan::gather_write(
+                batched,
+                schema.clone(),
+                local_shuffle_backend.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         });
 

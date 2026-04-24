@@ -157,6 +157,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
     ) -> DaftResult<PlanResult> {
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
+        let (shuffle_dirs_tx, shuffle_dirs_rx) = tokio::sync::oneshot::channel();
         let this = self.clone();
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
@@ -167,12 +168,18 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             );
 
             joinset.spawn(async move {
-                this.run_plan_impl(pipeline_node, query_idx, scheduler_handle, result_sender)
-                    .await
+                this.run_plan_impl(
+                    pipeline_node,
+                    query_idx,
+                    scheduler_handle,
+                    result_sender,
+                    shuffle_dirs_tx,
+                )
+                .await
             });
             joinset
         });
-        Ok(PlanResult::new(joinset, result_receiver))
+        Ok(PlanResult::new(joinset, result_receiver, shuffle_dirs_rx))
     }
 
     async fn run_plan_impl(
@@ -181,11 +188,18 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         query_idx: QueryIdx,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         sender: Sender<MaterializedOutput>,
+        shuffle_dirs_tx: tokio::sync::oneshot::Sender<Vec<String>>,
     ) -> DaftResult<()> {
         let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
+        // Hand ownership of the dirs to `PlanResult` so cleanup can be deferred
+        // until Python signals it's done fetching (via `finish()`). Running
+        // cleanup here would race with in-flight `FlightPartitionRef::fetch`
+        // calls on the driver that were already unblocked from the
+        // `result_receiver` but hadn't finished reading from the flight server.
+        let _ = shuffle_dirs_tx.send(shuffle_dirs);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -193,14 +207,6 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             if sender.send(result?).await.is_err() {
                 break;
             }
-        }
-
-        // Clean up shuffle directories via Ray remote functions
-        #[cfg(feature = "python")]
-        if !shuffle_dirs.is_empty()
-            && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
-        {
-            tracing::warn!("Failed to clear flight shuffle directories: {}", e);
         }
 
         Ok(())

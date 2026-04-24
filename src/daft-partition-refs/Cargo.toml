@@ -1,14 +1,27 @@
 [dependencies]
+common-error = {path = "../common/error", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false, optional = true}
+common-runtime = {path = "../common/runtime", default-features = false, optional = true}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, optional = true}
+daft-schema = {path = "../daft-schema", default-features = false, optional = true}
+daft-shuffles = {path = "../daft-shuffles", default-features = false, optional = true}
+futures = {workspace = true, optional = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
 python = [
   "dep:common-py-serde",
+  "dep:common-runtime",
+  "dep:daft-micropartition",
+  "dep:daft-schema",
+  "dep:daft-shuffles",
+  "dep:futures",
   "dep:pyo3",
-  "common-partitioning/python"
+  "common-partitioning/python",
+  "daft-micropartition/python",
+  "daft-schema/python"
 ]
 
 [lints]

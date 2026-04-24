@@ -28,7 +28,14 @@ impl Partition for FlightPartitionRef {
 
 #[cfg(feature = "python")]
 mod python {
+    use std::sync::Arc;
+
     use common_py_serde::impl_bincode_py_state_serialization;
+    use common_runtime::get_io_runtime;
+    use daft_micropartition::{MicroPartition, python::PyMicroPartition};
+    use daft_schema::python::schema::PySchema;
+    use daft_shuffles::client::FlightClientManager;
+    use futures::TryStreamExt;
     use pyo3::{Bound, PyResult, Python, pyclass, pymethods, types::PyModuleMethods};
     use serde::{Deserialize, Serialize};
 
@@ -91,6 +98,47 @@ mod python {
         #[getter]
         pub fn size_bytes(&self) -> usize {
             self.inner.size_bytes
+        }
+
+        /// Synchronously fetch the partition's `MicroPartition` from the flight
+        /// server named by `self.server_address`. Releases the GIL while
+        /// blocking on the flight RPC + record-batch stream collection. The
+        /// caller supplies `schema` — `FlightPartitionRef` intentionally does
+        /// not carry schema, so the consumer must know it (typically from the
+        /// DataFrame that produced the ref).
+        pub fn fetch(&self, py: Python, schema: &PySchema) -> PyResult<PyMicroPartition> {
+            let shuffle_id = self.inner.shuffle_id;
+            let server_address = self.inner.server_address.clone();
+            let partition_ref_id = self.inner.partition_ref_id;
+            let schema_ref = schema.schema.clone();
+            // Release the GIL for the blocking fetch — the flight RPC is pure
+            // I/O and can take a while; holding the GIL would block every
+            // other Python thread (including parallel iter_partitions calls).
+            let mp = py.detach(|| -> PyResult<MicroPartition> {
+                let runtime = get_io_runtime(true);
+                let batches = runtime
+                    .block_on_current_thread(async move {
+                        let client_manager = FlightClientManager::new();
+                        let stream = client_manager
+                            .fetch_partition(
+                                shuffle_id,
+                                &server_address,
+                                &[partition_ref_id],
+                                schema_ref.clone(),
+                            )
+                            .await?;
+                        stream.try_collect::<Vec<_>>().await
+                    })
+                    .map_err(|e: common_error::DaftError| {
+                        pyo3::exceptions::PyRuntimeError::new_err(e.to_string())
+                    })?;
+                Ok(MicroPartition::new_loaded(
+                    schema.schema.clone(),
+                    Arc::new(batches),
+                    None,
+                ))
+            })?;
+            Ok(PyMicroPartition::from(mp))
         }
     }
 

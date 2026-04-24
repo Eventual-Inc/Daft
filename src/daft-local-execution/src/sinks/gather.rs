@@ -6,8 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use tracing::{Span, instrument};
 
@@ -42,16 +41,14 @@ struct FlightShared {
 
 pub(crate) struct FlightGatherState {
     shared: Arc<FlightShared>,
-    input_id: InputId,
     refs: Vec<FlightPartitionRef>,
 }
 
 impl FlightGatherState {
     async fn push(&mut self, input: MicroPartition) -> DaftResult<()> {
         let shared = &self.shared;
-        let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
-            partition_ref_id,
+            &shared.local_server,
             shared.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
@@ -221,14 +218,13 @@ impl BlockingSink for GatherSink {
         vec![format!("Gather({})", self.backend.name())]
     }
 
-    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         match &self.backend {
             GatherBackend::Ray => Ok(GatherState::Ray(RayGatherState {
                 partitions: Vec::new(),
             })),
             GatherBackend::Flight(shared) => Ok(GatherState::Flight(FlightGatherState {
                 shared: shared.clone(),
-                input_id,
                 refs: Vec::new(),
             })),
         }

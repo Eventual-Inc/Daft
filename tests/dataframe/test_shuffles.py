@@ -552,3 +552,260 @@ def test_flight_gather_mixed_empty_inputs(flight_shuffle_ctx):
 
         top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
         assert top == sorted(expected_rows, reverse=True)[:5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize(
+    "rows, batch_size",
+    # Divisible, ragged tail, small input + small batch, batch_size > rows (tail-only).
+    [(1000, 100), (1000, 7), (10, 3), (100, 1000)],
+)
+def test_flight_into_batches(flight_shuffle_ctx, rows, batch_size):
+    """IntoBatches under flight_shuffle: rebatch tasks must emit FlightPartitionRefs via gather_write."""
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": list(range(rows))}).into_partitions(8).into_batches(batch_size)
+
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "IntoBatches(Flight)" in plan, f"expected IntoBatches(Flight) in plan:\n{plan}"
+        assert "IntoBatches(Ray)" not in plan, f"unexpected Ray IntoBatches:\n{plan}"
+
+        collected = df.collect()
+        partitions = list(collected.iter_partitions())
+        if get_tests_daft_runner_name() == "ray":
+            import ray
+
+            partitions = ray.get(partitions)
+
+        # Total row set must match input (every row present exactly once).
+        all_rows = [v for part in partitions for v in part.to_pydict()["x"]]
+        assert sorted(all_rows) == list(range(rows))
+
+        sizes = [len(part.to_pydict()["x"]) for part in partitions]
+        if batch_size >= rows:
+            # Tail-only flush: single partition with all rows (or none if rows == 0).
+            assert sizes == [rows] or sizes == []
+        else:
+            # Batch-size distribution under Flight differs from Ray's (the
+            # intermediate-op task output concatenates Phase-1 morsels at the
+            # task boundary, so sizes can exceed `batch_size` while the total
+            # row count and partition count are still sensible). Just assert
+            # no empty batches; the sum correctness is covered above.
+            assert all(s > 0 for s in sizes), f"empty batch in sizes: {sizes}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_metadata_access_does_not_fetch(flight_shuffle_ctx, monkeypatch):
+    """`FlightMaterializedResult` must defer the flight RPC until a consumer actually reads bytes.
+
+    Calling `len(df)` / iterating `df._result.values()` for metadata only must
+    NOT trigger `FlightPartitionRef.fetch` — that's the whole point of
+    yielding a lazy `FlightMaterializedResult` from `stream_plan` instead of
+    fetching+ray.put-ing on the driver. Once the consumer asks for bytes
+    (`to_pydict`), exactly one fetch per partition is expected.
+    """
+    from daft.runners.ray_runner import FlightMaterializedResult
+
+    fetch_count = {"n": 0}
+    real_materialize = FlightMaterializedResult._materialize
+
+    def counting_materialize(self):
+        fetch_count["n"] += 1
+        return real_materialize(self)
+
+    monkeypatch.setattr(FlightMaterializedResult, "_materialize", counting_materialize)
+
+    rows = 1000
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": list(range(rows))}).into_partitions(8).into_batches(100).collect()
+
+        # `_result` is the underlying RayPartitionSet; `num_partitions` and
+        # `len` go through `.metadata()` only — must not trigger any fetches.
+        n_partitions = df._result.num_partitions()
+        assert n_partitions > 0
+        assert len(df._result) == rows
+        assert fetch_count["n"] == 0, f"expected zero flight fetches for metadata-only access; got {fetch_count['n']}"
+
+        # Materializing bytes triggers fetches. Each `FlightMaterializedResult`
+        # caches after first call, so the count is bounded by partition count.
+        result_rows = df.to_pydict()["x"]
+        assert sorted(result_rows) == list(range(rows))
+        assert 0 < fetch_count["n"] <= n_partitions, (
+            f"expected at most one fetch per partition after to_pydict; "
+            f"got {fetch_count['n']} fetches for {n_partitions} partitions"
+        )
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_into_batches_feeds_downstream_distributed_op(flight_shuffle_ctx):
+    """IntoBatches(Flight) outputs must be consumable by a downstream distributed op via `shuffle_read(Flight)`.
+
+    Previous flight tests for IntoBatches only exercise the driver-side fetch
+    path (via `.collect()`). This one chains another distributed op
+    (`into_partitions`) after IntoBatches so the rebatch task's
+    `FlightPartitionRef` outputs are consumed on a worker actor — exercising
+    the `build_refs_task_builder` flight branch (`shuffle_read(Flight) +
+    with_flight_shuffle_reads`) end-to-end and the cross-actor flight RPC.
+    """
+    rows = 1000
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": list(range(rows))}).into_partitions(8).into_batches(50).into_partitions(4)
+
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "IntoBatches(Flight)" in plan, f"expected IntoBatches(Flight):\n{plan}"
+        assert "IntoPartitions(Flight)" in plan, f"expected IntoPartitions(Flight):\n{plan}"
+
+        collected = df.collect()
+        assert sorted(collected.to_pydict()["x"]) == list(range(rows))
+        assert len(list(collected.iter_partitions())) == 4
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed IntoBatches tests require the ray runner",
+)
+def test_ray_into_batches_plan_shape():
+    """Plan-shape assertion for the default Ray backend: ensure the Ray variant appears and Flight does not."""
+    df = daft.from_pydict({"x": list(range(1000))}).into_partitions(8).into_batches(100)
+
+    buf = io.StringIO()
+    df.explain(show_all=True, file=buf)
+    plan = buf.getvalue()
+    assert "IntoBatches(Ray)" in plan, f"expected IntoBatches(Ray) in plan:\n{plan}"
+    assert "IntoBatches(Flight)" not in plan, f"unexpected Flight IntoBatches:\n{plan}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_into_batches_all_empty_inputs(flight_shuffle_ctx):
+    """Empty-input regression: filter drops everything, into_batches must not panic or hang."""
+    with flight_shuffle_ctx():
+        df = (
+            daft.from_pydict({"x": list(range(1000))})
+            .into_partitions(8)
+            .filter(daft.col("x") < 0)
+            .into_batches(100)
+            .collect()
+        )
+        rows_out = df.to_pydict()["x"]
+        assert rows_out == []
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed IntoBatches tests require the ray runner",
+)
+@pytest.mark.parametrize("flight", [False, True])
+def test_into_batches_followed_by_streaming_project(flight, flight_shuffle_ctx):
+    """A streaming op fused on top of `IntoBatches` (Project via `with_column`) must consume the gather_write output correctly.
+
+    `Project` uses `pipeline_instruction` so it shares a task with the
+    rebatch — the local plan becomes `Project(... → into_batches →
+    gather_write(backend))`. Under Ray, gather_write loops its
+    `BlockingSinkOutput::Partitions` back into the morsel stream so the fused
+    Project can keep consuming. Under Flight, gather_write emits
+    `BlockingSinkOutput::FlightPartitionRefs` instead — and intermediate-op
+    handlers `unreachable!()` on `PipelineEvent::FlightPartitionRef`. Theory
+    says the Flight case should panic or silently drop rows.
+
+    `with_column` is used (rather than `filter`) because the optimizer
+    pushes filter below IntoBatches; a derived column can't be pushed past
+    IntoBatches and is guaranteed to sit on top of it in the physical plan.
+    """
+
+    @contextmanager
+    def maybe_flight():
+        if flight:
+            with flight_shuffle_ctx():
+                yield
+        else:
+            yield
+
+    rows = 1000
+    with maybe_flight():
+        # `with_column` (Project) can't be pushed below `into_batches` because
+        # the derived column doesn't exist upstream — guarantees Project sits
+        # on top of IntoBatches in the physical plan, fused into the same
+        # local task via `pipeline_instruction`.
+        df = (
+            daft.from_pydict({"x": list(range(rows))})
+            .into_partitions(8)
+            .into_batches(100)
+            .with_column("y", daft.col("x") * 2)
+            .collect()
+        )
+        out = df.to_pydict()
+        assert sorted(out["x"]) == list(range(rows)), f"flight={flight}: lost rows; got {len(out['x'])} expected {rows}"
+        # `y` must be derived correctly from the post-batched data.
+        pairs = sorted(zip(out["x"], out["y"]))
+        assert pairs == [(i, i * 2) for i in range(rows)], (
+            f"flight={flight}: project-after-into_batches produced wrong column values"
+        )
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed IntoBatches tests require the ray runner",
+)
+@pytest.mark.parametrize("flight", [False, True])
+def test_into_batches_emits_batch_size_partitions(flight, flight_shuffle_ctx):
+    """Output partitions of `df.into_batches(N)` should be approximately N rows each.
+
+    With phase-1 `gather_write(backend)` consolidating each upstream task's
+    data into a single ref, `execute_into_batches` sees `group_size = full
+    upstream task size` (potentially >> batch_size) and the rebatch task ends
+    up emitting one ref of `group_size` rows instead of `batch_size`-sized
+    refs. This test pins the user-facing invariant: output ref sizes should
+    track the requested `batch_size`, not the upstream partition size.
+    """
+
+    @contextmanager
+    def maybe_flight():
+        if flight:
+            with flight_shuffle_ctx():
+                yield
+        else:
+            yield
+
+    rows = 10_000
+    batch_size = 100
+    input_partitions = 4  # 2500 rows per input partition — much larger than batch_size
+    with maybe_flight():
+        df = (
+            daft.from_pydict({"x": list(range(rows))})
+            .into_partitions(input_partitions)
+            .into_batches(batch_size)
+            .collect()
+        )
+        partitions = list(df.iter_partitions())
+        if get_tests_daft_runner_name() == "ray":
+            import ray
+
+            partitions = ray.get(partitions)
+        sizes = [len(p.to_pydict()["x"]) for p in partitions]
+
+        # Total row count must be preserved.
+        assert sum(sizes) == rows, f"flight={flight}: lost rows; sizes={sizes}"
+
+        # Every non-tail batch should be approximately `batch_size` rows.
+        # Allow a tolerance for non-strict bucketing at task boundaries.
+        tolerance = batch_size  # allow up to 2× batch_size; anything beyond points at a regression
+        oversized = [s for s in sizes if s > batch_size + tolerance]
+        assert not oversized, (
+            f"flight={flight}: expected batches ≤ {batch_size + tolerance} rows; "
+            f"oversized batches: {oversized[:5]} (out of {len(sizes)} total)"
+        )

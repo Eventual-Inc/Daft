@@ -41,7 +41,7 @@ from daft.subscribers.event_log_sink import (
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
-    from daft.runners.ray_runner import RayMaterializedResult
+    from daft.runners.ray_runner import FlightMaterializedResult, RayMaterializedResult
 
 try:
     import ray
@@ -440,8 +440,11 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | PyExecutionStats | None:
+    async def get_next_partition(
+        self, plan_id: str
+    ) -> RayMaterializedResult | FlightMaterializedResult | PyExecutionStats | None:
         from daft.runners.ray_runner import (
+            FlightMaterializedResult,
             PartitionMetadataAccessor,
             RayMaterializedResult,
         )
@@ -460,11 +463,19 @@ class RemoteFlotillaRunner:
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
         )
-        materialized_result = RayMaterializedResult(
-            partition=next_partition_ref.object_ref,
-            metadatas=metadata_accessor,
-            metadata_idx=0,
-        )
+        if isinstance(next_partition_ref, RayPartitionRef):
+            materialized_result = RayMaterializedResult(
+                partition=next_partition_ref.object_ref,
+                metadatas=metadata_accessor,
+                metadata_idx=0,
+            )
+        elif isinstance(next_partition_ref, FlightPartitionRef):
+            materialized_result = FlightMaterializedResult(
+                flight_ref=next_partition_ref,
+                schema=self.curr_plans[plan_id].output_schema(),
+                metadatas=metadata_accessor,
+                metadata_idx=0,
+            )
         return materialized_result
 
 
@@ -564,7 +575,7 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
+    ) -> Generator[RayMaterializedResult | FlightMaterializedResult, None, PyExecutionStats]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 

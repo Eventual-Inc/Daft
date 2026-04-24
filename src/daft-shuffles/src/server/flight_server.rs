@@ -1,4 +1,11 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -69,11 +76,24 @@ struct FlightPartitionKey {
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
     shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
+    /// Server-wide counter for `partition_ref_id` minting. Guarantees every
+    /// cache registered against this server gets a unique id, so storage keys
+    /// `(shuffle_id, partition_ref_id)` never collide regardless of how
+    /// callers were organised (which task, which output partition, which
+    /// shuffle node).
+    ref_id_counter: Arc<AtomicU64>,
 }
 
 impl ShuffleFlightServer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Hand out a fresh `partition_ref_id`. Intended for use by
+    /// `InProgressShuffleCache` at construction time; callers outside the
+    /// cache should not need to call this directly.
+    pub fn new_partition_ref_id(&self) -> u64 {
+        self.ref_id_counter.fetch_add(1, Ordering::Relaxed)
     }
 
     pub async fn register_shuffle_partitions(

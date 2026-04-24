@@ -3158,8 +3158,14 @@ dependencies = [
 name = "daft-partition-refs"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "common-partitioning",
  "common-py-serde",
+ "common-runtime",
+ "daft-micropartition",
+ "daft-schema",
+ "daft-shuffles",
+ "futures",
  "pyo3",
  "serde",
 ]

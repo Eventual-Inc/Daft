@@ -10,7 +10,7 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use daft_partition_refs::RayPartitionRef;
+use daft_partition_refs::{FlightPartitionRef, PyFlightPartitionRef, RayPartitionRef};
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
@@ -36,6 +36,11 @@ use crate::{
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
     statistics_manager: StatisticsManagerRef,
+    /// Shuffle dirs to clean up once Python has finished fetching every ref
+    /// the plan produced. Consumed (taken) by the first `finish()` call.
+    /// Deferring cleanup to `finish()` avoids racing with in-flight
+    /// `FlightPartitionRef::fetch` calls still resolving on the driver.
+    shuffle_dirs: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<Vec<String>>>>>,
 }
 
 #[pymethods]
@@ -52,23 +57,60 @@ impl PythonPartitionRefStream {
                 let mut inner = inner.lock().await;
                 inner.next().await
             };
-            let next = match next {
-                Some(result) => {
-                    let result = result?;
-                    let ray_part_ref = result
-                        .as_any()
-                        .downcast_ref::<RayPartitionRef>()
-                        .expect("Failed to downcast to RayPartitionRef")
-                        .clone();
-                    Some(ray_part_ref)
-                }
+            let ref_value = match next {
                 None => None,
+                Some(result) => {
+                    let part = result?;
+                    // Transport only: yield whichever ref type the runtime
+                    // produced. Resolution (ray.get / FlightPartitionRef.fetch)
+                    // happens in Python-side consumers, so data stays on the
+                    // producing node until someone actually needs the bytes.
+                    let obj = Python::attach(|py| -> PyResult<Py<PyAny>> {
+                        if let Some(r) = part.as_any().downcast_ref::<RayPartitionRef>() {
+                            Ok(r.clone().into_pyobject(py)?.into_any().unbind())
+                        } else if let Some(f) = part.as_any().downcast_ref::<FlightPartitionRef>() {
+                            Ok(PyFlightPartitionRef::from(f.clone())
+                                .into_pyobject(py)?
+                                .into_any()
+                                .unbind())
+                        } else {
+                            Err(PyRuntimeError::new_err(
+                                "PythonPartitionRefStream received unknown partition ref type",
+                            ))
+                        }
+                    })?;
+                    Some(obj)
+                }
             };
-            Ok(next)
+            Ok(ref_value)
         })
     }
 
     fn finish(&self) -> PyResult<PyExecutionStats> {
+        // Python signals end-of-consumption here, which is the safe point to
+        // clean up any Flight shuffle dirs: every `FlightPartitionRef::fetch`
+        // issued by the driver has returned, so no reader on the flight server
+        // is about to touch these files. Fire-and-forget: spawn cleanup onto
+        // the IO runtime rather than blocking `finish()`, since Python often
+        // calls it from an asyncio context where blocking would stall the
+        // event loop.
+        let shuffle_dirs_rx = {
+            let mut guard = self.shuffle_dirs.blocking_lock();
+            guard.take()
+        };
+        if let Some(rx) = shuffle_dirs_rx {
+            let runtime = common_runtime::get_io_runtime(true);
+            // Detach the RuntimeTask handle — we don't need to await it; the
+            // task will drive itself on the IO runtime.
+            let _task = runtime.spawn(async move {
+                if let Ok(dirs) = rx.await
+                    && !dirs.is_empty()
+                    && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(dirs).await
+                {
+                    tracing::warn!("Failed to clear flight shuffle directories: {}", e);
+                }
+            });
+        }
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }
@@ -98,6 +140,16 @@ impl PyDistributedPhysicalPlan {
 
     fn idx(&self) -> String {
         self.plan.idx().to_string()
+    }
+
+    /// Output schema of the plan. Exposed so Python consumers can pass it to
+    /// `PyFlightPartitionRef::fetch` when resolving flight refs produced by
+    /// the iterator. Ray refs don't need schema; this is only read on the
+    /// flight path.
+    fn output_schema(&self) -> PyResult<daft_schema::python::schema::PySchema> {
+        Ok(daft_schema::python::schema::PySchema {
+            schema: self.plan.logical_plan().schema(),
+        })
     }
 
     fn num_partitions(&self) -> PyResult<usize> {
@@ -270,9 +322,11 @@ impl PyDistributedPhysicalPlanRunner {
             self.runner
                 .run_plan(query_idx, pipeline_node, statistics_manager.clone())?;
 
+        let (stream, shuffle_dirs_rx) = plan_result.into_stream_and_cleanup();
         let part_stream = PythonPartitionRefStream {
-            inner: Arc::new(Mutex::new(plan_result.into_stream())),
+            inner: Arc::new(Mutex::new(stream)),
             statistics_manager,
+            shuffle_dirs: Arc::new(Mutex::new(Some(shuffle_dirs_rx))),
         };
         Ok(part_stream)
     }

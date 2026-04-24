@@ -95,10 +95,12 @@ impl ShuffleBackend {
     }
 
     /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
-    /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
-    /// and then applies `wrap_plan` on top. The partition refs are attached to
-    /// the task via the backend-appropriate API (`with_psets` /
-    /// `with_flight_shuffle_reads`).
+    /// partition refs and then applies `wrap_plan` on top.
+    ///
+    /// Dispatches on the configured backend; the caller is responsible for
+    /// ensuring input refs match the backend (all Ray or all Flight — never
+    /// mixed). Operators should terminate their upstream tasks with
+    /// `gather_write(backend)` to guarantee the invariant.
     pub(crate) fn build_refs_task_builder<F>(
         &self,
         partition_refs: Vec<PartitionRef>,
@@ -110,25 +112,13 @@ impl ShuffleBackend {
     {
         let node_id = self.node_id;
         match &self.backend {
-            DistributedShuffleBackend::Ray => {
-                let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
-                let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-                    node_id,
-                    self.schema.clone(),
-                    total_size_bytes,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                );
-                let plan = wrap_plan(in_memory_scan);
-                SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
-            }
             DistributedShuffleBackend::Flight(_) => {
                 let flight_refs = partition_refs
                     .into_iter()
                     .map(|p| {
                         p.as_any()
                             .downcast_ref::<FlightPartitionRef>()
-                            .expect("expected flight partition ref")
+                            .expect("Flight backend must receive FlightPartitionRef inputs")
                             .clone()
                     })
                     .collect::<Vec<_>>();
@@ -144,6 +134,17 @@ impl ShuffleBackend {
                     node_id,
                     vec![FlightShuffleReadInput { refs: flight_refs }],
                 )
+            }
+            DistributedShuffleBackend::Ray => {
+                let shuffle_read = LocalPhysicalPlan::shuffle_read(
+                    node_id,
+                    self.schema.clone(),
+                    ShuffleReadBackend::Ray,
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                );
+                let plan = wrap_plan(shuffle_read);
+                SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
             }
         }
     }

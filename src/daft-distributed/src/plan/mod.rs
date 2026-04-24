@@ -78,17 +78,35 @@ pub(crate) type PlanResultStream =
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
     rx: Receiver<MaterializedOutput>,
+    /// Shuffle dirs registered by Flight-backend pipeline nodes. Ownership
+    /// travels with the result so cleanup can be deferred until Python has
+    /// finished fetching any `FlightPartitionRef`s the plan produced — running
+    /// cleanup in `run_plan_impl` would race with in-flight fetches.
+    shuffle_dirs_rx: tokio::sync::oneshot::Receiver<Vec<String>>,
 }
 
 impl PlanResult {
-    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<MaterializedOutput>) -> Self {
-        Self { joinset, rx }
+    fn new(
+        joinset: JoinSet<DaftResult<()>>,
+        rx: Receiver<MaterializedOutput>,
+        shuffle_dirs_rx: tokio::sync::oneshot::Receiver<Vec<String>>,
+    ) -> Self {
+        Self {
+            joinset,
+            rx,
+            shuffle_dirs_rx,
+        }
     }
 
-    pub fn into_stream(self) -> PlanResultStream {
-        JoinableForwardingStream::new(
-            Box::new(ReceiverStream::new(self.rx).flat_map(|mat| stream::iter(mat.into_inner().0))),
-            self.joinset,
-        )
+    pub fn into_stream_and_cleanup(
+        self,
+    ) -> (
+        PlanResultStream,
+        tokio::sync::oneshot::Receiver<Vec<String>>,
+    ) {
+        let inner: Box<dyn Stream<Item = PartitionRef> + Send + Unpin + 'static> =
+            Box::new(ReceiverStream::new(self.rx).flat_map(|mat| stream::iter(mat.into_inner().0)));
+        let stream = JoinableForwardingStream::new(inner, self.joinset);
+        (stream, self.shuffle_dirs_rx)
     }
 }

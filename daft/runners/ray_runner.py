@@ -17,7 +17,13 @@ import ray.experimental  # noqa: TID253
 
 import daft
 from daft.context import get_context
-from daft.daft import DistributedPhysicalPlan, PyExecutionStats, RayPartitionRef
+from daft.daft import (
+    DistributedPhysicalPlan,
+    FlightPartitionRef,
+    PyExecutionStats,
+    PySchema,
+    RayPartitionRef,
+)
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
@@ -295,7 +301,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef) -> ray.ObjectRef:
 
 
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
-    _results: dict[PartID, RayMaterializedResult]
+    _results: dict[PartID, RayMaterializedResult | FlightMaterializedResult]
 
     def __init__(self) -> None:
         super().__init__()
@@ -365,7 +371,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return self._results[idx].partition()
 
     def set_partition(self, idx: PartID, result: MaterializedResult[ray.ObjectRef]) -> None:
-        assert isinstance(result, RayMaterializedResult)
+        assert isinstance(result, (RayMaterializedResult, FlightMaterializedResult))
         self._results[idx] = result
 
     def delete_partition(self, idx: PartID) -> None:
@@ -389,8 +395,18 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return len(self._results)
 
     def wait(self) -> None:
-        deduped_object_refs = {r.partition() for r in self._results.values()}
-        ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
+        # Only wait on Ray-backed results: flight-backed results are already
+        # complete on the producing worker (the ref wouldn't have been emitted
+        # otherwise). Calling `.partition()` on a `FlightMaterializedResult`
+        # would force a fetch + ray.put just to satisfy `ray.wait`, defeating
+        # the lazy materialization.
+        deduped_object_refs = {r.partition() for r in self._results.values() if isinstance(r, RayMaterializedResult)}
+        if deduped_object_refs:
+            ray.wait(
+                list(deduped_object_refs),
+                fetch_local=False,
+                num_returns=len(deduped_object_refs),
+            )
 
 
 def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataType:
@@ -561,7 +577,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Generator[RayMaterializedResult, None, ExecutionMetadata]:
+    ) -> Generator[RayMaterializedResult | FlightMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
 
         # Grab and freeze the current context
@@ -714,7 +730,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             yield ray.get(result.partition())
 
     def _collect_into_cache(
-        self, results_iter: Generator[RayMaterializedResult, None, ExecutionMetadata]
+        self,
+        results_iter: Generator[RayMaterializedResult | FlightMaterializedResult, None, ExecutionMetadata],
     ) -> tuple[PartitionCacheEntry, ExecutionMetadata | None]:
         result_pset = RayPartitionSet()
 
@@ -777,6 +794,64 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def cancel(self) -> None:
         return ray.cancel(self._partition)
+
+    def _noop(self, _: ray.ObjectRef) -> None:
+        return None
+
+
+class FlightMaterializedResult(MaterializedResult[ray.ObjectRef]):
+    def __init__(
+        self,
+        flight_ref: FlightPartitionRef,
+        schema: PySchema,
+        metadatas: PartitionMetadataAccessor | None = None,
+        metadata_idx: int | None = None,
+    ):
+        self._flight_ref = flight_ref
+        self._schema = schema
+        self._object_ref: ray.ObjectRef | None = None
+        self._micropartition: MicroPartition | None = None
+        if metadatas is None:
+            assert metadata_idx is None
+            metadatas = PartitionMetadataAccessor.from_metadata_list(
+                [PartitionMetadata(flight_ref.num_rows, flight_ref.size_bytes)]
+            )
+            metadata_idx = 0
+        self._metadatas = metadatas
+        self._metadata_idx = metadata_idx
+
+    def _materialize(self) -> MicroPartition:
+        if self._micropartition is None:
+            self._micropartition = MicroPartition._from_pymicropartition(self._flight_ref.fetch(self._schema))
+        return self._micropartition
+
+    def partition(self) -> ray.ObjectRef:
+        # Unlike `RayMaterializedResult.partition()` — which is free because the data is
+        # already in Ray's object store — the flight path has no pre-existing `ObjectRef`
+        # to return, so we have to fetch the bytes from the producing worker and
+        # `ray.put` them to synthesize one.
+        #
+        # This is the latest point we can defer materialization without changing the
+        # `MaterializedResult.partition() -> ObjectRef` public API (consumers including
+        # `iter_partitions` expect an `ObjectRef` back and typically hand it to another
+        # Ray task).
+        #
+        # Callers that only need the bytes on the driver should use `.micropartition()`
+        # to skip the `ray.put` step entirely.
+        if self._object_ref is None:
+            self._object_ref = ray.put(self._materialize())
+        return self._object_ref
+
+    def micropartition(self) -> MicroPartition:
+        return self._materialize()
+
+    def metadata(self) -> PartitionMetadata:
+        assert self._metadata_idx is not None
+        return self._metadatas.get_index(self._metadata_idx)
+
+    def cancel(self) -> None:
+        # Flight tasks already finished by the time we hold a ref; nothing to cancel.
+        return None
 
     def _noop(self, _: ray.ObjectRef) -> None:
         return None
