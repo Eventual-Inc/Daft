@@ -52,3 +52,41 @@ def test_stderr_without_trailing_newline_does_not_deadlock_on_divider_merge():
     df = daft.from_pydict({"x": list(range(4))})
     actual = df.with_column("y", no_newline(df["x"])).to_pydict()
     assert actual == {"x": [0, 1, 2, 3], "y": [1, 2, 3, 4]}
+
+
+@pytest.mark.timeout(30)
+def test_silent_udf_produces_no_spurious_stdout_lines(monkeypatch):
+    r"""trace_output() must not surface the divider-padding newline as a line.
+
+    The divider-merge fix prepends `\n` to `_OUTPUT_DIVIDER` so the divider
+    always lands on its own line. Without filtering that padding in
+    trace_output(), every batch of every use_process=True UDF returns an
+    extra empty line, which the Rust caller then prints as `[`udf` Worker #N]`
+    noise to the terminal.
+
+    Intercept trace_output() to capture what it returns and assert the
+    silent-UDF case yields an empty list.
+    """
+    from daft.execution import udf as udf_mod
+
+    captured: list[list[str]] = []
+    original = udf_mod.UdfHandle.trace_output
+
+    def spy(self: object) -> list[str]:
+        result = original(self)  # type: ignore[arg-type]
+        captured.append(result)
+        return result
+
+    monkeypatch.setattr(udf_mod.UdfHandle, "trace_output", spy)
+
+    @daft.func(use_process=True)
+    def silent_udf(x: int) -> int:
+        return x + 1
+
+    df = daft.from_pydict({"x": list(range(4))})
+    actual = df.with_column("y", silent_udf(df["x"])).to_pydict()
+    assert actual == {"x": [0, 1, 2, 3], "y": [1, 2, 3, 4]}
+
+    # Every trace_output() call for a silent UDF should return exactly [].
+    non_empty_results = [r for r in captured if r]
+    assert non_empty_results == [], f"Silent UDF produced spurious stdout lines: {non_empty_results!r}"
