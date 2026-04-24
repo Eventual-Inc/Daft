@@ -12,7 +12,8 @@ type PlanNode = {
 };
 
 function parsePlan(planJson: string): PlanNode {
-  return JSON.parse(planJson);
+  const parsed = JSON.parse(planJson);
+  return parsed.plan ?? parsed;
 }
 
 /** Extract display properties from a node (everything except type and children). */

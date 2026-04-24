@@ -225,7 +225,8 @@ export default function PhysicalPlanTree({
   const planJson = exec_state.exec_info.physical_plan;
   if (planJson) {
     try {
-      plan = JSON.parse(planJson);
+      const parsed = JSON.parse(planJson);
+      plan = parsed.plan ?? parsed;
     } catch {
       // fall through — will show table
     }
