@@ -504,6 +504,37 @@ def list_contains(list_expr: Expression, item: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_contains", list_expr, item)
 
 
+def seq(n: Expression) -> Expression:
+    """Generates a list of sequential integers [0, 1, 2, ..., n-1] for each row.
+
+    Args:
+        n (Expression): An integer expression specifying the length of the sequence.
+
+    Returns:
+        Expression (List[UInt64] Expression): An expression with lists of sequential integers.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import seq
+        >>> df = daft.from_pydict({"n": [3, 5, 0]})
+        >>> df.with_column("indices", seq(df["n"])).collect()
+        ╭───────┬─────────────────╮
+        │ n     ┆ indices         │
+        │ ---   ┆ ---             │
+        │ Int64 ┆ List[UInt64]    │
+        ╞═══════╪═════════════════╡
+        │ 3     ┆ [0, 1, 2]       │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5     ┆ [0, 1, 2, 3, 4] │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 0     ┆ []              │
+        ╰───────┴─────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_seq", n)
+
+
 def to_list(*items: Expression) -> Expression:
     """Constructs a list from the item expressions.
 
