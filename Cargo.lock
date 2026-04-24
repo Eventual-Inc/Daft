@@ -2670,7 +2670,6 @@ name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
- "arrow-buffer 57.3.0",
  "common-error",
  "daft-core",
  "daft-dsl",
