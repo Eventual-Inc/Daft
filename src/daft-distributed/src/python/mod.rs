@@ -26,7 +26,10 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
+    statistics::{
+        StatisticsManager, StatisticsManagerRef, StatisticsSubscriber,
+        task_lifecycle::{TaskLifecycleEventSubscriber, task_events_enabled},
+    },
 };
 
 #[pyclass(frozen)]
@@ -232,6 +235,13 @@ impl PyDistributedPhysicalPlanRunner {
         // Create subscribers list with progress bar always included
         let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+
+        // Add the TaskLifecycleEventSubscriber if task emitting enabled
+        if task_events_enabled() {
+            subscribers.push(Box::new(TaskLifecycleEventSubscriber::new(
+                plan.plan.query_id(),
+            )));
+        }
 
         // Only add DashboardStatisticsSubscriber if RAY_DISABLE_DASHBOARD is not set to "1"
         if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() != Ok("1") {
