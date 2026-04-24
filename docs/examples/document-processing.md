@@ -46,7 +46,7 @@ from pydantic_to_pyarrow import get_pyarrow_schema
 from sentence_transformers import SentenceTransformer
 
 import daft
-from daft import Series, col, udf
+from daft import Series, col
 ```
 
 ## Our PDF Data
@@ -243,7 +243,7 @@ We will create a user defined function (UDF) to allow Daft to load and parse our
 #                  ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
 #                                        (b) and here!
 #                                       ⌄⌄⌄⌄⌄⌄⌄⌄⌄
-@udf(return_dtype=daft_pyarrow_datatype(ParsedPdf))
+@daft.cls()
 class LoadDirectAndParsePdf:
     def __init__(self, ocr: bool, page_limit: Optional[int]) -> None:
         self.ocr = ocr
@@ -259,6 +259,7 @@ class LoadDirectAndParsePdf:
         parsed_doc.pdf_path = url
         return parsed_doc
 
+    @daft.method.batch(return_dtype=daft_pyarrow_datatype(ParsedPdf))
     def __call__(self, urls: Series, pdf_bytes: Series) -> Series:
         return Series.from_pylist(
             # NOTE: it is **vital** to call .model_dump() on each Pydantic class.
@@ -450,7 +451,7 @@ class PipelineConfig(BaseModel):
     group_paragraphs: bool = True
 
 
-@udf(return_dtype=daft_pyarrow_datatype(list[Processed]))
+@daft.cls()
 class DocProcessor:
     def __init__(self, *, row_tolerance: int, y_thresh: int, x_thresh: int, group_paragraphs: bool) -> None:
         self.row_tolerance = row_tolerance
@@ -473,6 +474,7 @@ class DocProcessor:
                 indexed_texts=[IndexedTextBlock(index=i, text=t) for i, t in enumerate(text_blocks)],
             )
 
+    @daft.method.batch(return_dtype=daft_pyarrow_datatype(list[Processed]))
     def __call__(self, parsed: Series) -> Series:
         return Series.from_pylist(
             # Again, note the call to .model_dump() on each Pydantic object.
@@ -637,10 +639,9 @@ def revert_to_tb(tl: TextLine) -> TextBlock:
 Now that we have nice groups of text, we can generate embeddings for them! We will define a functor that makes a UDF from a `SentenceTransformer` model. The resulting UDF will make sure that the generated values are (1) of a fixed size and (2) of a known datatype (your classic 32-bit floating point number!).
 
 ```python
-@udf(
-    return_dtype=daft.DataType.embedding(daft.DataType.float32(), 384),
-    num_gpus=1,
-    concurrency=1,  # setting concurrency to initialize model once
+@daft.cls(
+    gpus=1,
+    max_concurrency=1,  # cap to one instance so the model is initialized once
 )
 class TextEmbedder:
     def __init__(self, model_name: str):
@@ -656,6 +657,7 @@ class TextEmbedder:
 
         self.model = model
 
+    @daft.method.batch(return_dtype=daft.DataType.embedding(daft.DataType.float32(), 384))
     def __call__(self, texts: Series) -> Series:
         with torch.no_grad():
             embeddings: np.ndarray[float] = self.model.encode(
@@ -741,15 +743,15 @@ df = df.with_column(
     #       This UDF mainly uses the downloaded PDF contents, but it also
     #       includes the URL to make a well-formed ParsedPdf instance.
     #
-    #       We're configuring how the UDF operates by supplying the
-    #       constructor arguments using the `with_init_args` class method.
+    #       We configure the UDF by passing constructor arguments when
+    #       we instantiate the class.
     #
     #       These arguments are applied here   and here
-    #                                    ⌄⌄⌄  ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
-    LoadDirectAndParsePdf.with_init_args(ocr, page_limit)(col("url"), col("pdf_bytes")),
+    #                            ⌄⌄⌄  ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
+    LoadDirectAndParsePdf(ocr, page_limit)(col("url"), col("pdf_bytes")),
     #       We're providing the two columns to our UDF
-    #                                                     ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
-    #                                                         here        and here
+    #                                          ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+    #                                              here        and here
 ).exclude("pdf_bytes")
 print(df.schema())
 ```
@@ -761,7 +763,7 @@ A note on how Daft works -- in our above UDF application, we're providing column
 Breaking down the PDF loading and parsing UDF call, the first part is actually constructing the UDF instance:
 
 ```python
-LoadDirectAndParsePdf.with_init_args(ocr, page_limit)
+LoadDirectAndParsePdf(ocr, page_limit)
 ```
 
 While the second part is actually applying that UDF to our two columns, `url` and `pdf_bytes`:
@@ -773,7 +775,7 @@ While the second part is actually applying that UDF to our two columns, `url` an
 Note that this is equivalent:
 
 ```python
-f = LoadDirectAndParsePdf.with_init_args(ocr, page_limit)
+f = LoadDirectAndParsePdf(ocr, page_limit)
 f(col("url"), col("pdf_bytes"))
 ```
 
@@ -784,7 +786,7 @@ Process the parsed document representation: perform custom logic grouping text b
 ```python
 df = df.with_column(
     "processed_raw",
-    DocProcessor.with_init_args(**config.model_dump())(col("parsed")),
+    DocProcessor(**config.model_dump())(col("parsed")),
 ).exclude("parsed")
 print(df.schema())
 ```
@@ -834,7 +836,7 @@ print(df.schema())
 The final step is to produce embeddings for each piece of text:
 
 ```python
-embedder = TextEmbedder.with_init_args(model_name=model_name)
+embedder = TextEmbedder(model_name=model_name)
 df = df.with_column("embeddings", embedder(col("text")))
 ```
 

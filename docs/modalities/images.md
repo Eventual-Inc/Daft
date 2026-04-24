@@ -220,7 +220,7 @@ Daft data may contain `None` (null) values. Your UDF must handle these gracefull
 
 ### 2. Choosing the Right `return_dtype`
 
-The `return_dtype` argument in `@daft.func` or `@daft.udf` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
+The `return_dtype` argument in `@daft.func`, `@daft.func.batch`, or `@daft.method.batch` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
 
 - **`daft.DataType.tensor(dtype)`**: Best for returning numerical data (numpy arrays, torch tensors). This allows Daft to treat the column as a native tensor type, enabling further vectorized operations.
 - **`daft.DataType.binary()`**: Best for returning raw bytes (e.g. encoded PNG/JPEG data). This is often more memory efficient than full bitmaps, and avoids the pickling overhead associated with Python objects.
@@ -440,7 +440,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
 === "🐍 Python"
 
     ```python
-    @daft.udf(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
+    @daft.cls()
     class ClassifyImages:
         def __init__(self):
             # Perform expensive initializations - create and load the pre-trained model
@@ -448,6 +448,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             self.utils = torch.hub.load("NVIDIA/DeepLearningExamples:torchhub", "nvidia_convnets_processing_utils")
             self.model.eval().to(torch.device("cpu"))
 
+        @daft.method.batch(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
         def __call__(self, images_urls):
             batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in images_urls]).to(torch.device("cpu"))
 
@@ -458,12 +459,13 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             return [result[0] for result in results]
     ```
 
-Now you're ready to call this function on the `urls` column and store the outputs in a new column we'll call `classify_breed`:
+Now you're ready to instantiate the classifier and call it on the `urls` column, storing the outputs in a new column we'll call `classify_breed`:
 
 === "🐍 Python"
 
     ```python
-    classified_images_df = df_family.with_column("classify_breed", ClassifyImages(daft.col("urls")))
+    classifier = ClassifyImages()
+    classified_images_df = df_family.with_column("classify_breed", classifier(daft.col("urls")))
     classified_images_df.select("dog_name", "image", "classify_breed").show()
     ```
 
