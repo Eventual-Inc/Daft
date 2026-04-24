@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import { ExecutingState, OperatorInfo, PhysicalPlanNode, StageDescriptor } from "./types";
 import {
   getStatusIcon,
   formatStatValue,
@@ -222,15 +222,27 @@ export default function PhysicalPlanTree({
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
   let plan: PhysicalPlanNode | null = null;
+  let stages: StageDescriptor[] = [];
   const planJson = exec_state.exec_info.physical_plan;
   if (planJson) {
     try {
       const parsed = JSON.parse(planJson);
       plan = parsed.plan ?? parsed;
+      stages = parsed.stages ?? [];
     } catch {
       // fall through — will show table
     }
   }
+
+  const nodeStageMap = useMemo(() => {
+    const map = new Map<number, StageDescriptor>();
+    for (const stage of stages) {
+      for (const nodeId of stage.operator_node_ids) {
+        map.set(nodeId, stage);
+      }
+    }
+    return map;
+  }, [stages]);
 
   const operators = exec_state.exec_info.operators;
   const maxCpuSec = Math.max(
@@ -260,11 +272,24 @@ export default function PhysicalPlanTree({
 
       if (parent.is_shuffle_boundary && parent.shuffle_info) {
         const info = parent.shuffle_info;
+        const parentStage = nodeStageMap.get(parent.id);
+        const childStage = nodeStageMap.get(child.id);
         return (
           <div className="flex flex-col items-center">
-            <div className="h-2" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+            {/* Upper stage label */}
+            {parentStage && (
+              <div className="flex items-center gap-2 my-1">
+                <div className="w-8 h-px bg-zinc-700" />
+                <span className={`${main.className} text-[9px] font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap`}>
+                  {parentStage.name}
+                </span>
+                <div className="w-8 h-px bg-zinc-700" />
+              </div>
+            )}
+            <div className="h-1.5" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+            {/* Shuffle badge */}
             <div
-              className={`${main.className} my-1 px-2.5 py-1 rounded-md border border-dashed border-amber-500/50 bg-zinc-900/90 flex items-center gap-1.5`}
+              className={`${main.className} my-0.5 px-2.5 py-1 rounded-md border border-dashed border-amber-500/50 bg-zinc-900/90 flex items-center gap-1.5`}
             >
               <span className="text-[10px] font-mono text-amber-400/80 whitespace-nowrap">
                 shuffle
@@ -273,7 +298,17 @@ export default function PhysicalPlanTree({
                 {info.strategy} → {info.num_partitions}p
               </span>
             </div>
-            <div className="h-2" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+            <div className="h-1.5" style={{ width: "1px", backgroundColor: "rgb(82, 82, 91)" }} />
+            {/* Lower stage label */}
+            {childStage && childStage !== parentStage && (
+              <div className="flex items-center gap-2 my-1">
+                <div className="w-8 h-px bg-zinc-700" />
+                <span className={`${main.className} text-[9px] font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap`}>
+                  {childStage.name}
+                </span>
+                <div className="w-8 h-px bg-zinc-700" />
+              </div>
+            )}
           </div>
         );
       }
@@ -287,7 +322,7 @@ export default function PhysicalPlanTree({
         />
       );
     },
-    [operators, maxBytes],
+    [operators, maxBytes, nodeStageMap],
   );
 
   return (

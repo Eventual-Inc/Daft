@@ -64,11 +64,25 @@ export type PhysicalPlanNode = {
   shuffle_info?: ShuffleInfo;
 };
 
+export type StageDescriptor = {
+  id: number;
+  name: string;
+  operator_node_ids: number[];
+};
+
+export type ShuffleDescriptor = {
+  write_stage_id: number;
+  read_stage_id: number;
+  strategy: string;
+  num_partitions: number;
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
-  // TODO: Logs
+  stages?: StageDescriptor[];
+  shuffles?: ShuffleDescriptor[];
 };
 
 export type ExecutingState = {
