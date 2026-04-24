@@ -1,12 +1,15 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
-use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
+use common_partitioning::PartitionRef;
+use daft_local_plan::{
+    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    ShuffleBackend as LocalShuffleBackend, ShuffleReadBackend,
+};
+use daft_logical_plan::stats::StatsState;
+use daft_partition_refs::FlightPartitionRef;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream},
+    pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl},
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -16,7 +19,6 @@ mod flight;
 mod ray;
 
 pub(crate) use flight::FlightShuffleBackendConfig;
-use flight::FlightShuffleReadSpec;
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
@@ -28,17 +30,10 @@ pub(crate) enum DistributedShuffleBackend {
     Flight(FlightShuffleBackendConfig),
 }
 
-pub(crate) struct ShuffleBackendWriteConfig {
-    pub(crate) input_node: TaskBuilderStream,
-    pub(crate) producer: Arc<dyn PipelineNodeImpl>,
-    pub(crate) backend: RepartitionWriteBackend,
-    pub(crate) repartition_spec: RepartitionSpec,
-}
-
+#[derive(Clone)]
 pub(crate) struct ShuffleBackend {
     backend: DistributedShuffleBackend,
     schema: SchemaRef,
-    num_partitions: usize,
     node_id: NodeID,
 }
 
@@ -46,12 +41,10 @@ impl ShuffleBackend {
     pub(crate) fn new(
         context: &PipelineNodeContext,
         schema: SchemaRef,
-        num_partitions: usize,
         backend: DistributedShuffleBackend,
     ) -> Self {
         Self {
             schema,
-            num_partitions,
             node_id: context.node_id,
             backend: match backend {
                 DistributedShuffleBackend::Ray => DistributedShuffleBackend::Ray,
@@ -70,8 +63,12 @@ impl ShuffleBackend {
         &self.backend
     }
 
-    pub(crate) fn num_partitions(&self) -> usize {
-        self.num_partitions
+    pub(crate) fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
+
+    pub(crate) fn node_id(&self) -> NodeID {
+        self.node_id
     }
 
     pub(crate) fn register_cleanup(&self, plan_context: &mut PlanExecutionContext) {
@@ -83,33 +80,82 @@ impl ShuffleBackend {
         }
     }
 
-    pub(crate) fn build_write_stage(&self, config: ShuffleBackendWriteConfig) -> TaskBuilderStream {
-        let num_partitions = self.num_partitions;
-        let schema = self.schema.clone();
+    /// The local-plan `ShuffleBackend` matching this distributed shuffle
+    /// backend, for use when building local ops like `IntoPartitions`,
+    /// `GatherWrite`, or `RepartitionWrite`.
+    pub(crate) fn local_shuffle_backend(&self) -> LocalShuffleBackend {
+        match self.backend.clone() {
+            DistributedShuffleBackend::Ray => LocalShuffleBackend::Ray,
+            DistributedShuffleBackend::Flight(cfg) => LocalShuffleBackend::Flight {
+                shuffle_id: cfg.shuffle_id,
+                shuffle_dirs: cfg.shuffle_dirs,
+                compression: cfg.compression,
+            },
+        }
+    }
+
+    /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
+    /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
+    /// and then applies `wrap_plan` on top. The partition refs are attached to
+    /// the task via the backend-appropriate API (`with_psets` /
+    /// `with_flight_shuffle_reads`).
+    pub(crate) fn build_refs_task_builder<F>(
+        &self,
+        partition_refs: Vec<PartitionRef>,
+        node: &dyn PipelineNodeImpl,
+        wrap_plan: F,
+    ) -> SwordfishTaskBuilder
+    where
+        F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
+    {
         let node_id = self.node_id;
-        config
-            .input_node
-            .pipeline_instruction(config.producer, move |input| {
-                LocalPhysicalPlan::repartition_write(
-                    input,
-                    num_partitions,
-                    schema.clone(),
-                    config.backend.clone(),
-                    config.repartition_spec.clone(),
+        match &self.backend {
+            DistributedShuffleBackend::Ray => {
+                let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
+                let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+                    node_id,
+                    self.schema.clone(),
+                    total_size_bytes,
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
+                );
+                let plan = wrap_plan(in_memory_scan);
+                SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
+            }
+            DistributedShuffleBackend::Flight(_) => {
+                let flight_refs = partition_refs
+                    .into_iter()
+                    .map(|p| {
+                        p.as_any()
+                            .downcast_ref::<FlightPartitionRef>()
+                            .expect("expected flight partition ref")
+                            .clone()
+                    })
+                    .collect::<Vec<_>>();
+                let shuffle_read = LocalPhysicalPlan::shuffle_read(
+                    node_id,
+                    self.schema.clone(),
+                    ShuffleReadBackend::Flight,
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                );
+                let plan = wrap_plan(shuffle_read);
+                SwordfishTaskBuilder::new(plan, node, node_id).with_flight_shuffle_reads(
+                    node_id,
+                    vec![FlightShuffleReadInput { refs: flight_refs }],
                 )
-            })
+            }
+        }
     }
 
     pub(crate) async fn emit_read_tasks(
         &self,
-        read_spec: ShuffleBackendReadSpec,
+        partition_groups: Vec<Vec<MaterializedOutput>>,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        match (&self.backend, read_spec) {
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Ray { partition_groups }) => {
+        match &self.backend {
+            DistributedShuffleBackend::Ray => {
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -119,43 +165,16 @@ impl ShuffleBackend {
                 )
                 .await
             }
-            (
-                DistributedShuffleBackend::Flight(backend),
-                ShuffleBackendReadSpec::Flight {
-                    server_cache_mapping,
-                },
-            ) => {
-                let read_spec: FlightShuffleReadSpec =
-                    flight::read_spec_from_server_cache_mapping(backend, server_cache_mapping);
+            DistributedShuffleBackend::Flight(_) => {
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
-                    self.num_partitions,
-                    read_spec,
+                    partition_groups,
                     node,
                     result_tx,
                 )
                 .await
             }
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Flight { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Ray shuffle read spec".to_string(),
-                ))
-            }
-            (DistributedShuffleBackend::Flight(_), ShuffleBackendReadSpec::Ray { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Flight shuffle read spec".to_string(),
-                ))
-            }
         }
     }
-}
-
-pub(crate) enum ShuffleBackendReadSpec {
-    Ray {
-        partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
-    },
-    Flight {
-        server_cache_mapping: std::collections::HashMap<String, Vec<u32>>,
-    },
 }

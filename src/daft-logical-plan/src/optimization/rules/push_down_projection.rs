@@ -13,7 +13,7 @@ use indexmap::IndexSet;
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, Join, Pivot, Project, UDFProject},
     source_info::SourceInfo,
 };
 
@@ -141,6 +141,18 @@ impl PushDownProjection {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
                 let required_columns = plan.required_columns().single();
+                // If the Source has a checkpoint, only allow projection pushdown
+                // when the `on=` key column is still required downstream —
+                // otherwise pruning would strip the key before the anti-join
+                // built by `RewriteCheckpointSource` can use it. When the user's
+                // query legitimately doesn't reference the key (e.g. `.select('value')`),
+                // keep the full Source schema and let the Project trim columns
+                // above the anti-join in memory.
+                if let Some(cfg) = source.checkpoint.as_ref()
+                    && !required_columns.contains(cfg.key_column.as_str())
+                {
+                    return Ok(Transformed::no(plan));
+                }
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
@@ -154,15 +166,19 @@ impl PushDownProjection {
                                 .cloned()
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema);
-                            let new_source: LogicalPlan = Source::new(
-                                schema.into(),
-                                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
-                                    external_info.pushdowns.with_columns(Some(Arc::new(
-                                        required_columns.iter().cloned().collect(),
-                                    ))),
-                                ))),
-                            )
-                            .into();
+                            let mut new_source_node =
+                                source
+                                    .clone()
+                                    .with_source_info(Arc::new(SourceInfo::Physical(
+                                        external_info.with_pushdowns(
+                                            external_info.pushdowns.with_columns(Some(Arc::new(
+                                                required_columns.iter().cloned().collect(),
+                                            ))),
+                                        ),
+                                    )));
+                            new_source_node.output_schema = schema.into();
+                            let new_source: LogicalPlan =
+                                LogicalPlan::Source(new_source_node).into();
                             let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
                             // Retry optimization now that the upstream node is different.
                             let new_plan = self
@@ -505,6 +521,7 @@ impl PushDownProjection {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
             LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
+            LogicalPlan::StageCheckpointKeys(_) => Ok(Transformed::no(plan)),
             LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }
     }

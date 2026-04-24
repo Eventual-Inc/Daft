@@ -1,4 +1,5 @@
 pub(crate) mod stats;
+pub(crate) mod task_lifecycle;
 
 use std::{
     collections::HashMap,
@@ -13,7 +14,10 @@ pub use stats::RuntimeStats;
 
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    scheduling::task::{TaskContext, TaskName, TaskStatus},
+    scheduling::{
+        task::{TaskContext, TaskName, TaskStatus},
+        worker::WorkerId,
+    },
     statistics::stats::RuntimeNodeManager,
 };
 
@@ -26,17 +30,19 @@ pub(crate) enum TaskEvent {
         context: TaskContext,
         name: TaskName,
     },
-
     Scheduled {
         context: TaskContext,
     },
     Completed {
         context: TaskContext,
         stats: ExecutionStats,
+        worker_id: WorkerId,
     },
     Failed {
         context: TaskContext,
         reason: String,
+        worker_id: Option<WorkerId>,
+        retryable: bool,
     },
     Cancelled {
         context: TaskContext,
@@ -44,6 +50,46 @@ pub(crate) enum TaskEvent {
 }
 
 impl TaskEvent {
+    pub fn new(context: TaskContext, result: &DaftResult<TaskStatus>, worker_id: WorkerId) -> Self {
+        match result {
+            Ok(task_status) => match task_status {
+                TaskStatus::Success { stats, .. } => Self::Completed {
+                    context,
+                    stats: stats.clone(),
+                    worker_id,
+                },
+                TaskStatus::Failed { error } => Self::Failed {
+                    context,
+                    reason: error.to_string(),
+                    worker_id: Some(worker_id),
+                    retryable: false,
+                },
+                TaskStatus::Cancelled => Self::Cancelled { context },
+                // WorkerDied and WorkerUnavailable are the only
+                // task statuses that get retried in the dispatcher
+                // src/daft-distributed/src/scheduling/dispatcher.rs
+                TaskStatus::WorkerDied => Self::Failed {
+                    context,
+                    reason: "Worker died".to_string(),
+                    worker_id: Some(worker_id),
+                    retryable: true,
+                },
+                TaskStatus::WorkerUnavailable => Self::Failed {
+                    context,
+                    reason: "Worker unavailable".to_string(),
+                    worker_id: Some(worker_id),
+                    retryable: true,
+                },
+            },
+            Err(error) => Self::Failed {
+                context,
+                reason: error.to_string(),
+                worker_id: Some(worker_id),
+                retryable: false,
+            },
+        }
+    }
+
     pub fn context(&self) -> &TaskContext {
         match self {
             Self::Submitted { context, .. } => context,
@@ -51,36 +97,6 @@ impl TaskEvent {
             Self::Completed { context, .. } => context,
             Self::Failed { context, .. } => context,
             Self::Cancelled { context, .. } => context,
-        }
-    }
-}
-
-impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
-    fn from((context, task_result): (TaskContext, &DaftResult<TaskStatus>)) -> Self {
-        match task_result {
-            Ok(task_status) => match task_status {
-                TaskStatus::Success { stats, .. } => Self::Completed {
-                    context,
-                    stats: stats.clone(),
-                },
-                TaskStatus::Failed { error } => Self::Failed {
-                    context,
-                    reason: error.to_string(),
-                },
-                TaskStatus::Cancelled => Self::Cancelled { context },
-                TaskStatus::WorkerDied => Self::Failed {
-                    context,
-                    reason: "Worker died".to_string(),
-                },
-                TaskStatus::WorkerUnavailable => Self::Failed {
-                    context,
-                    reason: "Worker unavailable".to_string(),
-                },
-            },
-            Err(error) => Self::Failed {
-                context,
-                reason: error.to_string(),
-            },
         }
     }
 }
@@ -113,7 +129,7 @@ impl StatisticsManager {
             let node_info = Arc::new(NodeInfo {
                 name: node.name(),
                 id: node.node_id() as usize,
-                node_origin_id: node.node_id() as usize,
+                node_origin_id: None,
                 node_type: node.context().node_type.clone(),
                 node_category: node.context().node_category.clone(),
                 node_phase: None,

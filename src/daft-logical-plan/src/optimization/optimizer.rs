@@ -12,6 +12,11 @@ use super::{
         ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans,
         OptimizerRule, PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
+        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
+        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
+        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
+        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
+        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
         SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
         SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
@@ -216,6 +221,11 @@ impl OptimizerBuilder {
                 vec![Box::new(PushDownShard::new())],
                 RuleExecutionStrategy::Once,
             ),
+            // --- Checkpoint filter: must run before MaterializeScans.
+            RuleBatch::new(
+                vec![Box::new(RewriteCheckpointSource::new())],
+                RuleExecutionStrategy::Once,
+            ),
             // --- Simplify expressions before scans are materialized ---
             RuleBatch::new(
                 vec![Box::new(SimplifyExpressionsRule::new())],
@@ -235,10 +245,14 @@ impl OptimizerBuilder {
         self
     }
 
-    pub fn reorder_joins(mut self, cfg: Option<Arc<DaftExecutionConfig>>) -> Self {
+    pub fn reorder_joins(
+        mut self,
+        cfg: Option<Arc<DaftExecutionConfig>>,
+        use_dp_ccp: bool,
+    ) -> Self {
         self.rule_batches.push(RuleBatch::new(
             vec![
-                Box::new(ReorderJoins::new(cfg.clone())),
+                Box::new(ReorderJoins::new(cfg.clone(), use_dp_ccp)),
                 Box::new(PushDownFilter::new(self.config.strict_pushdown)),
                 Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new(cfg)),

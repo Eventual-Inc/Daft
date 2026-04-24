@@ -58,6 +58,7 @@ pub enum LogicalPlan {
     Sample(Sample),
     Shuffle(Shuffle),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    StageCheckpointKeys(StageCheckpointKeys),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
     TopN(TopN),
@@ -184,6 +185,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
+            Self::StageCheckpointKeys(StageCheckpointKeys { input, .. }) => input.schema(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
             Self::Window(Window { schema, .. }) => schema.clone(),
             Self::TopN(TopN { input, .. }) => input.schema(),
@@ -200,6 +202,7 @@ impl LogicalPlan {
             | Self::IntoPartitions(..)
             | Self::Offset(..)
             | Self::Sample(..)
+            | Self::StageCheckpointKeys(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
             Self::Concat(..) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
@@ -421,6 +424,7 @@ impl LogicalPlan {
             Self::Sample(..) => "Sample",
             Self::Shuffle(..) => "Shuffle",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::StageCheckpointKeys(..) => "StageCheckpointKeys",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
             Self::TopN(..) => "TopN",
@@ -453,6 +457,7 @@ impl LogicalPlan {
             | Self::Sample(Sample { stats_state, .. })
             | Self::Shuffle(Shuffle { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. })
             | Self::VLLMProject(VLLMProject { stats_state, .. }) => stats_state,
@@ -498,6 +503,9 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
+            Self::StageCheckpointKeys(plan) => {
+                Self::StageCheckpointKeys(plan.with_materialized_stats())
+            }
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
             Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
             Self::VLLMProject(plan) => Self::VLLMProject(plan.with_materialized_stats()),
@@ -539,6 +547,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::StageCheckpointKeys(stage) => stage.multiline_display(),
             Self::SubqueryAlias(alias) => alias.multiline_display(),
             Self::Window(window) => window.multiline_display(),
             Self::TopN(top_n) => top_n.multiline_display(),
@@ -575,6 +584,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
+            Self::StageCheckpointKeys(StageCheckpointKeys { input, .. }) => vec![input],
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
             Self::Window(Window { input, .. }) => vec![input],
             Self::TopN(TopN { input, .. }) => vec![input],
@@ -771,6 +781,12 @@ impl LogicalPlan {
                     input.clone(),
                     expr.clone(),
                     output_column_name.clone(),
+                )),
+                Self::StageCheckpointKeys(StageCheckpointKeys {
+                    checkpoint_config, ..
+                }) => Self::StageCheckpointKeys(StageCheckpointKeys::new(
+                    input.clone(),
+                    checkpoint_config.clone(),
                 )),
                 Self::Concat(_)
                 | Self::Intersect(_)
@@ -1035,6 +1051,7 @@ impl LogicalPlan {
             | Self::Sample(Sample { plan_id, .. })
             | Self::Shuffle(Shuffle { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
             | Self::Window(Window { plan_id, .. })
             | Self::TopN(TopN { plan_id, .. })
@@ -1069,6 +1086,7 @@ impl LogicalPlan {
             | Self::Sample(Sample { node_id, .. })
             | Self::Shuffle(Shuffle { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { node_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
             | Self::Window(Window { node_id, .. })
             | Self::TopN(TopN { node_id, .. })
@@ -1109,6 +1127,9 @@ impl LogicalPlan {
             Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
+            }
+            Self::StageCheckpointKeys(stage) => {
+                Self::StageCheckpointKeys(stage.with_plan_id(plan_id))
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_plan_id(plan_id)),
             Self::Window(window) => Self::Window(window.with_plan_id(plan_id)),
@@ -1152,6 +1173,9 @@ impl LogicalPlan {
             Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_node_id(node_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
+            }
+            Self::StageCheckpointKeys(stage) => {
+                Self::StageCheckpointKeys(stage.with_node_id(node_id))
             }
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_node_id(node_id)),
             Self::Window(window) => Self::Window(window.with_node_id(node_id)),

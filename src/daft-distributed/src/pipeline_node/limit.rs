@@ -11,9 +11,7 @@ use daft_logical_plan::stats::{PlanStats, StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{
-    DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
-};
+use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -73,6 +71,10 @@ impl RuntimeStats for LimitStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
     }
 }
 
@@ -301,10 +303,7 @@ impl LimitNode {
             let mut total_num_rows: usize = 0;
             for future in local_limits {
                 let maybe_result = future.await?;
-                if let Some(materialized_output) = maybe_result
-                    .map(TaskOutput::into_materialized)
-                    .transpose()?
-                {
+                if let Some(materialized_output) = maybe_result {
                     total_num_rows += materialized_output.num_rows();
                     // Process the result and get the next tasks
                     let next_tasks =

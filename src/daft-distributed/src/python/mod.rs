@@ -10,11 +10,12 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use daft_partition_refs::RayPartitionRef;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{FlightShufflePartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -24,7 +25,7 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
+    python::ray::RayTaskResult,
     statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
 };
 
@@ -271,8 +272,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
-    parent.add_class::<RayPartitionRef>()?;
-    parent.add_class::<FlightShufflePartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

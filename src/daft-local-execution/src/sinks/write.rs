@@ -29,6 +29,7 @@ pub(crate) struct WriteStats {
     bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
 
     node_kv: Vec<KeyValue>,
 }
@@ -60,6 +61,7 @@ impl RuntimeStats for WriteStats {
                 None,
                 Some(UNIT_BYTES.into()),
             ),
+            num_tasks: meter.num_tasks_metric(),
 
             node_kv,
         }
@@ -76,6 +78,7 @@ impl RuntimeStats for WriteStats {
             rows_written,
             bytes_written,
             bytes_in: self.bytes_in.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -97,6 +100,10 @@ impl RuntimeStats for WriteStats {
 
     // bytes_out for WriteSink doesn't make sense — bytes_written is the meaningful metric.
     fn add_bytes_out(&self, _bytes: u64) {}
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
 }
 
 #[derive(Debug)]
@@ -117,13 +124,23 @@ pub enum WriteFormat {
 
 pub(crate) struct WriteState {
     writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
+    runtime_stats: Option<Arc<WriteStats>>,
+    total_rows_input: usize,
+    reported_rows: usize,
+    reported_bytes: usize,
 }
 
 impl WriteState {
     pub fn new(
         writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     ) -> Self {
-        Self { writer }
+        Self {
+            writer,
+            runtime_stats: None,
+            total_rows_input: 0,
+            reported_rows: 0,
+            reported_bytes: 0,
+        }
     }
 }
 
@@ -165,7 +182,13 @@ impl BlockingSink for WriteSink {
         spawner
             .spawn(
                 async move {
+                    if state.runtime_stats.is_none() {
+                        state.runtime_stats = Some(runtime_stats.clone());
+                    }
+                    state.total_rows_input += input.len();
                     let write_result = state.writer.write(input).await?;
+                    state.reported_rows += write_result.rows_written;
+                    state.reported_bytes += write_result.bytes_written;
                     runtime_stats.add_write_result(write_result);
                     Ok(state)
                 },
@@ -187,6 +210,18 @@ impl BlockingSink for WriteSink {
                     let mut results = vec![];
                     for mut state in states {
                         results.extend(state.writer.close().await?);
+                        if let Some(stats) = &state.runtime_stats {
+                            let total_bytes: usize = state.writer.bytes_per_file().iter().sum();
+                            let bytes_delta = total_bytes.saturating_sub(state.reported_bytes);
+                            let rows_delta =
+                                state.total_rows_input.saturating_sub(state.reported_rows);
+                            if bytes_delta > 0 || rows_delta > 0 {
+                                stats.add_write_result(WriteResult {
+                                    bytes_written: bytes_delta,
+                                    rows_written: rows_delta,
+                                });
+                            }
+                        }
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
                     Ok(BlockingSinkOutput::Partitions(vec![mp]))

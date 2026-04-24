@@ -74,7 +74,7 @@ def transcribe(file: daft.File) -> str:
     return result['text']
 
 # Extract bytes from struct column
-df = df.select(df["audio"].struct.get("bytes").alias("bytes"))
+df = df.select(df["audio"].get("bytes").alias("bytes"))
 # | ---------- |
 # | bytes      |
 # | ---------- |
@@ -108,7 +108,7 @@ You can also combine these operations into a single pipeline:
 ```python
 df = daft.read_parquet("hf://datasets/MrDragonFox/Elise")
 df.select(
-    transcribe(file(df["audio"].struct.get("bytes")))
+    transcribe(file(df["audio"].get("bytes")))
 ).write_csv("transcriptions.csv")
 ```
 
@@ -167,7 +167,7 @@ df.write_csv("transcriptions.csv")
 Now let's run it!
 
 ```bash
-uv run example_1.py
+uv run example_2.py
 ```
 
 We should see an output that looks like this:
