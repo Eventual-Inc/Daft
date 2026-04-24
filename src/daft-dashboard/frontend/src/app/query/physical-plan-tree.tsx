@@ -162,7 +162,7 @@ function TasksPanel({ stats }: { stats: Record<string, OperatorInfo["stats"][str
     { key: "attributed", n: attributed, bg: "bg-zinc-100" },
     { key: "completed-other", n: completedUnattributed, bg: "bg-zinc-600" },
     { key: "cancelled", n: cancelled, bg: "bg-zinc-700" },
-    { key: "failed", n: failed, bg: "bg-red-900" },
+    { key: "failed", n: failed, bg: "bg-red-950/70" },
     { key: "active", n: active, bg: "bg-zinc-400" },
   ];
 
@@ -208,7 +208,7 @@ function TasksPanel({ stats }: { stats: Record<string, OperatorInfo["stats"][str
       )}
       <div className="space-y-0.5 pt-0.5">
         {cancelled > 0 && row("cancelled", cancelled)}
-        {failed > 0 && row("failed", failed, "text-red-700")}
+        {failed > 0 && row("failed", failed, "text-red-900/80")}
         {active > 0 && row("active", active)}
       </div>
     </div>
