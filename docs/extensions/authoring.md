@@ -13,7 +13,7 @@ Daft supports native Rust extensions by leveraging a stable C ABI based on the
 Extensions are **not coupled** to any particular Arrow library version. The ABI boundary uses
 plain C structs (`ArrowSchema`, `ArrowArray`) so your extension can use any arrow-rs version
 (or even a different Arrow implementation entirely). Today we support authoring native
-scalar functions and aggregate functions (UDAFs).
+scalar functions(UDFs) and aggregate functions (UDAFs).
 
 ## Example
 
@@ -359,11 +359,6 @@ impl DaftExtension for MyExtension {
     }
 }
 ```
-
-!!! tip "State fields"
-
-    Keep state schemas simple and fixed — the `state_fields` implementation should not
-    depend on input types, because the finalize stage may call it with no input schemas.
 
 Now we define the python symbols for use in the Expression DSL; we link to rust via `daft.get_function` for scalars and `daft.get_aggregate_function` for aggregates.
 
