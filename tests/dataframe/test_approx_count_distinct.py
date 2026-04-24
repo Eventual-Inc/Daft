@@ -5,6 +5,8 @@ import pytest
 
 import daft
 from daft import col
+from tests.conftest import get_tests_daft_runner_name
+from tests.utils import explain_to_text
 
 TESTS = [
     [[], 0],
@@ -131,3 +133,22 @@ def test_approx_count_distinct_groupby_multiple_partitions(with_morsel_size):
     result_dict = result.to_pydict()
     assert result_dict["group"] == ["A", "B", "C"]
     assert result_dict["approx_distinct"] == [5, 1, 3]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Requires Ray runner repartitioning")
+def test_approx_count_distinct_groupby_uses_two_stage_hll_plan(with_morsel_size):
+    df = daft.from_pydict(
+        {
+            "group": ["A"] * 5 + ["B"] * 5 + ["C"] * 5,
+            "values": [1, 2, 3, 4, 5] + [10, 10, 10, 10, 10] + [1, 1, 2, 2, 3],
+        }
+    ).into_partitions(3)
+
+    plan = explain_to_text(
+        df.groupby("group").agg(col("values").approx_count_distinct().alias("approx_distinct")),
+        only_physical_plan=True,
+    )
+
+    assert plan.count("Group-By Aggregate") == 2
+    assert "approx_sketch" in plan
+    assert "merge_sketch" in plan
