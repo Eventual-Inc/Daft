@@ -32,7 +32,7 @@
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
-        * [Ignoring Corrupt Files](connectors/ignore-corrupt-files.md)
+        * [Generic File Source Options](connectors/generic-file-source-options.md)
         * [Custom Connectors](connectors/custom.md)
         * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)

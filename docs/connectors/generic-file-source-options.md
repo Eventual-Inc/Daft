@@ -1,8 +1,12 @@
-# Ignoring Corrupt Files
+# Generic File Source Options
+
+These options apply to all file-based readers (`read_parquet`, `read_csv`, `read_iceberg`). They are not tied to any single connector or format.
+
+## Ignoring Corrupt Files
 
 When reading large collections of files, some files may be unreadable — corrupt, truncated, or deleted between the time Daft lists them and the time it reads them. By default, Daft raises an error and halts the query. The `ignore_corrupt_files` option changes that behavior: qualifying files are silently skipped and the query continues with the remaining data.
 
-## Enabling `ignore_corrupt_files`
+### Enabling `ignore_corrupt_files`
 
 Pass `ignore_corrupt_files=True` to any of the supported reader functions:
 
@@ -21,7 +25,7 @@ df = daft.read_iceberg(table, ignore_corrupt_files=True)
 df.collect()
 ```
 
-## What counts as "corrupt"
+### What counts as "corrupt"
 
 Daft skips a file when it encounters a problem that is specific to the file itself and cannot be resolved by retrying:
 
@@ -40,11 +44,11 @@ Daft does **not** skip files for transient infrastructure problems, because thos
 
 This distinction matters. Silently retrying a permission error would mask a misconfiguration that needs human attention.
 
-## Observability: knowing what was skipped
+### Observability: knowing what was skipped
 
 `ignore_corrupt_files` is designed around the principle that **errors should be visible, not hidden**. Daft provides two complementary observability mechanisms.
 
-### Python warning logs
+#### Python warning logs
 
 Daft emits a `WARNING`-level log message for every skipped file, including the file path and the reason:
 
@@ -60,9 +64,9 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 ```
 
-### `df.skipped_corrupt_files` — programmatic access
+#### `df.skipped_corrupt_files` — programmatic access
 
-After calling `.collect()`, the `skipped_corrupt_files` property returns the list of skipped `(path, reason)` pairs as structured data, so your pipeline code can act on them:
+After materializing the dataframe with `.collect()`, the `skipped_corrupt_files` property returns the list of skipped `(path, reason)` pairs as structured data, so your pipeline code can act on them:
 
 ```python
 df = daft.read_parquet("s3://my-bucket/data/**/*.parquet", ignore_corrupt_files=True)
@@ -73,9 +77,9 @@ for path, reason in skipped:
     print(f"Skipped: {path}\n  Reason: {reason}")
 ```
 
-`skipped_corrupt_files` is available after any action that triggers execution (`.collect()`, `.write_parquet()`, etc.).
+`skipped_corrupt_files` is available after calling `.collect()` on the dataframe. Other execution methods such as `.count_rows()` do not populate this property, because they operate on an internal dataframe rather than materializing the original one.
 
-## Handling skipped files in production
+### Handling skipped files in production
 
 Because `skipped_corrupt_files` is plain Python data, you can plug it directly into your existing alerting or data-quality workflows:
 
@@ -100,13 +104,13 @@ This pattern — **errors visible, impact contained, tooling to fix** — lets a
 !!! warning "Do not use `ignore_corrupt_files` as a catch-all"
     This option is designed for files that are genuinely unreadable. It should not be used to suppress transient I/O errors (network issues, throttling) — Daft already retries those automatically. If you find yourself needing `ignore_corrupt_files` for a large fraction of your files, investigate the root cause rather than silencing the errors.
 
-## Supported formats
+### Supported formats
 
 | Format | File-level skip | Within-file error skip |
 |---|---|---|
-| Parquet (`read_parquet`) | ✅ (bad footer, wrong magic bytes, file too small) | ✅ (corrupt row group data) |
-| CSV (`read_csv`) | ✅ (unreadable file, truncated) | ✅ (bad encoding, wrong field count in chunk) |
-| Iceberg (`read_iceberg`) | ✅ (data files go through the Rust Parquet reader) | ✅ |
+| Parquet (`read_parquet`) | Yes (bad footer, wrong magic bytes, file too small) | Yes (corrupt row group data) |
+| CSV (`read_csv`) | Yes (unreadable file, truncated) | Yes (bad encoding, wrong field count in chunk) |
+| Iceberg (`read_iceberg`) | Yes (data files go through the Rust Parquet reader) | Yes |
 
 !!! note "Iceberg delete files"
     Corruption in Iceberg *delete files* is not covered. If a delete file is unreadable, Daft will raise an error regardless of `ignore_corrupt_files`. Delete files are small metadata structures and corruption there generally indicates a more serious catalog inconsistency.

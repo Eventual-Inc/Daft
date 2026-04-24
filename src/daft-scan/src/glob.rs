@@ -586,13 +586,12 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn supports_count_pushdown(&self) -> bool {
-        // Count pushdown reads row counts from Parquet footer statistics.
-        // Corrupt-file handling is done inside stream_parquet_count_pushdown itself:
-        // unreadable footers are skipped (contributing 0), and readable footers with
-        // corrupt row-group data use the footer's row count as-is (accepted trade-off).
         matches!(
             self.file_format_config.as_ref(),
-            FileFormatConfig::Parquet(_)
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                ignore_corrupt_files: false,
+                ..
+            })
         )
     }
 

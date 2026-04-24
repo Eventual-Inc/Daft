@@ -102,9 +102,6 @@ async fn read_parquet(
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
-    // Count pushdown reads row counts directly from the Parquet footer, avoiding a full scan.
-    // When ignore_corrupt_files is true, stream_parquet_count_pushdown handles corrupt footers
-    // by skipping that file and contributing 0 to the aggregate.
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
     {
