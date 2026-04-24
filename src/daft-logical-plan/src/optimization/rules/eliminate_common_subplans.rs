@@ -51,17 +51,35 @@ impl OptimizerRule for EliminateCommonSubplans {
 
         // Second pass: identify duplicate subplans with equality verification.
         // Hash alone is not sufficient due to potential collisions, so we also
-        // verify structural equality via PartialEq.
+        // verify structural equality via PartialEq. Within each hash bucket,
+        // we group by structural equality to handle mixed-equality buckets
+        // (where some plans are equal but others are not).
         let mut canonical_plans: HashMap<u64, Arc<LogicalPlan>> = HashMap::new();
         for (hash, plans) in &subplan_counts {
-            if plans.len() > 1
-                && let Some(first) = plans.first()
-            {
-                // Verify all plans in this hash bucket are structurally equal
-                if plans.iter().skip(1).all(|p| **p == **first) {
-                    canonical_plans
-                        .entry(*hash)
-                        .or_insert_with(|| Arc::clone(first));
+            if plans.len() > 1 {
+                // Group plans by structural equality
+                let mut groups: Vec<Vec<&Arc<LogicalPlan>>> = Vec::new();
+                for plan in plans {
+                    let mut found_group = false;
+                    for group in &mut groups {
+                        if **plan == **group[0] {
+                            group.push(plan);
+                            found_group = true;
+                            break;
+                        }
+                    }
+                    if !found_group {
+                        groups.push(vec![plan]);
+                    }
+                }
+
+                // Select canonical version from groups with duplicates
+                for group in groups {
+                    if group.len() > 1 {
+                        canonical_plans
+                            .entry(*hash)
+                            .or_insert_with(|| Arc::clone(group[0]));
+                    }
                 }
             }
         }

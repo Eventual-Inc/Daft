@@ -12,14 +12,10 @@ use super::{
         ExtractWindowFunction, FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans,
         OptimizerRule, PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter,
         PushDownJoinPredicate, PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins,
-        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
-        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
-        SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
+        RewriteCheckpointSource, RewriteCountDistinct, RewriteOffset, ShardScans,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
