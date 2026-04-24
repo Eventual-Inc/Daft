@@ -22,7 +22,7 @@ def udaf(
     """Decorator to create a user-defined aggregate function (UDAF) from a class.
 
     The class must define three methods:
-    - ``agg(*inputs) -> value | dict``: Map stage — receives input columns as Series, returns partial state
+    - ``agg_block(*inputs) -> value | dict``: Map stage — receives input columns as Series, returns partial state
     - ``combine(states) -> value | dict``: Combine stage — merges partial states (must be commutative/associative)
     - ``finalize(state) -> value``: Reduce stage — produces the final output from merged state
 
@@ -38,7 +38,7 @@ def udaf(
         >>> from daft import DataType, Series
         >>> @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
         ... class MySum:
-        ...     def agg(self, values: Series) -> float:
+        ...     def agg_block(self, values: Series) -> float:
         ...         return float(values.sum())
         ...     def combine(self, states: Series) -> float:
         ...         return float(states.sum())
@@ -52,7 +52,7 @@ def udaf(
         ...     state={"sum": DataType.float64(), "count": DataType.int64()},
         ... )
         ... class MyMean:
-        ...     def agg(self, values: Series) -> dict:
+        ...     def agg_block(self, values: Series) -> dict:
         ...         return {"sum": float(values.sum()), "count": int(values.count())}
         ...     def combine(self, states: dict) -> dict:
         ...         return {"sum": float(states["sum"].sum()), "count": int(states["count"].sum())}
@@ -75,7 +75,7 @@ def udaf(
         state_field_dtypes = [DataType._infer(state)]
 
     def _wrap(klass: type) -> type:
-        for method_name in ("agg", "combine", "finalize"):
+        for method_name in ("agg_block", "combine", "finalize"):
             attr = inspect.getattr_static(klass, method_name, None)
             if attr is None or not inspect.isfunction(attr):
                 raise ValueError(

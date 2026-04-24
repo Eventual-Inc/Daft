@@ -10,7 +10,7 @@ from daft import DataType, Series
 
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class MySum:
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return sum(values.to_pylist())
 
     def combine(self, states: Series) -> float:
@@ -40,7 +40,7 @@ df.groupby("cat").agg(my_sum(daft.col("val")).alias("total")).show()
 
 A UDAF class defines a three-stage aggregation pipeline:
 
-1. **`agg(*inputs: Series) -> value | dict`** — Map stage. Receives input columns as `Series` objects, returns a partial state value.
+1. **`agg_block(*inputs: Series) -> value | dict`** — Map stage. Receives input columns as `Series` objects, returns a partial state value.
 2. **`combine(states: Series | dict[str, Series]) -> value | dict`** — Combine stage. Merges multiple partial states into one. Must be commutative and associative.
 3. **`finalize(state: value | dict) -> value`** — Reduce stage. Converts the final merged state into the output value.
 
@@ -53,7 +53,7 @@ For simple accumulators, pass a single `DataType` as `state`:
 ```python
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class MySum:
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return sum(values.to_pylist())
 
     def combine(self, states: Series) -> float:
@@ -76,7 +76,7 @@ For aggregations that need to track multiple fields (e.g., both a sum and a coun
     state={"sum": DataType.float64(), "count": DataType.int64()},
 )
 class MyMean:
-    def agg(self, values: Series) -> dict:
+    def agg_block(self, values: Series) -> dict:
         vals = values.to_pylist()
         return {"sum": float(sum(vals)), "count": len(vals)}
 
@@ -90,7 +90,7 @@ class MyMean:
         return state["sum"] / state["count"]
 ```
 
-- `agg` returns a dict with one key per state field
+- `agg_block` returns a dict with one key per state field
 - `combine` receives a dict mapping field names to `Series` of partial values
 - `finalize` receives a dict mapping field names to single values
 
@@ -104,7 +104,7 @@ class BoundedSum:
     def __init__(self, max_val: float):
         self.max_val = max_val
 
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return float(sum(min(v, self.max_val) for v in values.to_pylist()))
 
     def combine(self, states: Series) -> float:
@@ -124,7 +124,7 @@ UDAFs can consume multiple input columns:
 ```python
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class WeightedSum:
-    def agg(self, values: Series, weights: Series) -> float:
+    def agg_block(self, values: Series, weights: Series) -> float:
         v = values.to_pylist()
         w = weights.to_pylist()
         return float(sum(a * b for a, b in zip(v, w)))

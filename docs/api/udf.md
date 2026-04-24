@@ -40,7 +40,7 @@ Learn more in the [User Guide](../custom-code/func.md).
 
 ## Aggregate UDFs
 
-`@daft.udaf` lets you define custom aggregation functions with a three-stage pipeline (agg, combine, finalize) that plugs into Daft's distributed aggregation engine.
+`@daft.udaf` lets you define custom aggregation functions with a three-stage pipeline (agg_block, combine, finalize) that plugs into Daft's distributed aggregation engine.
 
 Learn more in the [User Guide](../custom-code/udaf.md).
 

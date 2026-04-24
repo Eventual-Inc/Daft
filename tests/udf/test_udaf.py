@@ -8,7 +8,7 @@ from daft import DataType, Series, col
 
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class SumUDAF:
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return sum(values.to_pylist())
 
     def combine(self, states: Series) -> float:
@@ -23,7 +23,7 @@ class SumUDAF:
     state={"sum": DataType.float64(), "count": DataType.int64()},
 )
 class MeanUDAF:
-    def agg(self, values: Series) -> dict:
+    def agg_block(self, values: Series) -> dict:
         vals = values.to_pylist()
         return {"sum": float(sum(vals)), "count": len(vals)}
 
@@ -41,7 +41,7 @@ class BoundedSumUDAF:
     def __init__(self, max_val: float):
         self.max_val = max_val
 
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return float(sum(min(v, self.max_val) for v in values.to_pylist()))
 
     def combine(self, states: Series) -> float:
@@ -129,7 +129,7 @@ class TestUDAFMultiple:
 
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class WeightedSumUDAF:
-    def agg(self, values: Series, weights: Series) -> float:
+    def agg_block(self, values: Series, weights: Series) -> float:
         v = values.to_pylist()
         w = weights.to_pylist()
         return float(sum(a * b for a, b in zip(v, w)))
@@ -143,7 +143,7 @@ class WeightedSumUDAF:
 
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class NullSafeSumUDAF:
-    def agg(self, values: Series) -> float:
+    def agg_block(self, values: Series) -> float:
         return float(sum(v for v in values.to_pylist() if v is not None))
 
     def combine(self, states: Series) -> float:
@@ -202,14 +202,14 @@ class TestUDAFErrors:
 
             @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
             class BadUDAF:
-                def agg(self, values: Series) -> float:
+                def agg_block(self, values: Series) -> float:
                     return 0.0
 
                 def finalize(self, state: float) -> float:
                     return state
 
-    def test_missing_agg(self):
-        with pytest.raises(ValueError, match="must define a `agg` method"):
+    def test_missing_agg_block(self):
+        with pytest.raises(ValueError, match="must define a `agg_block` method"):
 
             @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
             class BadUDAF:
@@ -224,7 +224,7 @@ class TestUDAFErrors:
 
             @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
             class BadUDAF:
-                def agg(self, values: Series) -> float:
+                def agg_block(self, values: Series) -> float:
                     return 0.0
 
                 def combine(self, states: Series) -> float:
