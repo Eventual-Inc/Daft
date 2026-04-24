@@ -2307,7 +2307,7 @@ class Expression:
         return length_bytes(self)
 
     def hamming_distance(self, other: Expression) -> Expression:
-        """Compute the Hamming distance between two string expressions.
+        """Compute the Hamming distance between two strings.
 
         Tip: See Also
             [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)

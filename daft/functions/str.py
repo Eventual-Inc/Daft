@@ -1443,7 +1443,7 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
 
 
 def hamming_distance(left: Expression, right: Expression) -> Expression:
-    """Computes the Hamming distance between two strings.
+    """Compute the Hamming distance between two strings.
 
     The Hamming distance is the number of positions at which the corresponding
     characters are different.
