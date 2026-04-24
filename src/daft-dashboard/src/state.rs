@@ -56,7 +56,8 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
-    // TODO: Logs
+    pub stages: Vec<crate::engine::StageDescriptor>,
+    pub shuffles: Vec<crate::engine::ShuffleDescriptor>,
 }
 
 #[derive(Debug, Clone, Serialize)]

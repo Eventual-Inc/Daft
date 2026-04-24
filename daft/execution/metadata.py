@@ -94,7 +94,8 @@ class ExecutionMetadata:
 
     @property
     def query_plan(self) -> PlanNode:
-        return json.loads(self._query_plan)
+        parsed = json.loads(self._query_plan)
+        return parsed.get("plan", parsed)
 
     def encode(self) -> bytes:
         return self._py.encode()

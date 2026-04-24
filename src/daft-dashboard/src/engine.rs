@@ -199,28 +199,58 @@ pub struct ExecStartArgs {
 }
 
 #[derive(Clone, Deserialize)]
-struct PlanJsonConfig {
+struct PlanNodeJson {
     pub id: usize,
     pub name: String,
     #[serde(rename = "type")]
     pub node_type: Arc<str>,
     pub category: Arc<str>,
-    pub children: Option<Vec<PlanJsonConfig>>,
+    pub children: Option<Vec<PlanNodeJson>>,
 }
 
-fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
-    let parsed_plan = serde_json::from_str::<PlanJsonConfig>(physical_plan)
-        .expect("Failed to parse physical plan");
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct StageDescriptor {
+    pub id: usize,
+    pub name: String,
+    pub operator_node_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct ShuffleDescriptor {
+    pub write_stage_id: usize,
+    pub read_stage_id: usize,
+    pub strategy: String,
+    pub num_partitions: usize,
+}
+
+#[derive(Clone, Deserialize)]
+struct PlanJson {
+    pub plan: PlanNodeJson,
+    #[serde(default)]
+    pub stages: Vec<StageDescriptor>,
+    #[serde(default)]
+    pub shuffles: Vec<ShuffleDescriptor>,
+}
+
+struct ParsedPlan {
+    pub operators: OperatorInfos,
+    pub stages: Vec<StageDescriptor>,
+    pub shuffles: Vec<ShuffleDescriptor>,
+}
+
+fn parse_physical_plan(physical_plan: &QueryPlan) -> ParsedPlan {
+    let parsed: PlanJson =
+        serde_json::from_str(physical_plan).expect("Failed to parse physical plan");
     let mut operators = HashMap::new();
 
-    let mut plans = vec![parsed_plan];
-    while let Some(plan) = plans.pop() {
-        let node_id = plan.id;
+    let mut nodes = vec![parsed.plan];
+    while let Some(node) = nodes.pop() {
+        let node_id = node.id;
         let node_info = NodeInfo {
             id: node_id,
-            name: plan.name,
-            node_type: plan.node_type.clone(),
-            node_category: plan.category.clone(),
+            name: node.name,
+            node_type: node.node_type.clone(),
+            node_category: node.category.clone(),
         };
 
         operators.insert(
@@ -235,11 +265,15 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
             },
         );
 
-        if let Some(children) = plan.children {
-            plans.extend(children);
+        if let Some(children) = node.children {
+            nodes.extend(children);
         }
     }
-    operators
+    ParsedPlan {
+        operators,
+        stages: parsed.stages,
+        shuffles: parsed.shuffles,
+    }
 }
 
 async fn exec_start(
@@ -269,12 +303,15 @@ pub(crate) fn apply_exec_start(
         } => {
             let plan_info = plan_info.clone();
             let pending_source_stats = std::mem::take(pending_source_stats);
+            let parsed = parse_physical_plan(&args.physical_plan);
             query_info.state = QueryState::Executing {
                 plan_info,
                 exec_info: ExecInfo {
                     exec_start_sec: args.exec_start_sec,
-                    physical_plan: args.physical_plan.clone(),
-                    operators: parse_physical_plan(&args.physical_plan),
+                    physical_plan: args.physical_plan,
+                    operators: parsed.operators,
+                    stages: parsed.stages,
+                    shuffles: parsed.shuffles,
                 },
             };
 
@@ -703,6 +740,8 @@ pub(crate) fn apply_query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
+                        stages: Vec::new(),
+                        shuffles: Vec::new(),
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,

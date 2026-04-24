@@ -663,6 +663,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             try:
                 plan_dict = json.loads(physical_plan_json)
+                plan_tree = plan_dict.get("plan", plan_dict)
 
                 def notify_end(node: dict[str, Any]) -> None:
                     if "children" in node:
@@ -671,7 +672,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     if "id" in node:
                         ctx._notify_exec_operator_end(query_id, node["id"])
 
-                notify_end(plan_dict)
+                notify_end(plan_tree)
             except Exception as e:
                 logger.warning("Failed to send operator end notifications: %s", e)
 
