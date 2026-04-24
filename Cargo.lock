@@ -2800,6 +2800,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "arrow-buffer 57.3.0",
  "chrono",
  "chrono-tz",
  "common-error",

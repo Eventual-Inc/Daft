@@ -1440,3 +1440,39 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("find", expr, substr)
+
+
+def hamming_distance(expr: Expression, other: str | Expression) -> Expression:
+    """Computes the Hamming distance between each string and a given string.
+
+    The Hamming distance is the number of positions at which the corresponding
+    characters are different.
+
+    Args:
+        expr: The string expression to compare.
+        other: The string to compare against.
+
+    Returns:
+        The Hamming distance between each string and the given string. If the any pair of
+        strings are of different lengths, returns null for that pair.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import hamming_distance
+        >>> df = daft.from_pydict({"x": ["kitten", "sitting", "flitting"]})
+        >>> df.with_column("distance", hamming_distance(df["x"], "sitting")).collect()
+        ╭─────────┬──────────╮
+        │ x       ┆ distance │
+        │ ---     ┆ ---      │
+        │ String  ┆ UInt64   │
+        ╞═════════╪══════════╡
+        │ kitten  ┆ 3        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ sitting ┆ 0        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ flitting┆ 3        │
+        ╰─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("hamming_distance", expr, other)

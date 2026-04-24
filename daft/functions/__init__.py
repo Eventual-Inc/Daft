@@ -249,6 +249,7 @@ from .str import (
     replace,
     regexp_replace,
     find,
+    hamming_distance,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -359,6 +360,7 @@ __all__ = [
     "from_unixtime",
     "get",
     "guess_mime_type",
+    "hamming_distance",
     "hash",
     "hour",
     "hypot",
