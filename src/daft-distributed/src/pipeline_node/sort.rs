@@ -7,9 +7,7 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{
-    LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend, SamplingMethod,
-};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleBackend};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -149,15 +147,44 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     Ok(boundaries)
 }
 
+// Non-Python builds are only used in Rust-only test runs (`cargo test`).
+// Production always enables the python feature.
 #[cfg(not(feature = "python"))]
 pub(crate) async fn get_partition_boundaries_from_samples(
-    _samples: Vec<MaterializedOutput>,
-    _partition_by: &[BoundExpr],
-    _descending: Vec<bool>,
-    _nulls_first: Vec<bool>,
-    _num_partitions: usize,
+    samples: Vec<MaterializedOutput>,
+    partition_by: &[BoundExpr],
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
+    num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
-    unimplemented!("Distributed range partitioning requires Python feature to be enabled")
+    use daft_micropartition::MicroPartition;
+
+    // Extract partition refs and downcast to MicroPartition.
+    let micro_partitions: Vec<MicroPartition> = samples
+        .into_iter()
+        .flat_map(|mo| mo.into_inner().0)
+        .map(|pr| {
+            pr.as_any()
+                .downcast_ref::<MicroPartition>()
+                .ok_or_else(|| {
+                    common_error::DaftError::InternalError(
+                        "Expected MicroPartition in local mode".to_string(),
+                    )
+                })
+                .cloned()
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    // Concat all samples, sort by the partition columns, then compute quantiles.
+    let merged = MicroPartition::concat(micro_partitions)?;
+    let sorted = merged.sort(partition_by, &descending, &nulls_first)?;
+    let boundaries = sorted.quantiles(num_partitions)?;
+
+    boundaries.concat_or_get()?.ok_or_else(|| {
+        common_error::DaftError::InternalError(
+            "No boundaries found for range partitioning".to_string(),
+        )
+    })
 }
 
 /// Creates sample tasks from materialized outputs, projecting the specified columns.
@@ -250,7 +277,7 @@ pub(crate) fn create_range_repartition_tasks(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                RepartitionWriteBackend::Ray,
+                ShuffleBackend::Ray,
                 RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),
@@ -487,5 +514,100 @@ impl PipelineNodeImpl for SortNode {
             plan_context.scheduler_handle(),
         ));
         TaskBuilderStream::from(result_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+    use daft_micropartition::MicroPartition;
+
+    use super::*;
+    use crate::pipeline_node::test_helpers::{
+        bound_col_x, build_in_memory_source, make_partition, run_pipeline_and_get_stats,
+        test_schema,
+    };
+
+    fn build_sort_pipeline(
+        partitions: Vec<Arc<MicroPartition>>,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let (source, plan_config) = build_in_memory_source(0, partitions, meter);
+        let sort_node = SortNode::new(
+            1,
+            &plan_config,
+            vec![bound_col_x()],
+            vec![false],
+            vec![false],
+            test_schema(),
+            source,
+        );
+        DistributedPipelineNode::new(Arc::new(sort_node), meter)
+    }
+
+    /// Single-partition sort: exercises the FINAL_SORT_PHASE-only path.
+    /// SortStats should count rows only from the Default snapshot with
+    /// phase "final-sort", ignoring the Source snapshot from in_memory_scan.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_single_partition_stats() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_sort_stats");
+        let pipeline = build_sort_pipeline(vec![make_partition(&[5, 3, 1, 4, 2])], &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("sort node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => {
+                assert_eq!(s.rows_in, 5);
+                assert_eq!(s.rows_out, 5);
+                assert!(s.cpu_us > 0);
+            }
+            other => panic!("expected Default snapshot for sort, got: {other:?}"),
+        }
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 0)
+            .expect("source node stats");
+        assert!(matches!(snapshot, StatSnapshot::Source(_)));
+
+        Ok(())
+    }
+
+    /// Multi-partition sort: exercises all three phases (sample, repartition,
+    /// final-sort). SortStats should aggregate duration from all phases but
+    /// count rows only from final-sort Default snapshots.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_multi_partition_stats() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_sort_multi");
+        let pipeline = build_sort_pipeline(
+            vec![
+                make_partition(&[5, 3, 1]),
+                make_partition(&[4, 2, 6]),
+                make_partition(&[9, 7, 8]),
+            ],
+            &meter,
+        );
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("sort node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => {
+                assert_eq!(s.rows_in, 9);
+                assert_eq!(s.rows_out, 9);
+                assert!(s.cpu_us > 0);
+            }
+            other => panic!("expected Default snapshot for sort, got: {other:?}"),
+        }
+
+        Ok(())
     }
 }

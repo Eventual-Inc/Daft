@@ -167,7 +167,7 @@ df.write_csv("transcriptions.csv")
 Now let's run it!
 
 ```bash
-uv run example_1.py
+uv run example_2.py
 ```
 
 We should see an output that looks like this:

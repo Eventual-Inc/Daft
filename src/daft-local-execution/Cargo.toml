@@ -87,6 +87,10 @@ python = [
   "daft-text/python"
 ]
 
+[dev-dependencies]
+serde = {workspace = true}
+typetag = {workspace = true}
+
 [lints]
 workspace = true
 

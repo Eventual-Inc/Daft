@@ -69,7 +69,18 @@ fn get_global_runtime() -> &'static Handle {
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
-    unimplemented!("get_global_runtime is not implemented without python feature");
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build global tokio runtime for NativeExecutor");
+        let handle = rt.handle().clone();
+        // Keep the runtime alive for the duration of the process.
+        std::thread::spawn(move || {
+            rt.block_on(futures::future::pending::<()>());
+        });
+        handle
+    })
 }
 
 /// Message sent to the execution task to enqueue inputs
@@ -359,7 +370,7 @@ async fn run_execution_loop(
     result
 }
 
-pub(crate) struct NativeExecutor {
+pub struct NativeExecutor {
     cancel: CancellationToken,
     is_flotilla_worker: bool,
     shuffle_server: Option<Arc<ShuffleFlightServer>>,
@@ -587,6 +598,22 @@ pub struct ExecutionEngineResult {
 impl ExecutionEngineResult {
     async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
         self.receiver.recv().await
+    }
+
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
+            }
+        }
+        out
     }
 }
 
