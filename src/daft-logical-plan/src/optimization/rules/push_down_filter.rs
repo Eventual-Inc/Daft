@@ -167,7 +167,19 @@ impl PushDownFilter {
                             external_info.pushdowns.clone()
                         };
                         let new_pushdowns = if let Some(partition_filter) = partition_filter {
-                            new_pushdowns.with_partition_filters(Some(partition_filter))
+                            // Merge new partition filters with any existing ones via AND,
+                            // rather than overwriting. Partition filters are monotonic under
+                            // AND — adding predicates only makes pruning stricter, never
+                            // looser — so merging is always safe. This prevents previously
+                            // derived partition filters from being lost when the optimizer
+                            // re-runs this rule on a rebuilt Filter node.
+                            let merged_partition_filter =
+                                if let Some(existing) = &new_pushdowns.partition_filters {
+                                    existing.clone().and(partition_filter)
+                                } else {
+                                    partition_filter
+                                };
+                            new_pushdowns.with_partition_filters(Some(merged_partition_filter))
                         } else {
                             new_pushdowns
                         };
