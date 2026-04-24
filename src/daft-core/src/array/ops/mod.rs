@@ -28,6 +28,7 @@ pub mod full;
 mod get;
 mod get_lit;
 mod hash;
+mod hll_cardinality;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
