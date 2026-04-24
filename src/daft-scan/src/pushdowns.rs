@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_display::DisplayAs;
+use daft_algebra::boolean::split_conjunction;
 use daft_dsl::{ExprRef, estimated_selectivity};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,111 @@ use crate::Sharder;
 pub trait SupportsPushdownFilters {
     /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
     fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
+}
+
+/// The precision with which a source can honor a pushdown.
+///
+/// - `Exact`: the source applies the pushdown with full fidelity; the optimizer
+///   may drop the corresponding operator from above the scan.
+/// - `Inexact`: the source may apply the pushdown as a best-effort filter
+///   (e.g. row-group pruning), but callers must re-verify by keeping a residual
+///   operator above the scan.
+/// - `Unsupported`: the source cannot honor the pushdown; the optimizer must
+///   keep the corresponding operator above the scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PushdownVerdict {
+    Unsupported,
+    Inexact,
+    Exact,
+}
+
+impl PushdownVerdict {
+    /// True when the source promises exact application.
+    #[must_use]
+    pub fn is_exact(self) -> bool {
+        matches!(self, Self::Exact)
+    }
+
+    /// True when the source can apply the pushdown at all (Exact or Inexact).
+    #[must_use]
+    pub fn can_push(self) -> bool {
+        matches!(self, Self::Exact | Self::Inexact)
+    }
+
+    /// True when the optimizer must keep the corresponding operator above the
+    /// scan as a residual (Inexact or Unsupported).
+    #[must_use]
+    pub fn needs_residual(self) -> bool {
+        matches!(self, Self::Inexact | Self::Unsupported)
+    }
+}
+
+/// Declaration of how a source can honor the pushdowns presented by the optimizer.
+///
+/// Verdict vectors for `filters` / `partition_filters` are aligned with the
+/// AND-conjuncts of `Pushdowns::filters` / `Pushdowns::partition_filters`
+/// respectively, in the order produced by
+/// [`daft_algebra::boolean::split_conjunction`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PushdownCapability {
+    /// One verdict per AND-conjunct of `Pushdowns::filters`.
+    pub filters: Vec<PushdownVerdict>,
+    /// One verdict per AND-conjunct of `Pushdowns::partition_filters`.
+    pub partition_filters: Vec<PushdownVerdict>,
+    pub projection: PushdownVerdict,
+    pub limit: PushdownVerdict,
+    pub shard: PushdownVerdict,
+}
+
+impl PushdownCapability {
+    /// All-`Unsupported`, empty conjunct vectors. Safe default meaning
+    /// "the optimizer must keep every operator above the scan."
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            filters: Vec::new(),
+            partition_filters: Vec::new(),
+            projection: PushdownVerdict::Unsupported,
+            limit: PushdownVerdict::Unsupported,
+            shard: PushdownVerdict::Unsupported,
+        }
+    }
+
+    /// Returns `Exact` for every field populated on `pushdowns`, and
+    /// `Unsupported` for every field that is `None`/empty. Useful as a starting
+    /// point for impls that fully honor every pushdown.
+    #[must_use]
+    pub fn all_exact_for(pushdowns: &Pushdowns) -> Self {
+        let filter_n = pushdowns
+            .filters
+            .as_ref()
+            .map(|e| split_conjunction(e).len())
+            .unwrap_or(0);
+        let part_n = pushdowns
+            .partition_filters
+            .as_ref()
+            .map(|e| split_conjunction(e).len())
+            .unwrap_or(0);
+        Self {
+            filters: vec![PushdownVerdict::Exact; filter_n],
+            partition_filters: vec![PushdownVerdict::Exact; part_n],
+            projection: if pushdowns.columns.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+            limit: if pushdowns.limit.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+            shard: if pushdowns.sharder.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]

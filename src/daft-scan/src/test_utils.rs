@@ -6,9 +6,9 @@ use daft_schema::schema::SchemaRef;
 use daft_stats::TableMetadata;
 
 use crate::{
-    FileFormatConfig, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-    ScanTask, ScanTaskRef, SourceConfig, Statistics, SupportsPushdownFilters,
-    storage_config::StorageConfig,
+    FileFormatConfig, PartitionField, PushdownCapability, PushdownVerdict, Pushdowns, ScanOperator,
+    ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, Statistics,
+    SupportsPushdownFilters, storage_config::StorageConfig,
 };
 
 #[derive(Debug, Default)]
@@ -120,5 +120,111 @@ fn contains_in_expression(expr: &ExprRef) -> bool {
     match expr.as_ref() {
         daft_dsl::Expr::IsIn { .. } => true,
         _ => expr.children().iter().any(contains_in_expression),
+    }
+}
+
+/// Test-only scan operator that returns a caller-specified `PushdownCapability`.
+///
+/// Useful for exercising optimizer rules against Exact/Inexact/Unsupported
+/// verdicts without having to stand up a real source implementation. Projection,
+/// limit, and shard default to `Exact` when the corresponding `Pushdowns` field
+/// is populated (matching the adapter's conservative behavior); callers control
+/// the filter-conjunct verdicts directly.
+#[derive(Debug, Default)]
+pub struct VerdictScanOperator {
+    pub schema: SchemaRef,
+    pub num_scan_tasks: u32,
+    /// One verdict per AND-conjunct of the incoming filter pushdown, in order.
+    /// Empty means "no filter verdicts" (every conjunct falls through to
+    /// `Unsupported` via the rule's missing-verdict fallback).
+    pub filter_verdicts: Vec<PushdownVerdict>,
+}
+
+impl ScanOperator for VerdictScanOperator {
+    fn name(&self) -> &'static str {
+        "verdict"
+    }
+
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    fn partitioning_keys(&self) -> &[PartitionField] {
+        &[]
+    }
+
+    fn file_path_column(&self) -> Option<&str> {
+        None
+    }
+
+    fn generated_fields(&self) -> Option<SchemaRef> {
+        None
+    }
+
+    fn can_absorb_filter(&self) -> bool {
+        false
+    }
+    fn can_absorb_select(&self) -> bool {
+        false
+    }
+    fn can_absorb_limit(&self) -> bool {
+        false
+    }
+    fn can_absorb_shard(&self) -> bool {
+        false
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        vec!["VerdictScanOperator".to_string()]
+    }
+
+    fn supports_pushdowns(&self, pushdowns: &Pushdowns) -> PushdownCapability {
+        PushdownCapability {
+            filters: self.filter_verdicts.clone(),
+            partition_filters: Vec::new(),
+            projection: if pushdowns.columns.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+            limit: if pushdowns.limit.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+            shard: if pushdowns.sharder.is_some() {
+                PushdownVerdict::Exact
+            } else {
+                PushdownVerdict::Unsupported
+            },
+        }
+    }
+
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
+        Ok((0..self.num_scan_tasks)
+            .map(|i| {
+                Arc::new(ScanTask::new(
+                    vec![ScanSource {
+                        size_bytes: None,
+                        metadata: None,
+                        statistics: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: format!("verdict_file_{}.txt", i),
+                            chunk_spec: None,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
+                    }],
+                    Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                        Default::default(),
+                    ))),
+                    self.schema.clone(),
+                    Arc::new(StorageConfig::default()),
+                    pushdowns.clone(),
+                    None,
+                ))
+            })
+            .collect())
     }
 }

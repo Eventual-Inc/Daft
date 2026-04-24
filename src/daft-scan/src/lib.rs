@@ -41,7 +41,7 @@ mod source_config;
 pub mod statistics;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
-pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
+pub use pushdowns::{PushdownCapability, PushdownVerdict, Pushdowns, SupportsPushdownFilters};
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_state::{PhysicalScanInfo, ScanState};
 pub use sharder::{Sharder, ShardingStrategy};

@@ -12,7 +12,7 @@ use daft_dsl::{
     optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col,
 };
-use daft_scan::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
+use daft_scan::{PredicateGroups, PushdownVerdict, ScanState, rewrite_predicate_for_partitioning};
 
 use super::OptimizerRule;
 use crate::{
@@ -157,7 +157,7 @@ impl PushDownFilter {
                                 .collect::<Vec<_>>()
                         };
 
-                        let data_filter = combine_conjunction(data_only_filter.clone());
+                        let data_filter = combine_conjunction(data_only_filter);
                         let partition_filter = combine_conjunction(partition_only_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
@@ -166,51 +166,69 @@ impl PushDownFilter {
                         } else {
                             external_info.pushdowns.clone()
                         };
-                        let new_pushdowns = if let Some(partition_filter) = partition_filter {
+                        let mut new_pushdowns = if let Some(partition_filter) = partition_filter {
                             new_pushdowns.with_partition_filters(Some(partition_filter))
                         } else {
                             new_pushdowns
                         };
 
                         let scan_op = external_info.scan_state.get_scan_op().0.clone();
-                        let remaining_filters = if let Some(supports_pushdown) =
-                            scan_op.as_pushdown_filter()
-                            && self.strict_pushdown
-                        {
-                            let filters_to_push = new_pushdowns.filters.as_slice();
+                        let remaining_filters = if self.strict_pushdown {
+                            // Ask the source which data conjuncts it can honor,
+                            // and at what precision. The verdict vector is
+                            // aligned with split_conjunction(new_pushdowns.filters).
+                            let conjuncts = new_pushdowns
+                                .filters
+                                .as_ref()
+                                .map(split_conjunction)
+                                .unwrap_or_default();
+                            let cap = scan_op.supports_pushdowns(&new_pushdowns);
+                            let verdicts = cap.filters;
+                            // Adapter contract: one verdict per conjunct.
+                            // If an impl returns a mismatched length, treat any
+                            // unlabeled tail as Unsupported rather than panic.
+                            let get_verdict = |i: usize| {
+                                verdicts
+                                    .get(i)
+                                    .copied()
+                                    .unwrap_or(PushdownVerdict::Unsupported)
+                            };
 
-                            let (pushed_filters, post_filters) =
-                                supports_pushdown.push_filters(filters_to_push);
-                            let _ = new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
-                            if !post_filters.is_empty()
-                                && post_filters.len() == filters_to_push.len()
-                            {
+                            let mut pushed: Vec<ExprRef> = Vec::new();
+                            let mut residual: Vec<ExprRef> = Vec::new();
+                            for (i, expr) in conjuncts.iter().enumerate() {
+                                match get_verdict(i) {
+                                    PushdownVerdict::Exact => pushed.push(expr.clone()),
+                                    PushdownVerdict::Inexact => {
+                                        pushed.push(expr.clone());
+                                        residual.push(expr.clone());
+                                    }
+                                    PushdownVerdict::Unsupported => residual.push(expr.clone()),
+                                }
+                            }
+
+                            // If the source rejected every data-level conjunct
+                            // (Unsupported across the board), bail out: the
+                            // rewrite would produce a Source with the same
+                            // filters as before plus an identical residual
+                            // Filter above, and the optimizer would loop on it.
+                            // Partition-only pushdowns (conjuncts empty because
+                            // all filters bound to partition keys) stay valid
+                            // because the partition filter still changed.
+                            if pushed.is_empty() && !conjuncts.is_empty() {
                                 return Ok(Transformed::no(plan));
                             }
 
-                            let mut seen = HashSet::new();
-                            let pushed_filters_set = if pushed_filters.len() == 1 {
-                                split_conjunction(&pushed_filters[0])
-                                    .into_iter()
-                                    .collect::<HashSet<_>>()
-                            } else {
-                                pushed_filters
-                                    .iter()
-                                    .flat_map(split_conjunction)
-                                    .collect::<HashSet<_>>()
-                            };
-                            post_filters
-                                .into_iter()
-                                .chain(
-                                    data_only_filter
-                                        .iter()
-                                        .filter(|f| !pushed_filters_set.contains(*f))
-                                        .cloned(),
-                                )
-                                .filter(|e| seen.insert(e.clone()))
-                                .collect::<Vec<_>>()
+                            if !conjuncts.is_empty() {
+                                new_pushdowns = new_pushdowns
+                                    .with_filters(combine_conjunction(pushed.clone()))
+                                    .with_pushed_filters(Some(pushed));
+                            }
+                            residual
                         } else {
-                            // Return an empty Vec if strict pushdown is not supported
+                            // Non-strict mode: legacy optimistic-push. Sources
+                            // are trusted to apply the whole predicate; no
+                            // residual is kept above the scan.
                             Vec::new()
                         };
 
@@ -493,7 +511,10 @@ mod tests {
             rules::PushDownFilter,
             test::assert_optimized_plan_with_rules_eq,
         },
-        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
+        test::{
+            dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
+            verdict_scan_operator,
+        },
     };
 
     /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
@@ -1196,6 +1217,112 @@ mod tests {
     #[test]
     fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
         filter_pushdown_strict_mode_scenario(false)
+    }
+
+    // -------- Tri-state pushdown capability (B2) --------
+
+    /// A source that returns `[Exact, Inexact, Unsupported]` for a three-conjunct
+    /// filter splits the predicate across the scan and a residual filter.
+    ///
+    /// - Exact  conjunct ⇒ pushed only (source promises full fidelity).
+    /// - Inexact conjunct ⇒ pushed AND kept in the residual filter above the
+    ///   scan (source may approximate; re-verify).
+    /// - Unsupported conjunct ⇒ residual only (source cannot honor it).
+    ///
+    /// This is impossible to express with the legacy boolean capability API.
+    #[test]
+    fn mixed_verdict_splits_conjuncts_across_scan_and_residual() -> DaftResult<()> {
+        use daft_scan::PushdownVerdict::{Exact, Inexact, Unsupported};
+
+        let scan_op = verdict_scan_operator(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Int64),
+                Field::new("c", DataType::Utf8),
+            ],
+            vec![Exact, Inexact, Unsupported],
+        );
+        let c1 = resolved_col("a").eq(lit(1));
+        let c2 = resolved_col("b").gt(lit(0));
+        let c3 = resolved_col("c").eq(lit("x"));
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(c1.clone().and(c2.clone()).and(c3.clone()))?
+            .build();
+
+        // Pushed into scan: Exact + Inexact conjuncts (a=1, b>0).
+        // Residual above scan: Inexact + Unsupported conjuncts (b>0, c='x').
+        let pushed_conjuncts = vec![c1.clone(), c2.clone()];
+        let pushed = c1.and(c2.clone());
+        let residual = c2.and(c3);
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_filters(Some(pushed))
+                .with_pushed_filters(Some(pushed_conjuncts)),
+        )
+        .filter(residual)?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected, true)?;
+        Ok(())
+    }
+
+    /// The Inexact correctness-hazard demo.
+    ///
+    /// A source that can only *approximately* filter (think Parquet row-group
+    /// pruning: "I might skip some rows, but I make no promise about the ones
+    /// I hand you") must be able to say so. Pre-B2 its only options were
+    /// "claim exact" (silent wrong answers when it can't) or "claim nothing"
+    /// (no pushdown at all — slow).
+    ///
+    /// Post-B2 the source declares `Inexact` and the planner automatically
+    /// keeps a residual `Filter` node above the scan to re-verify every row.
+    ///
+    /// This test demonstrates the fix by comparing two sources that differ
+    /// *only* in their capability declaration:
+    ///   - `exact_source` (Exact verdict) → filter pushed, no residual.
+    ///   - `inexact_source` (Inexact verdict) → filter pushed, residual kept.
+    #[test]
+    fn inexact_verdict_keeps_residual_filter_above_scan() -> DaftResult<()> {
+        use daft_scan::PushdownVerdict::{Exact, Inexact};
+
+        let fields = vec![Field::new("value", DataType::Int64)];
+        let pred = resolved_col("value").gt(lit(5));
+
+        // Exact: source promises it filters perfectly — planner drops the
+        // Filter above the scan.
+        let exact_source = verdict_scan_operator(fields.clone(), vec![Exact]);
+        let plan_exact = dummy_scan_node(exact_source.clone())
+            .filter(pred.clone())?
+            .build();
+        let expected_exact = dummy_scan_node_with_pushdowns(
+            exact_source,
+            Pushdowns::default()
+                .with_filters(Some(pred.clone()))
+                .with_pushed_filters(Some(vec![pred.clone()])),
+        )
+        .build();
+        assert_optimized_plan_eq(plan_exact, expected_exact, true)?;
+
+        // Inexact: source offers best-effort filtering — planner keeps a
+        // residual Filter above the scan to re-verify. If the source silently
+        // drops rows that shouldn't have matched, the residual catches them.
+        let inexact_source = verdict_scan_operator(fields, vec![Inexact]);
+        let plan_inexact = dummy_scan_node(inexact_source.clone())
+            .filter(pred.clone())?
+            .build();
+        let expected_inexact = dummy_scan_node_with_pushdowns(
+            inexact_source,
+            Pushdowns::default()
+                .with_filters(Some(pred.clone()))
+                .with_pushed_filters(Some(vec![pred.clone()])),
+        )
+        .filter(pred)?
+        .build();
+        assert_optimized_plan_eq(plan_inexact, expected_inexact, true)?;
+
+        Ok(())
     }
 
     /// Tests that Filter on a column that exists in both left and right input schemas

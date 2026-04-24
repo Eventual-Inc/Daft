@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use daft_scan::{Pushdowns, ScanOperatorRef, test_utils::DummyScanOperator};
+use daft_scan::{
+    PushdownVerdict, Pushdowns, ScanOperatorRef,
+    test_utils::{DummyScanOperator, VerdictScanOperator},
+};
 use daft_schema::{field::Field, schema::Schema};
 
 use crate::builder::LogicalPlanBuilder;
@@ -51,5 +54,20 @@ pub fn dummy_scan_operator_for_aggregation(
         num_rows_per_task: None,
         supports_count_pushdown_flag,
         stats: None,
+    }))
+}
+
+/// Create a scan operator that reports the given per-conjunct filter verdicts
+/// via `supports_pushdowns`. Used for tests that exercise Exact/Inexact/
+/// Unsupported behavior on the filter-pushdown rule.
+pub fn verdict_scan_operator(
+    fields: Vec<Field>,
+    filter_verdicts: Vec<PushdownVerdict>,
+) -> ScanOperatorRef {
+    let schema = Arc::new(Schema::new(fields));
+    ScanOperatorRef(Arc::new(VerdictScanOperator {
+        schema,
+        num_scan_tasks: 1,
+        filter_verdicts,
     }))
 }

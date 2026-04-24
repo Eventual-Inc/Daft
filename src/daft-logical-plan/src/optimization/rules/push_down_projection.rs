@@ -160,6 +160,17 @@ impl PushDownProjection {
                             if matches!(external_info.scan_state, ScanState::Tasks(_)) {
                                 return Ok(Transformed::no(plan));
                             }
+                            // Propose the projected pushdowns, then ask the
+                            // source if it can honor them. The default adapter
+                            // returns Exact whenever `columns` is populated —
+                            // so built-in sources see zero behavior change.
+                            let proposed = external_info.pushdowns.with_columns(Some(Arc::new(
+                                required_columns.iter().cloned().collect(),
+                            )));
+                            let scan_op = external_info.scan_state.get_scan_op().0.clone();
+                            if !scan_op.supports_pushdowns(&proposed).projection.can_push() {
+                                return Ok(Transformed::no(plan));
+                            }
                             let pruned_upstream_schema = upstream_schema
                                 .into_iter()
                                 .filter(|field| required_columns.contains(&*field.name))
@@ -170,11 +181,7 @@ impl PushDownProjection {
                                 source
                                     .clone()
                                     .with_source_info(Arc::new(SourceInfo::Physical(
-                                        external_info.with_pushdowns(
-                                            external_info.pushdowns.with_columns(Some(Arc::new(
-                                                required_columns.iter().cloned().collect(),
-                                            ))),
-                                        ),
+                                        external_info.with_pushdowns(proposed),
                                     )));
                             new_source_node.output_schema = schema.into();
                             let new_source: LogicalPlan =

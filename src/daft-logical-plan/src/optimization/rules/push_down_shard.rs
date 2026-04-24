@@ -88,6 +88,21 @@ impl PushDownShard {
                             SourceInfo::Physical(external_info) => {
                                 let new_pushdowns =
                                     external_info.pushdowns.with_sharder(Some(sharder.clone()));
+                                // Ask the source whether it can honor the shard
+                                // pushdown. Default adapter returns Exact when
+                                // `sharder` is populated, so built-in sources
+                                // see zero behavior change. A source that
+                                // overrides to return Unsupported keeps the
+                                // Shard op above the scan.
+                                let shard_cap = external_info
+                                    .scan_state
+                                    .get_scan_op()
+                                    .0
+                                    .supports_pushdowns(&new_pushdowns)
+                                    .shard;
+                                if !shard_cap.can_push() {
+                                    return Ok(Transformed::no(plan));
+                                }
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source =
                                     LogicalPlan::Source(source.clone().with_source_info(

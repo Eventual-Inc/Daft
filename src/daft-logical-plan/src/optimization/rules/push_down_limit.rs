@@ -123,20 +123,24 @@ impl PushDownLimit {
                             SourceInfo::Physical(external_info) => {
                                 let new_pushdowns =
                                     external_info.pushdowns.with_limit(Some(pushdown_limit));
+                                let limit_is_exact = external_info
+                                    .scan_state
+                                    .get_scan_op()
+                                    .0
+                                    .supports_pushdowns(&new_pushdowns)
+                                    .limit
+                                    .is_exact();
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source =
                                     LogicalPlan::Source(source.clone().with_source_info(
                                         SourceInfo::Physical(new_external_info).into(),
                                     ))
                                     .into();
-                                let out_plan =
-                                    if external_info.scan_state.get_scan_op().0.can_absorb_limit()
-                                        && offset.is_none()
-                                    {
-                                        new_source
-                                    } else {
-                                        plan.with_new_children(&[new_source]).into()
-                                    };
+                                let out_plan = if limit_is_exact && offset.is_none() {
+                                    new_source
+                                } else {
+                                    plan.with_new_children(&[new_source]).into()
+                                };
                                 Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
