@@ -63,6 +63,19 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                         .map(|input| input.alias(name.clone()))
                         .collect(),
                 },
+                AggExpr::AggFn { handle, inputs } => AggExpr::AggFn {
+                    handle,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+                AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
+                    unreachable!(
+                        "AggFnMap / AggFnReduce are planner-internal expressions \
+                         and must not appear in a user-level alias context"
+                    )
+                }
             }
         }),
         _ => Err(DaftError::InternalError(format!(

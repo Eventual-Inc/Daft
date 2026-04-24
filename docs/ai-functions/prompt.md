@@ -46,7 +46,7 @@ df = daft.from_pydict({
 })
 
 # generate responses using a chat model
-df = df.with_column("response", prompt(daft.col("input"), model="gpt-5-mini"))
+df = df.with_column("response", prompt(daft.col("input"), model="gpt-5.4-mini"))
 
 df.show()
 ```
