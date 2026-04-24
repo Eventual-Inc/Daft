@@ -105,7 +105,8 @@ impl ScalarUDF for HammingDistance {
     }
 
     fn docstring(&self) -> &'static str {
-        "Calculate the Hamming distance between two UTF-8 strings."
+        "Compute the Hamming distance between two strings. Returns null when either input \
+        is null or the two strings have different lengths."
     }
 }
 
