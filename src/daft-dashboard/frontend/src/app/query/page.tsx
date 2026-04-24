@@ -9,8 +9,8 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
@@ -19,6 +19,7 @@ import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
 import ResultPreview from "./result-preview";
+import TasksSidebar from "./tasks-sidebar";
 
 /**
  * Query detail page component
@@ -26,9 +27,75 @@ import ResultPreview from "./result-preview";
  */
 function QueryPageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const queryId = searchParams.get("id");
   const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
+
+  const engine = query ? getEngineName(query.runner) : null;
+  const isFlotilla = engine === "Flotilla";
+
+  // Tab + tasks-sidebar state is URL-driven so deep links survive reload.
+  // - `tab`: active tab id
+  // - `tasks=open`: tasks sidebar visible (Flotilla + Execution tab only)
+  // - `origin`: node id used as sidebar filter and/or plan highlight
+  const urlTab = searchParams.get("tab");
+  const urlOrigin = searchParams.get("origin");
+  const originParam = urlOrigin != null ? Number(urlOrigin) : null;
+  const activeTab = urlTab ?? "progress-table";
+  const tasksOpen = searchParams.get("tasks") === "open";
+
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(updates)) {
+        if (v == null) params.delete(k);
+        else params.set(k, v);
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const handleTabChange = useCallback(
+    (next: string) => {
+      // Leaving the Execution tab clears the origin hint so a fresh return
+      // doesn't carry a stale filter/highlight. Sidebar open-state persists.
+      updateParams({ tab: next, origin: null });
+    },
+    [updateParams],
+  );
+
+  // Plan node -> open tasks sidebar, filtered to that origin.
+  const handleViewTasksForNode = useCallback(
+    (nodeId: number) => {
+      updateParams({ tasks: "open", origin: String(nodeId) });
+    },
+    [updateParams],
+  );
+
+  // Toolbar button -> open tasks sidebar, no filter.
+  const handleOpenTasks = useCallback(() => {
+    updateParams({ tasks: "open" });
+  }, [updateParams]);
+
+  const handleCloseTasks = useCallback(() => {
+    // Closing the sidebar also clears the filter so reopening starts fresh.
+    updateParams({ tasks: null, origin: null });
+  }, [updateParams]);
+
+  // Task row origin link -> highlight the plan node (sidebar stays open).
+  const handleSelectOrigin = useCallback(
+    (nodeId: number) => {
+      updateParams({ origin: String(nodeId) });
+    },
+    [updateParams],
+  );
+
+  const handleClearOrigin = useCallback(() => {
+    updateParams({ origin: null });
+  }, [updateParams]);
 
   useEffect(() => {
     const es = new EventSource(genApiUrl(`/client/query/${queryId}/subscribe`));
@@ -235,10 +302,11 @@ function QueryPageInner() {
       {/* Scrollable Content Section */}
       <div className="flex-1">
         <Tabs
-          defaultValue="progress-table"
+          value={activeTab}
+          onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList className={`grid w-full flex-shrink-0 ${getEngineName(query.runner) === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
+          <TabsList className={`grid w-full flex-shrink-0 ${engine === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -257,7 +325,7 @@ function QueryPageInner() {
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
             {/* Results preview only supported for Swordfish for now (#6559) */}
-            {getEngineName(query.runner) === "Swordfish" && (
+            {engine === "Swordfish" && (
               <TabsTrigger
                 value="results"
                 disabled={query.state.status !== "Finished"}
@@ -269,13 +337,34 @@ function QueryPageInner() {
 
           <TabsContent
             value="progress-table"
-            className="mt-4 flex-1 overflow-auto"
+            className="mt-4 flex-1 overflow-hidden"
           >
-            <div className="bg-zinc-900 h-full">
+            <div className="bg-zinc-900 h-full flex">
               {"exec_info" in query.state && query.state.exec_info !== null ? (
-                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
+                <>
+                  <div className="flex-1 min-w-0 h-full">
+                    <PhysicalPlanTree
+                      exec_state={query.state as ExecutingState}
+                      highlightedNodeId={originParam}
+                      onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
+                      tasksOpen={isFlotilla && tasksOpen}
+                      onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
+                    />
+                  </div>
+                  {isFlotilla && tasksOpen && queryId && (
+                    <div className="w-1/2 min-w-[480px] max-w-[900px] flex-shrink-0 border-l border-zinc-800 h-full">
+                      <TasksSidebar
+                        exec_state={query.state as ExecutingState}
+                        originFilter={originParam}
+                        onClearFilter={handleClearOrigin}
+                        onSelectOrigin={handleSelectOrigin}
+                        onClose={handleCloseTasks}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="p-8 text-center">
+                <div className="p-8 text-center w-full">
                   <p className={`${main.className} text-zinc-400`}>
                     No execution data available
                   </p>

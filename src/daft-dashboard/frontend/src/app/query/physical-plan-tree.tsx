@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
@@ -113,16 +114,30 @@ function PhysicalNodeCard({
   node,
   operator,
   intensity,
+  isHighlighted,
+  onViewTasks,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
+  /** Outline this node — typically set after navigating from the Tasks tab. */
+  isHighlighted: boolean;
+  /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
+  onViewTasks?: (nodeId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status = operator?.status ?? "Pending";
   const wallClock = useWallClockDuration(operator);
   const cardStyle: React.CSSProperties =
     status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
+
+  // Scroll the highlighted node into view when it becomes the navigation target.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+  }, [isHighlighted]);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
@@ -138,11 +153,19 @@ function PhysicalNodeCard({
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
+  const ringStyle: React.CSSProperties = isHighlighted
+    ? {
+        boxShadow:
+          "0 0 0 2px rgb(217, 70, 219), 0 0 18px 2px rgba(217, 70, 219, 0.55)",
+      }
+    : {};
+
   return (
     <div
+      ref={cardRef}
       className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
         hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
-      style={cardStyle}
+      style={{ ...cardStyle, ...ringStyle }}
       onClick={() => setExpanded(!expanded)}
     >
       {/* Header: status icon + name */}
@@ -153,8 +176,23 @@ function PhysicalNodeCard({
         >
           {node.name}
         </span>
+        {onViewTasks && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewTasks(node.id);
+            }}
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-md
+              bg-zinc-900/60 border border-zinc-700 text-[10px] text-zinc-300
+              hover:text-white hover:border-fuchsia-600 transition-colors"
+            title="View tasks originating from this node"
+          >
+            <ListChecks size={11} />
+            tasks
+          </button>
+        )}
         {hasExpandable && (
-          <span className="text-zinc-500 text-xs ml-auto">
+          <span className={`text-zinc-500 text-xs ${onViewTasks ? "" : "ml-auto"}`}>
             {expanded ? "▾" : "▸"}
           </span>
         )}
@@ -216,8 +254,18 @@ function PhysicalNodeCard({
 
 export default function PhysicalPlanTree({
   exec_state,
+  highlightedNodeId,
+  onViewTasks,
+  tasksOpen,
+  onOpenTasks,
 }: {
   exec_state: ExecutingState;
+  highlightedNodeId?: number | null;
+  onViewTasks?: (nodeId: number) => void;
+  /** Whether the tasks sidebar is currently open. Flotilla only. */
+  tasksOpen?: boolean;
+  /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
+  onOpenTasks?: () => void;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -306,6 +354,17 @@ export default function PhysicalPlanTree({
             JSON
           </button>
         )}
+        {onOpenTasks && !tasksOpen && (
+          <button
+            onClick={onOpenTasks}
+            className={`${main.className} ml-auto flex items-center gap-1 text-xs px-3 py-1 rounded-md
+              text-zinc-400 hover:text-zinc-200 transition-colors`}
+            title="Show tasks sidebar"
+          >
+            <PanelRightOpen size={13} />
+            Tasks
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -327,6 +386,8 @@ export default function PhysicalPlanTree({
                     node={node}
                     operator={op}
                     intensity={intensity}
+                    isHighlighted={highlightedNodeId === node.id}
+                    onViewTasks={onViewTasks}
                   />
                 );
               }}

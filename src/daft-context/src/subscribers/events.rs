@@ -149,7 +149,15 @@ pub struct ResultOutEvent {
 #[derive(Debug, Clone)]
 pub struct TaskMeta {
     pub id: u32,
+    /// The last distributed plan node in the task's pipeline — the one that
+    /// dispatched the task. Matches `TaskContext::last_node_id`.
+    pub origin_node_id: u32,
     pub node_ids: Vec<u32>,
+    /// Fingerprint identifying tasks with functionally identical plans.
+    /// Tasks with the same origin_node_id + plan_fingerprint share a compiled pipeline.
+    pub plan_fingerprint: u32,
+    /// Optional human-readable task name (pipeline shape), set on submit.
+    pub name: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         Arc, LazyLock,
         atomic::{AtomicUsize, Ordering},
@@ -44,6 +44,389 @@ pub(crate) struct OperatorInfo {
 
 pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
+pub(crate) enum TaskStatus {
+    Pending,
+    Finished,
+    Failed { message: Option<String> },
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TaskInfo {
+    pub task_id: u32,
+    pub origin_node_id: NodeID,
+    pub node_ids: Vec<NodeID>,
+    pub plan_fingerprint: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub status: TaskStatus,
+    pub submit_sec: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    pub cpu_us: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct TaskGroupKey {
+    pub origin_node_id: NodeID,
+    pub pipeline_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TaskGroupSummary {
+    pub origin_node_id: NodeID,
+    pub node_ids: Vec<NodeID>,
+    pub name: String,
+    pub task_count: u32,
+    pub pending_count: u32,
+    pub finished_count: u32,
+    pub failed_count: u32,
+    pub cancelled_count: u32,
+    pub total_rows_in: u64,
+    pub total_rows_out: u64,
+    pub total_bytes_in: u64,
+    pub total_bytes_out: u64,
+    pub total_cpu_us: u64,
+    pub first_submit_sec: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_end_sec: Option<f64>,
+    pub retained_task_count: u32,
+}
+
+/// Bounded task store that maintains per-group aggregate summaries and retains
+/// only "interesting" individual tasks: active (in-flight), failed/cancelled,
+/// and the top-K longest-duration completed tasks per group.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TaskStore {
+    /// Aggregate summaries per (origin_node_id, plan_fingerprint) group.
+    pub groups: Vec<TaskGroupSummary>,
+    /// Retained individual tasks (active, failed, top-K completed per group).
+    pub tasks: HashMap<u32, TaskInfo>,
+
+    /// Maps TaskGroupKey -> index into `groups` vec.
+    #[serde(skip)]
+    group_index: HashMap<TaskGroupKey, usize>,
+    /// Per-group list of retained finished-successful task IDs.
+    #[serde(skip)]
+    finished_ids_by_group: HashMap<TaskGroupKey, Vec<u32>>,
+    /// FIFO list of retained failed/cancelled task IDs.
+    #[serde(skip)]
+    failed_ids: VecDeque<u32>,
+    #[serde(skip)]
+    max_finished_per_group: usize,
+    #[serde(skip)]
+    max_retained_failed: usize,
+}
+
+impl Default for TaskStore {
+    fn default() -> Self {
+        Self::new(10, 100)
+    }
+}
+
+impl TaskStore {
+    pub fn new(max_finished_per_group: usize, max_retained_failed: usize) -> Self {
+        Self {
+            groups: Vec::new(),
+            tasks: HashMap::new(),
+            group_index: HashMap::new(),
+            finished_ids_by_group: HashMap::new(),
+            failed_ids: VecDeque::new(),
+            max_finished_per_group,
+            max_retained_failed,
+        }
+    }
+
+    /// Returns the index into `self.groups` for the given key, creating the
+    /// group if it doesn't exist yet.
+    fn ensure_group(
+        &mut self,
+        origin_node_id: NodeID,
+        node_ids: &[NodeID],
+        pipeline_name: &str,
+        initial_sec: f64,
+    ) -> usize {
+        let key = TaskGroupKey {
+            origin_node_id,
+            pipeline_name: pipeline_name.to_string(),
+        };
+        let groups = &mut self.groups;
+        *self.group_index.entry(key).or_insert_with_key(|key| {
+            let idx = groups.len();
+            groups.push(TaskGroupSummary {
+                origin_node_id: key.origin_node_id,
+                node_ids: node_ids.to_vec(),
+                name: key.pipeline_name.clone(),
+                task_count: 0,
+                pending_count: 0,
+                finished_count: 0,
+                failed_count: 0,
+                cancelled_count: 0,
+                total_rows_in: 0,
+                total_rows_out: 0,
+                total_bytes_in: 0,
+                total_bytes_out: 0,
+                total_cpu_us: 0,
+                first_submit_sec: initial_sec,
+                last_end_sec: None,
+                retained_task_count: 0,
+            });
+            idx
+        })
+    }
+
+    /// Derive the group key for a task. Uses the task's name if available,
+    /// otherwise falls back to a string representation of origin_node_id.
+    fn group_key_for_task(task: &TaskInfo) -> TaskGroupKey {
+        let pipeline_name = task
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Node {}", task.origin_node_id));
+        TaskGroupKey {
+            origin_node_id: task.origin_node_id,
+            pipeline_name,
+        }
+    }
+
+    /// Record a task submission. The individual task is always retained while
+    /// active (callers inspect active tasks for debugging stuck queries).
+    pub fn submit_task(
+        &mut self,
+        task_id: u32,
+        origin_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        plan_fingerprint: u32,
+        name: Option<String>,
+        submit_sec: f64,
+    ) {
+        let pipeline_name = name.as_deref().unwrap_or("unknown");
+        let is_new = !self.tasks.contains_key(&task_id);
+        let gi = self.ensure_group(origin_node_id, &node_ids, pipeline_name, submit_sec);
+        let group = &mut self.groups[gi];
+
+        if is_new {
+            group.task_count += 1;
+            group.pending_count += 1;
+            group.retained_task_count += 1;
+            if submit_sec < group.first_submit_sec {
+                group.first_submit_sec = submit_sec;
+            }
+        }
+
+        let entry = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
+            task_id,
+            origin_node_id,
+            node_ids: node_ids.clone(),
+            plan_fingerprint,
+            name: name.clone(),
+            status: TaskStatus::Pending,
+            submit_sec,
+            end_sec: None,
+            worker_id: None,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            cpu_us: 0,
+        });
+
+        // If a prior submit is replayed, keep the earliest submit_sec and sync
+        // identifying fields.
+        entry.origin_node_id = origin_node_id;
+        entry.node_ids = node_ids;
+        entry.plan_fingerprint = plan_fingerprint;
+        if name.is_some() {
+            entry.name = name;
+        }
+        if submit_sec < entry.submit_sec {
+            entry.submit_sec = submit_sec;
+        }
+    }
+
+    /// Record a task completion. Updates group summary and applies retention:
+    /// failed/cancelled tasks are always kept (up to a global cap); successful
+    /// tasks are kept if they are among the top-K longest by duration per group.
+    #[allow(clippy::too_many_arguments)]
+    pub fn end_task(
+        &mut self,
+        task_id: u32,
+        origin_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        plan_fingerprint: u32,
+        worker_id: Option<String>,
+        status: TaskStatus,
+        end_sec: f64,
+        rows_in: u64,
+        rows_out: u64,
+        bytes_in: u64,
+        bytes_out: u64,
+        cpu_us: u64,
+    ) {
+        // Determine whether this task was previously submitted (exists in tasks).
+        let was_submitted = self.tasks.contains_key(&task_id);
+        let was_pending = was_submitted
+            && matches!(
+                self.tasks.get(&task_id).map(|t| &t.status),
+                Some(TaskStatus::Pending)
+            );
+
+        // Derive the pipeline name from the existing task (set by prior submit)
+        // or fall back to a placeholder if end arrived before submit.
+        let pipeline_name = self
+            .tasks
+            .get(&task_id)
+            .and_then(|t| t.name.clone())
+            .unwrap_or_else(|| format!("Node {origin_node_id}"));
+        let key = TaskGroupKey {
+            origin_node_id,
+            pipeline_name: pipeline_name.clone(),
+        };
+
+        // Ensure group exists and update summary.
+        let gi = self.ensure_group(origin_node_id, &node_ids, &pipeline_name, end_sec);
+        let group = &mut self.groups[gi];
+
+        if !was_submitted {
+            group.task_count += 1;
+        }
+        if was_pending {
+            group.pending_count = group.pending_count.saturating_sub(1);
+        }
+        match &status {
+            TaskStatus::Finished => group.finished_count += 1,
+            TaskStatus::Failed { .. } => group.failed_count += 1,
+            TaskStatus::Cancelled => group.cancelled_count += 1,
+            TaskStatus::Pending => {}
+        }
+
+        group.total_rows_in += rows_in;
+        group.total_rows_out += rows_out;
+        group.total_bytes_in += bytes_in;
+        group.total_bytes_out += bytes_out;
+        group.total_cpu_us += cpu_us;
+        match group.last_end_sec {
+            Some(prev) if prev >= end_sec => {}
+            _ => group.last_end_sec = Some(end_sec),
+        }
+
+        if !was_submitted {
+            group.retained_task_count += 1;
+        }
+
+        // Upsert individual task.
+        let task = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
+            task_id,
+            origin_node_id,
+            node_ids: node_ids.clone(),
+            plan_fingerprint,
+            name: None,
+            status: TaskStatus::Pending,
+            submit_sec: end_sec, // no submit seen; use end time
+            end_sec: None,
+            worker_id: None,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            cpu_us: 0,
+        });
+
+        task.origin_node_id = origin_node_id;
+        if !node_ids.is_empty() {
+            task.node_ids = node_ids;
+        }
+        task.plan_fingerprint = plan_fingerprint;
+        task.status = status.clone();
+        task.end_sec = Some(end_sec);
+        task.worker_id = worker_id;
+        task.rows_in = rows_in;
+        task.rows_out = rows_out;
+        task.bytes_in = bytes_in;
+        task.bytes_out = bytes_out;
+        task.cpu_us = cpu_us;
+
+        // Apply retention policy.
+        match &status {
+            TaskStatus::Finished => {
+                self.retain_finished_task(task_id, &key);
+            }
+            TaskStatus::Failed { .. } | TaskStatus::Cancelled => {
+                self.retain_failed_task(task_id);
+            }
+            TaskStatus::Pending => {}
+        }
+    }
+
+    /// Keep top-K longest-duration finished tasks per group.
+    fn retain_finished_task(&mut self, task_id: u32, key: &TaskGroupKey) {
+        self.finished_ids_by_group
+            .entry(key.clone())
+            .or_default()
+            .push(task_id);
+
+        // Check whether eviction is needed; clone the (small, K~10) id list to
+        // break the borrow on self.finished_ids_by_group so we can read
+        // self.tasks freely.
+        let ids_snapshot = match self.finished_ids_by_group.get(key) {
+            Some(ids) if ids.len() > self.max_finished_per_group => ids.clone(),
+            _ => return,
+        };
+
+        // Find the shortest-duration task to evict.
+        let evict = ids_snapshot
+            .iter()
+            .enumerate()
+            .min_by(|(_, a_id), (_, b_id)| {
+                let dur = |id: &u32| -> f64 {
+                    self.tasks
+                        .get(id)
+                        .map(|t| t.end_sec.unwrap_or(0.0) - t.submit_sec)
+                        .unwrap_or(0.0)
+                };
+                dur(a_id)
+                    .partial_cmp(&dur(b_id))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx);
+
+        if let Some(evict_idx) = evict {
+            let evicted_id = ids_snapshot[evict_idx];
+            if let Some(ids) = self.finished_ids_by_group.get_mut(key) {
+                ids.swap_remove(evict_idx);
+            }
+            self.tasks.remove(&evicted_id);
+            if let Some(&gi) = self.group_index.get(key) {
+                self.groups[gi].retained_task_count =
+                    self.groups[gi].retained_task_count.saturating_sub(1);
+            }
+        }
+    }
+
+    /// Keep failed/cancelled tasks up to a global FIFO cap.
+    fn retain_failed_task(&mut self, task_id: u32) {
+        self.failed_ids.push_back(task_id);
+
+        if self.failed_ids.len() > self.max_retained_failed
+            && let Some(evicted_id) = self.failed_ids.pop_front()
+            && let Some(evicted) = self.tasks.remove(&evicted_id)
+        {
+            let evicted_key = Self::group_key_for_task(&evicted);
+            if let Some(gi) = self.group_index.get(&evicted_key) {
+                self.groups[*gi].retained_task_count =
+                    self.groups[*gi].retained_task_count.saturating_sub(1);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct PlanInfo {
     pub plan_start_sec: f64,
@@ -56,6 +439,11 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
+    /// Bounded task store for Flotilla queries. Maintains per-group aggregate
+    /// summaries and retains only interesting individual tasks (active, failed,
+    /// top-K by duration). Empty for Swordfish (local) queries.
+    #[serde(default)]
+    pub task_store: TaskStore,
     // TODO: Logs
 }
 
