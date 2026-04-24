@@ -1453,8 +1453,8 @@ def hamming_distance(left: Expression, right: Expression) -> Expression:
         right: The right string expression to compare against.
 
     Returns:
-        The Hamming distance between each string and the given string. If the any pair of
-        strings are of different lengths, returns null for that pair.
+        The Hamming distance for each pair of strings. Returns null when either input
+        is null or the two strings have different lengths.
 
     Examples:
         >>> import daft
