@@ -100,6 +100,18 @@ class TestUDAFParameterized:
         result = df.groupby("cat").agg(bounded_sum(col("val")).alias("total")).sort("cat").collect()
         assert result.to_pydict() == {"cat": ["a", "b"], "total": [11.0, 7.0]}
 
+    def test_two_parameterized_instances_same_agg(self):
+        df = daft.from_pydict({"cat": ["a", "a", "b", "b"], "val": [1.0, 100.0, 3.0, 4.0]})
+        bounded_10 = BoundedSumUDAF(max_val=10.0)
+        bounded_5 = BoundedSumUDAF(max_val=5.0)
+        result = (
+            df.groupby("cat")
+            .agg(bounded_10(col("val")).alias("b10"), bounded_5(col("val")).alias("b5"))
+            .sort("cat")
+            .collect()
+        )
+        assert result.to_pydict() == {"cat": ["a", "b"], "b10": [11.0, 7.0], "b5": [6.0, 7.0]}
+
 
 class TestUDAFMultiple:
     def test_multiple_udafs_in_same_agg(self):
@@ -119,10 +131,7 @@ class TestUDAFMultiple:
         sum1 = SumUDAF()
         sum2 = SumUDAF()
         result = (
-            df.groupby("cat")
-            .agg(sum1(col("x")).alias("sum_x"), sum2(col("y")).alias("sum_y"))
-            .sort("cat")
-            .collect()
+            df.groupby("cat").agg(sum1(col("x")).alias("sum_x"), sum2(col("y")).alias("sum_y")).sort("cat").collect()
         )
         assert result.to_pydict() == {"cat": ["a", "b"], "sum_x": [3.0, 7.0], "sum_y": [30.0, 70.0]}
 
@@ -190,7 +199,9 @@ class TestUDAFMultiInput:
         assert result.to_pydict() == {"total": [8.5]}
 
     def test_weighted_sum_groupby(self):
-        df = daft.from_pydict({"cat": ["a", "a", "b", "b"], "val": [1.0, 2.0, 3.0, 4.0], "weight": [1.0, 2.0, 1.0, 0.5]})
+        df = daft.from_pydict(
+            {"cat": ["a", "a", "b", "b"], "val": [1.0, 2.0, 3.0, 4.0], "weight": [1.0, 2.0, 1.0, 0.5]}
+        )
         ws = WeightedSumUDAF()
         result = df.groupby("cat").agg(ws(col("val"), col("weight")).alias("total")).sort("cat").collect()
         assert result.to_pydict() == {"cat": ["a", "b"], "total": [5.0, 5.0]}

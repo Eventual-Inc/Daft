@@ -19,7 +19,7 @@ def _get_instance(cls_factory: Any, init_args: tuple[tuple[Any, ...], dict[str, 
         cache = {}
         _local._udaf_instances = cache
 
-    key = id(cls_factory)
+    key = (id(cls_factory), id(init_args))
     instance = cache.get(key)
     if instance is None:
         args, kwargs = init_args
@@ -59,10 +59,7 @@ def call_agg_combine(
         state_series = Series._from_pyseries(state_pyseries_list[0])
         result = instance.combine(state_series)
     else:
-        states_dict = {
-            name: Series._from_pyseries(ps)
-            for name, ps in zip(state_field_names, state_pyseries_list)
-        }
+        states_dict = {name: Series._from_pyseries(ps) for name, ps in zip(state_field_names, state_pyseries_list)}
         result = instance.combine(states_dict)
 
     return _pack_state_result(result, state_field_names, state_field_dtypes)

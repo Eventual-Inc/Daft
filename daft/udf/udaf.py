@@ -40,8 +40,10 @@ def udaf(
         ... class MySum:
         ...     def agg_block(self, values: Series) -> float:
         ...         return float(values.sum())
+        ...
         ...     def combine(self, states: Series) -> float:
         ...         return float(states.sum())
+        ...
         ...     def finalize(self, state: float) -> float:
         ...         return state
 
@@ -54,8 +56,10 @@ def udaf(
         ... class MyMean:
         ...     def agg_block(self, values: Series) -> dict:
         ...         return {"sum": float(values.sum()), "count": int(values.count())}
+        ...
         ...     def combine(self, states: dict) -> dict:
         ...         return {"sum": float(states["sum"].sum()), "count": int(states["count"].sum())}
+        ...
         ...     def finalize(self, state: dict) -> float:
         ...         return state["sum"] / state["count"]
 
@@ -64,7 +68,6 @@ def udaf(
         >>> my_sum = MySum()
         >>> # df.groupby("category").agg(my_sum(df["value"]))
     """
-
     resolved_return_dtype = DataType._infer(return_dtype)
 
     if isinstance(state, dict):
@@ -78,9 +81,7 @@ def udaf(
         for method_name in ("agg_block", "combine", "finalize"):
             attr = inspect.getattr_static(klass, method_name, None)
             if attr is None or not inspect.isfunction(attr):
-                raise ValueError(
-                    f"UDAF class `{klass.__name__}` must define a `{method_name}` method."
-                )
+                raise ValueError(f"UDAF class `{klass.__name__}` must define a `{method_name}` method.")
 
         module_name = getattr(klass, "__module__", "")
         qual_name = getattr(klass, "__qualname__", klass.__name__)
@@ -93,6 +94,10 @@ def udaf(
                 self._daft_func_name = func_name
                 self._daft_func_id = f"{func_name}-{random.randint(0, 1_000_000)}"
                 self._daft_call_seq = 0
+                check_serializable(
+                    self._daft_cls_factory,
+                    "UDAF class must be serializable. Ensure it can be pickled.",
+                )
 
             def __call__(self, *args: Any, **kwargs: Any) -> Expression:
                 expr_args = []
@@ -111,11 +116,6 @@ def udaf(
 
                 call_id = f"{self._daft_func_id}-{self._daft_call_seq}"
                 self._daft_call_seq += 1
-
-                check_serializable(
-                    self._daft_cls_factory,
-                    "UDAF class must be serializable. Ensure it can be pickled.",
-                )
 
                 result = udaf_expr(
                     call_id,
