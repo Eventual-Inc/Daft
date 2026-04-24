@@ -1,4 +1,4 @@
-cluster_name: daft-cpu-a7f3e1
+cluster_name: ${CLUSTER_NAME}
 
 provider:
   type: aws
@@ -23,7 +23,7 @@ available_node_types:
       - ResourceType: instance
         Tags:
         - Key: owner
-          Value: euan
+          Value: ${OWNER}
       BlockDeviceMappings:
       - DeviceName: /dev/xvda
         Ebs:
@@ -43,7 +43,7 @@ available_node_types:
       - ResourceType: instance
         Tags:
         - Key: owner
-          Value: euan
+          Value: ${OWNER}
       BlockDeviceMappings:
       - DeviceName: /dev/xvda
         Ebs:
