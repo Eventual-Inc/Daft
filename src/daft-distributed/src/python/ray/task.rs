@@ -219,4 +219,8 @@ impl RaySwordfishTask {
         let config = self.task.config().clone();
         Ok(PyDaftExecutionConfig { config })
     }
+
+    fn added_resources(&self) -> HashMap<String, i64> {
+        self.task.added_resources().clone()
+    }
 }
