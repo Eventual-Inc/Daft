@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use opentelemetry::KeyValue;
 
@@ -37,11 +34,6 @@ struct SpillReporterInner {
     bytes_written: Counter,
     bytes_read: Counter,
     file_count: Counter,
-    /// Plain atomic because `files_resident` can decrement (spill files are
-    /// read back and deleted). TODO: expose as an OTel gauge via an
-    /// observable callback so exporters (Prometheus, OTLP) can see residency
-    /// — right now it only surfaces in snapshot payloads.
-    files_resident: AtomicU64,
     node_kv: Vec<KeyValue>,
 }
 
@@ -52,7 +44,6 @@ impl SpillReporter {
             bytes_written: meter.u64_counter(SPILL_BYTES_WRITTEN_STAT_KEY),
             bytes_read: meter.u64_counter(SPILL_BYTES_READ_STAT_KEY),
             file_count: meter.u64_counter(SPILL_FILE_COUNT_STAT_KEY),
-            files_resident: AtomicU64::new(0),
             node_kv: node_info.to_key_values(),
         };
         Self {
@@ -79,20 +70,6 @@ impl SpillReporter {
     pub fn record_file_created(&self) {
         if let Some(inner) = &self.inner {
             inner.file_count.add(1, inner.node_kv.as_slice());
-            inner.files_resident.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    /// Decrement the resident-files gauge when a spill file is read back or
-    /// deleted. Callers that leak files to end-of-query can skip this;
-    /// `files_resident` will equal `file_count` in that case.
-    pub fn record_file_removed(&self) {
-        if let Some(inner) = &self.inner {
-            let _ = inner
-                .files_resident
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                    Some(v.saturating_sub(1))
-                });
         }
     }
 
@@ -104,9 +81,8 @@ impl SpillReporter {
         let bytes_written = inner.bytes_written.load(ordering);
         let bytes_read = inner.bytes_read.load(ordering);
         let file_count = inner.file_count.load(ordering);
-        let files_resident = inner.files_resident.load(ordering);
 
-        if bytes_written == 0 && bytes_read == 0 && file_count == 0 && files_resident == 0 {
+        if bytes_written == 0 && bytes_read == 0 && file_count == 0 {
             return None;
         }
 
@@ -115,7 +91,6 @@ impl SpillReporter {
             bytes_written,
             bytes_read,
             file_count,
-            files_resident,
         })
     }
 }

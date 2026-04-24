@@ -133,7 +133,6 @@ pub const IN_MEMORY_BUFFER_BYTES_KEY: &str = "bytes.in_memory_buffer";
 pub const SPILL_BYTES_WRITTEN_STAT_KEY: &str = "spill.bytes.written";
 pub const SPILL_BYTES_READ_STAT_KEY: &str = "spill.bytes.read";
 pub const SPILL_FILE_COUNT_STAT_KEY: &str = "spill.files.created";
-pub const SPILL_FILES_RESIDENT_STAT_KEY: &str = "spill.files.resident";
 
 // Join metrics
 pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";

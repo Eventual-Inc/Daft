@@ -9,10 +9,11 @@ use smallvec::SmallVec;
 
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
-    IN_MEMORY_BUFFER_BYTES_KEY, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
-    JOIN_PROBE_BYTES_OUT_KEY, NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
-    SPILL_BYTES_READ_STAT_KEY, SPILL_BYTES_WRITTEN_STAT_KEY, SPILL_FILE_COUNT_STAT_KEY,
-    SPILL_FILES_RESIDENT_STAT_KEY, Stat, Stats,
+    IN_MEMORY_BUFFER_BYTES_KEY, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_BUILD_ROWS_INSERTED_KEY,
+    JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY, JOIN_PROBE_ROWS_IN_KEY,
+    JOIN_PROBE_ROWS_OUT_KEY, NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
+    SPILL_BYTES_READ_STAT_KEY, SPILL_BYTES_WRITTEN_STAT_KEY, SPILL_FILE_COUNT_STAT_KEY, Stat,
+    Stats,
 };
 
 macro_rules! stats {
@@ -62,7 +63,6 @@ pub struct SpillSnapshot {
     pub bytes_written: u64,
     pub bytes_read: u64,
     pub file_count: u64,
-    pub files_resident: u64,
 }
 
 impl SpillSnapshot {
@@ -72,7 +72,6 @@ impl SpillSnapshot {
             bytes_written: self.bytes_written + other.bytes_written,
             bytes_read: self.bytes_read + other.bytes_read,
             file_count: self.file_count + other.file_count,
-            files_resident: self.files_resident + other.files_resident,
         }
     }
 }
@@ -98,10 +97,6 @@ fn push_spill_stats(
     entries.push((
         SPILL_FILE_COUNT_STAT_KEY.into(),
         Stat::Count(spill.file_count),
-    ));
-    entries.push((
-        SPILL_FILES_RESIDENT_STAT_KEY.into(),
-        Stat::Count(spill.files_resident),
     ));
 }
 
@@ -490,11 +485,17 @@ impl StatSnapshotImpl for JoinSnapshot {
                 Stat::Duration(Duration::from_micros(self.cpu_us))
             ),
             (
-                "build rows inserted".into(),
+                JOIN_BUILD_ROWS_INSERTED_KEY.into(),
                 Stat::Count(self.build_rows_inserted)
             ),
-            ("probe rows in".into(), Stat::Count(self.probe_rows_in)),
-            ("probe rows out".into(), Stat::Count(self.probe_rows_out)),
+            (
+                JOIN_PROBE_ROWS_IN_KEY.into(),
+                Stat::Count(self.probe_rows_in)
+            ),
+            (
+                JOIN_PROBE_ROWS_OUT_KEY.into(),
+                Stat::Count(self.probe_rows_out)
+            ),
             (
                 JOIN_BUILD_BYTES_INSERTED_KEY.into(),
                 Stat::Bytes(self.build_bytes_inserted)

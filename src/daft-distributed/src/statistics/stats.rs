@@ -167,10 +167,6 @@ pub(crate) struct SpillRollupCounters {
     /// Peak in-memory buffer observed across any worker task. `fetch_max`
     /// rather than sum — buffer size is instantaneous, not cumulative.
     max_in_memory_buffer_bytes: AtomicU64,
-    /// Sum of resident-files counts reported from workers. Each task reports
-    /// its own still-resident count at task end; summed gives cluster-wide
-    /// residency.
-    spill_files_resident: AtomicU64,
     node_kv: Vec<KeyValue>,
 }
 
@@ -181,7 +177,6 @@ impl SpillRollupCounters {
             spill_bytes_read: meter.u64_counter(common_metrics::SPILL_BYTES_READ_STAT_KEY),
             spill_file_count: meter.u64_counter(common_metrics::SPILL_FILE_COUNT_STAT_KEY),
             max_in_memory_buffer_bytes: AtomicU64::new(0),
-            spill_files_resident: AtomicU64::new(0),
             node_kv,
         }
     }
@@ -197,8 +192,6 @@ impl SpillRollupCounters {
                 .add(spill.bytes_read, self.node_kv.as_slice());
             self.spill_file_count
                 .add(spill.file_count, self.node_kv.as_slice());
-            self.spill_files_resident
-                .fetch_add(spill.files_resident, Ordering::Relaxed);
         }
         if let Some(buf) = snapshot.in_memory_buffer_bytes() {
             self.max_in_memory_buffer_bytes
@@ -210,8 +203,7 @@ impl SpillRollupCounters {
         let bytes_written = self.spill_bytes_written.load(Ordering::Relaxed);
         let bytes_read = self.spill_bytes_read.load(Ordering::Relaxed);
         let file_count = self.spill_file_count.load(Ordering::Relaxed);
-        let files_resident = self.spill_files_resident.load(Ordering::Relaxed);
-        if bytes_written == 0 && bytes_read == 0 && file_count == 0 && files_resident == 0 {
+        if bytes_written == 0 && bytes_read == 0 && file_count == 0 {
             return None;
         }
         Some(SpillSnapshot {
@@ -219,7 +211,6 @@ impl SpillRollupCounters {
             bytes_written,
             bytes_read,
             file_count,
-            files_resident,
         })
     }
 
