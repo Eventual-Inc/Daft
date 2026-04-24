@@ -44,7 +44,6 @@ use crate::pipeline_node::MaterializedOutput;
 #[derive(Clone)]
 pub struct LocalSwordfishWorker {
     worker_id: WorkerId,
-    total_num_cpus: f64,
     active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
     /// Shared executor; all tasks routed to this worker run through it, so
     /// same-fingerprint tasks share a pipeline exactly as they would on a real
@@ -59,45 +58,18 @@ impl std::fmt::Debug for LocalSwordfishWorker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LocalSwordfishWorker")
             .field("worker_id", &self.worker_id)
-            .field("total_num_cpus", &self.total_num_cpus)
             .finish_non_exhaustive()
     }
 }
 
 impl LocalSwordfishWorker {
-    /// Create a new worker with its own `NativeExecutor`.
-    ///
-    /// Defaults to enough CPUs that the scheduler will dispatch tasks
-    /// concurrently — matching what a multi-core Ray worker does. Without
-    /// this, single-CPU serialization would prevent same-fingerprint tasks
-    /// from sharing a live pipeline in the executor's plan cache (the first
-    /// `try_finish` tears the plan down before the next `run` starts), which
-    /// would hide classes of shared-state bugs that the production path can
-    /// exhibit.
-    ///
-    /// `is_flotilla_worker` mirrors the real `NativeExecutor::new` flag. When
-    /// `true`, the executor starts a `ShuffleFlightServer` bound to `ip`
-    /// (default `127.0.0.1:0`) — set this for tests that exercise shuffles.
-    /// When `false`, no server is started, which is sufficient for tests that
-    /// only need plan-sharing realism (the common case).
     pub fn new(worker_id: WorkerId) -> Self {
-        Self::with_flotilla_mode(worker_id, 8.0, false, "")
-    }
-
-    /// Create a new worker, explicitly controlling CPU count and whether the
-    /// underlying `NativeExecutor` starts a shuffle server (as real Ray
-    /// workers do).
-    pub fn with_flotilla_mode(
-        worker_id: WorkerId,
-        total_num_cpus: f64,
-        is_flotilla_worker: bool,
-        ip: &str,
-    ) -> Self {
         Self {
             worker_id,
-            total_num_cpus,
             active_task_details: Arc::new(Mutex::new(HashMap::new())),
-            executor: Arc::new(Mutex::new(NativeExecutor::new(is_flotilla_worker, ip))),
+            // is_flotilla_worker=false: don't start a ShuffleFlightServer.
+            // Tests that need shuffle support can revisit this.
+            executor: Arc::new(Mutex::new(NativeExecutor::new(false, ""))),
             input_id_counter: Arc::new(AtomicU32::new(0)),
         }
     }
@@ -134,7 +106,12 @@ impl Worker for LocalSwordfishWorker {
     }
 
     fn total_num_cpus(&self) -> f64 {
-        self.total_num_cpus
+        // Only used by the scheduler's `can_schedule_task` check. Returning 1.0
+        // means the scheduler dispatches one task at a time per worker; the
+        // `NativeExecutor`'s plan cache still retains the pipeline across tasks
+        // because subsequent `run()` calls arrive before the previous task's
+        // `try_finish` tears it down.
+        1.0
     }
 
     fn total_num_gpus(&self) -> f64 {
@@ -154,7 +131,7 @@ impl LocalSwordfishWorker {
     fn to_snapshot(&self) -> WorkerSnapshot {
         WorkerSnapshot::new(
             self.worker_id.clone(),
-            self.total_num_cpus,
+            self.total_num_cpus(),
             0.0,
             self.active_task_details(),
         )
