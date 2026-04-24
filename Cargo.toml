@@ -37,6 +37,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal", default-feature
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
+daft-geo = {path = "src/daft-geo", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
