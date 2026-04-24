@@ -174,7 +174,7 @@ class Session:
     ###
 
     def attach(self, object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog, Table or UDF.
+        """Attaches a known attachable object like a Catalog, Table, UDF, or DataFrame.
 
         Args:
             object (Catalog|Table|UDF|DataFrame): object which is attachable to a session
@@ -251,8 +251,8 @@ class Session:
 
         Unlike ``attach_table(Table.from_df(...))``, this does not materialize data into a MemoryTable.
         """
-        py_source = PyTableSource.from_pybuilder(view._builder._builder)
-        return self._session.create_temp_table(alias, py_source, replace=False)
+        py_source = self._to_py_table_source(view)
+        return self._create_temp_table_with_source(alias, py_source, replace=False)
 
     def detach_catalog(self, alias: str) -> None:
         """Detaches the catalog from this session or raises if the catalog does not exist.
@@ -413,19 +413,23 @@ class Session:
         Returns:
             Table: new table instance
         """
-        if isinstance(source, Schema):
-            py_source = PyTableSource.from_pyschema(source._schema)
-        elif isinstance(source, DataFrame):
-            py_source = PyTableSource.from_pybuilder(source._builder._builder)
-        else:
-            raise ValueError(
-                f"Unsupported create_temp_table source, {type(source)}, expected either Schema or DataFrame."
-            )
-        return self._session.create_temp_table(identifier, py_source, replace=True)
+        py_source = self._to_py_table_source(source)
+        return self._create_temp_table_with_source(identifier, py_source, replace=True)
 
     def create_temp_view(self, identifier: str, view: DataFrame) -> Table:
         """Creates or replaces a non-materialized temporary view from a DataFrame."""
-        return self.create_temp_table(identifier, view)
+        py_source = self._to_py_table_source(view)
+        return self._create_temp_table_with_source(identifier, py_source, replace=True)
+
+    def _to_py_table_source(self, source: Schema | DataFrame) -> PyTableSource:
+        if isinstance(source, Schema):
+            return PyTableSource.from_pyschema(source._schema)
+        if isinstance(source, DataFrame):
+            return PyTableSource.from_pybuilder(source._builder._builder)
+        raise ValueError(f"Unsupported temp table source, {type(source)}, expected either Schema or DataFrame.")
+
+    def _create_temp_table_with_source(self, identifier: str, source: PyTableSource, replace: bool) -> Table:
+        return self._session.create_temp_table(identifier, source, replace=replace)
 
     ###
     # drop_*
