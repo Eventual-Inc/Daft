@@ -161,7 +161,7 @@ class IcebergScanOperator(ScanOperator):
 
         row_filter: BooleanExpression = ALWAYS_TRUE
         if pushdowns.filters is not None:
-            row_filter = convert_expression_to_iceberg(pushdowns.filters, self._iceberg_schema)
+            row_filter = convert_expression_to_iceberg(pushdowns.filters)
 
         _t0 = time.perf_counter()
         iceberg_tasks = list(
