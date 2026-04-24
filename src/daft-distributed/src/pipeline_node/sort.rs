@@ -332,7 +332,7 @@ pub(crate) fn create_range_repartition_tasks_with_sentinels(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                RepartitionWriteBackend::Ray,
+                ShuffleBackend::Ray,
                 RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),

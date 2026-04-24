@@ -1718,7 +1718,7 @@ fn physical_plan_to_pipeline(
         ) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                RepartitionWriteBackend::Ray => {
+                ShuffleBackend::Ray => {
                     let sink = RepartitionWithSentinelSink::new_ray(
                         repartition_spec.clone(),
                         *num_partitions,
@@ -1733,7 +1733,7 @@ fn physical_plan_to_pipeline(
                     )
                     .boxed()
                 }
-                RepartitionWriteBackend::Flight { .. } => {
+                ShuffleBackend::Flight { .. } => {
                     unimplemented!("RepartitionWriteWithSentinel does not support Flight backend")
                 }
             }
