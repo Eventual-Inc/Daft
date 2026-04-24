@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::buffer::NullBuffer;
+use arrow_buffer::{NullBuffer, NullBufferBuilder};
 use daft_core::prelude::{Float64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 
@@ -18,11 +18,19 @@ fn haversine_meters(lat1_deg: f64, lon1_deg: f64, lat2_deg: f64, lon2_deg: f64) 
     let sin_half_delta_lat = (delta_lat * 0.5).sin();
     let sin_half_delta_lon = (delta_lon * 0.5).sin();
 
-    let a = sin_half_delta_lat * sin_half_delta_lat
-        + lat1_rad.cos() * lat2_rad.cos() * sin_half_delta_lon * sin_half_delta_lon;
+    let a = (sin_half_delta_lat * sin_half_delta_lat
+        + lat1_rad.cos() * lat2_rad.cos() * sin_half_delta_lon * sin_half_delta_lon)
+        .clamp(0.0, 1.0);
 
-    let central_angle = 2.0 * a.sqrt().min(1.0).asin();
+    let central_angle = 2.0 * a.sqrt().asin();
     EARTH_RADIUS_M * central_angle
+}
+
+fn is_valid_lat_lon(lat: f64, lon: f64) -> bool {
+    lat.is_finite()
+        && lon.is_finite()
+        && (-90.0..=90.0).contains(&lat)
+        && (-180.0..=180.0).contains(&lon)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,7 +59,7 @@ impl ScalarUDF for GreatCircleDistance {
 
         let len = lat1.len();
 
-        let nulls = [lat1.nulls(), lon1.nulls(), lat2.nulls(), lon2.nulls()]
+        let input_nulls = [lat1.nulls(), lon1.nulls(), lat2.nulls(), lon2.nulls()]
             .into_iter()
             .fold(None, |acc, next| NullBuffer::union(acc.as_ref(), next));
 
@@ -61,23 +69,36 @@ impl ScalarUDF for GreatCircleDistance {
         let lon2_v = lon2.values();
 
         let mut values = Vec::with_capacity(len);
+        let mut validity = NullBufferBuilder::new(len);
 
-        if let Some(nulls) = &nulls {
-            for i in 0..len {
-                if nulls.is_null(i) {
-                    values.push(0.0);
-                } else {
-                    values.push(haversine_meters(lat1_v[i], lon1_v[i], lat2_v[i], lon2_v[i]));
-                }
+        for i in 0..len {
+            let row_is_present = input_nulls.as_ref().map(|n| !n.is_null(i)).unwrap_or(true);
+
+            if !row_is_present {
+                values.push(0.0);
+                validity.append_null();
+                continue;
             }
-        } else {
-            for i in 0..len {
-                values.push(haversine_meters(lat1_v[i], lon1_v[i], lat2_v[i], lon2_v[i]));
+
+            let a = lat1_v[i];
+            let b = lon1_v[i];
+            let c = lat2_v[i];
+            let d = lon2_v[i];
+
+            let row_is_valid = is_valid_lat_lon(a, b) && is_valid_lat_lon(c, d);
+
+            if row_is_valid {
+                values.push(haversine_meters(a, b, c, d));
+                validity.append_non_null();
+            } else {
+                values.push(0.0);
+                validity.append_null();
             }
         }
+
         let field = Arc::new(Field::new(self.name(), DataType::Float64));
         let result =
-            Float64Array::from_field_and_values(field, values.into_iter()).with_nulls(nulls)?;
+            Float64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
 
         Ok(result.into_series())
     }
@@ -116,7 +137,10 @@ impl ScalarUDF for GreatCircleDistance {
     }
 
     fn docstring(&self) -> &'static str {
-        "Computes the great circle distance in meters between two latitude/longitude points using the haversine formula."
+        "Computes the great-circle distance in meters between two points from \
+         (lat1, lon1) and (lat2, lon2), where latitudes and longitudes are \
+         specified in degrees, using the haversine formula. Null inputs or \
+         non-finite/out-of-range coordinates produce null."
     }
 }
 
