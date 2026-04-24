@@ -69,16 +69,6 @@ pub enum Error {
     #[cfg(feature = "python")]
     PyIO { source: PyErr },
 
-    #[snafu(display(
-        "PartitionSpecs were different during ScanTask::merge: {:?} vs {:?}",
-        ps1,
-        ps2
-    ))]
-    DifferingPartitionSpecsInScanTaskMerge {
-        ps1: Option<PartitionSpec>,
-        ps2: Option<PartitionSpec>,
-    },
-
     #[snafu(display("Schemas were different during ScanTask::merge: {} vs {}", s1, s2))]
     DifferingSchemasInScanTaskMerge { s1: SchemaRef, s2: SchemaRef },
 
@@ -403,12 +393,6 @@ impl ScanTask {
         generated_fields: Option<SchemaRef>,
     ) -> Self {
         assert!(!sources.is_empty());
-        debug_assert!(
-            sources
-                .iter()
-                .all(|s| s.partition_spec == sources.first().unwrap().partition_spec),
-            "ScanTask sources must all have the same PartitionSpec at construction",
-        );
         let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
@@ -457,12 +441,6 @@ impl ScanTask {
     }
 
     pub fn merge(sc1: &Self, sc2: &Self) -> Result<Self, Error> {
-        if sc1.partition_spec() != sc2.partition_spec() {
-            return Err(Error::DifferingPartitionSpecsInScanTaskMerge {
-                ps1: sc1.partition_spec().cloned(),
-                ps2: sc2.partition_spec().cloned(),
-            });
-        }
         if sc1.source_config != sc2.source_config {
             return Err(Error::DifferingSourceConfigsInScanTaskMerge {
                 sc_cfg1: sc1.source_config.clone(),
