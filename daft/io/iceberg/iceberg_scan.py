@@ -5,6 +5,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
+from pyiceberg.expressions import BooleanExpression
 from pyiceberg.schema import visit
 from pyiceberg.table import ALWAYS_TRUE
 
@@ -158,7 +159,7 @@ class IcebergScanOperator(ScanOperator):
         """Create regular scan tasks without count pushdown."""
         limit = pushdowns.limit
 
-        row_filter = ALWAYS_TRUE
+        row_filter: BooleanExpression = ALWAYS_TRUE
         if pushdowns.filters is not None:
             row_filter = convert_expression_to_iceberg(pushdowns.filters, self._iceberg_schema)
 
