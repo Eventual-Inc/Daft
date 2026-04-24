@@ -87,12 +87,44 @@ export type TaskInfo = {
   cpu_us: number;
 };
 
+/** Server-side aggregate summary for a group of tasks sharing an (origin_node_id, plan_fingerprint). */
+export type TaskGroupSummary = {
+  origin_node_id: number;
+  node_ids: number[];
+  plan_fingerprint: number;
+  name?: string;
+  task_count: number;
+  pending_count: number;
+  finished_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  total_rows_in: number;
+  total_rows_out: number;
+  total_bytes_in: number;
+  total_bytes_out: number;
+  total_cpu_us: number;
+  first_submit_sec: number;
+  last_end_sec?: number;
+  /** How many individual tasks for this group are in the retained `tasks` map. */
+  retained_task_count: number;
+};
+
+/**
+ * Bounded task store. Contains per-group aggregate summaries (always accurate)
+ * and a bounded set of retained individual tasks (active, failed, and top-K
+ * longest-duration completed tasks per group).
+ */
+export type TaskStore = {
+  groups: TaskGroupSummary[];
+  tasks: Record<number, TaskInfo>;
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
-  /** Per-task info keyed by task_id. Populated from TaskSubmit/TaskEnd events. */
-  tasks?: Record<number, TaskInfo>;
+  /** Bounded task store. Empty for Swordfish (local) queries. */
+  task_store?: TaskStore;
   // TODO: Logs
 };
 

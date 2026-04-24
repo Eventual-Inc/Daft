@@ -25,7 +25,7 @@ pub(crate) fn secs_from_epoch() -> f64 {
 
 use crate::state::{
     DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
-    QueryInfo, QueryState, TaskInfo, TaskStatus,
+    QueryInfo, QueryState, TaskStatus, TaskStore,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -275,7 +275,7 @@ pub(crate) fn apply_exec_start(
                     exec_start_sec: args.exec_start_sec,
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
-                    tasks: HashMap::new(),
+                    task_store: TaskStore::default(),
                 },
             };
 
@@ -704,7 +704,7 @@ pub(crate) fn apply_query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
-                        tasks: HashMap::new(),
+                        task_store: TaskStore::default(),
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
@@ -860,40 +860,15 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    let entry = exec_info
-        .tasks
-        .entry(args.task_id)
-        .or_insert_with(|| TaskInfo {
-            task_id: args.task_id,
-            origin_node_id: args.origin_node_id,
-            node_ids: args.node_ids.clone(),
-            plan_fingerprint: args.plan_fingerprint,
-            name: args.name.clone(),
-            status: TaskStatus::Pending,
-            submit_sec: args.submit_sec,
-            end_sec: None,
-            worker_id: None,
-            rows_in: 0,
-            rows_out: 0,
-            bytes_in: 0,
-            bytes_out: 0,
-            cpu_us: 0,
-        });
+    exec_info.task_store.submit_task(
+        args.task_id,
+        args.origin_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.name,
+        args.submit_sec,
+    );
 
-    // If a prior submit is replayed or arrives out of order, keep the earliest
-    // submit_sec and ensure identifying fields stay in sync.
-    entry.origin_node_id = args.origin_node_id;
-    entry.node_ids = args.node_ids;
-    entry.plan_fingerprint = args.plan_fingerprint;
-    if args.name.is_some() {
-        entry.name = args.name;
-    }
-    if args.submit_sec < entry.submit_sec {
-        entry.submit_sec = args.submit_sec;
-    }
-
-    // Task updates modify exec_info; pinging `query_update` delivers the full
-    // QueryInfo (including `exec_info.tasks`) to single-query SSE subscribers.
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
@@ -928,40 +903,20 @@ pub(crate) fn apply_task_end(
         TaskOutcomeArgs::Cancelled => TaskStatus::Cancelled,
     };
 
-    let task = exec_info
-        .tasks
-        .entry(args.task_id)
-        .or_insert_with(|| TaskInfo {
-            task_id: args.task_id,
-            origin_node_id: args.origin_node_id,
-            node_ids: args.node_ids.clone(),
-            plan_fingerprint: args.plan_fingerprint,
-            name: None,
-            status: TaskStatus::Pending,
-            // No submit event was seen; use the end time so duration renders as 0.
-            submit_sec: args.end_sec,
-            end_sec: None,
-            worker_id: None,
-            rows_in: 0,
-            rows_out: 0,
-            bytes_in: 0,
-            bytes_out: 0,
-            cpu_us: 0,
-        });
-
-    task.origin_node_id = args.origin_node_id;
-    if !args.node_ids.is_empty() {
-        task.node_ids = args.node_ids;
-    }
-    task.plan_fingerprint = args.plan_fingerprint;
-    task.status = status;
-    task.end_sec = Some(args.end_sec);
-    task.worker_id = args.worker_id;
-    task.rows_in = args.totals.rows_in;
-    task.rows_out = args.totals.rows_out;
-    task.bytes_in = args.totals.bytes_in;
-    task.bytes_out = args.totals.bytes_out;
-    task.cpu_us = args.totals.cpu_us;
+    exec_info.task_store.end_task(
+        args.task_id,
+        args.origin_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.worker_id,
+        status,
+        args.end_sec,
+        args.totals.rows_in,
+        args.totals.rows_out,
+        args.totals.bytes_in,
+        args.totals.bytes_out,
+        args.totals.cpu_us,
+    );
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK

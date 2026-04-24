@@ -12,7 +12,7 @@ import {
   getStatusText,
 } from "./stats-utils";
 import {
-  groupTasks,
+  buildTaskRows,
   taskDisplayStatus,
   TaskTypeRow,
 } from "./tasks-grouping";
@@ -22,8 +22,8 @@ import {
  * shows Flotilla task "types" (fused pipelines grouped by origin distributed-
  * plan node). Rows are expandable to individual task level.
  *
- * Tasks are populated from the backend via `exec_info.tasks`, pushed by the
- * distributed scheduler as TaskSubmit / TaskEnd events.
+ * Task data comes from `exec_info.task_store`, which contains per-group
+ * aggregate summaries and a bounded set of retained individual tasks.
  */
 export default function TasksSidebar({
   exec_state,
@@ -42,14 +42,9 @@ export default function TasksSidebar({
   /** Called when the user closes the sidebar. */
   onClose: () => void;
 }) {
-  const { operators, tasks } = exec_state.exec_info;
+  const { operators, task_store } = exec_state.exec_info;
 
-  const allTasks = useMemo<TaskInfo[]>(
-    () => (tasks ? Object.values(tasks) : []),
-    [tasks],
-  );
-
-  const allRows = useMemo(() => groupTasks(allTasks, operators), [allTasks, operators]);
+  const allRows = useMemo(() => buildTaskRows(task_store, operators), [task_store, operators]);
 
   const rows = useMemo(
     () =>
@@ -108,7 +103,7 @@ export default function TasksSidebar({
             <p className={`${main.className} text-zinc-400`}>
               {originFilter != null
                 ? "No tasks for this filter."
-                : allTasks.length === 0
+                : allRows.length === 0
                   ? "No tasks reported yet."
                   : "No tasks match."}
             </p>
@@ -253,7 +248,13 @@ function TaskTypeGroupRow({
         </Cell>
       </div>
 
-      {expanded && <ExpandedTaskList tasks={row.tasks} />}
+      {expanded && (
+        <ExpandedTaskList
+          tasks={row.tasks}
+          taskCount={row.task_count}
+          retainedTaskCount={row.retained_task_count}
+        />
+      )}
     </>
   );
 }
@@ -340,7 +341,17 @@ function StatusSummary({
 const SUB_GRID_COLS =
   "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_100px_110px_110px_110px_110px_100px]";
 
-function ExpandedTaskList({ tasks }: { tasks: TaskInfo[] }) {
+function ExpandedTaskList({
+  tasks,
+  taskCount,
+  retainedTaskCount,
+}: {
+  tasks: TaskInfo[];
+  /** Total number of tasks in this group (from server summary). */
+  taskCount: number;
+  /** Number of retained individual tasks for this group. */
+  retainedTaskCount: number;
+}) {
   return (
     <div className="bg-zinc-950/40 border-l-2 border-fuchsia-900/70 pl-0">
       {/* sub-header */}
@@ -363,6 +374,12 @@ function ExpandedTaskList({ tasks }: { tasks: TaskInfo[] }) {
         .map((t) => (
           <TaskSubRow key={t.task_id} task={t} />
         ))}
+      {retainedTaskCount < taskCount && (
+        <div className={`${main.className} px-6 py-2 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
+          Showing {retainedTaskCount} of {taskCount.toLocaleString()} tasks
+          (longest by duration, plus active and failed)
+        </div>
+      )}
     </div>
   );
 }

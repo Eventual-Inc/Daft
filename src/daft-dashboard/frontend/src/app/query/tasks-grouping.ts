@@ -1,16 +1,13 @@
 /**
  * Grouping helpers for the Flotilla Tasks sidebar.
  *
- * Tasks arrive from the backend via `exec_info.tasks` (keyed by task_id).
- * The sidebar groups them by (origin_node_id, plan_fingerprint):
- *   - same origin + same fingerprint       -> one row
- *   - different origin, same fingerprint   -> different rows
- *     (e.g. two ScanSource nodes both doing Read→Project)
- *
- * These helpers shape the raw task stream into the grouped rows the table
- * renders. The task-level info lives in `TaskInfo` (see types.ts).
+ * The server provides per-group aggregate summaries via `task_store.groups`
+ * and a bounded set of retained individual tasks via `task_store.tasks`.
+ * This module joins the two: each `TaskTypeRow` carries the server-computed
+ * aggregates (always accurate, even when individual tasks have been evicted)
+ * and attaches matching retained tasks for drill-down.
  */
-import { OperatorInfo, OperatorStatus, TaskInfo } from "./types";
+import { OperatorInfo, OperatorStatus, TaskGroupSummary, TaskInfo, TaskStore } from "./types";
 
 export type TaskRowStatus = OperatorStatus;
 
@@ -53,85 +50,104 @@ export type TaskTypeRow = {
   first_start_sec: number;
   /** Latest task end, or null if any task is still running. */
   last_end_sec: number | null;
+  /** Retained individual tasks for this group (may be fewer than task_count). */
   tasks: TaskInfo[];
+  /** How many individual tasks for this group are retained (active + failed + top-K). */
+  retained_task_count: number;
 };
 
 /**
- * Derive a pipeline of human-readable node names from the task's node_ids.
- * Names come from the distributed plan (exec_info.operators). If a name is
- * unknown the id is shown as a fallback so rows still group deterministically.
+ * Derive a pipeline of human-readable node names from the group's node_ids.
+ * Names come from the distributed plan (exec_info.operators). Falls back to
+ * a retained task's name if available.
  */
-function pipelineForTask(
-  task: TaskInfo,
+function pipelineForGroup(
+  group: TaskGroupSummary,
+  retainedTasks: TaskInfo[],
   operators: Record<number, OperatorInfo>,
 ): string[] {
-  if (task.name) {
-    // Backend-supplied name overrides the derived pipeline. Treat a dash-
-    // delimited name (`Read->Project`) as a pipeline; otherwise use as-is.
-    return task.name.includes("->") ? task.name.split("->") : [task.name];
+  // Check if a retained task has a backend-supplied name.
+  const namedTask = retainedTasks.find((t) => t.name);
+  if (namedTask?.name) {
+    return namedTask.name.includes("->")
+      ? namedTask.name.split("->")
+      : [namedTask.name];
   }
-  if (task.node_ids.length === 0) {
-    return [operators[task.origin_node_id]?.node_info.name ?? `Node ${task.origin_node_id}`];
+
+  // Derive from the group's node_ids.
+  if (group.node_ids.length > 0) {
+    return group.node_ids.map(
+      (id) => operators[id]?.node_info.name ?? `Node ${id}`,
+    );
   }
-  return task.node_ids.map(
-    (id) => operators[id]?.node_info.name ?? `Node ${id}`,
-  );
+
+  // Fall back to the origin node.
+  return [
+    operators[group.origin_node_id]?.node_info.name ??
+      `Node ${group.origin_node_id}`,
+  ];
 }
 
-export function groupTasks(
-  tasks: TaskInfo[],
+/**
+ * Build task-type rows from the server-provided TaskStore.
+ *
+ * Group summaries provide accurate aggregate stats (counts, totals) even when
+ * individual tasks have been evicted from the retained set. Retained tasks are
+ * attached for drill-down when the user expands a row.
+ */
+export function buildTaskRows(
+  taskStore: TaskStore | undefined,
   operators: Record<number, OperatorInfo>,
 ): TaskTypeRow[] {
-  const byKey = new Map<string, TaskTypeRow>();
+  if (!taskStore) return [];
 
-  for (const t of tasks) {
+  // Index retained tasks by group key.
+  const tasksByGroup = new Map<string, TaskInfo[]>();
+  for (const t of Object.values(taskStore.tasks)) {
     const key = `${t.origin_node_id}:${t.plan_fingerprint}`;
-    const pipeline = pipelineForTask(t, operators);
-    const status = taskDisplayStatus(t);
-    const cpuSec = t.cpu_us / 1_000_000;
-
-    let row = byKey.get(key);
-    if (!row) {
-      row = {
-        key,
-        origin_node_id: t.origin_node_id,
-        origin_node_name:
-          operators[t.origin_node_id]?.node_info.name ?? `Node ${t.origin_node_id}`,
-        pipeline,
-        plan_fingerprint: t.plan_fingerprint,
-        task_count: 0,
-        status_counts: { Pending: 0, Executing: 0, Finished: 0, Failed: 0 },
-        total_rows_in: 0,
-        total_rows_out: 0,
-        total_bytes_in: 0,
-        total_bytes_out: 0,
-        total_cpu_sec: 0,
-        first_start_sec: t.submit_sec,
-        last_end_sec: t.end_sec ?? null,
-        tasks: [],
-      };
-      byKey.set(key, row);
+    let arr = tasksByGroup.get(key);
+    if (!arr) {
+      arr = [];
+      tasksByGroup.set(key, arr);
     }
-
-    row.task_count += 1;
-    row.status_counts[status] += 1;
-    row.total_rows_in += t.rows_in;
-    row.total_rows_out += t.rows_out;
-    row.total_bytes_in += t.bytes_in;
-    row.total_bytes_out += t.bytes_out;
-    row.total_cpu_sec += cpuSec;
-    row.first_start_sec = Math.min(row.first_start_sec, t.submit_sec);
-    if (t.end_sec == null) {
-      row.last_end_sec = null;
-    } else if (row.last_end_sec != null) {
-      row.last_end_sec = Math.max(row.last_end_sec, t.end_sec);
-    }
-    row.tasks.push(t);
+    arr.push(t);
   }
 
-  return Array.from(byKey.values()).sort((a, b) => {
-    if (a.origin_node_id !== b.origin_node_id)
-      return a.origin_node_id - b.origin_node_id;
-    return a.pipeline.join("->").localeCompare(b.pipeline.join("->"));
-  });
+  return taskStore.groups
+    .map((g) => {
+      const key = `${g.origin_node_id}:${g.plan_fingerprint}`;
+      const tasks = tasksByGroup.get(key) ?? [];
+      const pipeline = pipelineForGroup(g, tasks, operators);
+
+      return {
+        key,
+        origin_node_id: g.origin_node_id,
+        origin_node_name:
+          operators[g.origin_node_id]?.node_info.name ??
+          `Node ${g.origin_node_id}`,
+        pipeline,
+        plan_fingerprint: g.plan_fingerprint,
+        task_count: g.task_count,
+        status_counts: {
+          Pending: 0,
+          Executing: g.pending_count,
+          Finished: g.finished_count,
+          Failed: g.failed_count + g.cancelled_count,
+        } as Record<TaskRowStatus, number>,
+        total_rows_in: g.total_rows_in,
+        total_rows_out: g.total_rows_out,
+        total_bytes_in: g.total_bytes_in,
+        total_bytes_out: g.total_bytes_out,
+        total_cpu_sec: g.total_cpu_us / 1_000_000,
+        first_start_sec: g.first_submit_sec,
+        last_end_sec: g.pending_count > 0 ? null : (g.last_end_sec ?? null),
+        tasks,
+        retained_task_count: g.retained_task_count,
+      };
+    })
+    .sort((a, b) => {
+      if (a.origin_node_id !== b.origin_node_id)
+        return a.origin_node_id - b.origin_node_id;
+      return a.pipeline.join("->").localeCompare(b.pipeline.join("->"));
+    });
 }
