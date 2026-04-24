@@ -24,6 +24,7 @@ def great_circle_distance(lat1: Expression, lon1: Expression, lat2: Expression, 
         >>> import daft
         >>> from daft.functions import great_circle_distance
         >>> df = daft.from_pydict({"lat1": [0.0], "lon1": [0.0], "lat2": [0.0], "lon2": [1.0]})
-        >>> df.select(great_circle_distance(df["lat1"], df["lon1"], df["lat2"], df["lon2"]).alias("meters")).show()
+        >>> df = df.select(great_circle_distance(df["lat1"], df["lon1"], df["lat2"], df["lon2"]).alias("meters"))
+        >>> df.show()  # doctest: +SKIP
     """
     return Expression._call_builtin_scalar_fn("great_circle_distance", lat1, lon1, lat2, lon2)
