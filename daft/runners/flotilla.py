@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import os
 import shutil
+import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 from daft.context import get_context
 from daft.daft import (
@@ -388,53 +390,147 @@ def _get_worker_startup_timeout() -> int:
     return get_context().daft_execution_config.worker_startup_timeout
 
 
+@dataclass
+class _PendingActor:
+    """Tracks a spawned actor that hasn't yet reported its address."""
+
+    node: dict[str, Any]
+    actor: ray.actor.ActorHandle
+    address_ref: ray.ObjectRef
+    spawn_time: float
+
+
+_pending_actors: dict[str, _PendingActor] = {}
+
+
+def _is_eligible_node(node: dict[str, Any]) -> bool:
+    return (
+        node.get("Alive", True)
+        and "Resources" in node
+        and "CPU" in node["Resources"]
+        and "memory" in node["Resources"]
+        and node["Resources"]["CPU"] > 0
+        and node["Resources"]["memory"] > 0
+    )
+
+
+def _kill_actor(actor: ray.actor.ActorHandle) -> None:
+    try:
+        ray.kill(actor)
+    except Exception:
+        pass
+
+
+def clear_pending_ray_workers() -> None:
+    for node_id, pending in list(_pending_actors.items()):
+        logger.info("Cleaning up pending actor on node %s", node_id)
+        _pending_actors.pop(node_id, None)
+        _kill_actor(pending.actor)
+
+
+atexit.register(clear_pending_ray_workers)
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    actors = []
-    for node in ray.nodes():
-        if (
-            "Resources" in node
-            and "CPU" in node["Resources"]
-            and "memory" in node["Resources"]
-            and node["Resources"]["CPU"] > 0
-            and node["Resources"]["memory"] > 0
-            and node["NodeID"] not in existing_worker_ids
-        ):
+    worker_startup_timeout = _get_worker_startup_timeout()
+    now = time.monotonic()
+    all_nodes = ray.nodes()
+
+    # Prune pending actors whose nodes no longer exist
+    current_node_ids = {node["NodeID"] for node in all_nodes if _is_eligible_node(node)}
+    for nid in [nid for nid in _pending_actors if nid not in current_node_ids]:
+        pending = _pending_actors.pop(nid)
+        logger.warning("Node %s disappeared while actor was pending startup; cleaning up", nid)
+        _kill_actor(pending.actor)
+
+    # Spawn actors for new nodes (not already tracked or existing)
+    skip_ids = set(existing_worker_ids) | set(_pending_actors.keys())
+    for node in all_nodes:
+        node_id = node["NodeID"]
+        if node_id not in skip_ids and _is_eligible_node(node):
             actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                    node_id=node["NodeID"],
+                    node_id=node_id,
                     soft=False,
                 ),
             ).remote(
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
-            actors.append((node, actor))
-
-    # Batch all IP address retrievals into a single ray.get call
-    actor_startup_timeout = _get_worker_startup_timeout()
-    try:
-        ip_addresses = ray.get(
-            [actor.get_address.remote() for _, actor in actors],
-            timeout=actor_startup_timeout,
-        )
-    except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
-
-    handles = []
-    for (node, actor), ip_address in zip(actors, ip_addresses):
-        actor_handle = RaySwordfishActorHandle(actor)
-        handles.append(
-            RaySwordfishWorker(
-                node["NodeID"],
-                actor_handle,
-                int(node["Resources"]["CPU"]),
-                int(node["Resources"].get("GPU", 0)),
-                int(node["Resources"]["memory"]),
-                ip_address,
+            _pending_actors[node_id] = _PendingActor(
+                node=node,
+                actor=actor,
+                address_ref=actor.get_address.remote(),
+                spawn_time=now,
             )
+
+    if not _pending_actors:
+        return []
+
+    # Non-blocking check for ready actors
+    pending_items = list(_pending_actors.items())
+    ready_refs, _ = ray.wait(
+        [p.address_ref for _, p in pending_items],
+        num_returns=len(pending_items),
+        timeout=0,
+    )
+    ready_ref_set = set(ready_refs)
+
+    # Collect ready workers
+    ready_workers: list[RaySwordfishWorker] = []
+    resolved_node_ids: list[str] = []
+    failed_node_ids: list[str] = []
+
+    for node_id, pending in pending_items:
+        if pending.address_ref not in ready_ref_set:
+            continue
+        resolved_node_ids.append(node_id)
+        try:
+            ip_address = ray.get(pending.address_ref)
+            ready_workers.append(
+                RaySwordfishWorker(
+                    node_id,
+                    RaySwordfishActorHandle(pending.actor),
+                    int(pending.node["Resources"]["CPU"]),
+                    int(pending.node["Resources"].get("GPU", 0)),
+                    int(pending.node["Resources"]["memory"]),
+                    ip_address,
+                )
+            )
+        except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError) as e:
+            logger.warning("Pending actor on node %s died during startup: %s", node_id, e)
+            failed_node_ids.append(node_id)
+            _kill_actor(pending.actor)
+        except Exception as e:
+            logger.warning("Unexpected error getting address for node %s: %s", node_id, e)
+            failed_node_ids.append(node_id)
+            _kill_actor(pending.actor)
+
+    for nid in resolved_node_ids:
+        _pending_actors.pop(nid, None)
+
+    # Expire actors that exceeded the startup timeout
+    timed_out_node_ids: list[str] = []
+    for nid in [nid for nid, p in _pending_actors.items() if now - p.spawn_time > worker_startup_timeout]:
+        pending = _pending_actors.pop(nid)
+        timed_out_node_ids.append(nid)
+        logger.warning("Actor on node %s failed to start within %ds; killing actor", nid, worker_startup_timeout)
+        _kill_actor(pending.actor)
+
+    if (
+        not existing_worker_ids
+        and not ready_workers
+        and not _pending_actors
+        and (failed_node_ids or timed_out_node_ids)
+    ):
+        failed_nodes = ", ".join(sorted({*failed_node_ids, *timed_out_node_ids}))
+        raise RuntimeError(
+            "Failed to start any Ray workers: "
+            f"startup failed or timed out within {worker_startup_timeout} seconds "
+            f"on nodes: {failed_nodes}"
         )
 
-    return handles
+    return ready_workers
 
 
 def try_autoscale(bundles: list[dict[str, int]]) -> None:
