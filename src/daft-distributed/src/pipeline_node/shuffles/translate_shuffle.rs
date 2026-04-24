@@ -8,9 +8,9 @@ use crate::pipeline_node::{
     DistributedPipelineNode,
     shuffles::{
         backends::{DistributedShuffleBackend, FlightShuffleBackendConfig},
-        gather::GatherNode,
+        gather::{GatherNode, GatherWriteNode},
         pre_shuffle_merge::PreShuffleMergeNode,
-        repartition::RepartitionNode,
+        repartition::{RepartitionNode, RepartitionWriteNode},
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -75,15 +75,30 @@ impl LogicalPlanToPipelineNodeTranslator {
             child
         };
 
+        let write_node_id = self.get_next_pipeline_node_id();
+        let write_node = DistributedPipelineNode::new(
+            Arc::new(RepartitionWriteNode::new(
+                write_node_id,
+                &self.plan_config,
+                repartition_spec.clone(),
+                schema.clone(),
+                num_partitions,
+                backend.clone(),
+                child_node,
+            )),
+            &self.meter,
+        );
+
+        let shuffle_node_id = self.get_next_pipeline_node_id();
         Ok(DistributedPipelineNode::new(
             Arc::new(RepartitionNode::new(
-                self.get_next_pipeline_node_id(),
+                shuffle_node_id,
                 &self.plan_config,
                 repartition_spec,
                 schema,
                 num_partitions,
                 backend,
-                child_node,
+                write_node,
             )),
             &self.meter,
         ))
@@ -123,15 +138,28 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
 
         let backend = self.select_backend();
+        let schema = input_node.config().schema.clone();
 
-        let node_id = self.get_next_pipeline_node_id();
+        let write_node_id = self.get_next_pipeline_node_id();
+        let write_node = DistributedPipelineNode::new(
+            Arc::new(GatherWriteNode::new(
+                write_node_id,
+                &self.plan_config,
+                schema.clone(),
+                backend.clone(),
+                input_node,
+            )),
+            &self.meter,
+        );
+
+        let shuffle_node_id = self.get_next_pipeline_node_id();
         DistributedPipelineNode::new(
             Arc::new(GatherNode::new(
-                node_id,
+                shuffle_node_id,
                 &self.plan_config,
-                input_node.config().schema.clone(),
+                schema,
                 backend,
-                input_node,
+                write_node,
             )),
             &self.meter,
         )

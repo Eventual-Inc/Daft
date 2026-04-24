@@ -60,6 +60,7 @@ mod scan_source;
 mod shuffles;
 mod sink;
 mod sort;
+pub(crate) mod stage;
 mod stage_checkpoint_keys;
 mod top_n;
 mod translate;
@@ -277,6 +278,9 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
         self.context().node_id
     }
     fn multiline_display(&self, verbose: bool) -> Vec<String>;
+    fn shuffle_info(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -318,6 +322,12 @@ impl DistributedPipelineNode {
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)
     }
+    pub fn children_ref(&self) -> &[Self] {
+        &self.children
+    }
+    pub fn shuffle_info(&self) -> Option<serde_json::Value> {
+        self.op.shuffle_info()
+    }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
@@ -352,13 +362,18 @@ impl TreeDisplay for DistributedPipelineNode {
     }
 
     fn repr_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "type": self.op.name(),
             "name": self.name(),
             "category": "Physical",
             "children": self.children.iter().map(|child| child.repr_json()).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(info) = self.op.shuffle_info() {
+            json["is_shuffle_boundary"] = serde_json::Value::Bool(true);
+            json["shuffle_info"] = info;
+        }
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

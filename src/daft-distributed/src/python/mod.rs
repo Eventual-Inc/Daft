@@ -21,7 +21,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     pipeline_node::{
-        logical_plan_to_pipeline_node, viz_distributed_pipeline_ascii,
+        logical_plan_to_pipeline_node, stage::extract_stage_plan, viz_distributed_pipeline_ascii,
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
@@ -194,7 +194,13 @@ impl PyDistributedPhysicalPlan {
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
+        let stage_plan = extract_stage_plan(&pipeline_node);
+        let json = serde_json::json!({
+            "plan": pipeline_node.repr_json(),
+            "stages": stage_plan.stages,
+            "shuffles": stage_plan.shuffles,
+        });
+        Ok(serde_json::to_string(&json).unwrap())
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
