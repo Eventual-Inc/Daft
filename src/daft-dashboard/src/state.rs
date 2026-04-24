@@ -77,16 +77,14 @@ pub(crate) struct TaskInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct TaskGroupKey {
     pub origin_node_id: NodeID,
-    pub plan_fingerprint: u32,
+    pub pipeline_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TaskGroupSummary {
     pub origin_node_id: NodeID,
     pub node_ids: Vec<NodeID>,
-    pub plan_fingerprint: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub name: String,
     pub task_count: u32,
     pub pending_count: u32,
     pub finished_count: u32,
@@ -153,13 +151,12 @@ impl TaskStore {
         &mut self,
         origin_node_id: NodeID,
         node_ids: &[NodeID],
-        plan_fingerprint: u32,
-        name: Option<&str>,
+        pipeline_name: &str,
         initial_sec: f64,
     ) -> usize {
         let key = TaskGroupKey {
             origin_node_id,
-            plan_fingerprint,
+            pipeline_name: pipeline_name.to_string(),
         };
         let groups = &mut self.groups;
         *self.group_index.entry(key).or_insert_with_key(|key| {
@@ -167,8 +164,7 @@ impl TaskStore {
             groups.push(TaskGroupSummary {
                 origin_node_id: key.origin_node_id,
                 node_ids: node_ids.to_vec(),
-                plan_fingerprint: key.plan_fingerprint,
-                name: name.map(String::from),
+                name: key.pipeline_name.clone(),
                 task_count: 0,
                 pending_count: 0,
                 finished_count: 0,
@@ -187,6 +183,19 @@ impl TaskStore {
         })
     }
 
+    /// Derive the group key for a task. Uses the task's name if available,
+    /// otherwise falls back to a string representation of origin_node_id.
+    fn group_key_for_task(task: &TaskInfo) -> TaskGroupKey {
+        let pipeline_name = task
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Node {}", task.origin_node_id));
+        TaskGroupKey {
+            origin_node_id: task.origin_node_id,
+            pipeline_name,
+        }
+    }
+
     /// Record a task submission. The individual task is always retained while
     /// active (callers inspect active tasks for debugging stuck queries).
     pub fn submit_task(
@@ -198,14 +207,9 @@ impl TaskStore {
         name: Option<String>,
         submit_sec: f64,
     ) {
+        let pipeline_name = name.as_deref().unwrap_or_else(|| "unknown");
         let is_new = !self.tasks.contains_key(&task_id);
-        let gi = self.ensure_group(
-            origin_node_id,
-            &node_ids,
-            plan_fingerprint,
-            name.as_deref(),
-            submit_sec,
-        );
+        let gi = self.ensure_group(origin_node_id, &node_ids, pipeline_name, submit_sec);
         let group = &mut self.groups[gi];
 
         if is_new {
@@ -266,11 +270,6 @@ impl TaskStore {
         bytes_out: u64,
         cpu_us: u64,
     ) {
-        let key = TaskGroupKey {
-            origin_node_id,
-            plan_fingerprint,
-        };
-
         // Determine whether this task was previously submitted (exists in tasks).
         let was_submitted = self.tasks.contains_key(&task_id);
         let was_pending = was_submitted
@@ -279,8 +278,20 @@ impl TaskStore {
                 Some(TaskStatus::Pending)
             );
 
+        // Derive the pipeline name from the existing task (set by prior submit)
+        // or fall back to a placeholder if end arrived before submit.
+        let pipeline_name = self
+            .tasks
+            .get(&task_id)
+            .and_then(|t| t.name.clone())
+            .unwrap_or_else(|| format!("Node {origin_node_id}"));
+        let key = TaskGroupKey {
+            origin_node_id,
+            pipeline_name: pipeline_name.clone(),
+        };
+
         // Ensure group exists and update summary.
-        let gi = self.ensure_group(origin_node_id, &node_ids, plan_fingerprint, None, end_sec);
+        let gi = self.ensure_group(origin_node_id, &node_ids, &pipeline_name, end_sec);
         let group = &mut self.groups[gi];
 
         if !was_submitted {
@@ -407,10 +418,7 @@ impl TaskStore {
             && let Some(evicted_id) = self.failed_ids.pop_front()
             && let Some(evicted) = self.tasks.remove(&evicted_id)
         {
-            let evicted_key = TaskGroupKey {
-                origin_node_id: evicted.origin_node_id,
-                plan_fingerprint: evicted.plan_fingerprint,
-            };
+            let evicted_key = Self::group_key_for_task(&evicted);
             if let Some(gi) = self.group_index.get(&evicted_key) {
                 self.groups[*gi].retained_task_count =
                     self.groups[*gi].retained_task_count.saturating_sub(1);

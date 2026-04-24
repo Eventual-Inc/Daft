@@ -87,12 +87,11 @@ export type TaskInfo = {
   cpu_us: number;
 };
 
-/** Server-side aggregate summary for a group of tasks sharing an (origin_node_id, plan_fingerprint). */
+/** Server-side aggregate summary for a group of tasks sharing an (origin_node_id, pipeline_name). */
 export type TaskGroupSummary = {
   origin_node_id: number;
   node_ids: number[];
-  plan_fingerprint: number;
-  name?: string;
+  name: string;
   task_count: number;
   pending_count: number;
   finished_count: number;

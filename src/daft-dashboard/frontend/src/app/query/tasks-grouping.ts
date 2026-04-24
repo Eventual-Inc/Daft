@@ -38,7 +38,6 @@ export type TaskTypeRow = {
   origin_node_name: string;
   /** Distributed plan node names along the task's pipeline, leaf → head. */
   pipeline: string[];
-  plan_fingerprint: number;
   task_count: number;
   status_counts: Record<TaskRowStatus, number>;
   total_rows_in: number;
@@ -57,35 +56,14 @@ export type TaskTypeRow = {
 };
 
 /**
- * Derive a pipeline of human-readable node names from the group's node_ids.
- * Names come from the distributed plan (exec_info.operators). Falls back to
- * a retained task's name if available.
+ * Derive a pipeline display from the group's name. The name is set by the
+ * scheduler (e.g. "PhysicalScan->Limit") and is the grouping key.
  */
-function pipelineForGroup(
-  group: TaskGroupSummary,
-  retainedTasks: TaskInfo[],
-  operators: Record<number, OperatorInfo>,
-): string[] {
-  // Check if a retained task has a backend-supplied name.
-  const namedTask = retainedTasks.find((t) => t.name);
-  if (namedTask?.name) {
-    return namedTask.name.includes("->")
-      ? namedTask.name.split("->")
-      : [namedTask.name];
+function pipelineForGroup(group: TaskGroupSummary): string[] {
+  if (group.name.includes("->")) {
+    return group.name.split("->");
   }
-
-  // Derive from the group's node_ids.
-  if (group.node_ids.length > 0) {
-    return group.node_ids.map(
-      (id) => operators[id]?.node_info.name ?? `Node ${id}`,
-    );
-  }
-
-  // Fall back to the origin node.
-  return [
-    operators[group.origin_node_id]?.node_info.name ??
-      `Node ${group.origin_node_id}`,
-  ];
+  return [group.name];
 }
 
 /**
@@ -101,10 +79,11 @@ export function buildTaskRows(
 ): TaskTypeRow[] {
   if (!taskStore) return [];
 
-  // Index retained tasks by group key.
+  // Index retained tasks by group key: (origin_node_id, name).
   const tasksByGroup = new Map<string, TaskInfo[]>();
   for (const t of Object.values(taskStore.tasks)) {
-    const key = `${t.origin_node_id}:${t.plan_fingerprint}`;
+    const name = t.name ?? `Node ${t.origin_node_id}`;
+    const key = `${t.origin_node_id}:${name}`;
     let arr = tasksByGroup.get(key);
     if (!arr) {
       arr = [];
@@ -115,9 +94,9 @@ export function buildTaskRows(
 
   return taskStore.groups
     .map((g) => {
-      const key = `${g.origin_node_id}:${g.plan_fingerprint}`;
+      const key = `${g.origin_node_id}:${g.name}`;
       const tasks = tasksByGroup.get(key) ?? [];
-      const pipeline = pipelineForGroup(g, tasks, operators);
+      const pipeline = pipelineForGroup(g);
 
       return {
         key,
@@ -126,7 +105,6 @@ export function buildTaskRows(
           operators[g.origin_node_id]?.node_info.name ??
           `Node ${g.origin_node_id}`,
         pipeline,
-        plan_fingerprint: g.plan_fingerprint,
         task_count: g.task_count,
         status_counts: {
           Pending: 0,
