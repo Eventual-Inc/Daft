@@ -27,7 +27,11 @@ use futures::TryStreamExt;
 /// `file:///absolute/path`.
 fn make_store() -> (tempfile::TempDir, S3CheckpointStore) {
     let dir = tempfile::tempdir().expect("failed to create temp dir");
-    let prefix = format!("file://{}", dir.path().display());
+    // Normalize to forward slashes so the `file://` URL is well-formed on Windows.
+    let prefix = format!(
+        "file://{}",
+        dir.path().display().to_string().replace('\\', "/")
+    );
     let store = S3CheckpointStore::new(prefix, Arc::new(IOConfig::default())).unwrap();
     (dir, store)
 }
