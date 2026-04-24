@@ -7,7 +7,7 @@
 One-time step to upload benchmark datasets to S3.
 
 ```bash
-python -m benchmarking.asof_join.data_generation --scale small
+python -m benchmarking.asof_join.data_generation --scale <small|medium|large>
 python -m benchmarking.asof_join.data_generation --all
 ```
 
@@ -19,11 +19,16 @@ Provisions an EC2 instance via Terraform, rsync's the benchmark code, and runs i
 
 ```bash
 cd benchmarking/asof_join/single_node/infra
-./run.sh --scale small
-./run.sh --scale large --systems polars,daft_native
-# Use a custom Daft build:
-./run.sh --scale small --daft-index-url https://ds0gqyebztuyf.cloudfront.net/builds/dev/<commit>
+./run.sh [--scale <small|medium|large>] [--daft-index-url <url>] [benchmark flags...]
 ```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--scale` | required | Dataset scale: `small`, `medium`, or `large` |
+| `--daft-index-url` | — | Install Daft from a custom build index URL |
+| `--systems` | `pandas,polars,daft_native` | Comma-separated list of systems to benchmark |
+| `--n_runs` | `3` | Number of timed runs per system |
+| `--skip_warmup` | false | Skip the warmup run |
 
 ---
 
@@ -32,8 +37,13 @@ cd benchmarking/asof_join/single_node/infra
 Spins up a Ray cluster via `ray submit` and runs the distributed Daft benchmark.
 
 ```bash
-python benchmarking/asof_join/distributed/run.py --scale small
-python benchmarking/asof_join/distributed/run.py --scale large --workers 4
-# Use a custom Daft build:
-python benchmarking/asof_join/distributed/run.py --scale small --daft-index-url https://ds0gqyebztuyf.cloudfront.net/builds/dev/<commit>
+python benchmarking/asof_join/distributed/run.py [--scale <small|medium|large>] [...]
 ```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--scale` | `small` | Dataset scale: `small`, `medium`, or `large` |
+| `--n_runs` | `3` | Number of timed runs |
+| `--workers` | `2` | Number of Ray worker nodes to launch |
+| `--daft-index-url` | — | Install Daft from a custom build index URL |
+| `--no-restart` | false | Skip `ray up` if the cluster is already running |
