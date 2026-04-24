@@ -1442,15 +1442,15 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("find", expr, substr)
 
 
-def hamming_distance(expr: Expression, other: str | Expression) -> Expression:
-    """Computes the Hamming distance between each string and a given string.
+def hamming_distance(left: Expression, right: Expression) -> Expression:
+    """Computes the Hamming distance between two strings.
 
     The Hamming distance is the number of positions at which the corresponding
     characters are different.
 
     Args:
-        expr: The string expression to compare.
-        other: The string to compare against.
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
 
     Returns:
         The Hamming distance between each string and the given string. If the any pair of
@@ -1459,20 +1459,21 @@ def hamming_distance(expr: Expression, other: str | Expression) -> Expression:
     Examples:
         >>> import daft
         >>> from daft.functions import hamming_distance
-        >>> df = daft.from_pydict({"x": ["kitten", "sitting", "flitting"]})
-        >>> df.with_column("distance", hamming_distance(df["x"], "sitting")).collect()
-        ╭─────────┬──────────╮
-        │ x       ┆ distance │
-        │ ---     ┆ ---      │
-        │ String  ┆ UInt64   │
-        ╞═════════╪══════════╡
-        │ kitten  ┆ 3        │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ sitting ┆ 0        │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ flitting┆ 3        │
-        ╰─────────┴──────────╯
+        >>> df = daft.from_pydict({"x": ["ronald", "ronald", "ronald"], "y": ["ronald", "renuld", "ronaldo"]})
+        >>> df = df.with_column("distance", hamming_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬─────────┬──────────╮
+        │ x      ┆ y       ┆ distance │
+        │ ---    ┆ ---     ┆ ---      │
+        │ String ┆ String  ┆ Int64    │
+        ╞════════╪═════════╪══════════╡
+        │ ronald ┆ ronald  ┆ 0        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ renuld  ┆ 2        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ ronaldo ┆ None     │
+        ╰────────┴─────────┴──────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
-    return Expression._call_builtin_scalar_fn("hamming_distance", expr, other)
+    return Expression._call_builtin_scalar_fn("hamming_distance", left, right)
