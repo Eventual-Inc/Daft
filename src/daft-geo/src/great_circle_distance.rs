@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow_buffer::{NullBuffer, NullBufferBuilder};
 use daft_core::prelude::{Float64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
+use serde::{Deserialize, Serialize};
 
 const EARTH_RADIUS_M: f64 = 6_371_000.0;
 
