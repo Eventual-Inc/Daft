@@ -80,7 +80,7 @@ export default function TreeLayout<T>({
               renderNode={renderNode}
               renderEdge={renderEdge}
               getNodeStage={getNodeStage}
-              parentStage={parentStage}
+              parentStage={myStage}
             />
           </>
         )}
@@ -143,7 +143,7 @@ export default function TreeLayout<T>({
                               renderNode={renderNode}
                               renderEdge={renderEdge}
                               getNodeStage={getNodeStage}
-                              parentStage={parentStage}
+                              parentStage={myStage}
                             />
                           </div>
                         </>
