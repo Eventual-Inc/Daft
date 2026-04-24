@@ -241,7 +241,7 @@ impl DaftContext {
         self.dispatch_event(&event, "notify exec emit stats")
     }
 
-    pub fn notify_event(&self, event: &Event) -> DaftResult<()> {
+    pub fn notify(&self, event: &Event) -> DaftResult<()> {
         self.dispatch_event(event, "notify event")
     }
 

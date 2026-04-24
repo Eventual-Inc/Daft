@@ -50,22 +50,8 @@ pub(crate) enum TaskEvent {
 }
 
 impl TaskEvent {
-    pub fn context(&self) -> &TaskContext {
-        match self {
-            Self::Submitted { context, .. } => context,
-            Self::Scheduled { context, .. } => context,
-            Self::Completed { context, .. } => context,
-            Self::Failed { context, .. } => context,
-            Self::Cancelled { context, .. } => context,
-        }
-    }
-}
-
-impl From<(TaskContext, &DaftResult<TaskStatus>, WorkerId)> for TaskEvent {
-    fn from(
-        (context, task_result, worker_id): (TaskContext, &DaftResult<TaskStatus>, WorkerId),
-    ) -> Self {
-        match task_result {
+    pub fn new(context: TaskContext, result: &DaftResult<TaskStatus>, worker_id: WorkerId) -> Self {
+        match result {
             Ok(task_status) => match task_status {
                 TaskStatus::Success { stats, .. } => Self::Completed {
                     context,
@@ -85,22 +71,32 @@ impl From<(TaskContext, &DaftResult<TaskStatus>, WorkerId)> for TaskEvent {
                 TaskStatus::WorkerDied => Self::Failed {
                     context,
                     reason: "Worker died".to_string(),
-                    worker_id: None,
+                    worker_id: Some(worker_id),
                     retryable: true,
                 },
                 TaskStatus::WorkerUnavailable => Self::Failed {
                     context,
                     reason: "Worker unavailable".to_string(),
-                    worker_id: None,
+                    worker_id: Some(worker_id),
                     retryable: true,
                 },
             },
             Err(error) => Self::Failed {
                 context,
                 reason: error.to_string(),
-                worker_id: None,
+                worker_id: Some(worker_id),
                 retryable: false,
             },
+        }
+    }
+
+    pub fn context(&self) -> &TaskContext {
+        match self {
+            Self::Submitted { context, .. } => context,
+            Self::Scheduled { context, .. } => context,
+            Self::Completed { context, .. } => context,
+            Self::Failed { context, .. } => context,
+            Self::Cancelled { context, .. } => context,
         }
     }
 }

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_checkpoint_config::CheckpointConfig;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use daft_scan::{PhysicalScanInfo, ScanState};
+use daft_scan::{PhysicalScanInfo, Precision, ScanState};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,9 @@ pub struct Source {
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
     pub stats_state: StatsState,
+
+    /// Checkpoint configuration for progress tracking.
+    pub checkpoint: Option<CheckpointConfig>,
 }
 
 impl Source {
@@ -32,7 +36,25 @@ impl Source {
             output_schema,
             source_info,
             stats_state: StatsState::NotMaterialized,
+            checkpoint: None,
         }
+    }
+
+    pub fn with_checkpoint(mut self, config: CheckpointConfig) -> Self {
+        self.checkpoint = Some(config);
+        self
+    }
+
+    /// Return a copy of this `Source` with a replaced `source_info`, preserving
+    /// every other field (output schema, plan/node ids, stats state, checkpoint
+    /// config). Use this when an optimizer rule replaces a source node with a
+    /// semantically equivalent one (e.g. pushing a predicate into the scan);
+    /// constructing via `Source::new` would reset fields like `checkpoint` that
+    /// should carry across the rewrite.
+    #[must_use]
+    pub fn with_source_info(mut self, source_info: Arc<SourceInfo>) -> Self {
+        self.source_info = source_info;
+        self
     }
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
@@ -50,22 +72,50 @@ impl Source {
     // should also hold a ScanState::Operator and not a ScanState::Tasks (which would indicate that we're
     // materializing this physical scan node multiple times).
     pub(crate) fn build_materialized_scan_source(mut self) -> DaftResult<Self> {
-        let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
-            SourceInfo::Physical(mut physical_scan_info) => {
-                let scan_tasks = match &physical_scan_info.scan_state {
-                    ScanState::Operator(scan_op) => scan_op
-                        .0
-                        .to_scan_tasks(physical_scan_info.pushdowns.clone())?,
-                    ScanState::Tasks(_) => {
-                        panic!("Physical scan nodes are being materialized more than once");
-                    }
-                };
-                physical_scan_info.scan_state = ScanState::Tasks(Arc::new(scan_tasks));
-                physical_scan_info
-            }
-            _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
+        // Extract the scan_info from the source_info.
+        let mut scan_info = match Arc::unwrap_or_clone(self.source_info) {
+            SourceInfo::Physical(scan_info) => scan_info,
+            _ => panic!("Only physical scan nodes can be materialized"),
         };
-        self.source_info = Arc::new(SourceInfo::Physical(new_physical_scan_info));
+
+        // Extract the scan operator from the scan_info, it's just an arc clone
+        let scan_operator = match &mut scan_info.scan_state {
+            ScanState::Operator(op) => op.clone().0,
+            ScanState::Tasks(_) => {
+                panic!("Physical scan nodes are being materialized more than once")
+            }
+        };
+
+        // Now we can materialize the scan tasks then patch the state.
+        let scan_pushdowns = scan_info.pushdowns.clone();
+        let scan_stats = scan_operator.statistics();
+        let scan_tasks = scan_operator.to_scan_tasks(scan_pushdowns.clone())?;
+
+        // !! SCAN TASK MATERIALIZATION !!
+        // Mutable update to the scan_info to hold the materialized scan tasks
+        scan_info.scan_state = ScanState::Tasks(Arc::new(scan_tasks));
+        self.source_info = Arc::new(SourceInfo::Physical(scan_info));
+
+        // If the source reports Exact num_rows, short-circuit the per-task stats
+        // aggregation, since there's no need to sum up task stats.
+        if let Some(stats) = &scan_stats
+            && let Precision::Exact(num_rows) = &stats.num_rows
+        {
+            let acc_selectivity = scan_pushdowns.estimated_selectivity(self.output_schema.as_ref());
+            let num_rows = (*num_rows as f64 * acc_selectivity) as usize;
+            let size_bytes = match stats.size_bytes {
+                Precision::Exact(n) | Precision::Inexact(n) => n as usize,
+                Precision::Absent => 0, // unknown size; treated as 0 like ApproxStats::empty()
+            };
+            let approx_stats = ApproxStats {
+                num_rows,
+                size_bytes,
+                acc_selectivity,
+            };
+            // Update the stats state to hold the materialized plan stats.
+            self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        }
+
         Ok(self)
     }
 

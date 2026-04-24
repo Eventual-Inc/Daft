@@ -1,28 +1,31 @@
-use std::sync::Arc;
+//! Contract test suite for [`CheckpointStore`] implementations.
+//!
+//! Call [`generate_checkpoint_store_tests!`] with a factory expression to
+//! generate all contract tests for your store implementation.
 
-use daft_checkpoint::{
-    CheckpointError, CheckpointId, CheckpointStatus, CheckpointStore, CheckpointStoreRef,
-    FileFormat, FileMetadata, impls::InMemoryCheckpointStore,
-};
 use daft_core::{
     datatypes::Utf8Array,
     series::{IntoSeries, Series},
 };
 use futures::TryStreamExt;
 
-fn make_store() -> InMemoryCheckpointStore {
-    InMemoryCheckpointStore::new()
-}
+use crate::{
+    CheckpointError, CheckpointId, CheckpointStatus, CheckpointStore, FileFormat, FileMetadata,
+};
 
-fn keys(values: &[&str]) -> Series {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+pub fn keys(values: &[&str]) -> Series {
     Utf8Array::from_slice("key", values).into_series()
 }
 
-fn file(data: &[u8]) -> FileMetadata {
+pub fn file(data: &[u8]) -> FileMetadata {
     FileMetadata::new(FileFormat::Iceberg, data.to_vec())
 }
 
-async fn collect_key_strings(store: &InMemoryCheckpointStore) -> Vec<String> {
+pub async fn collect_key_strings(store: &dyn CheckpointStore) -> Vec<String> {
     let chunks: Vec<Series> = store
         .get_checkpointed_keys()
         .await
@@ -43,7 +46,7 @@ async fn collect_key_strings(store: &InMemoryCheckpointStore) -> Vec<String> {
     result
 }
 
-async fn collect_files(store: &InMemoryCheckpointStore) -> Vec<FileMetadata> {
+pub async fn collect_files(store: &dyn CheckpointStore) -> Vec<FileMetadata> {
     let mut files: Vec<_> = store
         .get_checkpointed_files()
         .await
@@ -55,13 +58,11 @@ async fn collect_files(store: &InMemoryCheckpointStore) -> Vec<FileMetadata> {
     files
 }
 
-// ------------------------------------------------------------------
-// 1. Happy path lifecycle
-// ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Contract tests
+// ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn test_lifecycle() {
-    let store = make_store();
+pub async fn test_lifecycle(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
     // Empty store listing
@@ -81,30 +82,24 @@ async fn test_lifecycle() {
         .unwrap();
 
     // Staged data is invisible
-    assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
-    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+    assert_eq!(collect_key_strings(store).await, Vec::<String>::new());
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 
     // Seal makes data visible
     store.checkpoint(&id).await.unwrap();
-    assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
+    assert_eq!(collect_key_strings(store).await, vec!["a", "b"]);
     assert_eq!(
-        collect_files(&store).await,
+        collect_files(store).await,
         vec![file(b"file1"), file(b"file2")]
     );
 
     // Commit hides files but keeps keys
     store.mark_committed(&[id]).await.unwrap();
-    assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
-    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+    assert_eq!(collect_key_strings(store).await, vec!["a", "b"]);
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 }
 
-// ------------------------------------------------------------------
-// 2. Multiple checkpoints with incremental staging and partial commit
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_multiple_checkpoints_and_partial_commit() {
-    let store = make_store();
+pub async fn test_multiple_checkpoints_and_partial_commit(store: &dyn CheckpointStore) {
     let id1 = CheckpointId::generate(0);
     let id2 = CheckpointId::generate(0);
 
@@ -120,9 +115,9 @@ async fn test_multiple_checkpoints_and_partial_commit() {
     store.stage_files(&id2, vec![file(b"f3")]).await.unwrap();
     store.checkpoint(&id2).await.unwrap();
 
-    assert_eq!(collect_key_strings(&store).await, vec!["a", "b", "c", "d"]);
+    assert_eq!(collect_key_strings(store).await, vec!["a", "b", "c", "d"]);
     assert_eq!(
-        collect_files(&store).await,
+        collect_files(store).await,
         vec![file(b"f1"), file(b"f2"), file(b"f3")]
     );
 
@@ -130,17 +125,11 @@ async fn test_multiple_checkpoints_and_partial_commit() {
     store.mark_committed(&[id1]).await.unwrap();
 
     // All keys still visible, only checkpoint 2's files remain
-    assert_eq!(collect_key_strings(&store).await, vec!["a", "b", "c", "d"]);
-    assert_eq!(collect_files(&store).await, vec![file(b"f2"), file(b"f3")]);
+    assert_eq!(collect_key_strings(store).await, vec!["a", "b", "c", "d"]);
+    assert_eq!(collect_files(store).await, vec![file(b"f2"), file(b"f3")]);
 }
 
-// ------------------------------------------------------------------
-// 3. Idempotency: seal() and mark_committed() are no-ops on repeat
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_idempotency() {
-    let store = make_store();
+pub async fn test_idempotency(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
@@ -149,8 +138,8 @@ async fn test_idempotency() {
     // Double seal
     store.checkpoint(&id).await.unwrap();
     store.checkpoint(&id).await.unwrap();
-    assert_eq!(collect_key_strings(&store).await, vec!["a"]);
-    assert_eq!(collect_files(&store).await, vec![file(b"f1")]);
+    assert_eq!(collect_key_strings(store).await, vec!["a"]);
+    assert_eq!(collect_files(store).await, vec![file(b"f1")]);
 
     // Double mark_committed
     store
@@ -161,21 +150,14 @@ async fn test_idempotency() {
         .mark_committed(std::slice::from_ref(&id))
         .await
         .unwrap();
-    assert_eq!(collect_key_strings(&store).await, vec!["a"]);
-    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+    assert_eq!(collect_key_strings(store).await, vec!["a"]);
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 
     // seal() on committed is also a no-op
     store.checkpoint(&id).await.unwrap();
 }
 
-// ------------------------------------------------------------------
-// 4. Error paths
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_error_paths() {
-    let store = make_store();
-
+pub async fn test_error_paths(store: &dyn CheckpointStore) {
     // Seal unknown ID
     let err = store
         .checkpoint(&CheckpointId::generate(0))
@@ -216,14 +198,7 @@ async fn test_error_paths() {
     assert!(matches!(err, CheckpointError::NotCheckpointed { .. }));
 }
 
-// ------------------------------------------------------------------
-// 5. Orphaned staged entries are invisible
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_orphaned_staged_entries() {
-    let store = make_store();
-
+pub async fn test_orphaned_staged_entries(store: &dyn CheckpointStore) {
     // Orphan: staged but never sealed (simulates crash)
     let orphan_id = CheckpointId::generate(0);
     store
@@ -244,33 +219,21 @@ async fn test_orphaned_staged_entries() {
         .unwrap();
     store.checkpoint(&good_id).await.unwrap();
 
-    assert_eq!(collect_key_strings(&store).await, vec!["good"]);
-    assert_eq!(collect_files(&store).await, vec![file(b"good_file")]);
+    assert_eq!(collect_key_strings(store).await, vec!["good"]);
+    assert_eq!(collect_files(store).await, vec![file(b"good_file")]);
 }
 
-// ------------------------------------------------------------------
-// 6. Keys only (no files) — valid for non-2PC sinks
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_checkpoint_keys_only() {
-    let store = make_store();
+pub async fn test_checkpoint_keys_only(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
-    assert_eq!(collect_key_strings(&store).await, vec!["a"]);
-    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+    assert_eq!(collect_key_strings(store).await, vec!["a"]);
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 }
 
-// ------------------------------------------------------------------
-// 7. CRUD: get_checkpoint, list_checkpoints
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_crud() {
-    let store = make_store();
+pub async fn test_crud(store: &dyn CheckpointStore) {
     let id1 = CheckpointId::generate(0);
     let id2 = CheckpointId::generate(0);
 
@@ -322,13 +285,7 @@ async fn test_crud() {
     assert!(statuses.contains(&CheckpointStatus::Staged));
 }
 
-// ------------------------------------------------------------------
-// 8. Empty inputs and edge cases
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_empty_inputs() {
-    let store = make_store();
+pub async fn test_empty_inputs(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
     // Empty stage calls
@@ -336,20 +293,14 @@ async fn test_empty_inputs() {
     store.stage_files(&id, vec![]).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
-    assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
-    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+    assert_eq!(collect_key_strings(store).await, Vec::<String>::new());
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 
     // Empty mark_committed
     store.mark_committed(&[]).await.unwrap();
 }
 
-// ------------------------------------------------------------------
-// 9. Retry after partial failure
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_retry_after_partial_failure() {
-    let store = make_store();
+pub async fn test_retry_after_partial_failure(store: &dyn CheckpointStore) {
     let good_id = CheckpointId::generate(0);
     let staged_id = CheckpointId::generate(0);
 
@@ -387,13 +338,9 @@ async fn test_retry_after_partial_failure() {
     );
 }
 
-// ------------------------------------------------------------------
-// 10. Object safety: CheckpointStore works as trait object
-// ------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_object_safety() {
-    let store: CheckpointStoreRef = Arc::new(InMemoryCheckpointStore::new());
+pub async fn test_object_safety(store: &dyn CheckpointStore) {
+    // This function takes &dyn CheckpointStore, proving object safety.
+    // Exercise basic operations through the trait object.
     let id = CheckpointId::generate(0);
 
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
@@ -407,4 +354,96 @@ async fn test_object_safety() {
         .await
         .unwrap();
     assert_eq!(chunks.iter().map(|s| s.len()).sum::<usize>(), 1);
+    let _ = store.list_checkpoints().await.unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Macro
+// ---------------------------------------------------------------------------
+
+/// Generate all contract tests for a [`CheckpointStore`] implementation.
+///
+/// The factory expression must evaluate to `(store, _guard)` where `store`
+/// implements `CheckpointStore` and `_guard` is any value that keeps
+/// resources alive for the test duration (e.g., a `TempDir`).
+///
+/// # Example
+///
+/// ```ignore
+/// use daft_checkpoint::generate_checkpoint_store_tests;
+/// use daft_checkpoint::impls::S3CheckpointStore;
+/// use tempfile::tempdir;
+/// use std::sync::Arc;
+/// use common_io_config::IOConfig;
+///
+/// generate_checkpoint_store_tests!({
+///     let dir = tempdir().unwrap();
+///     let prefix = format!("file://{}", dir.path().display());
+///     let store = S3CheckpointStore::new(prefix, Arc::new(IOConfig::default())).unwrap();
+///     (store, dir)
+/// });
+/// ```
+#[macro_export]
+macro_rules! generate_checkpoint_store_tests {
+    ($factory:expr) => {
+        #[tokio::test]
+        async fn test_lifecycle() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_lifecycle(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_multiple_checkpoints_and_partial_commit() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_multiple_checkpoints_and_partial_commit(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_idempotency() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_idempotency(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_error_paths() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_error_paths(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_orphaned_staged_entries() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_orphaned_staged_entries(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_checkpoint_keys_only() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_checkpoint_keys_only(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_crud() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_crud(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_empty_inputs() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_empty_inputs(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_retry_after_partial_failure() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_retry_after_partial_failure(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_object_safety() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_object_safety(&store).await;
+        }
+    };
 }

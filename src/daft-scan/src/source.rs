@@ -7,7 +7,12 @@ use daft_schema::schema::SchemaRef;
 use daft_stats::{PartitionSpec, TableStatistics};
 use futures::stream::BoxStream;
 
-use crate::{ScanTaskRef, partitioning::PartitionField, pushdowns::Pushdowns};
+use crate::{
+    ScanTaskRef,
+    partitioning::PartitionField,
+    pushdowns::Pushdowns,
+    statistics::{Precision, Statistics},
+};
 
 /// Reference to a [`DataSource`].
 pub type DataSourceRef = Arc<dyn DataSource>;
@@ -41,7 +46,7 @@ pub trait DataSource: Send + Sync + Debug {
     /// from metadata alone (e.g. `COUNT(*)` when `num_rows` is `Exact`), without
     /// reading any data. Returning `None` disables all statistics-based rewrites
     /// for this source.
-    fn statistics(&self) -> Option<DataSourceStatistics> {
+    fn statistics(&self) -> Option<Statistics> {
         None
     }
 
@@ -50,34 +55,6 @@ pub trait DataSource: Send + Sync + Debug {
     /// The outer `DaftResult` captures setup errors (e.g. metadata lookup failures)
     /// before any tasks are produced. Per-task errors appear as items in the stream.
     async fn get_tasks(&self, pushdowns: &Pushdowns) -> DaftResult<DataSourceTaskStream>;
-}
-
-/// Pre-computed statistics exposed by a [`DataSource`] for query optimization.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataSourceStatistics {
-    /// Total number of rows across all tasks produced by this source.
-    pub num_rows: Precision<u64>,
-}
-
-/// Exactness annotation for a statistic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Precision<T> {
-    /// The value is exact. Safe to substitute for a full scan.
-    Exact(T),
-    /// The value is an estimate. Not safe to substitute; usable for heuristics only.
-    Inexact(T),
-    /// No value is available.
-    Absent,
-}
-
-impl<T> Precision<T> {
-    /// Returns a reference to the inner value regardless of exactness, or `None` if absent.
-    pub fn get(&self) -> Option<&T> {
-        match self {
-            Self::Exact(v) | Self::Inexact(v) => Some(v),
-            Self::Absent => None,
-        }
-    }
 }
 
 /// Metadata about a [`DataSourceTask`] used for planning and optimization.

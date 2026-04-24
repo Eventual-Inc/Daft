@@ -505,7 +505,8 @@ jobs:
         source .venv/bin/activate
         pytest -n auto tests/integration/io -m 'integration and not benchmark' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output.txt"
         pytest -n auto tests/io -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_2.txt"
-        python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt
+        pytest -n auto tests/integration/checkpoint -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_3.txt"
+        python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt io_integration_pytest_output_3.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
