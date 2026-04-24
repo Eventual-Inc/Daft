@@ -81,11 +81,11 @@ class IcebergScanOperator(ScanOperator):
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
 
-        iceberg_schema = resolve_iceberg_schema(iceberg_table.metadata, snapshot_id)
-        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
-        self._schema = convert_iceberg_schema(iceberg_schema)
+        self._iceberg_schema = resolve_iceberg_schema(iceberg_table.metadata, snapshot_id)
+        self._field_id_mapping = visit(self._iceberg_schema, SchemaFieldIdMappingVisitor())
+        self._schema = convert_iceberg_schema(self._iceberg_schema)
 
-        partition_fields = convert_iceberg_partition_spec(iceberg_schema, self._table.spec())
+        partition_fields = convert_iceberg_partition_spec(self._iceberg_schema, self._table.spec())
         self._partition_keys = [pf._partition_field for pf in partition_fields]
 
     def schema(self) -> Schema:
@@ -158,13 +158,14 @@ class IcebergScanOperator(ScanOperator):
         """Create regular scan tasks without count pushdown."""
         limit = pushdowns.limit
 
-        # TODO: Use the correct Iceberg expression for the row filter
-        # row_filter = ALWAYS_TRUE
-        # if pushdowns.filters is not None:
-        #     row_filter = convert_expression_to_iceberg(pushdowns.filters)
+        row_filter = ALWAYS_TRUE
+        if pushdowns.filters is not None:
+            row_filter = convert_expression_to_iceberg(pushdowns.filters, self._iceberg_schema)
 
         _t0 = time.perf_counter()
-        iceberg_tasks = list(self._table.scan(limit=limit, snapshot_id=self._snapshot_id).plan_files())
+        iceberg_tasks = list(
+            self._table.scan(row_filter=row_filter, limit=limit, snapshot_id=self._snapshot_id).plan_files()
+        )
         _files_listed = len(iceberg_tasks)
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
