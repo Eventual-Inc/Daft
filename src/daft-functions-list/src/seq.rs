@@ -2,7 +2,7 @@ use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{DataType, Field},
-    prelude::{Int64Array, Schema, Series},
+    prelude::{Schema, Series, UInt64Array},
     series::IntoSeries,
 };
 use daft_dsl::{
@@ -51,7 +51,7 @@ impl ScalarUDF for ListSeq {
 
         Ok(Field::new(
             input_field.name,
-            DataType::List(Box::new(DataType::Int64)),
+            DataType::List(Box::new(DataType::UInt64)),
         ))
     }
 }
@@ -62,7 +62,7 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
 
     let mut offsets = Vec::with_capacity(n_array.len() + 1);
     offsets.push(0i64);
-    let mut values: Vec<i64> = Vec::new();
+    let mut values: Vec<u64> = Vec::new();
     let mut current_offset = 0i64;
 
     for i in 0..n_array.len() {
@@ -74,16 +74,16 @@ fn list_seq_impl(input: &Series) -> DaftResult<Series> {
                 )));
             }
             for j in 0..n {
-                values.push(j);
+                values.push(j as u64);
             }
             current_offset += n;
         }
         offsets.push(current_offset);
     }
 
-    let values_array = Int64Array::from_values("item", values).into_series();
+    let values_array = UInt64Array::from_values("item", values).into_series();
 
-    let field = Field::new(input.name(), DataType::List(Box::new(DataType::Int64)));
+    let field = Field::new(input.name(), DataType::List(Box::new(DataType::UInt64)));
 
     let validity = input.nulls().cloned();
 
@@ -122,14 +122,14 @@ mod tests {
 
         let row0 = list.get(0).unwrap();
         assert_eq!(row0.len(), 3);
-        assert_eq!(row0.i64().unwrap().get(0), Some(0));
-        assert_eq!(row0.i64().unwrap().get(1), Some(1));
-        assert_eq!(row0.i64().unwrap().get(2), Some(2));
+        assert_eq!(row0.u64().unwrap().get(0), Some(0));
+        assert_eq!(row0.u64().unwrap().get(1), Some(1));
+        assert_eq!(row0.u64().unwrap().get(2), Some(2));
 
         let row1 = list.get(1).unwrap();
         assert_eq!(row1.len(), 5);
-        assert_eq!(row1.i64().unwrap().get(0), Some(0));
-        assert_eq!(row1.i64().unwrap().get(4), Some(4));
+        assert_eq!(row1.u64().unwrap().get(0), Some(0));
+        assert_eq!(row1.u64().unwrap().get(4), Some(4));
 
         let row2 = list.get(2).unwrap();
         assert_eq!(row2.len(), 0);
@@ -156,6 +156,6 @@ mod tests {
         let list = result.list().unwrap();
         let row0 = list.get(0).unwrap();
         assert_eq!(row0.len(), 1);
-        assert_eq!(row0.i64().unwrap().get(0), Some(0));
+        assert_eq!(row0.u64().unwrap().get(0), Some(0));
     }
 }

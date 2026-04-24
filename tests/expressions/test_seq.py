@@ -18,7 +18,7 @@ def test_seq_basic():
 def test_seq_return_dtype():
     df = daft.from_pydict({"n": [3]})
     out = df.select(seq(col("n")).alias("s"))
-    assert out.schema()["s"].dtype == dt.list(dt.int64())
+    assert out.schema()["s"].dtype == dt.list(dt.uint64())
 
 
 def test_seq_single_element():

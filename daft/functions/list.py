@@ -511,7 +511,7 @@ def seq(n: Expression) -> Expression:
         n (Expression): An integer expression specifying the length of the sequence.
 
     Returns:
-        Expression (List[Int64] Expression): An expression with lists of sequential integers.
+        Expression (List[UInt64] Expression): An expression with lists of sequential integers.
 
     Examples:
         >>> import daft
@@ -521,7 +521,7 @@ def seq(n: Expression) -> Expression:
         ╭───────┬─────────────────╮
         │ n     ┆ indices         │
         │ ---   ┆ ---             │
-        │ Int64 ┆ List[Int64]     │
+        │ Int64 ┆ List[UInt64]    │
         ╞═══════╪═════════════════╡
         │ 3     ┆ [0, 1, 2]       │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
