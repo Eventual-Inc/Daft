@@ -207,7 +207,7 @@ impl TaskStore {
         name: Option<String>,
         submit_sec: f64,
     ) {
-        let pipeline_name = name.as_deref().unwrap_or_else(|| "unknown");
+        let pipeline_name = name.as_deref().unwrap_or("unknown");
         let is_new = !self.tasks.contains_key(&task_id);
         let gi = self.ensure_group(origin_node_id, &node_ids, pipeline_name, submit_sec);
         let group = &mut self.groups[gi];
