@@ -468,6 +468,29 @@ impl CheckpointStore for S3CheckpointStore {
         self.put_bytes(&self.file_path(id, idx), blob).await
     }
 
+    async fn register(&self, id: &CheckpointId) -> CheckpointResult<()> {
+        {
+            let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            if staged.contains_key(id) {
+                return Ok(());
+            }
+        }
+
+        match self.read_manifest(id).await {
+            Ok(_) => Ok(()),
+            Err(CheckpointError::CheckpointNotFound { .. }) => {
+                let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                    message: format!("staged lock poisoned: {e}"),
+                })?;
+                staged.entry(id.clone()).or_insert_with(StagedEntry::new);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
         // If staged by this process, reserve_slots already verified no manifest exists —
         // skip the S3 GET. Otherwise (e.g. post-restart retry), read the manifest.

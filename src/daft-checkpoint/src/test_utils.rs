@@ -338,6 +338,22 @@ pub async fn test_retry_after_partial_failure(store: &dyn CheckpointStore) {
     );
 }
 
+pub async fn test_register_then_checkpoint(store: &dyn CheckpointStore) {
+    let id = CheckpointId::generate(0);
+
+    // Register without staging any data
+    store.register(&id).await.unwrap();
+
+    // Checkpoint succeeds with 0 keys/files
+    store.checkpoint(&id).await.unwrap();
+
+    assert_eq!(collect_key_strings(store).await, Vec::<String>::new());
+    assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
+
+    // register() on sealed ID is idempotent no-op
+    store.register(&id).await.unwrap();
+}
+
 pub async fn test_object_safety(store: &dyn CheckpointStore) {
     // This function takes &dyn CheckpointStore, proving object safety.
     // Exercise basic operations through the trait object.
@@ -438,6 +454,12 @@ macro_rules! generate_checkpoint_store_tests {
         async fn test_retry_after_partial_failure() {
             let (store, _guard) = $factory;
             $crate::test_utils::test_retry_after_partial_failure(&store).await;
+        }
+
+        #[tokio::test]
+        async fn test_register_then_checkpoint() {
+            let (store, _guard) = $factory;
+            $crate::test_utils::test_register_then_checkpoint(&store).await;
         }
 
         #[tokio::test]

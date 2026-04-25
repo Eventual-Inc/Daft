@@ -187,10 +187,6 @@ def test_checkpoint_s3_lifecycle(minio_io_config):
         assert count == 0, f"Expected 0 rows after commit + re-run, got {count}"
 
 
-@pytest.mark.xfail(
-    reason="checkpoint() on empty task errors — store needs to track in-flight writes",
-    strict=True,
-)
 def test_checkpoint_s3_empty_source(minio_io_config):
     """Empty source with checkpoint should produce 0 rows without error."""
     with minio_create_bucket(minio_io_config) as bucket:
