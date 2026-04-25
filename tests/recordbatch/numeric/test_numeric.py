@@ -999,3 +999,62 @@ def test_hypot_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b"], "b": ["c", "d"]})
     with pytest.raises(ValueError, match="Expected inputs to hypot to be numeric"):
         table.eval_expression_list([hypot(col("a"), col("b"))])
+
+
+def test_pmod() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 10, 0, 5], "b": [3, 4, 5, 5]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [1, 2, 0, 0]
+
+
+def test_pmod_negative() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-7, 7, -7, -8], type=pa.int64()), "b": pa.array([3, -3, -3, -3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2, -2, -1, -2]
+
+
+def test_pmod_float() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7.5, -7.5, 7.5], "b": [2.5, 2.5, -2.5]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0.0, 0.0, 0.0]
+
+
+def test_pmod_zero_divisor() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 0, -3, 5], "b": [0, 0, 0, 2]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None, None, 1]
+
+
+def test_pmod_int_boundary() -> None:
+    from daft.functions import pmod
+
+    # i64::MIN exercises the wrapping path: i64::MIN % -1 would panic without
+    # wrapping_rem; pmod(i64::MIN, -1) is mathematically 0.
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-(2**63), -(2**63)], type=pa.int64()), "b": pa.array([-1, 3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0, 1]
+
+
+def test_pmod_bad_input() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": ["x", "y"], "b": [1, 2]})
+    with pytest.raises(ValueError, match="Expected inputs to pmod to be numeric"):
+        table.eval_expression_list([pmod(col("a"), col("b"))])
