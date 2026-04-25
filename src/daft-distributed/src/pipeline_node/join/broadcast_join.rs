@@ -23,7 +23,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, metrics::key_values_from_context,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -201,16 +201,12 @@ impl BroadcastJoinNode {
         self: Arc<Self>,
         broadcaster_input: TaskBuilderStream,
         mut receiver_input: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let materialized_broadcast_data = broadcaster_input
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter.clone(),
-            )
+            .materialize(scheduler_handle.clone(), submission_ctx.clone())
             .try_collect::<Vec<_>>()
             .await?;
 
@@ -327,7 +323,7 @@ impl PipelineNodeImpl for BroadcastJoinNode {
         let execution_loop = self.execution_loop(
             broadcaster_input,
             receiver_input,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         );

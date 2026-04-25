@@ -10,7 +10,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SchedulingStrategy, SwordfishTask, SwordfishTaskBuilder},
@@ -87,11 +87,11 @@ impl PipelineNodeImpl for PreShuffleMergeNode {
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = plan_context.task_id_counter();
+        let submission_ctx = plan_context.task_submission_context();
         let scheduler_handle = plan_context.scheduler_handle();
 
         let merge_execution = async move {
-            self.execute_merge(input_node, task_id_counter, result_tx, scheduler_handle)
+            self.execute_merge(input_node, submission_ctx, result_tx, scheduler_handle)
                 .await
         };
 
@@ -104,13 +104,13 @@ impl PreShuffleMergeNode {
     async fn execute_merge(
         self: Arc<Self>,
         input_stream: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // First, materialize all input data.
         let mut materialized_stream =
-            input_stream.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
+            input_stream.materialize(scheduler_handle, submission_ctx);
 
         // Bucket materialized outputs by worker ID
         let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();

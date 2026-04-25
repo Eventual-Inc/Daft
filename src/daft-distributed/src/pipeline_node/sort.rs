@@ -22,7 +22,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -194,12 +194,11 @@ pub(crate) fn create_sample_tasks(
     input_schema: SchemaRef,
     sample_by: Vec<BoundExpr>,
     pipeline_node: &dyn PipelineNodeImpl,
-    task_id_counter: &TaskIDCounter,
+    submission_ctx: &TaskSubmissionContext,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
     fingerprint_salt: Option<u32>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let sample_size = pipeline_node.config().execution_config.sample_size_for_sort;
-    let context = pipeline_node.context();
     let sample_schema = Arc::new(Schema::new(sample_by.iter().map(|e| {
         e.inner()
             .to_field(&input_schema)
@@ -239,7 +238,7 @@ pub(crate) fn create_sample_tasks(
             if let Some(salt) = fingerprint_salt {
                 builder = builder.extend_fingerprint(salt);
             }
-            let submittable_task = builder.build(context.query_idx, task_id_counter);
+            let submittable_task = builder.build(submission_ctx);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -257,11 +256,10 @@ pub(crate) fn create_range_repartition_tasks(
     boundaries: RecordBatch,
     num_partitions: usize,
     pipeline_node: &dyn PipelineNodeImpl,
-    task_id_counter: &TaskIDCounter,
+    submission_ctx: &TaskSubmissionContext,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
     fingerprint_salt: Option<u32>,
 ) -> DaftResult<Vec<SubmittedTask>> {
-    let context = pipeline_node.context();
     let node_id = pipeline_node.node_id();
     materialized_outputs
         .into_iter()
@@ -293,7 +291,7 @@ pub(crate) fn create_range_repartition_tasks(
             if let Some(salt) = fingerprint_salt {
                 builder = builder.extend_fingerprint(salt);
             }
-            let submittable_task = builder.build(context.query_idx, task_id_counter);
+            let submittable_task = builder.build(submission_ctx);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -350,16 +348,12 @@ impl SortNode {
     async fn execution_loop(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let materialized_outputs = input_node
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter.clone(),
-            )
+            .materialize(scheduler_handle.clone(), submission_ctx.clone())
             .try_filter(|mo| future::ready(mo.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
@@ -399,7 +393,7 @@ impl SortNode {
             self.config.schema.clone(),
             self.sort_by.clone(),
             self.as_ref(),
-            &task_id_counter,
+            &submission_ctx,
             &scheduler_handle,
             None,
         )?;
@@ -428,7 +422,7 @@ impl SortNode {
             boundaries,
             num_partitions,
             self.as_ref(),
-            &task_id_counter,
+            &submission_ctx,
             &scheduler_handle,
             None,
         )?;
@@ -509,7 +503,7 @@ impl PipelineNodeImpl for SortNode {
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(
             input_node,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         ));

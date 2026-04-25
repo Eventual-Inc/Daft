@@ -15,7 +15,7 @@ use crate::{
     pipeline_node::{
         MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint,
     },
-    plan::{QueryIdx, TaskIDCounter},
+    plan::{QueryIdx, TaskSubmissionContext},
     scheduling::scheduler::SubmittableTask,
     utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
 };
@@ -459,18 +459,18 @@ impl SwordfishTaskBuilder {
 
     /// Build the SubmittableTask directly, which can be submitted to the scheduler.
     /// The task_id is assigned from the provided task_id_counter at build time.
-    pub fn build(
-        self,
-        query_idx: QueryIdx,
-        task_id_counter: &TaskIDCounter,
-    ) -> SubmittableTask<SwordfishTask> {
+    /// Records the task into the `DistributedPhysicalPlanCollector` so the
+    /// dashboard can show every local plan that actually ran, regardless of
+    /// which node materialized it.
+    pub fn build(self, ctx: &TaskSubmissionContext) -> SubmittableTask<SwordfishTask> {
+        ctx.physical_plan_collector.observe(&self);
         let strategy = self.strategy.unwrap_or(SchedulingStrategy::Spread);
 
-        let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
+        let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, ctx.query_idx as u32]);
 
-        let task_id = task_id_counter.next();
+        let task_id = ctx.task_id_counter.next();
         let task_context = TaskContext {
-            query_idx,
+            query_idx: ctx.query_idx,
             last_node_id: *self
                 .pending_node_ids
                 .last()

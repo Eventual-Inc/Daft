@@ -13,7 +13,7 @@ use crate::{
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -63,17 +63,13 @@ impl GatherNode {
     async fn execution_loop(
         self: Arc<Self>,
         local_gather_write_node: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Drive all upstream gather-write tasks to completion and collect their outputs.
         let materialized = local_gather_write_node
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter,
-            )
+            .materialize(scheduler_handle.clone(), submission_ctx)
             .try_collect::<Vec<MaterializedOutput>>()
             .await?;
 
@@ -128,14 +124,14 @@ impl PipelineNodeImpl for GatherNode {
         let (result_tx, result_rx) = create_channel(1);
 
         let self_arc = self.clone();
-        let task_id_counter = plan_context.task_id_counter();
+        let submission_ctx = plan_context.task_submission_context();
         let scheduler_handle = plan_context.scheduler_handle();
 
         let execution = async move {
             self_arc
                 .execution_loop(
                     local_gather_write_node,
-                    task_id_counter,
+                    submission_ctx,
                     result_tx,
                     scheduler_handle,
                 )

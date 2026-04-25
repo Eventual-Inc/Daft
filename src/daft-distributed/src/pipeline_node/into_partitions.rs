@@ -14,7 +14,7 @@ use crate::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -70,7 +70,7 @@ impl IntoPartitionsNode {
         self: Arc<Self>,
         builders: Vec<SwordfishTaskBuilder>,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
+        submission_ctx: &TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         assert!(
@@ -103,7 +103,7 @@ impl IntoPartitionsNode {
                 .by_ref()
                 .take(chunk_size)
                 .map(|builder| {
-                    let submittable_task = builder.build(self.context.query_idx, task_id_counter);
+                    let submittable_task = builder.build(submission_ctx);
                     submittable_task.submit(scheduler_handle)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
@@ -157,7 +157,7 @@ impl IntoPartitionsNode {
         self: Arc<Self>,
         builders: Vec<SwordfishTaskBuilder>,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
+        submission_ctx: &TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         assert!(
@@ -192,8 +192,7 @@ impl IntoPartitionsNode {
                 )
             });
             // Build and submit
-            let submittable_task =
-                into_partitions_builder.build(self.context.query_idx, task_id_counter);
+            let submittable_task = into_partitions_builder.build(submission_ctx);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             submitted_tasks.push(submitted_task);
         }
@@ -227,7 +226,7 @@ impl IntoPartitionsNode {
     async fn execute_into_partitions(
         self: Arc<Self>,
         input_stream: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
@@ -266,7 +265,7 @@ impl IntoPartitionsNode {
                 self.coalesce_tasks(
                     input_builders,
                     &scheduler_handle,
-                    &task_id_counter,
+                    &submission_ctx,
                     result_tx,
                 )
                 .await?;
@@ -276,7 +275,7 @@ impl IntoPartitionsNode {
                 self.split_tasks(
                     input_builders,
                     &scheduler_handle,
-                    &task_id_counter,
+                    &submission_ctx,
                     result_tx,
                 )
                 .await?;
@@ -320,7 +319,7 @@ impl PipelineNodeImpl for IntoPartitionsNode {
 
         plan_context.spawn(self.execute_into_partitions(
             input_stream,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         ));

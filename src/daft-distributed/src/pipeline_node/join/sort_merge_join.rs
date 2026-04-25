@@ -21,7 +21,7 @@ use crate::{
             get_partition_boundaries_from_samples,
         },
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -166,7 +166,7 @@ impl SortMergeJoinNode {
         self: Arc<Self>,
         left_materialized: Vec<MaterializedOutput>,
         right_materialized: Vec<MaterializedOutput>,
-        task_id_counter: &TaskIDCounter,
+        submission_ctx: &TaskSubmissionContext,
         result_tx: &Sender<SwordfishTaskBuilder>,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
@@ -180,7 +180,7 @@ impl SortMergeJoinNode {
             self.left.config().schema.clone(),
             self.left_on.clone(),
             self.as_ref(),
-            task_id_counter,
+            submission_ctx,
             scheduler_handle,
             Some(0),
         )?;
@@ -208,7 +208,7 @@ impl SortMergeJoinNode {
             self.right.config().schema.clone(),
             right_sample_by_aliased,
             self.as_ref(),
-            task_id_counter,
+            submission_ctx,
             scheduler_handle,
             Some(1),
         )?;
@@ -244,7 +244,7 @@ impl SortMergeJoinNode {
             left_partition_boundaries.clone(),
             num_partitions,
             self.as_ref(),
-            task_id_counter,
+            submission_ctx,
             scheduler_handle,
             Some(0),
         )?;
@@ -278,7 +278,7 @@ impl SortMergeJoinNode {
             right_partition_boundaries,
             num_partitions,
             self.as_ref(),
-            task_id_counter,
+            submission_ctx,
             scheduler_handle,
             Some(1),
         )?;
@@ -324,27 +324,19 @@ impl SortMergeJoinNode {
         self: Arc<Self>,
         left_inputs: TaskBuilderStream,
         right_inputs: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Materialize both inputs
         let left_materialized = left_inputs
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter.clone(),
-            )
+            .materialize(scheduler_handle.clone(), submission_ctx.clone())
             .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
         let right_materialized = right_inputs
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter.clone(),
-            )
+            .materialize(scheduler_handle.clone(), submission_ctx.clone())
             .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
@@ -363,7 +355,7 @@ impl SortMergeJoinNode {
             self.range_shuffle_and_join(
                 left_materialized,
                 right_materialized,
-                &task_id_counter,
+                &submission_ctx,
                 &result_tx,
                 &scheduler_handle,
             )
@@ -403,7 +395,7 @@ impl PipelineNodeImpl for SortMergeJoinNode {
         plan_context.spawn(self.execution_loop(
             left_input,
             right_input,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         ));

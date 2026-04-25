@@ -17,7 +17,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -124,12 +124,11 @@ impl IntoBatchesNode {
     async fn execute_into_batches(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let mut materialized_stream =
-            input_node.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
+        let mut materialized_stream = input_node.materialize(scheduler_handle, submission_ctx);
 
         let mut current_group: Vec<MaterializedOutput> = Vec::new();
         let mut current_group_size = 0;
@@ -232,7 +231,7 @@ impl PipelineNodeImpl for IntoBatchesNode {
         let (result_tx, result_rx) = create_channel(1);
         let execution_future = self.execute_into_batches(
             local_into_batches_node,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         );

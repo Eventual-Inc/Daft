@@ -22,7 +22,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, metrics::key_values_from_context,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -229,12 +229,11 @@ impl SinkNode {
         info: OutputFileInfo<BoundExpr>,
         input: TaskBuilderStream,
         scheduler: SchedulerHandle<SwordfishTask>,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         sender: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let file_schema = self.config.schema.clone();
-        let materialized_stream =
-            input.materialize(scheduler, self.context.query_idx, task_id_counter);
+        let materialized_stream = input.materialize(scheduler, submission_ctx);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
 
         let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
@@ -328,7 +327,7 @@ impl PipelineNodeImpl for SinkNode {
                 info.clone(),
                 pipelined_node_with_writes,
                 plan_context.scheduler_handle(),
-                plan_context.task_id_counter(),
+                plan_context.task_submission_context(),
                 sender,
             ));
             TaskBuilderStream::from(receiver)

@@ -26,7 +26,7 @@ use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
-    plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
+    plan::{PlanExecutionContext, QueryIdx, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder, TaskID},
@@ -422,12 +422,11 @@ impl TaskBuilderStream {
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        query_idx: QueryIdx,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
         let stream = self
             .task_builder_stream
-            .map(move |builder| builder.build(query_idx, &task_id_counter));
+            .map(move |builder| builder.build(&submission_ctx));
         materialize_all_pipeline_outputs(stream, scheduler_handle, None)
     }
 

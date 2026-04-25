@@ -25,7 +25,11 @@ mod runner;
 pub(crate) use distributed_physical_plan::DistributedPhysicalPlanCollector;
 #[cfg(test)]
 pub(crate) use runner::RunningPlan;
-pub(crate) use runner::{PlanConfig, PlanExecutionContext, PlanRunner, TaskIDCounter};
+pub(crate) use runner::{
+    PlanConfig, PlanExecutionContext, PlanRunner, TaskSubmissionContext,
+};
+#[cfg(test)]
+pub(crate) use runner::TaskIDCounter;
 
 /// Internal scheduler counter for the # of queries executed so far.
 static QUERY_IDX_COUNTER: AtomicU16 = AtomicU16::new(0);

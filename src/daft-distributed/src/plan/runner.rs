@@ -50,6 +50,7 @@ pub(crate) struct PlanExecutionContext {
     scheduler_handle: SchedulerHandle<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
+    physical_plan_collector: DistributedPhysicalPlanCollector,
     shuffle_dirs: Vec<String>,
 }
 
@@ -57,6 +58,7 @@ impl PlanExecutionContext {
     pub(crate) fn new(
         query_idx: QueryIdx,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        physical_plan_collector: DistributedPhysicalPlanCollector,
     ) -> Self {
         let joinset = JoinSet::new();
         Self {
@@ -64,6 +66,7 @@ impl PlanExecutionContext {
             scheduler_handle,
             joinset,
             task_id_counter: TaskIDCounter::new(),
+            physical_plan_collector,
             shuffle_dirs: Vec::new(),
         }
     }
@@ -76,14 +79,31 @@ impl PlanExecutionContext {
         self.joinset.spawn(task);
     }
 
-    pub fn task_id_counter(&self) -> TaskIDCounter {
-        self.task_id_counter.clone()
+    /// Bundle the args every materializing node needs to call `.build()` on a
+    /// `SwordfishTaskBuilder`. Cheap to clone (Arc-y internals) so nodes
+    /// snapshot it once and move clones into closures.
+    pub fn task_submission_context(&self) -> TaskSubmissionContext {
+        TaskSubmissionContext {
+            query_idx: self.query_idx,
+            task_id_counter: self.task_id_counter.clone(),
+            physical_plan_collector: self.physical_plan_collector.clone(),
+        }
     }
 
     /// Register shuffle directories for cleanup when the plan completes
     pub fn register_shuffle_dirs(&mut self, dirs: Vec<String>) {
         self.shuffle_dirs.extend(dirs);
     }
+}
+
+/// Per-task-submission context: everything `SwordfishTaskBuilder::build()`
+/// needs. Holds Arc-clonable state (the task id counter and the
+/// distributed-physical-plan collector) plus the small `query_idx`.
+#[derive(Clone)]
+pub(crate) struct TaskSubmissionContext {
+    pub query_idx: QueryIdx,
+    pub task_id_counter: TaskIDCounter,
+    pub physical_plan_collector: DistributedPhysicalPlanCollector,
 }
 
 #[derive(Clone)]
@@ -116,19 +136,13 @@ impl PlanConfig {
 pub(crate) struct RunningPlan {
     task_stream: TaskBuilderStream,
     plan_context: PlanExecutionContext,
-    physical_plan_collector: DistributedPhysicalPlanCollector,
 }
 
 impl RunningPlan {
-    pub(crate) fn new(
-        task_stream: TaskBuilderStream,
-        plan_context: PlanExecutionContext,
-        physical_plan_collector: DistributedPhysicalPlanCollector,
-    ) -> Self {
+    pub(crate) fn new(task_stream: TaskBuilderStream, plan_context: PlanExecutionContext) -> Self {
         Self {
             task_stream,
             plan_context,
-            physical_plan_collector,
         }
     }
 
@@ -136,16 +150,11 @@ impl RunningPlan {
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        let task_id_counter = self.plan_context.task_id_counter();
+        let submission_ctx = self.plan_context.task_submission_context();
         let joinset = self.plan_context.joinset;
-        let collector = self.physical_plan_collector;
-        let stream = self.task_stream.map(move |builder| {
-            // Observe every builder produced by the distributed pipeline so the
-            // aggregated DistributedPhysicalPlan can be exposed to the dashboard
-            // once execution finishes.
-            collector.observe(&builder);
-            builder.build(self.plan_context.query_idx, &task_id_counter)
-        });
+        let stream = self
+            .task_stream
+            .map(move |builder| builder.build(&submission_ctx));
         materialize_all_pipeline_outputs(stream, scheduler_handle, Some(joinset))
     }
 }
@@ -206,11 +215,15 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         sender: Sender<MaterializedOutput>,
         physical_plan_collector: DistributedPhysicalPlanCollector,
     ) -> DaftResult<()> {
-        let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
+        let mut plan_context = PlanExecutionContext::new(
+            query_idx,
+            scheduler_handle.clone(),
+            physical_plan_collector,
+        );
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
-        let running_stage = RunningPlan::new(running_node, plan_context, physical_plan_collector);
+        let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
         while let Some(result) = materialized_result_stream.next().await {

@@ -12,7 +12,7 @@ use crate::{
         TaskBuilderStream,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -74,15 +74,11 @@ impl RepartitionNode {
     async fn execution_loop(
         self: Arc<Self>,
         local_shuffle_write_node: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let outputs = local_shuffle_write_node.materialize(
-            scheduler_handle.clone(),
-            self.context.query_idx,
-            task_id_counter,
-        );
+        let outputs = local_shuffle_write_node.materialize(scheduler_handle.clone(), submission_ctx);
 
         let transposed_outputs =
             transpose_materialized_outputs_from_stream(outputs, self.num_partitions).await?;
@@ -134,14 +130,14 @@ impl PipelineNodeImpl for RepartitionNode {
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = plan_context.task_id_counter();
+        let submission_ctx = plan_context.task_submission_context();
         let scheduler_handle = plan_context.scheduler_handle();
 
         let execution = async move {
             self_arc
                 .execution_loop(
                     local_shuffle_write_node,
-                    task_id_counter,
+                    submission_ctx,
                     result_tx,
                     scheduler_handle,
                 )

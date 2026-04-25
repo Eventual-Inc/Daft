@@ -17,7 +17,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -103,16 +103,12 @@ impl RandomShuffleNode {
     async fn execution_loop(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let outputs = input_node.materialize(
-            scheduler_handle.clone(),
-            self.context.query_idx,
-            task_id_counter.clone(),
-        );
+        let outputs = input_node.materialize(scheduler_handle.clone(), submission_ctx.clone());
 
         let partition_groups =
             transpose_materialized_outputs_from_stream(outputs, num_partitions).await?;
@@ -174,7 +170,7 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(
             partitioned_input,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         ));

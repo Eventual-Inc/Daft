@@ -21,7 +21,7 @@ use crate::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -189,7 +189,7 @@ impl KeyFilteringJoinNode {
         self: Arc<Self>,
         right_input: TaskBuilderStream,
         mut left_input: TaskBuilderStream,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
@@ -246,7 +246,7 @@ impl KeyFilteringJoinNode {
         // Materialise all right-side tasks through the scheduler.
         // We don't need the output data — only the side-effect of key ingestion.
         right_with_ingest
-            .materialize(scheduler_handle, self.context.query_idx, task_id_counter)
+            .materialize(scheduler_handle, submission_ctx)
             .try_collect::<Vec<_>>()
             .await?;
 
@@ -357,7 +357,7 @@ impl PipelineNodeImpl for KeyFilteringJoinNode {
         let execution_loop = self.execution_loop(
             right_input,
             left_input,
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
             result_tx,
             plan_context.scheduler_handle(),
         );

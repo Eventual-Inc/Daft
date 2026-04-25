@@ -14,7 +14,7 @@ use futures::StreamExt;
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, TaskSubmissionContext},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -262,7 +262,7 @@ impl LimitNode {
         mut input: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
-        task_id_counter: TaskIDCounter,
+        submission_ctx: TaskSubmissionContext,
     ) -> DaftResult<()> {
         let node_id = self.node_id();
         let mut limit_state = LimitState::new(self.limit, self.offset);
@@ -290,8 +290,7 @@ impl LimitNode {
                         })
                         .extend_fingerprint(local_limit_per_task as u32)
                         .extend_fingerprint(0);
-                    let submittable =
-                        builder_with_limit.build(self.context.query_idx, &task_id_counter);
+                    let submittable = builder_with_limit.build(&submission_ctx);
                     let future = submittable.submit(&scheduler_handle)?;
                     local_limits.push_back(future);
                 } else {
@@ -389,7 +388,7 @@ impl PipelineNodeImpl for LimitNode {
             input_stream,
             result_tx,
             plan_context.scheduler_handle(),
-            plan_context.task_id_counter(),
+            plan_context.task_submission_context(),
         ));
         TaskBuilderStream::from(result_rx)
     }
