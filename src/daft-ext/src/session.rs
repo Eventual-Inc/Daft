@@ -1,11 +1,14 @@
+use std::ffi::CStr;
+
 use crate::{
-    abi::FFI_SessionContext,
+    abi::{ArrowSchema, FFI_ExtensionType, FFI_SessionContext},
     function::{DaftScalarFunctionRef, into_ffi},
 };
 
 /// Trait for installing an extension within a session.
 pub trait DaftSession {
     fn define_function(&mut self, function: DaftScalarFunctionRef);
+    fn define_type(&mut self, name: &CStr, storage_schema: ArrowSchema);
 }
 
 /// Trait implemented by extension crates to install themselves.
@@ -32,6 +35,15 @@ impl DaftSession for SessionContext<'_> {
         let vtable = into_ffi(func);
         let rc = unsafe { (self.session.define_function)(self.session.ctx, vtable) };
         assert_eq!(rc, 0, "host define_function returned non-zero: {rc}");
+    }
+
+    fn define_type(&mut self, name: &CStr, storage_schema: ArrowSchema) {
+        let ffi_type = FFI_ExtensionType {
+            name: name.as_ptr(),
+            storage_schema,
+        };
+        let rc = unsafe { (self.session.define_type)(self.session.ctx, ffi_type) };
+        assert_eq!(rc, 0, "host define_type returned non-zero: {rc}");
     }
 }
 
@@ -83,9 +95,17 @@ mod tests {
             0
         }
 
+        unsafe extern "C" fn mock_define_type(
+            _ctx: *mut c_void,
+            _ext_type: FFI_ExtensionType,
+        ) -> c_int {
+            0
+        }
+
         let mut raw_session = FFI_SessionContext {
             ctx: std::ptr::null_mut(),
             define_function: mock_define,
+            define_type: mock_define_type,
         };
 
         let mut session = SessionContext::new(&mut raw_session);
@@ -117,6 +137,48 @@ mod tests {
     }
 
     #[test]
+    fn session_context_define_type() {
+        static TYPES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+        unsafe extern "C" fn mock_define_fn(_ctx: *mut c_void, _func: FFI_ScalarFunction) -> c_int {
+            0
+        }
+
+        unsafe extern "C" fn mock_define_type(
+            _ctx: *mut c_void,
+            ext_type: FFI_ExtensionType,
+        ) -> c_int {
+            let name = unsafe { CStr::from_ptr(ext_type.name) }
+                .to_str()
+                .unwrap()
+                .to_string();
+            TYPES.lock().unwrap().push(name);
+            0
+        }
+
+        let mut raw_session = FFI_SessionContext {
+            ctx: std::ptr::null_mut(),
+            define_function: mock_define_fn,
+            define_type: mock_define_type,
+        };
+
+        let mut session = SessionContext::new(&mut raw_session);
+
+        let field = Field::new("item", DataType::Float64, false);
+        let storage = ArrowSchema::try_from(&Field::new(
+            "point2d",
+            DataType::FixedSizeList(Arc::new(field), 2),
+            true,
+        ))
+        .unwrap();
+
+        session.define_type(c"daft_geo.point2d", storage);
+
+        let types = TYPES.lock().unwrap();
+        assert!(types.contains(&"daft_geo.point2d".to_string()));
+    }
+
+    #[test]
     fn session_context_multiple_functions() {
         static NAMES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -130,9 +192,17 @@ mod tests {
             0
         }
 
+        unsafe extern "C" fn mock_define_type(
+            _ctx: *mut c_void,
+            _ext_type: FFI_ExtensionType,
+        ) -> c_int {
+            0
+        }
+
         let mut raw_session = FFI_SessionContext {
             ctx: std::ptr::null_mut(),
             define_function: mock_define,
+            define_type: mock_define_type,
         };
 
         let mut session = SessionContext::new(&mut raw_session);

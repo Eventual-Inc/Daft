@@ -7,8 +7,9 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_ext::abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_ext::abi::{FFI_ExtensionType, FFI_ScalarFunction, FFI_SessionContext};
 use daft_ext_internal::module::ModuleHandle;
+use daft_schema::dtype::DataType;
 use uuid::Uuid;
 
 use crate::{
@@ -42,6 +43,8 @@ struct SessionState {
     tables: Bindings<TableRef>,
     /// Session-scoped functions (Python UDFs and native extension functions).
     functions: Bindings<ScalarFunction>,
+    /// Session-scoped extension types (name → DataType::Extension).
+    types: Bindings<DataType>,
 }
 
 // TODO: Session should just use a Result not CatalogResult.
@@ -79,6 +82,7 @@ impl Session {
             providers: Bindings::empty(),
             tables: Bindings::empty(),
             functions: Bindings::empty(),
+            types: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -116,6 +120,21 @@ impl Session {
         self.state_mut()
             .functions
             .bind(name.into(), function.into());
+    }
+
+    pub fn attach_type(&self, name: impl Into<String>, dtype: DataType) {
+        self.state_mut().types.bind(name.into(), dtype);
+    }
+
+    pub fn get_type(&self, name: &str) -> DaftResult<DataType> {
+        let state = self.state();
+        let results = state.types.lookup(name, LookupMode::Sensitive);
+        match results.first() {
+            Some(dt) => Ok((*dt).clone()),
+            None => Err(DaftError::ValueError(format!(
+                "Extension type '{name}' not found"
+            ))),
+        }
     }
 
     /// Attaches a provider to this session, err if already exists.
@@ -462,6 +481,31 @@ impl Session {
             0
         }
 
+        unsafe extern "C" fn define_type_cb(
+            ctx: *mut c_void,
+            ffi_type: FFI_ExtensionType,
+        ) -> c_int {
+            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let name = unsafe { CStr::from_ptr(ffi_type.name) }
+                .to_str()
+                .unwrap_or("unknown")
+                .to_string();
+            let ffi_schema: arrow_schema::ffi::FFI_ArrowSchema =
+                unsafe { ffi_type.storage_schema.into_owned() };
+            let field = match arrow_schema::Field::try_from(&ffi_schema) {
+                Ok(f) => f,
+                Err(_) => return 1,
+            };
+            let storage_dtype = match DataType::try_from(field.data_type()) {
+                Ok(dt) => dt,
+                Err(_) => return 1,
+            };
+            let ext_dtype = DataType::Extension(name.clone(), Box::new(storage_dtype), None);
+            let session = unsafe { &*init_ctx.session };
+            session.attach_type(name, ext_dtype);
+            0
+        }
+
         let init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
@@ -470,6 +514,7 @@ impl Session {
         let mut ffi_ctx = FFI_SessionContext {
             ctx: (&raw const init_ctx) as *mut c_void,
             define_function: define_function_cb,
+            define_type: define_type_cb,
         };
 
         let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };

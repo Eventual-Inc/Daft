@@ -17,7 +17,7 @@ use std::ffi::{c_char, c_int, c_void};
 pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 1;
+pub const DAFT_ABI_VERSION: u32 = 2;
 
 /// Symbol that every Daft module cdylib must export.
 ///
@@ -112,9 +112,31 @@ pub struct FFI_ScalarFunction {
 unsafe impl Send for FFI_ScalarFunction {}
 unsafe impl Sync for FFI_ScalarFunction {}
 
+/// Definition of an extension type passed across the FFI boundary.
+///
+/// Extension types are named types backed by an Arrow storage type.
+/// The host registers them so they can be referenced by name.
+#[repr(C)]
+pub struct FFI_ExtensionType {
+    /// Type name as a null-terminated UTF-8 string (e.g. "daft_geo.point2d").
+    ///
+    /// Must remain valid until the host copies it during registration.
+    pub name: *const c_char,
+
+    /// The Arrow storage schema for this type (via C Data Interface).
+    ///
+    /// For example, a Point2D might use `FixedSizeList[Float64, 2]`.
+    /// Ownership is transferred to the host on success.
+    pub storage_schema: ArrowSchema,
+}
+
+// SAFETY: C string pointer plus ArrowSchema (opaque pointer wrapper).
+unsafe impl Send for FFI_ExtensionType {}
+unsafe impl Sync for FFI_ExtensionType {}
+
 /// Host-side session context passed to a module's `init` function.
 ///
-/// The module calls `define_function` to register extensions.
+/// The module calls `define_function` and `define_type` to register extensions.
 #[repr(C)]
 pub struct FFI_SessionContext {
     /// Opaque host-side context pointer.
@@ -126,6 +148,12 @@ pub struct FFI_SessionContext {
     /// Returns 0 on success, non-zero on error.
     pub define_function:
         unsafe extern "C" fn(ctx: *mut c_void, function: FFI_ScalarFunction) -> c_int,
+
+    /// Register an extension type with the host session.
+    ///
+    /// The host copies the name and takes ownership of the storage schema.
+    /// Returns 0 on success, non-zero on error.
+    pub define_type: unsafe extern "C" fn(ctx: *mut c_void, ext_type: FFI_ExtensionType) -> c_int,
 }
 
 // SAFETY: Function pointer plus opaque host pointer.
@@ -143,8 +171,8 @@ mod tests {
         // FFI_ScalarFunction: ctx + name + get_return_field + call + fini = 5 pointers
         assert_eq!(std::mem::size_of::<FFI_ScalarFunction>(), 5 * ptr);
 
-        // FFI_SessionContext: ctx + define_function = 2 pointers
-        assert_eq!(std::mem::size_of::<FFI_SessionContext>(), 2 * ptr);
+        // FFI_SessionContext: ctx + define_function + define_type = 3 pointers
+        assert_eq!(std::mem::size_of::<FFI_SessionContext>(), 3 * ptr);
 
         // FFI_Module: u32 (padded) + name + init + free_string
         // 64-bit: 4 + 4 pad + 8 + 8 + 8 = 32
@@ -159,6 +187,7 @@ mod tests {
     fn send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<FFI_ScalarFunction>();
+        assert_send_sync::<FFI_ExtensionType>();
         assert_send_sync::<FFI_SessionContext>();
         assert_send_sync::<FFI_Module>();
     }
@@ -167,7 +196,7 @@ mod tests {
     fn constants() {
         // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
         // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
-        assert_eq!(DAFT_ABI_VERSION, 1);
+        assert_eq!(DAFT_ABI_VERSION, 2);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }

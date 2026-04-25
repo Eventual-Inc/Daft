@@ -173,6 +173,11 @@ impl PySession {
         Ok(self.0.load_and_init_extension(std::path::Path::new(path))?)
     }
 
+    pub fn get_type(&self, name: &str) -> PyResult<daft_schema::python::PyDataType> {
+        let dtype = self.0.get_type(name)?;
+        Ok(daft_schema::python::PyDataType { dtype })
+    }
+
     #[pyo3(signature = (name, *args))]
     pub fn get_function(
         &self,
