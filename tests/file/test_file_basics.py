@@ -21,7 +21,76 @@ def test_path_file_is_readable_and_seekable(tmp_path: Path):
     assert f.seekable()
     assert f.readable()
     assert not f.isatty()
-    assert not f.writable()
+    assert f.writable()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_write_binary(tmp_path: Path):
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(b"before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("wb") as writer:
+        written = writer.write(b"hello")
+        assert written == 5
+        assert writer.writable()
+        assert not writer.readable()
+
+    assert temp_file.read_bytes() == b"hello"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_write_text(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        written = writer.write("hello")
+        assert written == 5
+
+    assert temp_file.read_text() == "hello"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_mode_validations(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(ValueError, match="Unsupported mode"):
+        f.open("a")
+
+    with f.open("wb") as writer:
+        with pytest.raises(TypeError, match="bytes-like"):
+            writer.write("text")
+
+    with f.open("w") as writer:
+        with pytest.raises(TypeError, match="must be str"):
+            writer.write(b"bytes")
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_support_in_udf(tmp_path: Path):
+    src_path = tmp_path / "src.txt"
+    dst_path = tmp_path / "dst.txt"
+    src_path.write_text("hello from udf")
+
+    df = daft.from_pydict({"src": [str(src_path.absolute())], "dst": [str(dst_path.absolute())]})
+    df = df.select(file(daft.col("src")).alias("src"), daft.col("dst"))
+
+    @daft.func(return_dtype=dt.string())
+    def copy_file(src_file: daft.File, dst_path: str) -> str:
+        with src_file.open() as reader:
+            payload = reader.read()
+        dst_file = daft.File(dst_path)
+        with dst_file.open("wb") as writer:
+            writer.write(payload)
+        return dst_path
+
+    out = df.select(copy_file(daft.col("src"), daft.col("dst")).alias("written_path")).to_pydict()
+    assert out["written_path"] == [str(dst_path.absolute())]
+    assert dst_path.read_text() == "hello from udf"
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
