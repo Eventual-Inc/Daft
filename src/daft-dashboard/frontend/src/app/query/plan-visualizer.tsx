@@ -18,7 +18,7 @@ function parsePlan(planJson: string): PlanNode {
 /** Extract display properties from a node (everything except type and children). */
 function getNodeProps(node: PlanNode): [string, unknown][] {
   return Object.entries(node).filter(
-    ([key]) => key !== "type" && key !== "children",
+    ([key]) => key !== "type" && key !== "children"
   );
 }
 
@@ -26,9 +26,71 @@ function getColor(nodeType: string) {
   return categoryColors[nodeType] ?? defaultColor;
 }
 
-function formatValue(value: unknown): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function formatCompactValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "auto";
+  }
   if (Array.isArray(value)) {
-    return value.map((v) => String(v)).join(", ");
+    return `[${value.map(v => formatCompactValue(v)).join(", ")}]`;
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function formatRepartitionSpec(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length !== 1) {
+    return null;
+  }
+
+  const [specType, specConfig] = entries[0];
+  if (
+    !isRecord(specConfig) ||
+    !["Random", "Hash", "Range"].includes(specType)
+  ) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if ("num_partitions" in specConfig) {
+    parts.push(
+      `num_partitions=${formatCompactValue(specConfig.num_partitions)}`
+    );
+  }
+  if ("by" in specConfig) {
+    parts.push(`by=${formatCompactValue(specConfig.by)}`);
+  }
+  if (
+    "seed" in specConfig &&
+    specConfig.seed !== null &&
+    specConfig.seed !== undefined
+  ) {
+    parts.push(`seed=${formatCompactValue(specConfig.seed)}`);
+  }
+
+  return parts.length > 0 ? `${specType} (${parts.join(", ")})` : specType;
+}
+
+function formatValue(key: string, value: unknown): string {
+  if (key.toLowerCase() === "repartition_spec") {
+    const formattedRepartitionSpec = formatRepartitionSpec(value);
+    if (formattedRepartitionSpec !== null) {
+      return formattedRepartitionSpec;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(v => String(v)).join(", ");
   }
   if (value === null || value === undefined) {
     return "—";
@@ -81,7 +143,7 @@ function NodeCard({
               <span
                 className={`${main.className} text-xs text-zinc-300 break-all`}
               >
-                {formatValue(value)}
+                {formatValue(key, value)}
               </span>
             </div>
           ))}
@@ -152,8 +214,8 @@ export default function PlanVisualizer({ planJson }: { planJson: string }) {
           <div className="relative flex justify-center py-6 px-4 overflow-auto">
             <TreeLayout
               node={plan}
-              getChildren={(node) => node.children ?? []}
-              renderNode={(node) => <ExpandableNodeCard node={node} />}
+              getChildren={node => node.children ?? []}
+              renderNode={node => <ExpandableNodeCard node={node} />}
             />
           </div>
         ) : (
