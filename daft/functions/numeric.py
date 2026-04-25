@@ -223,6 +223,15 @@ def power(base: Expression, expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("power", base, expr)
 
 
+def pmod(a: Expression, b: Expression) -> Expression:
+    """Returns the positive modulo: ``((a % b) + b) % b``.
+
+    The result has the same sign as ``b`` (e.g. ``pmod(-7, 3)`` returns ``2``).
+    Returns NULL when ``b`` is 0.
+    """
+    return Expression._call_builtin_scalar_fn("pmod", a, b)
+
+
 def exp(expr: Expression) -> Expression:
     """The e^expr of a numeric expression."""
     return Expression._call_builtin_scalar_fn("exp", expr)
