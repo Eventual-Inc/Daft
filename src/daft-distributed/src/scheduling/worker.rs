@@ -90,10 +90,10 @@ pub(crate) mod tests {
         }
 
         pub fn last_retire_args(&self) -> Option<(usize, bool)> {
-            self.last_retire_args
+            *self
+                .last_retire_args
                 .lock()
                 .expect("Failed to lock last_retire_args")
-                .clone()
         }
     }
 
