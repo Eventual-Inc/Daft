@@ -395,6 +395,11 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     )
 
 
+def clear_autoscaling_requests() -> None:
+    # Clear any previously requested resources by the Ray autoscaler.
+    try_autoscale(bundles=[])
+
+
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
     def __init__(
