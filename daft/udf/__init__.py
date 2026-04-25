@@ -8,6 +8,7 @@ from typing import ParamSpec
 from .legacy import udf, UDF
 from . import metrics
 from .udf_v2 import Func, mark_cls_method, wrap_cls
+from .udaf import udaf
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -577,4 +578,4 @@ class _MethodDecorator:
 method: _MethodDecorator = _MethodDecorator()
 
 
-__all__ = ["UDF", "metrics", "udf"]
+__all__ = ["UDF", "metrics", "udaf", "udf"]
