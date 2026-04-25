@@ -90,10 +90,19 @@ pub trait CheckpointStore: Send + Sync {
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()>;
 
+    /// Register a checkpoint ID for in-flight tracking without staging any
+    /// data. Creates an empty `Staged` entry so that a subsequent
+    /// [`checkpoint`](Self::checkpoint) call succeeds even if no keys or
+    /// files were staged (e.g., when the source produces 0 rows).
+    ///
+    /// **Idempotent** — no-op if the ID is already staged or sealed.
+    async fn register(&self, id: &CheckpointId) -> CheckpointResult<()>;
+
     /// Checkpoint (seal) a staged entry — couples the staged keys and files, making them
     /// visible to readers. No further staging is allowed after this call.
     ///
-    /// Returns [`CheckpointNotFound`] if the ID was never staged.
+    /// Returns [`CheckpointNotFound`] if the ID was never staged or
+    /// [`register`](Self::register)ed.
     ///
     /// **Idempotent** — no-op if the checkpoint has already been sealed.
     /// This supports retry after message loss (e.g., worker sends checkpoint,

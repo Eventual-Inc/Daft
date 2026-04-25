@@ -189,6 +189,7 @@ impl PipelineNode for CheckpointTerminusNode {
                         }
                         PipelineMessage::Flush(input_id) => {
                             let checkpoint_id = id_map.get_or_generate(input_id);
+                            store.register(&checkpoint_id).await?;
                             store.checkpoint(&checkpoint_id).await?;
                             if output_sender
                                 .send(PipelineMessage::Flush(input_id))
