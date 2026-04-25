@@ -563,6 +563,29 @@ impl ToPyArrow for Series {
             (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
         )?;
 
+        if self.data_type().is_extension() {
+            let is_already_extension = array
+                .getattr(pyo3::intern!(py, "type"))?
+                .is_instance(&pyarrow.getattr(pyo3::intern!(py, "BaseExtensionType"))?)?;
+            if !is_already_extension {
+                let dtype_json = self.data_type().to_json()?;
+                let daft_ext_mod =
+                    pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?;
+                daft_ext_mod
+                    .call_method0(pyo3::intern!(py, "_ensure_registered_super_ext_type"))?;
+                let ext_type_cls =
+                    pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.extension_type"))?
+                        .getattr(pyo3::intern!(py, "DaftExtension"))?;
+                let ext_type = ext_type_cls.call1((
+                    array.getattr(pyo3::intern!(py, "type"))?,
+                    dtype_json.as_bytes(),
+                ))?;
+                return pyarrow
+                    .getattr(pyo3::intern!(py, "ExtensionArray"))?
+                    .call_method1(pyo3::intern!(py, "from_storage"), (ext_type, &array));
+            }
+        }
+
         // For FixedShapeTensor, re-wrap the storage array as a PyArrow canonical
         // FixedShapeTensorArray instead of returning a DaftExtension array.
         if self.data_type().is_fixed_shape_tensor() {
