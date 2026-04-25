@@ -2895,6 +2895,7 @@ dependencies = [
  "google-cloud-token",
  "home",
  "itertools 0.14.0",
+ "libc",
  "log",
  "md5",
  "opendal",

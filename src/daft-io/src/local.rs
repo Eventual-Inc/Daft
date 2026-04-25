@@ -3,7 +3,7 @@ use std::{
     io::{SeekFrom, Write},
     ops::Range,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use async_trait::async_trait;
@@ -11,7 +11,10 @@ use bytes::Bytes;
 use common_error::DaftError;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{ResultExt, Snafu};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::{
+    io::{AsyncReadExt, AsyncSeekExt},
+    sync::Semaphore,
+};
 
 use super::{
     InvalidRangeRequestSnafu, Result,
@@ -23,6 +26,21 @@ use crate::{
     range::GetRange,
     stats::IOStatsRef,
 };
+
+static OPEN_DIR_LIMITER: LazyLock<Semaphore> = LazyLock::new(|| {
+    #[cfg(unix)]
+    {
+        let mut rlim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut rlim) } == 0 && rlim.rlim_cur > 0
+        {
+            return Semaphore::new(rlim.rlim_cur as usize / 2);
+        }
+    }
+    Semaphore::new(512)
+});
 
 /// NOTE: We hardcode this even for Windows
 ///
@@ -330,6 +348,7 @@ impl ObjectSource for LocalSource {
             })])
             .boxed());
         }
+        let permit = OPEN_DIR_LIMITER.acquire().await.expect("semaphore closed");
         let dir_entries = tokio::fs::read_dir(uri.as_ref()).await.with_context(|_| {
             UnableToFetchDirectoryEntriesSnafu {
                 path: uri.to_string(),
@@ -338,6 +357,7 @@ impl ObjectSource for LocalSource {
         let dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
         let uri = Arc::new(uri.to_string());
         let file_meta_stream = dir_stream.then(move |entry| {
+            let _ = &permit;
             let uri = uri.clone();
             async move {
                 let entry = entry.with_context(|_| UnableToFetchDirectoryEntriesSnafu {

@@ -22,6 +22,7 @@ google-cloud-storage = {version = "0.24.0", default-features = false, features =
 google-cloud-token = {version = "0.1.2"}
 home = "0.5.12"
 itertools = {workspace = true}
+libc = {workspace = true}
 log = {workspace = true}
 opendal = {workspace = true, features = [
   "executors-tokio",  # Use tokio for async execution
