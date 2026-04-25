@@ -1024,10 +1024,10 @@ def test_pmod_negative() -> None:
 def test_pmod_float() -> None:
     from daft.functions import pmod
 
-    table = MicroPartition.from_pydict({"a": [7.5, -7.5, 7.5], "b": [2.5, 2.5, -2.5]})
+    table = MicroPartition.from_pydict({"a": [7.5, -7.0, 1.0, -1.0], "b": [2.5, 3.0, -3.0, -3.0]})
     result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
-    assert values == [0.0, 0.0, 0.0]
+    assert values == [0.0, 2.0, -2.0, -1.0]
 
 
 def test_pmod_zero_divisor() -> None:

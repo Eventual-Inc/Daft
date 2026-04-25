@@ -123,7 +123,7 @@ fn pmod_f32(a: Series, b: Series) -> DaftResult<Series> {
     let arr_a = a.f32().unwrap();
     let arr_b = b.f32().unwrap();
     let iter = arr_a.iter().zip(arr_b.iter()).map(|(x, y)| match (x, y) {
-        (Some(x), Some(y)) if y != 0.0 => Some(x.rem_euclid(y)),
+        (Some(x), Some(y)) if y != 0.0 => Some(((x % y) + y) % y),
         _ => None,
     });
     Ok(Float32Array::from_iter(Field::new(arr_a.name(), DataType::Float32), iter).into_series())
@@ -133,7 +133,7 @@ fn pmod_f64(a: Series, b: Series) -> DaftResult<Series> {
     let arr_a = a.f64().unwrap();
     let arr_b = b.f64().unwrap();
     let iter = arr_a.iter().zip(arr_b.iter()).map(|(x, y)| match (x, y) {
-        (Some(x), Some(y)) if y != 0.0 => Some(x.rem_euclid(y)),
+        (Some(x), Some(y)) if y != 0.0 => Some(((x % y) + y) % y),
         _ => None,
     });
     Ok(Float64Array::from_iter(Field::new(arr_a.name(), DataType::Float64), iter).into_series())
