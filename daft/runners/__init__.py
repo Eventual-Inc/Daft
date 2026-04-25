@@ -97,7 +97,6 @@ def set_runner_ray(
     Note:
         Can also be configured via environment variable: DAFT_RUNNER=ray
     """
-
     # Allow programmatic configuration of autoscaling/downscaling behavior via `daft.set_runner_ray`.
     # These settings are still backed by environment variables so they can propagate to the Rust
     # scheduler/worker-manager components without threading configuration throughout the stack.
@@ -114,9 +113,7 @@ def set_runner_ray(
     if pending_release_exclude_seconds is not None:
         if pending_release_exclude_seconds < 0:
             raise ValueError("pending_release_exclude_seconds must be >= 0")
-        os.environ["DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS"] = str(
-            pending_release_exclude_seconds
-        )
+        os.environ["DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS"] = str(pending_release_exclude_seconds)
 
     return _set_runner_ray(
         address=address,
