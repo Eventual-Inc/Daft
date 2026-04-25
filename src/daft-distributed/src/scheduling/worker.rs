@@ -45,11 +45,25 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
+    /// Optionally retire idle workers to allow the backend to scale in.
+    ///
+    /// The default implementation is a no-op for backends that do not support worker retirement.
+    #[allow(unused_variables)]
+    fn retire_idle_workers(
+        &self,
+        max_to_retire: usize,
+        force_all_when_cluster_idle: bool,
+    ) -> DaftResult<usize> {
+        Ok(0)
+    }
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::sync::{Mutex, atomic::AtomicBool};
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
 
     use super::*;
     use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
@@ -58,13 +72,28 @@ pub(crate) mod tests {
     #[derive(Clone)]
     pub struct MockWorkerManager {
         workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
+        retire_call_count: Arc<AtomicUsize>,
+        last_retire_args: Arc<Mutex<Option<(usize, bool)>>>,
     }
 
     impl MockWorkerManager {
         pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
             Self {
                 workers: Arc::new(Mutex::new(workers)),
+                retire_call_count: Arc::new(AtomicUsize::new(0)),
+                last_retire_args: Arc::new(Mutex::new(None)),
             }
+        }
+
+        pub fn retire_call_count(&self) -> usize {
+            self.retire_call_count.load(Ordering::SeqCst)
+        }
+
+        pub fn last_retire_args(&self) -> Option<(usize, bool)> {
+            self.last_retire_args
+                .lock()
+                .expect("Failed to lock last_retire_args")
+                .clone()
         }
     }
 
@@ -144,6 +173,21 @@ pub(crate) mod tests {
                 .values()
                 .for_each(|w| w.shutdown());
             Ok(())
+        }
+
+        fn retire_idle_workers(
+            &self,
+            max_to_retire: usize,
+            force_all_when_cluster_idle: bool,
+        ) -> DaftResult<usize> {
+            // Mock implementation: distributed Ray autoscaler is not exercised in unit tests.
+            self.retire_call_count.fetch_add(1, Ordering::SeqCst);
+            *self
+                .last_retire_args
+                .lock()
+                .expect("Failed to lock last_retire_args") =
+                Some((max_to_retire, force_all_when_cluster_idle));
+            Ok(0)
         }
     }
 
