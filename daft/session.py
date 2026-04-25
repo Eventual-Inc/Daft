@@ -14,7 +14,6 @@ from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
 from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
-from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
@@ -50,7 +49,6 @@ __all__ = [
     "get_function",
     "get_provider",
     "get_table",
-    "get_type",
     "has_catalog",
     "has_namespace",
     "has_provider",
@@ -554,17 +552,6 @@ class Session:
         """
         return Expression._from_pyexpr(self._session.get_function(name, *[a._expr for a in args]))
 
-    def get_type(self, name: str) -> DataType:
-        """Returns an extension type registered by a loaded extension.
-
-        Args:
-            name (str): type name as registered by an extension (e.g. "daft_geo.point2d")
-
-        Returns:
-            DataType: the extension DataType
-        """
-        return DataType._from_pydatatype(self._session.get_type(name))
-
     ###
     # has_*
     ###
@@ -894,11 +881,6 @@ def get_table(identifier: Identifier | str) -> Table:
 def get_function(name: str, *args: Expression) -> Expression:
     """Returns the function from the current session or raises an exception if it does not exist."""
     return _session().get_function(name, *args)
-
-
-def get_type(name: str) -> DataType:
-    """Returns an extension type registered by a loaded extension."""
-    return _session().get_type(name)
 
 
 ###

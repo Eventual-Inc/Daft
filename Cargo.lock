@@ -3291,7 +3291,6 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-schema 57.3.0",
  "common-error",
  "daft-ai",
  "daft-catalog",
@@ -3300,7 +3299,6 @@ dependencies = [
  "daft-ext",
  "daft-ext-internal",
  "daft-logical-plan",
- "daft-schema",
  "pyo3",
  "uuid",
 ]
