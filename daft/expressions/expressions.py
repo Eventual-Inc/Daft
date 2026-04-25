@@ -2306,6 +2306,16 @@ class Expression:
 
         return length_bytes(self)
 
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the Hamming distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
