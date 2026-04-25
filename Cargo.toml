@@ -327,7 +327,7 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = "0.28"
-opendal = {version = "0.55", default-features = false}
+opendal = {git = "https://github.com/apache/opendal.git", rev = "a0c1d81237f9a558e8682ec3d24773f865d3ceea", package = "opendal", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}

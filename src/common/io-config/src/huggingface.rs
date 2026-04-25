@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +31,30 @@ impl Default for HuggingFaceConfig {
 }
 
 impl HuggingFaceConfig {
+    pub fn to_opendal_config(
+        &self,
+        repo_type: &str,
+        repo_id: &str,
+        revision: Option<&str>,
+    ) -> BTreeMap<String, String> {
+        let mut config = BTreeMap::from([
+            ("repo_type".to_string(), repo_type.to_string()),
+            ("repo_id".to_string(), repo_id.to_string()),
+        ]);
+
+        if let Some(revision) = revision.filter(|revision| !revision.is_empty()) {
+            config.insert("revision".to_string(), revision.to_string());
+        }
+
+        if !self.anonymous
+            && let Some(token) = &self.token
+        {
+            config.insert("token".to_string(), token.as_string().clone());
+        }
+
+        config
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(token) = &self.token {
@@ -45,5 +72,27 @@ impl Display for HuggingFaceConfig {
             "HuggingFaceConfig\n{}",
             self.multiline_display().join("\n")
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HuggingFaceConfig;
+
+    #[test]
+    fn test_to_opendal_config_respects_anonymous_mode() {
+        let config = HuggingFaceConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+
+        let opendal = config.to_opendal_config("bucket", "user/bucket", None);
+
+        assert_eq!(opendal.get("repo_type").map(String::as_str), Some("bucket"));
+        assert_eq!(
+            opendal.get("repo_id").map(String::as_str),
+            Some("user/bucket")
+        );
+        assert!(!opendal.contains_key("token"));
     }
 }
