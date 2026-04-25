@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import io
 import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
-from daft.daft import PyDaftFile, PyFileReference
+from daft.daft import PyDaftFile, PyFileReference, io_put
 from daft.datatype import MediaType
 from daft.dependencies import av, sf
 
@@ -16,6 +17,85 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 
+class _DaftWritableFile:
+    def __init__(self, path: str, io_config: IOConfig | None, mode: str, encoding: str) -> None:
+        self.path = path
+        self._io_config = io_config
+        self._mode = mode
+        self._encoding = encoding
+        self._closed = False
+        self._buffer = io.BytesIO()
+
+    def __enter__(self) -> _DaftWritableFile:
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def readable(self) -> bool:
+        return False
+
+    def writable(self) -> bool:
+        return not self._closed
+
+    def seekable(self) -> bool:
+        return True
+
+    def isatty(self) -> bool:
+        return False
+
+    def write(self, data: str | bytes | bytearray | memoryview) -> int:
+        if self._closed:
+            raise ValueError("Cannot write to closed file")
+
+        if "b" in self._mode:
+            if isinstance(data, str):
+                raise TypeError("write() argument must be bytes-like in binary mode")
+            payload = bytes(data)
+            self._buffer.write(payload)
+            return len(payload)
+
+        if not isinstance(data, str):
+            raise TypeError("write() argument must be str in text mode")
+        payload = data.encode(self._encoding)
+        self._buffer.write(payload)
+        return len(data)
+
+    def tell(self) -> int:
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        return self._buffer.tell()
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        return self._buffer.seek(offset, whence)
+
+    def truncate(self, size: int | None = None) -> int:
+        if self._closed:
+            raise ValueError("Cannot truncate closed file")
+        if size is None:
+            size = self._buffer.tell()
+        return self._buffer.truncate(size)
+
+    def flush(self) -> None:
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        try:
+            io_put(path=self.path, data=self._buffer.getvalue(), multithreaded_io=True, io_config=self._io_config)
+        finally:
+            self._buffer.close()
+            self._closed = True
+
+
 class File:
     """A file-like object for working with file contents in Daft.
 
@@ -23,8 +103,7 @@ class File:
     with Python's file protocol.
 
     The File object can be used with most Python libraries that accept file-like objects,
-    and implements the standard read/seek/tell interface. Files are read-only in the
-    current implementation.
+    and implements standard file-style interfaces for reads and writes.
 
     Examples:
         >>> import daft
@@ -53,8 +132,13 @@ class File:
     ) -> None:
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
 
-    def open(self) -> PyDaftFile:
-        return PyDaftFile._from_file_reference(self._inner)
+    def open(self, mode: str = "rb", encoding: str = "utf-8") -> PyDaftFile | _DaftWritableFile:
+        if mode in ("r", "rb"):
+            return PyDaftFile._from_file_reference(self._inner)
+        if mode in ("w", "wt", "wb"):
+            _, path, io_config = self._inner._get_file()
+            return _DaftWritableFile(path=path, io_config=io_config, mode=mode, encoding=encoding)
+        raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', and 'wb'")
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -63,7 +147,7 @@ class File:
         return True
 
     def writable(self) -> bool:
-        return False
+        return True
 
     def seekable(self) -> bool:
         return True
