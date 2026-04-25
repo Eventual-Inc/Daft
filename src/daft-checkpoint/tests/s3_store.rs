@@ -485,7 +485,37 @@ async fn test_parquet_file_metadata_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
-// 14. sealed_file_paths visibility lifecycle
+// 14. register() then checkpoint() — empty source (0 rows)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_register_then_checkpoint() {
+    let (_dir, store) = make_store();
+    let id = CheckpointId::generate(0);
+
+    // Register without staging any data
+    store.register(&id).await.unwrap();
+
+    // get_checkpoint sees the staged entry
+    let ckpt = store.get_checkpoint(&id).await.unwrap();
+    assert_eq!(ckpt.status, CheckpointStatus::Staged);
+
+    // Checkpoint succeeds with 0 keys/files
+    store.checkpoint(&id).await.unwrap();
+
+    assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
+    assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
+
+    // register() on sealed ID is idempotent no-op
+    store.register(&id).await.unwrap();
+
+    // stage_keys after register+seal is still AlreadySealed
+    let err = store.stage_keys(&id, keys(&["a"])).await.unwrap_err();
+    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// 15. sealed_file_paths visibility lifecycle
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
