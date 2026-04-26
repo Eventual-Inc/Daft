@@ -515,37 +515,35 @@ fn create_sentinel_tasks(
     Ok(tasks_by_bucket)
 }
 
-fn row_is_all_null(batch: &RecordBatch) -> bool {
-    debug_assert_eq!(batch.len(), 1);
-    (0..batch.num_columns()).all(|i| !batch.get_column(i).is_valid(0))
-}
-
-/// Reduces sentinel MaterializedOutputs from all workers into one `Option<RecordBatch>` per partition.
+/// Reduces sentinel MaterializedOutputs into one `Option<RecordBatch>` per bucket.
 ///
-/// Each worker's sentinel partition contains N rows — one max row per bucket index.
-/// Empty buckets are represented as all-null rows.
+/// `sentinel_groups[bucket_idx]` contains one 1-row MaterializedOutput per worker
+/// (the top_n result for that bucket from that worker).
 ///
 /// This function:
-/// 1. Fetches the sentinel data from workers via ray.get() (small — N rows each)
-/// 2. For each bucket index, collects that row from every worker and finds the max
+/// 1. Flattens all refs across all buckets and fetches via one ray.get() call
+/// 2. Reconstructs per-bucket groups and finds the cross-worker max for each bucket
 /// 3. Forward-fills: if bucket j has no valid sentinel, inherit from bucket j-1
 ///
-/// Returns `Vec<Option<RecordBatch>>` of length `num_partitions`.
+/// Returns `Vec<Option<RecordBatch>>` of length `sentinel_groups.len()`.
 #[cfg(feature = "python")]
 async fn reduce_sentinels(
-    sentinel_group: Vec<MaterializedOutput>,
-    num_partitions: usize,
+    sentinel_groups: Vec<Vec<MaterializedOutput>>,
     composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
     use pyo3::prelude::*;
 
-    if sentinel_group.is_empty() {
+    let num_partitions = sentinel_groups.len();
+
+    if sentinel_groups.iter().all(|g| g.is_empty()) {
         return Ok(vec![None; num_partitions]);
     }
 
-    // 1. Extract partition refs from sentinel group.
-    let ray_partition_refs = sentinel_group
+    let bucket_sizes: Vec<usize> = sentinel_groups.iter().map(|g| g.len()).collect();
+
+    let ray_partition_refs = sentinel_groups
         .into_iter()
+        .flatten()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
             use crate::python::ray::RayPartitionRef;
@@ -559,8 +557,6 @@ async fn reduce_sentinels(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    // 2. Fetch all sentinel MicroPartitions via ray.get().
-    //    ray.get() is synchronous, so we run it on a blocking thread.
     let sentinel_mps = tokio::task::spawn_blocking(move || {
         Python::attach(|py| {
             let ray = py.import(pyo3::intern!(py, "ray"))?;
@@ -572,7 +568,6 @@ async fn reduce_sentinels(
             let mut mps = Vec::new();
             for item in results.try_iter()? {
                 let item = item?;
-                // Ray returns Python MicroPartition wrappers; unwrap to inner PyMicroPartition
                 let inner = item.getattr("_micropartition").unwrap_or(item);
                 let mp: daft_micropartition::python::PyMicroPartition =
                     inner.extract().map_err(pyo3::PyErr::from)?;
@@ -586,28 +581,18 @@ async fn reduce_sentinels(
         common_error::DaftError::InternalError(format!("Join error in spawn_blocking: {e}"))
     })??;
 
-    // 3. Concat each MicroPartition down to a single RecordBatch per worker.
-    let worker_batches: Vec<RecordBatch> = sentinel_mps
+    // Each MP is a 1-row result from top_n. Empty buckets produce None via concat_or_get.
+    let all_batches: Vec<Option<RecordBatch>> = sentinel_mps
         .into_iter()
-        .filter_map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
+        .map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
         .collect();
 
-    if worker_batches.is_empty() {
-        return Ok(vec![None; num_partitions]);
-    }
-
-    // 4. For each bucket index, collect that row from every worker and find the max.
     let mut sentinels: Vec<Option<RecordBatch>> = Vec::with_capacity(num_partitions);
-    for bucket_idx in 0..num_partitions {
-        let mut candidates = Vec::new();
-        for batch in &worker_batches {
-            if bucket_idx < batch.len() {
-                let row = batch.slice(bucket_idx, bucket_idx + 1)?;
-                if !row_is_all_null(&row) {
-                    candidates.push(row);
-                }
-            }
-        }
+    let mut batch_iter = all_batches.into_iter();
+    for bucket_size in bucket_sizes {
+        let candidates: Vec<RecordBatch> = (0..bucket_size)
+            .filter_map(|_| batch_iter.next().flatten())
+            .collect();
         if candidates.is_empty() {
             sentinels.push(None);
         } else if candidates.len() == 1 {
@@ -618,7 +603,6 @@ async fn reduce_sentinels(
         }
     }
 
-    // 5. Forward-fill: if bucket j has no valid sentinel, inherit from bucket j-1.
     for j in 1..num_partitions {
         if sentinels[j].is_none() {
             let prev = sentinels[j - 1].clone();
@@ -631,8 +615,7 @@ async fn reduce_sentinels(
 
 #[cfg(not(feature = "python"))]
 async fn reduce_sentinels(
-    _sentinel_group: Vec<MaterializedOutput>,
-    num_partitions: usize,
+    _sentinel_groups: Vec<Vec<MaterializedOutput>>,
     _composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
     unimplemented!("Distributed asof join sentinel reduction requires Python feature to be enabled")
