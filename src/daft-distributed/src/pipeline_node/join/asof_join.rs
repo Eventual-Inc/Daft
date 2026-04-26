@@ -1,4 +1,4 @@
-use std::{future, sync::Arc};
+use std::{collections::HashMap, future, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
@@ -24,12 +24,15 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder},
+        scheduler::{SchedulerHandle, SubmittedTask},
+        task::{SchedulingStrategy, SwordfishTask, SwordfishTaskBuilder},
+        worker::WorkerId,
     },
     statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
+
+const SENTINEL_PHASE: &str = "sentinel";
 
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
@@ -438,6 +441,78 @@ impl PipelineNodeImpl for AsofJoinNode {
         ));
         TaskBuilderStream::from(result_rx)
     }
+}
+
+/// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
+/// sentinel (max) rows from the right-side range-repartitioned outputs.
+///
+/// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
+fn create_sentinel_tasks(
+    materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
+    composite_keys: Vec<BoundExpr>,
+    num_partitions: usize,
+    pipeline_node: &dyn PipelineNodeImpl,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<Vec<Vec<SubmittedTask>>> {
+    let context = pipeline_node.context();
+    let node_id = pipeline_node.node_id();
+    let descending = vec![true; composite_keys.len()];
+    let nulls_first = vec![false; composite_keys.len()];
+
+    let mut worker_groups: HashMap<WorkerId, Vec<Vec<MaterializedOutput>>> = HashMap::new();
+    for mo in materialized_outputs {
+        let worker_id = mo.worker_id().clone();
+        worker_groups
+            .entry(worker_id)
+            .or_default()
+            .push(mo.split_into_materialized_outputs());
+    }
+
+    let mut tasks_by_bucket = Vec::with_capacity(num_partitions);
+    for bucket_idx in 0..num_partitions {
+        let mut bucket_tasks = vec![];
+        for (worker_id, split_mos) in &worker_groups {
+            let mos_for_bucket: Vec<MaterializedOutput> = split_mos
+                .iter()
+                .map(|splits| splits[bucket_idx].clone())
+                .collect();
+
+            let (in_memory_scan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    mos_for_bucket,
+                    input_schema.clone(),
+                    node_id,
+                    SENTINEL_PHASE,
+                );
+
+            let plan = LocalPhysicalPlan::top_n(
+                in_memory_scan,
+                composite_keys.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                1,
+                None,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(SENTINEL_PHASE),
+            );
+
+            let submitted = SwordfishTaskBuilder::new(plan, pipeline_node, node_id)
+                .with_psets(node_id, psets)
+                .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                    worker_id: worker_id.clone(),
+                    soft: false,
+                }))
+                .build(context.query_idx, task_id_counter)
+                .submit(scheduler_handle)?;
+
+            bucket_tasks.push(submitted);
+        }
+        tasks_by_bucket.push(bucket_tasks);
+    }
+
+    Ok(tasks_by_bucket)
 }
 
 fn row_is_all_null(batch: &RecordBatch) -> bool {
