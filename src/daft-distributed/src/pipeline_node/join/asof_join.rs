@@ -18,8 +18,8 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::{
-            create_range_repartition_tasks, create_range_repartition_tasks_with_sentinels,
-            create_sample_tasks, get_partition_boundaries_from_samples,
+            create_range_repartition_tasks, create_sample_tasks,
+            get_partition_boundaries_from_samples,
         },
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -274,7 +274,7 @@ impl AsofJoinNode {
                 .collect::<Vec<_>>(),
         )?;
 
-        let right_partition_tasks = create_range_repartition_tasks_with_sentinels(
+        let right_partition_tasks = create_range_repartition_tasks(
             right_materialized,
             self.right.config().schema.clone(),
             right_composite_key.clone(),
@@ -296,10 +296,29 @@ impl AsofJoinNode {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
-        let right_partitioned_outputs = right_partitioned_outputs
+        let right_partitioned_outputs: Vec<MaterializedOutput> = right_partitioned_outputs
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .collect();
+
+        let sentinel_tasks = create_sentinel_tasks(
+            right_partitioned_outputs.clone(),
+            self.right.config().schema.clone(),
+            right_composite_key.clone(),
+            num_partitions,
+            self.as_ref(),
+            task_id_counter,
+            scheduler_handle,
+        )?;
+
+        let sentinel_groups: Vec<Vec<MaterializedOutput>> =
+            try_join_all(sentinel_tasks.into_iter().map(try_join_all))
+                .await?
+                .into_iter()
+                .map(|bucket| bucket.into_iter().flatten().collect())
+                .collect();
+
+        let sentinels = reduce_sentinels(sentinel_groups, &right_composite_key).await?;
 
         let left_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
@@ -307,17 +326,11 @@ impl AsofJoinNode {
                 num_partitions,
             );
 
-        let mut right_partition_groups =
+        let right_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
                 right_partitioned_outputs,
-                num_partitions + 1,
+                num_partitions,
             );
-
-        // The last group is the sentinel group — one MaterializedOutput per worker
-        let sentinel_group = right_partition_groups.pop().unwrap();
-
-        let sentinels =
-            reduce_sentinels(sentinel_group, num_partitions, &right_composite_key).await?;
 
         for (i, (left_group, right_group)) in left_partition_groups
             .into_iter()
