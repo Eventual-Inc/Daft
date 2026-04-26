@@ -120,6 +120,29 @@ def test_property_name_source_with_required_args_uses_explicit_registration_name
         assert sess.read_source("required_arg_property_name", x=3).to_pydict() == {"x": [3]}
 
 
+class _RaisingInitDataSource(DataSource):
+    def __init__(self) -> None:
+        raise RuntimeError("boom")
+
+    @property
+    def name(self) -> str:
+        return "raising"
+
+    @property
+    def schema(self) -> Schema:
+        return Schema.from_pyarrow_schema(pa.schema([("x", pa.int64())]))
+
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        del pushdowns
+        yield _TableTask(pa.table({"x": [0]}))
+
+
+def test_property_name_source_with_failing_init_wraps_error():
+    with daft.session() as sess:
+        with pytest.raises(ValueError, match="instantiating it with no arguments failed.*boom"):
+            sess.register_data_source(_RaisingInitDataSource)
+
+
 def test_unregister_source():
     with daft.session() as sess:
         sess.register_data_source(_SimpleDataSource)

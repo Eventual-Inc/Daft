@@ -83,11 +83,29 @@ def _data_source_registration_name(data_source: type[DataSource], name: str | No
         source_name_attr = inspect.getattr_static(data_source, "name", None)
         if isinstance(source_name_attr, property):
             try:
-                source_name = data_source().name
-            except TypeError as e:
+                sig: inspect.Signature | None = inspect.signature(data_source)
+            except (TypeError, ValueError):
+                sig = None
+            if sig is not None and any(
+                p.default is inspect.Parameter.empty
+                and p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+                for p in sig.parameters.values()
+            ):
                 raise ValueError(
-                    "DataSource defines name as an instance property; pass name= explicitly "
-                    "if the source constructor requires arguments"
+                    "DataSource defines name as an instance property and its constructor "
+                    "requires arguments; pass name= explicitly"
+                )
+            try:
+                source_name = data_source().name
+            except Exception as e:
+                raise ValueError(
+                    f"DataSource defines name as an instance property but instantiating it "
+                    f"with no arguments failed: {e}. Pass name= explicitly."
                 ) from e
         else:
             source_name_func = getattr(data_source, "name", None)
@@ -100,10 +118,17 @@ def _data_source_registration_name(data_source: type[DataSource], name: str | No
     return source_name
 
 
-def _read_registered_data_source(name: str, inner: DataSource) -> DataFrame:
+_RegisteredDataSourceCls: type[DataSource] | None = None
+
+
+def _registered_data_source_cls() -> type[DataSource]:
+    global _RegisteredDataSourceCls
+    if _RegisteredDataSourceCls is not None:
+        return _RegisteredDataSourceCls
+
     from daft.io.source import DataSource
 
-    class RegisteredDataSource(DataSource):
+    class _RegisteredDataSource(DataSource):
         def __init__(self, registered_name: str, wrapped: DataSource) -> None:
             self._registered_name = registered_name
             self._wrapped = wrapped
@@ -123,7 +148,13 @@ def _read_registered_data_source(name: str, inner: DataSource) -> DataFrame:
             async for task in self._wrapped.get_tasks(pushdowns):
                 yield task
 
-    return RegisteredDataSource(name, inner).read()
+    _RegisteredDataSourceCls = _RegisteredDataSource
+    return _RegisteredDataSourceCls
+
+
+def _read_registered_data_source(name: str, inner: DataSource) -> DataFrame:
+    registered_data_source_cls: Any = _registered_data_source_cls()
+    return registered_data_source_cls(name, inner).read()
 
 
 def session() -> Session:
@@ -703,7 +734,13 @@ class Session:
         name: str | None = None,
         replace: bool = False,
     ) -> None:
-        """Register a Python ``DataSource`` class with this session."""
+        """Register a Python ``DataSource`` class with this session.
+
+        If ``name`` is omitted and the class declares ``name`` as an instance
+        ``@property``, the class is instantiated with no arguments to read it.
+        Pass ``name=`` explicitly to skip that construction (e.g. when the
+        constructor has side effects or requires arguments).
+        """
         from daft.io.source import DataSource
 
         if not isinstance(data_source, type) or not issubclass(data_source, DataSource):
