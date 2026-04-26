@@ -602,9 +602,10 @@ async fn reduce_sentinels(
 
     let mut sentinels: Vec<Option<RecordBatch>> = Vec::with_capacity(num_partitions);
     let mut batch_iter = all_batches.into_iter();
-    for bucket_size in bucket_sizes {
-        let candidates: Vec<RecordBatch> = (0..bucket_size)
+    for (bucket_idx, bucket_size) in bucket_sizes.iter().enumerate() {
+        let candidates: Vec<RecordBatch> = (0..*bucket_size)
             .filter_map(|_| batch_iter.next().flatten())
+            .filter(|b| b.len() > 0)
             .collect();
         if candidates.is_empty() {
             sentinels.push(None);
@@ -618,8 +619,7 @@ async fn reduce_sentinels(
 
     for j in 1..num_partitions {
         if sentinels[j].is_none() {
-            let prev = sentinels[j - 1].clone();
-            sentinels[j] = prev;
+            sentinels[j] = sentinels[j - 1].clone();
         }
     }
 
