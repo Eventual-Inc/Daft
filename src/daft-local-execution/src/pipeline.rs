@@ -59,7 +59,6 @@ use crate::{
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
-        repartition_with_sentinel::RepartitionWithSentinelSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1701,40 +1700,6 @@ fn physical_plan_to_pipeline(
                         context,
                     )
                     .boxed()
-                }
-            }
-        }
-        LocalPhysicalPlan::RepartitionWriteWithSentinel(
-            daft_local_plan::RepartitionWriteWithSentinel {
-                input,
-                num_partitions,
-                backend,
-                repartition_spec,
-                sentinel_sort_keys,
-                stats_state,
-                context,
-                ..
-            },
-        ) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match backend {
-                ShuffleBackend::Ray => {
-                    let sink = RepartitionWithSentinelSink::new_ray(
-                        repartition_spec.clone(),
-                        *num_partitions,
-                        sentinel_sort_keys.clone(),
-                    );
-                    BlockingSinkNode::new(
-                        Arc::new(sink),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-                ShuffleBackend::Flight { .. } => {
-                    unimplemented!("RepartitionWriteWithSentinel does not support Flight backend")
                 }
             }
         }

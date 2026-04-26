@@ -7,7 +7,6 @@ pub mod grouped_aggregate;
 pub mod into_partitions;
 pub mod pivot;
 pub mod repartition;
-pub mod repartition_with_sentinel;
 pub mod sort;
 pub mod top_n;
 pub mod window_base;
