@@ -300,6 +300,62 @@ pub(crate) fn create_range_repartition_tasks(
         .collect::<DaftResult<Vec<_>>>()
 }
 
+/// Creates range repartition tasks that also produce per-bucket sentinel (max) rows.
+/// Each task outputs N+1 partitions: N range buckets + 1 sentinel partition.
+/// The sentinel partition contains N rows — one max row per bucket.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_range_repartition_tasks_with_sentinels(
+    materialized_outputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
+    partition_by: Vec<BoundExpr>,
+    descending: Vec<bool>,
+    boundaries: RecordBatch,
+    num_partitions: usize,
+    pipeline_node: &dyn PipelineNodeImpl,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    fingerprint_salt: Option<u32>,
+) -> DaftResult<Vec<SubmittedTask>> {
+    let context = pipeline_node.context();
+    let node_id = pipeline_node.node_id();
+    materialized_outputs
+        .into_iter()
+        .map(|mo| {
+            let (in_memory_source_plan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    vec![mo],
+                    input_schema.clone(),
+                    node_id,
+                    REPARTITION_PHASE,
+                );
+            let plan = LocalPhysicalPlan::repartition_write_with_sentinel(
+                in_memory_source_plan,
+                num_partitions,
+                input_schema.clone(),
+                ShuffleBackend::Ray,
+                RepartitionSpec::Range(RangeRepartitionConfig::new(
+                    Some(num_partitions),
+                    boundaries.clone(),
+                    partition_by.clone(),
+                    descending.clone(),
+                )),
+                partition_by.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(REPARTITION_PHASE),
+            );
+            let mut builder =
+                SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
+                    .with_psets(node_id, psets);
+            if let Some(salt) = fingerprint_salt {
+                builder = builder.extend_fingerprint(salt);
+            }
+            let submittable_task = builder.build(context.query_idx, task_id_counter);
+            let submitted_task = submittable_task.submit(scheduler_handle)?;
+            Ok(submitted_task)
+        })
+        .collect::<DaftResult<Vec<_>>>()
+}
+
 pub(crate) struct SortNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,

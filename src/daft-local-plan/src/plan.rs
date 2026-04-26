@@ -24,6 +24,7 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
 };
 use daft_partition_refs::FlightPartitionRef;
+use daft_recordbatch::RecordBatch;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +111,7 @@ pub enum LocalPhysicalPlan {
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
     GatherWrite(GatherWrite),
+    RepartitionWriteWithSentinel(RepartitionWriteWithSentinel),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     AsofJoin(AsofJoin),
@@ -168,6 +170,10 @@ impl LocalPhysicalPlan {
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
             | Self::GatherWrite(GatherWrite { stats_state, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                stats_state,
+                ..
+            })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -220,6 +226,9 @@ impl LocalPhysicalPlan {
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                context, ..
+            })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -838,6 +847,7 @@ impl LocalPhysicalPlan {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        right_sentinel: Option<RecordBatch>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -849,6 +859,7 @@ impl LocalPhysicalPlan {
             right_by,
             left_on,
             right_on,
+            right_sentinel,
             schema,
             stats_state,
             context,
@@ -1048,6 +1059,30 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn repartition_write_with_sentinel(
+        input: LocalPhysicalPlanRef,
+        num_partitions: usize,
+        schema: SchemaRef,
+        backend: ShuffleBackend,
+        repartition_spec: RepartitionSpec,
+        sentinel_sort_keys: Vec<BoundExpr>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+            input,
+            num_partitions,
+            schema,
+            backend,
+            repartition_spec,
+            sentinel_sort_keys,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn shuffle_read(
         source_id: SourceId,
         schema: SchemaRef,
@@ -1111,6 +1146,9 @@ impl LocalPhysicalPlan {
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
             Self::GatherWrite(GatherWrite { schema, .. }) => schema,
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { schema, .. }) => {
+                schema
+            }
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1196,6 +1234,9 @@ impl LocalPhysicalPlan {
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
             Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { input, .. }) => {
+                vec![input.clone()]
+            }
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
@@ -1691,6 +1732,24 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                    num_partitions,
+                    schema,
+                    backend,
+                    repartition_spec,
+                    sentinel_sort_keys,
+                    context,
+                    ..
+                }) => Self::repartition_write_with_sentinel(
+                    new_child.clone(),
+                    *num_partitions,
+                    schema.clone(),
+                    backend.clone(),
+                    repartition_spec.clone(),
+                    sentinel_sort_keys.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::ShuffleRead(_) => panic!(
                     "LocalPhysicalPlan::with_new_children: ShuffleRead should have 0 children"
                 ),
@@ -1773,6 +1832,7 @@ impl LocalPhysicalPlan {
                     right_by,
                     left_on,
                     right_on,
+                    right_sentinel,
                     schema,
                     stats_state,
                     context,
@@ -1784,6 +1844,7 @@ impl LocalPhysicalPlan {
                     right_by.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    right_sentinel.clone(),
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -2131,6 +2192,7 @@ pub struct AsofJoin {
     pub right_by: Vec<BoundExpr>,
     pub left_on: BoundExpr,
     pub right_on: BoundExpr,
+    pub right_sentinel: Option<RecordBatch>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -2316,6 +2378,18 @@ pub struct GatherWrite {
     pub input: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub backend: ShuffleBackend,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RepartitionWriteWithSentinel {
+    pub input: LocalPhysicalPlanRef,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
+    pub repartition_spec: RepartitionSpec,
+    pub sentinel_sort_keys: Vec<BoundExpr>,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
