@@ -23,12 +23,13 @@ Create a class that inherits from [`DataSource`](../api/io.md#daft.io.source.Dat
 
 === "🐍 Python"
 ```python
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from daft.datatype import DataType
+from daft.io.pushdowns import Pushdowns
 from daft.io import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 
@@ -38,6 +39,10 @@ class TextFileDataSource(DataSource):
     Each line in the text file becomes a row in the dataframe.
     """
 
+    @property
+    def name(self) -> str:
+        return "text_file"
+
     def __init__(self, file_paths: list[str]):
         """Initialize the text file data source.
 
@@ -45,11 +50,6 @@ class TextFileDataSource(DataSource):
             file_paths: List of text file paths to read from
         """
         self.file_paths = [Path(path) for path in file_paths]
-
-    @property
-    def name(self) -> str:
-        """Return a descriptive name for this source."""
-        return "Text File Data Source"
 
     @property
     def schema(self) -> Schema:
@@ -62,7 +62,7 @@ class TextFileDataSource(DataSource):
             ("line", DataType.string()),
         ])
 
-    def get_tasks(self, pushdowns) -> Iterator["TextFileDataSourceTask"]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator["TextFileDataSourceTask"]:
         """Create tasks for each file to enable parallel processing.
 
         Args:
@@ -76,7 +76,7 @@ class TextFileDataSource(DataSource):
 
 
 class TextFileDataSourceTask(DataSourceTask):
-    """A task that reads a single text file and converts it to MicroPartitions."""
+    """A task that reads a single text file and converts it to RecordBatches."""
 
     def __init__(self, file_path: Path):
         """Initialize the task with a specific file path.
@@ -93,27 +93,27 @@ class TextFileDataSourceTask(DataSourceTask):
             ("line", DataType.string()),
         ])
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        """Read the text file and yield MicroPartitions.
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        """Read the text file and yield RecordBatches.
 
-        This method reads the file line by line and creates MicroPartitions
+        This method reads the file line by line and creates RecordBatches
         containing the line data.
 
         Yields:
-            MicroPartition: Contains the lines from the text file
+            RecordBatch: Contains the lines from the text file
         """
         lines = []
         with open(self.file_path, encoding='utf-8') as f:
             for line in f:
                 lines.append(line)
 
-        # Create a single MicroPartition with all lines.
-        yield MicroPartition.from_pydict({
+        # Create a single RecordBatch with all lines.
+        yield RecordBatch.from_pydict({
             "line": lines,
         })
 ```
 
-### Step 2: Use Your Custom Data Source to Create a Daft DataFrame
+### Step 2: Register and Read Your Custom Data Source
 
 === "🐍 Python"
 ```python
@@ -128,13 +128,23 @@ with open(sample_file, "w") as f:
     f.write("There was nothing so very remarkable in that;\n")
     f.write("nor did Alice think it so very much out of the way to hear the Rabbit say to itself, 'Oh dear! Oh dear! I shall be late!'\n")
 
-data_source = TextFileDataSource([sample_file])
+daft.data_sources.register(TextFileDataSource, name="text_file")
 
 (
-    data_source
-    .read()
+    daft.read_source("text_file", file_paths=[sample_file])
     .show()
 )
+```
+
+`daft.data_sources.register()` registers the source class on the current session. `daft.read_source()` instantiates the registered source with the keyword arguments you pass and returns a DataFrame. Pass `name=` when the source constructor requires arguments.
+
+You can also register sources on an explicit session:
+
+=== "🐍 Python"
+```python
+with daft.session() as sess:
+    sess.register_data_source(TextFileDataSource, name="text_file")
+    df = sess.read_source("text_file", file_paths=[sample_file])
 ```
 
 **Output:**
