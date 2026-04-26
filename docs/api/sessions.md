@@ -13,3 +13,7 @@ Sessions enable you to attach objects such as catalogs, providers, models, funct
 ::: daft.session.Session
     options:
         filters: ["!^_"]
+
+::: daft.session.read_source
+    options:
+        heading_level: 3

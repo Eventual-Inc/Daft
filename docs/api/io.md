@@ -84,6 +84,10 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
+::: daft.read_source
+    options:
+        heading_level: 3
+
 ::: daft.sql.sql.sql
     options:
         heading_level: 3
@@ -156,6 +160,26 @@ Daft supports diverse input sources and output sinks, this section covers lower-
 ::: daft.io.source.DataSourceTask
     options:
         filters: ["!^_"]
+        heading_level: 3
+
+::: daft.data_sources.register
+    options:
+        heading_level: 3
+
+::: daft.data_sources.read
+    options:
+        heading_level: 3
+
+::: daft.data_sources.get
+    options:
+        heading_level: 3
+
+::: daft.data_sources.list
+    options:
+        heading_level: 3
+
+::: daft.data_sources.unregister
+    options:
         heading_level: 3
 
 ::: daft.io.sink.DataSink

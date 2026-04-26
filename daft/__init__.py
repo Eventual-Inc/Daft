@@ -125,6 +125,7 @@ from daft.session import (
     list_catalogs,
     list_tables,
     load_extension,
+    read_source,
     read_table,
     session,
     set_catalog,
@@ -164,6 +165,7 @@ from daft.file import File, VideoFile, AudioFile, ImageFile
 range = _range  # type: ignore[no-redef,unused-ignore]
 
 from daft import context
+from daft import data_sources
 from daft import io
 from daft import runners
 from daft import datasets
@@ -229,6 +231,7 @@ __all__ = [
     "current_namespace",
     "current_provider",
     "current_session",
+    "data_sources",
     "datasets",
     "detach_catalog",
     "detach_function",
@@ -282,6 +285,7 @@ __all__ = [
     "read_mcap",
     "read_paimon",
     "read_parquet",
+    "read_source",
     "read_sql",
     "read_table",
     "read_text",
