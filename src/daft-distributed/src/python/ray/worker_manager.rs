@@ -170,6 +170,13 @@ impl WorkerManager for RayWorkerManager {
         Ok(())
     }
 
+    fn cleanup_shuffle_dirs(
+        &self,
+        dirs: Vec<String>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
+        Box::pin(super::clear_shuffle_dirs_on_all_nodes(dirs))
+    }
+
     /// Autoscale the Ray cluster by requesting resources from Ray's autoscaler.
     ///
     /// Constraints we operate under:

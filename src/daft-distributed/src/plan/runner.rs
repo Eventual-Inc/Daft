@@ -195,10 +195,8 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             }
         }
 
-        // Clean up shuffle directories via Ray remote functions
-        #[cfg(feature = "python")]
         if !shuffle_dirs.is_empty()
-            && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
+            && let Err(e) = self.worker_manager.cleanup_shuffle_dirs(shuffle_dirs).await
         {
             tracing::warn!("Failed to clear flight shuffle directories: {}", e);
         }
