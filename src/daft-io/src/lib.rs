@@ -556,6 +556,21 @@ pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
     Some(path)
 }
 
+/// Builds a canonical `file://` URI from a local path.
+///
+/// POSIX absolute paths (`/tmp/foo`) get two slashes (`file:///tmp/foo`).
+/// Windows drive-letter paths (`C:/Users/...`) get three (`file:///C:/Users/...`)
+/// so the URL parses correctly and round-trips through `strip_file_uri_to_path`.
+///
+/// Inverse of [`strip_file_uri_to_path`].
+pub fn local_path_to_file_uri(local_path: &str) -> String {
+    if local_path.starts_with('/') {
+        format!("file://{local_path}")
+    } else {
+        format!("file:///{local_path}")
+    }
+}
+
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion
@@ -565,7 +580,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
+                Some((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -575,7 +590,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let url = match url::Url::parse(input) {
         Ok(url) => Ok(url),
         Err(ParseError::RelativeUrlWithoutBase) => {
-            fixed_input = Cow::Owned(format!("file://{input}"));
+            fixed_input = Cow::Owned(local_path_to_file_uri(input));
 
             url::Url::parse(fixed_input.as_ref())
         }
@@ -613,7 +628,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
-            Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
+            Ok((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
         }
         _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }
