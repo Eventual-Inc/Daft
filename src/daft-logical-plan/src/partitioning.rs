@@ -74,7 +74,10 @@ impl RepartitionSpec {
         }
 
         fn format_list<T: Display>(items: impl IntoIterator<Item = T>) -> String {
-            format!("[{}]", items.into_iter().map(|item| item.to_string()).join(", "))
+            format!(
+                "[{}]",
+                items.into_iter().map(|item| item.to_string()).join(", ")
+            )
         }
 
         match self {
@@ -87,8 +90,10 @@ impl RepartitionSpec {
                 num_partitions,
                 seed,
             }) => {
-                let mut parts =
-                    vec![format!("num_partitions={}", format_num_partitions(*num_partitions))];
+                let mut parts = vec![format!(
+                    "num_partitions={}",
+                    format_num_partitions(*num_partitions)
+                )];
                 if let Some(seed) = seed {
                     parts.push(format!("seed={seed}"));
                 }
