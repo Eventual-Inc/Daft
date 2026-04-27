@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
@@ -13,8 +13,10 @@ import {
 } from "./stats-utils";
 import {
   buildTaskRows,
+  getActiveTasks,
   taskDisplayStatus,
   TaskTypeRow,
+  TOP_K_RUNNING,
 } from "./tasks-grouping";
 
 /**
@@ -54,6 +56,24 @@ export default function TasksSidebar({
     [allRows, originFilter],
   );
 
+  // Active tasks for the "top" section.
+  const allActiveTasks = useMemo(() => getActiveTasks(task_store), [task_store]);
+  const filteredActiveTasks = useMemo(
+    () =>
+      originFilter == null
+        ? allActiveTasks
+        : allActiveTasks.filter((t) => t.origin_node_id === originFilter),
+    [allActiveTasks, originFilter],
+  );
+  const activeTasks = filteredActiveTasks.slice(0, TOP_K_RUNNING);
+  const totalRunning = filteredActiveTasks.length;
+
+  // Summary counts from group aggregates (always accurate).
+  const totalTasks = rows.reduce((a, r) => a + r.task_count, 0);
+  const totalExecuting = rows.reduce((a, r) => a + r.status_counts.Executing, 0);
+  const totalFinished = rows.reduce((a, r) => a + r.status_counts.Finished, 0);
+  const totalFailed = rows.reduce((a, r) => a + r.status_counts.Failed, 0);
+
   const filteredOriginName =
     originFilter != null
       ? (operators[originFilter]?.node_info.name ?? `Node ${originFilter}`)
@@ -67,9 +87,12 @@ export default function TasksSidebar({
             Tasks
           </span>
           <span>
-            {rows.length} type{rows.length === 1 ? "" : "s"},{" "}
-            {rows.reduce((a, r) => a + r.task_count, 0)} task
-            {rows.reduce((a, r) => a + r.task_count, 0) === 1 ? "" : "s"}
+            {totalExecuting > 0 && <span className="text-emerald-400">{totalExecuting} running</span>}
+            {totalExecuting > 0 && totalFinished > 0 && " · "}
+            {totalFinished > 0 && <span>{totalFinished} finished</span>}
+            {totalFailed > 0 && " · "}
+            {totalFailed > 0 && <span className="text-red-400">{totalFailed} failed</span>}
+            {totalTasks === 0 && "0 tasks"}
           </span>
           {originFilter != null && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-fuchsia-950/50 border border-fuchsia-800 text-fuchsia-200 truncate">
@@ -98,7 +121,7 @@ export default function TasksSidebar({
       </div>
 
       <div className="flex-1 overflow-auto">
-        {rows.length === 0 ? (
+        {rows.length === 0 && activeTasks.length === 0 ? (
           <div className="p-8 text-center">
             <p className={`${main.className} text-zinc-400`}>
               {originFilter != null
@@ -109,8 +132,118 @@ export default function TasksSidebar({
             </p>
           </div>
         ) : (
-          <TaskTypeTable rows={rows} onSelectOrigin={onSelectOrigin} />
+          <>
+            <RunningTasksSection
+              tasks={activeTasks}
+              totalRunning={totalRunning}
+            />
+            <TaskTypeTable rows={rows} onSelectOrigin={onSelectOrigin} />
+          </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Running tasks "top" section.
+// ---------------------------------------------------------------------------
+const RUNNING_GRID_COLS =
+  "grid-cols-[minmax(200px,2fr)_90px_100px_100px_100px]";
+
+function RunningTasksSection({
+  tasks,
+  totalRunning,
+}: {
+  tasks: TaskInfo[];
+  totalRunning: number;
+}) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const hasRunning = tasks.length > 0;
+
+  useEffect(() => {
+    if (!hasRunning) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, [hasRunning]);
+
+  return (
+    <div className="border-b border-zinc-700">
+      <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800">
+        <span className={`${main.className} text-xs font-bold text-emerald-300 uppercase tracking-wider`}>
+          Running ({totalRunning})
+        </span>
+      </div>
+      <div className="min-w-[600px]">
+        <div
+          className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
+        >
+          <RunningHeader align="left">Pipeline</RunningHeader>
+          <RunningHeader align="right">Duration</RunningHeader>
+          <RunningHeader align="right">Rows In</RunningHeader>
+          <RunningHeader align="right">Rows Out</RunningHeader>
+          <RunningHeader align="right">Bytes In</RunningHeader>
+        </div>
+        {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
+          const task = tasks[i];
+          return task ? (
+            <RunningTaskRow key={task.task_id} task={task} now={now} />
+          ) : (
+            <div key={`empty-${i}`} className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px]`} />
+          );
+        })}
+        {totalRunning > tasks.length && (
+          <div className={`${main.className} px-4 py-1.5 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
+            Showing {tasks.length} of {totalRunning} running tasks (longest first)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RunningHeader({
+  children,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  align?: "left" | "right";
+}) {
+  const justify = align === "right" ? "justify-end" : "justify-start";
+  return (
+    <div
+      className={`px-3 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500 font-mono flex items-center ${justify}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
+  // TODO: show cpu_us instead of wall-clock once within-task metric updates land
+  const duration = formatDuration(Math.max(0, now - task.submit_sec)) + "\u2026";
+  const pipeline = task.name
+    ? task.name.includes("->") ? task.name.split("->") : [task.name]
+    : [`Node ${task.origin_node_id}`];
+
+  return (
+    <div
+      className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px] hover:bg-zinc-800/40 transition-colors`}
+    >
+      <div className="px-3">
+        <PipelineChips pipeline={pipeline} />
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
+        {duration}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {task.rows_in.toLocaleString()}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {task.rows_out.toLocaleString()}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatBytes(task.bytes_in)}
       </div>
     </div>
   );

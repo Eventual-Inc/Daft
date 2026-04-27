@@ -66,6 +66,21 @@ function pipelineForGroup(group: TaskGroupSummary): string[] {
   return [group.name];
 }
 
+/** Maximum number of running tasks shown in the "top" section. */
+export const TOP_K_RUNNING = 10;
+
+/**
+ * Extract active (running) tasks from the store, sorted by wall-clock duration
+ * descending. TODO: sort by cpu_us instead once within-task metric updates land
+ * (currently cpu_us is only populated on task end).
+ */
+export function getActiveTasks(taskStore: TaskStore | undefined): TaskInfo[] {
+  if (!taskStore) return [];
+  return Object.values(taskStore.tasks)
+    .filter((t) => t.status.status === "Pending" && t.end_sec == null)
+    .sort((a, b) => a.submit_sec - b.submit_sec); // oldest first = longest running
+}
+
 /**
  * Build task-type rows from the server-provided TaskStore.
  *
@@ -125,7 +140,7 @@ export function buildTaskRows(
     })
     .sort((a, b) => {
       if (a.origin_node_id !== b.origin_node_id)
-        return a.origin_node_id - b.origin_node_id;
+        return b.origin_node_id - a.origin_node_id;
       return a.pipeline.join("->").localeCompare(b.pipeline.join("->"));
     });
 }
