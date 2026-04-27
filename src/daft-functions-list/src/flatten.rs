@@ -48,11 +48,11 @@ impl ScalarUDF for Flatten {
             inner_field.dtype.is_list() || inner_field.dtype.is_fixed_size_list(),
             "Input must be a list of lists"
         );
-        Ok(inner_field)
+        Ok(inner_field.to_exploded_field()?.to_list_field())
     }
 }
 
 #[must_use]
-pub fn list_flatten(expr:ExprRef) -> ExprRef {
+pub fn list_flatten(expr: ExprRef) -> ExprRef {
     ScalarFn::builtin(Flatten {}, vec![expr]).into()
 }

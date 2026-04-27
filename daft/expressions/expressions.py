@@ -2336,6 +2336,11 @@ class Expression:
 
         return list_join(self, delimiter)
 
+    def list_flatten(self) -> Expression:
+        from daft.functions import list_flatten
+        
+        return list_flatten(self)
+
     def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
 

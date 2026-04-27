@@ -1137,6 +1137,9 @@ class SeriesListNamespace(SeriesNamespace):
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
         return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
 
+    def flatten(self) -> Series:
+        return self._eval_expressions("list_flatten")
+
     def contains(self, item: Series) -> Series:
         return self._eval_expressions("list_contains", item=item)
 
