@@ -18,12 +18,18 @@ use libloading::Library;
 /// one `Arc<ModuleHandle>`.
 pub struct ModuleHandle {
     module: FFI_Module,
+    path: PathBuf,
 }
 
 impl ModuleHandle {
     /// Wraps a raw `FFI_Module` in a `ModuleHandle`.
-    pub fn new(module: FFI_Module) -> Self {
-        Self { module }
+    pub fn new(module: FFI_Module, path: PathBuf) -> Self {
+        Self { module, path }
+    }
+
+    /// Path to the shared library this module was loaded from.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Free a C string allocated by this module.
@@ -79,7 +85,7 @@ pub fn load_module(path: &Path) -> DaftResult<Arc<ModuleHandle>> {
 
     let library = open_library(&path)?;
     let module = resolve_module(&library, &path)?;
-    let handle = Arc::new(ModuleHandle::new(module));
+    let handle = Arc::new(ModuleHandle::new(module, path.clone()));
     modules.insert(
         path,
         LoadedModule {
@@ -128,6 +134,20 @@ fn resolve_module(library: &Library, path: &Path) -> DaftResult<FFI_Module> {
     Ok(module)
 }
 
+/// Return all paths currently in the process-global `MODULES` cache.
+///
+/// Order is unspecified. Intended for propagating the driver's loaded
+/// extension set to Ray workers.
+pub fn loaded_module_paths() -> Vec<PathBuf> {
+    let Some(modules) = MODULES.get() else {
+        return Vec::new();
+    };
+    let Ok(guard) = modules.lock() else {
+        return Vec::new();
+    };
+    guard.keys().cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::c_int;
@@ -154,23 +174,31 @@ mod tests {
     #[test]
     fn module_handle_name() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         assert_eq!(handle.name().to_str().unwrap(), "test_module");
     }
 
     #[test]
     fn module_handle_ffi_module() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         assert_eq!(handle.ffi_module().daft_abi_version, DAFT_ABI_VERSION);
     }
 
     #[test]
     fn module_handle_free_string_null() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         // Should not panic on null
         unsafe { handle.free_string(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn module_handle_exposes_path() {
+        let module = make_test_module(c"test_module");
+        let path = Path::new("/tmp/fake.so").to_path_buf();
+        let handle = ModuleHandle::new(module, path.clone());
+        assert_eq!(handle.path(), path.as_path());
     }
 
     #[test]

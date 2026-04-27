@@ -4,7 +4,7 @@ use arrow::{
     array::{Array, builder::StringBuilder, cast::AsArray},
     datatypes::{DataType, Field},
 };
-use daft_ext::prelude::*;
+use daft_ext::{daft_extension, prelude::*};
 
 // ── Module ──────────────────────────────────────────────────────────
 
