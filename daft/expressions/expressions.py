@@ -2468,6 +2468,16 @@ class Expression:
 
         return list_map(self, mapper)
 
+    def list_filter(self, predicate: Expression) -> Expression:
+        """Filters elements in the list using a boolean predicate over `daft.element()`.
+
+        Tip: See Also
+            [`daft.functions.list_filter`](https://docs.daft.ai/en/stable/api/functions/list_filter/)
+        """
+        from daft.functions import list_filter
+
+        return list_filter(self, predicate)
+
     def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 

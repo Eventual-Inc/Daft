@@ -10,7 +10,7 @@ use daft_dsl::{
         BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionExpr, scalar::ScalarFn,
         struct_::StructExpr,
     },
-    has_agg, is_actor_pool_udf, left_col,
+    has_agg, is_actor_pool_udf, left_col, lit,
     python_udf::PyScalarFn,
     resolved_col, right_col,
 };
@@ -177,7 +177,10 @@ fn replace_element_with_column_ref(expr: ExprRef, replacement: ExprRef) -> DaftR
 fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
     // Functions that can support an eval/map context
 
-    let eval_functions: &[TypeId] = &[TypeId::of::<daft_functions_list::ListMap>()];
+    let eval_functions: &[TypeId] = &[
+        TypeId::of::<daft_functions_list::ListMap>(),
+        TypeId::of::<daft_functions_list::ListFilter>(),
+    ];
 
     expr.transform_down(|e| {
         let expr_ref = e.as_ref();
@@ -190,7 +193,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
                 DaftError::ValueError("list should have at least one element".to_string())
             })?;
 
-            let exploded = list_col.clone().explode()?;
+            let exploded = daft_functions_list::explode(list_col.clone(), lit(true));
 
             let mut new_inputs = Vec::with_capacity(inputs.len());
             new_inputs.push(FunctionArg::Unnamed(list_col.clone()));
