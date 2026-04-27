@@ -1,0 +1,278 @@
+use std::{io::Cursor, sync::Arc};
+
+use arrow_buffer::NullBufferBuilder;
+use common_error::{DaftError, DaftResult};
+use daft_core::{
+    prelude::{
+        BinaryArray, BooleanArray, DataType, Field, Float64Array, FullNull, IntoSeries, Schema,
+        Utf8Array,
+    },
+    series::Series,
+};
+use daft_dsl::{ExprRef, functions::FunctionArgs};
+use geo::Geometry;
+use wkb::wkb_to_geom;
+
+/// Parse WKB bytes into a `geo::Geometry`.
+pub fn parse_wkb(bytes: &[u8]) -> DaftResult<Geometry> {
+    let mut cur = Cursor::new(bytes);
+    wkb_to_geom(&mut cur).map_err(|e| DaftError::ComputeError(format!("WKB parse error: {e:?}")))
+}
+
+/// Get the physical BinaryArray backing a Geometry or Binary Series.
+pub fn get_geometry_binary(series: &Series) -> DaftResult<&BinaryArray> {
+    match series.data_type() {
+        DataType::Geometry => Ok(&series.geometry()?.physical),
+        DataType::Binary => series.binary(),
+        _ => Err(DaftError::TypeError(format!(
+            "Expected Geometry or Binary column, got {}",
+            series.data_type()
+        ))),
+    }
+}
+
+/// Validate that a function argument at `arg_pos` is Geometry or Binary.
+pub fn validate_geometry_field(
+    inputs: &FunctionArgs<ExprRef>,
+    schema: &Schema,
+    arg_pos: usize,
+    arg_name: &str,
+    fn_name: &str,
+) -> DaftResult<Field> {
+    let f = inputs.required(arg_pos)?.to_field(schema)?;
+    if !matches!(f.dtype, DataType::Geometry | DataType::Binary) {
+        return Err(DaftError::TypeError(format!(
+            "{fn_name}: {arg_name} must be Geometry or Binary (WKB), got {}",
+            f.dtype
+        )));
+    }
+    Ok(f)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Generic computation helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Apply a unary mapping over a geometry column → Float64 Series.
+pub fn unary_geom_to_f64(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> f64,
+) -> DaftResult<Series> {
+    let binary = get_geometry_binary(series)?;
+    let len = binary.len();
+    let mut values = Vec::with_capacity(len);
+    let mut validity = NullBufferBuilder::new(len);
+
+    for opt in binary.into_iter() {
+        match opt.and_then(|b| parse_wkb(b).ok()) {
+            Some(geom) => {
+                values.push(f(&geom));
+                validity.append_non_null();
+            }
+            None => {
+                values.push(0.0);
+                validity.append_null();
+            }
+        }
+    }
+
+    let field = Arc::new(Field::new(out_name, DataType::Float64));
+    let arr = Float64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
+    Ok(arr.into_series())
+}
+
+/// Apply a unary mapping over a geometry column → Boolean Series.
+pub fn unary_geom_to_bool(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> bool,
+) -> DaftResult<Series> {
+    let binary = get_geometry_binary(series)?;
+    let len = binary.len();
+
+    if len == 0 {
+        return Ok(BooleanArray::empty(out_name, &DataType::Boolean).into_series());
+    }
+
+    let mut values: Vec<Option<bool>> = Vec::with_capacity(len);
+    for opt in binary.into_iter() {
+        values.push(opt.and_then(|b| parse_wkb(b).ok()).map(|g| f(&g)));
+    }
+
+    Ok(BooleanArray::from_iter(out_name, values.into_iter()).into_series())
+}
+
+/// Apply a unary mapping over a geometry column → Utf8 Series.
+pub fn unary_geom_to_utf8(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> String,
+) -> DaftResult<Series> {
+    let binary = get_geometry_binary(series)?;
+    let values: Vec<Option<String>> = binary
+        .into_iter()
+        .map(|opt| opt.and_then(|b| parse_wkb(b).ok()).map(|g| f(&g)))
+        .collect();
+
+    Ok(Utf8Array::from_iter(out_name, values.iter().map(|v| v.as_deref())).into_series())
+}
+
+/// Apply a unary mapping over a geometry column → Geometry (WKB Binary) Series.
+pub fn unary_geom_to_geom(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> Option<Geometry>,
+) -> DaftResult<Series> {
+    use wkb::geom_to_wkb;
+
+    let binary = get_geometry_binary(series)?;
+    let len = binary.len();
+    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
+
+    for opt in binary.into_iter() {
+        let result = opt
+            .and_then(|b| parse_wkb(b).ok())
+            .and_then(|g| f(&g))
+            .and_then(|out_geom| {
+                geom_to_wkb(&out_geom).ok()
+            });
+        wkb_values.push(result);
+    }
+
+    let field = Field::new(out_name, DataType::Geometry);
+    let mut builder = arrow_buffer::NullBufferBuilder::new(len);
+    let phys_values: Vec<Option<&[u8]>> = wkb_values
+        .iter()
+        .map(|v| {
+            if v.is_some() {
+                builder.append_non_null();
+            } else {
+                builder.append_null();
+            }
+            v.as_deref()
+        })
+        .collect();
+
+    let phys_field = Field::new(out_name, DataType::Binary);
+    let phys_arr = BinaryArray::from_iter(&phys_field.name, phys_values.into_iter());
+
+    // Wrap as Geometry logical array
+    use daft_core::prelude::{GeometryType, LogicalArray};
+    let logical =
+        LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?);
+    Ok(logical.into_series())
+}
+
+/// Apply a binary predicate over two geometry columns → Boolean Series.
+pub fn binary_geom_to_bool(
+    lhs: &Series,
+    rhs: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry, &Geometry) -> bool,
+) -> DaftResult<Series> {
+    let lhs_bin = get_geometry_binary(lhs)?;
+    let rhs_bin = get_geometry_binary(rhs)?;
+
+    // support scalar broadcast: rhs may be length 1
+    let rhs_scalar = rhs_bin.len() == 1;
+
+    let rhs_geom_scalar: Option<Option<Geometry>> = if rhs_scalar {
+        Some(
+            rhs_bin
+                .into_iter()
+                .next()
+                .flatten()
+                .and_then(|b| parse_wkb(b).ok()),
+        )
+    } else {
+        None
+    };
+
+    let values: Vec<Option<bool>> = if let Some(rhs_opt) = rhs_geom_scalar {
+        lhs_bin
+            .into_iter()
+            .map(|lopt| {
+                let lg = lopt.and_then(|b| parse_wkb(b).ok())?;
+                let rg = rhs_opt.as_ref()?;
+                Some(f(&lg, rg))
+            })
+            .collect()
+    } else {
+        lhs_bin
+            .into_iter()
+            .zip(rhs_bin.into_iter())
+            .map(|(lopt, ropt)| {
+                let lg = lopt.and_then(|b| parse_wkb(b).ok())?;
+                let rg = ropt.and_then(|b| parse_wkb(b).ok())?;
+                Some(f(&lg, &rg))
+            })
+            .collect()
+    };
+
+    Ok(BooleanArray::from_iter(out_name, values.into_iter()).into_series())
+}
+
+/// Apply a binary geometry → Float64 function (e.g. distance).
+pub fn binary_geom_to_f64(
+    lhs: &Series,
+    rhs: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry, &Geometry) -> f64,
+) -> DaftResult<Series> {
+    let lhs_bin = get_geometry_binary(lhs)?;
+    let rhs_bin = get_geometry_binary(rhs)?;
+    let len = lhs_bin.len();
+    let rhs_scalar = rhs_bin.len() == 1;
+
+    let rhs_geom_scalar: Option<Option<Geometry>> = if rhs_scalar {
+        Some(
+            rhs_bin
+                .into_iter()
+                .next()
+                .flatten()
+                .and_then(|b| parse_wkb(b).ok()),
+        )
+    } else {
+        None
+    };
+
+    let mut values = Vec::with_capacity(len);
+    let mut validity = NullBufferBuilder::new(len);
+
+    if let Some(rhs_opt) = rhs_geom_scalar {
+        for lopt in lhs_bin.into_iter() {
+            match (lopt.and_then(|b| parse_wkb(b).ok()), rhs_opt.as_ref()) {
+                (Some(lg), Some(rg)) => {
+                    values.push(f(&lg, &rg));
+                    validity.append_non_null();
+                }
+                _ => {
+                    values.push(0.0);
+                    validity.append_null();
+                }
+            }
+        }
+    } else {
+        for (lopt, ropt) in lhs_bin.into_iter().zip(rhs_bin.into_iter()) {
+            match (
+                lopt.and_then(|b| parse_wkb(b).ok()),
+                ropt.and_then(|b| parse_wkb(b).ok()),
+            ) {
+                (Some(lg), Some(rg)) => {
+                    values.push(f(&lg, &rg));
+                    validity.append_non_null();
+                }
+                _ => {
+                    values.push(0.0);
+                    validity.append_null();
+                }
+            }
+        }
+    }
+
+    let field = Arc::new(Field::new(out_name, DataType::Float64));
+    let arr = Float64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
+    Ok(arr.into_series())
+}
+

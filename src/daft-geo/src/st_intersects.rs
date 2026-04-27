@@ -1,0 +1,49 @@
+use common_error::DaftResult;
+use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
+use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
+use geo::{Geometry, Intersects};
+use serde::{Deserialize, Serialize};
+
+use crate::utils::{binary_geom_to_bool, validate_geometry_field};
+
+fn geom_intersects(a: &Geometry, b: &Geometry) -> bool {
+    match (a, b) {
+        (Geometry::Point(pa), Geometry::Point(pb)) => pa.intersects(pb),
+        (Geometry::Point(p), Geometry::Polygon(poly)) => p.intersects(poly),
+        (Geometry::Polygon(poly), Geometry::Point(p)) => poly.intersects(p),
+        (Geometry::Polygon(a), Geometry::Polygon(b)) => a.intersects(b),
+        (Geometry::LineString(a), Geometry::LineString(b)) => a.intersects(b),
+        (Geometry::LineString(ls), Geometry::Polygon(p)) => ls.intersects(p),
+        (Geometry::Polygon(p), Geometry::LineString(ls)) => p.intersects(ls),
+        (Geometry::MultiPolygon(mp), Geometry::Point(pt)) => mp.intersects(pt),
+        (Geometry::MultiPolygon(mp), Geometry::Polygon(p)) => mp.intersects(p),
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct StIntersects;
+
+#[typetag::serde]
+impl ScalarUDF for StIntersects {
+    fn name(&self) -> &'static str { "st_intersects" }
+
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
+        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(), geom_intersects)
+    }
+
+    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        validate_geometry_field(&inputs, schema, 0, "geom_a", self.name())?;
+        validate_geometry_field(&inputs, schema, 1, "geom_b", self.name())?;
+        Ok(Field::new(self.name(), DataType::Boolean))
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Returns true if geometry A and geometry B spatially intersect."
+    }
+}
+
+#[must_use]
+pub fn st_intersects(geom_a: ExprRef, geom_b: ExprRef) -> ExprRef {
+    ScalarFn::builtin(StIntersects, vec![geom_a, geom_b]).into()
+}

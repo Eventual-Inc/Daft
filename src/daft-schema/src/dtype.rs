@@ -139,6 +139,9 @@ pub enum DataType {
     /// A logical type for sparse tensors with the same shape.
     FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
 
+    /// A logical type for geospatial geometries stored as WKB (Well-Known Binary).
+    Geometry,
+
     #[cfg(feature = "python")]
     Python,
 
@@ -218,6 +221,7 @@ impl Display for DataType {
                 f,
                 "FixedShapeSparseTensor[{dtype}; {shape:?}; indices_offset: {indices_offset}]"
             ),
+            Self::Geometry => write!(f, "Geometry"),
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
@@ -415,6 +419,7 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
+            Geometry => Binary,
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
@@ -705,6 +710,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_geometry(&self) -> bool {
+        matches!(self, Self::Geometry)
+    }
+
+    #[inline]
     pub fn is_fixed_size_list(&self) -> bool {
         matches!(self, Self::FixedSizeList(..))
     }
@@ -837,6 +847,7 @@ impl DataType {
                 | Self::Timestamp(..)
                 | Self::Duration(..)
                 | Self::Uuid
+                | Self::Geometry
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)

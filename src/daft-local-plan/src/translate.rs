@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::join::JoinStrategy;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_core::{join::{JoinSide, JoinStrategy}, prelude::Schema};
 use daft_dsl::{
+    Expr, ExprRef,
     expr::{
+        Column,
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
     join::normalize_join_keys,
-    resolved_col, window_to_agg_exprs,
+    resolved_col, unresolved_col, window_to_agg_exprs,
 };
 use daft_functions::random::random_int_expr;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
@@ -17,6 +20,53 @@ use daft_scan::{ScanState, ScanTaskRef};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
+
+/// Spatial predicate function names that trigger NestedLoopJoin instead of a cross-join + filter.
+const SPATIAL_PREDICATES: &[&str] = &[
+    "st_contains",
+    "st_intersects",
+    "st_within",
+    "st_covers",
+    "st_covered_by",
+    "st_disjoint",
+    "st_touches",
+    "st_overlaps",
+    "st_crosses",
+    "st_equals",
+];
+
+fn is_spatial_predicate(expr: &ExprRef) -> bool {
+    let mut found = false;
+    let _ = expr.apply(|e: &ExprRef| {
+        if let Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf)) = e.as_ref() {
+            if SPATIAL_PREDICATES.contains(&sf.func.name()) {
+                found = true;
+                return Ok(TreeNodeRecursion::Stop);
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
+}
+
+/// Re-bind `expr` to `schema` by name.
+///
+/// `BoundExpr::try_new` does NOT re-bind already-`Column::Bound` nodes — it leaves them
+/// with their old indices. This helper first converts every `Bound` column back to an
+/// unresolved column reference (using the stored field name), then calls
+/// `BoundExpr::try_new` so the indices are correct for the new schema.
+fn rebind_predicate(expr: ExprRef, schema: &Schema) -> DaftResult<BoundExpr> {
+    let unbound = expr
+        .transform(|e| {
+            if let Expr::Column(Column::Bound(bc)) = e.as_ref() {
+                Ok(Transformed::yes(unresolved_col(bc.field.name.as_ref())))
+            } else {
+                Ok(Transformed::no(e))
+            }
+        })?
+        .data;
+    BoundExpr::try_new(unbound, schema)
+}
 
 pub fn translate(
     plan: &LogicalPlanRef,
@@ -100,6 +150,75 @@ fn translate_helper(
             "Sharding should have been folded into a source".to_string(),
         )),
         LogicalPlan::Filter(filter) => {
+            // ── Spatial-join rewrite ──────────────────────────────────────────────
+            // When the WHERE clause contains a spatial predicate (e.g. st_contains)
+            // and the input is a Join (or a Project over a Join — which the optimizer
+            // often inserts to trim extra key columns), rewrite to NestedLoopJoin so
+            // we never materialise the full Cartesian product in memory.
+            if is_spatial_predicate(&filter.predicate) {
+                let maybe_join = match filter.input.as_ref() {
+                    LogicalPlan::Join(join) => Some(join),
+                    // The optimizer inserts a Project between Filter and Join to drop
+                    // extra key columns; look through exactly one Project level.
+                    LogicalPlan::Project(proj) => {
+                        if let LogicalPlan::Join(join) = proj.input.as_ref() {
+                            Some(join)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(join) = maybe_join {
+                    if join.join_type == JoinType::Inner {
+                        let (left_plan, mut left_inputs) =
+                            translate_helper(&join.left, source_counter, psets)?;
+                        let (right_plan, right_inputs) =
+                            translate_helper(&join.right, source_counter, psets)?;
+                        left_inputs.extend(right_inputs);
+
+                        // The filter predicate may have Column::Bound indices that were
+                        // set relative to a Project (not the join output schema). Use
+                        // rebind_predicate to convert Bound → Unresolved by field name,
+                        // then re-bind by name to the actual join output schema.
+                        let output_schema = join.output_schema.clone();
+                        let filter_expr =
+                            rebind_predicate(filter.predicate.clone(), &output_schema)?;
+
+                        // Choose the smaller side to build (collect), larger to probe (stream).
+                        let left_stats = join.left.materialized_stats();
+                        let right_stats = join.right.materialized_stats();
+                        let build_on_left = left_stats.approx_stats.size_bytes
+                            <= right_stats.approx_stats.size_bytes;
+
+                        // build_side records which logical-join side the build table came from.
+                        // This determines the tile column ordering in nested_loop_inner_join, which
+                        // MUST match the column ordering that the BoundExpr filter was bound to.
+                        // Convention: phys_left = probe, phys_right = build.
+                        let (phys_left, phys_right, build_side) = if build_on_left {
+                            // left is build, right is probe
+                            (right_plan, left_plan, JoinSide::Left)
+                        } else {
+                            // right is build, left is probe
+                            (left_plan, right_plan, JoinSide::Right)
+                        };
+
+                        return Ok((
+                            LocalPhysicalPlan::nested_loop_join(
+                                phys_left,
+                                phys_right,
+                                filter_expr,
+                                build_side,
+                                output_schema,
+                                filter.stats_state.clone(),
+                                LocalNodeContext::default(),
+                            ),
+                            left_inputs,
+                        ));
+                    }
+                }
+            }
+            // ── Normal filter ─────────────────────────────────────────────────────
             let (input_plan, inputs) = translate_helper(&filter.input, source_counter, psets)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input_plan.schema())?;
             Ok((

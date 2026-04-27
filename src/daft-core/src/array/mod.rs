@@ -22,6 +22,7 @@ pub use list_array::ListArray;
 pub use struct_array::StructArray;
 pub use union_array::UnionArray;
 pub use uuid_array::UuidArray;
+pub use crate::datatypes::logical::GeometryArray;
 mod boolean;
 pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};

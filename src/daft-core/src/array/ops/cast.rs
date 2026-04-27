@@ -18,7 +18,7 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
+        DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -1692,6 +1692,24 @@ impl UuidArray {
             DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast UUID to {}",
+                dtype
+            ))),
+        }
+    }
+}
+
+impl GeometryArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Geometry => Ok(self.clone().into_series()),
+            DataType::Binary => Ok(self.physical.clone().into_series()),
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Geometry to {}",
                 dtype
             ))),
         }

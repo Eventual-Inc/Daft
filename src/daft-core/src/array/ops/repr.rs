@@ -4,7 +4,7 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray},
+    array::{DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
@@ -504,6 +504,15 @@ impl UuidArray {
     }
 }
 
+impl GeometryArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        match self.physical.get(idx) {
+            None => Ok("None".to_string()),
+            Some(bytes) => Ok(format!("Geometry({} bytes)", bytes.len())),
+        }
+    }
+}
+
 // Truncate strings so they do not crash the browser when rendering HTML
 fn truncate_for_html(s: &str) -> String {
     // Limit string length to 1MB to prevent browser crashes
@@ -559,6 +568,7 @@ impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
 impl_array_html_value!(FixedSizeBinaryArray);
 impl_array_html_value!(UuidArray);
+impl_array_html_value!(GeometryArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(MapArray);

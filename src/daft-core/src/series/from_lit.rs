@@ -253,6 +253,17 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             UuidArray::new(field, physical).into_series()
         }
+        DataType::Geometry => {
+            let data: Vec<Option<Vec<u8>>> = values
+                .map(|(i, lit)| unwrap_inner!(lit, i, Literal::Binary(b) => b))
+                .collect();
+            let physical = BinaryArray::from_iter(
+                "literal",
+                data.iter().map(|opt| opt.as_deref()),
+            );
+
+            GeometryArray::new(field, physical).into_series()
+        }
         DataType::List(ref child_dtype) => {
             let data = values
                 .map(|(i, lit)| {

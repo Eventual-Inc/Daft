@@ -15,6 +15,7 @@ daft-checkpoint = {path = "../daft-checkpoint", default-features = false, featur
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
+daft-geo = {path = "../daft-geo", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-functions-uri = {path = "../daft-functions-uri", default-features = false}

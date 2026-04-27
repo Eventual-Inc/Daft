@@ -7,9 +7,10 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
+        CollocatedJoin, DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
+        GeohashPruning, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
+    SpatialPartitionPruning,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
@@ -141,6 +142,14 @@ impl OptimizerBuilder {
                 vec![Box::new(SimplifyExpressionsRule::new())],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
+            // --- Geohash pruning ---
+            // Rewrite spatial predicates (st_intersects, st_contains, st_within) to also
+            // filter on `{col}_geohash` when such a column exists in the schema.
+            // Run once, early in the pipeline so PushDownFilter can push the geohash predicate down.
+            RuleBatch::new(
+                vec![Box::new(GeohashPruning)],
+                RuleExecutionStrategy::Once,
+            ),
             // --- Filter out null join keys ---
             // This rule should be run once, before any filter pushdown rules.
             RuleBatch::new(
@@ -233,6 +242,26 @@ impl OptimizerBuilder {
             // --- Shard scans ---
             RuleBatch::new(
                 vec![Box::new(ShardScans::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Spatial partition pruning (R-tree index) ---
+            // Prune scan tasks whose per-file MBR does not overlap the query geometry.
+            // Runs after MaterializeScans so that concrete file paths are available.
+            // No-op when no _spatial_index.json sidecar is present.
+            RuleBatch::new(
+                vec![Box::new(SpatialPartitionPruning)],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Geohash partition pruning ---
+            // Prune scan tasks whose partition_gh=<prefix> directory is not covered
+            // --- Collocated join: split on shared partition key ---
+            // When both sides of an inner join are hive-partitioned scans and the
+            // equality join key is the partition key, process one partition at a
+            // time to bound peak memory usage.
+            // Must run after MaterializeScans (needs ScanState::Tasks) and after
+            // SpatialPartitionPruning (pruning first reduces the task lists).
+            RuleBatch::new(
+                vec![Box::new(CollocatedJoin)],
                 RuleExecutionStrategy::Once,
             ),
         ]);

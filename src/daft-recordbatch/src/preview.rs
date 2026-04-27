@@ -83,6 +83,7 @@ pub struct PreviewOptions {
 /// I have no intention of adding any more methods here to be honest.
 impl Preview {
     /// Create preview with options.
+    #[allow(dead_code)]
     pub fn new(preview: RecordBatch, format: PreviewFormat, options: PreviewOptions) -> Self {
         Self {
             batch: preview,

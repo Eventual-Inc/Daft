@@ -26,6 +26,8 @@ log/
 # Added by MacOS
 **.DS_Store
 
+examples/spatial_geohash_pruning/points
+examples/spatial_geohash_pruning/polygons
 # Added by cargo
 /target
 **/target/

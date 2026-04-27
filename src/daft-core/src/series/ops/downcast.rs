@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray, UnionArray, UuidArray},
+    array::{GeometryArray, ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
@@ -94,6 +94,10 @@ impl Series {
     }
 
     pub fn uuid(&self) -> DaftResult<&UuidArray> {
+        self.downcast()
+    }
+
+    pub fn geometry(&self) -> DaftResult<&GeometryArray> {
         self.downcast()
     }
 

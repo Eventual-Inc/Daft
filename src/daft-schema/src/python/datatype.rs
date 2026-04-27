@@ -179,6 +179,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn geometry() -> PyResult<Self> {
+        Ok(DataType::Geometry.into())
+    }
+
+    #[staticmethod]
     pub fn string() -> PyResult<Self> {
         Ok(DataType::Utf8.into())
     }
@@ -471,6 +476,10 @@ impl PyDataType {
 
     pub fn is_uuid(&self) -> bool {
         self.dtype.is_uuid()
+    }
+
+    pub fn is_geometry(&self) -> bool {
+        self.dtype.is_geometry()
     }
 
     pub fn is_string(&self) -> bool {

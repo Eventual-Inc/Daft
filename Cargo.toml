@@ -214,6 +214,7 @@ members = [
   "src/daft-functions-tokenize",
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
+  "src/daft-geo",
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
@@ -296,6 +297,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal"}
 daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
+daft-geo = {path = "src/daft-geo"}
 daft-hash = {path = "src/daft-hash"}
 daft-io = {path = "src/daft-io"}
 daft-local-execution = {path = "src/daft-local-execution"}
@@ -310,6 +312,9 @@ daft-sql = {path = "src/daft-sql"}
 dashmap = "6.1.0"
 educe = "0.6.0"
 futures = "0.3.30"
+geo = "0.29"
+geohash = "0.13"
+h3o = "0.6"
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
@@ -340,6 +345,7 @@ prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.9"
 rayon = "1.11.0"
+rstar = "0.12"
 regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}

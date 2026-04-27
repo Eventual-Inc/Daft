@@ -18,6 +18,7 @@ use crate::RecordBatch;
 mod asof_join;
 mod hash_join;
 mod merge_join;
+pub mod nested_loop_join;
 
 fn match_types_for_tables(
     left: &RecordBatch,

@@ -58,6 +58,8 @@ tracing = {workspace = true}
 serde_json = {workspace = true}
 opentelemetry = {workspace = true}
 dashmap = {workspace = true}
+rstar = {workspace = true}
+daft-geo = {path = "../daft-geo", default-features = false}
 sysinfo = {workspace = true}
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
