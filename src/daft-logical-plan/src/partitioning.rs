@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
 use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
@@ -64,6 +64,59 @@ impl RepartitionSpec {
                 descending.clone(),
             )),
         }
+    }
+
+    pub fn compact_display(&self) -> String {
+        fn format_num_partitions(num_partitions: Option<usize>) -> String {
+            num_partitions
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "auto".to_string())
+        }
+
+        fn format_list<T: Display>(items: impl IntoIterator<Item = T>) -> String {
+            format!("[{}]", items.into_iter().map(|item| item.to_string()).join(", "))
+        }
+
+        match self {
+            Self::Hash(HashRepartitionConfig { num_partitions, by }) => format!(
+                "Hash (num_partitions={}, by={})",
+                format_num_partitions(*num_partitions),
+                format_list(by.iter().map(|expr| expr.to_string()))
+            ),
+            Self::Random(RandomShuffleConfig {
+                num_partitions,
+                seed,
+            }) => {
+                let mut parts =
+                    vec![format!("num_partitions={}", format_num_partitions(*num_partitions))];
+                if let Some(seed) = seed {
+                    parts.push(format!("seed={seed}"));
+                }
+                format!("Random ({})", parts.join(", "))
+            }
+            Self::Range(RangeRepartitionConfig {
+                num_partitions,
+                by,
+                descending,
+                ..
+            }) => {
+                let mut parts = vec![
+                    format!("num_partitions={}", format_num_partitions(*num_partitions)),
+                    format!("by={}", format_list(by.iter().map(|expr| expr.to_string()))),
+                ];
+
+                if !descending.is_empty() {
+                    parts.push(format!("descending={}", format_list(descending.iter())));
+                }
+                format!("Range ({})", parts.join(", "))
+            }
+        }
+    }
+}
+
+impl Display for RepartitionSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.compact_display())
     }
 }
 
