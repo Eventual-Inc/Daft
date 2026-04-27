@@ -19,6 +19,7 @@ from daft.daft import (
     NativeExecutor,
     PyDaftExecutionConfig,
     PyExecutionStats,
+    PyExpr,
     PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
@@ -231,6 +232,45 @@ async def get_boundaries(
     num_quantiles: int,
 ) -> PyMicroPartition:
     return await get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples)
+
+
+@ray.remote  # type: ignore[untyped-decorator]
+def reduce_sentinels_remote(
+    sort_by: list[Expression],
+    bucket_sizes: list[int],
+    *sentinel_refs: MicroPartition,
+) -> list[PyMicroPartition]:
+    sort_by_exprs = ExpressionsProjection(sort_by)
+    n = len(sort_by_exprs)
+    descending = [True] * n
+    nulls_first = [False] * n
+
+    sentinels: list[MicroPartition] = []
+    flat_iter = iter(sentinel_refs)
+    for size in bucket_sizes:
+        bucket_mps = [next(flat_iter) for _ in range(size)]
+        non_empty = [mp for mp in bucket_mps if len(mp) > 0]
+        if non_empty:
+            combined = MicroPartition.concat(non_empty)
+            sorted_mp = combined.sort(sort_by_exprs, descending=descending, nulls_first=nulls_first)
+            sentinels.append(sorted_mp.slice(0, 1))
+        else:
+            sentinels.append(MicroPartition.concat(bucket_mps))
+
+    for j in range(1, len(sentinels)):
+        if len(sentinels[j]) == 0:
+            sentinels[j] = sentinels[j - 1]
+
+    return [mp._micropartition for mp in sentinels]
+
+
+async def reduce_sentinels(
+    sentinel_refs: list[ray.ObjectRef],
+    sort_by: list[PyExpr],
+    bucket_sizes: list[int],
+) -> list[PyMicroPartition]:
+    wrapped = [Expression._from_pyexpr(e) for e in sort_by]
+    return await reduce_sentinels_remote.remote(wrapped, bucket_sizes, *sentinel_refs)
 
 
 @dataclass

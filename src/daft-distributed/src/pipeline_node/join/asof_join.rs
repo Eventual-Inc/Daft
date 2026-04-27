@@ -5,13 +5,14 @@ use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
-use daft_core::{array::ops::build_multi_array_compare, datatypes::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
+#[cfg(feature = "python")]
+use pyo3::types::PyAnyMethods;
 
 use super::stats::BasicJoinStats;
 use crate::{
@@ -455,34 +456,6 @@ impl PipelineNodeImpl for AsofJoinNode {
     }
 }
 
-fn record_batch_max_composite(
-    batch: &RecordBatch,
-    composite_keys: &[BoundExpr],
-) -> DaftResult<Option<RecordBatch>> {
-    use std::cmp::Ordering;
-
-    if batch.is_empty() {
-        return Ok(None);
-    }
-
-    let cols: Vec<_> = composite_keys
-        .iter()
-        .map(|k| batch.eval_expression(k))
-        .collect::<DaftResult<_>>()?;
-    let descending = vec![false; composite_keys.len()];
-    let nulls_first = vec![true; composite_keys.len()];
-    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
-    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
-        if cmp(i, best) == Ordering::Greater {
-            i
-        } else {
-            best
-        }
-    });
-    let idx = UInt64Array::from_vec("idx", vec![max_idx as u64]);
-    Ok(Some(batch.take(&idx)?))
-}
-
 /// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
 /// sentinel (max) rows from the right-side range-repartitioned outputs.
 ///
@@ -556,23 +529,11 @@ fn create_sentinel_tasks(
 }
 
 /// Reduces sentinel MaterializedOutputs into one `Option<RecordBatch>` per bucket.
-///
-/// `sentinel_groups[bucket_idx]` contains one 1-row MaterializedOutput per worker
-/// (the top_n result for that bucket from that worker).
-///
-/// This function:
-/// 1. Flattens all refs across all buckets and fetches via one ray.get() call
-/// 2. Reconstructs per-bucket groups and finds the cross-worker max for each bucket
-/// 3. Forward-fills: if bucket j has no valid sentinel, inherit from bucket j-1
-///
-/// Returns `Vec<Option<RecordBatch>>` of length `sentinel_groups.len()`.
 #[cfg(feature = "python")]
 async fn reduce_sentinels(
     sentinel_groups: Vec<Vec<MaterializedOutput>>,
     composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
-    use pyo3::prelude::*;
-
     let num_partitions = sentinel_groups.len();
 
     if sentinel_groups.iter().all(|g| g.is_empty()) {
@@ -597,59 +558,33 @@ async fn reduce_sentinels(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    let sentinel_mps = tokio::task::spawn_blocking(move || {
-        Python::attach(|py| {
-            let ray = py.import(pyo3::intern!(py, "ray"))?;
-            let py_object_refs = ray_partition_refs
-                .into_iter()
-                .map(|pr| pr.get_object_ref(py))
-                .collect::<Vec<_>>();
-            let results = ray.call_method1("get", (py_object_refs,))?;
-            let mut mps = Vec::new();
-            for item in results.try_iter()? {
-                let item = item?;
-                let inner = item.getattr("_micropartition").unwrap_or(item);
-                let mp: daft_micropartition::python::PyMicroPartition =
-                    inner.extract().map_err(pyo3::PyErr::from)?;
-                mps.push(mp);
-            }
-            Ok::<_, pyo3::PyErr>(mps)
+    let py_sort_by = composite_keys
+        .iter()
+        .map(|e| daft_dsl::python::PyExpr {
+            expr: e.inner().unwrap_alias().0,
         })
-    })
-    .await
-    .map_err(|e| {
-        common_error::DaftError::InternalError(format!("Join error in spawn_blocking: {e}"))
-    })??;
+        .collect::<Vec<_>>();
 
-    // Each MP is a 1-row result from top_n. Empty buckets produce None via concat_or_get.
-    let all_batches: Vec<Option<RecordBatch>> = sentinel_mps
+    let sentinel_mps = common_runtime::python::execute_python_coroutine::<
+        _,
+        Vec<daft_micropartition::python::PyMicroPartition>,
+    >(move |py| {
+        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let py_object_refs = ray_partition_refs
+            .into_iter()
+            .map(|pr| pr.get_object_ref(py))
+            .collect::<Vec<_>>();
+        flotilla_module.call_method1(
+            pyo3::intern!(py, "reduce_sentinels"),
+            (py_object_refs, py_sort_by, bucket_sizes),
+        )
+    })
+    .await?;
+
+    let sentinels = sentinel_mps
         .into_iter()
         .map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
         .collect();
-
-    let mut sentinels: Vec<Option<RecordBatch>> = Vec::with_capacity(num_partitions);
-    let mut batch_iter = all_batches.into_iter();
-    for bucket_size in &bucket_sizes {
-        let candidates: Vec<RecordBatch> = (0..*bucket_size)
-            .filter_map(|_| batch_iter.next().flatten())
-            .filter(|b| !b.is_empty())
-            .collect();
-        if candidates.is_empty() {
-            sentinels.push(None);
-        } else if candidates.len() == 1 {
-            sentinels.push(Some(candidates.into_iter().next().unwrap()));
-        } else {
-            let combined = RecordBatch::concat(&candidates.iter().collect::<Vec<_>>())?;
-            sentinels.push(record_batch_max_composite(&combined, composite_keys)?);
-        }
-    }
-
-    for j in 1..num_partitions {
-        if sentinels[j].is_none() {
-            let prev = sentinels[j - 1].clone();
-            sentinels[j] = prev;
-        }
-    }
 
     Ok(sentinels)
 }
