@@ -174,6 +174,7 @@ impl IntoBatchesNode {
                 current_group_size += rows;
                 if current_group_size >= (self.batch_size as f64 * BATCH_SIZE_THRESHOLD) as usize {
                     let group_size = std::mem::take(&mut current_group_size);
+
                     let materialized_outputs = std::mem::take(&mut current_group);
                     let builder = self.build_rebatch_task(materialized_outputs, group_size);
                     if result_tx.send(builder).await.is_err() {

@@ -98,6 +98,7 @@ impl IntoPartitionsNode {
                 chunk_size += 1;
             }
 
+            // Build and submit all the tasks for this partition
             let node_id = self.node_id();
             let submitted_tasks = builder_iter
                 .by_ref()
@@ -159,7 +160,9 @@ impl IntoPartitionsNode {
                     self.as_ref(),
                     |input| input,
                 );
-                let _ = result_tx.send(builder).await;
+                if result_tx.send(builder).await.is_err() {
+                    break;
+                }
             }
         }
         Ok(())
@@ -226,7 +229,9 @@ impl IntoPartitionsNode {
                         self.as_ref(),
                         |input| input,
                     );
-                    let _ = result_tx.send(builder).await;
+                    if result_tx.send(builder).await.is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -276,12 +281,16 @@ impl IntoPartitionsNode {
                                 self.as_ref(),
                                 |input| input,
                             );
-                            let _ = result_tx.send(builder).await;
+                            if result_tx.send(builder).await.is_err() {
+                                break;
+                            }
                         }
                     }
                 } else {
                     for builder in input_builders {
-                        let _ = result_tx.send(builder).await;
+                        if result_tx.send(builder).await.is_err() {
+                            break;
+                        }
                     }
                 }
             }
