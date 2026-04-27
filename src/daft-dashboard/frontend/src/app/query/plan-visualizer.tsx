@@ -31,8 +31,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function formatCompactValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "auto";
+  if (value === null) {
+    return "null";
+  }
+  if (value === undefined) {
+    return "undefined";
   }
   if (Array.isArray(value)) {
     return `[${value.map(v => formatCompactValue(v)).join(", ")}]`;
@@ -41,6 +44,16 @@ function formatCompactValue(value: unknown): string {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function formatRepartitionField(key: string, value: unknown): string | null {
+  if (key === "num_partitions" && (value === null || value === undefined)) {
+    return `${key}=auto`;
+  }
+  if (key === "seed" && (value === null || value === undefined)) {
+    return null;
+  }
+  return `${key}=${formatCompactValue(value)}`;
 }
 
 function formatRepartitionSpec(value: unknown): string | null {
@@ -62,20 +75,26 @@ function formatRepartitionSpec(value: unknown): string | null {
   }
 
   const parts: string[] = [];
-  if ("num_partitions" in specConfig) {
-    parts.push(
-      `num_partitions=${formatCompactValue(specConfig.num_partitions)}`
-    );
+  const knownKeys = ["num_partitions", "by", "seed"];
+
+  for (const key of knownKeys) {
+    if (key in specConfig) {
+      const formatted = formatRepartitionField(key, specConfig[key]);
+      if (formatted !== null) {
+        parts.push(formatted);
+      }
+    }
   }
-  if ("by" in specConfig) {
-    parts.push(`by=${formatCompactValue(specConfig.by)}`);
-  }
-  if (
-    "seed" in specConfig &&
-    specConfig.seed !== null &&
-    specConfig.seed !== undefined
-  ) {
-    parts.push(`seed=${formatCompactValue(specConfig.seed)}`);
+
+  for (const [key, fieldValue] of Object.entries(specConfig)) {
+    if (knownKeys.includes(key)) {
+      continue;
+    }
+
+    const formatted = formatRepartitionField(key, fieldValue);
+    if (formatted !== null) {
+      parts.push(formatted);
+    }
   }
 
   return parts.length > 0 ? `${specType} (${parts.join(", ")})` : specType;
