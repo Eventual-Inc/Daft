@@ -3300,6 +3300,8 @@ dependencies = [
  "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
+ "serde",
+ "typetag",
  "uuid",
 ]
 

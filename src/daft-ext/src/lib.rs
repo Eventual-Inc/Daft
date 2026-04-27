@@ -1,4 +1,5 @@
 pub mod abi;
+pub mod aggregate;
 pub mod error;
 pub mod function;
 pub mod prelude;
