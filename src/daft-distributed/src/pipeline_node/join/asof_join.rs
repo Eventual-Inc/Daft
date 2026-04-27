@@ -34,7 +34,7 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const SENTINEL_PHASE: &str = "sentinel";
+const CARRYOVER_PHASE: &str = "carryover";
 
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
@@ -102,7 +102,7 @@ impl AsofJoinNode {
         partition_idx: u32,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
-        right_sentinel: Option<RecordBatch>,
+        right_carryover: Option<RecordBatch>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
@@ -138,7 +138,7 @@ impl AsofJoinNode {
             self.right_by.clone(),
             self.left_on.clone(),
             self.right_on.clone(),
-            right_sentinel,
+            right_carryover,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),
@@ -301,7 +301,7 @@ impl AsofJoinNode {
         let right_partitioned_outputs: Vec<MaterializedOutput> =
             right_partitioned_outputs.into_iter().flatten().collect();
 
-        let sentinel_tasks = create_sentinel_tasks(
+        let carryover_tasks = create_carryover_tasks(
             right_partitioned_outputs.clone(),
             self.right.config().schema.clone(),
             right_composite_key.clone(),
@@ -311,14 +311,14 @@ impl AsofJoinNode {
             scheduler_handle,
         )?;
 
-        let sentinel_groups: Vec<Vec<MaterializedOutput>> =
-            try_join_all(sentinel_tasks.into_iter().map(try_join_all))
+        let carryover_groups: Vec<Vec<MaterializedOutput>> =
+            try_join_all(carryover_tasks.into_iter().map(try_join_all))
                 .await?
                 .into_iter()
                 .map(|bucket| bucket.into_iter().flatten().collect())
                 .collect();
 
-        let sentinels = reduce_sentinels(sentinel_groups, &right_composite_key).await?;
+        let carryovers = reduce_carryovers(carryover_groups, &right_composite_key).await?;
 
         let left_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
@@ -337,16 +337,16 @@ impl AsofJoinNode {
             .zip(right_partition_groups)
             .enumerate()
         {
-            let sentinel = if i == 0 {
+            let carryover = if i == 0 {
                 None
             } else {
-                sentinels[i - 1].clone()
+                carryovers[i - 1].clone()
             };
             self.create_and_submit_join_task(
                 i as u32,
                 left_group,
                 right_group,
-                sentinel,
+                carryover,
                 result_tx,
             )
             .await?;
@@ -457,10 +457,10 @@ impl PipelineNodeImpl for AsofJoinNode {
 }
 
 /// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
-/// sentinel (max) rows from the right-side range-repartitioned outputs.
+/// carryover (max) rows from the right-side range-repartitioned outputs.
 ///
 /// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
-fn create_sentinel_tasks(
+fn create_carryover_tasks(
     materialized_outputs: Vec<MaterializedOutput>,
     input_schema: SchemaRef,
     composite_keys: Vec<BoundExpr>,
@@ -497,7 +497,7 @@ fn create_sentinel_tasks(
                     mos_for_bucket,
                     input_schema.clone(),
                     node_id,
-                    SENTINEL_PHASE,
+                    CARRYOVER_PHASE,
                 );
 
             let plan = LocalPhysicalPlan::top_n(
@@ -508,7 +508,7 @@ fn create_sentinel_tasks(
                 1,
                 None,
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)).with_phase(SENTINEL_PHASE),
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(CARRYOVER_PHASE),
             );
 
             let submitted = SwordfishTaskBuilder::new(plan, pipeline_node, node_id)
@@ -528,21 +528,21 @@ fn create_sentinel_tasks(
     Ok(tasks_by_bucket)
 }
 
-/// Reduces sentinel MaterializedOutputs into one `Option<RecordBatch>` per bucket.
+/// Reduces carryover MaterializedOutputs into one `Option<RecordBatch>` per bucket.
 #[cfg(feature = "python")]
-async fn reduce_sentinels(
-    sentinel_groups: Vec<Vec<MaterializedOutput>>,
+async fn reduce_carryovers(
+    carryover_groups: Vec<Vec<MaterializedOutput>>,
     composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
-    let num_partitions = sentinel_groups.len();
+    let num_partitions = carryover_groups.len();
 
-    if sentinel_groups.iter().all(|g| g.is_empty()) {
+    if carryover_groups.iter().all(|g| g.is_empty()) {
         return Ok(vec![None; num_partitions]);
     }
 
-    let bucket_sizes: Vec<usize> = sentinel_groups.iter().map(|g| g.len()).collect();
+    let bucket_sizes: Vec<usize> = carryover_groups.iter().map(|g| g.len()).collect();
 
-    let ray_partition_refs = sentinel_groups
+    let ray_partition_refs = carryover_groups
         .into_iter()
         .flatten()
         .flat_map(|mo| mo.into_inner().0)
@@ -565,7 +565,7 @@ async fn reduce_sentinels(
         })
         .collect::<Vec<_>>();
 
-    let sentinel_mps = common_runtime::python::execute_python_coroutine::<
+    let carryover_mps = common_runtime::python::execute_python_coroutine::<
         _,
         Vec<daft_micropartition::python::PyMicroPartition>,
     >(move |py| {
@@ -575,24 +575,26 @@ async fn reduce_sentinels(
             .map(|pr| pr.get_object_ref(py))
             .collect::<Vec<_>>();
         flotilla_module.call_method1(
-            pyo3::intern!(py, "reduce_sentinels"),
+            pyo3::intern!(py, "reduce_carryovers"),
             (py_object_refs, py_sort_by, bucket_sizes),
         )
     })
     .await?;
 
-    let sentinels = sentinel_mps
+    let carryovers = carryover_mps
         .into_iter()
         .map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
         .collect();
 
-    Ok(sentinels)
+    Ok(carryovers)
 }
 
 #[cfg(not(feature = "python"))]
-async fn reduce_sentinels(
-    _sentinel_groups: Vec<Vec<MaterializedOutput>>,
+async fn reduce_carryovers(
+    _carryover_groups: Vec<Vec<MaterializedOutput>>,
     _composite_keys: &[BoundExpr],
 ) -> DaftResult<Vec<Option<RecordBatch>>> {
-    unimplemented!("Distributed asof join sentinel reduction requires Python feature to be enabled")
+    unimplemented!(
+        "Distributed asof join carryover reduction requires Python feature to be enabled"
+    )
 }
