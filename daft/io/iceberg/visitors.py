@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.expressions import (
@@ -18,16 +20,26 @@ from pyiceberg.expressions import (
     Or,
     Reference,
 )
-from pyiceberg.expressions.literals import Literal, literal
+from pyiceberg.expressions.literals import DateLiteral, Literal, StringLiteral, literal
+from pyiceberg.types import TimestampType, TimestamptzType
+from pyiceberg.utils.datetime import days_to_date
 
 from daft.expressions.visitor import PredicateVisitor
 
 if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+
     from daft.datatype import DataType
     from daft.expressions import Expression
 
+_DATE_ONLY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
 
 class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
+
+    def __init__(self, schema: IcebergSchema | None = None) -> None:
+        self._schema = schema
+
     def visit_col(self, name: str) -> BooleanExpression:
         return Reference(name)  # type: ignore[return-value]
 
@@ -87,13 +99,13 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
 
     def visit_between(self, expr: Expression, lower: Expression, upper: Expression) -> BooleanExpression:
         ref = self._visit_as_reference(expr)
-        lo = self._visit_as_literal(lower)
-        hi = self._visit_as_literal(upper)
+        lo = self._coerce_literal(ref, self._visit_as_literal(lower))
+        hi = self._coerce_literal(ref, self._visit_as_literal(upper))
         return And(GreaterThanOrEqual(ref, lo), LessThanOrEqual(ref, hi))
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> BooleanExpression:
         ref = self._visit_as_reference(expr)
-        lits = [self._visit_as_literal(item).value for item in items]
+        lits = [self._coerce_literal(ref, self._visit_as_literal(item)).value for item in items]
         return In(ref, lits)
 
     # --- null predicates ---
@@ -106,6 +118,26 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
 
     # --- helpers ---
 
+    def _coerce_literal(self, ref: Reference, lit: Literal) -> Literal:
+        """Coerce a literal to match the referenced column's type when pyiceberg can't."""
+        if self._schema is None:
+            return lit
+        try:
+            field = self._schema.find_field(ref.name)
+        except ValueError:
+            return lit
+        field_type = field.field_type
+        if not isinstance(field_type, (TimestampType, TimestamptzType)):
+            return lit
+        # date-only string → full ISO-8601 timestamp string
+        if isinstance(lit, StringLiteral) and _DATE_ONLY_RE.fullmatch(lit.value):
+            return literal(lit.value + "T00:00:00")
+        # DateLiteral → TimestampLiteral via datetime
+        if isinstance(lit, DateLiteral):
+            dt = datetime.combine(days_to_date(lit.value), datetime.min.time())
+            return literal(dt)
+        return lit
+
     def _extract_ref_and_lit(
         self,
         left: Expression,
@@ -113,9 +145,9 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
     ) -> tuple[Reference, Literal, bool]:
         l, r = self.visit(left), self.visit(right)
         if isinstance(l, Reference) and isinstance(r, Literal):
-            return l, r, False
+            return l, self._coerce_literal(l, r), False
         if isinstance(r, Reference) and isinstance(l, Literal):
-            return r, l, True
+            return r, self._coerce_literal(r, l), True
         raise ValueError(
             f"Expected one column reference and one literal, got {type(l).__name__} and {type(r).__name__}"
         )

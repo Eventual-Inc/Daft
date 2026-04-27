@@ -161,12 +161,22 @@ class IcebergScanOperator(ScanOperator):
 
         row_filter: BooleanExpression = ALWAYS_TRUE
         if pushdowns.filters is not None:
-            row_filter = convert_expression_to_iceberg(pushdowns.filters)
+            try:
+                row_filter = convert_expression_to_iceberg(pushdowns.filters, self._iceberg_schema)
+            except (ValueError, TypeError) as e:
+                logger.warning("Could not convert filter to Iceberg expression, skipping pushdown: %s", e)
 
         _t0 = time.perf_counter()
-        iceberg_tasks = list(
-            self._table.scan(row_filter=row_filter, limit=limit, snapshot_id=self._snapshot_id).plan_files()
-        )
+        try:
+            iceberg_tasks = list(
+                self._table.scan(row_filter=row_filter, limit=limit, snapshot_id=self._snapshot_id).plan_files()
+            )
+        except (ValueError, TypeError) as e:
+            logger.warning("Iceberg row filter failed during scan planning, falling back to unfiltered scan: %s", e)
+            row_filter = ALWAYS_TRUE
+            iceberg_tasks = list(
+                self._table.scan(row_filter=row_filter, limit=limit, snapshot_id=self._snapshot_id).plan_files()
+            )
         _files_listed = len(iceberg_tasks)
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
