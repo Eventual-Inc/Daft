@@ -128,7 +128,10 @@ def create_scalar_index_internal(
         try:
             existing_indices = lance_ds.list_indices()
         except Exception as e:
-            logger.warning("Could not fetch existing indices for removal; old index may not be cleaned up: %s", e)
+            logger.warning(
+                "Could not fetch existing indices to check for duplicates; duplicate index names may not be detected: %s",
+                e,
+            )
         existing_names = {idx["name"] for idx in existing_indices}
         if name in existing_names:
             raise ValueError(f"Index with name '{name}' already exists. Set replace=True to replace it.")
