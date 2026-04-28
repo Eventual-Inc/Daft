@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
 use tracing::Span;
 
 use crate::{
@@ -31,7 +28,6 @@ pub struct AsofJoinOperator {
     right_by: Vec<BoundExpr>,
     left_on: BoundExpr,
     right_on: BoundExpr,
-    right_carryover: Option<RecordBatch>,
     left_schema: SchemaRef,
     right_schema: SchemaRef,
 }
@@ -42,7 +38,6 @@ impl AsofJoinOperator {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
-        right_carryover: Option<RecordBatch>,
         left_schema: SchemaRef,
         right_schema: SchemaRef,
     ) -> Self {
@@ -51,7 +46,6 @@ impl AsofJoinOperator {
             right_by,
             left_on,
             right_on,
-            right_carryover,
             left_schema,
             right_schema,
         }
@@ -118,7 +112,6 @@ impl JoinOperator for AsofJoinOperator {
         let right_by = self.right_by.clone();
         let left_on = self.left_on.clone();
         let right_on = self.right_on.clone();
-        let right_carryover = self.right_carryover.clone();
         let left_schema = self.left_schema.clone();
         let right_schema = self.right_schema.clone();
 
@@ -127,21 +120,8 @@ impl JoinOperator for AsofJoinOperator {
                 async move {
                     let left_mp =
                         MicroPartition::concat_or_empty(state.build_contents, left_schema)?;
-
-                    // If a carryover row exists, append it to probe_contents before concat.
-                    let right_mp = if let Some(carryover) = right_carryover {
-                        let carryover_mp = MicroPartition::new_loaded(
-                            right_schema.clone(),
-                            Arc::new(vec![carryover]),
-                            None,
-                        );
-                        let mut parts = state.probe_contents;
-                        parts.push(carryover_mp);
-                        MicroPartition::concat_or_empty(parts, right_schema)?
-                    } else {
-                        MicroPartition::concat_or_empty(state.probe_contents, right_schema)?
-                    };
-
+                    let right_mp =
+                        MicroPartition::concat_or_empty(state.probe_contents, right_schema)?;
                     let joined =
                         left_mp.asof_join(&right_mp, &left_by, &right_by, &left_on, &right_on)?;
                     Ok(Some(joined))

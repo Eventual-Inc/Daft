@@ -11,8 +11,6 @@ use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
-#[cfg(feature = "python")]
-use pyo3::types::PyAnyMethods;
 
 use super::stats::BasicJoinStats;
 use crate::{
@@ -34,7 +32,8 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const CARRYOVER_PHASE: &str = "carryover";
+const PER_WORKER_CARRYOVER_PHASE: &str = "per_worker_carryover";
+const PER_PARTITION_CARRYOVER_PHASE: &str = "per_partition_carryover";
 
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
@@ -102,7 +101,7 @@ impl AsofJoinNode {
         partition_idx: u32,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
-        right_carryover: Option<RecordBatch>,
+        carryover_mo: Option<MaterializedOutput>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
@@ -126,10 +125,14 @@ impl AsofJoinNode {
             LocalNodeContext::new(Some(self.right.node_id() as usize)),
         );
 
-        let right_psets = right_partition_group
+        let mut right_psets = right_partition_group
             .into_iter()
             .flat_map(|output| output.into_inner().0)
             .collect::<Vec<_>>();
+
+        if let Some(carryover) = carryover_mo {
+            right_psets.extend(carryover.into_inner().0);
+        }
 
         let plan = LocalPhysicalPlan::asof_join(
             left_shuffle_read_plan,
@@ -138,7 +141,6 @@ impl AsofJoinNode {
             self.right_by.clone(),
             self.left_on.clone(),
             self.right_on.clone(),
-            right_carryover,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),
@@ -301,7 +303,7 @@ impl AsofJoinNode {
         let right_partitioned_outputs: Vec<MaterializedOutput> =
             right_partitioned_outputs.into_iter().flatten().collect();
 
-        let carryover_tasks = create_carryover_tasks(
+        let carryover_tasks = create_per_worker_carryover_tasks(
             right_partitioned_outputs.clone(),
             self.right.config().schema.clone(),
             right_composite_key.clone(),
@@ -311,14 +313,38 @@ impl AsofJoinNode {
             scheduler_handle,
         )?;
 
-        let carryover_groups: Vec<Vec<MaterializedOutput>> =
+        let per_worker_carryover_mos: Vec<Vec<MaterializedOutput>> =
             try_join_all(carryover_tasks.into_iter().map(try_join_all))
                 .await?
                 .into_iter()
                 .map(|bucket| bucket.into_iter().flatten().collect())
                 .collect();
 
-        let carryovers = reduce_carryovers(carryover_groups, &right_composite_key).await?;
+        let per_partition_carryover_tasks = create_per_partition_carryover_tasks(
+            per_worker_carryover_mos,
+            self.right.config().schema.clone(),
+            right_composite_key.clone(),
+            self.as_ref(),
+            task_id_counter,
+            scheduler_handle,
+        )?;
+
+        let mut global_carryovers: Vec<Option<MaterializedOutput>> =
+            try_join_all(per_partition_carryover_tasks.into_iter().map(|t| async {
+                match t {
+                    Some(task) => task.await.map(|mo| mo.filter(|m| m.num_rows() > 0)),
+                    None => Ok(None),
+                }
+            }))
+            .await?;
+
+        // Forward-propagate: if bucket i produced no carryover, inherit from bucket i-1.
+        for i in 1..global_carryovers.len() {
+            if global_carryovers[i].is_none() {
+                let prev = global_carryovers[i - 1].clone();
+                global_carryovers[i] = prev;
+            }
+        }
 
         let left_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
@@ -340,7 +366,7 @@ impl AsofJoinNode {
             let carryover = if i == 0 {
                 None
             } else {
-                carryovers[i - 1].clone()
+                global_carryovers[i - 1].clone()
             };
             self.create_and_submit_join_task(
                 i as u32,
@@ -456,11 +482,52 @@ impl PipelineNodeImpl for AsofJoinNode {
     }
 }
 
+/// Builds and submits a single top_n(limit=1, descending=true) task over `inputs`.
+#[allow(clippy::too_many_arguments)]
+fn submit_top1_task(
+    inputs: Vec<MaterializedOutput>,
+    input_schema: SchemaRef,
+    composite_keys: &[BoundExpr],
+    phase: &str,
+    strategy: Option<SchedulingStrategy>,
+    pipeline_node: &dyn PipelineNodeImpl,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<SubmittedTask> {
+    let node_id = pipeline_node.node_id();
+    let descending = vec![true; composite_keys.len()];
+    let nulls_first = vec![false; composite_keys.len()];
+
+    let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+        inputs,
+        input_schema,
+        node_id,
+        phase,
+    );
+
+    let plan = LocalPhysicalPlan::top_n(
+        in_memory_scan,
+        composite_keys.to_vec(),
+        descending,
+        nulls_first,
+        1,
+        None,
+        StatsState::NotMaterialized,
+        LocalNodeContext::new(Some(node_id as usize)).with_phase(phase),
+    );
+
+    SwordfishTaskBuilder::new(plan, pipeline_node, node_id)
+        .with_psets(node_id, psets)
+        .with_strategy(strategy)
+        .build(pipeline_node.context().query_idx, task_id_counter)
+        .submit(scheduler_handle)
+}
+
 /// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
 /// carryover (max) rows from the right-side range-repartitioned outputs.
 ///
 /// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
-fn create_carryover_tasks(
+fn create_per_worker_carryover_tasks(
     materialized_outputs: Vec<MaterializedOutput>,
     input_schema: SchemaRef,
     composite_keys: Vec<BoundExpr>,
@@ -469,11 +536,6 @@ fn create_carryover_tasks(
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<Vec<SubmittedTask>>> {
-    let context = pipeline_node.context();
-    let node_id = pipeline_node.node_id();
-    let descending = vec![true; composite_keys.len()];
-    let nulls_first = vec![false; composite_keys.len()];
-
     let mut worker_groups: HashMap<WorkerId, Vec<Vec<MaterializedOutput>>> = HashMap::new();
     for mo in materialized_outputs {
         let worker_id = mo.worker_id().clone();
@@ -492,33 +554,19 @@ fn create_carryover_tasks(
                 .map(|splits| splits[bucket_idx].clone())
                 .collect();
 
-            let (in_memory_scan, psets) =
-                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
-                    mos_for_bucket,
-                    input_schema.clone(),
-                    node_id,
-                    CARRYOVER_PHASE,
-                );
-
-            let plan = LocalPhysicalPlan::top_n(
-                in_memory_scan,
-                composite_keys.clone(),
-                descending.clone(),
-                nulls_first.clone(),
-                1,
-                None,
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)).with_phase(CARRYOVER_PHASE),
-            );
-
-            let submitted = SwordfishTaskBuilder::new(plan, pipeline_node, node_id)
-                .with_psets(node_id, psets)
-                .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+            let submitted = submit_top1_task(
+                mos_for_bucket,
+                input_schema.clone(),
+                &composite_keys,
+                PER_WORKER_CARRYOVER_PHASE,
+                Some(SchedulingStrategy::WorkerAffinity {
                     worker_id: worker_id.clone(),
                     soft: false,
-                }))
-                .build(context.query_idx, task_id_counter)
-                .submit(scheduler_handle)?;
+                }),
+                pipeline_node,
+                task_id_counter,
+                scheduler_handle,
+            )?;
 
             bucket_tasks.push(submitted);
         }
@@ -528,73 +576,41 @@ fn create_carryover_tasks(
     Ok(tasks_by_bucket)
 }
 
-/// Reduces carryover MaterializedOutputs into one `Option<RecordBatch>` per bucket.
-#[cfg(feature = "python")]
-async fn reduce_carryovers(
-    carryover_groups: Vec<Vec<MaterializedOutput>>,
-    composite_keys: &[BoundExpr],
-) -> DaftResult<Vec<Option<RecordBatch>>> {
-    let num_partitions = carryover_groups.len();
-
-    if carryover_groups.iter().all(|g| g.is_empty()) {
-        return Ok(vec![None; num_partitions]);
-    }
-
-    let bucket_sizes: Vec<usize> = carryover_groups.iter().map(|g| g.len()).collect();
-
-    let ray_partition_refs = carryover_groups
+/// Creates a single top_n(limit=1, descending=true) task per partition over the per-worker
+/// top-1 outputs produced by `create_per_worker_carryover_tasks`, yielding the global max per partition.
+///
+/// Returns `Vec<Option<SubmittedTask>>` where `None` means the partition had no data.
+fn create_per_partition_carryover_tasks(
+    per_worker_carryover_mos: Vec<Vec<MaterializedOutput>>,
+    input_schema: SchemaRef,
+    composite_keys: Vec<BoundExpr>,
+    pipeline_node: &dyn PipelineNodeImpl,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<Vec<Option<SubmittedTask>>> {
+    per_worker_carryover_mos
         .into_iter()
-        .flatten()
-        .flat_map(|mo| mo.into_inner().0)
-        .map(|pr| {
-            use crate::python::ray::RayPartitionRef;
+        .map(|worker_mos| {
+            let non_empty: Vec<MaterializedOutput> = worker_mos
+                .into_iter()
+                .filter(|mo| mo.num_rows() > 0)
+                .collect();
 
-            let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
-                common_error::DaftError::InternalError(
-                    "Failed to downcast partition ref".to_string(),
-                ),
-            )?;
-            Ok(ray_partition_ref.clone())
+            if non_empty.is_empty() {
+                return Ok(None);
+            }
+
+            submit_top1_task(
+                non_empty,
+                input_schema.clone(),
+                &composite_keys,
+                PER_PARTITION_CARRYOVER_PHASE,
+                None,
+                pipeline_node,
+                task_id_counter,
+                scheduler_handle,
+            )
+            .map(Some)
         })
-        .collect::<DaftResult<Vec<_>>>()?;
-
-    let py_sort_by = composite_keys
-        .iter()
-        .map(|e| daft_dsl::python::PyExpr {
-            expr: e.inner().unwrap_alias().0,
-        })
-        .collect::<Vec<_>>();
-
-    let carryover_mps = common_runtime::python::execute_python_coroutine::<
-        _,
-        Vec<daft_micropartition::python::PyMicroPartition>,
-    >(move |py| {
-        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-        let py_object_refs = ray_partition_refs
-            .into_iter()
-            .map(|pr| pr.get_object_ref(py))
-            .collect::<Vec<_>>();
-        flotilla_module.call_method1(
-            pyo3::intern!(py, "reduce_carryovers"),
-            (py_object_refs, py_sort_by, bucket_sizes),
-        )
-    })
-    .await?;
-
-    let carryovers = carryover_mps
-        .into_iter()
-        .map(|py_mp| py_mp.inner.concat_or_get().ok().flatten())
-        .collect();
-
-    Ok(carryovers)
-}
-
-#[cfg(not(feature = "python"))]
-async fn reduce_carryovers(
-    _carryover_groups: Vec<Vec<MaterializedOutput>>,
-    _composite_keys: &[BoundExpr],
-) -> DaftResult<Vec<Option<RecordBatch>>> {
-    unimplemented!(
-        "Distributed asof join carryover reduction requires Python feature to be enabled"
-    )
+        .collect()
 }
