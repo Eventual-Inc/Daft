@@ -22,30 +22,25 @@ jobs:
             ),
           );
 
-          const componentSection = extractSection(body, "Component(s)");
-          if (!componentSection) {
-            core.info("No Component(s) section found.");
-            return;
-          }
-
-          const selectedComponents = parseSelections(componentSection);
-          if (selectedComponents.length === 0) {
-            core.info("No component selections found.");
-            return;
-          }
-
           // Map component choices to existing repo labels where semantics are clear.
           // Unmapped components are intentionally left as no-op until dedicated labels exist.
           const componentToLabels = {
             "Built-in Functions": ["expression"],
             "UDFs (User Defined Functions)": ["python"],
-            "Data Sources & Sinks": ["data-catalogs"],
-            "Cloud Storage (S3/GCS/Azure)": ["data-catalogs"],
           };
 
           const managedLabels = new Set(
             Object.values(componentToLabels).flat(),
           );
+
+          const componentSection = extractSection(body, "Component(s)");
+          if (!componentSection) {
+            await removeManagedLabels(Array.from(managedLabels));
+            core.info("No Component(s) section found. Cleared managed component labels.");
+            return;
+          }
+
+          const selectedComponents = parseSelections(componentSection);
 
           const desiredLabels = new Set();
           for (const component of selectedComponents) {
@@ -62,14 +57,7 @@ jobs:
             }
           }
 
-          for (const label of labelsToRemove) {
-            await github.rest.issues.removeLabel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.issue.number,
-              name: label,
-            });
-          }
+          await removeManagedLabels(labelsToRemove);
 
           const labelsToAdd = [];
           for (const label of desiredLabels) {
@@ -93,6 +81,20 @@ jobs:
             core.info(
               `Component labels updated. Added: [${labelsToAdd.join(", ")}], removed: [${labelsToRemove.join(", ")}]`,
             );
+          }
+
+          async function removeManagedLabels(labels) {
+            for (const label of labels) {
+              if (!currentLabels.has(label)) {
+                continue;
+              }
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                name: label,
+              });
+            }
           }
 
           function extractSection(markdownBody, heading) {

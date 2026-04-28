@@ -43,7 +43,7 @@ body:
     - Lance Integration
     - Other
   validations:
-    required: true
+    required: false
 - type: textarea
   id: additional-context
   attributes:
