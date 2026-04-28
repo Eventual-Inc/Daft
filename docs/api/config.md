@@ -87,3 +87,11 @@ These configurations are most often used as inputs to Daft when reading I/O func
 ::: daft.io.TosConfig
     options:
         filters: ["!^_"]
+
+::: daft.io.CosConfig
+    options:
+        filters: ["!^_"]
+
+::: daft.io.GravitinoConfig
+    options:
+        filters: ["!^_"]

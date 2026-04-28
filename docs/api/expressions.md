@@ -8,6 +8,14 @@ Daft Expressions allow you to express some computation that needs to happen in a
     options:
         heading_level: 3
 
+::: daft.expressions.element
+    options:
+        heading_level: 3
+
+::: daft.expressions.interval
+    options:
+        heading_level: 3
+
 ::: daft.expressions.lit
     options:
         heading_level: 3

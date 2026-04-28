@@ -10,4 +10,26 @@
     options:
         filters: ["!^_"]
 
-<!-- fix: how come there's no source? -->
+::: daft.daft.ImageProperty
+    options:
+        filters: ["!^_"]
+
+## Data Types
+
+::: daft.datatype.TimeUnit
+    options:
+        filters: ["!^_"]
+
+::: daft.datatype.MediaType
+    options:
+        filters: ["!^_"]
+
+## Execution Types
+
+::: daft.daft.ResourceRequest
+    options:
+        filters: ["!^_"]
+
+::: daft.daft.UnionMode
+    options:
+        filters: ["!^_"]
