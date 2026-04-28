@@ -213,6 +213,32 @@ impl PySession {
             )),
         }
     }
+
+    #[pyo3(signature = (name, *args))]
+    pub fn get_aggregate_function(
+        &self,
+        name: &str,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<daft_dsl::python::PyExpr> {
+        use daft_dsl::expr::{AggExpr, Expr};
+
+        let handle = self.0.get_aggregate_function(name)?.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "aggregate function '{name}' not found in session"
+            ))
+        })?;
+
+        let inputs: Vec<daft_dsl::ExprRef> = args
+            .iter()
+            .map(|py| -> PyResult<_> {
+                let expr = py.extract::<daft_dsl::python::PyExpr>()?;
+                Ok(expr.expr)
+            })
+            .collect::<PyResult<_>>()?;
+
+        let expr: daft_dsl::ExprRef = Expr::Agg(AggExpr::AggFn { handle, inputs }).arced();
+        Ok(expr.into())
+    }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

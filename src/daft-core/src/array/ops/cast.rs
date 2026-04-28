@@ -418,14 +418,34 @@ impl DurationArray {
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
-            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            DataType::Duration(tu) => {
+                let self_tu = match self.data_type() {
+                    DataType::Duration(tu) => tu,
+                    ty => panic!("Wrong dtype for DurationArray: {ty}"),
+                };
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
+                    std::cmp::Ordering::Greater => {
+                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
+                        self.physical
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                    std::cmp::Ordering::Less => {
+                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
+                        self.physical
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                };
+                Ok(
+                    DurationArray::new(Field::new(self.name(), dtype.clone()), physical)
+                        .into_series(),
+                )
+            }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Duration to {}",
-                dtype
+                "Cannot cast Duration to {dtype}"
             ))),
         }
     }

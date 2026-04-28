@@ -112,7 +112,7 @@ from dotenv import load_dotenv
 import daft
 from daft.ai.openai.provider import OpenAIProvider
 from daft.functions.ai import prompt
-from daft.functions import unnest
+from daft.functions import format, unnest
 from daft.session import Session
 from pydantic import BaseModel, Field
 

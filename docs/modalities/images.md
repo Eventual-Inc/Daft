@@ -548,11 +548,11 @@ This is necessary because multimodal data such as images, videos, and audio file
 **Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
 
 === "🐍 Python"
-`python
+    ```python
     # Each operation uses different batch sizes automatically
     df = daft.read_parquet("metadata.parquet") # Large batches
           .with_column("image_data", col("urls").download())  # Small batches
           .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
-    `
+    ```
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

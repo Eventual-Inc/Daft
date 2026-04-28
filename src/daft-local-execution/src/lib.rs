@@ -3,6 +3,7 @@
 mod batch_manager;
 mod buffer;
 mod channel;
+mod checkpoint_terminus;
 mod concat;
 mod dynamic_batching;
 mod input_sender;
@@ -12,7 +13,6 @@ mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
-mod shuffle_metadata;
 mod sinks;
 mod sources;
 mod streaming_sink;
@@ -29,6 +29,14 @@ use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::ExecutionEngineResult;
+
+/// Helpers for distributed execution tests.
+///
+/// Used by `LocalSwordfishWorker` in `daft-distributed` to exercise real
+/// local execution without Ray.
+pub mod testing {
+    pub use super::run::NativeExecutor;
+}
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;

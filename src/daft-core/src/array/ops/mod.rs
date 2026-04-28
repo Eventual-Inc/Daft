@@ -28,6 +28,7 @@ pub mod full;
 mod get;
 mod get_lit;
 mod hash;
+mod hll_cardinality;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
@@ -42,6 +43,7 @@ mod merge_sketch;
 mod minhash;
 mod null;
 mod pairwise;
+mod percentile;
 mod pow;
 mod product;
 mod repr;
@@ -204,6 +206,12 @@ pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftPercentileAggable {
+    type Output;
+    fn percentile(&self, percentage: f64) -> Self::Output;
+    fn grouped_percentile(&self, groups: &GroupIndices, percentage: f64) -> Self::Output;
 }
 
 pub trait DaftStddevAggable {

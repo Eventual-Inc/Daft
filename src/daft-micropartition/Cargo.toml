@@ -18,6 +18,7 @@ daft-warc = {path = "../daft-warc", default-features = false}
 dashmap = {workspace = true}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+rayon = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tracing = {workspace = true}

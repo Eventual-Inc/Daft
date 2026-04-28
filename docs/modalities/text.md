@@ -14,7 +14,7 @@ Text embeddings convert text into numerical vectors that capture semantic meanin
 By default, `embed_text` uses the [Sentence Transformers provider](#using-sentence-transformers), which requires the `sentence-transformers` [optional dependency](../install.md).
 
 ```bash
-pip install -U "daft[sentence-transformers]"
+pip install -U "daft[transformers]"
 ```
 
 Once installed, we can run:
@@ -156,7 +156,7 @@ nlp_model_name = "en_core_web_sm"
 def chunk_by_sentences(text: str) -> typing.Iterator[str]:
     import spacy
     nlp = spacy.load(nlp_model_name)
-    for sentence in nlp(text):
+    for sentence in nlp(text).sents:
         yield sentence.text
 
 

@@ -37,6 +37,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal", default-feature
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
+daft-geo = {path = "src/daft-geo", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
@@ -47,6 +48,7 @@ daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
+daft-partition-refs = {path = "src/daft-partition-refs", default-features = false}
 daft-runners = {path = "src/daft-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
@@ -76,6 +78,8 @@ python = [
   "common-metrics/python",
   "daft-ai/python",
   "daft-catalog/python",
+  "daft-checkpoint/python",
+  "daft-checkpoint/s3",
   "daft-cli/python",
   "daft-context/python",
   "daft-core/python",
@@ -98,6 +102,7 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-parquet/python",
+  "daft-partition-refs/python",
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
@@ -176,6 +181,7 @@ tikv-jemallocator = {version = "0.6.0", features = [
 
 [workspace]
 members = [
+  "src/common/checkpoint-config",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",
@@ -217,6 +223,7 @@ members = [
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
+  "src/daft-partition-refs",
   "src/daft-runners",
   "src/daft-scan",
   "src/daft-session",
@@ -368,7 +375,7 @@ tracing-subscriber = {version = "0.3.22", default-features = false, features = [
 typetag = "0.2.21"
 rustfft = "6"
 url = "2.4.0"
-uuid = {version = "1.19.0", features = ["v4"]}
+uuid = {version = "1.19.0", features = ["v4", "serde"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
 hex = "0.4.3"

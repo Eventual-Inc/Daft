@@ -1050,6 +1050,26 @@ class Expression:
 
         return mean(self)
 
+    def percentile(self, percentage: builtins.float) -> Expression:
+        """Calculates the exact percentile for a column of numeric values.
+
+        Tip: See Also
+            [`daft.functions.percentile`](https://docs.daft.ai/en/stable/api/functions/percentile/)
+        """
+        from daft.functions import percentile
+
+        return percentile(self, percentage)
+
+    def median(self) -> Expression:
+        """Calculates the median of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.median`](https://docs.daft.ai/en/stable/api/functions/median/)
+        """
+        from daft.functions import median
+
+        return median(self)
+
     def stddev(self, ddof: int = 1) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 
@@ -2286,6 +2306,16 @@ class Expression:
 
         return length_bytes(self)
 
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the Hamming distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -2447,6 +2477,16 @@ class Expression:
         from daft.functions import list_map
 
         return list_map(self, mapper)
+
+    def list_filter(self, predicate: Expression) -> Expression:
+        """Filters elements in the list using a boolean predicate over `daft.element()`.
+
+        Tip: See Also
+            [`daft.functions.list_filter`](https://docs.daft.ai/en/stable/api/functions/list_filter/)
+        """
+        from daft.functions import list_filter
+
+        return list_filter(self, predicate)
 
     def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.

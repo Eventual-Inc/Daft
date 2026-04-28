@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_metrics::{
-    NodeID, QueryID, QueryPlan, Stats,
+    NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_micropartition::MicroPartitionRef;
@@ -17,6 +17,8 @@ pub enum Event {
     OptimizationComplete(OptimizationCompleteEvent),
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
+    TaskSubmit(TaskSubmitEvent),
+    TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
@@ -36,7 +38,7 @@ pub struct OperatorMeta {
     pub name: Arc<str>,
     pub node_type: NodeType,
     pub node_category: NodeCategory,
-    pub origin_node_id: NodeID,
+    pub origin_node_id: Option<NodeID>,
     pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
 }
@@ -50,7 +52,7 @@ impl OperatorMeta {
             name: Arc::from("unknown"),
             node_type: NodeType::default(),
             node_category: NodeCategory::default(),
-            origin_node_id: node_id,
+            origin_node_id: None,
             node_phase: None,
             context: HashMap::new(),
         }
@@ -142,4 +144,32 @@ pub struct ResultOutEvent {
     pub num_rows: u64,
     // needed by the dashboard subscriber
     pub data: Option<MicroPartitionRef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskMeta {
+    pub id: u32,
+    pub node_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskSubmitEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskMeta>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskEndEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskMeta>,
+    pub worker_id: Option<Arc<str>>,
+    pub outcome: TaskOutcome,
+    pub stats: Vec<(Arc<NodeInfo>, StatSnapshot)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TaskOutcome {
+    Success,
+    Failed { message: String },
+    Cancelled,
 }
