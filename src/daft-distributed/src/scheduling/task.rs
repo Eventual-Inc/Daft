@@ -445,7 +445,6 @@ impl SwordfishTaskBuilder {
         for input in self.inputs.values() {
             match input {
                 Input::ScanTasks(scan_tasks) => {
-                    tracing::warn!("found {} scan tasks", scan_tasks.len());
                     for st in scan_tasks {
                         if let Some(n) = st.num_rows() {
                             total = total.saturating_add(n);
@@ -457,19 +456,34 @@ impl SwordfishTaskBuilder {
                         }
                     }
                 }
-                Input::InMemory(uparts) => {
-                    tracing::warn!("found {} in-mem uparts", uparts.len());
-                    let uparts_rows = uparts.iter().map(|p| p.len()).sum();
-                    total = total.saturating_add(uparts_rows);
-                    found_any = true;
-                }
+                Input::InMemory(_) => debug_assert!(
+                    false,
+                    "Input::InMemory should never appear in SwordfishTask.inputs; in-memory data lives in psets"
+                ),
                 Input::GlobPaths(_) => {
                     // num_rows would be the number of files matching the glob patterns,
                     // but we can't estimate that at planning time
                 }
-                Input::FlightShuffle(jkjkjkTODO) => {}
+                Input::FlightShuffle(shuffle_inputs) => {
+                    for input in shuffle_inputs {
+                        for part in &input.refs {
+                            total = total.saturating_add(part.num_rows);
+                            found_any = true;
+                        }
+                    }
+                }
             }
         }
+
+        // in-memory sources live in psets instead of inputs
+        for partition_refs in self.psets.values() {
+            for pr in partition_refs {
+                let n = pr.num_rows();
+                total = total.saturating_add(n);
+                found_any = true;
+            }
+        }
+
         found_any.then_some(total)
     }
 
