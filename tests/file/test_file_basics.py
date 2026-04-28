@@ -53,6 +53,45 @@ def test_path_file_can_write_text(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_flush_persists_data(tmp_path: Path):
+    temp_file = tmp_path / "flush_test.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        writer.write("hello")
+        writer.flush()
+        assert temp_file.read_text() == "hello"
+        writer.write(" world")
+
+    assert temp_file.read_text() == "hello world"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_context_exception_does_not_commit(tmp_path: Path):
+    temp_file = tmp_path / "error_test.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with f.open("w") as writer:
+            writer.write("partial")
+            raise RuntimeError("boom")
+
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_read_text_with_encoding(tmp_path: Path):
+    temp_file = tmp_path / "encoding_test.txt"
+    temp_file.write_bytes("café".encode("latin-1"))
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("r", encoding="latin-1") as reader:
+        assert reader.read() == "café"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
 def test_path_file_write_mode_validations(tmp_path: Path):
     temp_file = tmp_path / "test_file.txt"
     temp_file.write_text("before")
@@ -246,26 +285,32 @@ def test_filesize_expr(tmp_path: Path):
         ("png", lambda: b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01", "image/png"),
         (
             "gif",
-            lambda: b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b",
+            lambda: (
+                b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b"
+            ),
             "image/gif",
         ),
         ("pdf", lambda: b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n", "application/pdf"),
         ("mp3", lambda: b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x44" + b"\x00" * 32, "audio/mpeg"),
         (
             "wav",
-            lambda: b"RIFF"
-            + struct.pack("<I", 36)
-            + b"WAVE"
-            + b"fmt "
-            + struct.pack("<I", 16)
-            + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
-            + b"data"
-            + struct.pack("<I", 0),
+            lambda: (
+                b"RIFF"
+                + struct.pack("<I", 36)
+                + b"WAVE"
+                + b"fmt "
+                + struct.pack("<I", 16)
+                + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
+                + b"data"
+                + struct.pack("<I", 0)
+            ),
             "audio/wav",
         ),
         (
             "ogg",
-            lambda: b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "audio/ogg",
         ),
         (
@@ -275,7 +320,9 @@ def test_filesize_expr(tmp_path: Path):
         ),
         (
             "zip",
-            lambda: b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "application/zip",
         ),
         ("html", lambda: b"<!DOCTYPE html><html><head></head><body></body></html>", "text/html"),

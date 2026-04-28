@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import shutil
 import tempfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from daft.daft import PyDaftFile, PyFileReference, io_put
 from daft.datatype import MediaType
@@ -30,6 +30,10 @@ class _DaftWritableFile:
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        if exc_type is not None:
+            self._buffer.close()
+            self._closed = True
+            return
         self.close()
 
     @property
@@ -85,6 +89,7 @@ class _DaftWritableFile:
     def flush(self) -> None:
         if self._closed:
             raise ValueError("I/O operation on closed file")
+        io_put(path=self.path, data=self._buffer.getvalue(), multithreaded_io=True, io_config=self._io_config)
 
     def close(self) -> None:
         if self._closed:
@@ -94,6 +99,50 @@ class _DaftWritableFile:
         finally:
             self._buffer.close()
             self._closed = True
+
+
+class _DaftReadableTextFile:
+    def __init__(self, file_ref: PyFileReference, encoding: str) -> None:
+        self._inner = PyDaftFile._from_file_reference(file_ref)
+        self._encoding = encoding
+
+    def __enter__(self) -> _DaftReadableTextFile:
+        self._inner.__enter__()
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self._inner.__exit__(exc_type, exc_val, exc_tb)
+
+    @property
+    def closed(self) -> bool:
+        return self._inner.closed()
+
+    def read(self, size: int = -1) -> str:
+        data = self._inner.read(size)
+        if isinstance(data, str):
+            return data
+        return data.decode(self._encoding)
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._inner.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._inner.tell()
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def readable(self) -> bool:
+        return True
+
+    def writable(self) -> bool:
+        return False
+
+    def seekable(self) -> bool:
+        return True
+
+    def isatty(self) -> bool:
+        return False
 
 
 class File:
@@ -132,13 +181,25 @@ class File:
     ) -> None:
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
 
-    def open(self, mode: str = "rb", encoding: str = "utf-8") -> PyDaftFile | _DaftWritableFile:
-        if mode in ("r", "rb"):
+    @overload
+    def open(self, mode: Literal["rb"] = "rb", encoding: str = "utf-8") -> PyDaftFile: ...
+
+    @overload
+    def open(self, mode: Literal["r", "rt"], encoding: str = "utf-8") -> _DaftReadableTextFile: ...
+
+    @overload
+    def open(self, mode: Literal["w", "wt", "wb"], encoding: str = "utf-8") -> _DaftWritableFile: ...
+
+    def open(self, mode: str = "rb", encoding: str = "utf-8") -> PyDaftFile | _DaftReadableTextFile | _DaftWritableFile:
+        if mode == "rb":
             return PyDaftFile._from_file_reference(self._inner)
+        if mode in ("r", "rt"):
+            return _DaftReadableTextFile(file_ref=self._inner, encoding=encoding)
         if mode in ("w", "wt", "wb"):
-            _, path, io_config = self._inner._get_file()
+            inner = cast("Any", self._inner)
+            _, path, io_config = inner._get_file()
             return _DaftWritableFile(path=path, io_config=io_config, mode=mode, encoding=encoding)
-        raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', and 'wb'")
+        raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rt', 'rb', 'w', 'wt', and 'wb'")
 
     def __str__(self) -> str:
         return self._inner.__str__()
