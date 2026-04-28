@@ -4,13 +4,16 @@ pub mod great_circle_distance;
 pub mod h3_index;
 pub mod mbr;
 pub mod st_area;
+pub mod st_astext;
 pub mod st_buffer;
 pub mod st_centroid;
 pub mod st_contains;
 pub mod st_distance;
+pub mod st_geojson;
 pub mod st_geometrytype;
 pub mod st_geohash;
 pub mod st_geohash_covers;
+pub mod st_geomfromtext;
 pub mod st_intersects;
 pub mod st_isvalid;
 pub mod st_length;
@@ -21,13 +24,16 @@ pub mod utils;
 pub use great_circle_distance::GreatCircleDistance;
 pub use mbr::{Mbr, mbrs_intersect, wkb_to_mbr};
 pub use st_area::StArea;
+pub use st_astext::StAsText;
 pub use st_buffer::StBuffer;
 pub use st_centroid::StCentroid;
 pub use st_contains::StContains;
 pub use st_distance::StDistance;
+pub use st_geojson::{StGeomFromGeoJson, StGeoJsonFromGeom};
 pub use st_geometrytype::StGeometryType;
 pub use st_geohash::{StGeohash, geohash_covers_geometry};
 pub use st_geohash_covers::StGeohashCovers;
+pub use st_geomfromtext::StGeomFromText;
 pub use st_intersects::StIntersects;
 pub use st_isvalid::StIsValid;
 pub use st_length::StLength;
@@ -55,5 +61,9 @@ impl FunctionModule for SpatialFunctions {
             precision: 5,
             covering_cells: String::new(),
         });
+        parent.add_fn(StAsText);
+        parent.add_fn(StGeomFromText);
+        parent.add_fn(StGeomFromGeoJson);
+        parent.add_fn(StGeoJsonFromGeom);
     }
 }

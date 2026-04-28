@@ -3,9 +3,8 @@ use std::sync::Arc;
 use daft_dsl::{
     ExprRef,
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
-    lit,
 };
-use daft_geo::{StArea, StBuffer, StCentroid, StContains, StDistance, StGeohash, StGeometryType, StIntersects, StIsValid, StLength, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StDistance, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersects, StIsValid, StLength, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -32,6 +31,10 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_distance", SQLSpatialBinary(Arc::new(StDistance)));
         parent.add_fn("st_buffer", SQLStBuffer);
         parent.add_fn("st_geohash", SQLStGeohash);
+        parent.add_fn("st_astext", SQLSpatialUnary(Arc::new(StAsText)));
+        parent.add_fn("st_geomfromtext", SQLSpatialUnary(Arc::new(StGeomFromText)));
+        parent.add_fn("st_geomfromgeojson", SQLSpatialUnary(Arc::new(StGeomFromGeoJson)));
+        parent.add_fn("st_geojsonfromgeom", SQLSpatialUnary(Arc::new(StGeoJsonFromGeom)));
     }
 }
 

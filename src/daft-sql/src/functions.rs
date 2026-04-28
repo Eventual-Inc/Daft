@@ -11,8 +11,9 @@ use daft_dsl::{
         BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs,
         ScalarFunctionFactory, ScalarUDF,
     },
-    unresolved_col,
+    null_lit, unresolved_col,
 };
+use daft_functions_utf8::{LStrip, RStrip, Strip};
 use daft_session::{ScalarFunction as SessionFunction, Session};
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
@@ -82,6 +83,10 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
     functions.add_fn("coalesce", SQLCoalesce);
+    functions.add_fn("null_if", SQLNullIf);
+    functions.add_fn("str_trim", Arc::new(Strip) as Arc<dyn ScalarUDF>);
+    functions.add_fn("str_ltrim", Arc::new(LStrip) as Arc<dyn ScalarUDF>);
+    functions.add_fn("str_rtrim", Arc::new(RStrip) as Arc<dyn ScalarUDF>);
 
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Auto-register all functions from the registry as generic SQL
@@ -99,6 +104,26 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     }
     functions
 });
+
+pub struct SQLNullIf;
+
+impl SQLFunction for SQLNullIf {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            return Err(PlannerError::invalid_operation(
+                "null_if requires exactly 2 arguments",
+            ));
+        }
+        let x = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let y = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(x.clone().eq(y).if_else(null_lit(), x))
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Returns NULL if the two arguments are equal, otherwise returns the first argument"
+            .to_string()
+    }
+}
 
 pub struct SQLCoalesce;
 

@@ -37,7 +37,7 @@ Typical workflow
     # 2. Build the H3 index (once)
     from daft.functions.spatial_index import build_spatial_index
     build_spatial_index("output/", geom_col="geom")
-    # → writes output/_spatial_index.json  (H3)
+    # → writes output/_spatial_index.idx  (H3 inverted Parquet)
 
     # 3. Query — pruning is automatic
     import daft
@@ -47,25 +47,25 @@ Typical workflow
 
 Index format (v1)
 -----------------
-::
+Stored as an **inverted Parquet file** (``_spatial_index.idx``) with two
+columns::
 
-    {
-      "version": 1,
-      "geom_col": "geom",
-      "h3_resolution": 5,
-      "files": {
-        "part-0.parquet": ["851fb46ffffffff", "851fb467fffffff"],
-        "part-1.parquet": ["851fb46ffffffff"]
-      }
-    }
+    h3_cell  STRING   — H3 cell hex string (e.g. "8a1fb46ffffffff")
+    filename STRING   — basename of the parquet file covering that cell
 
+The file also carries schema-level metadata::
+
+    b"geom_col"      → column name bytes
+    b"h3_resolution" → resolution as decimal bytes
+
+Using an inverted layout means query-time pruning can filter to only the
+rows whose ``h3_cell`` matches the query — no need to load the full index.
 Cell strings use H3's standard hex representation (15 hex characters).
 """
 
 from __future__ import annotations
 
 import glob
-import json
 import os
 import struct
 from typing import Optional
@@ -77,10 +77,9 @@ __all__ = [
     "SpatialIndex",
 ]
 
-INDEX_FILENAME = "_spatial_index.json"
+INDEX_FILENAME = "_spatial_index.idx"
 INDEX_VERSION_H3 = 1
-DEFAULT_H3_RESOLUTION = 10
-DEFAULT_MAX_CELLS_PER_FILE = 50
+DEFAULT_H3_RESOLUTION = 7
 
 
 # ── H3 library helpers ────────────────────────────────────────────────────
@@ -213,12 +212,235 @@ _H3_CELL_AREA_M2 = [
     15_047, 2_149, 307, 44, 6, 1,
 ]
 
+# Approximate H3 cell edge length in degrees for each resolution (equatorial).
+# Used to compute grid density required to have ≤ one cell-width between samples
+# (prevents false negatives from sparse grid sampling).
+# Derived from: edge_km = [1281,483,182.5,68.8,25.9,9.78,3.69,1.39,0.524,0.198,0.0747,0.0282,0.0107,0.00401,0.00152,0.000572]
+# 1 deg lat ≈ 111km, edge_deg = edge_km / 111
+_H3_EDGE_DEG = [
+    11.54, 4.35, 1.64, 0.620, 0.234, 0.0881, 0.0332, 0.0125,
+    0.00472, 0.00178, 0.000673, 0.000254, 0.0000964, 0.0000361, 0.0000137, 0.00000515,
+]
+
 
 def _estimate_polyfill_cells(x0: float, y0: float, x1: float, y1: float, resolution: int) -> int:
     """Rough upper-bound estimate of H3 polyfill count from an MBR."""
     area_m2 = (x1 - x0) * (y1 - y0) * (111_000 ** 2)
     cell_area = _H3_CELL_AREA_M2[min(resolution, 15)]
     return max(1, int(area_m2 / cell_area))
+
+
+def _batch_point_h3_cells(
+    wkbs: list,
+    h3lib,
+    is_v4: bool,
+    resolution: int,
+) -> set[str]:
+    """Fast batch H3 cell extraction for uniform 21-byte LE point WKBs using numpy.
+
+    Skips per-row WKB parsing entirely; extracts all (lon, lat) coordinates
+    in a single numpy buffer read.
+    """
+    import numpy as np
+
+    valid = [bytes(w) for w in wkbs if w is not None and len(w) == 21]
+    if not valid:
+        return set()
+    buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 21)
+    lons = np.ascontiguousarray(buf[:, 5:13]).view("<f8").flatten()
+    lats = np.ascontiguousarray(buf[:, 13:21]).view("<f8").flatten()
+    if is_v4:
+        return {
+            h3lib.latlng_to_cell(float(la), float(lo), resolution)
+            for lo, la in zip(lons.tolist(), lats.tolist())
+        }
+    return {
+        h3lib.geo_to_h3(float(la), float(lo), resolution)
+        for lo, la in zip(lons.tolist(), lats.tolist())
+    }
+
+
+def _batch_rect_h3_cells(
+    wkbs: list,
+    h3lib,
+    is_v4: bool,
+    resolution: int,
+    max_polyfill: int = 300,
+) -> set[str]:
+    """Fast per-row H3 cells for uniform 93-byte LE axis-aligned polygon WKBs.
+
+    Uses numpy to batch-extract all ``(x0, y0, x1, y1)`` corner coordinates,
+    then for each row either polyfills (small polygon) or samples a small
+    ``n × n`` grid (large polygon).  Avoids re-parsing WKB in Python.
+
+    The *max_polyfill* threshold controls the polyfill/grid switch; keeping it
+    low (≤ 500) avoids generating millions of cells for large polygons.
+    """
+    import numpy as np
+
+    valid = [bytes(w) for w in wkbs if w is not None and len(w) == 93]
+    if not valid:
+        return set()
+
+    buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 93)
+    x0l = np.ascontiguousarray(buf[:, 13:21]).view("<f8").flatten().tolist()
+    y0l = np.ascontiguousarray(buf[:, 21:29]).view("<f8").flatten().tolist()
+    x1l = np.ascontiguousarray(buf[:, 45:53]).view("<f8").flatten().tolist()
+    y1l = np.ascontiguousarray(buf[:, 53:61]).view("<f8").flatten().tolist()
+
+    cells: set[str] = set()
+    disk_fn = h3lib.grid_disk if is_v4 else h3lib.k_ring
+
+    for i in range(len(valid)):
+        vx0, vy0, vx1, vy1 = x0l[i], y0l[i], x1l[i], y1l[i]
+        estimated = _estimate_polyfill_cells(vx0, vy0, vx1, vy1, resolution)
+
+        if estimated <= max_polyfill:
+            outer_latlng = [(vy0, vx0), (vy0, vx1), (vy1, vx1), (vy1, vx0), (vy0, vx0)]
+            try:
+                if is_v4:
+                    interior = set(h3lib.polygon_to_cells(h3lib.LatLngPoly(outer_latlng), resolution))
+                else:
+                    gj = {"type": "Polygon", "coordinates": [[[lon, lat] for lat, lon in outer_latlng]]}
+                    interior = set(h3lib.polyfill_geojson(gj, resolution))
+                cells.update(interior)
+            except Exception:
+                pass
+        else:
+            # Grid sampling: spacing ≤ one H3 cell edge so no cell is skipped.
+            edge_deg = _H3_EDGE_DEG[min(resolution, 15)]
+            n_lon = max(3, int((vx1 - vx0) / edge_deg) + 2)
+            n_lat = max(3, int((vy1 - vy0) / edge_deg) + 2)
+            dx = (vx1 - vx0) / max(n_lon - 1, 1)
+            dy = (vy1 - vy0) / max(n_lat - 1, 1)
+            for gi in range(n_lon):
+                for gj in range(n_lat):
+                    c = _cell_for_point(h3lib, is_v4, vy0 + gj * dy, vx0 + gi * dx, resolution)
+                    cells.add(c)
+
+        # Always cover corners + center with k=1 disk for edge safety
+        cx, cy = (vx0 + vx1) * 0.5, (vy0 + vy1) * 0.5
+        for lon, lat in [(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1), (cx, cy)]:
+            c = _cell_for_point(h3lib, is_v4, lat, lon, resolution)
+            cells.update(disk_fn(c, 1))
+
+    return cells
+
+
+def _file_mbr_from_wkbs(wkbs: list) -> Optional[tuple[float, float, float, float]]:
+    """Compute the union MBR of all WKBs in a file.
+
+    Fast path: if all WKBs are uniform 21-byte (points) or 93-byte (LE
+    axis-aligned rectangles) use numpy for bulk extraction.  Falls back to
+    the row-by-row ``_wkb_mbr`` parser for heterogeneous/complex geometries.
+    Returns ``(min_x, min_y, max_x, max_y)`` or ``None`` if nothing valid.
+    """
+    import numpy as np
+
+    valid = [bytes(w) for w in wkbs if w is not None]
+    if not valid:
+        return None
+
+    sizes = {len(w) for w in valid}
+
+    if sizes == {21}:
+        # All points (21 bytes LE)
+        buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 21)
+        lons = np.ascontiguousarray(buf[:, 5:13]).view("<f8").flatten()
+        lats = np.ascontiguousarray(buf[:, 13:21]).view("<f8").flatten()
+        return float(lons.min()), float(lats.min()), float(lons.max()), float(lats.max())
+
+    if sizes == {93}:
+        # All LE axis-aligned rectangles (93 bytes: geom hdr + ring hdr + 5 × (x,y))
+        buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 93)
+        x0 = np.ascontiguousarray(buf[:, 13:21]).view("<f8").flatten()
+        y0 = np.ascontiguousarray(buf[:, 21:29]).view("<f8").flatten()
+        x1 = np.ascontiguousarray(buf[:, 45:53]).view("<f8").flatten()
+        y1 = np.ascontiguousarray(buf[:, 53:61]).view("<f8").flatten()
+        return float(x0.min()), float(y0.min()), float(x1.max()), float(y1.max())
+
+    # Fallback: parse each WKB individually
+    mbrs = [_wkb_mbr(w) for w in valid]
+    mbrs = [m for m in mbrs if m is not None]
+    if not mbrs:
+        return None
+    return (
+        min(m[0] for m in mbrs), min(m[1] for m in mbrs),
+        max(m[2] for m in mbrs), max(m[3] for m in mbrs),
+    )
+
+
+# Maximum total H3 calls allowed when building the file-level MBR grid.
+# At ~300K H3 calls/sec in Python, 10K = ~33ms per file.
+# Resolutions > 8 on large partition files exceed this limit.
+_MAX_INDEX_GRID_CELLS = 10_000
+
+
+def _h3_cells_for_file_mbr(
+    h3lib,
+    is_v4: bool,
+    x0: float, y0: float,
+    x1: float, y1: float,
+    resolution: int,
+) -> set[str]:
+    """Return H3 cells covering the bounding box at *resolution*.
+
+    The caller is responsible for ensuring *resolution* is safe for the given
+    MBR size (see ``_safe_resolution_for_mbr``).  Uses ``polygon_to_cells``
+    when the estimated cell count is ≤ 5 000; otherwise samples a grid with
+    spacing = one H3 cell edge (no false negatives, no gaps).
+    """
+    import numpy as np
+
+    estimated = _estimate_polyfill_cells(x0, y0, x1, y1, resolution)
+    cells: set[str] = set()
+
+    if estimated <= 5_000:
+        ring_latlng = [(y0, x0), (y0, x1), (y1, x1), (y1, x0), (y0, x0)]
+        try:
+            if is_v4:
+                poly = h3lib.LatLngPoly(ring_latlng)
+                cells = set(h3lib.polygon_to_cells(poly, resolution))
+            else:
+                geojson = {
+                    "type": "Polygon",
+                    "coordinates": [[[lon, lat] for lat, lon in ring_latlng]],
+                }
+                cells = set(h3lib.polyfill_geojson(geojson, resolution))
+        except Exception:
+            pass
+
+    if not cells:
+        # Grid sampling: spacing ≤ one H3 cell edge — no gaps.
+        edge_deg = _H3_EDGE_DEG[resolution]
+        n_lon = max(3, int((x1 - x0) / edge_deg) + 2)
+        n_lat = max(3, int((y1 - y0) / edge_deg) + 2)
+        lons = np.linspace(x0, x1, n_lon)
+        lats = np.linspace(y0, y1, n_lat)
+        lon_g, lat_g = np.meshgrid(lons, lats)
+        lo_list = lon_g.flatten().tolist()
+        la_list = lat_g.flatten().tolist()
+        if is_v4:
+            cells = {
+                h3lib.latlng_to_cell(float(la), float(lo), resolution)
+                for lo, la in zip(lo_list, la_list)
+            }
+        else:
+            cells = {
+                h3lib.geo_to_h3(float(la), float(lo), resolution)
+                for lo, la in zip(lo_list, la_list)
+            }
+
+    # Edge expansion: k=1 disk around all corner cells
+    corners = [
+        (y0, x0), (y0, x1), (y1, x0), (y1, x1),
+        ((y0 + y1) * 0.5, (x0 + x1) * 0.5),
+    ]
+    for lat, lon in corners:
+        c = _cell_for_point(h3lib, is_v4, lat, lon, resolution)
+        cells.update(_disk(h3lib, is_v4, c, 1))
+
+    return cells
 
 
 # ── H3 cell computation ───────────────────────────────────────────────────
@@ -309,7 +531,7 @@ def build_spatial_index(
     output_path: Optional[str] = None,
     glob_pattern: str = "*.parquet",
     h3_resolution: int = DEFAULT_H3_RESOLUTION,
-    max_cells_per_file: int = DEFAULT_MAX_CELLS_PER_FILE,
+    max_cells_per_file: Optional[int] = None,
 ) -> dict:
     """Scan every parquet file in *directory* and write ``_spatial_index.json``.
 
@@ -330,15 +552,13 @@ def build_spatial_index(
     max_cells_per_file:
         Maximum number of H3 cells stored per parquet file in the index.
         When the full cell set is larger, a random sample of this size is
-        kept, trading recall for a smaller index.  Default 50.
+        kept, trading recall for a smaller index.  Default ``None`` (no cap).
 
     Returns
     -------
     dict
         ``{filename: [cell, ...]}`` mapping that was written to the index.
     """
-    import daft
-
     parquet_files = sorted(glob.glob(os.path.join(directory, glob_pattern)))
     if not parquet_files:
         raise FileNotFoundError(
@@ -360,6 +580,25 @@ def build_spatial_index(
     )
 
 
+def _safe_resolution_for_mbr(
+    x0: float, y0: float, x1: float, y1: float, resolution: int
+) -> int:
+    """Return the highest resolution ≤ *resolution* that keeps the MBR within
+    ``_MAX_INDEX_GRID_CELLS`` H3 calls (polyfill or grid)."""
+    res = resolution
+    while res > 0:
+        estimated = _estimate_polyfill_cells(x0, y0, x1, y1, res)
+        if estimated <= 5_000:
+            break  # polyfill path — always fine
+        edge = _H3_EDGE_DEG[res]
+        n_lon = max(3, int((x1 - x0) / edge) + 2)
+        n_lat = max(3, int((y1 - y0) / edge) + 2)
+        if n_lon * n_lat <= _MAX_INDEX_GRID_CELLS:
+            break
+        res -= 1
+    return res
+
+
 def _build_h3_index(
     parquet_files: list[str],
     geom_col: str,
@@ -367,41 +606,116 @@ def _build_h3_index(
     is_v4: bool,
     resolution: int,
     output_path: str,
-    max_cells_per_file: int = DEFAULT_MAX_CELLS_PER_FILE,
+    max_cells_per_file: Optional[int] = None,
 ) -> dict[str, list[str]]:
-    import random
-    import daft
+    import warnings
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # ── Pass 1: fast numpy MBR extraction per file (no H3 calls) ──────────
+    def _mbr_of_file(fpath: str) -> Optional[tuple[float, float, float, float]]:
+        tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
+        return _file_mbr_from_wkbs(tbl[geom_col].to_pylist())
+
+    workers = min(len(parquet_files), (os.cpu_count() or 4))
+    file_mbrs: dict[str, Optional[tuple]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_mbr_of_file, fp): fp for fp in parquet_files}
+        for fut in as_completed(futs):
+            file_mbrs[futs[fut]] = fut.result()
+
+    # ── Determine a single safe resolution for ALL files ──────────────────
+    # Use the union MBR so every file is guaranteed to stay within budget.
+    valid_mbrs = [m for m in file_mbrs.values() if m is not None]
+    if valid_mbrs:
+        ux0 = min(m[0] for m in valid_mbrs)
+        uy0 = min(m[1] for m in valid_mbrs)
+        ux1 = max(m[2] for m in valid_mbrs)
+        uy1 = max(m[3] for m in valid_mbrs)
+        effective_resolution = _safe_resolution_for_mbr(ux0, uy0, ux1, uy1, resolution)
+    else:
+        effective_resolution = resolution
+
+    if effective_resolution != resolution:
+        warnings.warn(
+            f"Index resolution automatically adjusted from {resolution} to "
+            f"{effective_resolution} because the data MBR is too large for fine-"
+            f"resolution indexing within the {_MAX_INDEX_GRID_CELLS:,}-cell budget.  "
+            f"For this dataset, h3_resolution ≤ {effective_resolution} avoids this "
+            f"adjustment.  The index is still complete (no false negatives).",
+            UserWarning,
+            stacklevel=4,
+        )
+
+    # ── Pass 2: build H3 cells per file using effective_resolution ─────────
+    def _index_one_file(fpath: str) -> tuple[str, list[str]]:
+        """Compute H3 cells for a single parquet file and return (basename, cells)."""
+        tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
+        wkbs = tbl[geom_col].to_pylist()
+        non_null = [w for w in wkbs if w is not None]
+        sizes = {len(w) for w in non_null}
+        cells: set[str] = set()
+
+        if sizes == {21}:
+            # All points — one H3 cell per point (exact, no false negatives).
+            cells = _batch_point_h3_cells(wkbs, h3lib, is_v4, effective_resolution)
+        else:
+            # Polygons / mixed — file union MBR → single polyfill/grid.
+            # Correct: any query overlapping any polygon in the file lies inside
+            # the file's union MBR.
+            mbr = file_mbrs.get(fpath)
+            if mbr is not None:
+                cells = _h3_cells_for_file_mbr(h3lib, is_v4, *mbr, effective_resolution)
+
+        cell_list = sorted(cells)
+        if max_cells_per_file is not None and len(cell_list) > max_cells_per_file:
+            import random
+            cell_list = sorted(random.sample(cell_list, max_cells_per_file))
+        return os.path.basename(fpath), cell_list
 
     file_cells: dict[str, list[str]] = {}
-    for fpath in parquet_files:
-        df = daft.read_parquet(fpath)
-        rows = df.select(geom_col).to_pydict()[geom_col]
-        cells: set[str] = set()
-        for wkb in rows:
-            if wkb is not None:
-                cells.update(
-                    _h3_cells_for_wkb(
-                        bytes(wkb), h3lib, is_v4, resolution,
-                        max_polyfill=max_cells_per_file * 10,
-                    )
-                )
-        if cells:
-            cell_list = sorted(cells)
-            if len(cell_list) > max_cells_per_file:
-                cell_list = sorted(random.sample(cell_list, max_cells_per_file))
-            file_cells[os.path.basename(fpath)] = cell_list
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_index_one_file, fp): fp for fp in parquet_files}
+        for fut in as_completed(futs):
+            basename, cell_list = fut.result()
+            if cell_list:
+                file_cells[basename] = cell_list
 
-    index_data = {
-        "version": INDEX_VERSION_H3,
-        "geom_col": geom_col,
-        "h3_resolution": resolution,
-        "files": file_cells,
-    }
-    with open(output_path, "w") as f:
-        json.dump(index_data, f, indent=2)
+    # ── Write inverted Parquet index ───────────────────────────────────────
+    h3_cells_col: list[str] = []
+    filenames_col: list[str] = []
+    for basename, cell_list in sorted(file_cells.items()):
+        h3_cells_col.extend(cell_list)
+        filenames_col.extend([basename] * len(cell_list))
+
+    schema = pa.schema(
+        [
+            pa.field("h3_cell", pa.dictionary(pa.int32(), pa.utf8())),
+            pa.field("filename", pa.dictionary(pa.int32(), pa.utf8())),
+        ],
+        metadata={
+            b"geom_col": geom_col.encode(),
+            b"h3_resolution": str(effective_resolution).encode(),
+        },
+    )
+    table = pa.table(
+        {
+            "h3_cell": pa.array(h3_cells_col, type=pa.dictionary(pa.int32(), pa.utf8())),
+            "filename": pa.array(filenames_col, type=pa.dictionary(pa.int32(), pa.utf8())),
+        },
+        schema=schema,
+    )
+    pq.write_table(table, output_path, compression="zstd")
+    total_cells = len(h3_cells_col)
+    eff_str = (
+        f"res={effective_resolution}"
+        + (f" (requested {resolution}, adjusted)" if effective_resolution != resolution else "")
+    )
     print(
-        f"H3 spatial index (v1, res={resolution}, max_cells={max_cells_per_file}) "
-        f"written to '{output_path}' ({len(file_cells)} files indexed)."
+        f"H3 spatial index (v1, {eff_str}, "
+        f"max_cells={'unlimited' if max_cells_per_file is None else max_cells_per_file}) "
+        f"written to '{output_path}' ({len(file_cells)} files, {total_cells:,} cell-file pairs)."
     )
     return file_cells
 
@@ -412,7 +726,7 @@ def _build_h3_index(
 
 
 class SpatialIndex:
-    """In-memory representation of a ``_spatial_index.json`` sidecar (H3 format).
+    """In-memory representation of a ``_spatial_index.idx`` sidecar (H3 format).
 
     Attributes
     ----------
@@ -420,8 +734,12 @@ class SpatialIndex:
         Geometry column this index was built for.
     h3_resolution : int
         H3 resolution the index was built at.
+    index_path : str
+        Path to the ``.idx`` Parquet file (used for lazy queries).
     file_h3_cells : dict
         ``{basename: [cell_str, ...]}`` — H3 cells covering each file.
+        Populated lazily on first full load; prefer ``filter_paths`` for
+        query-time pruning which reads only the relevant rows.
     """
 
     def __init__(
@@ -430,27 +748,34 @@ class SpatialIndex:
         *,
         file_h3_cells: Optional[dict[str, list[str]]] = None,
         h3_resolution: Optional[int] = None,
+        index_path: Optional[str] = None,
     ):
         self.geom_col = geom_col
         self.file_h3_cells: dict[str, list[str]] = file_h3_cells or {}
         self.h3_resolution = h3_resolution
+        self.index_path = index_path
 
     @classmethod
     def load(cls, path: str) -> "SpatialIndex":
-        """Load a ``_spatial_index.json`` file."""
-        with open(path) as f:
-            data = json.load(f)
+        """Load a ``_spatial_index.idx`` Parquet file (lazy — metadata only)."""
+        import pyarrow.parquet as pq
+        meta = pq.read_schema(path).metadata or {}
+        geom_col = (meta.get(b"geom_col") or b"geom").decode()
+        resolution_raw = meta.get(b"h3_resolution")
+        h3_resolution = int(resolution_raw.decode()) if resolution_raw else None
+        # Don't load all rows yet — filter_paths will query lazily
+        return cls(geom_col=geom_col, h3_resolution=h3_resolution, index_path=path)
 
-        version = data.get("version")
-        if version != INDEX_VERSION_H3:
-            raise ValueError(
-                f"Unsupported spatial index version: {version!r}. Only H3 (version 1) is supported."
-            )
-        return cls(
-            geom_col=data["geom_col"],
-            file_h3_cells=data["files"],
-            h3_resolution=data["h3_resolution"],
-        )
+    def _load_full(self) -> None:
+        """Materialise the full forward dict (for repr / introspection)."""
+        if self.file_h3_cells or self.index_path is None:
+            return
+        import pyarrow.parquet as pq
+        tbl = pq.read_table(self.index_path, columns=["h3_cell", "filename"])
+        d: dict[str, list[str]] = {}
+        for cell, fname in zip(tbl["h3_cell"].to_pylist(), tbl["filename"].to_pylist()):
+            d.setdefault(fname, []).append(cell)
+        self.file_h3_cells = d
 
     def filter_paths(
         self,
@@ -465,44 +790,52 @@ class SpatialIndex:
 
     def _filter_h3(self, full_paths: list[str], query_wkb: bytes) -> list[str]:
         h3lib, is_v4 = _h3_import()
-        if h3lib is None or self.h3_resolution is None:
-            return full_paths  # conservative: keep all if h3 unavailable
+        if h3lib is None or self.h3_resolution is None or self.index_path is None:
+            return full_paths
 
-        # Use a coarser resolution for comparison so that the 50-cell sample
-        # reliably covers the partition.  At res=5 (~8.5 km) each stored
-        # fine-res cell maps to a single parent cell, giving full partition
-        # coverage even with a small sample.
-        COMPARE_RES = min(self.h3_resolution, 5)
-        query_cells = _h3_cells_for_wkb(query_wkb, h3lib, is_v4, COMPARE_RES)
+        query_cells = _h3_cells_for_wkb(query_wkb, h3lib, is_v4, self.h3_resolution)
         if not query_cells:
             return full_paths
 
-        def _to_parent(cell: str) -> str:
-            if COMPARE_RES < self.h3_resolution:
-                return h3lib.cell_to_parent(cell, COMPARE_RES) if is_v4 else h3lib.h3_to_parent(cell, COMPARE_RES)
-            return cell
+        # Query inverted index lazily — read only rows whose h3_cell is in the
+        # query set; no need to load the full index into memory.
+        import pyarrow.parquet as pq
+        import pyarrow.compute as pc
+        tbl = pq.read_table(
+            self.index_path,
+            columns=["h3_cell", "filename"],
+            filters=[("h3_cell", "in", list(query_cells))],
+        )
+        matched_basenames: set[str] = set(tbl["filename"].to_pylist())
 
         result = []
         for path in full_paths:
             basename = os.path.basename(path)
-            file_cells = self.file_h3_cells.get(basename)
-            if file_cells is None:
-                result.append(path)
-                continue
-            coarse = {_to_parent(c) for c in file_cells}
-            if bool(query_cells.intersection(coarse)):
+            # Keep if matched by index, or if not in index at all (conservative)
+            if basename in matched_basenames or basename not in self._all_indexed_files():
                 result.append(path)
         return result
+
+    def _all_indexed_files(self) -> set[str]:
+        """Return set of all filenames present in the index (cached)."""
+        if not hasattr(self, "_indexed_files_cache"):
+            if self.index_path is None:
+                self._indexed_files_cache: set[str] = set()
+            else:
+                import pyarrow.parquet as pq
+                tbl = pq.read_table(self.index_path, columns=["filename"])
+                self._indexed_files_cache = set(tbl["filename"].unique().to_pylist())
+        return self._indexed_files_cache
 
     def __repr__(self) -> str:
         return (
             f"SpatialIndex(H3, geom_col={self.geom_col!r}, "
-            f"resolution={self.h3_resolution}, files={len(self.file_h3_cells)})"
+            f"resolution={self.h3_resolution}, path={self.index_path!r})"
         )
 
 
 def load_spatial_index(directory: str) -> Optional[SpatialIndex]:
-    """Load the ``_spatial_index.json`` from *directory*, or return ``None``."""
+    """Load the ``_spatial_index.idx`` from *directory*, or return ``None``."""
     path = os.path.join(directory, INDEX_FILENAME)
     if not os.path.exists(path):
         return None
@@ -517,7 +850,7 @@ def read_parquet_spatial(
 ):
     """Read only the parquet files whose coverage overlaps *query_wkb*.
 
-    Loads the ``_spatial_index.json`` sidecar (if present) and passes only
+    Loads the ``_spatial_index.idx`` sidecar (if present) and passes only
     the relevant file paths to ``daft.read_parquet``.  Supports both v1
     (MBR) and v2 (H3) index formats transparently.
     """
@@ -846,64 +1179,3 @@ def _compute_union_wkb(wkbs: list[bytes]) -> Optional[bytes]:
 
 
 
-def load_spatial_index(directory: str) -> Optional[SpatialIndex]:
-    """Load the ``_spatial_index.json`` from *directory*, or return ``None``."""
-    path = os.path.join(directory, INDEX_FILENAME)
-    if not os.path.exists(path):
-        return None
-    return SpatialIndex.load(path)
-
-
-def read_parquet_spatial(
-    directory: str,
-    query_wkb: bytes,
-    geom_col: str = "geom",
-    glob_pattern: str = "*.parquet",
-):
-    """Read only the parquet files whose MBR overlaps *query_wkb*.
-
-    This is the **Python-level** spatial partition pruning entry point.  It
-    loads the ``_spatial_index.json`` sidecar (if present) and passes only the
-    relevant file paths to ``daft.read_parquet``.
-
-    The optimizer-level ``SpatialPartitionPruning`` rule also fires when you
-    use ``daft.read_parquet`` + a spatial ``where()`` filter — this function is
-    complementary: it prunes **before** Daft even creates scan tasks.
-
-    Parameters
-    ----------
-    directory:
-        Directory that contains the parquet files and the index sidecar.
-    query_wkb:
-        WKB bytes of the query geometry.
-    geom_col:
-        Geometry column name (must match what the index was built with).
-    glob_pattern:
-        File glob pattern within *directory*.
-
-    Returns
-    -------
-    daft.DataFrame
-        A DataFrame reading only the files that may overlap the query.
-    """
-    import daft
-
-    all_paths = sorted(glob.glob(os.path.join(directory, glob_pattern)))
-    if not all_paths:
-        raise FileNotFoundError(f"No '{glob_pattern}' files in '{directory}'")
-
-    index = load_spatial_index(directory)
-    if index is None or index.geom_col != geom_col:
-        # No index or wrong column — read everything.
-        return daft.read_parquet(os.path.join(directory, glob_pattern))
-
-    pruned = index.filter_paths(all_paths, query_wkb)
-    skipped = len(all_paths) - len(pruned)
-    if skipped:
-        print(f"Spatial index pruned {skipped}/{len(all_paths)} file(s).")
-
-    if not pruned:
-        # All files pruned — return empty DataFrame with correct schema.
-        return daft.read_parquet(all_paths[0]).where(daft.lit(False))
-
-    return daft.read_parquet(pruned)

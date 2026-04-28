@@ -147,7 +147,8 @@ def _write_batch_partitioned(
 
 
 def _build_all_indexes(root: str, geom_col: str) -> None:
-    """Build _spatial_index.json for every partition subdirectory under root."""
+    """Build _spatial_index.idx for every partition subdirectory under root (parallel)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from daft.functions.spatial_index import build_spatial_index
 
     subdirs = sorted(
@@ -155,11 +156,27 @@ def _build_all_indexes(root: str, geom_col: str) -> None:
         for d in os.listdir(root)
         if os.path.isdir(os.path.join(root, d))
     )
-    for subdir in subdirs:
+
+    def _build_one(subdir: str) -> str:
         parquets = [f for f in os.listdir(subdir) if f.endswith(".parquet")]
         if parquets:
-            build_spatial_index(subdir, geom_col=geom_col, glob_pattern="*.parquet")
-    print(f"  Built spatial indexes in {len(subdirs)} partition dir(s) under '{root}'")
+            # resolution=7 (cell edge ~1.2 km) is coarse enough for fast polyfill
+            # even on polygons up to a few hundred km wide, while still giving
+            # useful per-file partition pruning.
+            build_spatial_index(
+                subdir, geom_col=geom_col, glob_pattern="*.parquet", h3_resolution=7
+            )
+        return subdir
+
+    workers = min(os.cpu_count() or 4, len(subdirs), 16)
+    built = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_build_one, sd): sd for sd in subdirs}
+        for fut in as_completed(futs):
+            fut.result()  # re-raise exceptions immediately
+            built += 1
+            print(f"  indexed {built}/{len(subdirs)} partitions\r", end="", flush=True)
+    print(f"\n  Built spatial indexes in {len(subdirs)} partition dir(s) under '{root}'")
 
 
 # ---------------------------------------------------------------------------

@@ -314,7 +314,9 @@ educe = "0.6.0"
 futures = "0.3.30"
 geo = "0.29"
 geohash = "0.13"
+geojson = "1.0"
 h3o = "0.6"
+wkt = { version = "0.14", features = ["geo-types"] }
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
