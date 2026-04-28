@@ -75,6 +75,13 @@ where
             DataType::Python => {
                 Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
             }
+            DataType::Geometry => {
+                // Binary → Geometry: wrap the physical binary array as a GeometryArray.
+                let binary_series = self.cast(&DataType::Binary)?;
+                let physical = binary_series.binary().unwrap().clone();
+                let field = Field::new(self.name(), DataType::Geometry);
+                Ok(GeometryArray::new(field, physical).into_series())
+            }
             _ => {
                 // Cast from DataArray to the target DataType
                 // by using Arrow's casting mechanisms.

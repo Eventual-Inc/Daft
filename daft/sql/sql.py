@@ -82,14 +82,21 @@ def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
         )
         return {fname: (target, len(cells)) for fname, cells in file_cells.items()}
 
-    workers = min(os.cpu_count() or 4, len(targets), 16)
+    # Cap outer workers to avoid nested-pool OOM when each partition also
+    # spawns an inner thread pool for per-file reads.
+    workers = min(os.cpu_count() or 4, len(targets), 4)
     rows: list[dict] = []
+    n_done = 0
+    n_total = len(targets)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_build_one, t): t for t in targets}
         for fut in as_completed(futs):
             for fname, (tgt, n_cells) in fut.result().items():
                 rows.append({"directory": tgt, "file": fname,
                              "h3_cells": n_cells, "resolution": resolution})
+            n_done += 1
+            if n_total > 1 and (n_done % max(1, n_total // 20) == 0 or n_done == n_total):
+                print(f"  spatial index: {n_done}/{n_total} partitions done")
 
     rows.sort(key=lambda r: (r["directory"], r["file"] or ""))
     if not rows:

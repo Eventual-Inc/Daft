@@ -337,7 +337,13 @@ def _file_mbr_from_wkbs(wkbs: list) -> Optional[tuple[float, float, float, float
     """
     import numpy as np
 
-    valid = [bytes(w) for w in wkbs if w is not None]
+    def _to_bytes(w) -> bytes:
+        if isinstance(w, (bytes, bytearray, memoryview)):
+            return bytes(w)
+        # Hex string stored in parquet as utf8/large_string
+        return bytes.fromhex(w)
+
+    valid = [_to_bytes(w) for w in wkbs if w is not None]
     if not valid:
         return None
 
@@ -613,20 +619,33 @@ def _build_h3_index(
     import pyarrow.parquet as pq
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # ── Pass 1: fast numpy MBR extraction per file (no H3 calls) ──────────
-    def _mbr_of_file(fpath: str) -> Optional[tuple[float, float, float, float]]:
+    # ── Single pass: read each file once, collect MBR + WKBs for points ───
+    # For polygon/mixed files we only need the MBR; for point files (21-byte
+    # WKBs) we also cache the WKB list so we can compute H3 cells without a
+    # second read.  This halves I/O compared to the old 2-pass approach.
+    def _scan_file(fpath: str):
+        """Return (mbr, wkbs_or_None, is_all_points)."""
         tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
-        return _file_mbr_from_wkbs(tbl[geom_col].to_pylist())
+        wkbs = tbl[geom_col].to_pylist()
+        mbr = _file_mbr_from_wkbs(wkbs)
+        non_null = [w for w in wkbs if w is not None]
+        sizes = {len(w) for w in non_null} if non_null else set()
+        is_pts = sizes == {21}
+        # Keep WKBs only for point files; polygon MBR is enough
+        return mbr, (wkbs if is_pts else None), is_pts
 
-    workers = min(len(parquet_files), (os.cpu_count() or 4))
-    file_mbrs: dict[str, Optional[tuple]] = {}
+    # Cap at 4 to avoid OOM when called from an outer thread pool.
+    workers = min(len(parquet_files), (os.cpu_count() or 4), 4)
+    # scan_results: {fpath: (mbr, wkbs_or_None, is_all_points)}
+    scan_results: dict = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {pool.submit(_mbr_of_file, fp): fp for fp in parquet_files}
+        futs = {pool.submit(_scan_file, fp): fp for fp in parquet_files}
         for fut in as_completed(futs):
-            file_mbrs[futs[fut]] = fut.result()
+            scan_results[futs[fut]] = fut.result()
+
+    file_mbrs = {fp: r[0] for fp, r in scan_results.items()}
 
     # ── Determine a single safe resolution for ALL files ──────────────────
-    # Use the union MBR so every file is guaranteed to stay within budget.
     valid_mbrs = [m for m in file_mbrs.values() if m is not None]
     if valid_mbrs:
         ux0 = min(m[0] for m in valid_mbrs)
@@ -648,25 +667,14 @@ def _build_h3_index(
             stacklevel=4,
         )
 
-    # ── Pass 2: build H3 cells per file using effective_resolution ─────────
+    # ── Compute H3 cells per file (no extra parquet reads) ─────────────────
     def _index_one_file(fpath: str) -> tuple[str, list[str]]:
-        """Compute H3 cells for a single parquet file and return (basename, cells)."""
-        tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
-        wkbs = tbl[geom_col].to_pylist()
-        non_null = [w for w in wkbs if w is not None]
-        sizes = {len(w) for w in non_null}
+        mbr, cached_wkbs, is_pts = scan_results[fpath]
         cells: set[str] = set()
-
-        if sizes == {21}:
-            # All points — one H3 cell per point (exact, no false negatives).
-            cells = _batch_point_h3_cells(wkbs, h3lib, is_v4, effective_resolution)
-        else:
-            # Polygons / mixed — file union MBR → single polyfill/grid.
-            # Correct: any query overlapping any polygon in the file lies inside
-            # the file's union MBR.
-            mbr = file_mbrs.get(fpath)
-            if mbr is not None:
-                cells = _h3_cells_for_file_mbr(h3lib, is_v4, *mbr, effective_resolution)
+        if is_pts and cached_wkbs is not None:
+            cells = _batch_point_h3_cells(cached_wkbs, h3lib, is_v4, effective_resolution)
+        elif mbr is not None:
+            cells = _h3_cells_for_file_mbr(h3lib, is_v4, *mbr, effective_resolution)
 
         cell_list = sorted(cells)
         if max_cells_per_file is not None and len(cell_list) > max_cells_per_file:
@@ -675,6 +683,7 @@ def _build_h3_index(
         return os.path.basename(fpath), cell_list
 
     file_cells: dict[str, list[str]] = {}
+    # H3 computation is CPU-bound; release GIL during cell math.
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_index_one_file, fp): fp for fp in parquet_files}
         for fut in as_completed(futs):

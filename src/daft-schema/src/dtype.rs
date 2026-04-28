@@ -338,6 +338,7 @@ impl DataType {
             }
             Self::Date => arrow_schema::DataType::Date32,
             Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
+            Self::Geometry => arrow_schema::DataType::LargeBinary,
             Self::Union(fields, ids, mode) => arrow_schema::DataType::Union(
                 arrow_schema::UnionFields::try_new(
                     ids.clone(),
