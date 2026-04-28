@@ -77,7 +77,7 @@ fn hash_ngram(ngram: &str, hash_function: HashFunctionKind) -> u64 {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SimHashFunction;
 
 #[derive(FunctionArgs)]
