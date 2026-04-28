@@ -30,6 +30,17 @@ pub(crate) enum DistributedShuffleBackend {
     Flight(FlightShuffleBackendConfig),
 }
 
+impl DistributedShuffleBackend {
+    /// Short label for this backend, used to build op names in `multiline_display`
+    /// (e.g. `IntoPartitions({name})`, `{name}Gather`).
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Ray => "Ray",
+            Self::Flight(_) => "Flight",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ShuffleBackend {
     backend: DistributedShuffleBackend,

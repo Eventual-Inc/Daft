@@ -98,11 +98,7 @@ impl PipelineNodeImpl for GatherNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "RayGather",
-            DistributedShuffleBackend::Flight(_) => "FlightGather",
-        };
-        vec![backend_name.to_string()]
+        vec![format!("{}Gather", self.shuffle_backend.backend().name())]
     }
 
     fn produce_tasks(

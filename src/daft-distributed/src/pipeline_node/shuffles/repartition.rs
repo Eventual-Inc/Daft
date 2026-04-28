@@ -153,12 +153,9 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "RayShuffle",
-            DistributedShuffleBackend::Flight(_) => "FlightShuffle",
-        };
         let mut res = vec![format!(
-            "{backend_name}: {}",
+            "{}Shuffle: {}",
+            self.shuffle_backend.backend().name(),
             self.repartition_spec.var_name()
         )];
         res.extend(self.repartition_spec.multiline_display());
