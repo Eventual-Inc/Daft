@@ -82,8 +82,8 @@ def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
         )
         return {fname: (target, len(cells)) for fname, cells in file_cells.items()}
 
-    # Cap outer workers to avoid nested-pool OOM when each partition also
-    # spawns an inner thread pool for per-file reads.
+    # Inner pool uses bbox cols when available (cheap), so outer parallelism
+    # is safe — peak memory per partition worker stays bounded.
     workers = min(os.cpu_count() or 4, len(targets), 4)
     rows: list[dict] = []
     n_done = 0

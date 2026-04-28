@@ -619,24 +619,43 @@ def _build_h3_index(
     import pyarrow.parquet as pq
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # ── Single pass: read each file once, collect MBR + WKBs for points ───
-    # For polygon/mixed files we only need the MBR; for point files (21-byte
-    # WKBs) we also cache the WKB list so we can compute H3 cells without a
-    # second read.  This halves I/O compared to the old 2-pass approach.
+    # ── Pass 1: MBR extraction (cheap path first) ─────────────────────────
+    # If the file has pre-computed bbox columns (min_x/min_y/max_x/max_y)
+    # we read only those 4 float columns — no WKB parsing, minimal memory.
+    # Otherwise we read only the geometry column and parse WKBs.
+    # We also detect pure-point files (all 21-byte WKBs) for pass 2.
+    _BBOX_COLS = ("min_x", "min_y", "max_x", "max_y")
+
     def _scan_file(fpath: str):
-        """Return (mbr, wkbs_or_None, is_all_points)."""
-        tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
+        """Return (mbr, is_all_points).  Never caches raw WKBs."""
+        pf = pq.ParquetFile(fpath)
+        schema_names = {f.name for f in pf.schema_arrow}
+
+        if _BBOX_COLS[0] in schema_names and all(c in schema_names for c in _BBOX_COLS):
+            # Fast path: read pre-computed bbox floats only
+            tbl = pf.read(columns=list(_BBOX_COLS))
+            xs0 = [v for v in tbl["min_x"].to_pylist() if v is not None]
+            ys0 = [v for v in tbl["min_y"].to_pylist() if v is not None]
+            xs1 = [v for v in tbl["max_x"].to_pylist() if v is not None]
+            ys1 = [v for v in tbl["max_y"].to_pylist() if v is not None]
+            if not xs0:
+                return None, False
+            mbr = (min(xs0), min(ys0), max(xs1), max(ys1))
+            # Polygons always have bbox cols; treat as non-point
+            return mbr, False
+
+        # Fallback: read geometry column and parse
+        tbl = pf.read(columns=[geom_col])
         wkbs = tbl[geom_col].to_pylist()
         mbr = _file_mbr_from_wkbs(wkbs)
         non_null = [w for w in wkbs if w is not None]
         sizes = {len(w) for w in non_null} if non_null else set()
-        is_pts = sizes == {21}
-        # Keep WKBs only for point files; polygon MBR is enough
-        return mbr, (wkbs if is_pts else None), is_pts
+        return mbr, sizes == {21}
 
-    # Cap at 4 to avoid OOM when called from an outer thread pool.
+    # Parallelism is safe: peak memory per worker = 4 float cols (fast path)
+    # or one file's WKBs (fallback path) — never all files at once.
     workers = min(len(parquet_files), (os.cpu_count() or 4), 4)
-    # scan_results: {fpath: (mbr, wkbs_or_None, is_all_points)}
+    # scan_results: {fpath: (mbr, is_all_points)}
     scan_results: dict = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_scan_file, fp): fp for fp in parquet_files}
@@ -667,12 +686,18 @@ def _build_h3_index(
             stacklevel=4,
         )
 
-    # ── Compute H3 cells per file (no extra parquet reads) ─────────────────
+    # ── Pass 2: compute H3 cells per file, re-reading WKBs for points ──────
+    # For polygon/mixed files the MBR from pass 1 is reused (no re-read).
+    # For point files we re-read the file: only one file's WKBs live in
+    # memory at a time per worker, keeping peak usage bounded.
     def _index_one_file(fpath: str) -> tuple[str, list[str]]:
-        mbr, cached_wkbs, is_pts = scan_results[fpath]
+        mbr, is_pts = scan_results[fpath]
         cells: set[str] = set()
-        if is_pts and cached_wkbs is not None:
-            cells = _batch_point_h3_cells(cached_wkbs, h3lib, is_v4, effective_resolution)
+        if is_pts:
+            tbl = pq.ParquetFile(fpath).read(columns=[geom_col])
+            cells = _batch_point_h3_cells(
+                tbl[geom_col].to_pylist(), h3lib, is_v4, effective_resolution
+            )
         elif mbr is not None:
             cells = _h3_cells_for_file_mbr(h3lib, is_v4, *mbr, effective_resolution)
 
@@ -683,7 +708,6 @@ def _build_h3_index(
         return os.path.basename(fpath), cell_list
 
     file_cells: dict[str, list[str]] = {}
-    # H3 computation is CPU-bound; release GIL during cell math.
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_index_one_file, fp): fp for fp in parquet_files}
         for fut in as_completed(futs):
