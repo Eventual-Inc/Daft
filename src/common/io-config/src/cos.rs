@@ -148,21 +148,26 @@ impl CosConfig {
         }
         config.insert("region".to_string(), region);
 
-        if let Some(secret_id) = &self.secret_id {
-            config.insert("secret_id".to_string(), secret_id.clone());
-        }
-        if let Some(secret_key) = &self.secret_key {
-            config.insert("secret_key".to_string(), secret_key.as_string().clone());
-        }
-        if let Some(security_token) = &self.security_token {
-            config.insert(
-                "security_token".to_string(),
-                security_token.as_string().clone(),
-            );
-        }
+        if self.anonymous {
+            // 匿名访问模式：不传递凭证，并禁止从环境变量加载凭证
+            config.insert("disable_config_load".to_string(), "true".to_string());
+        } else {
+            if let Some(secret_id) = &self.secret_id {
+                config.insert("secret_id".to_string(), secret_id.clone());
+            }
+            if let Some(secret_key) = &self.secret_key {
+                config.insert("secret_key".to_string(), secret_key.as_string().clone());
+            }
+            if let Some(security_token) = &self.security_token {
+                config.insert(
+                    "security_token".to_string(),
+                    security_token.as_string().clone(),
+                );
+            }
 
-        // Allow OpenDAL to also load from environment variables
-        config.insert("disable_config_load".to_string(), "false".to_string());
+            // 允许 OpenDAL 从环境变量加载凭证
+            config.insert("disable_config_load".to_string(), "false".to_string());
+        }
 
         config
     }
