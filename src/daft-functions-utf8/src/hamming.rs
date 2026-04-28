@@ -32,7 +32,7 @@ pub struct HammingDistance;
 #[typetag::serde]
 impl ScalarUDF for HammingDistance {
     fn name(&self) -> &'static str {
-        "hamming_distance"
+        "hamming_distance_str"
     }
 
     fn call(
@@ -111,6 +111,6 @@ impl ScalarUDF for HammingDistance {
 }
 
 #[must_use]
-pub fn hamming_distance(left: ExprRef, right: ExprRef) -> ExprRef {
+pub fn hamming_distance_str(left: ExprRef, right: ExprRef) -> ExprRef {
     ScalarFn::builtin(HammingDistance, vec![left, right]).into()
 }
