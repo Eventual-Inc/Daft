@@ -69,7 +69,7 @@ impl Drop for FlotillaProgressBar {
 impl StatisticsSubscriber for FlotillaProgressBar {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            TaskEvent::Submitted { context, name } => {
+            TaskEvent::Submitted { context, name, .. } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
@@ -82,7 +82,7 @@ impl StatisticsSubscriber for FlotillaProgressBar {
             // We don't care about failed tasks as they will be retried
             TaskEvent::Failed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            TaskEvent::Cancelled { context } => {
+            TaskEvent::Cancelled { context, .. } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
