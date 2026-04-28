@@ -412,7 +412,6 @@ mod tests {
 
     use common_error::DaftResult;
     use common_metrics::{Meter, StatSnapshot};
-    use daft_micropartition::MicroPartition;
     use daft_scan::{
         CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
         ScanTaskRef, SourceConfig, storage_config::StorageConfig,
