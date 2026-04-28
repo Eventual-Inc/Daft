@@ -149,7 +149,7 @@ impl CosConfig {
         config.insert("region".to_string(), region);
 
         if self.anonymous {
-            // 匿名访问模式：不传递凭证，并禁止从环境变量加载凭证
+            // Anonymous mode: skip credential forwarding and prevent OpenDAL from loading credentials via env vars
             config.insert("disable_config_load".to_string(), "true".to_string());
         } else {
             if let Some(secret_id) = &self.secret_id {
@@ -165,7 +165,7 @@ impl CosConfig {
                 );
             }
 
-            // 允许 OpenDAL 从环境变量加载凭证
+            // Allow OpenDAL to load credentials from environment variables
             config.insert("disable_config_load".to_string(), "false".to_string());
         }
 
