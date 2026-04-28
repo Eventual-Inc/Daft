@@ -567,7 +567,7 @@ def test_into_batches(flight, shuffle_ctx, rows, batch_size):
     reason="distributed IntoBatches tests require the ray runner",
 )
 def test_into_batches_all_empty_inputs(shuffle_ctx):
-    """Empty-input regression: filter drops everything, into_batches must not panic or hang."""
+    """Ensures `into_batches` handles all-empty inputs (post-filter) without panicking or hanging."""
     with shuffle_ctx():
         df = (
             daft.from_pydict({"x": list(range(1000))})
@@ -585,11 +585,9 @@ def test_into_batches_all_empty_inputs(shuffle_ctx):
     reason="distributed IntoPartitions tests require the ray runner",
 )
 def test_into_partitions_coalesce_with_fused_downstream(shuffle_ctx):
-    """Fused Project on top of `into_partitions(2)` Coalesce path produces correct values.
+    """Ensures the `into_partitions` Coalesce path re-reads its materialized partition refs into a fused downstream's morsel stream, so a fused Project sees real row values rather than the refs themselves.
 
-    Regresses a bug where the Coalesce path forwarded materialized partition
-    refs into the fused downstream's morsel stream instead of re-reading them
-    first. Setup: 8→2 forces Coalesce.
+    Setup: 8→2 forces Coalesce.
     """
     rows = 100
     with shuffle_ctx():
@@ -612,11 +610,9 @@ def test_into_partitions_coalesce_with_fused_downstream(shuffle_ctx):
     reason="distributed IntoPartitions tests require the ray runner",
 )
 def test_into_partitions_equal_split_and_merge_with_fused_downstream(shuffle_ctx):
-    """Fused Project on top of the Equal+`enable_scan_task_split_and_merge=True` path produces correct values.
+    """Ensures the `into_partitions` Equal+`enable_scan_task_split_and_merge=True` path re-reads its materialized partition refs into a fused downstream's morsel stream, mirroring the Coalesce variant.
 
-    Regresses the same partition-ref-leakage bug as the Coalesce variant, but
-    on the Equal+split-merge path. Setup: N→N with split-and-merge forces the
-    Equal path.
+    Setup: N→N with split-and-merge forces the Equal path.
     """
     rows = 100
     n = 4
@@ -624,7 +620,7 @@ def test_into_partitions_equal_split_and_merge_with_fused_downstream(shuffle_ctx
         df = (
             daft.from_pydict({"x": list(range(rows))})
             .into_partitions(n)
-            .into_partitions(n)  # Equal path — exercises the partition-ref re-read fix.
+            .into_partitions(n)  # Equal path — exercises the partition-ref re-read.
             .with_column("y", daft.col("x") * 2)
             .collect()
         )
@@ -640,12 +636,10 @@ def test_into_partitions_equal_split_and_merge_with_fused_downstream(shuffle_ctx
     reason="distributed IntoBatches tests require the ray runner",
 )
 def test_into_batches_followed_by_streaming_project(shuffle_ctx):
-    """Fused Project on top of `into_batches` produces correct values.
+    """Ensures the `into_batches` rebatch step re-reads its materialized partition refs into a fused downstream's morsel stream, so a fused Project sees real row values rather than the refs themselves.
 
-    Regresses a bug where the rebatch step forwarded materialized partition
-    refs into the fused downstream's morsel stream instead of re-reading them
-    first. `with_column` is used over `filter` because the optimizer can't
-    push a derived column below IntoBatches.
+    `with_column` is used over `filter` because the optimizer can't push a
+    derived column below IntoBatches.
     """
     rows = 1000
     with shuffle_ctx():
@@ -668,12 +662,7 @@ def test_into_batches_followed_by_streaming_project(shuffle_ctx):
     reason="distributed IntoBatches tests require the ray runner",
 )
 def test_into_batches_emits_batch_size_partitions(shuffle_ctx):
-    """Output partition sizes track the requested `batch_size`, not the upstream partition size.
-
-    Regresses a bug where each upstream task was consolidated into a single
-    partition ref before rebatching, so the rebatch step emitted refs sized
-    to the upstream partition (potentially >> `batch_size`).
-    """
+    """Ensures `into_batches` emits partitions sized to the requested `batch_size`, not to the upstream partition — each upstream task must split its rows across multiple refs rather than consolidating them into one ref sized to the upstream partition."""
     rows = 1000
     batch_size = 100
     input_partitions = 2  # 500 rows per input partition — still > batch_size, exercises the "input partition larger than batch_size" path

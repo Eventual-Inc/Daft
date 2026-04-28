@@ -333,12 +333,8 @@ impl PipelineNodeImpl for IntoPartitionsNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        };
         vec![
-            format!("IntoPartitions({})", backend_name),
+            format!("IntoPartitions({})", self.shuffle_backend.backend().name()),
             format!("Num partitions = {}", self.num_partitions),
         ]
     }

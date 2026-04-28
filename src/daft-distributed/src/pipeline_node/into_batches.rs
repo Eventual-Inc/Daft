@@ -210,13 +210,10 @@ impl PipelineNodeImpl for IntoBatchesNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        };
         vec![format!(
             "IntoBatches({}): {}",
-            backend_name, self.batch_size
+            self.shuffle_backend.backend().name(),
+            self.batch_size
         )]
     }
 
