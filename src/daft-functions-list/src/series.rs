@@ -94,7 +94,10 @@ impl SeriesListExtension for Series {
     fn list_flatten(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.list_flatten().map(IntoSeries::into_series),
-            DataType::FixedSizeList(..) => self.fixed_size_list()?.list_flatten().map(IntoSeries::into_series),
+            DataType::FixedSizeList(..) => self
+                .fixed_size_list()?
+                .list_flatten()
+                .map(IntoSeries::into_series),
             dt => Err(DaftError::TypeError(format!(
                 "list flatten not implemented for {}",
                 dt
