@@ -303,12 +303,8 @@ impl AsofJoinNode {
         let right_partitioned_outputs: Vec<MaterializedOutput> =
             right_partitioned_outputs.into_iter().flatten().collect();
 
-        let carryover_tasks = create_per_worker_carryover_tasks(
+        let carryover_tasks = self.create_per_worker_carryover_tasks(
             right_partitioned_outputs.clone(),
-            self.right.config().schema.clone(),
-            right_composite_key.clone(),
-            num_partitions,
-            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -320,11 +316,8 @@ impl AsofJoinNode {
                 .map(|bucket| bucket.into_iter().flatten().collect())
                 .collect();
 
-        let per_partition_carryover_tasks = create_per_partition_carryover_tasks(
+        let per_partition_carryover_tasks = self.create_per_partition_carryover_tasks(
             per_worker_carryover_mos,
-            self.right.config().schema.clone(),
-            right_composite_key.clone(),
-            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -428,6 +421,135 @@ impl AsofJoinNode {
         )
         .await
     }
+
+    fn right_composite_key(&self) -> Vec<BoundExpr> {
+        self.right_by
+            .iter()
+            .chain(std::iter::once(&self.right_on))
+            .cloned()
+            .collect()
+    }
+
+    /// Builds and submits a single top_n(limit=1, descending=true) task over `inputs`,
+    /// using the right-side schema and composite key derived from `self`.
+    fn submit_top1_carryover_task(
+        &self,
+        inputs: Vec<MaterializedOutput>,
+        phase: &str,
+        strategy: Option<SchedulingStrategy>,
+        task_id_counter: &TaskIDCounter,
+        scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<SubmittedTask> {
+        let composite_keys = self.right_composite_key();
+        let node_id = self.node_id();
+        let descending = vec![true; composite_keys.len()];
+        let nulls_first = vec![false; composite_keys.len()];
+
+        let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+            inputs,
+            self.right.config().schema.clone(),
+            node_id,
+            phase,
+        );
+
+        let plan = LocalPhysicalPlan::top_n(
+            in_memory_scan,
+            composite_keys,
+            descending,
+            nulls_first,
+            1,
+            None,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(node_id as usize)).with_phase(phase),
+        );
+
+        SwordfishTaskBuilder::new(plan, self, node_id)
+            .with_psets(node_id, psets)
+            .with_strategy(strategy)
+            .build(self.context().query_idx, task_id_counter)
+            .submit(scheduler_handle)
+    }
+
+    /// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
+    /// carryover (max) rows from the right-side range-repartitioned outputs.
+    ///
+    /// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
+    fn create_per_worker_carryover_tasks(
+        &self,
+        materialized_outputs: Vec<MaterializedOutput>,
+        task_id_counter: &TaskIDCounter,
+        scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<Vec<Vec<SubmittedTask>>> {
+        let mut worker_groups: HashMap<WorkerId, Vec<Vec<MaterializedOutput>>> = HashMap::new();
+        for mo in materialized_outputs {
+            let worker_id = mo.worker_id().clone();
+            worker_groups
+                .entry(worker_id)
+                .or_default()
+                .push(mo.split_into_materialized_outputs());
+        }
+
+        let mut tasks_by_bucket = Vec::with_capacity(self.num_partitions);
+        for bucket_idx in 0..self.num_partitions {
+            let mut bucket_tasks = vec![];
+            for (worker_id, split_mos) in &worker_groups {
+                let mos_for_bucket: Vec<MaterializedOutput> = split_mos
+                    .iter()
+                    .map(|splits| splits[bucket_idx].clone())
+                    .collect();
+
+                let submitted = self.submit_top1_carryover_task(
+                    mos_for_bucket,
+                    PER_WORKER_CARRYOVER_PHASE,
+                    Some(SchedulingStrategy::WorkerAffinity {
+                        worker_id: worker_id.clone(),
+                        soft: false,
+                    }),
+                    task_id_counter,
+                    scheduler_handle,
+                )?;
+
+                bucket_tasks.push(submitted);
+            }
+            tasks_by_bucket.push(bucket_tasks);
+        }
+
+        Ok(tasks_by_bucket)
+    }
+
+    /// Creates a single top_n(limit=1, descending=true) task per partition over the per-worker
+    /// top-1 outputs produced by `create_per_worker_carryover_tasks`, yielding the global max per partition.
+    ///
+    /// Returns `Vec<Option<SubmittedTask>>` where `None` means the partition had no data.
+    fn create_per_partition_carryover_tasks(
+        &self,
+        per_worker_carryover_mos: Vec<Vec<MaterializedOutput>>,
+        task_id_counter: &TaskIDCounter,
+        scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<Vec<Option<SubmittedTask>>> {
+        per_worker_carryover_mos
+            .into_iter()
+            .map(|worker_mos| {
+                let non_empty: Vec<MaterializedOutput> = worker_mos
+                    .into_iter()
+                    .filter(|mo| mo.num_rows() > 0)
+                    .collect();
+
+                if non_empty.is_empty() {
+                    return Ok(None);
+                }
+
+                self.submit_top1_carryover_task(
+                    non_empty,
+                    PER_PARTITION_CARRYOVER_PHASE,
+                    None,
+                    task_id_counter,
+                    scheduler_handle,
+                )
+                .map(Some)
+            })
+            .collect()
+    }
 }
 
 impl PipelineNodeImpl for AsofJoinNode {
@@ -480,137 +602,4 @@ impl PipelineNodeImpl for AsofJoinNode {
         ));
         TaskBuilderStream::from(result_rx)
     }
-}
-
-/// Builds and submits a single top_n(limit=1, descending=true) task over `inputs`.
-#[allow(clippy::too_many_arguments)]
-fn submit_top1_task(
-    inputs: Vec<MaterializedOutput>,
-    input_schema: SchemaRef,
-    composite_keys: &[BoundExpr],
-    phase: &str,
-    strategy: Option<SchedulingStrategy>,
-    pipeline_node: &dyn PipelineNodeImpl,
-    task_id_counter: &TaskIDCounter,
-    scheduler_handle: &SchedulerHandle<SwordfishTask>,
-) -> DaftResult<SubmittedTask> {
-    let node_id = pipeline_node.node_id();
-    let descending = vec![true; composite_keys.len()];
-    let nulls_first = vec![false; composite_keys.len()];
-
-    let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
-        inputs,
-        input_schema,
-        node_id,
-        phase,
-    );
-
-    let plan = LocalPhysicalPlan::top_n(
-        in_memory_scan,
-        composite_keys.to_vec(),
-        descending,
-        nulls_first,
-        1,
-        None,
-        StatsState::NotMaterialized,
-        LocalNodeContext::new(Some(node_id as usize)).with_phase(phase),
-    );
-
-    SwordfishTaskBuilder::new(plan, pipeline_node, node_id)
-        .with_psets(node_id, psets)
-        .with_strategy(strategy)
-        .build(pipeline_node.context().query_idx, task_id_counter)
-        .submit(scheduler_handle)
-}
-
-/// Creates top_n(limit=1, descending=true) tasks per (bucket, worker) pair to compute
-/// carryover (max) rows from the right-side range-repartitioned outputs.
-///
-/// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
-fn create_per_worker_carryover_tasks(
-    materialized_outputs: Vec<MaterializedOutput>,
-    input_schema: SchemaRef,
-    composite_keys: Vec<BoundExpr>,
-    num_partitions: usize,
-    pipeline_node: &dyn PipelineNodeImpl,
-    task_id_counter: &TaskIDCounter,
-    scheduler_handle: &SchedulerHandle<SwordfishTask>,
-) -> DaftResult<Vec<Vec<SubmittedTask>>> {
-    let mut worker_groups: HashMap<WorkerId, Vec<Vec<MaterializedOutput>>> = HashMap::new();
-    for mo in materialized_outputs {
-        let worker_id = mo.worker_id().clone();
-        worker_groups
-            .entry(worker_id)
-            .or_default()
-            .push(mo.split_into_materialized_outputs());
-    }
-
-    let mut tasks_by_bucket = Vec::with_capacity(num_partitions);
-    for bucket_idx in 0..num_partitions {
-        let mut bucket_tasks = vec![];
-        for (worker_id, split_mos) in &worker_groups {
-            let mos_for_bucket: Vec<MaterializedOutput> = split_mos
-                .iter()
-                .map(|splits| splits[bucket_idx].clone())
-                .collect();
-
-            let submitted = submit_top1_task(
-                mos_for_bucket,
-                input_schema.clone(),
-                &composite_keys,
-                PER_WORKER_CARRYOVER_PHASE,
-                Some(SchedulingStrategy::WorkerAffinity {
-                    worker_id: worker_id.clone(),
-                    soft: false,
-                }),
-                pipeline_node,
-                task_id_counter,
-                scheduler_handle,
-            )?;
-
-            bucket_tasks.push(submitted);
-        }
-        tasks_by_bucket.push(bucket_tasks);
-    }
-
-    Ok(tasks_by_bucket)
-}
-
-/// Creates a single top_n(limit=1, descending=true) task per partition over the per-worker
-/// top-1 outputs produced by `create_per_worker_carryover_tasks`, yielding the global max per partition.
-///
-/// Returns `Vec<Option<SubmittedTask>>` where `None` means the partition had no data.
-fn create_per_partition_carryover_tasks(
-    per_worker_carryover_mos: Vec<Vec<MaterializedOutput>>,
-    input_schema: SchemaRef,
-    composite_keys: Vec<BoundExpr>,
-    pipeline_node: &dyn PipelineNodeImpl,
-    task_id_counter: &TaskIDCounter,
-    scheduler_handle: &SchedulerHandle<SwordfishTask>,
-) -> DaftResult<Vec<Option<SubmittedTask>>> {
-    per_worker_carryover_mos
-        .into_iter()
-        .map(|worker_mos| {
-            let non_empty: Vec<MaterializedOutput> = worker_mos
-                .into_iter()
-                .filter(|mo| mo.num_rows() > 0)
-                .collect();
-
-            if non_empty.is_empty() {
-                return Ok(None);
-            }
-
-            submit_top1_task(
-                non_empty,
-                input_schema.clone(),
-                &composite_keys,
-                PER_PARTITION_CARRYOVER_PHASE,
-                None,
-                pipeline_node,
-                task_id_counter,
-                scheduler_handle,
-            )
-            .map(Some)
-        })
-        .collect()
 }
