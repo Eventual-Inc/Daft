@@ -20,7 +20,9 @@ use common_metrics::{
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::{prelude::SchemaRef, series::Series};
+use daft_core::prelude::SchemaRef;
+#[cfg(feature = "python")]
+use daft_core::series::Series;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -28,6 +30,7 @@ use daft_dsl::{
     operator_metrics::OperatorMetrics, utils::remap_used_cols,
 };
 use daft_micropartition::MicroPartition;
+#[cfg(feature = "python")]
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
@@ -45,6 +48,7 @@ use crate::{
     runtime_stats::RuntimeStats,
 };
 
+#[allow(dead_code)]
 pub(crate) struct UdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
@@ -121,6 +125,7 @@ impl RuntimeStats for UdfRuntimeStats {
     }
 }
 
+#[allow(dead_code)]
 impl UdfRuntimeStats {
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
@@ -153,6 +158,7 @@ impl UdfRuntimeStats {
 }
 
 /// Common parameters for UDF handle and operator
+#[allow(dead_code)]
 struct UdfParams {
     udf_properties: UDFProperties,
     passthrough_columns: Vec<BoundExpr>,
@@ -335,6 +341,7 @@ impl Drop for UdfHandle {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct UdfState {
     expr: BoundExpr,
     worker_idx: usize,
@@ -348,6 +355,7 @@ pub(crate) struct UdfOperator {
     worker_count: AtomicUsize,
     concurrency: usize,
     memory_request: u64,
+    #[allow(dead_code)]
     use_process: bool,
 }
 
@@ -441,6 +449,7 @@ impl IntermediateOperator for UdfOperator {
     type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
+    #[allow(unused_variables, unused_mut)]
     fn execute(
         &self,
         input: MicroPartition,
@@ -538,6 +547,7 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
+    #[allow(unused_variables)]
     fn make_state(&self) -> Self::State {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
 

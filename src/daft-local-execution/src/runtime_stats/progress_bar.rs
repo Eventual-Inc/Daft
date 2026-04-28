@@ -66,6 +66,7 @@ impl<L: Log> Log for IndicatifLogger<L> {
     }
 }
 
+#[allow(dead_code)]
 struct IndicatifPrintTarget {
     pbar: indicatif::MultiProgress,
 }

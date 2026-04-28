@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
-use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BinaryArray, DataType, Field, FullNull, IntoSeries, Schema},
+    prelude::{BinaryArray, DataType, Field, IntoSeries, Schema},
     series::Series,
 };
 use daft_dsl::{

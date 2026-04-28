@@ -1,9 +1,7 @@
-use std::{io::Cursor, sync::Arc};
-
 use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BinaryArray, DataType, Field, FullNull, IntoSeries, Schema},
+    prelude::{BinaryArray, DataType, Field, IntoSeries, Schema},
     series::Series,
 };
 use daft_dsl::{
@@ -59,7 +57,6 @@ impl ScalarUDF for StGeomFromText {
             }
         }
 
-        let field = Arc::new(Field::new(self.name(), DataType::Binary));
         let arr = BinaryArray::from_iter(self.name(), values.iter().map(|v| v.as_deref()));
         Ok(arr.into_series())
     }

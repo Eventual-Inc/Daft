@@ -18,7 +18,7 @@ use wkb::wkb_to_geom;
 /// If the WKB type word has the PostGIS SRID flag (0x20000000) set, return a
 /// new buffer with that flag cleared and the 4-byte SRID removed.  Otherwise
 /// return a slice of the original bytes unchanged.
-fn strip_ewkb_srid(bytes: &[u8]) -> std::borrow::Cow<[u8]> {
+fn strip_ewkb_srid<'a>(bytes: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
     if bytes.len() < 5 {
         return std::borrow::Cow::Borrowed(bytes);
     }

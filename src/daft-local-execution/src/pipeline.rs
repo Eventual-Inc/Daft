@@ -33,6 +33,8 @@ use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
+#[cfg(feature = "python")]
+use crate::intermediate_ops::distributed_actor_pool_project::DistributedActorPoolProjectOperator;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
@@ -40,7 +42,6 @@ use crate::{
     concat::ConcatNode,
     input_sender::InputSender,
     intermediate_ops::{
-        distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         into_batches::IntoBatchesOperator, project::ProjectOperator,
         stage_checkpoint_keys::StageCheckpointKeysOperator, udf::UdfOperator,
@@ -280,6 +281,7 @@ pub struct BuilderContext {
 }
 
 impl BuilderContext {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::new_with_context("".into(), HashMap::new(), None)
     }
@@ -367,6 +369,7 @@ impl BuilderContext {
     }
 }
 
+#[allow(dead_code)]
 pub fn viz_pipeline_mermaid(
     root: &dyn PipelineNode,
     display_type: DisplayLevel,
@@ -380,6 +383,7 @@ pub fn viz_pipeline_mermaid(
     output
 }
 
+#[allow(dead_code)]
 pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     let mut s = String::new();
     let level = if simple {

@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_mut)]
+
 use std::{
     borrow::Cow,
     collections::HashMap,

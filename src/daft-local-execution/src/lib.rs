@@ -211,6 +211,7 @@ impl ExecutionTaskSpawner {
 // ---------------------------- STDOUT / STDERR PIPING ---------------------------- //
 
 /// Target for printing to.
+#[allow(dead_code)]
 trait PythonPrintTarget: Send + Sync + 'static {
     fn println(&self, message: &str);
 }
@@ -237,6 +238,7 @@ impl StdoutHandler {
         self.target.store(Arc::new(None));
     }
 
+    #[allow(dead_code)]
     fn print(&self, prefix: &str, message: &str) {
         let message = format!("{} {}", style(prefix).magenta(), message);
 
