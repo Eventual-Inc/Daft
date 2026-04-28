@@ -8,18 +8,14 @@ use common_metrics::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use futures::{TryStreamExt, future::try_join_all};
+use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        sort::{
-            create_range_repartition_tasks, create_sample_tasks,
-            get_partition_boundaries_from_samples,
-        },
+        sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -171,151 +167,29 @@ impl SortMergeJoinNode {
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let num_partitions = self.num_partitions;
-        let descending = vec![false; self.left_on.len()];
-        let nulls_first = vec![false; self.left_on.len()];
 
-        // Sample left side
-        let left_sample_tasks = create_sample_tasks(
-            left_materialized.clone(),
-            self.left.config().schema.clone(),
+        let (left_partitioned, right_partitioned) = range_repartition_two_sides(
+            left_materialized,
+            right_materialized,
             self.left_on.clone(),
-            self.as_ref(),
-            task_id_counter,
-            scheduler_handle,
-            Some(0),
-        )?;
-
-        let left_boundary_key_names = self
-            .left_on
-            .iter()
-            .map(|expr| {
-                expr.inner()
-                    .to_field(&self.left.config().schema)
-                    .map(|f| f.name)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let right_sample_by_aliased = self
-            .right_on
-            .iter()
-            .zip(left_boundary_key_names.into_iter())
-            .map(|(expr, key_name)| BoundExpr::new_unchecked(expr.inner().alias(key_name)))
-            .collect::<Vec<_>>();
-
-        // Sample right side
-        let right_sample_tasks = create_sample_tasks(
-            right_materialized.clone(),
+            self.right_on.clone(),
+            self.left.config().schema.clone(),
             self.right.config().schema.clone(),
-            right_sample_by_aliased,
+            num_partitions,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
-            Some(1),
-        )?;
-
-        // Collect all samples
-        let combined_sampled_outputs = try_join_all(
-            left_sample_tasks
-                .into_iter()
-                .chain(right_sample_tasks.into_iter()),
-        )
-        .await?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-
-        // Compute partition boundaries from combined samples
-        let left_partition_boundaries = get_partition_boundaries_from_samples(
-            combined_sampled_outputs,
-            &self.left_on,
-            descending.clone(),
-            nulls_first,
-            num_partitions,
         )
         .await?;
 
-        // Range repartition left side
-        let left_schema = self.left.config().schema.clone();
-        let left_partition_tasks = create_range_repartition_tasks(
-            left_materialized,
-            left_schema,
-            self.left_on.clone(),
-            descending.clone(),
-            left_partition_boundaries.clone(),
-            num_partitions,
-            self.as_ref(),
-            task_id_counter,
-            scheduler_handle,
-            Some(0),
-        )?;
+        let left_transposed =
+            transpose_materialized_outputs_from_vec(left_partitioned, num_partitions);
+        let right_transposed =
+            transpose_materialized_outputs_from_vec(right_partitioned, num_partitions);
 
-        let right_boundary_names = self
-            .right_on
-            .iter()
-            .map(|expr| {
-                expr.inner()
-                    .to_field(&self.right.config().schema)
-                    .map(|f| f.name)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let right_partition_boundaries = RecordBatch::from_nonempty_columns(
-            left_partition_boundaries
-                .columns()
-                .iter()
-                .zip(right_boundary_names)
-                .map(|(col, name)| col.as_materialized_series().rename(&name))
-                .collect::<Vec<_>>(),
-        )?;
-
-        // Range repartition right side
-        let right_schema = self.right.config().schema.clone();
-        let right_partition_tasks = create_range_repartition_tasks(
-            right_materialized,
-            right_schema,
-            self.right_on.clone(),
-            descending,
-            right_partition_boundaries,
-            num_partitions,
-            self.as_ref(),
-            task_id_counter,
-            scheduler_handle,
-            Some(1),
-        )?;
-
-        // Wait for both sides to be partitioned
-        let (left_partitioned_outputs, right_partitioned_outputs) = futures::try_join!(
-            try_join_all(left_partition_tasks),
-            try_join_all(right_partition_tasks)
-        )?;
-
-        let left_partitioned_outputs = left_partitioned_outputs
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let right_partitioned_outputs = right_partitioned_outputs
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        // Transpose outputs to group by partition index
-        let left_transposed_outputs =
-            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions);
-        let right_transposed_outputs =
-            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions);
-
-        // Emit sort-merge join tasks for each partition pair
-        for (left_partition_group, right_partition_group) in left_transposed_outputs
-            .into_iter()
-            .zip(right_transposed_outputs)
-        {
-            self.create_and_submit_join_task(
-                left_partition_group,
-                right_partition_group,
-                result_tx,
-            )
-            .await?;
+        for (left_group, right_group) in left_transposed.into_iter().zip(right_transposed) {
+            self.create_and_submit_join_task(left_group, right_group, result_tx)
+                .await?;
         }
         Ok(())
     }
