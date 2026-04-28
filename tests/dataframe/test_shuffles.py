@@ -209,10 +209,11 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
-    reason="shuffle tests are meant for the ray runner",
+    reason="distributed shuffle tests require the ray runner",
 )
-def test_random_shuffle_uses_ray_shuffle_path_under_flight_shuffle_config(flight_shuffle_ctx):
-    with flight_shuffle_ctx():
+def test_random_shuffle(shuffle_ctx):
+    """Ensures `df.shuffle(...)` produces a permutation of the input under both backends."""
+    with shuffle_ctx():
         df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
         shuffled = df.shuffle(seed=0).to_pydict()["id"]
 

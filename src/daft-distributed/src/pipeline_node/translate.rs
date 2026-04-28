@@ -639,16 +639,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
-            LogicalPlan::Shuffle(shuffle) => DistributedPipelineNode::new(
-                Arc::new(RandomShuffleNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    shuffle.seed,
-                    shuffle.input.schema(),
-                    self.curr_node.pop().unwrap(),
-                )),
-                &self.meter,
-            ),
+            LogicalPlan::Shuffle(shuffle) => {
+                let backend = self.select_backend();
+                DistributedPipelineNode::new(
+                    Arc::new(RandomShuffleNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        shuffle.seed,
+                        shuffle.input.schema(),
+                        backend,
+                        self.curr_node.pop().unwrap(),
+                    )),
+                    &self.meter,
+                )
+            }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
