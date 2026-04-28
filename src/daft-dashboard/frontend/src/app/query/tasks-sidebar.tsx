@@ -44,6 +44,7 @@ export default function TasksSidebar({
   /** Called when the user closes the sidebar. */
   onClose: () => void;
 }) {
+  const queryActive = exec_state.status === "Executing";
   const { operators, task_store } = exec_state.exec_info;
 
   const allRows = useMemo(() => buildTaskRows(task_store, operators), [task_store, operators]);
@@ -133,10 +134,18 @@ export default function TasksSidebar({
           </div>
         ) : (
           <>
-            <RunningTasksSection
-              tasks={activeTasks}
-              totalRunning={totalRunning}
-            />
+            <div
+              className="overflow-hidden transition-all duration-500 ease-in-out"
+              style={{
+                maxHeight: queryActive ? "600px" : "0px",
+                opacity: queryActive ? 1 : 0,
+              }}
+            >
+              <RunningTasksSection
+                tasks={activeTasks}
+                totalRunning={totalRunning}
+              />
+            </div>
             <TaskTypeTable rows={rows} onSelectOrigin={onSelectOrigin} />
           </>
         )}
