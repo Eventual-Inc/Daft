@@ -30,7 +30,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-use crate::strip_file_uri_to_path;
+use crate::{local_path_to_file_uri, strip_file_uri_to_path};
 
 pub struct LocalSource {}
 
@@ -264,8 +264,7 @@ impl ObjectSource for LocalSource {
     }
 
     async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(path) = strip_file_uri_to_path(uri) {
             match tokio::fs::remove_file(path).await {
                 Err(err) => {
                     use std::io::ErrorKind;
@@ -302,7 +301,6 @@ impl ObjectSource for LocalSource {
             unimplemented!("Prefix-listing is not implemented for local.");
         }
 
-        const LOCAL_PROTOCOL: &str = "file://";
         let uri = if uri.is_empty() {
             std::borrow::Cow::Owned(
                 std::env::current_dir()
@@ -324,7 +322,7 @@ impl ObjectSource for LocalSource {
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
+                filepath: local_path_to_file_uri(&uri),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])
@@ -359,9 +357,8 @@ impl ObjectSource for LocalSource {
                 })?;
                 Ok(FileMetadata {
                     filepath: format!(
-                        "{}{}{}",
-                        LOCAL_PROTOCOL,
-                        path,
+                        "{}{}",
+                        local_path_to_file_uri(&path),
                         if meta.is_dir() {
                             PATH_SEGMENT_DELIMITER
                         } else {

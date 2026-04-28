@@ -173,6 +173,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
         functions_registry.register::<daft_functions::random::RandomFunctions>();
+        functions_registry.register::<daft_geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);

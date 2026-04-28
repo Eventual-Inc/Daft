@@ -556,6 +556,28 @@ pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
     Some(path)
 }
 
+/// Returns true if the path looks like a Windows drive-letter path (e.g. `C:/foo`).
+fn starts_with_windows_drive(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// Builds a `file://` URI from a local path, ensuring the canonical
+/// triple-slash form for Windows drive-letter paths.
+///
+/// - POSIX absolute paths (`/tmp/foo`) → `file:///tmp/foo` (two slashes + leading `/`).
+/// - Windows drive-letter paths (`C:/Users/...`) → `file:///C:/Users/...` (three slashes).
+/// - Anything else (relative paths) → `file://{path}` (preserves prior behavior).
+///
+/// Inverse of [`strip_file_uri_to_path`] for absolute inputs.
+pub fn local_path_to_file_uri(local_path: &str) -> String {
+    if starts_with_windows_drive(local_path) {
+        format!("file:///{local_path}")
+    } else {
+        format!("file://{local_path}")
+    }
+}
+
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion
@@ -565,7 +587,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
+                Some((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -575,7 +597,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let url = match url::Url::parse(input) {
         Ok(url) => Ok(url),
         Err(ParseError::RelativeUrlWithoutBase) => {
-            fixed_input = Cow::Owned(format!("file://{input}"));
+            fixed_input = Cow::Owned(local_path_to_file_uri(input));
 
             url::Url::parse(fixed_input.as_ref())
         }
@@ -613,7 +635,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
-            Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
+            Ok((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
         }
         _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }
