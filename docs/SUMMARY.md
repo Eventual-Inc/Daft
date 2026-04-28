@@ -43,6 +43,7 @@
         * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Bigtable](connectors/bigtable.md)
+        * [COS (Tencent Cloud)](connectors/cos.md)
         * [ClickHouse](connectors/clickhouse.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Files](connectors/files.md)
