@@ -88,12 +88,21 @@ jobs:
               if (!currentLabels.has(label)) {
                 continue;
               }
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.issue.number,
-                name: label,
-              });
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.issue.number,
+                  name: label,
+                });
+              } catch (error) {
+                // Labels may be removed by another actor between webhook dispatch and execution.
+                if (error?.status === 404) {
+                  core.info(`Label '${label}' already absent; skipping remove.`);
+                  continue;
+                }
+                throw error;
+              }
             }
           }
 
@@ -113,14 +122,24 @@ jobs:
               .map((line) => line.trim())
               .filter((line) => line.length > 0 && line !== "_No response_");
 
-            const selections = [];
+            const rawSelections = [];
             for (const line of lines) {
               if (line.startsWith("- [x]")) {
-                selections.push(line.replace(/^- \[x\]\s*/i, "").trim());
+                rawSelections.push(line.replace(/^- \[x\]\s*/i, "").trim());
               } else if (line.startsWith("-")) {
-                selections.push(line.replace(/^-+\s*/, "").trim());
+                rawSelections.push(line.replace(/^-+\s*/, "").trim());
               } else {
-                selections.push(line);
+                rawSelections.push(line);
+              }
+            }
+
+            const selections = [];
+            for (const selection of rawSelections) {
+              for (const part of selection.split(",")) {
+                const normalized = part.trim();
+                if (normalized.length > 0) {
+                  selections.push(normalized);
+                }
               }
             }
             return selections;
