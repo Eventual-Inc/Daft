@@ -6,12 +6,15 @@ use daft_context::{
     DaftContext, get_context,
     subscribers::{
         event_header,
-        events::{Event, TaskEndEvent, TaskMeta, TaskOutcome, TaskSubmitEvent},
+        events::{
+            Event, InMemoryScanSource, PhysicalScanSource, TaskEndEvent, TaskInfo, TaskOutcome,
+            TaskSource as EventTaskSource, TaskSubmitEvent,
+        },
     },
 };
 
 use crate::{
-    scheduling::task::TaskContext,
+    scheduling::task::{TaskContext, TaskSource},
     statistics::{StatisticsSubscriber, TaskEvent},
 };
 
@@ -39,13 +42,37 @@ impl TaskLifecycleEventSubscriber {
     }
 }
 
+fn to_task_source(source: &TaskSource) -> EventTaskSource {
+    match source {
+        TaskSource::PhysicalScan(scan) => EventTaskSource::PhysicalScan(PhysicalScanSource {
+            source_id: scan.source_id,
+            scan_tasks: scan.scan_tasks,
+            paths: scan.paths.clone(),
+            storage_bytes: scan.storage_bytes,
+            estimated_memory_bytes: scan.estimated_memory_bytes,
+        }),
+        TaskSource::InMemoryScan(scan) => EventTaskSource::InMemoryScan(InMemoryScanSource {
+            source_id: scan.source_id,
+            partitions: scan.partitions,
+            total_bytes: scan.total_bytes,
+        }),
+    }
+}
+
 impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            TaskEvent::Submitted { context, .. } => {
+            TaskEvent::Submitted {
+                context,
+                name: _,
+                metadata,
+            } => {
+                let sources: Vec<EventTaskSource> =
+                    metadata.sources.iter().map(to_task_source).collect();
                 let submit_event = Event::TaskSubmit(TaskSubmitEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_meta_from_context(context),
+                    task: task_info_from_context(context),
+                    sources: Arc::new(sources),
                 });
                 self.dispatch_event(&submit_event)
             }
@@ -56,7 +83,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
             } => {
                 let end_event = Event::TaskEnd(TaskEndEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_meta_from_context(context),
+                    task: task_info_from_context(context),
                     worker_id: Some(worker_id.clone()),
                     outcome: TaskOutcome::Success,
                     stats: stats.nodes.clone(),
@@ -74,7 +101,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 } else {
                     let end_event = Event::TaskEnd(TaskEndEvent {
                         header: event_header(self.query_id.clone()),
-                        task: task_meta_from_context(context),
+                        task: task_info_from_context(context),
                         worker_id: worker_id.clone(),
                         outcome: TaskOutcome::Failed {
                             message: reason.into(),
@@ -87,7 +114,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
             TaskEvent::Cancelled { context } => {
                 let end_event = Event::TaskEnd(TaskEndEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_meta_from_context(context),
+                    task: task_info_from_context(context),
                     worker_id: None,
                     outcome: TaskOutcome::Cancelled,
                     stats: vec![],
@@ -99,10 +126,10 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     }
 }
 
-fn task_meta_from_context(context: &TaskContext) -> Arc<TaskMeta> {
-    let meta = TaskMeta {
+fn task_info_from_context(context: &TaskContext) -> Arc<TaskInfo> {
+    let info = TaskInfo {
         id: context.task_id,
         node_ids: context.node_ids.clone(),
     };
-    Arc::new(meta)
+    Arc::new(info)
 }
