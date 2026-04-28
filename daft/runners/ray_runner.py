@@ -25,6 +25,7 @@ from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
 from daft.runners.flotilla import FlotillaRunner
 from daft.runners.heartbeat import Heartbeat
+from daft.runners.query_id import emit_query_id
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
@@ -567,6 +568,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Grab and freeze the current context
         ctx = get_context()
         query_id = generate_query_name()
+        emit_query_id(query_id)
         daft_execution_config = ctx.daft_execution_config
         output_schema = builder.schema()
         unoptimized_plan_json = builder.repr_json()
