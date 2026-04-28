@@ -48,24 +48,28 @@ def test_simhash_short_string():
 
 
 def test_simhash_similar_strings_small_distance():
-    df = daft.from_pydict({
-        "text": [
-            "the quick brown fox jumps over the lazy dog",
-            "the quick brown fox jumps over the lazy cat",
-        ]
-    })
+    df = daft.from_pydict(
+        {
+            "text": [
+                "the quick brown fox jumps over the lazy dog",
+                "the quick brown fox jumps over the lazy cat",
+            ]
+        }
+    )
     result = df.select(col("text").simhash()).to_pydict()["text"]
     distance = bin(result[0] ^ result[1]).count("1")
     assert distance < 32
 
 
 def test_simhash_different_strings_large_distance():
-    df = daft.from_pydict({
-        "text": [
-            "the quick brown fox jumps over the lazy dog",
-            "1234567890 abcdefghijklmnopqrstuvwxyz !@#$%",
-        ]
-    })
+    df = daft.from_pydict(
+        {
+            "text": [
+                "the quick brown fox jumps over the lazy dog",
+                "1234567890 abcdefghijklmnopqrstuvwxyz !@#$%",
+            ]
+        }
+    )
     result = df.select(col("text").simhash()).to_pydict()["text"]
     distance = bin(result[0] ^ result[1]).count("1")
     assert distance > 5

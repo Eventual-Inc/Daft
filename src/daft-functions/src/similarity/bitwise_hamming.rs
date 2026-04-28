@@ -24,9 +24,9 @@ impl ScalarUDF for BitwiseHammingDistanceFunction {
         let right = inputs.required(1)?;
 
         match (left.data_type(), right.data_type()) {
-            (DataType::UInt64, DataType::UInt64) => compute_u64(&left, &right),
+            (DataType::UInt64, DataType::UInt64) => compute_u64(left, right),
             (DataType::FixedSizeBinary(n1), DataType::FixedSizeBinary(n2)) if n1 == n2 => {
-                compute_fixed_size_binary(&left, &right)
+                compute_fixed_size_binary(left, right)
             }
             (l, r) if l.is_integer() && r.is_integer() => {
                 let left = left.cast(&DataType::UInt64)?;

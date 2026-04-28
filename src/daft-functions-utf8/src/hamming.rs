@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 const NULL_SENTINEL: i64 = 0;
 
-fn hamming_distance_str(left: &str, right: &str) -> Option<i64> {
+fn compute_hamming_distance(left: &str, right: &str) -> Option<i64> {
     let mut left_chars = left.chars();
     let mut right_chars = right.chars();
 
@@ -51,7 +51,7 @@ impl ScalarUDF for HammingDistance {
 
                 for i in 0..len {
                     match (left.get(i), right.get(i)) {
-                        (Some(l), Some(r)) => match hamming_distance_str(l, r) {
+                        (Some(l), Some(r)) => match compute_hamming_distance(l, r) {
                             Some(dist) => {
                                 values.push(dist);
                                 validity.append_non_null();
