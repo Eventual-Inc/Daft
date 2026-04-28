@@ -101,7 +101,6 @@ def test_swapped_comparisons(expr: Any, expected_type: type) -> None:
     assert result.term.name == "x"
 
 
-# ---------------------------------------------------------------------------
 def test_and() -> None:
     expr = (daft.col("x") > daft.lit(1)) & (daft.col("x") < daft.lit(10))
     result = convert_expression_to_iceberg(expr)

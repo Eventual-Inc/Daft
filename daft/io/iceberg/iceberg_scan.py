@@ -172,7 +172,7 @@ class IcebergScanOperator(ScanOperator):
     def _create_regular_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         limit = pushdowns.limit
-        row_filter = convert_row_filter(pushdowns, self._table.schema())
+        row_filter = convert_row_filter(pushdowns, self._iceberg_schema)
 
         iceberg_tasks = self._table.scan(
             row_filter=row_filter,
