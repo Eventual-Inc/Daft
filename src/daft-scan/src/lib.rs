@@ -10,6 +10,7 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::DaftError;
+use daft_dsl::ExprRef;
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -120,6 +121,12 @@ pub enum Error {
     DifferingPushdownsInScanTaskMerge {
         p1: Box<Pushdowns>,
         p2: Box<Pushdowns>,
+    },
+
+    #[snafu(display("Filters were different during ScanTask::merge: {:?} vs {:?}", f1, f2))]
+    DifferingFiltersInScanTaskMerge {
+        f1: Option<ExprRef>,
+        f2: Option<ExprRef>,
     },
 }
 
@@ -364,6 +371,8 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+    /// The residual filter that the engine must apply after the source emits batches.
+    pub filter: Option<ExprRef>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -401,6 +410,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         generated_fields: Option<SchemaRef>,
+        filter: Option<ExprRef>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -453,6 +463,7 @@ impl ScanTask {
             metadata,
             statistics,
             generated_fields,
+            filter,
         }
     }
 
@@ -493,6 +504,12 @@ impl ScanTask {
                 fpc2: sc2.generated_fields.clone(),
             });
         }
+        if sc1.filter != sc2.filter {
+            return Err(Error::DifferingFiltersInScanTaskMerge {
+                f1: sc1.filter.clone(),
+                f2: sc2.filter.clone(),
+            });
+        }
         Ok(Self::new(
             sc1.sources
                 .clone()
@@ -504,6 +521,7 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
             sc1.generated_fields.clone(),
+            sc1.filter.clone(),
         ))
     }
 
@@ -521,6 +539,7 @@ impl ScanTask {
                     self.storage_config.clone(),
                     self.pushdowns.clone(),
                     self.generated_fields.clone(),
+                    self.filter.clone(),
                 ))
             }))
         }
@@ -916,6 +935,7 @@ mod test {
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
+            None,
         )
     }
 
@@ -1066,6 +1086,7 @@ mod test {
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
+            None,
         );
 
         // Estimate should be capped, not overflow
@@ -1108,6 +1129,7 @@ mod test {
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
+            None,
             None,
         );
 
@@ -1152,6 +1174,7 @@ mod test {
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
+            None,
             None,
         );
 
@@ -1202,6 +1225,7 @@ mod test {
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
+            None,
             None,
         );
 
@@ -1254,6 +1278,7 @@ mod test {
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
+            None,
         );
 
         let estimate = scan_task.estimate_in_memory_size_bytes(None);
@@ -1297,6 +1322,7 @@ mod test {
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
+            None,
             None,
         );
 
@@ -1344,6 +1370,7 @@ mod test {
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
+            None,
         );
 
         let estimate = scan_task.estimate_in_memory_size_bytes(None);
@@ -1386,6 +1413,7 @@ mod test {
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
+            None,
             None,
         );
 

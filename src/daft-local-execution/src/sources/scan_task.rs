@@ -9,13 +9,16 @@ use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
-use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{
+    JoinSet, combine_stream, get_compute_pool_num_threads, get_compute_runtime, get_io_runtime,
+};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
-use futures::{FutureExt, Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
 use crate::{
@@ -585,7 +588,7 @@ async fn stream_scan_task(
     let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
 
     // TODO(rchowell): remove the scan_task_reader module in the near future with a more general DataSource (TableProvider-like) trait.
-    let table_stream = scan_task_reader::read_scan_task(
+    let rb_stream = scan_task_reader::read_scan_task(
         &scan_task,
         url,
         file_column_names,
@@ -597,10 +600,17 @@ async fn stream_scan_task(
     )
     .await?;
 
-    Ok(table_stream.map(move |table| {
-        let table = table?;
+    // Bind the residual filter against the materialized schema, required for evaluation.
+    let filter = scan_task
+        .filter
+        .as_ref()
+        .map(|expr| BoundExpr::try_new(expr.clone(), &scan_task.materialized_schema()))
+        .transpose()?;
+
+    let mp_stream = rb_stream.map(move |rb| {
+        // Cast the record batch to the materialized schema
         #[allow(deprecated)]
-        let casted_table = table.cast_to_schema_with_fill(
+        let mut rb = rb?.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task
                 .partition_spec()
@@ -608,7 +618,11 @@ async fn stream_scan_task(
                 .map(|pspec| pspec.to_fill_map())
                 .as_ref(),
         )?;
-
+        // Filter the record batch if there's some residual filter
+        if let Some(filter) = filter.clone() {
+            rb = rb.filter(&[filter])?;
+        }
+        // Cast the statistics to the materialized schema
         let stats = scan_task
             .statistics
             .as_ref()
@@ -617,12 +631,14 @@ async fn stream_scan_task(
                 stats.cast_to_schema(&scan_task.materialized_schema())
             })
             .transpose()?;
-
+        // Create the micropartition from the single record batch
         let mp = MicroPartition::new_loaded(
             scan_task.materialized_schema(),
-            Arc::new(vec![casted_table]),
+            Arc::new(vec![rb]),
             stats,
         );
         Ok(mp)
-    }))
+    });
+
+    Ok(mp_stream)
 }

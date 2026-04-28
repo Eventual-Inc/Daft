@@ -128,6 +128,7 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
+                    None,
                 ))
             })
             .collect())

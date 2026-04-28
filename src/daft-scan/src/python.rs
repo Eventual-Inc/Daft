@@ -135,6 +135,7 @@ impl PyDataSourceTask {
             storage_config,
             pushdowns,
             None,
+            None,
         ));
 
         Ok(Self(Arc::new(ShimSourceTask::new(scan_task))))
@@ -761,6 +762,7 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
+                None,
             );
             Ok(Some(Self(Arc::new(scan_task))))
         }
@@ -804,6 +806,7 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
                 None,
             );
             Ok(Self(Arc::new(scan_task)))
@@ -866,6 +869,7 @@ pub mod pylib {
                 // ScanTask creation, so we just put in a placeholder here
                 Arc::new(Default::default()),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
                 None,
             );
             Ok(Self(Arc::new(scan_task)))
@@ -952,6 +956,7 @@ pub mod pylib {
             Arc::new(schema),
             Arc::new(Default::default()),
             Pushdowns::new(None, None, columns.map(Arc::new), None, None, None),
+            None,
             None,
         );
         Ok(st.estimate_in_memory_size_bytes(None).unwrap())

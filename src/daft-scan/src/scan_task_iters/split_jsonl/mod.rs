@@ -122,6 +122,7 @@ pub fn split_by_jsonl_ranges<'a>(
                             t.storage_config.clone(),
                             t.pushdowns.clone(),
                             t.generated_fields.clone(),
+                            t.filter.clone(),
                         );
                         new_tasks.push(Ok(new_task.into()));
                     }
@@ -257,6 +258,7 @@ mod tests {
             Arc::new(daft_schema::schema::Schema::empty()),
             StorageConfig::default().into(),
             crate::Pushdowns::default(),
+            None,
             None,
         )
     }

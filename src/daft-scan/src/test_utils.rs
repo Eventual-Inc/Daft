@@ -89,6 +89,7 @@ impl ScanOperator for DummyScanOperator {
                     Arc::new(StorageConfig::default()),
                     pushdowns.clone(),
                     None,
+                    None,
                 ))
             })
             .collect())

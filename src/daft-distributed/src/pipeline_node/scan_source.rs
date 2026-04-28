@@ -321,6 +321,7 @@ mod tests {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
+                    None,
                 ))
             })
             .collect();

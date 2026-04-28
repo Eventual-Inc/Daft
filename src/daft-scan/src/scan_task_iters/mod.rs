@@ -299,6 +299,7 @@ fn split_by_row_groups(
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
                                     t.generated_fields.clone(),
+                                    t.filter.clone(),
                                 )
                                 .into()));
                             }

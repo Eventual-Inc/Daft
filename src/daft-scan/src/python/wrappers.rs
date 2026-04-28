@@ -133,6 +133,7 @@ impl PyDataSourceWrapper {
             Arc::new(StorageConfig::default()),
             pushdowns.clone(),
             None,
+            None,
         )))
     }
 }

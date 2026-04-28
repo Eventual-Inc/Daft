@@ -618,6 +618,7 @@ impl ScanOperator for GlobScanOperator {
                         storage_config.clone(),
                         pushdowns.clone(),
                         generated_fields,
+                        None,
                     )))
                 })();
                 match scan_task_result {
