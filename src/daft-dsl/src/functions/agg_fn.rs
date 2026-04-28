@@ -14,14 +14,14 @@ pub type State = Literal;
 /// Registered with `typetag::serde` so implementations survive plan serialization across
 /// worker boundaries without extra registration steps.
 ///
-/// Execution follows a three-stage Map → Combine → Reduce pipeline:
+/// Execution follows a three-stage Aggregation → Combination → Finalization pipeline:
 ///
 /// ```text
-/// Map:     call_agg_block(inputs) → Vec<State>          (one call per group per input block)
-///          ↓  [framework packs States into a typed Struct column]
-/// Combine: call_agg_combine(states) → Vec<State>        (one call per group, may be repeated)
-///          ↓
-/// Reduce:  call_agg_finalize(state) → State             (one call per group)
+/// Aggregation:   call_agg_block(inputs) → Vec<State>    (partial state, one call per group per block)
+///                ↓  [framework packs States into a typed Struct column]
+/// Combination:   call_agg_combine(states) → Vec<State>  (merge partial states, may be repeated)
+///                ↓
+/// Finalization:  call_agg_finalize(state) → State       (final output, one call per group)
 /// ```
 ///
 /// Intermediate state is typed: `state_fields` declares one Arrow [`Field`] per state component,
@@ -29,12 +29,13 @@ pub type State = Literal;
 /// serialization and lets Arrow and the query planner reason about state types.
 #[typetag::serde(tag = "type")]
 pub trait AggFn: Send + Sync {
-    /// Globally unique name for this function.
+    /// Name that identifies this function instance.
     ///
-    /// Used as the serde discriminant (`typetag` tag value) and as the sole basis for
-    /// [`AggFnHandle`]'s `Hash` and `PartialEq`. Two handles with the same name are
-    /// considered the same function — choose a name that cannot collide across crates.
-    fn name(&self) -> &'static str;
+    /// Used as the sole basis for [`AggFnHandle`]'s `Hash` and `PartialEq` — two
+    /// handles with the same name are considered the same function. Note that this
+    /// is independent of the `typetag` serde tag, which is set separately via the
+    /// `#[typetag::serde(name = "...")]` attribute.
+    fn name(&self) -> &str;
 
     /// Infer the output [`DataType`] from the types of the input columns.
     ///
@@ -45,30 +46,33 @@ pub trait AggFn: Send + Sync {
     /// Declare the schema of the intermediate accumulator state.
     ///
     /// Returns one [`Field`] per state component. The framework uses these fields to
-    /// build the Struct column that carries partial results between Map and Combine stages.
-    /// `inputs` are the input column fields, available here to derive state types that
-    /// depend on the input schema (e.g., keeping the same dtype as the input).
+    /// build the Struct column that carries partial results between stages. `inputs`
+    /// are the input column fields, available here to derive state types that depend
+    /// on the input schema (e.g., keeping the same dtype as the input).
     fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>>;
 
-    /// **Map stage.** Consume all rows of `inputs` for one group and emit the initial
-    /// accumulator state as one [`State`] per field declared by [`state_fields`].
+    /// **Aggregation.** Consume all rows of `inputs` for one group and produce the
+    /// initial partial state as one [`State`] per field declared by [`state_fields`].
     ///
-    /// `inputs` contains one [`Series`] per input column; every Series has the same length
-    /// (all rows belonging to this group). Nulls within a Series must be handled explicitly.
+    /// `inputs` contains one [`Series`] per input column; every Series has the same
+    /// length (all rows belonging to this group). Nulls within a Series must be
+    /// handled explicitly.
     fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<State>>;
 
-    /// **Combine stage.** Merge all partial states for one group into a single state.
+    /// **Combination.** Merge all partial states for one group into a single state.
     ///
     /// `states` contains one [`Series`] per state field declared by [`state_fields`];
-    /// each row in a Series is one partial result from a prior Map or Combine call.
-    /// Must be **associative and commutative** — the framework does not guarantee the
-    /// order in which partial states arrive. Returns one [`State`] per state field.
+    /// each row in a Series is one partial result from a prior Aggregation or
+    /// Combination call. Must be **associative and commutative** — the framework
+    /// does not guarantee the order in which partial states arrive. Returns one
+    /// [`State`] per state field.
     fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<State>>;
 
-    /// **Reduce stage.** Produce the final output value from the fully-merged state.
+    /// **Finalization.** Produce the final output value from the fully-merged state.
     ///
-    /// Receives one [`State`] per state field. Called exactly once per group after all
-    /// Combine passes are complete. Apply any post-processing here (e.g., `mean = sum / count`).
+    /// Receives one [`State`] per state field. Called exactly once per group after
+    /// all Combination passes are complete. Apply any post-processing here
+    /// (e.g., `mean = sum / count`).
     fn call_agg_finalize(&self, state: Vec<State>) -> DaftResult<State>;
 }
 
@@ -85,7 +89,7 @@ impl AggFnHandle {
         Self(udf)
     }
 
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> &str {
         self.0.name()
     }
 
@@ -168,8 +172,9 @@ mod tests {
     struct NoopA;
 
     #[typetag::serde(name = "NoopA")]
+    #[allow(clippy::unnecessary_literal_bound)]
     impl AggFn for NoopA {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "noop_a"
         }
 
@@ -198,8 +203,9 @@ mod tests {
     struct NoopB;
 
     #[typetag::serde(name = "NoopB")]
+    #[allow(clippy::unnecessary_literal_bound)]
     impl AggFn for NoopB {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "noop_b"
         }
 

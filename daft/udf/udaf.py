@@ -21,15 +21,41 @@ def udaf(
 ) -> type | Callable[[type], type]:
     """Decorator to create a user-defined aggregate function (UDAF) from a class.
 
-    The class must define three methods:
-    - ``agg_block(*inputs) -> value | dict``: Map stage — receives input columns as Series, returns partial state
-    - ``combine(states) -> value | dict``: Combine stage — merges partial states (must be commutative/associative)
-    - ``finalize(state) -> value``: Reduce stage — produces the final output from merged state
+    The execution pipeline follows three stages:
+
+    .. code-block:: text
+
+        Aggregation:   aggregate(inputs)  -> partial state
+        Combination:   combine(states)    -> merged state   (associative & commutative)
+        Finalization:  finalize(state)    -> final output
+
+    The class must define exactly three methods:
+
+    - ``aggregate(*inputs)``: Consume all rows of the input columns for one
+      group and produce the initial partial state.  Receives one :class:`Series`
+      per input column.  Returns either a single scalar (single-state mode) or
+      a ``dict[str, scalar]`` (multi-state mode).
+
+    - ``combine(states)``: Merge multiple partial states into one.  Must be
+      **associative and commutative** — the framework does not guarantee the
+      order in which partial states arrive.  In single-state mode receives a
+      :class:`Series` of scalars; in multi-state mode receives a
+      ``dict[str, Series]``.
+
+    - ``finalize(state)``: Produce the final output value from the fully-merged
+      state.  Called exactly once per group.  In single-state mode receives a
+      single Python scalar; in multi-state mode receives a
+      ``dict[str, scalar]``.
+
+    State is typed: the ``state`` parameter declares one data type per state
+    component. The framework carries state between stages using these types,
+    which lets Arrow and the query planner reason about intermediate results.
 
     Args:
         return_dtype: The output data type of the aggregate function.
-        state: The intermediate state type(s). Either a single DataType for simple accumulators,
-            or a dict of ``{name: DataType}`` for multi-field state.
+        state: The intermediate state type(s). Either a single DataType for
+            simple accumulators, or a dict of ``{name: DataType}`` for
+            multi-field state.
 
     Examples:
         Single-state UDAF:
@@ -38,7 +64,7 @@ def udaf(
         >>> from daft import DataType, Series
         >>> @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
         ... class MySum:
-        ...     def agg_block(self, values: Series) -> float:
+        ...     def aggregate(self, values: Series) -> float:
         ...         return float(values.sum())
         ...
         ...     def combine(self, states: Series) -> float:
@@ -54,7 +80,7 @@ def udaf(
         ...     state={"sum": DataType.float64(), "count": DataType.int64()},
         ... )
         ... class MyMean:
-        ...     def agg_block(self, values: Series) -> dict:
+        ...     def aggregate(self, values: Series) -> dict:
         ...         return {"sum": float(values.sum()), "count": int(values.count())}
         ...
         ...     def combine(self, states: dict) -> dict:
@@ -78,7 +104,7 @@ def udaf(
         state_field_dtypes = [DataType._infer(state)]
 
     def _wrap(klass: type) -> type:
-        for method_name in ("agg_block", "combine", "finalize"):
+        for method_name in ("aggregate", "combine", "finalize"):
             attr = inspect.getattr_static(klass, method_name, None)
             if attr is None or not inspect.isfunction(attr):
                 raise ValueError(f"UDAF class `{klass.__name__}` must define a `{method_name}` method.")

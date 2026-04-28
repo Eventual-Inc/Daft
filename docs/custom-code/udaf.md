@@ -1,6 +1,6 @@
 # Aggregate UDFs with `@daft.udaf`
 
-When Daft's built-in aggregation functions (sum, mean, count, etc.) aren't sufficient, `@daft.udaf` lets you define custom aggregations in Python. UDAFs work with `groupby().agg()` and global `agg()`, and support Daft's two-stage aggregation pipeline for efficient distributed execution.
+When Daft's built-in aggregation functions (sum, mean, count, etc.) aren't sufficient, `@daft.udaf` lets you define custom aggregations in Python. UDAFs work with `groupby().agg()` and global `agg()`, and support Daft's three-stage aggregation pipeline for efficient distributed execution.
 
 ## Quick Example
 
@@ -10,7 +10,7 @@ from daft import DataType, Series
 
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class MySum:
-    def agg_block(self, values: Series) -> float:
+    def aggregate(self, values: Series) -> float:
         return sum(values.to_pylist())
 
     def combine(self, states: Series) -> float:
@@ -40,11 +40,17 @@ df.groupby("cat").agg(my_sum(daft.col("val")).alias("total")).show()
 
 A UDAF class defines a three-stage aggregation pipeline:
 
-1. **`agg_block(*inputs: Series) -> value | dict`** — Map stage. Receives input columns as `Series` objects, returns a partial state value.
-2. **`combine(states: Series | dict[str, Series]) -> value | dict`** — Combine stage. Merges multiple partial states into one. Must be commutative and associative.
-3. **`finalize(state: value | dict) -> value`** — Reduce stage. Converts the final merged state into the output value.
+```text
+Aggregation:   aggregate(inputs)  -> partial state
+Combination:   combine(states)    -> merged state   (associative & commutative)
+Finalization:  finalize(state)    -> final output
+```
 
-Daft's planner automatically decomposes UDAFs into map and reduce stages so partial aggregation happens close to the data.
+1. **`aggregate(*inputs: Series) -> value | dict`** — Aggregation stage. Receives input columns as `Series` objects, returns a partial state value.
+2. **`combine(states: Series | dict[str, Series]) -> value | dict`** — Combination stage. Merges multiple partial states into one. Must be commutative and associative.
+3. **`finalize(state: value | dict) -> value`** — Finalization stage. Converts the final merged state into the output value.
+
+Intermediate state is typed: the `state` parameter declares one data type per state component. The framework carries state between stages using these types, which lets Arrow and the query planner reason about intermediate results. Daft's planner automatically decomposes UDAFs into aggregation and finalization stages so partial aggregation happens close to the data.
 
 ## Single-State UDAF
 
@@ -53,7 +59,7 @@ For simple accumulators, pass a single `DataType` as `state`:
 ```python
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class MySum:
-    def agg_block(self, values: Series) -> float:
+    def aggregate(self, values: Series) -> float:
         return sum(values.to_pylist())
 
     def combine(self, states: Series) -> float:
@@ -76,7 +82,7 @@ For aggregations that need to track multiple fields (e.g., both a sum and a coun
     state={"sum": DataType.float64(), "count": DataType.int64()},
 )
 class MyMean:
-    def agg_block(self, values: Series) -> dict:
+    def aggregate(self, values: Series) -> dict:
         vals = values.to_pylist()
         return {"sum": float(sum(vals)), "count": len(vals)}
 
@@ -90,7 +96,7 @@ class MyMean:
         return state["sum"] / state["count"]
 ```
 
-- `agg_block` returns a dict with one key per state field
+- `aggregate` returns a dict with one key per state field
 - `combine` receives a dict mapping field names to `Series` of partial values
 - `finalize` receives a dict mapping field names to single values
 
@@ -104,7 +110,7 @@ class BoundedSum:
     def __init__(self, max_val: float):
         self.max_val = max_val
 
-    def agg_block(self, values: Series) -> float:
+    def aggregate(self, values: Series) -> float:
         return float(sum(min(v, self.max_val) for v in values.to_pylist()))
 
     def combine(self, states: Series) -> float:
@@ -124,7 +130,7 @@ UDAFs can consume multiple input columns:
 ```python
 @daft.udaf(return_dtype=DataType.float64(), state=DataType.float64())
 class WeightedSum:
-    def agg_block(self, values: Series, weights: Series) -> float:
+    def aggregate(self, values: Series, weights: Series) -> float:
         v = values.to_pylist()
         w = weights.to_pylist()
         return float(sum(a * b for a, b in zip(v, w)))

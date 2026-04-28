@@ -508,8 +508,9 @@ mod tests {
     struct TestSumAggSink;
 
     #[typetag::serde(name = "TestSumAggSink")]
+    #[allow(clippy::unnecessary_literal_bound)]
     impl AggFn for TestSumAggSink {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "test_sum_sink"
         }
 

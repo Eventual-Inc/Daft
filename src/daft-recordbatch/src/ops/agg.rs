@@ -373,8 +373,9 @@ mod tests {
     struct TestSumAgg;
 
     #[typetag::serde(name = "TestSumAgg")]
+    #[allow(clippy::unnecessary_literal_bound)]
     impl AggFn for TestSumAgg {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "test_sum"
         }
 

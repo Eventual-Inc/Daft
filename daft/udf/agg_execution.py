@@ -41,7 +41,7 @@ def call_agg_block(
     input_series = [Series._from_pyseries(ps) for ps in input_pyseries_list]
     args, kwargs = replace_expressions_with_evaluated_args(original_args, input_series)
 
-    result = instance.agg_block(*args, **kwargs)
+    result = instance.aggregate(*args, **kwargs)
 
     return _pack_state_result(result, state_field_names, state_field_dtypes)
 

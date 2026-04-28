@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::{DataType, Field, Series};
@@ -15,19 +12,6 @@ use crate::{
         python::RuntimePyObject,
     },
 };
-
-static NAME_CACHE: Mutex<Option<HashMap<String, &'static str>>> = Mutex::new(None);
-
-fn intern_name(name: &str) -> &'static str {
-    let mut guard = NAME_CACHE.lock().unwrap();
-    let cache = guard.get_or_insert_with(HashMap::new);
-    if let Some(&existing) = cache.get(name) {
-        return existing;
-    }
-    let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
-    cache.insert(name.to_owned(), leaked);
-    leaked
-}
 
 #[derive(Serialize, Deserialize)]
 pub struct PyAggFn {
@@ -43,8 +27,8 @@ pub struct PyAggFn {
 
 #[typetag::serde(name = "PyAggFn")]
 impl AggFn for PyAggFn {
-    fn name(&self) -> &'static str {
-        intern_name(&self.func_id)
+    fn name(&self) -> &str {
+        &self.func_id
     }
 
     fn return_dtype(&self, _input_types: &[DataType]) -> DaftResult<DataType> {
