@@ -21,7 +21,7 @@ from pyiceberg.expressions import (
     NotNull,
     Or,
 )
-from pyiceberg.expressions.literals import DateLiteral, StringLiteral, literal
+from pyiceberg.expressions.literals import DateLiteral, StringLiteral
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DateType,
@@ -31,6 +31,7 @@ from pyiceberg.types import (
     TimestampType,
     TimestamptzType,
 )
+from pyiceberg.utils.datetime import datetime_to_micros
 
 import daft
 from daft.datatype import DataType
@@ -259,16 +260,14 @@ def test_date_literal_coerced_to_timestamp(schema: Schema) -> None:
     assert isinstance(result, EqualTo)
     # Coerced away from DateLiteral — value should be microseconds, not days
     assert not isinstance(result.literal, DateLiteral)
-    expected = literal(datetime(2023, 1, 1, 0, 0, 0))
-    assert result.literal.value == expected.value
+    assert result.literal.value == datetime_to_micros(datetime(2023, 1, 1, 0, 0, 0))
 
 
 def test_date_literal_coerced_to_timestamptz(schema: Schema) -> None:
     result = convert_expression_to_iceberg(daft.col("tstz") == daft.lit(date(2023, 1, 1)), schema)
     assert isinstance(result, EqualTo)
     assert not isinstance(result.literal, DateLiteral)
-    expected = literal(datetime(2023, 1, 1, 0, 0, 0))
-    assert result.literal.value == expected.value
+    assert result.literal.value == datetime_to_micros(datetime(2023, 1, 1, 0, 0, 0))
 
 
 def test_coerce_missing_column_unchanged(schema: Schema) -> None:

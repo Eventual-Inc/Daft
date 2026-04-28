@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.expressions import (
@@ -20,9 +20,9 @@ from pyiceberg.expressions import (
     Or,
     Reference,
 )
-from pyiceberg.expressions.literals import DateLiteral, Literal, StringLiteral, literal
+from pyiceberg.expressions.literals import DateLiteral, Literal, StringLiteral, TimestampLiteral, literal
 from pyiceberg.types import TimestampType, TimestamptzType
-from pyiceberg.utils.datetime import days_to_date
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, days_to_date
 
 from daft.expressions.visitor import PredicateVisitor
 
@@ -57,6 +57,10 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
         return Reference(name)
 
     def visit_lit(self, value: Any) -> BooleanExpression:
+        if isinstance(value, datetime):
+            return TimestampLiteral(datetime_to_micros(value))
+        if isinstance(value, date):
+            return DateLiteral(date_to_days(value))
         return literal(value)
 
     def visit_alias(self, expr: Expression, alias: str) -> BooleanExpression:
@@ -82,53 +86,53 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
 
     def visit_equal(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, _ = self.visit_lhs_rhs(left, right)
-        return EqualTo(term=ref, value=lit)
+        return EqualTo(term=ref, literal=lit)
 
     def visit_not_equal(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, _ = self.visit_lhs_rhs(left, right)
-        return NotEqualTo(term=ref, value=lit)
+        return NotEqualTo(term=ref, literal=lit)
 
     def visit_less_than(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, swapped = self.visit_lhs_rhs(left, right)
         if swapped:
-            return GreaterThan(term=ref, value=lit)
+            return GreaterThan(term=ref, literal=lit)
         else:
-            return LessThan(term=ref, value=lit)
+            return LessThan(term=ref, literal=lit)
 
     def visit_less_than_or_equal(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, swapped = self.visit_lhs_rhs(left, right)
         if swapped:
-            return GreaterThanOrEqual(term=ref, value=lit)
+            return GreaterThanOrEqual(term=ref, literal=lit)
         else:
-            return LessThanOrEqual(term=ref, value=lit)
+            return LessThanOrEqual(term=ref, literal=lit)
 
     def visit_greater_than(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, swapped = self.visit_lhs_rhs(left, right)
         if swapped:
-            return LessThan(term=ref, value=lit)
+            return LessThan(term=ref, literal=lit)
         else:
-            return GreaterThan(term=ref, value=lit)
+            return GreaterThan(term=ref, literal=lit)
 
     def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> BooleanExpression:
         ref, lit, swapped = self.visit_lhs_rhs(left, right)
         if swapped:
-            return LessThanOrEqual(term=ref, value=lit)
+            return LessThanOrEqual(term=ref, literal=lit)
         else:
-            return GreaterThanOrEqual(term=ref, value=lit)
+            return GreaterThanOrEqual(term=ref, literal=lit)
 
     def visit_between(self, expr: Expression, lower: Expression, upper: Expression) -> BooleanExpression:
         ref = self.visit_as_ref(expr)
         lo = self.coerce(ref, self.visit_as_lit(lower))
         hi = self.coerce(ref, self.visit_as_lit(upper))
         return And(
-            left=GreaterThanOrEqual(term=ref, value=lo),
-            right=LessThanOrEqual(term=ref, value=hi),
+            left=GreaterThanOrEqual(term=ref, literal=lo),
+            right=LessThanOrEqual(term=ref, literal=hi),
         )
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> BooleanExpression:
         ref = self.visit_as_ref(expr)
         literals = [self.coerce(ref, self.visit_as_lit(item)) for item in items]
-        return In(term=ref, values=set(literals))
+        return In(term=ref, literals=set(literals))
 
     def visit_is_null(self, expr: Expression) -> BooleanExpression:
         return IsNull(term=self.visit_as_ref(expr))
@@ -160,7 +164,7 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
             dt = datetime.combine(days_to_date(lit.value), datetime.min.time())
             if isinstance(field_type, _TIMESTAMPTZ_TYPES):
                 dt = dt.replace(tzinfo=timezone.utc)
-            return literal(dt)
+            return TimestampLiteral(datetime_to_micros(dt))
         return lit
 
     def visit_lhs_rhs(
