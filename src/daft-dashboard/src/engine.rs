@@ -806,10 +806,6 @@ pub enum TaskOutcomeArgs {
 #[derive(Clone, Deserialize, Serialize, Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskTotals {
-    pub rows_in: u64,
-    pub rows_out: u64,
-    pub bytes_in: u64,
-    pub bytes_out: u64,
     pub cpu_us: u64,
 }
 
@@ -911,10 +907,6 @@ pub(crate) fn apply_task_end(
         args.worker_id,
         status,
         args.end_sec,
-        args.totals.rows_in,
-        args.totals.rows_out,
-        args.totals.bytes_in,
-        args.totals.bytes_out,
         args.totals.cpu_us,
     );
 

@@ -490,30 +490,18 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
 
-        // Aggregate per-node stats into task-level totals. Tasks fuse multiple
-        // local plan nodes, so rows.in from the head and rows.out from the tail
-        // represent the task's external I/O.
+        // CPU duration is the only task-level total we currently report; it
+        // sums correctly across all nodes in the fused pipeline. rows/bytes
+        // I/O totals require head/leaf identification (see follow-up ticket)
+        // and are intentionally omitted to avoid double-counting.
         let mut totals = daft_dashboard::engine::TaskTotals::default();
         for (_, snapshot) in &event.stats {
             let stats = snapshot.to_stats();
             for (name, stat) in stats.iter() {
-                match (name, stat) {
-                    (common_metrics::ROWS_IN_KEY, common_metrics::Stat::Count(v)) => {
-                        totals.rows_in += v;
-                    }
-                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(v)) => {
-                        totals.rows_out += v;
-                    }
-                    (common_metrics::BYTES_IN_KEY, common_metrics::Stat::Bytes(v)) => {
-                        totals.bytes_in += v;
-                    }
-                    (common_metrics::BYTES_OUT_KEY, common_metrics::Stat::Bytes(v)) => {
-                        totals.bytes_out += v;
-                    }
-                    (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) => {
-                        totals.cpu_us += d.as_micros() as u64;
-                    }
-                    _ => {}
+                if let (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) =
+                    (name, stat)
+                {
+                    totals.cpu_us += d.as_micros() as u64;
                 }
             }
         }

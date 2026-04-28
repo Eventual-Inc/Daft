@@ -67,10 +67,6 @@ pub(crate) struct TaskInfo {
     pub end_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_id: Option<String>,
-    pub rows_in: u64,
-    pub rows_out: u64,
-    pub bytes_in: u64,
-    pub bytes_out: u64,
     pub cpu_us: u64,
 }
 
@@ -90,10 +86,6 @@ pub(crate) struct TaskGroupSummary {
     pub finished_count: u32,
     pub failed_count: u32,
     pub cancelled_count: u32,
-    pub total_rows_in: u64,
-    pub total_rows_out: u64,
-    pub total_bytes_in: u64,
-    pub total_bytes_out: u64,
     pub total_cpu_us: u64,
     pub first_submit_sec: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,10 +162,6 @@ impl TaskStore {
                 finished_count: 0,
                 failed_count: 0,
                 cancelled_count: 0,
-                total_rows_in: 0,
-                total_rows_out: 0,
-                total_bytes_in: 0,
-                total_bytes_out: 0,
                 total_cpu_us: 0,
                 first_submit_sec: initial_sec,
                 last_end_sec: None,
@@ -231,10 +219,6 @@ impl TaskStore {
             submit_sec,
             end_sec: None,
             worker_id: None,
-            rows_in: 0,
-            rows_out: 0,
-            bytes_in: 0,
-            bytes_out: 0,
             cpu_us: 0,
         });
 
@@ -264,10 +248,6 @@ impl TaskStore {
         worker_id: Option<String>,
         status: TaskStatus,
         end_sec: f64,
-        rows_in: u64,
-        rows_out: u64,
-        bytes_in: u64,
-        bytes_out: u64,
         cpu_us: u64,
     ) {
         // Determine whether this task was previously submitted (exists in tasks).
@@ -307,10 +287,6 @@ impl TaskStore {
             TaskStatus::Pending => {}
         }
 
-        group.total_rows_in += rows_in;
-        group.total_rows_out += rows_out;
-        group.total_bytes_in += bytes_in;
-        group.total_bytes_out += bytes_out;
         group.total_cpu_us += cpu_us;
         match group.last_end_sec {
             Some(prev) if prev >= end_sec => {}
@@ -332,10 +308,6 @@ impl TaskStore {
             submit_sec: end_sec, // no submit seen; use end time
             end_sec: None,
             worker_id: None,
-            rows_in: 0,
-            rows_out: 0,
-            bytes_in: 0,
-            bytes_out: 0,
             cpu_us: 0,
         });
 
@@ -347,10 +319,6 @@ impl TaskStore {
         task.status = status.clone();
         task.end_sec = Some(end_sec);
         task.worker_id = worker_id;
-        task.rows_in = rows_in;
-        task.rows_out = rows_out;
-        task.bytes_in = bytes_in;
-        task.bytes_out = bytes_out;
         task.cpu_us = cpu_us;
 
         // Apply retention policy.

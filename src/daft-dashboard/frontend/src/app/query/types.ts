@@ -80,10 +80,6 @@ export type TaskInfo = {
   submit_sec: number;
   end_sec?: number;
   worker_id?: string;
-  rows_in: number;
-  rows_out: number;
-  bytes_in: number;
-  bytes_out: number;
   cpu_us: number;
 };
 
@@ -97,10 +93,6 @@ export type TaskGroupSummary = {
   finished_count: number;
   failed_count: number;
   cancelled_count: number;
-  total_rows_in: number;
-  total_rows_out: number;
-  total_bytes_in: number;
-  total_bytes_out: number;
   total_cpu_us: number;
   first_submit_sec: number;
   last_end_sec?: number;

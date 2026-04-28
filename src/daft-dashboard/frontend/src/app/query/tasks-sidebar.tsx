@@ -5,7 +5,6 @@ import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
 import {
-  formatBytes,
   formatDuration,
   getStatusIcon,
   getStatusColor,
@@ -157,8 +156,7 @@ export default function TasksSidebar({
 // ---------------------------------------------------------------------------
 // Running tasks "top" section.
 // ---------------------------------------------------------------------------
-const RUNNING_GRID_COLS =
-  "grid-cols-[minmax(200px,2fr)_90px_100px_100px_100px]";
+const RUNNING_GRID_COLS = "grid-cols-[minmax(200px,2fr)_90px]";
 
 function RunningTasksSection({
   tasks,
@@ -183,15 +181,12 @@ function RunningTasksSection({
           Running ({totalRunning})
         </span>
       </div>
-      <div className="min-w-[600px]">
+      <div className="min-w-[300px]">
         <div
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Pipeline</RunningHeader>
           <RunningHeader align="right">Duration</RunningHeader>
-          <RunningHeader align="right">Rows In</RunningHeader>
-          <RunningHeader align="right">Rows Out</RunningHeader>
-          <RunningHeader align="right">Bytes In</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
           const task = tasks[i];
@@ -229,7 +224,6 @@ function RunningHeader({
 }
 
 function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
-  // TODO: show cpu_us instead of wall-clock once within-task metric updates land
   const duration = formatDuration(Math.max(0, now - task.submit_sec)) + "\u2026";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
@@ -245,15 +239,6 @@ function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
       <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
         {duration}
       </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {task.rows_in.toLocaleString()}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {task.rows_out.toLocaleString()}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {formatBytes(task.bytes_in)}
-      </div>
     </div>
   );
 }
@@ -262,7 +247,7 @@ function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
 // Table of task-type rows.
 // ---------------------------------------------------------------------------
 const GRID_COLS =
-  "grid-cols-[32px_minmax(220px,2fr)_minmax(180px,1.5fr)_90px_130px_110px_110px_110px_110px_100px]";
+  "grid-cols-[32px_minmax(220px,2fr)_minmax(180px,1.5fr)_90px_130px_100px]";
 
 function TaskTypeTable({
   rows,
@@ -272,7 +257,7 @@ function TaskTypeTable({
   onSelectOrigin: (nodeId: number) => void;
 }) {
   return (
-    <div className="min-w-[1250px]">
+    <div className="min-w-[820px]">
       {/* Header */}
       <div
         className={`bg-zinc-800 grid ${GRID_COLS} gap-0 items-center min-h-[48px] border-b border-zinc-700 sticky top-0 z-10`}
@@ -282,10 +267,6 @@ function TaskTypeTable({
         <HeaderCell align="left">Origin Node</HeaderCell>
         <HeaderCell align="right">Tasks</HeaderCell>
         <HeaderCell align="left">Status</HeaderCell>
-        <HeaderCell align="right">Rows In</HeaderCell>
-        <HeaderCell align="right">Rows Out</HeaderCell>
-        <HeaderCell align="right">Bytes In</HeaderCell>
-        <HeaderCell align="right">Bytes Out</HeaderCell>
         <HeaderCell align="right" last>
           CPU
         </HeaderCell>
@@ -372,18 +353,6 @@ function TaskTypeGroupRow({
         </Cell>
         <Cell align="left">
           <StatusSummary counts={row.status_counts} />
-        </Cell>
-        <Cell align="right">
-          <Mono>{row.total_rows_in.toLocaleString()}</Mono>
-        </Cell>
-        <Cell align="right">
-          <Mono>{row.total_rows_out.toLocaleString()}</Mono>
-        </Cell>
-        <Cell align="right">
-          <Mono>{formatBytes(row.total_bytes_in)}</Mono>
-        </Cell>
-        <Cell align="right">
-          <Mono>{formatBytes(row.total_bytes_out)}</Mono>
         </Cell>
         <Cell align="right" last>
           <Mono>{formatDuration(row.total_cpu_sec)}</Mono>
@@ -478,10 +447,10 @@ function StatusSummary({
 // ---------------------------------------------------------------------------
 // Expanded task-level sub-table.
 // ---------------------------------------------------------------------------
-// Removed the Context column since the backend does not yet surface per-task
-// context (filename, partition id, etc.). See TODO below.
+// Per-task rows/bytes stats are not surfaced yet — they require correct
+// head/leaf identification across the fused pipeline. See follow-up ticket.
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_100px_110px_110px_110px_110px_100px]";
+  "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_100px_100px]";
 
 function ExpandedTaskList({
   tasks,
@@ -505,10 +474,6 @@ function ExpandedTaskList({
         <SubHeader align="left">Worker</SubHeader>
         <SubHeader align="left">Status</SubHeader>
         <SubHeader align="right">Duration</SubHeader>
-        <SubHeader align="right">Rows In</SubHeader>
-        <SubHeader align="right">Rows Out</SubHeader>
-        <SubHeader align="right">Bytes In</SubHeader>
-        <SubHeader align="right">Bytes Out</SubHeader>
         <SubHeader align="right">CPU</SubHeader>
       </div>
       {[...tasks]
@@ -579,18 +544,6 @@ function TaskSubRow({ task }: { task: TaskInfo }) {
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {duration}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {task.rows_in.toLocaleString()}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {task.rows_out.toLocaleString()}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {formatBytes(task.bytes_in)}
-      </div>
-      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
-        {formatBytes(task.bytes_out)}
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {formatDuration(cpuSec)}
