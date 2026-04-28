@@ -1335,13 +1335,11 @@ jobs:
         os: [ubuntu, Windows]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
-        # TEMP: Windows rust tests enabled on this PR to verify the
-        # iter_dir canonical-URI fix from #6817. Revert before merge.
-        # exclude:
-        #   # Don't run Windows rust tests in PRs - they take 50+ minutes
-        #   # Consider re-enabling if we upgrade to large runners.
-        # - os: Windows
-        #   on-main: false
+        exclude:
+          # Don't run Windows rust tests in PRs - they take 50+ minutes
+          # Consider re-enabling if we upgrade to large runners.
+        - os: Windows
+          on-main: false
     steps:
     - uses: actions/checkout@v6
       with:
