@@ -1,0 +1,99 @@
+name: Issue Component Labeller
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+
+jobs:
+  apply-component-labels:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Apply labels from Component(s)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const body = context.payload.issue.body || "";
+          const currentLabels = new Set(
+            (context.payload.issue.labels || []).map((label) =>
+              typeof label === "string" ? label : label.name,
+            ),
+          );
+
+          const componentSection = extractSection(body, "Component(s)");
+          if (!componentSection) {
+            core.info("No Component(s) section found.");
+            return;
+          }
+
+          const selectedComponents = parseSelections(componentSection);
+          if (selectedComponents.length === 0) {
+            core.info("No component selections found.");
+            return;
+          }
+
+          const componentToLabels = {
+            "Built-in Functions": ["expression"],
+            "UDFs (User Defined Functions)": ["python"],
+            "Data Sources & Sinks": ["data-catalogs"],
+            "Cloud Storage (S3/GCS/Azure)": ["data-catalogs"],
+            "Lance Integration": ["data-catalogs"],
+            "Memory Management/OOM's": ["oncall"],
+            "Native Runner (swordfish)": ["oncall"],
+            "Distributed Runner (flotilla)": ["oncall"],
+          };
+
+          const labelsToAdd = new Set();
+          for (const component of selectedComponents) {
+            const mappedLabels = componentToLabels[component] || [];
+            for (const mappedLabel of mappedLabels) {
+              if (!currentLabels.has(mappedLabel)) {
+                labelsToAdd.add(mappedLabel);
+              }
+            }
+          }
+
+          if (labelsToAdd.size === 0) {
+            core.info("No new labels to add.");
+            return;
+          }
+
+          const labels = Array.from(labelsToAdd);
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.issue.number,
+            labels,
+          });
+          core.info(`Applied labels: ${labels.join(", ")}`);
+
+          function extractSection(markdownBody, heading) {
+            const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(
+              `###\\s*${escapedHeading}\\s*\\n+([\\s\\S]*?)(?=\\n###\\s|$)`,
+              "i",
+            );
+            const match = markdownBody.match(regex);
+            return match ? match[1].trim() : null;
+          }
+
+          function parseSelections(sectionText) {
+            const lines = sectionText
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0 && line !== "_No response_");
+
+            const selections = [];
+            for (const line of lines) {
+              if (line.startsWith("- [x]")) {
+                selections.push(line.replace(/^- \[x\]\s*/i, "").trim());
+              } else if (line.startsWith("-")) {
+                selections.push(line.replace(/^-+\s*/, "").trim());
+              } else {
+                selections.push(line);
+              }
+            }
+            return selections;
+          }

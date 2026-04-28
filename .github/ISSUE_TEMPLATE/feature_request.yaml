@@ -26,6 +26,24 @@ body:
     placeholder: Some potential solutions
   validations:
     required: false
+- type: dropdown
+  id: component
+  attributes:
+    label: Component(s)
+    multiple: true
+    options:
+    - Built-in Functions
+    - UDFs (User Defined Functions)
+    - Data Sources & Sinks
+    - Native Runner (swordfish)
+    - Distributed Runner (flotilla)
+    - Cloud Storage (S3/GCS/Azure)
+    - Multimodal Operations (files/images/etc.)
+    - Memory Management/OOM's
+    - Lance Integration
+    - Other
+  validations:
+    required: true
 - type: textarea
   id: additional-context
   attributes:
