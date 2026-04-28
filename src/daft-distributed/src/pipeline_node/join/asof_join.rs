@@ -183,26 +183,26 @@ impl AsofJoinNode {
         )
         .await?;
 
-        let carryover_tasks = self.create_per_worker_carryover_tasks(
+        let per_worker_carryover_tasks = self.create_per_worker_carryover_tasks(
             right_partitioned_outputs.clone(),
             task_id_counter,
             scheduler_handle,
         )?;
 
-        let per_worker_carryover_mos: Vec<Vec<MaterializedOutput>> =
-            try_join_all(carryover_tasks.into_iter().map(try_join_all))
+        let per_worker_carryover_outputs: Vec<Vec<MaterializedOutput>> =
+            try_join_all(per_worker_carryover_tasks.into_iter().map(try_join_all))
                 .await?
                 .into_iter()
                 .map(|bucket| bucket.into_iter().flatten().collect())
                 .collect();
 
         let per_partition_carryover_tasks = self.create_per_partition_carryover_tasks(
-            per_worker_carryover_mos,
+            per_worker_carryover_outputs,
             task_id_counter,
             scheduler_handle,
         )?;
 
-        let mut global_carryovers: Vec<Option<MaterializedOutput>> =
+        let mut per_partition_carryover_outputs: Vec<Option<MaterializedOutput>> =
             try_join_all(per_partition_carryover_tasks.into_iter().map(|t| async {
                 match t {
                     Some(task) => task.await.map(|mo| mo.filter(|m| m.num_rows() > 0)),
@@ -212,10 +212,10 @@ impl AsofJoinNode {
             .await?;
 
         // Forward-propagate: if bucket i produced no carryover, inherit from bucket i-1.
-        for i in 1..global_carryovers.len() {
-            if global_carryovers[i].is_none() {
-                let prev = global_carryovers[i - 1].clone();
-                global_carryovers[i] = prev;
+        for i in 1..per_partition_carryover_outputs.len() {
+            if per_partition_carryover_outputs[i].is_none() {
+                let prev = per_partition_carryover_outputs[i - 1].clone();
+                per_partition_carryover_outputs[i] = prev;
             }
         }
 
@@ -239,7 +239,7 @@ impl AsofJoinNode {
             let carryover = if i == 0 {
                 None
             } else {
-                global_carryovers[i - 1].clone()
+                per_partition_carryover_outputs[i - 1].clone()
             };
             self.create_and_submit_join_task(left_group, right_group, carryover, result_tx)
                 .await?;
