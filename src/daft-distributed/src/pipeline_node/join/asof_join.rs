@@ -94,7 +94,6 @@ impl AsofJoinNode {
 
     async fn create_and_submit_join_task(
         self: &Arc<Self>,
-        partition_idx: u32,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
         carryover_mo: Option<MaterializedOutput>,
@@ -143,7 +142,6 @@ impl AsofJoinNode {
         );
 
         let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-            .extend_fingerprint(partition_idx)
             .with_psets(self.left.node_id(), left_psets)
             .with_psets(self.right.node_id(), right_psets);
 
@@ -164,13 +162,7 @@ impl AsofJoinNode {
 
         if num_partitions == 1 {
             return self
-                .create_and_submit_join_task(
-                    0,
-                    left_materialized,
-                    right_materialized,
-                    None,
-                    result_tx,
-                )
+                .create_and_submit_join_task(left_materialized, right_materialized, None, result_tx)
                 .await;
         }
 
@@ -249,14 +241,8 @@ impl AsofJoinNode {
             } else {
                 global_carryovers[i - 1].clone()
             };
-            self.create_and_submit_join_task(
-                i as u32,
-                left_group,
-                right_group,
-                carryover,
-                result_tx,
-            )
-            .await?;
+            self.create_and_submit_join_task(left_group, right_group, carryover, result_tx)
+                .await?;
         }
 
         Ok(())
@@ -296,7 +282,7 @@ impl AsofJoinNode {
 
         if right_materialized.is_empty() {
             return self
-                .create_and_submit_join_task(0, left_materialized, vec![], None, &result_tx)
+                .create_and_submit_join_task(left_materialized, vec![], None, &result_tx)
                 .await;
         }
 

@@ -168,7 +168,7 @@ impl SortMergeJoinNode {
     ) -> DaftResult<()> {
         let num_partitions = self.num_partitions;
 
-        let (left_partitioned, right_partitioned) = range_repartition_two_sides(
+        let (left_partitioned_outputs, right_partitioned_outputs) = range_repartition_two_sides(
             left_materialized,
             right_materialized,
             self.left_on.clone(),
@@ -182,14 +182,23 @@ impl SortMergeJoinNode {
         )
         .await?;
 
-        let left_transposed =
-            transpose_materialized_outputs_from_vec(left_partitioned, num_partitions);
-        let right_transposed =
-            transpose_materialized_outputs_from_vec(right_partitioned, num_partitions);
+        // Transpose outputs to group by partition index
+        let left_transposed_outputs =
+            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions);
+        let right_transposed_outputs =
+            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions);
 
-        for (left_group, right_group) in left_transposed.into_iter().zip(right_transposed) {
-            self.create_and_submit_join_task(left_group, right_group, result_tx)
-                .await?;
+        // Emit sort-merge join tasks for each partition pair
+        for (left_partition_group, right_partition_group) in left_transposed_outputs
+            .into_iter()
+            .zip(right_transposed_outputs)
+        {
+            self.create_and_submit_join_task(
+                left_partition_group,
+                right_partition_group,
+                result_tx,
+            )
+            .await?;
         }
         Ok(())
     }
