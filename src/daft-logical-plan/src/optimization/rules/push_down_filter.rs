@@ -17,7 +17,7 @@ use daft_scan::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
 use super::OptimizerRule;
 use crate::{
     LogicalPlan,
-    ops::{Concat, Filter, Join, Project, Source},
+    ops::{Concat, Filter, Join, Project},
     source_info::SourceInfo,
 };
 
@@ -79,6 +79,14 @@ impl PushDownFilter {
                     .data
             }
             LogicalPlan::Source(source) => {
+                // If the Source has a checkpoint, keep the Filter as a separate op
+                // above the Source. Letting the filter sink into the scan's pushdowns
+                // would cause Parquet to drop rows at decode time before SCKO can
+                // stage their keys — breaking the "checkpoint all source keys" guarantee
+                // and forcing every re-run to re-read and re-evaluate those rows.
+                if source.checkpoint.is_some() {
+                    return Ok(Transformed::no(plan));
+                }
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
                     SourceInfo::InMemory(_) => return Ok(Transformed::no(plan)),
@@ -159,7 +167,19 @@ impl PushDownFilter {
                             external_info.pushdowns.clone()
                         };
                         let new_pushdowns = if let Some(partition_filter) = partition_filter {
-                            new_pushdowns.with_partition_filters(Some(partition_filter))
+                            // Merge new partition filters with any existing ones via AND,
+                            // rather than overwriting. Partition filters are monotonic under
+                            // AND — adding predicates only makes pruning stricter, never
+                            // looser — so merging is always safe. This prevents previously
+                            // derived partition filters from being lost when the optimizer
+                            // re-runs this rule on a rebuilt Filter node.
+                            let merged_partition_filter =
+                                if let Some(existing) = &new_pushdowns.partition_filters {
+                                    existing.clone().and(partition_filter)
+                                } else {
+                                    partition_filter
+                                };
+                            new_pushdowns.with_partition_filters(Some(merged_partition_filter))
                         } else {
                             new_pushdowns
                         };
@@ -216,11 +236,10 @@ impl PushDownFilter {
                         };
 
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                        let new_source: LogicalPlan = Source::new(
-                            source.output_schema.clone(),
-                            SourceInfo::Physical(new_external_info).into(),
-                        )
-                        .into();
+                        let new_source: LogicalPlan = source
+                            .clone()
+                            .with_source_info(SourceInfo::Physical(new_external_info).into())
+                            .into();
                         if !needing_filter_op.is_empty() {
                             // We need to apply any filter predicates that reference both partition and data columns after the scan.
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
@@ -458,7 +477,9 @@ impl PushDownFilter {
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
             | LogicalPlan::Distinct(..)
-            | LogicalPlan::VLLMProject(..) => {
+            | LogicalPlan::AsofJoin(..)
+            | LogicalPlan::VLLMProject(..)
+            | LogicalPlan::StageCheckpointKeys(..) => {
                 return Ok(Transformed::no(plan));
             }
         };

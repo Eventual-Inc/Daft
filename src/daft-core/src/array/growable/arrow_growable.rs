@@ -243,6 +243,10 @@ where
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
         Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
     }
+
+    fn len(&self) -> usize {
+        self.len
+    }
 }
 
 /// Simplified null growable — just tracks a length counter.
@@ -279,6 +283,11 @@ impl Growable for ArrowNullGrowable {
         let len = self.len;
         self.len = 0;
         Ok(NullArray::full_null(&self.name, &self.dtype, len).into_series())
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 

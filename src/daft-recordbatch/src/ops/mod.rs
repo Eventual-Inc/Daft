@@ -13,4 +13,4 @@ mod unpivot;
 mod window;
 mod window_states;
 
-pub use joins::{get_column_by_name, get_columns_by_name};
+pub use joins::{build_left_to_right_map, get_column_by_name, get_columns_by_name};

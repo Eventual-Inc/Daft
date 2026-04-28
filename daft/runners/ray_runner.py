@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import sys
 import time
 from collections.abc import Generator, Iterable, Iterator
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
+import daft
 from daft.context import get_context
 from daft.daft import DistributedPhysicalPlan, PyExecutionStats, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -22,6 +24,8 @@ from daft.execution.metadata import ExecutionMetadata
 from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
 from daft.runners.flotilla import FlotillaRunner
+from daft.runners.heartbeat import Heartbeat
+from daft.runners.query_id import emit_query_id
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
@@ -30,8 +34,6 @@ if TYPE_CHECKING:
 
     import dask
     import dask.dataframe
-
-    import daft
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ from daft.daft import (
     QueryEndState,
 )
 from daft.datatype import DataType
+from daft.errors import UDFException
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
@@ -84,6 +87,8 @@ except ImportError:
 from daft.logical.schema import Schema
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+
+HEARTBEAT_INTERVAL_SEC = 10.0
 
 _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
 try:
@@ -226,9 +231,13 @@ def _series_from_arrow_with_ray_data_extensions(
             if hasattr(array.type, "shape") and array.type.shape is not None and hasattr(array, "storage"):
                 tensor_array = cast("ArrowTensorArray", array)
                 storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
+                # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
+                arrow_scalar_type = getattr(tensor_array.type, "value_type", None) or getattr(
+                    tensor_array.type, "scalar_type"
+                )
                 series = storage_series.cast(
                     DataType.fixed_size_list(
-                        _from_arrow_type_with_ray_data_extensions(tensor_array.type.scalar_type),
+                        _from_arrow_type_with_ray_data_extensions(arrow_scalar_type),
                         int(np.prod(array.type.shape)),
                     )
                 )
@@ -388,7 +397,9 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataType:
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
         tensor_types = cast("ArrowTensorType | ArrowVariableShapedTensorType", arrow_type)
-        scalar_dtype = _from_arrow_type_with_ray_data_extensions(tensor_types.scalar_type)
+        # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
+        arrow_scalar_type = getattr(tensor_types, "value_type", None) or getattr(tensor_types, "scalar_type")
+        scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_scalar_type)
         # Both ArrowTensorType and ArrowTensorTypeV2 have a shape attribute
         # ArrowVariableShapedTensorType does not
         shape = getattr(tensor_types, "shape", None)
@@ -557,8 +568,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Grab and freeze the current context
         ctx = get_context()
         query_id = generate_query_name()
+        emit_query_id(query_id)
         daft_execution_config = ctx.daft_execution_config
         output_schema = builder.schema()
+        unoptimized_plan_json = builder.repr_json()
 
         # Notify query start
         ray_dashboard_url = None
@@ -582,11 +595,12 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
-        should_notify = bool(ray_dashboard_url or dashboard_url)
 
         # Log Dashboard URL if configured
         if dashboard_url:
             logger.info("Daft Dashboard: %s/query/%s", dashboard_url, query_id)
+
+        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
 
         try:
             # Optimize the logical plan.
@@ -609,19 +623,27 @@ class RayRunner(Runner[ray.ObjectRef]):
             physical_plan_json = distributed_plan.repr_json(repr_psets)
 
             # Only send notifications after we've successfully created the distributed plan
-            if should_notify:
-                try:
-                    ctx._notify_query_start(
-                        query_id,
-                        PyQueryMetadata(
-                            output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
-                        ),
-                    )
-                    ctx._notify_optimization_start(query_id)
-                    ctx._notify_optimization_end(query_id, builder.repr_json())
-                    ctx._notify_exec_start(query_id, physical_plan_json)
-                except Exception:
-                    pass
+            try:
+                ctx._notify_query_start(
+                    query_id,
+                    PyQueryMetadata(
+                        output_schema._schema,
+                        unoptimized_plan_json,
+                        "Ray (Flotilla)",
+                        ray_dashboard_url,
+                        entrypoint,
+                        python_version=platform.python_version(),
+                        daft_version=daft.get_version(),
+                        ray_version=ray.__version__,
+                    ),
+                )
+                ctx._notify_optimization_start(query_id)
+                ctx._notify_optimization_end(query_id, builder.repr_json())
+                ctx._notify_exec_start(query_id, physical_plan_json)
+            except Exception as e:
+                logger.warning("Failed to send notifications: %s", e)
+
+            heartbeat.start()
 
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
@@ -630,6 +652,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             result_gen = self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
             )
+
             try:
                 while True:
                     result = next(result_gen)
@@ -640,38 +663,49 @@ class RayRunner(Runner[ray.ObjectRef]):
                 stats: PyExecutionStats = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
-            if should_notify:
-                try:
-                    plan_dict = json.loads(physical_plan_json)
+            try:
+                plan_dict = json.loads(physical_plan_json)
 
-                    def notify_end(node: dict[str, Any]) -> None:
-                        if "children" in node:
-                            for child in node["children"]:
-                                notify_end(child)
-                        if "id" in node:
-                            ctx._notify_exec_operator_end(query_id, node["id"])
+                def notify_end(node: dict[str, Any]) -> None:
+                    if "children" in node:
+                        for child in node["children"]:
+                            notify_end(child)
+                    if "id" in node:
+                        ctx._notify_exec_operator_end(query_id, node["id"])
 
-                    notify_end(plan_dict)
-                except Exception:
-                    pass
+                notify_end(plan_dict)
+            except Exception as e:
+                logger.warning("Failed to send operator end notifications: %s", e)
 
-            if should_notify:
-                try:
-                    ctx._notify_exec_end(query_id)
-                except Exception:
-                    pass
+            try:
+                ctx._notify_exec_end(query_id)
                 ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+            except Exception as e:
+                logger.warning("Failed to send query end notifications: %s", e)
 
         except GeneratorExit:
-            # GeneratorExit is raised when the generator is closed (e.g. by break)
-            # We should treat this as a cancellation/interruption but not necessarily a failure if execution was partial
-            # However, if it's external cancellation, we might want to log it.
-            # For now, we propagate it to ensure proper cleanup.
-            raise
+            # Generator was abandoned (e.g. .show() breaking out early). Match NativeRunner so
+            # subscribers and the dashboard leave the Finalizing state.
+            try:
+                query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+                ctx._notify_query_end(query_id, query_result)
+            except Exception as ex:
+                logger.warning("Failed to send query end notification: %s", ex)
+            return  # type: ignore[return-value]
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except UDFException as e:
+            err_msg = f"UDF failed with exception: {e.original_exception}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
         except Exception as e:
-            if should_notify:
-                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
-            raise
+            err_msg = f"General Exception raised: {e}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
+        finally:
+            heartbeat.stop()
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 

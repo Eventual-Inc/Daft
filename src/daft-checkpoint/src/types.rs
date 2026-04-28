@@ -1,36 +1,10 @@
 use std::{fmt, time::SystemTime};
 
-use uuid::Uuid;
-
-/// Unique identifier for a checkpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CheckpointId(Uuid);
-
-impl CheckpointId {
-    /// Generate a new random checkpoint ID.
-    #[must_use]
-    pub fn generate() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    /// Create a checkpoint ID from an existing UUID.
-    #[must_use]
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    /// Get the inner UUID.
-    #[must_use]
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-}
-
-impl fmt::Display for CheckpointId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "checkpoint-{}", self.0)
-    }
-}
+// `CheckpointId` lives in `common-checkpoint-config` so that consumers
+// outside the store impls (e.g. `daft-distributed` task metadata) can
+// reference it without pulling in the store trait + impls.
+pub use common_checkpoint_config::CheckpointId;
+use serde::{Deserialize, Serialize};
 
 /// Lifecycle state of a checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -90,10 +64,12 @@ impl Checkpoint {
 
 /// Tag indicating the format of the opaque file metadata blob.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Iceberg,
     Parquet,
+    DeltaLake,
 }
 
 /// Opaque file metadata produced by a sink writer.
@@ -112,5 +88,40 @@ impl FileMetadata {
     #[must_use]
     pub fn new(format: FileFormat, data: Vec<u8>) -> Self {
         Self { format, data }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_produces_valid_id() {
+        let id = CheckpointId::generate(42);
+        assert!(CheckpointId::is_valid(id.as_ref()));
+    }
+
+    #[test]
+    fn from_string_accepts_valid_id() {
+        let id = CheckpointId::from_string("task-0-checkpoint-abc123".to_string());
+        assert_eq!(id.as_ref(), "task-0-checkpoint-abc123");
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty")]
+    fn from_string_rejects_empty() {
+        let _ = CheckpointId::from_string(String::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty and contain only ASCII alphanumeric")]
+    fn from_string_rejects_slash() {
+        let _ = CheckpointId::from_string("bad/path".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty and contain only ASCII alphanumeric")]
+    fn from_string_rejects_space() {
+        let _ = CheckpointId::from_string("bad path".to_string());
     }
 }

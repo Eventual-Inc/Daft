@@ -165,6 +165,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                     };
                     if let Some(mp) = output_mp {
                         runtime_stats.add_probe_rows_out(mp.len() as u64);
+                        runtime_stats.add_probe_bytes_out(mp.size_bytes() as u64);
                         let _ = output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
@@ -190,6 +191,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                 && let Some(mp) = op.finalize_probe(states, &finalize_spawner).await??
             {
                 runtime_stats.add_probe_rows_out(mp.len() as u64);
+                runtime_stats.add_probe_bytes_out(mp.size_bytes() as u64);
                 let _ = output_tx
                     .send(PipelineMessage::Morsel {
                         input_id,
@@ -268,6 +270,9 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                     };
                     if let Some(mp) = output_mp {
                         per_input.runtime_stats.add_probe_rows_out(mp.len() as u64);
+                        per_input
+                            .runtime_stats
+                            .add_probe_bytes_out(mp.size_bytes() as u64);
                         let _ = self
                             .output_sender
                             .send(PipelineMessage::Morsel {
@@ -354,6 +359,9 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                     per_input
                         .runtime_stats
                         .add_probe_rows_in(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_probe_bytes_in(partition.size_bytes() as u64);
                     per_input.buffer.push(partition);
                     per_input.spawn_ready_batches(
                         &mut tasks,
@@ -378,8 +386,8 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         );
                     }
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("Probe join should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!("Probe join should not receive flight partition refs from child")
                 }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {

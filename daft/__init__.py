@@ -61,9 +61,14 @@ from daft.catalog import (
     Identifier,
     Table,
 )
+from daft.checkpoint import CheckpointStore
 from daft.context import (
+    get_context,
+    attach_subscriber,
+    detach_subscriber,
     set_execution_config,
     set_planning_config,
+    with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
 )
@@ -75,7 +80,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
@@ -106,6 +111,7 @@ from daft.session import (
     drop_table,
     get_catalog,
     get_function,
+    get_aggregate_function,
     get_provider,
     get_table,
     has_catalog,
@@ -174,6 +180,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointStore",
     "DataFrame",
     "DataType",
     "Expression",
@@ -190,12 +197,14 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "UnionMode",
     "VideoFile",
     "Window",
     "attach",
     "attach_catalog",
     "attach_function",
     "attach_provider",
+    "attach_subscriber",
     "attach_table",
     "cls",
     "col",
@@ -214,6 +223,7 @@ __all__ = [
     "detach_catalog",
     "detach_function",
     "detach_provider",
+    "detach_subscriber",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -229,7 +239,9 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "functions",
+    "get_aggregate_function",
     "get_catalog",
+    "get_context",
     "get_function",
     "get_or_create_runner",
     "get_or_infer_runner_type",
@@ -281,5 +293,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "udf",
+    "with_subscriber",
     "write_table",
 ]

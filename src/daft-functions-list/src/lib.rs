@@ -11,10 +11,12 @@ mod flatten;
 mod get;
 mod join;
 mod list_fill;
+mod list_filter;
 mod list_map;
 mod max;
 mod mean;
 mod min;
+mod seq;
 mod sort;
 mod sum;
 mod value_counts;
@@ -32,9 +34,12 @@ pub use flatten::{Flatten, list_flatten};
 pub use get::{ListGet, list_get as get};
 pub use join::{ListJoin, list_join as join};
 pub use list_fill::{ListFill, list_fill};
+pub use list_filter::ListFilter;
+pub use list_map::ListMap;
 pub use max::{ListMax, list_max as max};
 pub use mean::{ListMean, list_mean as mean};
 pub use min::{ListMin, list_min as min};
+pub use seq::{ListSeq, list_seq as seq};
 pub use sort::{ListSort, list_sort as sort};
 pub use sum::{ListSum, list_sum as sum};
 pub use value_counts::{ListValueCounts, list_value_counts as value_counts};
@@ -45,7 +50,6 @@ pub use bool_and::*;
 use daft_dsl::functions::FunctionModule;
 pub use series::SeriesListExtension;
 
-pub use crate::list_map::ListMap;
 pub struct ListFunctions;
 
 impl FunctionModule for ListFunctions {
@@ -66,9 +70,11 @@ impl FunctionModule for ListFunctions {
         parent.add_fn(ListMax);
         parent.add_fn(ListMean);
         parent.add_fn(ListMin);
+        parent.add_fn(ListSeq);
         parent.add_fn(ListSort);
         parent.add_fn(ListSum);
         parent.add_fn(ListValueCounts);
         parent.add_fn(ListMap);
+        parent.add_fn(ListFilter);
     }
 }

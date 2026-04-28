@@ -57,7 +57,7 @@ After writing this local example table, we can easily read it into Daft as a Dat
 
     df = daft.read_sql(
         "SELECT * FROM books",
-        "sqlite://example.db",
+        "sqlite:///example.db",
     )
     ```
 
@@ -73,7 +73,7 @@ You can also directly provide a SQL alchemy connection via a **connection factor
     from sqlalchemy import create_engine
 
     def create_connection():
-        return sqlalchemy.create_engine("sqlite:///example.db", echo=True).connect()
+        return create_engine("sqlite:///example.db", echo=True).connect()
 
     df = daft.read_sql("SELECT * FROM books", create_connection)
     ```
@@ -93,7 +93,7 @@ Supply the [`daft.read_sql()`][daft.read_sql] function with a **partition column
     df = daft.read_sql(
         "SELECT * FROM table",
         "sqlite:///big_table.db",
-        partition_on="col",
+        partition_col="col",
         num_partitions=3,
     )
     ```

@@ -346,6 +346,39 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_map", list_expr, mapper)
 
 
+def list_filter(list_expr: Expression, predicate: Expression) -> Expression:
+    """Filters elements in a list using a boolean predicate expression.
+
+    Elements where the predicate evaluates to `False` or `null` are removed.
+    Null list rows remain null. Empty list rows remain empty.
+
+    Args:
+        list_expr (List Expression): expression to filter.
+        predicate: Boolean expression to evaluate on each element. Use `daft.element()` to reference the current element.
+
+    Returns:
+        Expression (List Expression): an expression representing the filtered list.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_filter
+        >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+        >>> df.with_column("no_b", list_filter(df["letters"], daft.element() != "b")).collect()
+        ╭──────────────┬──────────────╮
+        │ letters      ┆ no_b         │
+        │ ---          ┆ ---          │
+        │ List[String] ┆ List[String] │
+        ╞══════════════╪══════════════╡
+        │ [a, b, a]    ┆ [a, a]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [b, c, b, c] ┆ [c, c]       │
+        ╰──────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_filter", list_expr, predicate)
+
+
 def explode(list_expr: Expression, ignore_empty_and_null: bool = False) -> Expression:
     """Explode a list expression.
 
@@ -517,6 +550,37 @@ def list_contains(list_expr: Expression, item: Expression) -> Expression:
         (Showing first 2 of 2 rows)
     """
     return Expression._call_builtin_scalar_fn("list_contains", list_expr, item)
+
+
+def seq(n: Expression) -> Expression:
+    """Generates a list of sequential integers [0, 1, 2, ..., n-1] for each row.
+
+    Args:
+        n (Expression): An integer expression specifying the length of the sequence.
+
+    Returns:
+        Expression (List[UInt64] Expression): An expression with lists of sequential integers.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import seq
+        >>> df = daft.from_pydict({"n": [3, 5, 0]})
+        >>> df.with_column("indices", seq(df["n"])).collect()
+        ╭───────┬─────────────────╮
+        │ n     ┆ indices         │
+        │ ---   ┆ ---             │
+        │ Int64 ┆ List[UInt64]    │
+        ╞═══════╪═════════════════╡
+        │ 3     ┆ [0, 1, 2]       │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5     ┆ [0, 1, 2, 3, 4] │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 0     ┆ []              │
+        ╰───────┴─────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_seq", n)
 
 
 def to_list(*items: Expression) -> Expression:

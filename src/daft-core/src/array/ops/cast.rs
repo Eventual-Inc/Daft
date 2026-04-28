@@ -18,7 +18,7 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -418,14 +418,34 @@ impl DurationArray {
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
-            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            DataType::Duration(tu) => {
+                let self_tu = match self.data_type() {
+                    DataType::Duration(tu) => tu,
+                    ty => panic!("Wrong dtype for DurationArray: {ty}"),
+                };
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
+                    std::cmp::Ordering::Greater => {
+                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
+                        self.physical
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                    std::cmp::Ordering::Less => {
+                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
+                        self.physical
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                };
+                Ok(
+                    DurationArray::new(Field::new(self.name(), dtype.clone()), physical)
+                        .into_series(),
+                )
+            }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Duration to {}",
-                dtype
+                "Cannot cast Duration to {dtype}"
             ))),
         }
     }
@@ -1642,6 +1662,42 @@ impl MapArray {
     }
 }
 
+impl UuidArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Uuid => Ok(self.clone().into_series()),
+            DataType::Utf8 => {
+                // Convert UUID to string representation
+                let uuid_strings = self
+                    .into_iter()
+                    .map(|opt_bytes| opt_bytes.map(|bytes| bytes.to_string()));
+                Ok(Utf8Array::from_iter(self.name(), uuid_strings).into_series())
+            }
+            DataType::FixedSizeBinary(16) => Ok(self.physical.clone().into_series()),
+            DataType::Binary => {
+                // Convert UUID to binary representation
+                let binary_values = self.physical.iter();
+                Ok(
+                    DataArray::<crate::datatypes::BinaryType>::from_iter(
+                        self.name(),
+                        binary_values,
+                    )
+                    .into_series(),
+                )
+            }
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast UUID to {}",
+                dtype
+            ))),
+        }
+    }
+}
+
 impl StructArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (self.data_type(), dtype) {
@@ -1764,6 +1820,19 @@ impl StructArray {
                 dtype
             ),
         }
+    }
+}
+
+impl UnionArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        if dtype == self.data_type() {
+            return Ok(self.clone().into_series());
+        }
+
+        Err(DaftError::TypeError(format!(
+            "Union casting not implemented for dtype: {}",
+            dtype
+        )))
     }
 }
 

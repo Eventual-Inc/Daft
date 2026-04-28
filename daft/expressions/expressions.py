@@ -1050,6 +1050,26 @@ class Expression:
 
         return mean(self)
 
+    def percentile(self, percentage: builtins.float) -> Expression:
+        """Calculates the exact percentile for a column of numeric values.
+
+        Tip: See Also
+            [`daft.functions.percentile`](https://docs.daft.ai/en/stable/api/functions/percentile/)
+        """
+        from daft.functions import percentile
+
+        return percentile(self, percentage)
+
+    def median(self) -> Expression:
+        """Calculates the median of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.median`](https://docs.daft.ai/en/stable/api/functions/median/)
+        """
+        from daft.functions import median
+
+        return median(self)
+
     def stddev(self, ddof: int = 1) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 
@@ -2286,6 +2306,16 @@ class Expression:
 
         return length_bytes(self)
 
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the Hamming distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -2460,6 +2490,16 @@ class Expression:
         from daft.functions import list_map
 
         return list_map(self, mapper)
+
+    def list_filter(self, predicate: Expression) -> Expression:
+        """Filters elements in the list using a boolean predicate over `daft.element()`.
+
+        Tip: See Also
+            [`daft.functions.list_filter`](https://docs.daft.ai/en/stable/api/functions/list_filter/)
+        """
+        from daft.functions import list_filter
+
+        return list_filter(self, predicate)
 
     def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
@@ -2818,6 +2858,16 @@ class Expression:
 
         return image_hash(self, method=method, hash_size=hash_size, binbits=binbits)
 
+    def file_path(self) -> Expression:
+        """Gets the path (URL) of a file as a string.
+
+        Tip: See Also
+            [`daft.functions.file_path`](https://docs.daft.ai/en/stable/api/functions/file_path/)
+        """
+        from daft.functions import file_path
+
+        return file_path(self)
+
     def file_size(self) -> Expression:
         """Gets the size of a file in bytes.
 
@@ -2827,6 +2877,51 @@ class Expression:
         from daft.functions import file_size
 
         return file_size(self)
+
+    def video_metadata(self) -> Expression:
+        """Gets metadata for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_metadata`](https://docs.daft.ai/en/stable/api/functions/video_metadata/)
+        """
+        from daft.functions import video_metadata
+
+        return video_metadata(self)
+
+    def video_keyframes(self, *, start_time: float = 0, end_time: float | None = None) -> Expression:
+        """Gets keyframes for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_keyframes`](https://docs.daft.ai/en/stable/api/functions/video_keyframes/)
+        """
+        from daft.functions import video_keyframes
+
+        return video_keyframes(self, start_time=start_time, end_time=end_time)
+
+    def video_frames(
+        self,
+        *,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        is_key_frame: bool | None = None,
+    ) -> Expression:
+        """Decodes video frames from a video file.
+
+        Tip: See Also
+            [`daft.functions.video_frames`](https://docs.daft.ai/en/stable/api/functions/video_frames/)
+        """
+        from daft.functions import video_frames
+
+        return video_frames(
+            self,
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+        )
 
 
 class WhenExpr(Expression):

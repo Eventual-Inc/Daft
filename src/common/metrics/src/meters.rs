@@ -7,7 +7,8 @@ use atomic_float::AtomicF64;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 
 use crate::{
-    ATTR_QUERY_ID, DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+    ATTR_QUERY_ID, BYTES_IN_KEY, BYTES_OUT_KEY, DURATION_KEY, NUM_TASKS_KEY, QueryID, ROWS_IN_KEY,
+    ROWS_OUT_KEY, UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS, UNIT_TASKS,
 };
 
 pub fn normalize_name(name: impl Into<Cow<'static, str>>) -> String {
@@ -203,6 +204,33 @@ impl Meter {
             ROWS_OUT_KEY,
             None,
             Some(Cow::Borrowed(UNIT_ROWS)),
+        )
+    }
+
+    pub fn bytes_in_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            BYTES_IN_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_BYTES)),
+        )
+    }
+
+    pub fn bytes_out_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            BYTES_OUT_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_BYTES)),
+        )
+    }
+
+    pub fn num_tasks_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            NUM_TASKS_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_TASKS)),
         )
     }
 }

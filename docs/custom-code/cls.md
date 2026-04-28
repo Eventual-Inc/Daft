@@ -61,13 +61,16 @@ Daft automatically detects which variant to use for regular functions based on y
 
 ### Resource Control
 
-Control computational resources with decorator parameters:
+Control computational resources, concurrency, and error handling with decorator parameters:
 
 ```python
 @daft.cls(
+    cpus=2,                    # Request 2 CPUs per instance (placement hint)
     gpus=1,                    # Request 1 GPU per instance
-    max_concurrency=4,         # Limit to 4 concurrent instances
-    use_process=True           # Run in separate process
+    max_concurrency=4,         # Cap concurrent instances at 4
+    use_process=True,          # Run each instance in its own process
+    max_retries=3,             # Retry failing calls up to 3 times with backoff
+    on_error="log",            # On final failure, log and emit None instead of raising
 )
 class ImageClassifier:
     def __init__(self, model_name: str):
@@ -85,9 +88,13 @@ df = df.select(classifier(df["images"]))
 
 **Parameters:**
 
-- `gpus`: Number of GPUs required per instance (default: 0)
-- `max_concurrency`: Maximum number of concurrent instances across all workers
-- `use_process`: Whether to run in a separate process for isolation
+- `cpus`: CPUs per instance — placement hint used by the scheduler (fractional values allowed).
+- `gpus`: GPUs per instance (default: 0). Fractional values up to 1.0 are allowed; values above 1.0 must be integers.
+- `use_process`: Whether to run each instance in a separate process for isolation.
+- `max_concurrency`: Maximum number of concurrent instances across all workers.
+- `max_retries`: Number of retry attempts for failing calls (exponential backoff starting at 100 ms, ±25% jitter, capped at 60 s).
+- `on_error`: `"raise"` (default), `"log"`, or `"ignore"`. Controls behavior once retries are exhausted.
+- `name_override`: Display name for the UDF in plans and progress bars.
 
 ### Using `@daft.method`
 

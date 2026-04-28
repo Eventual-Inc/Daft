@@ -160,8 +160,7 @@ impl BlockingSink for DedupSink {
                         .collect::<DaftResult<Vec<_>>>()?;
 
                     // Concatenate the results and return
-                    let concated = MicroPartition::concat(results)?;
-                    Ok(BlockingSinkOutput::Partitions(vec![concated]))
+                    Ok(BlockingSinkOutput::Partitions(results))
                 },
                 Span::current(),
             )

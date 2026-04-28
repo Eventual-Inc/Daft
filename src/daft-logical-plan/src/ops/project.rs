@@ -608,6 +608,16 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Mean, |_| e)
         }
+        AggExpr::Median(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Median, |_| e)
+        }
+        AggExpr::Percentile(ref child, ref percentile) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Percentile(transformed_child, percentile.clone()),
+                |_| e.clone(),
+            )
+        }
         AggExpr::Stddev(ref child, ddof) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::Stddev(transformed_child, ddof),
@@ -671,6 +681,54 @@ fn replace_column_with_semantic_id_aggexpr(
                 Transformed::yes(AggExpr::MapGroups {
                     func,
                     inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFn { handle, inputs } => {
+            let transforms = inputs
+                .iter()
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
+                .collect::<Vec<_>>();
+            if transforms.iter().all(|e| !e.transformed) {
+                Transformed::no(AggExpr::AggFn { handle, inputs })
+            } else {
+                Transformed::yes(AggExpr::AggFn {
+                    handle,
+                    inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFnMap { handle, inputs } => {
+            let transforms = inputs
+                .iter()
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
+                .collect::<Vec<_>>();
+            if transforms.iter().all(|e| !e.transformed) {
+                Transformed::no(AggExpr::AggFnMap { handle, inputs })
+            } else {
+                Transformed::yes(AggExpr::AggFnMap {
+                    handle,
+                    inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFnReduce {
+            handle,
+            partial,
+            return_field,
+        } => {
+            let t = replace_column_with_semantic_id(partial.clone(), subexprs_to_replace, schema);
+            if !t.transformed {
+                Transformed::no(AggExpr::AggFnReduce {
+                    handle,
+                    partial,
+                    return_field,
+                })
+            } else {
+                Transformed::yes(AggExpr::AggFnReduce {
+                    handle,
+                    partial: t.data,
+                    return_field,
                 })
             }
         }

@@ -35,6 +35,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Percentile(e, percentile) => {
+                    AggExpr::Percentile(Expr::Alias(e, name.clone()).into(), percentile)
+                }
                 AggExpr::Stddev(e, ddof) => {
                     AggExpr::Stddev(Expr::Alias(e, name.clone()).into(), ddof)
                 }
@@ -51,6 +54,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Concat(e, delimiter) => {
                     AggExpr::Concat(Expr::Alias(e, name.clone()).into(), delimiter)
                 }
+                AggExpr::Median(e) => AggExpr::Median(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Skew(e) => AggExpr::Skew(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
@@ -59,6 +63,19 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                         .map(|input| input.alias(name.clone()))
                         .collect(),
                 },
+                AggExpr::AggFn { handle, inputs } => AggExpr::AggFn {
+                    handle,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+                AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
+                    unreachable!(
+                        "AggFnMap / AggFnReduce are planner-internal expressions \
+                         and must not appear in a user-level alias context"
+                    )
+                }
             }
         }),
         _ => Err(DaftError::InternalError(format!(

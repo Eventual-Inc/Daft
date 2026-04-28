@@ -4,11 +4,11 @@ import threading
 import typing
 import warnings
 from types import GenericAlias, UnionType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, UnionMode, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -121,10 +121,12 @@ class TimeUnit:
         return f"TimeUnit({self.__str__()})"
 
 
+# Names of DataType factory methods, used by DataType.constructors().
 _DATATYPE_CONSTRUCTOR_SET: set[str] = set()
 
 
 def datatype_constructor(obj: Any) -> Any:
+    """Decorator to register a DataType factory method in the constructor set."""
     if isinstance(obj, classmethod):
         name = obj.__func__.__name__
     else:
@@ -143,6 +145,28 @@ class DataType:
             "We do not support creating a DataType via __init__ "
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
+
+    # These are defined as class-level instances at module bottom via setattr for singleton behavior.
+    # The TYPE_CHECKING stubs below tell mypy about their types.
+    if TYPE_CHECKING:
+        int8: ClassVar[_CallableSingletonDataType]
+        int16: ClassVar[_CallableSingletonDataType]
+        int32: ClassVar[_CallableSingletonDataType]
+        int64: ClassVar[_CallableSingletonDataType]
+        uint8: ClassVar[_CallableSingletonDataType]
+        uint16: ClassVar[_CallableSingletonDataType]
+        uint32: ClassVar[_CallableSingletonDataType]
+        uint64: ClassVar[_CallableSingletonDataType]
+        float32: ClassVar[_CallableSingletonDataType]
+        float64: ClassVar[_CallableSingletonDataType]
+        string: ClassVar[_CallableSingletonDataType]
+        bool: ClassVar[_CallableSingletonDataType]
+        binary: ClassVar[_CallableSingletonDataType]
+        null: ClassVar[_CallableSingletonDataType]
+        date: ClassVar[_CallableSingletonDataType]
+        interval: ClassVar[_CallableSingletonDataType]
+        python: ClassVar[_CallableSingletonDataType]
+        uuid: ClassVar[_CallableSingletonDataType]
 
     @classmethod
     def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
@@ -487,84 +511,6 @@ class DataType:
 
     @datatype_constructor
     @classmethod
-    def int8(cls) -> DataType:
-        """Create an 8-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int8())
-
-    @datatype_constructor
-    @classmethod
-    def int16(cls) -> DataType:
-        """Create an 16-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int16())
-
-    @datatype_constructor
-    @classmethod
-    def int32(cls) -> DataType:
-        """Create an 32-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int32())
-
-    @datatype_constructor
-    @classmethod
-    def int64(cls) -> DataType:
-        """Create an 64-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int64())
-
-    @datatype_constructor
-    @classmethod
-    def uint8(cls) -> DataType:
-        """Create an unsigned 8-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint8())
-
-    @datatype_constructor
-    @classmethod
-    def uint16(cls) -> DataType:
-        """Create an unsigned 16-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint16())
-
-    @datatype_constructor
-    @classmethod
-    def uint32(cls) -> DataType:
-        """Create an unsigned 32-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint32())
-
-    @datatype_constructor
-    @classmethod
-    def uint64(cls) -> DataType:
-        """Create an unsigned 64-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint64())
-
-    @datatype_constructor
-    @classmethod
-    def float32(cls) -> DataType:
-        """Create a 32-bit float DataType."""
-        return cls._from_pydatatype(PyDataType.float32())
-
-    @datatype_constructor
-    @classmethod
-    def float64(cls) -> DataType:
-        """Create a 64-bit float DataType."""
-        return cls._from_pydatatype(PyDataType.float64())
-
-    @datatype_constructor
-    @classmethod
-    def string(cls) -> DataType:
-        """Create a String DataType: A string of UTF8 characters."""
-        return cls._from_pydatatype(PyDataType.string())
-
-    @datatype_constructor
-    @classmethod
-    def bool(cls) -> DataType:
-        """Create the Boolean DataType: Either ``True`` or ``False``."""
-        return cls._from_pydatatype(PyDataType.bool())
-
-    @datatype_constructor
-    @classmethod
-    def binary(cls) -> DataType:
-        """Create a Binary DataType: A string of bytes."""
-        return cls._from_pydatatype(PyDataType.binary())
-
-    @datatype_constructor
-    @classmethod
     def fixed_size_binary(cls, size: int) -> DataType:
         """Create a FixedSizeBinary DataType: A fixed-size string of bytes."""
         if not isinstance(size, int) or size <= 0:
@@ -573,21 +519,9 @@ class DataType:
 
     @datatype_constructor
     @classmethod
-    def null(cls) -> DataType:
-        """Creates the Null DataType: Always the ``Null`` value."""
-        return cls._from_pydatatype(PyDataType.null())
-
-    @datatype_constructor
-    @classmethod
     def decimal128(cls, precision: int, scale: int) -> DataType:
         """Fixed-precision decimal."""
         return cls._from_pydatatype(PyDataType.decimal128(precision, scale))
-
-    @datatype_constructor
-    @classmethod
-    def date(cls) -> DataType:
-        """Create a Date DataType: A date with a year, month and day."""
-        return cls._from_pydatatype(PyDataType.date())
 
     @datatype_constructor
     @classmethod
@@ -612,12 +546,6 @@ class DataType:
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
-
-    @datatype_constructor
-    @classmethod
-    def interval(cls) -> DataType:
-        """Interval DataType."""
-        return cls._from_pydatatype(PyDataType.interval())
 
     @datatype_constructor
     @classmethod
@@ -854,6 +782,15 @@ class DataType:
         elif isinstance(arrow_type, pa.FixedShapeTensorType):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
+        elif pa.types.is_union(arrow_type):
+            assert isinstance(arrow_type, pa.UnionType)
+            mode = "dense" if arrow_type.mode == "dense" else "sparse"
+            field_dict = {
+                arrow_type.field(i).name: cls.from_arrow_type(arrow_type.field(i).type, python_fallback)
+                for i in range(arrow_type.num_fields)
+            }
+            type_ids = list(arrow_type.type_codes)
+            return cls.union(field_dict, type_ids, mode)
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
         if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
@@ -907,22 +844,43 @@ class DataType:
 
     @datatype_constructor
     @classmethod
-    def python(cls) -> DataType:
-        """Create a Python DataType: a type which refers to an arbitrary Python object."""
-        return cls._from_pydatatype(PyDataType.python())
-
-    @datatype_constructor
-    @classmethod
     def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
         return cls._from_pydatatype(PyDataType.file(media_type._media_type))
+
+    @datatype_constructor
+    @classmethod
+    def union(
+        cls,
+        fields: dict[str, DataType],
+        type_ids: builtins.list[int],
+        mode: str | UnionMode = "sparse",
+    ) -> DataType:
+        """Create a Union DataType: a union of named fields, each with its own type.
+
+        Args:
+            fields: Mapping of field names to their DataTypes
+            type_ids: Type IDs (one per field) used to identify which variant is stored
+            mode: Union mode, either ``"sparse"`` or ``"dense"`` (default: ``"sparse"``)
+
+        Examples:
+            >>> import daft
+            >>> union_type = daft.DataType.union(
+            ...     {"i": daft.DataType.int32(), "f": daft.DataType.float64()},
+            ...     type_ids=[0, 1],
+            ...     mode="sparse",
+            ... )
+        """
+        if isinstance(mode, str):
+            mode = UnionMode.from_mode_string(mode)
+        return cls._from_pydatatype(PyDataType.union({name: dt._dtype for name, dt in fields.items()}, type_ids, mode))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.null()
+            >>> dtype = daft.DataType.null  # or daft.DataType.null()
             >>> dtype.is_null()
             True
         """
@@ -933,7 +891,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.bool()
+            >>> dtype = daft.DataType.bool  # or daft.DataType.bool()
             >>> assert dtype.is_boolean()
         """
         return self._dtype.is_boolean()
@@ -943,7 +901,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int8()
+            >>> dtype = daft.DataType.int8  # or daft.DataType.int8()
             >>> assert dtype.is_int8()
         """
         return self._dtype.is_int8()
@@ -953,7 +911,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int16()
+            >>> dtype = daft.DataType.int16  # or daft.DataType.int16()
             >>> assert dtype.is_int16()
         """
         return self._dtype.is_int16()
@@ -963,7 +921,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int32()
+            >>> dtype = daft.DataType.int32  # or daft.DataType.int32()
             >>> assert dtype.is_int32()
         """
         return self._dtype.is_int32()
@@ -973,7 +931,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> assert dtype.is_int64()
         """
         return self._dtype.is_int64()
@@ -983,7 +941,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint8()
+            >>> dtype = daft.DataType.uint8  # or daft.DataType.uint8()
             >>> assert dtype.is_uint8()
         """
         return self._dtype.is_uint8()
@@ -993,7 +951,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint16()
+            >>> dtype = daft.DataType.uint16  # or daft.DataType.uint16()
             >>> assert dtype.is_uint16()
         """
         return self._dtype.is_uint16()
@@ -1003,7 +961,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint32()
+            >>> dtype = daft.DataType.uint32  # or daft.DataType.uint32()
             >>> assert dtype.is_uint32()
         """
         return self._dtype.is_uint32()
@@ -1013,7 +971,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint64()
+            >>> dtype = daft.DataType.uint64  # or daft.DataType.uint64()
             >>> assert dtype.is_uint64()
         """
         return self._dtype.is_uint64()
@@ -1023,7 +981,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float32()
+            >>> dtype = daft.DataType.float32  # or daft.DataType.float32()
             >>> assert dtype.is_float32()
         """
         return self._dtype.is_float32()
@@ -1033,7 +991,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float64()
+            >>> dtype = daft.DataType.float64  # or daft.DataType.float64()
             >>> assert dtype.is_float64()
         """
         return self._dtype.is_float64()
@@ -1063,7 +1021,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.date()
+            >>> dtype = daft.DataType.date  # or daft.DataType.date()
             >>> assert dtype.is_date()
         """
         return self._dtype.is_date()
@@ -1093,7 +1051,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.interval()
+            >>> dtype = daft.DataType.interval  # or daft.DataType.interval()
             >>> assert dtype.is_interval()
         """
         return self._dtype.is_interval()
@@ -1103,7 +1061,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.binary()
+            >>> dtype = daft.DataType.binary  # or daft.DataType.binary()
             >>> assert dtype.is_binary()
         """
         return self._dtype.is_binary()
@@ -1118,12 +1076,22 @@ class DataType:
         """
         return self._dtype.is_fixed_size_binary()
 
+    def is_uuid(self) -> builtins.bool:
+        """Check if this is a UUID type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.uuid()
+            >>> assert dtype.is_uuid()
+        """
+        return self._dtype.is_uuid()
+
     def is_string(self) -> builtins.bool:
         """Check if this is a string type.
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.string()
+            >>> dtype = daft.DataType.string  # or daft.DataType.string()
             >>> assert dtype.is_string()
         """
         return self._dtype.is_string()
@@ -1167,6 +1135,16 @@ class DataType:
             >>> assert dtype.is_map()
         """
         return self._dtype.is_map()
+
+    def is_union(self) -> builtins.bool:
+        """Check if this is a union type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> assert dtype.is_union()
+        """
+        return self._dtype.is_union()
 
     def is_extension(self) -> builtins.bool:
         """Check if this is an extension type.
@@ -1253,7 +1231,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.python()
+            >>> dtype = daft.DataType.python  # or daft.DataType.python()
             >>> assert dtype.is_python()
         """
         return self._dtype.is_python()
@@ -1263,7 +1241,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float64()
+            >>> dtype = daft.DataType.float64  # or daft.DataType.float64()
             >>> assert dtype.is_numeric()
         """
         return self._dtype.is_numeric()
@@ -1273,7 +1251,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> assert dtype.is_integer()
         """
         return self._dtype.is_integer()
@@ -1283,7 +1261,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.bool()
+            >>> dtype = daft.DataType.bool  # or daft.DataType.bool()
             >>> assert not dtype.is_logical()
         """
         return self._dtype.is_logical()
@@ -1368,7 +1346,7 @@ class DataType:
             >>> assert dtype.timezone == "UTC"
             >>> dtype = daft.DataType.int64()
             >>> try:
-            ...     dtype.time_zone
+            ...     dtype.timezone
             ... except AttributeError:
             ...     pass
         """
@@ -1433,7 +1411,7 @@ class DataType:
             >>> assert dtype.scale == 2
             >>> dtype = daft.DataType.int64()
             >>> try:
-            ...     dtype.precision
+            ...     dtype.scale
             ... except AttributeError:
             ...     pass
         """
@@ -1503,6 +1481,55 @@ class DataType:
         """
         return DataType._from_pydatatype(self._dtype.value_type())
 
+    @property
+    def union_mode(self) -> UnionMode:
+        """If this is a union type, return the union mode, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32()}, type_ids=[0], mode="dense")
+            >>> assert str(dtype.union_mode) == "Dense"
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.union_mode
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.union_mode()
+
+    @property
+    def type_ids(self) -> builtins.list[int]:
+        """If this is a union type, return the type IDs, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> assert dtype.type_ids == [0, 1]
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.type_ids
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.type_ids()
+
+    @property
+    def union_fields(self) -> dict[str, DataType]:
+        """If this is a union type, return the fields, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> fields = dtype.union_fields
+            >>> assert fields["i"] == daft.DataType.int32()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.union_fields
+            ... except AttributeError:
+            ...     pass
+        """
+        return {field.name(): DataType._from_pydatatype(field.dtype()) for field in self._dtype.union_fields()}
+
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
         # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
@@ -1554,3 +1581,44 @@ def get_super_ext_type() -> type[pa.ExtensionType]:
     _ensure_registered_super_ext_type()
     assert _STATIC_DAFT_EXTENSION is not None
     return _STATIC_DAFT_EXTENSION
+
+
+class _CallableSingletonDataType(DataType):
+    """Private subtype used for zero-arg singleton dtypes that keep ``()`` compatibility."""
+
+    def __call__(self) -> DataType:
+        return self
+
+
+def _make_simple_singleton(name: str) -> _CallableSingletonDataType:
+    dt = _CallableSingletonDataType.__new__(_CallableSingletonDataType)
+    dt._dtype = getattr(PyDataType, name)()
+    return dt
+
+
+# Create singleton instances for simple no-arg DataType constructors.
+# This allows both ``DataType.int64`` (property) and ``DataType.int64()`` (call) to work,
+# and isinstance(DataType.int64, DataType) is True everywhere.
+for _simple_name in (
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "float32",
+    "float64",
+    "string",
+    "bool",
+    "binary",
+    "null",
+    "date",
+    "interval",
+    "python",
+    "uuid",
+):
+    _DATATYPE_CONSTRUCTOR_SET.add(_simple_name)
+    setattr(DataType, _simple_name, _make_simple_singleton(_simple_name))
+del _simple_name

@@ -14,6 +14,7 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
@@ -27,6 +28,7 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
+    daft_partition_refs::PyFlightPartitionRef,
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
@@ -41,12 +43,11 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
-    shuffle_metadata::ShuffleMetadata,
 };
 
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
-    ShuffleMetadata(ShuffleMetadata),
+    FlightPartitionRef(FlightPartitionRef),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -68,7 +69,18 @@ fn get_global_runtime() -> &'static Handle {
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
-    unimplemented!("get_global_runtime is not implemented without python feature");
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build global tokio runtime for NativeExecutor");
+        let handle = rt.handle().clone();
+        // Keep the runtime alive for the duration of the process.
+        std::thread::spawn(move || {
+            rt.block_on(futures::future::pending::<()>());
+        });
+        handle
+    })
 }
 
 /// Message sent to the execution task to enqueue inputs
@@ -111,9 +123,13 @@ impl MessageRouter {
                     let _ = sender.send(ExecutionEngineResultItem::Partition(partition));
                 }
             }
-            PipelineMessage::ShuffleMetadata { input_id, metadata } => {
+            PipelineMessage::FlightPartitionRef {
+                input_id,
+                partition_ref,
+            } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(ExecutionEngineResultItem::ShuffleMetadata(metadata));
+                    let _ =
+                        sender.send(ExecutionEngineResultItem::FlightPartitionRef(partition_ref));
                 }
             }
         }
@@ -154,7 +170,7 @@ struct PlanState {
 )]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
-    port: u16,
+    address: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -170,15 +186,15 @@ impl PyNativeExecutor {
     #[new]
     pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
         let executor = NativeExecutor::new(is_flotilla_worker, ip);
-        let port = executor.shuffle_port();
+        let address = executor.shuffle_address();
         Self {
             executor: Arc::new(Mutex::new(executor)),
-            port,
+            address,
         }
     }
 
-    pub fn shuffle_port(&self) -> u16 {
-        self.port
+    pub fn shuffle_address(&self) -> Option<String> {
+        self.address.clone()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -354,7 +370,7 @@ async fn run_execution_loop(
     result
 }
 
-pub(crate) struct NativeExecutor {
+pub struct NativeExecutor {
     cancel: CancellationToken,
     is_flotilla_worker: bool,
     shuffle_server: Option<Arc<ShuffleFlightServer>>,
@@ -387,11 +403,10 @@ impl NativeExecutor {
         }
     }
 
-    pub fn shuffle_port(&self) -> u16 {
+    pub fn shuffle_address(&self) -> Option<String> {
         self.shuffle_server_connection
             .as_ref()
-            .map(|conn| conn.port())
-            .unwrap_or(0)
+            .map(|conn| conn.shuffle_address())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -410,10 +425,13 @@ impl NativeExecutor {
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
+            let shuffle_address = self.shuffle_address();
             let ctx = BuilderContext::new_with_context(
                 query_id.clone(),
                 additional_context,
-                self.shuffle_server.clone(),
+                self.shuffle_server
+                    .as_ref()
+                    .map(|server| (server.clone(), shuffle_address.unwrap())),
             );
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
@@ -472,7 +490,6 @@ impl NativeExecutor {
                 }
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
-                    shuffle_metadata: None,
                 })
             }
             .boxed(),
@@ -576,29 +593,27 @@ impl Drop for NativeExecutor {
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_metadata: Option<ShuffleMetadata>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<MicroPartition> {
-        while let Some(item) = self.receiver.recv().await {
-            match item {
-                ExecutionEngineResultItem::Partition(partition) => return Some(partition),
-                ExecutionEngineResultItem::ShuffleMetadata(metadata) => {
-                    self.shuffle_metadata = Some(metadata);
-                }
-            }
-        }
-        None
+    async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
+        self.receiver.recv().await
     }
 
-    async fn into_shuffle_metadata(mut self) -> Option<ShuffleMetadata> {
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
         while let Some(item) = self.receiver.recv().await {
-            if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
-                self.shuffle_metadata = Some(metadata);
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
             }
         }
-        self.shuffle_metadata
+        out
     }
 }
 
@@ -629,7 +644,23 @@ impl PyResultReceiver {
                 .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
-            Ok(part.map(PyMicroPartition::from))
+            Python::attach(|py| {
+                Ok(match part {
+                    None => py.None(),
+                    Some(ExecutionEngineResultItem::Partition(partition)) => {
+                        PyMicroPartition::from(partition)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                        PyFlightPartitionRef::from(partition_ref)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                })
+            })
         })
     }
 
@@ -650,36 +681,6 @@ impl PyResultReceiver {
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
-        })
-    }
-
-    fn try_finish_with_shuffle_metadata<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let result = self.result.clone();
-        let executor = self.executor.clone();
-        let fingerprint = self.fingerprint;
-        let input_id = self.input_id;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut result_guard = result.lock().await;
-            let execution_result = result_guard
-                .take()
-                .expect("PyResultReceiver.try_finish_with_shuffle_metadata() should not be called more than once.");
-            drop(result_guard);
-
-            let shuffle_metadata = execution_result.into_shuffle_metadata().await;
-            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
-            let stats = finish_future.await?;
-            Python::attach(|py| {
-                let py_metadata = shuffle_metadata
-                    .as_ref()
-                    .map(|metadata| metadata.to_pyobject(py))
-                    .transpose()?;
-                Ok((PyExecutionStats::from(stats), py_metadata)
-                    .into_pyobject(py)?
-                    .unbind())
-            })
         })
     }
 }
