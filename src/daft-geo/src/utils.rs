@@ -13,9 +13,47 @@ use daft_dsl::{ExprRef, functions::FunctionArgs};
 use geo::Geometry;
 use wkb::wkb_to_geom;
 
+/// Strip EWKB SRID prefix so the standard `wkb` crate can parse it.
+///
+/// If the WKB type word has the PostGIS SRID flag (0x20000000) set, return a
+/// new buffer with that flag cleared and the 4-byte SRID removed.  Otherwise
+/// return a slice of the original bytes unchanged.
+fn strip_ewkb_srid(bytes: &[u8]) -> std::borrow::Cow<[u8]> {
+    if bytes.len() < 5 {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let le = bytes[0] == 1;
+    let raw_type = if le {
+        u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]])
+    } else {
+        u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]])
+    };
+    if raw_type & 0x20000000 == 0 {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    // Clear the SRID flag and remove the 4-byte SRID field
+    let clean_type = raw_type & !0x20000000;
+    let clean_type_bytes = if le {
+        clean_type.to_le_bytes()
+    } else {
+        clean_type.to_be_bytes()
+    };
+    let mut out = Vec::with_capacity(bytes.len() - 4);
+    out.push(bytes[0]);
+    out.extend_from_slice(&clean_type_bytes);
+    // Skip bytes[5..9] (the SRID), then copy the rest
+    if bytes.len() > 9 {
+        out.extend_from_slice(&bytes[9..]);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// Parse WKB bytes into a `geo::Geometry`.
+///
+/// Accepts both standard ISO WKB and PostGIS EWKB (with SRID).
 pub fn parse_wkb(bytes: &[u8]) -> DaftResult<Geometry> {
-    let mut cur = Cursor::new(bytes);
+    let stripped = strip_ewkb_srid(bytes);
+    let mut cur = Cursor::new(stripped.as_ref());
     wkb_to_geom(&mut cur).map_err(|e| DaftError::ComputeError(format!("WKB parse error: {e:?}")))
 }
 

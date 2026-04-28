@@ -134,8 +134,11 @@ def _wkb_rings(data: bytes) -> list[list[tuple[float, float]]]:
 def _parse_wkb(buf: bytes, offset: int) -> tuple[int, Optional[tuple]]:
     bo = buf[offset]
     e = "<" if bo == 1 else ">"
-    geom_type = struct.unpack_from(e + "I", buf, offset + 1)[0] & 0xFFFF
+    flags = struct.unpack_from(e + "I", buf, offset + 1)[0]
+    geom_type = flags & 0xFFFF
     offset += 5
+    if flags & 0x20000000:  # EWKB: skip 4-byte SRID
+        offset += 4
     return _parse_type(buf, e, geom_type, offset)
 
 
@@ -178,8 +181,11 @@ def _parse_wkb_rings(buf: bytes, offset: int) -> tuple[int, list[list[tuple[floa
     """Parse WKB to a flat list of rings (each ring = list of (lon, lat) pairs)."""
     bo = buf[offset]
     e = "<" if bo == 1 else ">"
-    geom_type = struct.unpack_from(e + "I", buf, offset + 1)[0] & 0xFFFF
+    flags = struct.unpack_from(e + "I", buf, offset + 1)[0]
+    geom_type = flags & 0xFFFF
     offset += 5
+    if flags & 0x20000000:  # EWKB: skip 4-byte SRID
+        offset += 4
 
     if geom_type == 1:  # Point
         x, y = struct.unpack_from(e + "dd", buf, offset)
@@ -225,9 +231,14 @@ _H3_EDGE_DEG = [
 
 def _estimate_polyfill_cells(x0: float, y0: float, x1: float, y1: float, resolution: int) -> int:
     """Rough upper-bound estimate of H3 polyfill count from an MBR."""
+    import math
+
     area_m2 = (x1 - x0) * (y1 - y0) * (111_000 ** 2)
     cell_area = _H3_CELL_AREA_M2[min(resolution, 15)]
-    return max(1, int(area_m2 / cell_area))
+    ratio = area_m2 / cell_area
+    if not math.isfinite(ratio):
+        return 2**63 - 1
+    return max(1, int(ratio))
 
 
 def _batch_point_h3_cells(
@@ -354,6 +365,13 @@ def _file_mbr_from_wkbs(wkbs: list) -> Optional[tuple[float, float, float, float
         buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 21)
         lons = np.ascontiguousarray(buf[:, 5:13]).view("<f8").flatten()
         lats = np.ascontiguousarray(buf[:, 13:21]).view("<f8").flatten()
+        return float(lons.min()), float(lats.min()), float(lons.max()), float(lats.max())
+
+    if sizes == {25}:
+        # All EWKB points with SRID (25 bytes): 1 endian + 4 flags + 4 SRID + 8 x + 8 y
+        buf = np.frombuffer(b"".join(valid), dtype=np.uint8).reshape(-1, 25)
+        lons = np.ascontiguousarray(buf[:, 9:17]).view("<f8").flatten()
+        lats = np.ascontiguousarray(buf[:, 17:25]).view("<f8").flatten()
         return float(lons.min()), float(lats.min()), float(lons.max()), float(lats.max())
 
     if sizes == {93}:
@@ -650,7 +668,7 @@ def _build_h3_index(
         mbr = _file_mbr_from_wkbs(wkbs)
         non_null = [w for w in wkbs if w is not None]
         sizes = {len(w) for w in non_null} if non_null else set()
-        return mbr, sizes == {21}
+        return mbr, sizes in ({21}, {25})
 
     # Parallelism is safe: peak memory per worker = 4 float cols (fast path)
     # or one file's WKBs (fallback path) — never all files at once.
@@ -665,8 +683,12 @@ def _build_h3_index(
     file_mbrs = {fp: r[0] for fp, r in scan_results.items()}
 
     # ── Determine a single safe resolution for ALL files ──────────────────
+    # Resolution capping only matters for polygon/MBR-indexed files (those that
+    # go through polyfill or grid-walk).  Pure-point files map each point to
+    # exactly one cell at any resolution, so their MBR size is irrelevant.
+    all_points = all(r[1] for r in scan_results.values() if r[0] is not None)
     valid_mbrs = [m for m in file_mbrs.values() if m is not None]
-    if valid_mbrs:
+    if valid_mbrs and not all_points:
         ux0 = min(m[0] for m in valid_mbrs)
         uy0 = min(m[1] for m in valid_mbrs)
         ux1 = max(m[2] for m in valid_mbrs)

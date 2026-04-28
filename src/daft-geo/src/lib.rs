@@ -23,6 +23,7 @@ pub mod utils;
 
 pub use great_circle_distance::GreatCircleDistance;
 pub use mbr::{Mbr, mbrs_intersect, wkb_to_mbr};
+pub use utils::get_geometry_binary;
 pub use st_area::StArea;
 pub use st_astext::StAsText;
 pub use st_buffer::StBuffer;

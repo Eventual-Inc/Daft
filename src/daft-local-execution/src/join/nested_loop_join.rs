@@ -1,15 +1,17 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use common_display::table_display::StrValue;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::{join::JoinSide, prelude::SchemaRef};
+use daft_core::{join::JoinSide, prelude::{SchemaRef, UInt64Array}};
 use daft_dsl::{
     Expr, ExprRef,
     expr::{Column, bound_expr::BoundExpr},
 };
-use daft_geo::wkb_to_mbr;
+use daft_geo::{get_geometry_binary, wkb_to_mbr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{RecordBatch, nested_loop_inner_join, nested_loop_inner_join_indexed};
+use rayon::prelude::*;
 use rstar::{AABB, RTree, RTreeObject};
 use tracing::Span;
 
@@ -41,6 +43,18 @@ impl RTreeObject for RTreeEntry {
 struct RTreeState {
     merged_build: RecordBatch,
     rtree: RTree<RTreeEntry>,
+    probe_geom_col: usize,
+}
+
+// ── Partitioned R-tree state (one R-tree per equality-key group) ──────────
+
+/// Per-key state: each group owns its own `RecordBatch` (only that group's
+/// rows), and an R-tree whose entries index into that per-group batch.
+/// This avoids a global `RecordBatch::concat` whose peak = 2× all build rows.
+struct PartitionedRTreeState {
+    /// key → (group's RecordBatch, R-tree indexing into it)
+    groups: HashMap<String, (RecordBatch, RTree<RTreeEntry>)>,
+    probe_key_col: usize,
     probe_geom_col: usize,
 }
 
@@ -123,8 +137,9 @@ fn extract_geom_col_indices(
     extract_from_expr(filter.inner(), build_side, output_schema_len, build_n)
 }
 
-// ── R-tree construction ───────────────────────────────────────────────────
+// ── R-tree construction helpers ───────────────────────────────────────────
 
+/// Build a single R-tree covering all rows in `tables` (original path).
 fn build_rtree(
     tables: &[RecordBatch],
     build_col: usize,
@@ -137,7 +152,7 @@ fn build_rtree(
         return None;
     }
     let series = merged.get_column(build_col);
-    let binary = series.binary().ok()?;
+    let binary = get_geometry_binary(series).ok()?;
 
     let entries: Vec<RTreeEntry> = (0..merged.len())
         .filter_map(|i| {
@@ -153,6 +168,157 @@ fn build_rtree(
     Some((merged, RTree::bulk_load(entries)))
 }
 
+/// Build per-partition R-trees without a global concat.
+///
+/// Phase 1: scan all source tables once to map key → [(table_idx, row_idx)].
+///          No data is copied in this phase.
+/// Phase 2: for each key, `RecordBatch::take` rows from their source tables
+///          and concat only that group's (typically small) slices.
+///          Build one R-tree per group indexing into its own RecordBatch.
+///          This phase is parallelised with rayon across groups.
+///
+/// Bbox fast-path: if the build tables contain precomputed `min_x/min_y/max_x/max_y`
+/// Float64 columns, their values are used directly instead of parsing WKB bytes.
+/// This eliminates the dominant cost (wkb_to_mbr) when such columns exist.
+///
+/// Memory peak ≈ original_scattered_tables + max_one_group (during phase 2).
+/// After this function returns the original `tables` are freed by the caller.
+/// Steady-state = sum(per_group_RecordBatch) + R-tree entries (~32 B each).
+fn build_partitioned_rtrees(
+    tables: &[RecordBatch],
+    build_key_col: usize,
+    build_geom_col: usize,
+    probe_key_col: usize,
+    probe_geom_col: usize,
+) -> Option<PartitionedRTreeState> {
+    if tables.is_empty() {
+        return None;
+    }
+
+    // Detect precomputed bbox columns in the first table's schema.
+    // If present, use them directly instead of wkb_to_mbr (10-100× faster).
+    let bbox_cols: Option<[usize; 4]> = {
+        let schema = &tables[0].schema;
+        let try_find = |name: &str| schema.get_index(name).ok();
+        let candidates = [
+            ("min_x", "min_y", "max_x", "max_y"),
+            ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
+        ];
+        candidates.iter().find_map(|(mn_x, mn_y, mx_x, mx_y)| {
+            Some([
+                try_find(mn_x)?,
+                try_find(mn_y)?,
+                try_find(mx_x)?,
+                try_find(mx_y)?,
+            ])
+        })
+    };
+
+    // Phase 1: group (table_idx, row_idx) pairs by key — no data copy.
+    let mut key_to_locs: HashMap<String, Vec<(usize, u32)>> = HashMap::new();
+    for (t_idx, table) in tables.iter().enumerate() {
+        let key_series = table.get_column(build_key_col);
+        for r_idx in 0..table.len() {
+            let key = key_series.str_value(r_idx);
+            key_to_locs.entry(key).or_default().push((t_idx, r_idx as u32));
+        }
+    }
+
+    if key_to_locs.is_empty() {
+        return None;
+    }
+
+    // Phase 2: per group — extract rows, concat, build R-tree.
+    // Parallelised with rayon: each group is independent.
+    let groups: HashMap<String, (RecordBatch, RTree<RTreeEntry>)> = key_to_locs
+        .into_par_iter()
+        .filter_map(|(key, locs)| {
+            // Gather per-source-table index lists.
+            let mut per_table: HashMap<usize, Vec<u64>> = HashMap::new();
+            for (t_idx, r_idx) in &locs {
+                per_table.entry(*t_idx).or_default().push(*r_idx as u64);
+            }
+
+            // Take rows from each source table and collect the slices.
+            let mut pieces: Vec<RecordBatch> = Vec::with_capacity(per_table.len());
+            for (t_idx, row_indices) in per_table {
+                let idx_arr = UInt64Array::from_vec("", row_indices);
+                if let Ok(taken) = tables[t_idx].take(&idx_arr) {
+                    if !taken.is_empty() {
+                        pieces.push(taken);
+                    }
+                }
+            }
+
+            if pieces.is_empty() {
+                return None;
+            }
+
+            let group_rb = if pieces.len() == 1 {
+                pieces.remove(0)
+            } else {
+                RecordBatch::concat(&pieces).ok()?
+            };
+
+            if group_rb.is_empty() {
+                return None;
+            }
+
+            // Build R-tree entries — bbox fast-path when precomputed columns exist.
+            let entries: Vec<RTreeEntry> = if let Some([ix, iy, ax, ay]) = bbox_cols {
+                let min_x_s = group_rb.get_column(ix).f64().ok()?;
+                let min_y_s = group_rb.get_column(iy).f64().ok()?;
+                let max_x_s = group_rb.get_column(ax).f64().ok()?;
+                let max_y_s = group_rb.get_column(ay).f64().ok()?;
+                let min_x_v = min_x_s.values();
+                let min_y_v = min_y_s.values();
+                let max_x_v = max_x_s.values();
+                let max_y_v = max_y_s.values();
+                (0..group_rb.len())
+                    .filter_map(|i| {
+                        let mn_x = min_x_v[i];
+                        let mn_y = min_y_v[i];
+                        let mx_x = max_x_v[i];
+                        let mx_y = max_y_v[i];
+                        if mn_x.is_finite() && mn_y.is_finite()
+                            && mx_x.is_finite() && mx_y.is_finite()
+                        {
+                            Some(RTreeEntry {
+                                bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
+                                row_idx: i as u32,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            } else {
+                // Slow path: parse WKB bytes to extract MBR.
+                let geom_series = group_rb.get_column(build_geom_col);
+                let binary = get_geometry_binary(geom_series).ok()?;
+                (0..group_rb.len())
+                    .filter_map(|i| {
+                        let wkb = binary.get(i)?;
+                        let [mn_x, mn_y, mx_x, mx_y] = wkb_to_mbr(wkb)?;
+                        Some(RTreeEntry {
+                            bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
+                            row_idx: i as u32,
+                        })
+                    })
+                    .collect()
+            };
+
+            Some((key, (group_rb, RTree::bulk_load(entries))))
+        })
+        .collect();
+
+    if groups.is_empty() {
+        return None;
+    }
+
+    Some(PartitionedRTreeState { groups, probe_key_col, probe_geom_col })
+}
+
 // ── Operator state ────────────────────────────────────────────────────────
 
 pub(crate) struct NestedLoopBuildState {
@@ -162,6 +328,7 @@ pub(crate) struct NestedLoopBuildState {
 pub(crate) struct NestedLoopProbeState {
     build_tables: Vec<RecordBatch>,
     rtree_state: Option<RTreeState>,
+    partitioned_rtree_state: Option<PartitionedRTreeState>,
     stream_idx: usize,
 }
 
@@ -173,6 +340,8 @@ pub struct NestedLoopJoinOperator {
     build_side: JoinSide,
     /// `Some((build_geom_col, probe_geom_col))` when R-tree is applicable.
     geom_cols: Option<(usize, usize)>,
+    /// `Some((build_key_col, probe_key_col))` when equality partition key is present.
+    partition_key: Option<(usize, usize)>,
 }
 
 impl NestedLoopJoinOperator {
@@ -182,6 +351,7 @@ impl NestedLoopJoinOperator {
         output_schema: SchemaRef,
         build_side: JoinSide,
         build_n_cols: usize,
+        partition_key: Option<(usize, usize)>,
     ) -> Self {
         let geom_cols = extract_geom_col_indices(
             &filter,
@@ -189,7 +359,7 @@ impl NestedLoopJoinOperator {
             output_schema.len(),
             build_n_cols,
         );
-        Self { filter, output_schema, build_side, geom_cols }
+        Self { filter, output_schema, build_side, geom_cols, partition_key }
     }
 }
 
@@ -222,6 +392,29 @@ impl JoinOperator for NestedLoopJoinOperator {
         &self,
         finalized_build_state: Self::FinalizedBuildState,
     ) -> Self::ProbeState {
+        // Prefer the partitioned R-tree path when we have both a geometry column
+        // and an equality partition key.  This keeps memory proportional to the
+        // build side (no extra 2× concat copy over the whole table at once) and
+        // makes each probe morsel query only its matching key group's R-tree.
+        if let (Some((build_geom_col, probe_geom_col)), Some((build_key_col, probe_key_col))) =
+            (self.geom_cols, self.partition_key)
+        {
+            if let Some(ps) = build_partitioned_rtrees(
+                &finalized_build_state,
+                build_key_col,
+                build_geom_col,
+                probe_key_col,
+                probe_geom_col,
+            ) {
+                return NestedLoopProbeState {
+                    build_tables: vec![],
+                    rtree_state: None,
+                    partitioned_rtree_state: Some(ps),
+                    stream_idx: 0,
+                };
+            }
+        }
+        // Fall back to single global R-tree when no partition key.
         if let Some((build_col, probe_col)) = self.geom_cols {
             if let Some((merged, rtree)) = build_rtree(&finalized_build_state, build_col) {
                 return NestedLoopProbeState {
@@ -231,6 +424,7 @@ impl JoinOperator for NestedLoopJoinOperator {
                         rtree,
                         probe_geom_col: probe_col,
                     }),
+                    partitioned_rtree_state: None,
                     stream_idx: 0,
                 };
             }
@@ -238,6 +432,7 @@ impl JoinOperator for NestedLoopJoinOperator {
         NestedLoopProbeState {
             build_tables: finalized_build_state,
             rtree_state: None,
+            partitioned_rtree_state: None,
             stream_idx: 0,
         }
     }
@@ -248,10 +443,14 @@ impl JoinOperator for NestedLoopJoinOperator {
         mut state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
-        let build_is_empty = state
-            .rtree_state
-            .as_ref()
-            .map_or(state.build_tables.is_empty(), |rs| rs.merged_build.is_empty());
+        let build_is_empty = if state.partitioned_rtree_state.is_some() {
+            false // partitioned state is never considered empty; unmatched keys just produce no output
+        } else {
+            state
+                .rtree_state
+                .as_ref()
+                .map_or(state.build_tables.is_empty(), |rs| rs.merged_build.is_empty())
+        };
 
         if input.is_empty() || build_is_empty {
             let empty = MicroPartition::empty(Some(self.output_schema.clone()));
@@ -274,14 +473,66 @@ impl JoinOperator for NestedLoopJoinOperator {
                     let probe_tables = input.record_batches();
                     let probe_tbl = &probe_tables[state.stream_idx];
 
-                    let output_mp = if let Some(ref rs) = state.rtree_state {
+                    let output_mp = if let Some(ref ps) = state.partitioned_rtree_state {
+                        // ── Partition-key R-tree path ─────────────────────────────
+                        // Each group has its own RecordBatch; probe rows are bucketed
+                        // by key and joined against only their matching group.
+                        let key_series = probe_tbl.get_column(ps.probe_key_col);
+                        let probe_geom_series = probe_tbl.get_column(ps.probe_geom_col);
+
+                        // Collect candidate (probe_idx, build_idx) pairs per key.
+                        // build_idx is relative to that key's group RecordBatch.
+                        let mut per_key: HashMap<String, (Vec<u64>, Vec<u64>)> = HashMap::new();
+
+                        if let Ok(binary) = get_geometry_binary(probe_geom_series) {
+                            for i in 0..probe_tbl.len() {
+                                let key = key_series.str_value(i);
+                                let Some((_, group_tree)) = ps.groups.get(&key) else {
+                                    continue;
+                                };
+                                let Some(wkb) = binary.get(i) else { continue; };
+                                let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb) else {
+                                    continue;
+                                };
+                                let q = AABB::from_corners([min_x, min_y], [max_x, max_y]);
+                                let e = per_key.entry(key).or_default();
+                                for entry in group_tree.locate_in_envelope_intersecting(&q) {
+                                    e.0.push(i as u64);
+                                    e.1.push(entry.row_idx as u64);
+                                }
+                            }
+                        }
+
+                        // One indexed join call per unique key in this probe morsel.
+                        let mut result_batches: Vec<RecordBatch> = Vec::new();
+                        for (key, (cp, cb)) in per_key {
+                            if cp.is_empty() { continue; }
+                            let (group_rb, _) = ps.groups.get(&key).unwrap();
+                            let rb = nested_loop_inner_join_indexed(
+                                probe_tbl, group_rb, &filter, build_side, &cp, &cb,
+                            )?;
+                            if !rb.is_empty() {
+                                result_batches.push(rb);
+                            }
+                        }
+
+                        if result_batches.is_empty() {
+                            MicroPartition::empty(Some(output_schema))
+                        } else {
+                            MicroPartition::new_loaded(
+                                output_schema,
+                                Arc::new(result_batches),
+                                None,
+                            )
+                        }
+                    } else if let Some(ref rs) = state.rtree_state {
                         // ── R-tree accelerated path ───────────────────────────────
                         let merged_build = &rs.merged_build;
                         let rtree = &rs.rtree;
 
                         let probe_series = probe_tbl.get_column(rs.probe_geom_col);
                         let (cand_probe, cand_build, use_rtree) = if let Ok(binary) =
-                            probe_series.binary()
+                            get_geometry_binary(probe_series)
                         {
                             // Conservative capacity: assume ~few candidates per probe row.
                             let hint = probe_tbl.len() * 4;

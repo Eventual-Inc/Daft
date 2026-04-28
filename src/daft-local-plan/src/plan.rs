@@ -814,6 +814,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         filter: BoundExpr,
         build_side: JoinSide,
+        partition_key: Option<[usize; 2]>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -823,6 +824,7 @@ impl LocalPhysicalPlan {
             right,
             filter,
             build_side,
+            partition_key,
             schema,
             stats_state,
             context,
@@ -1782,6 +1784,7 @@ impl LocalPhysicalPlan {
                 Self::NestedLoopJoin(NestedLoopJoin {
                     filter,
                     build_side,
+                    partition_key,
                     schema,
                     stats_state,
                     context,
@@ -1791,6 +1794,7 @@ impl LocalPhysicalPlan {
                     new_right.clone(),
                     filter.clone(),
                     *build_side,
+                    *partition_key,
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -2164,6 +2168,11 @@ pub struct NestedLoopJoin {
     /// Which physical child (left = probe, right = build) the build table comes from.
     /// This fixes the tile-schema column ordering to match the bound filter indices.
     pub build_side: JoinSide,
+    /// Optional equality partition key extracted from the original join's ON clause.
+    /// [0] = column index in the build-side schema, [1] = column index in the probe-side schema.
+    /// When set, the NLJ groups the build side by key and probes only the matching group,
+    /// keeping memory proportional to the largest single partition rather than the full table.
+    pub partition_key: Option<[usize; 2]>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

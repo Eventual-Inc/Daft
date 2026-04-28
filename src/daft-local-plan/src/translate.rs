@@ -185,11 +185,51 @@ fn translate_helper(
                         let filter_expr =
                             rebind_predicate(filter.predicate.clone(), &output_schema)?;
 
-                        // Choose the smaller side to build (collect), larger to probe (stream).
-                        let left_stats = join.left.materialized_stats();
-                        let right_stats = join.right.materialized_stats();
-                        let build_on_left = left_stats.approx_stats.size_bytes
-                            <= right_stats.approx_stats.size_bytes;
+                        // Choose the build side: prefer the side that contains arg0 of the
+                        // spatial function (the "container" geometry, e.g. polygon for
+                        // st_contains).  Building the R-tree from polygons and probing with
+                        // points is both semantically correct and more selective.
+                        //
+                        // We do NOT use optimizer row-count stats here because they can be
+                        // wildly off (e.g. the planner may report a join output cardinality
+                        // rather than the input table size, causing the wrong side to be
+                        // chosen as build).
+                        //
+                        // Fallback: stats-based selection if we can't identify arg0.
+                        let left_schema_len = join.left.schema().len();
+                        let build_on_left: bool = (|| -> bool {
+                            // Walk the bound filter to find arg0's column index.
+                            fn spatial_arg0_idx(expr: &ExprRef) -> Option<usize> {
+                                match expr.as_ref() {
+                                    Expr::ScalarFn(
+                                        daft_dsl::functions::scalar::ScalarFn::Builtin(sf),
+                                    ) if SPATIAL_PREDICATES.contains(&sf.func.name()) => {
+                                        let arg0 = sf.inputs.required(0).ok()?;
+                                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
+                                            Some(bc.index)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    Expr::BinaryOp { left, right, .. } => {
+                                        spatial_arg0_idx(left)
+                                            .or_else(|| spatial_arg0_idx(right))
+                                    }
+                                    Expr::Not(inner) => spatial_arg0_idx(inner),
+                                    _ => None,
+                                }
+                            }
+                            if let Some(idx) = spatial_arg0_idx(filter_expr.inner()) {
+                                // arg0 col idx < left schema len → arg0 in left side.
+                                idx < left_schema_len
+                            } else {
+                                // Fallback: pick the side with fewer estimated rows.
+                                let left_stats = join.left.materialized_stats();
+                                let right_stats = join.right.materialized_stats();
+                                left_stats.approx_stats.num_rows
+                                    <= right_stats.approx_stats.num_rows
+                            }
+                        })();
 
                         // build_side records which logical-join side the build table came from.
                         // This determines the tile column ordering in nested_loop_inner_join, which
@@ -203,12 +243,47 @@ fn translate_helper(
                             (left_plan, right_plan, JoinSide::Right)
                         };
 
+                        // Extract equality partition key from the join's ON predicate.
+                        // When present, the NLJ groups its build side by the key value and
+                        // probes only the matching group — keeping per-probe memory bounded
+                        // to one partition's worth of build rows instead of the full table.
+                        //
+                        // split_eq_preds returns cleaned ExprRef where JoinSide column markers
+                        // have been replaced with plain resolved column references.
+                        let partition_key: Option<[usize; 2]> = (|| -> Option<[usize; 2]> {
+                            let (_, left_eq_keys, right_eq_keys, _) = join.on.split_eq_preds();
+                            if left_eq_keys.len() != 1 || right_eq_keys.len() != 1 {
+                                return None;
+                            }
+                            // Map logical-join left/right keys to probe/build keys.
+                            // phys_left is probe, phys_right is build (convention above).
+                            let (probe_eq_key, build_eq_key) = if build_on_left {
+                                // join.left is build, join.right is probe
+                                (&right_eq_keys[0], &left_eq_keys[0])
+                            } else {
+                                // join.right is build, join.left is probe
+                                (&left_eq_keys[0], &right_eq_keys[0])
+                            };
+                            let probe_col_name = match probe_eq_key.as_ref() {
+                                Expr::Column(col) => col.name(),
+                                _ => return None,
+                            };
+                            let build_col_name = match build_eq_key.as_ref() {
+                                Expr::Column(col) => col.name(),
+                                _ => return None,
+                            };
+                            let probe_idx = phys_left.schema().get_index(&probe_col_name).ok()?;
+                            let build_idx = phys_right.schema().get_index(&build_col_name).ok()?;
+                            Some([build_idx, probe_idx])
+                        })();
+
                         return Ok((
                             LocalPhysicalPlan::nested_loop_join(
                                 phys_left,
                                 phys_right,
                                 filter_expr,
                                 build_side,
+                                partition_key,
                                 output_schema,
                                 filter.stats_state.clone(),
                                 LocalNodeContext::default(),
