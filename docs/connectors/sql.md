@@ -155,5 +155,4 @@ You could modify the SQL query to add the filters and projections yourself, but 
 
 Here are the SQL features that are on our roadmap. Please let us know if you would like to see support for any of these features!
 
-1. Write support into SQL databases.
-2. Reads via [ADBC (Arrow Database Connectivity)](https://arrow.apache.org/docs/format/ADBC.html).
+1. Reads via [ADBC (Arrow Database Connectivity)](https://arrow.apache.org/docs/format/ADBC.html).

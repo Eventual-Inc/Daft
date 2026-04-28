@@ -17,12 +17,16 @@ Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-
 === "🐍 Python"
 
     ```python
-    from daft.catalog.__glue import load_glue
+    import boto3
+    from daft.catalog import Catalog
 
-    # Load a glue catalog instance
-    catalog = load_glue(
+    # Create a boto3 session or client
+    session = boto3.Session(region_name="us-west-2")
+
+    # Load a glue catalog instance using the public API
+    catalog = Catalog.from_glue(
         name="my_glue_catalog",
-        region_name="us-west-2"
+        session=session,
     )
 
     # Load a glue table
@@ -76,7 +80,9 @@ you must append your custom table's class to the catalog's `_table_impls` field.
 The Daft `GlueCatalog._table_impls` field holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that each `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
 
 ```python
-from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue
+import boto3
+from daft.catalog import Catalog
+from daft.catalog.__glue import GlueCatalog, GlueTable
 
 class GlueTestTable(GlueTable):
     """GlueTestTable shows how we register custom table implementations."""
@@ -94,6 +100,7 @@ class GlueTestTable(GlueTable):
     def write(self, df: DataFrame, mode: Literal['append'] | Literal['overwrite'] = "append", **options) -> None:
         raise NotImplementedError
 
-gc = load_glue("my_glue_catalog", region_name="us-west-2")
+session = boto3.Session(region_name="us-west-2")
+gc = Catalog.from_glue("my_glue_catalog", session=session)
 gc._table_impls.append(GlueTestTable) # !! REGISTER GLUE TEST TABLE !!
 ```

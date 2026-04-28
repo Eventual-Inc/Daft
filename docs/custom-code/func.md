@@ -379,27 +379,6 @@ df.show()
 ╰───────╯
 ```
 
-### Eager Evaluation
-
-Like regular functions, batch UDFs execute immediately when called with scalars:
-
-```python
-@daft.func.batch(return_dtype=DataType.int64())
-def multiply(a: Series, b: Series) -> Series:
-    import pyarrow.compute as pc
-
-    a_arrow = a.to_arrow()
-    b_arrow = b.to_arrow()
-    result = pc.multiply(a_arrow, b_arrow)
-    return result
-
-# Lazy execution - returns Expression
-expr = multiply(df["x"], df["y"])
-
-# Eager execution - computes immediately
-result = multiply(5, 10)  # Returns 50
-```
-
 ## Resources, Concurrency, and Error Handling
 
 `@daft.func` and `@daft.func.batch` accept a common set of keyword arguments for concurrency control, scheduling, and error handling:

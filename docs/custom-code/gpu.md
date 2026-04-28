@@ -36,9 +36,9 @@ class SmallModel:
         import torch
         self.model = torch.load(name).cuda()
 
-    @daft.method.batch(batch_size=16)
-    def infer(self, x: Series) -> Series:
-        return self.model(x.to_arrow().to_numpy())
+    @daft.method.batch(return_dtype=DataType.float32(), batch_size=16)
+    def infer(self, x: Series) -> list[float]:
+        return self.model(x.to_arrow().to_numpy()).tolist()
 ```
 
 With `gpus=0.5` and `max_concurrency=2`, two instances share one physical GPU. Daft isolates `CUDA_VISIBLE_DEVICES` per process, so device ordinals stay consistent inside each instance.
