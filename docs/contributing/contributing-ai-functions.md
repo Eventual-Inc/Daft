@@ -101,7 +101,7 @@ and idea of where you actual logic should live, and the previous steps are to pr
 hook your new expression into the provider/model system.
 
 ```python
-dataclass
+@dataclass
 class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str  # store some metadata
 

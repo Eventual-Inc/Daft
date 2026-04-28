@@ -1440,3 +1440,40 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("find", expr, substr)
+
+
+def hamming_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Hamming distance between two strings.
+
+    The Hamming distance is the number of positions at which the corresponding
+    characters are different.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Hamming distance for each pair of strings. Returns null when either input
+        is null or the two strings have different lengths.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import hamming_distance
+        >>> df = daft.from_pydict({"x": ["ronald", "ronald", "ronald"], "y": ["ronald", "renuld", "ronaldo"]})
+        >>> df = df.with_column("distance", hamming_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬─────────┬──────────╮
+        │ x      ┆ y       ┆ distance │
+        │ ---    ┆ ---     ┆ ---      │
+        │ String ┆ String  ┆ Int64    │
+        ╞════════╪═════════╪══════════╡
+        │ ronald ┆ ronald  ┆ 0        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ renuld  ┆ 2        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ ronaldo ┆ None     │
+        ╰────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("hamming_distance", left, right)

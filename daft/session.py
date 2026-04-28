@@ -552,6 +552,18 @@ class Session:
         """
         return Expression._from_pyexpr(self._session.get_function(name, *[a._expr for a in args]))
 
+    def get_aggregate_function(self, name: str, *args: Expression) -> Expression:
+        """Returns an aggregate function expression from the current session.
+
+        Args:
+            name (str): aggregate function name as registered by an extension
+            *args: Expression arguments to pass to the aggregate function
+
+        Returns:
+            Expression: aggregate result expression
+        """
+        return Expression._from_pyexpr(self._session.get_aggregate_function(name, *[a._expr for a in args]))
+
     ###
     # has_*
     ###
@@ -881,6 +893,11 @@ def get_table(identifier: Identifier | str) -> Table:
 def get_function(name: str, *args: Expression) -> Expression:
     """Returns the function from the current session or raises an exception if it does not exist."""
     return _session().get_function(name, *args)
+
+
+def get_aggregate_function(name: str, *args: Expression) -> Expression:
+    """Returns the aggregate function from the current session or raises an exception if it does not exist."""
+    return _session().get_aggregate_function(name, *args)
 
 
 ###
