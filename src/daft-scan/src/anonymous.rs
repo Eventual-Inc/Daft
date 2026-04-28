@@ -106,6 +106,7 @@ impl ScanOperator for AnonymousScanOperator {
                 Arc::new(ScanTask::new(
                     vec![ScanSource {
                         size_bytes: None,
+                        last_modified: None,
                         metadata: None,
                         statistics: None,
                         partition_spec: None,

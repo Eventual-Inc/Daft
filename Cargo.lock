@@ -2290,6 +2290,7 @@ dependencies = [
  "daft-minhash",
  "daft-parquet",
  "daft-partition-refs",
+ "daft-raw",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
@@ -2297,7 +2298,6 @@ dependencies = [
  "daft-shuffles",
  "daft-sql",
  "daft-stats",
- "daft-text",
  "daft-warc",
  "daft-writers",
  "libc",
@@ -2896,6 +2896,7 @@ dependencies = [
  "google-cloud-token",
  "home",
  "itertools 0.14.0",
+ "jiff",
  "log",
  "md5",
  "opendal",
@@ -2989,10 +2990,10 @@ dependencies = [
  "daft-micropartition",
  "daft-parquet",
  "daft-partition-refs",
+ "daft-raw",
  "daft-recordbatch",
  "daft-scan",
  "daft-shuffles",
- "daft-text",
  "daft-warc",
  "daft-writers",
  "dashmap",
@@ -3178,6 +3179,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-raw"
+version = "0.3.0-dev0"
+dependencies = [
+ "async-stream",
+ "common-error",
+ "daft-compression",
+ "daft-core",
+ "daft-io",
+ "daft-recordbatch",
+ "flate2",
+ "futures",
+ "jiff",
+ "serde",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
@@ -3253,6 +3273,7 @@ dependencies = [
  "futures",
  "indexmap",
  "itertools 0.14.0",
+ "jiff",
  "pyo3",
  "serde",
  "serde_json",
@@ -3378,24 +3399,6 @@ dependencies = [
  "daft-recordbatch",
  "serde",
  "snafu",
-]
-
-[[package]]
-name = "daft-text"
-version = "0.3.0-dev0"
-dependencies = [
- "async-stream",
- "common-error",
- "daft-compression",
- "daft-core",
- "daft-io",
- "daft-recordbatch",
- "flate2",
- "futures",
- "serde",
- "tokio",
- "tokio-stream",
- "tokio-util",
 ]
 
 [[package]]

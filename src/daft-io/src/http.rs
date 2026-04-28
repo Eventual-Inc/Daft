@@ -139,6 +139,7 @@ fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<File
                 // for populating `size` if necessary
                 size: None,
                 filetype,
+                last_modified: None,
             }))
         })
         .collect::<super::Result<Vec<_>>>()?;
@@ -326,6 +327,47 @@ impl ObjectSource for HttpSource {
         }
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let request = self.client.head(uri);
+        let response = request
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+        let response = response
+            .error_for_status()
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+
+        let headers = response.headers();
+        let size_header = headers
+            .get(CONTENT_LENGTH)
+            .ok_or_else(|| Error::UnableToDetermineSize { path: uri.into() })?;
+        let size_bytes = String::from_utf8(size_header.as_bytes().to_vec())
+            .with_context(|_| UnableToParseUtf8HeaderSnafu::<String> { path: uri.into() })?;
+        let size = size_bytes
+            .parse::<u64>()
+            .with_context(|_| UnableToParseIntegerSnafu::<String> { path: uri.into() })?;
+        let last_modified = headers
+            .get(reqwest::header::LAST_MODIFIED)
+            .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
+            .and_then(|s| jiff::fmt::rfc2822::parse(s).ok())
+            .map(jiff::Timestamp::from);
+
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(size),
+            filetype: FileType::File,
+            last_modified,
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,
@@ -395,6 +437,7 @@ impl ObjectSource for HttpSource {
                     filepath: path.clone(),
                     filetype: FileType::File,
                     size: response.content_length(),
+                    last_modified: None,
                 }],
                 continuation_token: None,
             }),

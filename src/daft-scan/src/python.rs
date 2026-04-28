@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
 
 use crate::{
-    CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig, JsonSourceConfig,
-    ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig, TextSourceConfig,
-    WarcSourceConfig, source::ShimSourceTask, storage_config::StorageConfig,
+    BlobSourceConfig, CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig,
+    JsonSourceConfig, ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig,
+    TextSourceConfig, WarcSourceConfig, source::ShimSourceTask, storage_config::StorageConfig,
 };
 
 /// A Rust [`DataSource`] exposed as a Python object.
@@ -115,6 +115,7 @@ impl PyDataSourceTask {
 
         let source = ScanSource {
             size_bytes,
+            last_modified: None,
             metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
             statistics,
             partition_spec: Some(pspec),
@@ -183,6 +184,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Text(config)))
     }
 
+    /// Create a Blob file format config.
+    #[staticmethod]
+    fn from_blob_config(config: BlobSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Blob(config)))
+    }
+
     /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
@@ -204,6 +211,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Blob(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
@@ -742,6 +753,7 @@ pub mod pylib {
 
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata,
                 statistics,
                 partition_spec: Some(pspec),
@@ -792,6 +804,7 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
                 statistics,
                 partition_spec: None,
@@ -838,6 +851,7 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
                 }),
@@ -928,6 +942,7 @@ pub mod pylib {
         )?;
         let data_source = ScanSource {
             size_bytes: Some(file_size),
+            last_modified: None,
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),

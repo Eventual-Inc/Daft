@@ -240,6 +240,17 @@ impl ObjectSource for GravitinoSource {
         source.get_size(&source_uri, io_stats).await
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let (source, source_uri) = self.fileset_path_to_source_and_url(uri).await?;
+        let mut fm = source.get_file_metadata(&source_uri, io_stats).await?;
+        fm.filepath = uri.to_string();
+        Ok(fm)
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,

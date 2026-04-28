@@ -241,6 +241,7 @@ mod tests {
         ScanTask::new(
             vec![ScanSource {
                 size_bytes: Some(size_bytes),
+                last_modified: None,
                 metadata: None,
                 statistics: None,
                 partition_spec: None,
