@@ -556,18 +556,25 @@ pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
     Some(path)
 }
 
-/// Builds a canonical `file://` URI from a local path.
+/// Returns true if the path looks like a Windows drive-letter path (e.g. `C:/foo`).
+fn starts_with_windows_drive(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// Builds a `file://` URI from a local path, ensuring the canonical
+/// triple-slash form for Windows drive-letter paths.
 ///
-/// POSIX absolute paths (`/tmp/foo`) get two slashes (`file:///tmp/foo`).
-/// Windows drive-letter paths (`C:/Users/...`) get three (`file:///C:/Users/...`)
-/// so the URL parses correctly and round-trips through `strip_file_uri_to_path`.
+/// - POSIX absolute paths (`/tmp/foo`) → `file:///tmp/foo` (two slashes + leading `/`).
+/// - Windows drive-letter paths (`C:/Users/...`) → `file:///C:/Users/...` (three slashes).
+/// - Anything else (relative paths) → `file://{path}` (preserves prior behavior).
 ///
-/// Inverse of [`strip_file_uri_to_path`].
+/// Inverse of [`strip_file_uri_to_path`] for absolute inputs.
 pub fn local_path_to_file_uri(local_path: &str) -> String {
-    if local_path.starts_with('/') {
-        format!("file://{local_path}")
-    } else {
+    if starts_with_windows_drive(local_path) {
         format!("file:///{local_path}")
+    } else {
+        format!("file://{local_path}")
     }
 }
 
