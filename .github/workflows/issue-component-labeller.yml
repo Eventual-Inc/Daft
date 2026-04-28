@@ -34,40 +34,66 @@ jobs:
             return;
           }
 
+          // Map component choices to existing repo labels where semantics are clear.
+          // Unmapped components are intentionally left as no-op until dedicated labels exist.
           const componentToLabels = {
             "Built-in Functions": ["expression"],
             "UDFs (User Defined Functions)": ["python"],
             "Data Sources & Sinks": ["data-catalogs"],
             "Cloud Storage (S3/GCS/Azure)": ["data-catalogs"],
-            "Lance Integration": ["data-catalogs"],
-            "Memory Management/OOM's": ["oncall"],
-            "Native Runner (swordfish)": ["oncall"],
-            "Distributed Runner (flotilla)": ["oncall"],
           };
 
-          const labelsToAdd = new Set();
+          const managedLabels = new Set(
+            Object.values(componentToLabels).flat(),
+          );
+
+          const desiredLabels = new Set();
           for (const component of selectedComponents) {
             const mappedLabels = componentToLabels[component] || [];
             for (const mappedLabel of mappedLabels) {
-              if (!currentLabels.has(mappedLabel)) {
-                labelsToAdd.add(mappedLabel);
-              }
+              desiredLabels.add(mappedLabel);
             }
           }
 
-          if (labelsToAdd.size === 0) {
-            core.info("No new labels to add.");
-            return;
+          const labelsToRemove = [];
+          for (const label of managedLabels) {
+            if (currentLabels.has(label) && !desiredLabels.has(label)) {
+              labelsToRemove.push(label);
+            }
           }
 
-          const labels = Array.from(labelsToAdd);
-          await github.rest.issues.addLabels({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.payload.issue.number,
-            labels,
-          });
-          core.info(`Applied labels: ${labels.join(", ")}`);
+          for (const label of labelsToRemove) {
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              name: label,
+            });
+          }
+
+          const labelsToAdd = [];
+          for (const label of desiredLabels) {
+            if (!currentLabels.has(label)) {
+              labelsToAdd.push(label);
+            }
+          }
+
+          if (labelsToAdd.length > 0) {
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: labelsToAdd,
+            });
+          }
+
+          if (labelsToAdd.length === 0 && labelsToRemove.length === 0) {
+            core.info("No component label changes needed.");
+          } else {
+            core.info(
+              `Component labels updated. Added: [${labelsToAdd.join(", ")}], removed: [${labelsToRemove.join(", ")}]`,
+            );
+          }
 
           function extractSection(markdownBody, heading) {
             const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
