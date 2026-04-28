@@ -14,7 +14,10 @@ use daft_context::{
 };
 
 use crate::{
-    scheduling::task::{TaskContext, TaskSource},
+    scheduling::{
+        task,
+        task::{TaskContext, TaskSource},
+    },
     statistics::{StatisticsSubscriber, TaskEvent},
 };
 
@@ -42,23 +45,6 @@ impl TaskLifecycleEventSubscriber {
     }
 }
 
-fn to_task_source(source: &TaskSource) -> EventTaskSource {
-    match source {
-        TaskSource::PhysicalScan(scan) => EventTaskSource::PhysicalScan(PhysicalScanSource {
-            source_id: scan.source_id,
-            scan_tasks: scan.scan_tasks,
-            paths: scan.paths.clone(),
-            storage_bytes: scan.storage_bytes,
-            estimated_memory_bytes: scan.estimated_memory_bytes,
-        }),
-        TaskSource::InMemoryScan(scan) => EventTaskSource::InMemoryScan(InMemoryScanSource {
-            source_id: scan.source_id,
-            partitions: scan.partitions,
-            total_bytes: scan.total_bytes,
-        }),
-    }
-}
-
 impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
@@ -68,7 +54,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 metadata,
             } => {
                 let sources: Vec<EventTaskSource> =
-                    metadata.sources.iter().map(to_task_source).collect();
+                    metadata.sources.iter().map(Into::into).collect();
                 let submit_event = Event::TaskSubmit(TaskSubmitEvent {
                     header: event_header(self.query_id.clone()),
                     task: task_info_from_context(context),
@@ -132,4 +118,35 @@ fn task_info_from_context(context: &TaskContext) -> Arc<TaskInfo> {
         node_ids: context.node_ids.clone(),
     };
     Arc::new(info)
+}
+
+impl From<&task::PhysicalScanSource> for PhysicalScanSource {
+    fn from(scan: &task::PhysicalScanSource) -> Self {
+        Self {
+            source_id: scan.source_id,
+            scan_tasks: scan.scan_tasks,
+            paths: scan.paths.clone(),
+            storage_bytes: scan.storage_bytes,
+            estimated_memory_bytes: scan.estimated_memory_bytes,
+        }
+    }
+}
+
+impl From<&task::InMemoryScanSource> for InMemoryScanSource {
+    fn from(scan: &task::InMemoryScanSource) -> Self {
+        Self {
+            source_id: scan.source_id,
+            partitions: scan.partitions,
+            total_bytes: scan.total_bytes,
+        }
+    }
+}
+
+impl From<&TaskSource> for EventTaskSource {
+    fn from(source: &TaskSource) -> Self {
+        match source {
+            TaskSource::PhysicalScan(scan) => Self::PhysicalScan(scan.into()),
+            TaskSource::InMemoryScan(scan) => Self::InMemoryScan(scan.into()),
+        }
+    }
 }
