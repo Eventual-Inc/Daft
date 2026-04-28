@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa  # noqa: TID253
@@ -42,18 +41,6 @@ class PaimonCatalog(Catalog):
     @property
     def name(self) -> str:
         return self._name
-
-    # ------------------------------------------------------------------
-    # Internal capability helpers
-    # ------------------------------------------------------------------
-
-    def _supports_listing(self) -> bool:
-        """True when the inner catalog exposes list_databases / list_tables (e.g. RESTCatalog)."""
-        return hasattr(self._inner, "list_databases") and hasattr(self._inner, "list_tables")
-
-    def _supports_drop(self) -> bool:
-        """True when the inner catalog exposes drop_database / drop_table (e.g. RESTCatalog)."""
-        return hasattr(self._inner, "drop_database") and hasattr(self._inner, "drop_table")
 
     ###
     # create_*
@@ -99,25 +86,16 @@ class PaimonCatalog(Catalog):
     ###
 
     def _drop_namespace(self, ident: Identifier) -> None:
-        if not self._supports_drop():
-            raise NotImplementedError(
-                "This Paimon catalog does not support dropping namespaces. "
-                "drop_database is only available on RESTCatalog."
-            )
         db_name = _to_paimon_ident(ident)
         try:
-            self._inner.drop_database(db_name, ignore_if_exists=False)
+            self._inner.drop_database(db_name, ignore_if_not_exists=False)
         except DatabaseNotExistException as ex:
             raise NotFoundError(f"Namespace '{db_name}' not found.") from ex
 
     def _drop_table(self, ident: Identifier) -> None:
-        if not self._supports_drop():
-            raise NotImplementedError(
-                "This Paimon catalog does not support dropping tables. drop_table is only available on RESTCatalog."
-            )
         paimon_ident = _to_paimon_ident(ident)
         try:
-            self._inner.drop_table(paimon_ident, ignore_if_exists=False)
+            self._inner.drop_table(paimon_ident, ignore_if_not_exists=False)
         except TableNotExistException as ex:
             raise NotFoundError(f"Table '{paimon_ident}' not found.") from ex
 
@@ -161,83 +139,17 @@ class PaimonCatalog(Catalog):
     ###
 
     def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        # REST catalog: use native list_databases() (auto-paginated).
-        if self._supports_listing():
-            databases: list[str] = self._inner.list_databases()
-            return [Identifier(db) for db in databases if pattern is None or db.startswith(pattern)]
-
-        # FileSystemCatalog: use file_io — works for local, OSS, S3, and HDFS.
-        file_io = getattr(self._inner, "file_io", None)
-        warehouse = getattr(self._inner, "warehouse", None)
-        if file_io is not None and warehouse is not None:
-            return _list_namespaces_via_file_io(file_io, warehouse, pattern)
-
-        raise NotImplementedError("Listing namespaces is not supported for this Paimon catalog type.")
+        databases: list[str] = self._inner.list_databases()
+        return [Identifier(db) for db in databases if pattern is None or db.startswith(pattern)]
 
     def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        # REST catalog: iterate databases then call list_tables(db) for each.
-        if self._supports_listing():
-            result = []
-            for db in self._inner.list_databases():
-                for table_name in self._inner.list_tables(db):
-                    ident = Identifier(db, table_name)
-                    if pattern is None or str(ident).startswith(pattern):
-                        result.append(ident)
-            return result
-
-        # FileSystemCatalog: use file_io — works for local, OSS, S3, and HDFS.
-        file_io = getattr(self._inner, "file_io", None)
-        warehouse = getattr(self._inner, "warehouse", None)
-        if file_io is not None and warehouse is not None:
-            return _list_tables_via_file_io(file_io, warehouse, pattern)
-
-        raise NotImplementedError("Listing tables is not supported for this Paimon catalog type.")
-
-
-# ------------------------------------------------------------------
-# FileSystemCatalog listing via FileIO (local + remote object stores)
-# ------------------------------------------------------------------
-
-
-def _list_namespaces_via_file_io(file_io: Any, warehouse: str, pattern: str | None) -> list[Identifier]:
-    from pypaimon.catalog.catalog import Catalog as PaimonBaseCatalog
-    from pypaimon.catalog.filesystem_catalog import FileSystemCatalog as PaimonFSCatalog
-
-    db_suffix = PaimonBaseCatalog.DB_SUFFIX  # ".db"
-    warehouse_path = PaimonFSCatalog._trim_schema(warehouse)
-
-    namespaces = []
-    for info in file_io.list_directories(warehouse_path):
-        if not info.base_name.endswith(db_suffix):
-            continue
-        db_name = info.base_name[: -len(db_suffix)]
-        if pattern is None or db_name.startswith(pattern):
-            namespaces.append(Identifier(db_name))
-    return namespaces
-
-
-def _list_tables_via_file_io(file_io: Any, warehouse: str, pattern: str | None) -> list[Identifier]:
-    from pypaimon.catalog.catalog import Catalog as PaimonBaseCatalog
-    from pypaimon.catalog.filesystem_catalog import FileSystemCatalog as PaimonFSCatalog
-
-    db_suffix = PaimonBaseCatalog.DB_SUFFIX  # ".db"
-    warehouse_path = PaimonFSCatalog._trim_schema(warehouse)
-
-    tables: list[Identifier] = []
-    for db_info in file_io.list_directories(warehouse_path):
-        if not db_info.base_name.endswith(db_suffix):
-            continue
-        db_name = db_info.base_name[: -len(db_suffix)]
-        db_path = Path(db_info.path)
-        for table_info in file_io.list_directories(db_path):
-            # A valid Paimon table directory contains a 'schema' subdirectory.
-            schema_path = Path(table_info.path) / "schema"
-            if not file_io.exists(schema_path):
-                continue
-            ident = Identifier(db_name, table_info.base_name)
-            if pattern is None or str(ident).startswith(pattern):
-                tables.append(ident)
-    return tables
+        result = []
+        for db in self._inner.list_databases():
+            for table_name in self._inner.list_tables(db):
+                ident = Identifier(db, table_name)
+                if pattern is None or str(ident).startswith(pattern):
+                    result.append(ident)
+        return result
 
 
 # ------------------------------------------------------------------
@@ -288,7 +200,7 @@ class PaimonTable(Table):
     @property
     def table_options(self) -> dict[str, str]:
         """Returns the table options/configuration."""
-        return dict(self._inner.options)
+        return dict(self._inner.options.options.to_map())
 
     def schema(self) -> Schema:
         return self.read().schema()
@@ -306,6 +218,24 @@ class PaimonTable(Table):
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         Table._validate_options("Paimon write", options, set())
         df.write_paimon(self._inner, mode="overwrite")
+
+    def truncate(self) -> None:
+        """Remove all data from this table."""
+        write_builder = self._inner.new_batch_write_builder()
+        table_commit = write_builder.new_commit()
+        try:
+            table_commit.truncate_table()
+        finally:
+            table_commit.close()
+
+    def truncate_partitions(self, partitions: list[dict[str, str]]) -> None:
+        """Remove data from specific partitions."""
+        write_builder = self._inner.new_batch_write_builder()
+        table_commit = write_builder.new_commit()
+        try:
+            table_commit.truncate_partitions(partitions)
+        finally:
+            table_commit.close()
 
 
 # ------------------------------------------------------------------
@@ -334,27 +264,16 @@ def _to_paimon_ident(ident: Identifier) -> str:
 def _cast_large_types(arrow_schema: pa.Schema) -> pa.Schema:
     """Convert PyArrow schema to be compatible with pypaimon.
 
-    pypaimon doesn't support large_string/large_binary types, so we need to
-    convert them to regular string/binary types.
-
-    Args:
-        arrow_schema: PyArrow schema to convert
-
-    Returns:
-        pa.Schema: Converted schema compatible with pypaimon
+    pypaimon doesn't support large_string, so we convert it to regular string.
+    large_binary is kept as-is because pypaimon 1.4+ maps it to the BLOB type.
     """
     new_fields = []
     need_conversion = False
 
     for field in arrow_schema:
         field_type = field.type
-        # Convert large_string to string
         if pa.types.is_large_string(field_type):
             field_type = pa.string()
-            need_conversion = True
-        # Convert large_binary to binary
-        elif pa.types.is_large_binary(field_type):
-            field_type = pa.binary()
             need_conversion = True
         new_fields.append(pa.field(field.name, field_type, nullable=field.nullable, metadata=field.metadata))
 

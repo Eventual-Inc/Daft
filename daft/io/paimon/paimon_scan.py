@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.io.paimon._blob import BLOB_STRUCT_TYPE, blob_column_to_struct
 from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
@@ -39,10 +40,17 @@ class _PaimonPKSplitTask(DataSourceTask):
     native reader which handles LSM merging internally.
     """
 
-    def __init__(self, table: FileStoreTable, split: Split, schema: Schema) -> None:
+    def __init__(
+        self,
+        table: FileStoreTable,
+        split: Split,
+        schema: Schema,
+        blob_column_names: set[str] | None = None,
+    ) -> None:
         self._table = table
         self._split = split
         self._schema = schema
+        self._blob_column_names = blob_column_names or set()
 
     @property
     def schema(self) -> Schema:
@@ -52,7 +60,24 @@ class _PaimonPKSplitTask(DataSourceTask):
         table_read = self._table.new_read_builder().new_read()
         reader = table_read.to_arrow_batch_reader([self._split])
         for batch in iter(reader.read_next_batch, None):
-            yield RecordBatch.from_arrow_record_batches([batch], reader.schema)
+            if self._blob_column_names:
+                batch = _convert_blob_columns(batch, self._blob_column_names)
+            yield RecordBatch.from_arrow_record_batches([batch], batch.schema)
+
+
+def _convert_blob_columns(batch: pa.RecordBatch, blob_column_names: set[str]) -> pa.RecordBatch:
+    """Replace serialized BlobDescriptor columns with struct{url, offset, length}."""
+    arrays = []
+    fields = []
+    for i, field in enumerate(batch.schema):
+        col = batch.column(i)
+        if field.name in blob_column_names and (pa.types.is_large_binary(field.type) or pa.types.is_binary(field.type)):
+            arrays.append(blob_column_to_struct(col))
+            fields.append(pa.field(field.name, BLOB_STRUCT_TYPE, nullable=field.nullable))
+        else:
+            arrays.append(col)
+            fields.append(field)
+    return pa.RecordBatch.from_arrays(arrays, schema=pa.schema(fields))
 
 
 class PaimonDataSource(DataSource):
@@ -80,13 +105,28 @@ class PaimonDataSource(DataSource):
         from pypaimon.schema.data_types import PyarrowFieldParser
 
         pa_schema = PyarrowFieldParser.from_paimon_schema(table.fields)
+
+        self._blob_column_names: set[str] = {
+            field.name for field in pa_schema if pa.types.is_large_binary(field.type)
+        }
+        self._has_blob_columns = bool(self._blob_column_names)
+
+        if self._has_blob_columns:
+            new_fields = []
+            for field in pa_schema:
+                if field.name in self._blob_column_names:
+                    new_fields.append(pa.field(field.name, BLOB_STRUCT_TYPE, nullable=field.nullable))
+                else:
+                    new_fields.append(field)
+            pa_schema = pa.schema(new_fields, metadata=pa_schema.metadata)
+
         self._schema = Schema.from_pyarrow_schema(pa_schema)
 
         warehouse = catalog_options.get("warehouse", "")
         self._warehouse_scheme = urlparse(warehouse).scheme
 
-        self._file_format = table.options.get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
-        self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET
+        self._file_format = table.options.file_format().lower()
+        self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET and not self._has_blob_columns
 
         self._partition_field_arrow_types: dict[str, pa.DataType] = (
             {f.name: PyarrowFieldParser.from_paimon_type(f.type) for f in table.partition_keys_fields}
@@ -132,7 +172,11 @@ class PaimonDataSource(DataSource):
         return pushed_filters, remaining_filters
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
-        read_builder = self._table.new_read_builder()
+        read_table = self._table
+        if self._has_blob_columns:
+            read_table = self._table.copy({"blob-as-descriptor": "true"})
+
+        read_builder = read_table.new_read_builder()
 
         if pushdowns.columns is not None:
             read_builder = read_builder.with_projection(list(pushdowns.columns))
@@ -198,7 +242,7 @@ class PaimonDataSource(DataSource):
                     len(split.files),
                     reason,
                 )
-                yield _PaimonPKSplitTask(self._table, split, self._schema)
+                yield _PaimonPKSplitTask(read_table, split, self._schema, self._blob_column_names)
 
     def _build_file_uri(self, file_path: str) -> str:
         """Reconstruct a full URI from a (potentially scheme-stripped) file_path."""
