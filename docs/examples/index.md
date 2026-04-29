@@ -42,18 +42,6 @@
 
     Perform similarity search on Stack Exchange questions using language models and embeddings.
 
-- [Document Processing](document-processing.md)
-
-    Process and analyze documents at scale using Daft.
-
-- [MNIST Classification](mnist.md)
-
-    Train and run inference on MNIST digit classification.
-
-- [Querying Images](querying-images.md)
-
-    Query and analyze image datasets with Daft.
-
 </div>
 
 

@@ -59,7 +59,7 @@ Telemetry
 
 To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``, ``SCARF_NO_ANALYTICS=true``, or ``DAFT_ANALYTICS_ENABLED=false``.
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 

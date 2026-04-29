@@ -77,7 +77,6 @@ The Daft `GlueCatalog._table_impls` field holds a list of `GlueTable` implementa
 
 ```python
 from typing import Any, Literal
-from daft import DataFrame
 from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue
 
 class GlueTestTable(GlueTable):
