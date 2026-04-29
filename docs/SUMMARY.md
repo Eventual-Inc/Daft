@@ -44,6 +44,7 @@
         * [Azure Blob Store](connectors/azure.md)
         * [Bigtable](connectors/bigtable.md)
         * [ClickHouse](connectors/clickhouse.md)
+        * [COS (Tencent Cloud)](connectors/cos.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Files](connectors/files.md)
         * [Google Cloud Storage](connectors/gcs.md)
