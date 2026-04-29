@@ -195,9 +195,13 @@ impl TaskStore {
         name: Option<String>,
         submit_sec: f64,
     ) {
-        let pipeline_name = name.as_deref().unwrap_or("unknown");
+        // Use the same nameless-task fallback as `end_task` and
+        // `group_key_for_task` so submit and end resolve to the same group key.
+        let pipeline_name = name
+            .clone()
+            .unwrap_or_else(|| format!("Node {origin_node_id}"));
         let is_new = !self.tasks.contains_key(&task_id);
-        let gi = self.ensure_group(origin_node_id, &node_ids, pipeline_name, submit_sec);
+        let gi = self.ensure_group(origin_node_id, &node_ids, &pipeline_name, submit_sec);
         let group = &mut self.groups[gi];
 
         if is_new {
