@@ -82,6 +82,11 @@ where
                 self.statistics_manager.handle_event(TaskEvent::Submitted {
                     context: task.task_context(),
                     name: task.task.task_name().clone(),
+                    // TODO(perf): Avoid building TaskMetadata unless a subscriber/export path needs it.
+                    // This currently clones scan paths and estimates scan sizes for every submitted task,
+                    // even when task lifecycle event emission is disabled. The right fix likely belongs
+                    // in the task-event wiring layer rather than StatisticsSubscriber.
+                    metadata: task.task_metadata(),
                 })?;
             }
 
