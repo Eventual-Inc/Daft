@@ -56,10 +56,66 @@ export type PhysicalPlanNode = {
   children?: PhysicalPlanNode[];
 };
 
+/**
+ * Task lifecycle info pushed by the Flotilla scheduler.
+ *
+ * A Flotilla task is a fused chain of local plan nodes dispatched to a
+ * Swordfish worker. Tasks originate at a specific distributed plan node
+ * (`last_node_id`) and tasks with the same fused pipeline share a
+ * `plan_fingerprint`, so the UI groups by (last_node_id, plan_fingerprint).
+ */
+export type TaskStatus =
+  | { status: "Pending" }
+  | { status: "Finished" }
+  | { status: "Failed"; message: string | null }
+  | { status: "Cancelled" };
+
+export type TaskInfo = {
+  task_id: number;
+  last_node_id: number;
+  node_ids: number[];
+  plan_fingerprint: number;
+  name?: string;
+  status: TaskStatus;
+  submit_sec: number;
+  end_sec?: number;
+  worker_id?: string;
+  cpu_us: number;
+};
+
+/** Server-side aggregate summary for a group of tasks sharing an (last_node_id, pipeline_name). */
+export type TaskGroupSummary = {
+  last_node_id: number;
+  node_ids: number[];
+  name: string;
+  task_count: number;
+  pending_count: number;
+  finished_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  total_cpu_us: number;
+  first_submit_sec: number;
+  last_end_sec?: number;
+  /** How many individual tasks for this group are in the retained `tasks` map. */
+  retained_task_count: number;
+};
+
+/**
+ * Bounded task store. Contains per-group aggregate summaries (always accurate)
+ * and a bounded set of retained individual tasks (active, failed, and top-K
+ * longest-duration completed tasks per group).
+ */
+export type TaskStore = {
+  groups: TaskGroupSummary[];
+  tasks: Record<number, TaskInfo>;
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
   physical_plan: string;
+  /** Bounded task store. Empty for Swordfish (local) queries. */
+  task_store?: TaskStore;
   // TODO: Logs
 };
 

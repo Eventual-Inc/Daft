@@ -82,6 +82,7 @@ dev = [
   "pytest-cov==7.0.0",
   "pytest-profiling>=1.8.1",
   "pytest-xdist[psutil]>=3.8.0",
+  "pytest-timeout>=2.3.0",
   "memray==1.19.1; platform_system != \"Windows\"",
   # Testing dependencies
   "lxml==6.0.2",

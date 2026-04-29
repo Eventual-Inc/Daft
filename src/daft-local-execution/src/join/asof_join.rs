@@ -122,7 +122,6 @@ impl JoinOperator for AsofJoinOperator {
                         MicroPartition::concat_or_empty(state.build_contents, left_schema)?;
                     let right_mp =
                         MicroPartition::concat_or_empty(state.probe_contents, right_schema)?;
-
                     let joined =
                         left_mp.asof_join(&right_mp, &left_by, &right_by, &left_on, &right_on)?;
                     Ok(Some(joined))

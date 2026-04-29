@@ -115,6 +115,10 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     fn task_name(&self) -> TaskName;
+
+    fn task_metadata(&self) -> TaskMetadata {
+        TaskMetadata::default()
+    }
 }
 
 #[derive(Clone)]
@@ -157,6 +161,34 @@ impl std::fmt::Debug for TaskDetails {
             self.memory_bytes()
         )
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TaskMetadata {
+    pub sources: Vec<TaskSource>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TaskSource {
+    PhysicalScan(PhysicalScanSource),
+    InMemoryScan(InMemoryScanSource),
+    // TODO: Add glob and flight sources
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PhysicalScanSource {
+    pub source_id: SourceId,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    pub storage_bytes: Option<usize>,
+    pub estimated_memory_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InMemoryScanSource {
+    pub source_id: SourceId,
+    pub partitions: usize,
+    pub total_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +299,10 @@ impl Task for SwordfishTask {
             node_id: self.task_context.last_node_id,
             task_id: self.task_context.task_id,
         }
+    }
+
+    fn task_metadata(&self) -> TaskMetadata {
+        self.build_metadata()
     }
 }
 
