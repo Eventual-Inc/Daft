@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::{Arc, LazyLock}};
 
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
@@ -13,6 +13,20 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::{RecordBatch, nested_loop_inner_join, nested_loop_inner_join_indexed};
 use rayon::prelude::*;
 use rstar::{AABB, RTree, RTreeObject};
+
+// Thread pool used for parallel R-tree probing: num_cpus/2 (min 2) so that
+// probe parallelism does not starve other concurrent partition workers.
+static PROBE_POOL: LazyLock<rayon::ThreadPool> = LazyLock::new(|| {
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let threads = (cpus / 2).max(2);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .thread_name(|i| format!("daft-rtree-probe-{i}"))
+        .build()
+        .expect("failed to build R-tree probe thread pool")
+});
 use tracing::Span;
 
 use crate::{
@@ -482,26 +496,53 @@ impl JoinOperator for NestedLoopJoinOperator {
 
                         // Collect candidate (probe_idx, build_idx) pairs per key.
                         // build_idx is relative to that key's group RecordBatch.
-                        let mut per_key: HashMap<String, (Vec<u64>, Vec<u64>)> = HashMap::new();
-
-                        if let Ok(binary) = get_geometry_binary(probe_geom_series) {
-                            for i in 0..probe_tbl.len() {
-                                let key = key_series.str_value(i);
-                                let Some((_, group_tree)) = ps.groups.get(&key) else {
-                                    continue;
-                                };
-                                let Some(wkb) = binary.get(i) else { continue; };
-                                let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb) else {
-                                    continue;
-                                };
-                                let q = AABB::from_corners([min_x, min_y], [max_x, max_y]);
-                                let e = per_key.entry(key).or_default();
-                                for entry in group_tree.locate_in_envelope_intersecting(&q) {
-                                    e.0.push(i as u64);
-                                    e.1.push(entry.row_idx as u64);
+                        // Each probe row is independent, so we probe the R-tree in
+                        // parallel with rayon and merge the per-row results serially.
+                        let per_key: HashMap<String, (Vec<u64>, Vec<u64>)> =
+                            if let Ok(binary) = get_geometry_binary(probe_geom_series) {
+                                let per_row: Vec<Vec<(String, u64, u64)>> =
+                                    PROBE_POOL.install(|| (0..probe_tbl.len())
+                                        .into_par_iter()
+                                        .map(|i| -> Vec<(String, u64, u64)> {
+                                            let key = key_series.str_value(i);
+                                            let Some((_, group_tree)) =
+                                                ps.groups.get(&key)
+                                            else {
+                                                return vec![];
+                                            };
+                                            let Some(wkb) = binary.get(i) else {
+                                                return vec![];
+                                            };
+                                            let Some([min_x, min_y, max_x, max_y]) =
+                                                wkb_to_mbr(wkb)
+                                            else {
+                                                return vec![];
+                                            };
+                                            let q = AABB::from_corners(
+                                                [min_x, min_y],
+                                                [max_x, max_y],
+                                            );
+                                            group_tree
+                                                .locate_in_envelope_intersecting(&q)
+                                                .map(|entry| {
+                                                    (key.clone(), i as u64, entry.row_idx as u64)
+                                                })
+                                                .collect()
+                                        })
+                                        .collect());
+                                let mut map: HashMap<String, (Vec<u64>, Vec<u64>)> =
+                                    HashMap::new();
+                                for row_cands in per_row {
+                                    for (key, pi, bi) in row_cands {
+                                        let e = map.entry(key).or_default();
+                                        e.0.push(pi);
+                                        e.1.push(bi);
+                                    }
                                 }
-                            }
-                        }
+                                map
+                            } else {
+                                HashMap::new()
+                            };
 
                         // One indexed join call per unique key in this probe morsel.
                         let mut result_batches: Vec<RecordBatch> = Vec::new();
@@ -534,25 +575,37 @@ impl JoinOperator for NestedLoopJoinOperator {
                         let (cand_probe, cand_build, use_rtree) = if let Ok(binary) =
                             get_geometry_binary(probe_series)
                         {
-                            // Conservative capacity: assume ~few candidates per probe row.
-                            let hint = probe_tbl.len() * 4;
-                            let mut cp: Vec<u64> = Vec::with_capacity(hint);
-                            let mut cb: Vec<u64> = Vec::with_capacity(hint);
-                            for i in 0..probe_tbl.len() {
-                                let Some(wkb) = binary.get(i) else {
-                                    continue;
-                                };
-                                let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb)
-                                else {
-                                    continue;
-                                };
-                                let q = AABB::from_corners(
-                                    [min_x, min_y],
-                                    [max_x, max_y],
-                                );
-                                for entry in rtree.locate_in_envelope_intersecting(&q) {
-                                    cp.push(i as u64);
-                                    cb.push(entry.row_idx as u64);
+                            // Probe each row in parallel: RTree is Sync so concurrent
+                            // locate_in_envelope_intersecting calls are safe.  Each rayon
+                            // task returns its (probe_idx, build_idx) pairs; we flatten
+                            // them into the final index vectors afterwards.
+                            let per_row: Vec<Vec<(u64, u64)>> = PROBE_POOL.install(|| (0..probe_tbl.len())
+                                .into_par_iter()
+                                .map(|i| -> Vec<(u64, u64)> {
+                                    let Some(wkb) = binary.get(i) else {
+                                        return vec![];
+                                    };
+                                    let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb)
+                                    else {
+                                        return vec![];
+                                    };
+                                    let q = AABB::from_corners(
+                                        [min_x, min_y],
+                                        [max_x, max_y],
+                                    );
+                                    rtree
+                                        .locate_in_envelope_intersecting(&q)
+                                        .map(|entry| (i as u64, entry.row_idx as u64))
+                                        .collect()
+                                })
+                                .collect());
+                            let total: usize = per_row.iter().map(|v| v.len()).sum();
+                            let mut cp: Vec<u64> = Vec::with_capacity(total);
+                            let mut cb: Vec<u64> = Vec::with_capacity(total);
+                            for pairs in per_row {
+                                for (pi, bi) in pairs {
+                                    cp.push(pi);
+                                    cb.push(bi);
                                 }
                             }
                             (cp, cb, true)
