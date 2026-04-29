@@ -137,19 +137,19 @@ impl AsofJoinFinalizedBuildState {
         })
     }
 
-    /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[r].
+    /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[right_idx].
     /// Returns the best potential left row index, or `None` if no valid match exists.
     fn search_bucket(
         &self,
         bucket: &[u64],
         on_key_cmp: &DynPartialComparator,
-        r: usize,
+        right_idx: usize,
     ) -> Option<usize> {
         let mut lo = 0usize;
         let mut hi = bucket.len();
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            match on_key_cmp(bucket[mid] as usize, r) {
+            match on_key_cmp(bucket[mid] as usize, right_idx) {
                 Some(Ordering::Less) => lo = mid + 1,
                 _ => hi = mid,
             }
@@ -160,11 +160,11 @@ impl AsofJoinFinalizedBuildState {
             .then_some(candidate_left_idx)
     }
 
-    /// Find the group index for right row `r`.
+    /// Find the group index for right row `right_idx`.
     /// Returns `None` if the row belongs to no group (hash miss or equality miss).
     fn find_left_group(
         &self,
-        r: usize,
+        right_idx: usize,
         by_key_hashes_and_comparator: Option<(
             &UInt64Array,
             &(dyn Fn(usize, usize) -> bool + Send + Sync),
@@ -173,9 +173,9 @@ impl AsofJoinFinalizedBuildState {
         match by_key_hashes_and_comparator {
             None => Some(0),
             Some((hashes, eq_cmp)) => {
-                let h = hashes.values()[r];
+                let h = hashes.values()[right_idx];
                 let candidates = self.group_hash_map.get(&h)?;
-                candidates.iter().copied().find(|&g| eq_cmp(g, r))
+                candidates.iter().copied().find(|&g| eq_cmp(g, right_idx))
             }
         }
     }
@@ -239,23 +239,23 @@ impl AsofJoinProbeState {
         let by_key_hashes_and_comparator_ref = by_key_hashes_and_comparator
             .as_ref()
             .map(|(h, eq)| (h, eq.as_ref()));
-        for r in 0..right_rb.len() {
-            if !right_on_series.is_valid(r) {
+        for right_idx in 0..right_rb.len() {
+            if !right_on_series.is_valid(right_idx) {
                 continue;
             }
 
-            let Some(group_idx) = table.find_left_group(r, by_key_hashes_and_comparator_ref) else {
+            let Some(group_idx) = table.find_left_group(right_idx, by_key_hashes_and_comparator_ref) else {
                 continue;
             };
 
             let bucket = &table.group_buckets[group_idx];
-            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, r) else {
+            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx) else {
                 continue;
             };
 
             self.update_best_match(
                 candidate_left_idx,
-                r,
+                right_idx,
                 current_morsel_idx,
                 &right_on_arr,
                 &mut cmp_cache,
@@ -265,6 +265,7 @@ impl AsofJoinProbeState {
         self.right_on_key_arrs.push(right_on_arr);
         Ok(())
     }
+    
 }
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
