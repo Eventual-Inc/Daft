@@ -330,3 +330,83 @@ def test_video_frames_expression_sample_interval(sample_video_path):
 
     result = df.to_pydict()["frames"][0]
     assert len(result) == 10
+
+
+# --- video_frames_from_bytes tests ---
+
+
+def test_video_frames_from_bytes_standalone(sample_video_path):
+    """video_frames_from_bytes() reads bytes column and produces same frames as video_frames()."""
+    from pathlib import Path
+
+    video_bytes = Path(sample_video_path).read_bytes()
+    df = daft.from_pydict({"video_bytes": [video_bytes]})
+    df = df.select(daft.functions.video_frames_from_bytes(df["video_bytes"]).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 290
+    first = result[0]
+    assert "frame_index" in first
+    assert "frame_time" in first
+    assert "is_key_frame" in first
+    assert "data" in first
+
+
+def test_video_frames_from_bytes_sample_interval(sample_video_path):
+    """video_frames_from_bytes() respects sample_interval_seconds."""
+    from pathlib import Path
+
+    video_bytes = Path(sample_video_path).read_bytes()
+    df = daft.from_pydict({"video_bytes": [video_bytes]})
+    df = df.select(
+        daft.functions.video_frames_from_bytes(df["video_bytes"], sample_interval_seconds=1.0).alias("frames")
+    )
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 10
+
+
+def test_video_frames_from_bytes_resize(sample_video_path):
+    """video_frames_from_bytes() respects width/height."""
+    from pathlib import Path
+
+    video_bytes = Path(sample_video_path).read_bytes()
+    df = daft.from_pydict({"video_bytes": [video_bytes]})
+    df = df.select(daft.functions.video_frames_from_bytes(df["video_bytes"], width=64, height=48).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 290
+    assert result[0]["data"].shape == (48, 64, 3)
+
+
+def test_video_frames_from_bytes_keyframe_filter(sample_video_path):
+    """video_frames_from_bytes() respects is_key_frame=True."""
+    from pathlib import Path
+
+    video_bytes = Path(sample_video_path).read_bytes()
+    df = daft.from_pydict({"video_bytes": [video_bytes]})
+    df = df.select(daft.functions.video_frames_from_bytes(df["video_bytes"], is_key_frame=True).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 13
+    assert all(frame["is_key_frame"] for frame in result)
+
+
+def test_video_frames_from_bytes_null_input_returns_empty_list(sample_video_path):
+    """video_frames_from_bytes() returns [] for null rows instead of crashing.
+
+    Lets upstream UDFs signal failure with None (e.g. a download UDF whose
+    blobstore client errored) without aborting the whole batch — the
+    surrounding pipeline can branch on the same null column to populate an
+    ``extract_error`` column.
+    """
+    from pathlib import Path
+
+    video_bytes = Path(sample_video_path).read_bytes()
+    df = daft.from_pydict({"video_bytes": [video_bytes, None]})
+    df = df.select(daft.functions.video_frames_from_bytes(df["video_bytes"]).alias("frames"))
+
+    out = df.to_pydict()["frames"]
+    assert len(out) == 2
+    assert len(out[0]) == 290  # ok row keeps the full frame list
+    assert out[1] == []  # null row yields empty list, no exception
