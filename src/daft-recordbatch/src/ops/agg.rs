@@ -87,53 +87,6 @@ impl RecordBatch {
         Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
     }
 
-    /// Runs a combine-only pass over `to_agg` on partially-aggregated data.
-    ///
-    /// - [`AggExpr::AggFnReduce`]: calls `call_agg_combine` in one batched call per group,
-    ///   returning a Struct column — identical schema to stage-1 (`AggFnMap`) output.
-    /// - All other expressions: evaluated normally (they are associative, so the result
-    ///   is a valid intermediate state for a subsequent [`Self::agg`] call).
-    ///
-    /// Intended for the map-side eager combine in `GroupedAggregateSink`.
-    pub fn agg_combine_only(
-        &self,
-        to_agg: &[BoundAggExpr],
-        group_by: &[BoundExpr],
-    ) -> DaftResult<Self> {
-        match group_by.len() {
-            0 => {
-                let cols = to_agg
-                    .iter()
-                    .map(|e| self.eval_agg_expression_combine_only(e, None))
-                    .collect::<DaftResult<Vec<_>>>()?;
-                Self::from_nonempty_columns(cols)
-            }
-            _ => {
-                let groupby_table = self.eval_expression_list(group_by)?;
-                let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
-                let groupkeys_table = {
-                    let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
-                    groupby_table.take(&indices_as_arr)?
-                };
-                let group_idx_input = if groupvals_indices.len() == 1 {
-                    None
-                } else {
-                    Some(&groupvals_indices)
-                };
-                let grouped_cols = to_agg
-                    .iter()
-                    .map(|e| self.eval_agg_expression_combine_only(e, group_idx_input))
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let groupkeys_series: Vec<Series> = groupkeys_table
-                    .columns
-                    .iter()
-                    .map(|c| c.as_materialized_series().clone())
-                    .collect();
-                Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
-            }
-        }
-    }
-
     #[cfg(feature = "python")]
     pub fn map_groups(
         &self,
@@ -434,6 +387,17 @@ mod tests {
         .unwrap()
     }
 
+    fn bound_combine_only(schema: &daft_core::prelude::SchemaRef) -> BoundAggExpr {
+        BoundAggExpr::try_new(
+            AggExpr::AggFnCombine {
+                handle: make_handle(),
+                partial: unresolved_col(&*partial_col_name()),
+            },
+            schema,
+        )
+        .unwrap()
+    }
+
     // Global: two batches (one with a null). Null=0 per TestSumAgg, so 1+null+2+3 = 6.
     #[test]
     fn test_agg_fn_global() -> DaftResult<()> {
@@ -561,7 +525,7 @@ mod tests {
         let merged = RecordBatch::concat(&[partial1, partial2])?;
         assert_eq!(merged.len(), 2);
 
-        let combined = merged.agg_combine_only(&[bound_combine(&merged.schema)], &[])?;
+        let combined = merged.agg_global(&[bound_combine_only(&merged.schema)])?;
         assert_eq!(combined.len(), 1);
         let col = get_column_by_name(&combined, &partial_col_name())?;
         assert!(
@@ -594,8 +558,8 @@ mod tests {
         let merged = RecordBatch::concat(&[partial1, partial2])?;
 
         let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
-        let combined = merged.agg_combine_only(
-            &[bound_combine(&merged.schema)],
+        let combined = merged.agg(
+            &[bound_combine_only(&merged.schema)],
             std::slice::from_ref(&bound_g_m),
         )?;
         assert_eq!(combined.len(), 2);

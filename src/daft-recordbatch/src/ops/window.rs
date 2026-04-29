@@ -30,7 +30,7 @@ impl RecordBatch {
         if let [agg_expr] = agg_exprs.as_slice()
             && matches!(
                 agg_expr.as_ref(),
-                AggExpr::MapGroups { .. } | AggExpr::AggFn { .. }
+                AggExpr::MapGroups { .. } | AggExpr::AggFn { .. } | AggExpr::AggFnCombine { .. }
             )
         {
             return Err(DaftError::ValueError(
@@ -84,7 +84,7 @@ impl RecordBatch {
     pub fn window_agg(&self, to_agg: &BoundAggExpr, name: String) -> DaftResult<Self> {
         if matches!(
             to_agg.as_ref(),
-            AggExpr::MapGroups { .. } | AggExpr::AggFn { .. }
+            AggExpr::MapGroups { .. } | AggExpr::AggFn { .. } | AggExpr::AggFnCombine { .. }
         ) {
             return Err(DaftError::ValueError(
                 "MapGroups and extension aggregations (AggFn) are not supported in window functions".into(),

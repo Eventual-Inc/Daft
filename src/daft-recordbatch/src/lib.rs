@@ -697,35 +697,6 @@ impl RecordBatch {
         }
     }
 
-    /// Like [`eval_agg_expression`] but stops before `call_agg_finalize` for
-    /// [`AggExpr::AggFnReduce`], keeping the Struct column type.  Output schema
-    /// matches stage-1 (`AggFnMap`) output — valid input for a subsequent full `agg()`.
-    pub(crate) fn eval_agg_expression_combine_only(
-        &self,
-        agg_expr: &BoundAggExpr,
-        groups: Option<&GroupIndices>,
-    ) -> DaftResult<Series> {
-        if let AggExpr::AggFnReduce {
-            handle, partial, ..
-        } = agg_expr.as_ref()
-        {
-            let struct_series = self.eval_agg_child(partial)?;
-            let struct_field = struct_series.field().clone();
-            let state_series = unpack_struct_state(&struct_series)?;
-            let field_names: Vec<String> =
-                state_series.iter().map(|s| s.name().to_string()).collect();
-            let merged = dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
-            let merged: Vec<Series> = merged
-                .into_iter()
-                .zip(field_names.iter())
-                .map(|(s, n)| s.rename(n))
-                .collect();
-            pack_struct_state(struct_field, merged)
-        } else {
-            self.eval_agg_expression(agg_expr, groups)
-        }
-    }
-
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,
@@ -830,6 +801,21 @@ impl RecordBatch {
                     .collect();
                 let struct_field = Field::new(expected_name, DataType::Struct(state_fields));
                 Ok(StructArray::new(struct_field, state_series, None).into_series())
+            }
+            AggExpr::AggFnCombine { handle, partial } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                let struct_field = struct_series.field().clone();
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                pack_struct_state(struct_field, merged)
             }
             AggExpr::AggFnReduce {
                 handle,

@@ -238,6 +238,7 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::Skew(_) => unsupported_sql_err!("skew"),
         AggExpr::AggFn { .. } => unsupported_sql_err!("agg_fn"),
         AggExpr::AggFnMap { .. } => unsupported_sql_err!("agg_fn_map"),
+        AggExpr::AggFnCombine { .. } => unsupported_sql_err!("agg_fn_combine"),
         AggExpr::AggFnReduce { .. } => unsupported_sql_err!("agg_fn_reduce"),
     }
 }
