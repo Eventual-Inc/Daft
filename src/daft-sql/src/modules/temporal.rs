@@ -32,7 +32,7 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date_trunc", SQLDateTrunc);
         parent.add_fn("truncate", SQLDateTrunc);
-        parent.add_fn("trunc", SQLDateTrunc);
+        parent.add_fn("trunc", SQLTrunc);
         parent.add_fn("dayofmonth", Arc::new(DayOfMonth) as Arc<dyn ScalarUDF>);
         parent.add_fn("dayofyear", Arc::new(DayOfYear) as Arc<dyn ScalarUDF>);
         parent.add_fn("weekofyear", Arc::new(WeekOfYear) as Arc<dyn ScalarUDF>);
@@ -140,6 +140,61 @@ impl SQLFunction for SQLDateTrunc {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["interval", "input", "relative_to"]
+    }
+}
+
+pub struct SQLTrunc;
+
+impl SQLFunction for SQLTrunc {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("trunc expects 2 arguments: trunc(input, interval)");
+        }
+
+        let input_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let interval_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let interval_str = interval_expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "trunc second argument must be a string literal (e.g. 'month')",
+                )
+            })?;
+
+        let normalized = if interval_str
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+        {
+            interval_str.to_string()
+        } else {
+            format!("1 {interval_str}")
+        };
+
+        let args = vec![
+            FunctionArg::unnamed(input_expr),
+            FunctionArg::unnamed(null_lit()),
+            FunctionArg::named("interval".to_string(), lit(normalized)),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(Truncate)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Spark-style trunc alias with argument order trunc(input, interval).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "interval"]
     }
 }
 

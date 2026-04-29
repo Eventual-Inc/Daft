@@ -870,7 +870,7 @@ def test_temporal_alias_functions() -> None:
         col("dt").week_of_year().alias("woy_expected"),
         date_format(col("dt"), "%Y-%m-%d").alias("fmt_alias"),
         col("dt").strftime("%Y-%m-%d").alias("fmt_expected"),
-        trunc("1 day", col("dt")).alias("trunc_alias"),
+        trunc(col("dt"), "day").alias("trunc_alias"),
         date_trunc("1 day", col("dt")).alias("trunc_expected"),
         dateadd(col("d"), col("n")).alias("dateadd_alias"),
         date_add(col("d"), col("n")).alias("dateadd_expected"),

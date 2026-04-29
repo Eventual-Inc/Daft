@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 
 import daft
+from daft.functions import date_add, date_diff, date_trunc, strftime
 
 
 def test_temporals():
@@ -194,8 +195,6 @@ def test_date_trunc():
 
 
 def test_temporal_sql_aliases():
-    from daft.functions import date_add, date_diff, date_trunc, strftime
-
     df = daft.from_pydict(
         {
             "datetimes": [
@@ -225,7 +224,7 @@ def test_temporal_sql_aliases():
             dayofyear(datetimes) AS doy,
             weekofyear(datetimes) AS woy,
             date_format(datetimes, '%Y-%m-%d') AS fmt,
-            trunc('day', datetimes) AS truncated,
+            trunc(datetimes, 'day') AS truncated,
             dateadd(date(datetimes), 2) AS added,
             datediff(date(datetimes), date(datetimes)) AS diff_zero,
             datepart('year', datetimes) AS part_year,

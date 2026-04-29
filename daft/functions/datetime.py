@@ -1216,8 +1216,14 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
     return Expression._call_builtin_scalar_fn("truncate", expr, relative_to, interval=interval)
 
 
-def trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
-    """Alias for ``date_trunc``."""
+def trunc(expr: Expression, interval: str, relative_to: Expression | None = None) -> Expression:
+    """Alias for ``date_trunc`` with Spark-style argument order.
+
+    Args:
+        expr: The datetime/date expression to truncate.
+        interval: The truncation unit/interval (e.g. ``"day"``, ``"month"``, ``"1 hour"``).
+        relative_to (optional): Timestamp to truncate relative to.
+    """
     return date_trunc(interval, expr, relative_to)
 
 
