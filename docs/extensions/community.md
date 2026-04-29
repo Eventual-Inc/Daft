@@ -2,7 +2,7 @@
 
 !!! tip "Want to build your own extension?"
 
-    Start with the [Extensions overview](index.md), the [Python UDF docs](../custom-code/func.md),
+    Start with the [Extensions overview](overview.md), the [Python UDF docs](../custom-code/func.md),
     or the [Native Extension Authoring Guide](authoring.md).
 
 Community extensions are reusable packages that add functionality to Daft

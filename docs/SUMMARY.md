@@ -57,7 +57,7 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
-        * [Overview](extensions/index.md)
+        * [Overview](extensions/overview.md)
         * [Community Extensions](extensions/community.md)
         * [Built on Daft](extensions/projects.md)
         * [Authoring Guide](extensions/authoring.md)

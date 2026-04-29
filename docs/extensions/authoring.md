@@ -5,7 +5,7 @@
     Native extensions are experimental and may change in future releases.
 
 > Please see the [prompt](#prompt) if you want help generating an extension.
-> Looking for the broader extension model? See the [Extensions overview](index.md).
+> Looking for the broader extension model? See the [Extensions overview](overview.md).
 > Looking for extensions you can install today? See [Community Extensions](community.md).
 
 This document is a guide for authoring Daft native extensions in Rust.
