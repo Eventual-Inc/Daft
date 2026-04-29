@@ -69,8 +69,7 @@ impl AsofJoinFinalizedBuildState {
             Some(rb) => rb,
             None => {
                 let empty_left = RecordBatch::empty(Some(left_schema));
-                let left_on_rb = empty_left.eval_expression_list(std::slice::from_ref(left_on))?;
-                let left_on_series = left_on_rb.get_column(0).clone();
+                let left_on_series = empty_left.eval_expression(left_on)?;
                 let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
                 return Ok(Self {
                     left_rb: empty_left,
@@ -86,8 +85,7 @@ impl AsofJoinFinalizedBuildState {
         };
 
         let total_left_rows = left_rb.len();
-        let left_on_rb = left_rb.eval_expression_list(std::slice::from_ref(left_on))?;
-        let left_on_series = left_on_rb.get_column(0).clone();
+        let left_on_series = left_rb.eval_expression(left_on)?;
         let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
 
         let on_key_sort_cmp =
@@ -140,7 +138,7 @@ impl AsofJoinFinalizedBuildState {
     }
 
     /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[r].
-    /// Returns the global left row index, or `None` if no valid match exists.
+    /// Returns the best potential left row index, or `None` if no valid match exists.
     fn search_bucket(
         &self,
         bucket: &[u64],
@@ -156,19 +154,23 @@ impl AsofJoinFinalizedBuildState {
                 _ => hi = mid,
             }
         }
-        let left_global = *bucket.get(lo)? as usize;
+        let candidate_left_idx = *bucket.get(lo)? as usize;
         self.left_on_series
-            .is_valid(left_global)
-            .then_some(left_global)
+            .is_valid(candidate_left_idx)
+            .then_some(candidate_left_idx)
     }
+
     /// Find the group index for right row `r`.
     /// Returns `None` if the row belongs to no group (hash miss or equality miss).
     fn find_left_group(
         &self,
         r: usize,
-        by_key_eval: Option<(&UInt64Array, &(dyn Fn(usize, usize) -> bool + Send + Sync))>,
+        by_key_hashes_and_comparator: Option<(
+            &UInt64Array,
+            &(dyn Fn(usize, usize) -> bool + Send + Sync),
+        )>,
     ) -> Option<usize> {
-        match by_key_eval {
+        match by_key_hashes_and_comparator {
             None => Some(0),
             Some((hashes, eq_cmp)) => {
                 let h = hashes.values()[r];
@@ -190,6 +192,80 @@ pub(crate) struct AsofJoinProbeState {
     right_on_key_arrs: Vec<Arc<dyn Array>>,
 }
 
+impl AsofJoinProbeState {
+    fn probe_batch(
+        &mut self,
+        right_rb: &RecordBatch,
+        right_on: &BoundExpr,
+        right_by: &[BoundExpr],
+        current_morsel_idx: usize,
+    ) -> DaftResult<()> {
+        let table = self.build_contents.clone();
+
+        let right_on_series = right_rb.eval_expression(right_on)?;
+        let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
+
+        //we use this later when we call search_bucket()
+        let on_key_cmp = build_partial_compare_with_nulls(
+            table.left_on_arr.as_ref(),
+            right_on_arr.as_ref(),
+            false,
+        )?;
+
+        // we use this later when we call find_left_group()
+        let by_key_hashes_and_comparator: Option<(_, _)> = if table.has_by_keys {
+            let right_by_rb = right_rb.eval_expression_list(right_by)?;
+            let hashes = right_by_rb.hash_rows()?;
+            let num_by_cols = table.group_reps.num_columns();
+            let eq_cmp = build_multi_array_is_equal(
+                &table
+                    .group_reps
+                    .as_materialized_series()
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                &right_by_rb
+                    .as_materialized_series()
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                &vec![false; num_by_cols],
+                &vec![false; num_by_cols],
+            )?;
+            Some((hashes, eq_cmp))
+        } else {
+            None
+        };
+        let by_key_hashes_and_comparator_ref = by_key_hashes_and_comparator
+            .as_ref()
+            .map(|(h, eq)| (h, eq.as_ref()));
+        for r in 0..right_rb.len() {
+            if !right_on_series.is_valid(r) {
+                continue;
+            }
+
+            let Some(group_idx) = table.find_left_group(r, by_key_hashes_and_comparator_ref) else {
+                continue;
+            };
+
+            let bucket = &table.group_buckets[group_idx];
+            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, r) else {
+                continue;
+            };
+
+            self.update_best_match(
+                candidate_left_idx,
+                r,
+                current_morsel_idx,
+                &right_on_arr,
+                &mut cmp_cache,
+            )?;
+        }
+
+        self.right_on_key_arrs.push(right_on_arr);
+        Ok(())
+    }
+}
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
     right_by: Vec<BoundExpr>,
@@ -279,7 +355,6 @@ impl JoinOperator for AsofJoinOperator {
                     if table.total_left_rows == 0 {
                         return Ok((state, ProbeOutput::NeedMoreInput(None)));
                     }
-
                     for right_rb in input.record_batches() {
                         if right_rb.is_empty() {
                             continue;
