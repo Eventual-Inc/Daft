@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use daft_core::series::Series;
-use daft_io::{IOClient, IOConfig, get_io_client};
+use daft_io::{IOClient, IOConfig, get_io_client, strip_file_uri_to_path};
 use futures::{
     StreamExt, TryStreamExt,
     future::{join_all, try_join_all},
@@ -134,8 +134,12 @@ impl S3CheckpointStore {
 
     async fn put_bytes(&self, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
         // Local filesystem backend (`file://`) requires parent directories
-        // to exist before writing — S3 does not.
-        if let Some(local) = path.strip_prefix("file://")
+        // to exist before writing — S3 does not. Use `strip_file_uri_to_path`
+        // (rather than a hand-rolled `strip_prefix("file://")`) so the
+        // Windows-canonical `file:///C:/Users/...` form has its leading slash
+        // before the drive letter stripped — otherwise `std::path::Path` fails
+        // with os error 123 on Windows.
+        if let Some(local) = strip_file_uri_to_path(path)
             && let Some(parent) = std::path::Path::new(local).parent()
         {
             std::fs::create_dir_all(parent).map_err(|e| CheckpointError::Internal {

@@ -120,6 +120,7 @@ from .list import (
     list_sort,
     list_distinct,
     list_map,
+    list_filter,
     explode,
     list_append,
     list_contains,
@@ -203,6 +204,7 @@ from .partition import (
     partition_iceberg_bucket,
     partition_iceberg_truncate,
 )
+from .spatial import great_circle_distance
 from .str import (
     deserialize,
     try_deserialize,
@@ -249,6 +251,7 @@ from .str import (
     replace,
     regexp_replace,
     find,
+    hamming_distance,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -358,7 +361,9 @@ __all__ = [
     "format",
     "from_unixtime",
     "get",
+    "great_circle_distance",
     "guess_mime_type",
+    "hamming_distance",
     "hash",
     "hour",
     "hypot",
@@ -391,6 +396,7 @@ __all__ = [
     "list_contains",
     "list_count",
     "list_distinct",
+    "list_filter",
     "list_join",
     "list_map",
     "list_max",

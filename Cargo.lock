@@ -2278,6 +2278,7 @@ dependencies = [
  "daft-functions-tokenize",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-geo",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2800,6 +2801,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "arrow-buffer 57.3.0",
  "chrono",
  "chrono-tz",
  "common-error",
@@ -2812,6 +2814,17 @@ dependencies = [
  "serde",
  "typetag",
  "unicode-normalization",
+]
+
+[[package]]
+name = "daft-geo"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-buffer 57.3.0",
+ "daft-core",
+ "daft-dsl",
+ "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -3288,6 +3301,8 @@ dependencies = [
  "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
+ "serde",
+ "typetag",
  "uuid",
 ]
 

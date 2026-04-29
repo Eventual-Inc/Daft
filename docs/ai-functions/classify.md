@@ -29,7 +29,6 @@ df = df.with_column(
         labels=['travel', 'cooking', 'dancing'],
         provider="transformers",
         model="facebook/bart-large-mnli",
-        multi_label=True,
     ),
 )
 
