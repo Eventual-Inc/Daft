@@ -118,6 +118,17 @@ fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResu
     Ok(StructArray::new(struct_field, state_series, None).into_series())
 }
 
+fn empty_agg_struct(struct_field: &Field) -> Series {
+    let DataType::Struct(fields) = &struct_field.dtype else {
+        unreachable!("empty_agg_struct called with non-Struct field");
+    };
+    let children: Vec<Series> = fields
+        .iter()
+        .map(|f| Series::empty(&f.name, &f.dtype))
+        .collect();
+    StructArray::new(struct_field.clone(), children, None).into_series()
+}
+
 fn dispatch_per_group(
     inputs: Vec<Series>,
     groups: Option<&GroupIndices>,
@@ -792,6 +803,11 @@ impl RecordBatch {
                     .join(", ");
                 let expected_name = format!("{}({})", handle.name(), inputs_str);
                 let state_fields = handle.state_fields(&input_fields)?;
+                let struct_field =
+                    Field::new(expected_name, DataType::Struct(state_fields.clone()));
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
                 let state_series =
                     dispatch_per_group(evaled_inputs, groups, |g| handle.call_agg_block(g))?;
                 let state_series: Vec<Series> = state_series
@@ -799,12 +815,14 @@ impl RecordBatch {
                     .zip(state_fields.iter())
                     .map(|(s, f)| s.rename(&f.name))
                     .collect();
-                let struct_field = Field::new(expected_name, DataType::Struct(state_fields));
                 Ok(StructArray::new(struct_field, state_series, None).into_series())
             }
             AggExpr::AggFnCombine { handle, partial } => {
                 let struct_series = self.eval_agg_child(partial)?;
                 let struct_field = struct_series.field().clone();
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
                 let state_series = unpack_struct_state(&struct_series)?;
                 let field_names: Vec<String> =
                     state_series.iter().map(|s| s.name().to_string()).collect();
@@ -823,6 +841,9 @@ impl RecordBatch {
                 return_field,
             } => {
                 let struct_series = self.eval_agg_child(partial)?;
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(Series::empty(&return_field.name, &return_field.dtype));
+                }
                 let state_series = unpack_struct_state(&struct_series)?;
                 let field_names: Vec<String> =
                     state_series.iter().map(|s| s.name().to_string()).collect();
