@@ -43,10 +43,11 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     left_on_series: Series,
     // Concatenated on_key as an Arrow array – used for sort and binary search comparators.
     left_on_arr: Arc<dyn Array>,
-
-    // group_hash_map maps a right row's by_key hash to candidate group's index, g, for fast lookup,
-    // group_reps[g] holds the by_key values for group g
-    // group_buckets[g] holds the left row indices for group g sorted by on_key for binary search.
+    // group_hash_map maps a by_key hash to a list of candidate group indices (Vec<usize>).
+    // Multiple candidates exist only on hash collision; typically there is just one.
+    // For each candidate group index g:
+    //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
+    //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
     group_buckets: Vec<Vec<u64>>,
     group_reps: RecordBatch,
     group_hash_map: HashMap<u64, Vec<usize>>,
@@ -123,10 +124,6 @@ impl AsofJoinFinalizedBuildState {
                 group_hash_map.entry(h).or_default().push(g);
             }
 
-            // group_hash_map maps a right row's by_key hash to candidate group's index, g, for fast lookup,
-            // group_reps[g] holds the by_key values for group g
-            // group_buckets[g] holds the left row indices for group g sorted by on_key for binary search.
-
             (group_buckets, group_reps, group_hash_map)
         };
 
@@ -144,8 +141,14 @@ impl AsofJoinFinalizedBuildState {
 }
 
 pub(crate) struct AsofJoinProbeState {
-    build_contents: Vec<MicroPartition>,
-    probe_contents: Vec<MicroPartition>,
+    build_contents: Arc<AsofJoinFinalizedBuildState>,
+    // Per left row: (morsel_idx, row_idx) of the current best right match.
+    best_match: Vec<Option<(u32, u32)>>,
+    // All right RecordBatches seen so far, stored for final output construction.
+    right_tables: Vec<RecordBatch>,
+    // Per right morsel: its on_key as an Arrow array, used to build cross-morsel comparators
+    // for the "is this a better match?" check during probe.
+    right_on_key_arrs: Vec<Arc<dyn Array>>,
 }
 
 pub struct AsofJoinOperator {
@@ -212,9 +215,12 @@ impl JoinOperator for AsofJoinOperator {
         &self,
         finalized_build_state: Self::FinalizedBuildState,
     ) -> Self::ProbeState {
+        let n = finalized_build_state.total_left_rows;
         AsofJoinProbeState {
             build_contents: finalized_build_state,
-            probe_contents: Vec::new(),
+            best_match: vec![None::<(u32, u32)>; n],
+            right_tables: Vec::new(),
+            right_on_key_arrs: Vec::new(),
         }
     }
 
@@ -222,12 +228,32 @@ impl JoinOperator for AsofJoinOperator {
         &self,
         input: MicroPartition,
         mut state: Self::ProbeState,
-        _spawner: &ExecutionTaskSpawner,
+        spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
-        if !input.is_empty() {
-            state.probe_contents.push(input);
-        }
-        Ok((state, ProbeOutput::NeedMoreInput(None))).into()
+        let right_on = self.right_on.clone();
+        let right_by = self.right_by.clone();
+
+        spawner
+            .spawn(
+                async move {
+                    let table = state.build_contents.clone();
+                    if table.total_left_rows == 0 {
+                        return Ok((state, ProbeOutput::NeedMoreInput(None)));
+                    }
+
+                    for right_rb in input.record_batches() {
+                        if right_rb.is_empty() {
+                            continue;
+                        }
+                        let current_morsel_idx = state.right_tables.len();
+                        state.probe_batch(right_rb, &right_on, &right_by, current_morsel_idx)?;
+                        state.right_tables.push(right_rb.clone());
+                    }
+                    Ok((state, ProbeOutput::NeedMoreInput(None)))
+                },
+                Span::current(),
+            )
+            .into()
     }
 
     fn finalize_probe(
