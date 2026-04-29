@@ -6,8 +6,13 @@
  * This module joins the two: each `TaskTypeRow` carries the server-computed
  * aggregates (always accurate, even when individual tasks have been evicted)
  * and attaches matching retained tasks for drill-down.
+ *
+ * Groups are keyed by the full `node_ids` chain (the distributed pipeline
+ * nodes that contributed to the fused task) — two tasks with the same chain
+ * belong to the same group regardless of how their `name` strings differ
+ * (e.g. parameter-driven variations like different limit values).
  */
-import { OperatorInfo, OperatorStatus, TaskGroupSummary, TaskInfo, TaskStore } from "./types";
+import { OperatorInfo, OperatorStatus, TaskInfo, TaskStore } from "./types";
 
 export type TaskRowStatus = OperatorStatus;
 
@@ -30,14 +35,23 @@ export function taskDisplayStatus(task: TaskInfo): TaskRowStatus {
   }
 }
 
-/** One row in the Tasks sidebar — a group of tasks that share a pipeline shape. */
+/** A node in a distributed-plan chain, displayable + clickable. */
+export type PlanChainNode = { id: number; name: string };
+
+/** One row in the Tasks sidebar — a group of tasks that share a node_ids chain. */
 export type TaskTypeRow = {
-  /** Stable React key: `${origin_node_id}:${plan_fingerprint}`. */
+  /** Stable React key: stringified node_ids. */
   key: string;
-  origin_node_id: number;
-  origin_node_name: string;
-  /** Distributed plan node names along the task's pipeline, leaf → head. */
+  /** The dispatching distributed plan node (= node_ids.last()). */
+  last_node_id: number;
+  /** Display name for the dispatcher (used in headers/sort). */
+  last_node_name: string;
+  /** Local-plan chain (`task.name` split on "->"), used by the "Local Plan" column. */
   pipeline: string[];
+  /** Distributed-plan chain derived from node_ids, used by the "Distributed Plan" column. */
+  distributed_plan: PlanChainNode[];
+  /** The full chain — directly used by the filter predicate and hover handler. */
+  node_ids: number[];
   task_count: number;
   status_counts: Record<TaskRowStatus, number>;
   total_cpu_sec: number;
@@ -51,15 +65,30 @@ export type TaskTypeRow = {
   retained_task_count: number;
 };
 
+/** Stable string key for indexing by node_ids chain. */
+function nodeIdsKey(nodeIds: number[]): string {
+  return nodeIds.join(",");
+}
+
 /**
- * Derive a pipeline display from the group's name. The name is set by the
- * scheduler (e.g. "PhysicalScan->Limit") and is the grouping key.
+ * Derive the distributed-plan chain (id + display name) for a node_ids list,
+ * looking each id up in the operators map. Falls back to "Node {id}" when the
+ * operator isn't yet in the map (e.g. SSE delivery race).
  */
-function pipelineForGroup(group: TaskGroupSummary): string[] {
-  if (group.name.includes("->")) {
-    return group.name.split("->");
-  }
-  return [group.name];
+function distributedPlanChain(
+  nodeIds: number[],
+  operators: Record<number, OperatorInfo>,
+): PlanChainNode[] {
+  return nodeIds.map((id) => ({
+    id,
+    name: operators[id]?.node_info.name ?? `Node ${id}`,
+  }));
+}
+
+/** Local-plan chain from a task name like `"ScanTaskSource->Project"`. */
+function localPlanChain(name: string | null | undefined): string[] {
+  if (!name) return [];
+  return name.includes("->") ? name.split("->") : [name];
 }
 
 /** Maximum number of running tasks shown in the "top" section. */
@@ -90,11 +119,11 @@ export function buildTaskRows(
 ): TaskTypeRow[] {
   if (!taskStore) return [];
 
-  // Index retained tasks by group key: (origin_node_id, name).
+  // Index retained tasks by node_ids chain (matching the server's group key).
   const tasksByGroup = new Map<string, TaskInfo[]>();
   for (const t of Object.values(taskStore.tasks)) {
-    const name = t.name ?? `Node ${t.origin_node_id}`;
-    const key = `${t.origin_node_id}:${name}`;
+    const ids = t.node_ids.length > 0 ? t.node_ids : [t.last_node_id];
+    const key = nodeIdsKey(ids);
     let arr = tasksByGroup.get(key);
     if (!arr) {
       arr = [];
@@ -105,17 +134,24 @@ export function buildTaskRows(
 
   return taskStore.groups
     .map((g) => {
-      const key = `${g.origin_node_id}:${g.name}`;
+      const ids = g.node_ids.length > 0 ? g.node_ids : [g.last_node_id];
+      const key = nodeIdsKey(ids);
       const tasks = tasksByGroup.get(key) ?? [];
-      const pipeline = pipelineForGroup(g);
+
+      // Local plan: derived from any retained task's `name`, falling back to
+      // the server-supplied display label (`g.name`). Empty if nothing usable.
+      const sampleName = tasks[0]?.name ?? g.name;
+      const pipeline = localPlanChain(sampleName);
 
       return {
         key,
-        origin_node_id: g.origin_node_id,
-        origin_node_name:
-          operators[g.origin_node_id]?.node_info.name ??
-          `Node ${g.origin_node_id}`,
+        last_node_id: g.last_node_id,
+        last_node_name:
+          operators[g.last_node_id]?.node_info.name ??
+          `Node ${g.last_node_id}`,
         pipeline,
+        distributed_plan: distributedPlanChain(ids, operators),
+        node_ids: ids,
         task_count: g.task_count,
         status_counts: {
           Pending: 0,
@@ -131,8 +167,8 @@ export function buildTaskRows(
       };
     })
     .sort((a, b) => {
-      if (a.origin_node_id !== b.origin_node_id)
-        return b.origin_node_id - a.origin_node_id;
-      return a.pipeline.join("->").localeCompare(b.pipeline.join("->"));
+      if (a.last_node_id !== b.last_node_id)
+        return b.last_node_id - a.last_node_id;
+      return a.key.localeCompare(b.key);
     });
 }

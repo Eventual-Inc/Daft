@@ -61,8 +61,8 @@ export type PhysicalPlanNode = {
  *
  * A Flotilla task is a fused chain of local plan nodes dispatched to a
  * Swordfish worker. Tasks originate at a specific distributed plan node
- * (`origin_node_id`) and tasks with the same fused pipeline share a
- * `plan_fingerprint`, so the UI groups by (origin_node_id, plan_fingerprint).
+ * (`last_node_id`) and tasks with the same fused pipeline share a
+ * `plan_fingerprint`, so the UI groups by (last_node_id, plan_fingerprint).
  */
 export type TaskStatus =
   | { status: "Pending" }
@@ -72,7 +72,7 @@ export type TaskStatus =
 
 export type TaskInfo = {
   task_id: number;
-  origin_node_id: number;
+  last_node_id: number;
   node_ids: number[];
   plan_fingerprint: number;
   name?: string;
@@ -83,9 +83,9 @@ export type TaskInfo = {
   cpu_us: number;
 };
 
-/** Server-side aggregate summary for a group of tasks sharing an (origin_node_id, pipeline_name). */
+/** Server-side aggregate summary for a group of tasks sharing an (last_node_id, pipeline_name). */
 export type TaskGroupSummary = {
-  origin_node_id: number;
+  last_node_id: number;
   node_ids: number[];
   name: string;
   task_count: number;

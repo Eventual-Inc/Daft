@@ -115,13 +115,16 @@ function PhysicalNodeCard({
   operator,
   intensity,
   isHighlighted,
+  isHovered,
   onViewTasks,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
-  /** Outline this node — typically set after navigating from the Tasks tab. */
+  /** Sticky highlight — typically set by the URL/node filter from the Tasks sidebar. */
   isHighlighted: boolean;
+  /** Transient hover preview — set when the user hovers a task row in the sidebar. */
+  isHovered: boolean;
   /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
   onViewTasks?: (nodeId: number) => void;
 }) {
@@ -131,7 +134,8 @@ function PhysicalNodeCard({
   const cardStyle: React.CSSProperties =
     status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
 
-  // Scroll the highlighted node into view when it becomes the navigation target.
+  // Scroll into view only when the *sticky* (click-driven) highlight becomes
+  // active — scrubbing the sidebar via hover shouldn't jump the plan around.
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (isHighlighted && cardRef.current) {
@@ -153,12 +157,22 @@ function PhysicalNodeCard({
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
-  const ringStyle: React.CSSProperties = isHighlighted
-    ? {
-        boxShadow:
-          "0 0 0 2px rgb(217, 70, 219), 0 0 18px 2px rgba(217, 70, 219, 0.55)",
-      }
-    : {};
+  // Sticky click highlight: magenta outer ring (existing).
+  // Transient hover preview: amber inner glow (lower intensity).
+  // When both apply we layer them: amber inner + magenta outer.
+  const ringShadows: string[] = [];
+  if (isHovered) {
+    ringShadows.push(
+      "inset 0 0 0 2px rgb(245, 158, 11), inset 0 0 12px 0px rgba(245, 158, 11, 0.45)",
+    );
+  }
+  if (isHighlighted) {
+    ringShadows.push(
+      "0 0 0 2px rgb(217, 70, 219), 0 0 18px 2px rgba(217, 70, 219, 0.55)",
+    );
+  }
+  const ringStyle: React.CSSProperties =
+    ringShadows.length > 0 ? { boxShadow: ringShadows.join(", ") } : {};
 
   return (
     <div
@@ -254,13 +268,17 @@ function PhysicalNodeCard({
 
 export default function PhysicalPlanTree({
   exec_state,
-  highlightedNodeId,
+  highlightedNodeIds,
+  hoveredNodeIds,
   onViewTasks,
   tasksOpen,
   onOpenTasks,
 }: {
   exec_state: ExecutingState;
-  highlightedNodeId?: number | null;
+  /** Sticky highlight set — driven by URL/node filter (click-to-filter). */
+  highlightedNodeIds?: ReadonlySet<number> | null;
+  /** Transient hover preview set — driven by sidebar row hovers. */
+  hoveredNodeIds?: ReadonlySet<number> | null;
   onViewTasks?: (nodeId: number) => void;
   /** Whether the tasks sidebar is currently open. Flotilla only. */
   tasksOpen?: boolean;
@@ -386,7 +404,8 @@ export default function PhysicalPlanTree({
                     node={node}
                     operator={op}
                     intensity={intensity}
-                    isHighlighted={highlightedNodeId === node.id}
+                    isHighlighted={highlightedNodeIds?.has(node.id) ?? false}
+                    isHovered={hoveredNodeIds?.has(node.id) ?? false}
                     onViewTasks={onViewTasks}
                   />
                 );

@@ -13,6 +13,7 @@ import {
 import {
   buildTaskRows,
   getActiveTasks,
+  PlanChainNode,
   taskDisplayStatus,
   TaskTypeRow,
   TOP_K_RUNNING,
@@ -20,26 +21,34 @@ import {
 
 /**
  * Tasks sidebar — a collapsible panel docked inside the Execution tab that
- * shows Flotilla task "types" (fused pipelines grouped by origin distributed-
- * plan node). Rows are expandable to individual task level.
+ * shows Flotilla task "types" (groups of tasks sharing a `node_ids` chain).
+ * Rows are expandable to individual task level.
  *
  * Task data comes from `exec_info.task_store`, which contains per-group
  * aggregate summaries and a bounded set of retained individual tasks.
+ *
+ * The filter is by node-id membership: a row is shown if `nodeFilter` is null
+ * or if `row.node_ids.includes(nodeFilter)`. Hovering a row notifies the page
+ * via `onHoverNodes` so the physical plan tree can preview-highlight all
+ * nodes in the chain.
  */
 export default function TasksSidebar({
   exec_state,
-  originFilter,
+  nodeFilter,
   onClearFilter,
-  onSelectOrigin,
+  onSelectNode,
+  onHoverNodes,
   onClose,
 }: {
   exec_state: ExecutingState;
-  /** If set, only show rows whose origin_node_id matches. */
-  originFilter: number | null;
-  /** Called when the user clears the origin filter. */
+  /** If set, only show rows whose `node_ids` contains this id. */
+  nodeFilter: number | null;
+  /** Called when the user clears the node filter. */
   onClearFilter: () => void;
-  /** Called when the user clicks an origin node name — highlights the plan node. */
-  onSelectOrigin: (nodeId: number) => void;
+  /** Called when the user clicks a chip — narrows the filter to that node id. */
+  onSelectNode: (nodeId: number) => void;
+  /** Called when the user hovers a row (a Set of node ids), or null on leave. */
+  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
   /** Called when the user closes the sidebar. */
   onClose: () => void;
 }) {
@@ -50,20 +59,20 @@ export default function TasksSidebar({
 
   const rows = useMemo(
     () =>
-      originFilter == null
+      nodeFilter == null
         ? allRows
-        : allRows.filter((r) => r.origin_node_id === originFilter),
-    [allRows, originFilter],
+        : allRows.filter((r) => r.node_ids.includes(nodeFilter)),
+    [allRows, nodeFilter],
   );
 
   // Active tasks for the "top" section.
   const allActiveTasks = useMemo(() => getActiveTasks(task_store), [task_store]);
   const filteredActiveTasks = useMemo(
     () =>
-      originFilter == null
+      nodeFilter == null
         ? allActiveTasks
-        : allActiveTasks.filter((t) => t.origin_node_id === originFilter),
-    [allActiveTasks, originFilter],
+        : allActiveTasks.filter((t) => t.node_ids.includes(nodeFilter)),
+    [allActiveTasks, nodeFilter],
   );
   const activeTasks = filteredActiveTasks.slice(0, TOP_K_RUNNING);
   const totalRunning = filteredActiveTasks.length;
@@ -74,9 +83,9 @@ export default function TasksSidebar({
   const totalFinished = rows.reduce((a, r) => a + r.status_counts.Finished, 0);
   const totalFailed = rows.reduce((a, r) => a + r.status_counts.Failed, 0);
 
-  const filteredOriginName =
-    originFilter != null
-      ? (operators[originFilter]?.node_info.name ?? `Node ${originFilter}`)
+  const filteredNodeName =
+    nodeFilter != null
+      ? (operators[nodeFilter]?.node_info.name ?? `Node ${nodeFilter}`)
       : null;
 
   return (
@@ -94,15 +103,15 @@ export default function TasksSidebar({
             {totalFailed > 0 && <span className="text-red-400">{totalFailed} failed</span>}
             {totalTasks === 0 && "0 tasks"}
           </span>
-          {originFilter != null && (
+          {nodeFilter != null && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-fuchsia-950/50 border border-fuchsia-800 text-fuchsia-200 truncate">
               <span className="truncate">
-                origin: {filteredOriginName} (#{originFilter})
+                contains: {filteredNodeName} (#{nodeFilter})
               </span>
               <button
                 onClick={onClearFilter}
                 className="hover:text-white flex-shrink-0"
-                aria-label="Clear origin filter"
+                aria-label="Clear node filter"
               >
                 <X size={12} />
               </button>
@@ -124,7 +133,7 @@ export default function TasksSidebar({
         {rows.length === 0 && activeTasks.length === 0 ? (
           <div className="p-8 text-center">
             <p className={`${main.className} text-zinc-400`}>
-              {originFilter != null
+              {nodeFilter != null
                 ? "No tasks for this filter."
                 : allRows.length === 0
                   ? "No tasks reported yet."
@@ -143,9 +152,14 @@ export default function TasksSidebar({
               <RunningTasksSection
                 tasks={activeTasks}
                 totalRunning={totalRunning}
+                onHoverNodes={onHoverNodes}
               />
             </div>
-            <TaskTypeTable rows={rows} onSelectOrigin={onSelectOrigin} />
+            <TaskTypeTable
+              rows={rows}
+              onSelectNode={onSelectNode}
+              onHoverNodes={onHoverNodes}
+            />
           </>
         )}
       </div>
@@ -161,9 +175,11 @@ const RUNNING_GRID_COLS = "grid-cols-[minmax(200px,2fr)_90px]";
 function RunningTasksSection({
   tasks,
   totalRunning,
+  onHoverNodes,
 }: {
   tasks: TaskInfo[];
   totalRunning: number;
+  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   const [now, setNow] = useState(() => Date.now() / 1000);
   const hasRunning = tasks.length > 0;
@@ -185,13 +201,18 @@ function RunningTasksSection({
         <div
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
-          <RunningHeader align="left">Pipeline</RunningHeader>
+          <RunningHeader align="left">Local Plan</RunningHeader>
           <RunningHeader align="right">Duration</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
           const task = tasks[i];
           return task ? (
-            <RunningTaskRow key={task.task_id} task={task} now={now} />
+            <RunningTaskRow
+              key={task.task_id}
+              task={task}
+              now={now}
+              onHoverNodes={onHoverNodes}
+            />
           ) : (
             <div key={`empty-${i}`} className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px]`} />
           );
@@ -223,15 +244,26 @@ function RunningHeader({
   );
 }
 
-function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
+function RunningTaskRow({
+  task,
+  now,
+  onHoverNodes,
+}: {
+  task: TaskInfo;
+  now: number;
+  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
+}) {
   const duration = formatDuration(Math.max(0, now - task.submit_sec)) + "\u2026";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
-    : [`Node ${task.origin_node_id}`];
+    : [`Node ${task.last_node_id}`];
+  const ids = task.node_ids.length > 0 ? task.node_ids : [task.last_node_id];
 
   return (
     <div
       className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px] hover:bg-zinc-800/40 transition-colors`}
+      onMouseEnter={() => onHoverNodes(new Set(ids))}
+      onMouseLeave={() => onHoverNodes(null)}
     >
       <div className="px-3">
         <PipelineChips pipeline={pipeline} />
@@ -246,25 +278,28 @@ function RunningTaskRow({ task, now }: { task: TaskInfo; now: number }) {
 // ---------------------------------------------------------------------------
 // Table of task-type rows.
 // ---------------------------------------------------------------------------
+// Columns: chevron | Local Plan | Distributed Plan | Tasks | Status | CPU
 const GRID_COLS =
-  "grid-cols-[32px_minmax(220px,2fr)_minmax(180px,1.5fr)_90px_130px_100px]";
+  "grid-cols-[32px_minmax(220px,2fr)_minmax(220px,2fr)_90px_130px_100px]";
 
 function TaskTypeTable({
   rows,
-  onSelectOrigin,
+  onSelectNode,
+  onHoverNodes,
 }: {
   rows: TaskTypeRow[];
-  onSelectOrigin: (nodeId: number) => void;
+  onSelectNode: (nodeId: number) => void;
+  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="min-w-[820px]">
+    <div className="min-w-[900px]">
       {/* Header */}
       <div
         className={`bg-zinc-800 grid ${GRID_COLS} gap-0 items-center min-h-[48px] border-b border-zinc-700 sticky top-0 z-10`}
       >
         <HeaderCell />
-        <HeaderCell align="left">Pipeline</HeaderCell>
-        <HeaderCell align="left">Origin Node</HeaderCell>
+        <HeaderCell align="left">Local Plan</HeaderCell>
+        <HeaderCell align="left">Distributed Plan</HeaderCell>
         <HeaderCell align="right">Tasks</HeaderCell>
         <HeaderCell align="left">Status</HeaderCell>
         <HeaderCell align="right" last>
@@ -275,7 +310,12 @@ function TaskTypeTable({
       {/* Body */}
       <div className="divide-y divide-zinc-800">
         {rows.map((row) => (
-          <TaskTypeGroupRow key={row.key} row={row} onSelectOrigin={onSelectOrigin} />
+          <TaskTypeGroupRow
+            key={row.key}
+            row={row}
+            onSelectNode={onSelectNode}
+            onHoverNodes={onHoverNodes}
+          />
         ))}
       </div>
     </div>
@@ -310,18 +350,23 @@ function HeaderCell({
 
 function TaskTypeGroupRow({
   row,
-  onSelectOrigin,
+  onSelectNode,
+  onHoverNodes,
 }: {
   row: TaskTypeRow;
-  onSelectOrigin: (nodeId: number) => void;
+  onSelectNode: (nodeId: number) => void;
+  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const hoverSet = useMemo(() => new Set(row.node_ids), [row.node_ids]);
 
   return (
     <>
       <div
         className={`grid ${GRID_COLS} gap-0 items-center min-h-[48px] cursor-pointer hover:bg-zinc-800/50 transition-colors`}
         onClick={() => setExpanded((e) => !e)}
+        onMouseEnter={() => onHoverNodes(hoverSet)}
+        onMouseLeave={() => onHoverNodes(null)}
       >
         <Cell align="center">
           {expanded ? (
@@ -334,17 +379,10 @@ function TaskTypeGroupRow({
           <PipelineChips pipeline={row.pipeline} />
         </Cell>
         <Cell align="left">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectOrigin(row.origin_node_id);
-            }}
-            className={`${main.className} text-sm text-sky-400 hover:text-sky-300 hover:underline font-mono text-left truncate`}
-            title={`Jump to ${row.origin_node_name} in the physical plan`}
-          >
-            {row.origin_node_name}{" "}
-            <span className="text-zinc-500">#{row.origin_node_id}</span>
-          </button>
+          <ClickablePipelineChips
+            chain={row.distributed_plan}
+            onClickNode={onSelectNode}
+          />
         </Cell>
         <Cell align="right">
           <span className={`${main.className} text-sm text-zinc-200 font-mono`}>
@@ -413,6 +451,41 @@ function PipelineChips({ pipeline }: { pipeline: string[] }) {
             {name}
           </span>
           {i < pipeline.length - 1 && (
+            <span className="text-zinc-500 text-xs">→</span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Like {@link PipelineChips} but each chip is a clickable button. Clicking a
+ * chip filters the sidebar to tasks containing that node id. We stop click
+ * propagation so the row's expand/collapse handler doesn't also fire.
+ */
+function ClickablePipelineChips({
+  chain,
+  onClickNode,
+}: {
+  chain: PlanChainNode[];
+  onClickNode: (id: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap min-w-0">
+      {chain.map((node, i) => (
+        <span key={`${node.id}-${i}`} className="flex items-center gap-1 min-w-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClickNode(node.id);
+            }}
+            className={`${main.className} px-2 py-0.5 rounded-md bg-zinc-800 border border-zinc-700 text-xs text-sky-300 hover:text-sky-200 hover:bg-zinc-700 hover:border-sky-700 font-mono truncate transition-colors`}
+            title={`${node.name} #${node.id} — click to filter`}
+          >
+            {node.name}
+          </button>
+          {i < chain.length - 1 && (
             <span className="text-zinc-500 text-xs">→</span>
           )}
         </span>

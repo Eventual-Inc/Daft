@@ -39,12 +39,23 @@ function QueryPageInner() {
   // Tab + tasks-sidebar state is URL-driven so deep links survive reload.
   // - `tab`: active tab id
   // - `tasks=open`: tasks sidebar visible (Flotilla + Execution tab only)
-  // - `origin`: node id used as sidebar filter and/or plan highlight
+  // - `node`: node id used as sidebar filter (containment in node_ids) and
+  //   sticky plan highlight.
   const urlTab = searchParams.get("tab");
-  const urlOrigin = searchParams.get("origin");
-  const originParam = urlOrigin != null ? Number(urlOrigin) : null;
+  const urlNode = searchParams.get("node");
+  const nodeFilter = urlNode != null ? Number(urlNode) : null;
   const activeTab = urlTab ?? "progress-table";
   const tasksOpen = searchParams.get("tasks") === "open";
+
+  // Transient hover preview from the sidebar — not URL-backed (hover would
+  // thrash the URL). Drives the amber preview ring on the plan tree.
+  const [hoveredNodeIds, setHoveredNodeIds] = useState<ReadonlySet<number> | null>(null);
+
+  // Sticky highlight set passed to the plan tree: derived from the URL filter.
+  const highlightedNodeIds = useMemo(
+    () => (nodeFilter != null ? new Set([nodeFilter]) : null),
+    [nodeFilter],
+  );
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -60,17 +71,17 @@ function QueryPageInner() {
 
   const handleTabChange = useCallback(
     (next: string) => {
-      // Leaving the Execution tab clears the origin hint so a fresh return
+      // Leaving the Execution tab clears the node hint so a fresh return
       // doesn't carry a stale filter/highlight. Sidebar open-state persists.
-      updateParams({ tab: next, origin: null });
+      updateParams({ tab: next, node: null });
     },
     [updateParams],
   );
 
-  // Plan node -> open tasks sidebar, filtered to that origin.
+  // Plan node -> open tasks sidebar, filtered to that node.
   const handleViewTasksForNode = useCallback(
     (nodeId: number) => {
-      updateParams({ tasks: "open", origin: String(nodeId) });
+      updateParams({ tasks: "open", node: String(nodeId) });
     },
     [updateParams],
   );
@@ -82,19 +93,19 @@ function QueryPageInner() {
 
   const handleCloseTasks = useCallback(() => {
     // Closing the sidebar also clears the filter so reopening starts fresh.
-    updateParams({ tasks: null, origin: null });
+    updateParams({ tasks: null, node: null });
   }, [updateParams]);
 
-  // Task row origin link -> highlight the plan node (sidebar stays open).
-  const handleSelectOrigin = useCallback(
+  // Task row chip click -> filter sidebar to tasks containing this node id.
+  const handleSelectNode = useCallback(
     (nodeId: number) => {
-      updateParams({ origin: String(nodeId) });
+      updateParams({ node: String(nodeId) });
     },
     [updateParams],
   );
 
-  const handleClearOrigin = useCallback(() => {
-    updateParams({ origin: null });
+  const handleClearNodeFilter = useCallback(() => {
+    updateParams({ node: null });
   }, [updateParams]);
 
   useEffect(() => {
@@ -345,7 +356,8 @@ function QueryPageInner() {
                   <div className="flex-1 min-w-0 h-full">
                     <PhysicalPlanTree
                       exec_state={query.state as ExecutingState}
-                      highlightedNodeId={originParam}
+                      highlightedNodeIds={highlightedNodeIds}
+                      hoveredNodeIds={hoveredNodeIds}
                       onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
                       tasksOpen={isFlotilla && tasksOpen}
                       onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
@@ -355,9 +367,10 @@ function QueryPageInner() {
                     <div className="w-1/2 min-w-[480px] max-w-[900px] flex-shrink-0 border-l border-zinc-800 h-full">
                       <TasksSidebar
                         exec_state={query.state as ExecutingState}
-                        originFilter={originParam}
-                        onClearFilter={handleClearOrigin}
-                        onSelectOrigin={handleSelectOrigin}
+                        nodeFilter={nodeFilter}
+                        onClearFilter={handleClearNodeFilter}
+                        onSelectNode={handleSelectNode}
+                        onHoverNodes={setHoveredNodeIds}
                         onClose={handleCloseTasks}
                       />
                     </div>
