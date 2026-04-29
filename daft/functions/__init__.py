@@ -85,6 +85,7 @@ from .datetime import (
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
+    hamming_distance,
     cosine_similarity,
     pearson_correlation,
     jaccard_similarity,
@@ -140,6 +141,7 @@ from .misc import (
     is_in,
     hash,
     minhash,
+    simhash,
     length,
     concat,
     coalesce,
@@ -252,7 +254,7 @@ from .str import (
     replace,
     regexp_replace,
     find,
-    hamming_distance,
+    hamming_distance_str,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -365,6 +367,7 @@ __all__ = [
     "great_circle_distance",
     "guess_mime_type",
     "hamming_distance",
+    "hamming_distance_str",
     "hash",
     "hour",
     "hypot",
@@ -479,6 +482,7 @@ __all__ = [
     "shift_left",
     "shift_right",
     "sign",
+    "simhash",
     "sin",
     "sinh",
     "skew",
