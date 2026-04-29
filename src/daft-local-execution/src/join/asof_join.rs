@@ -177,7 +177,7 @@ impl AsofJoinOperator {
 
 impl JoinOperator for AsofJoinOperator {
     type BuildState = AsofJoinBuildState;
-    type FinalizedBuildState = Vec<MicroPartition>;
+    type FinalizedBuildState = Arc<AsofJoinBuilt>;
     type ProbeState = AsofJoinProbeState;
 
     fn build(
@@ -193,7 +193,13 @@ impl JoinOperator for AsofJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        Ok(state.tables).into()
+        let join_table = AsofJoinBuilt::new(
+            state.tables,
+            self.left_schema.clone(),
+            &self.left_by,
+            &self.left_on,
+        )?;
+        Ok(Arc::new(join_table))
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
