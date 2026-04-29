@@ -5,6 +5,7 @@
     Native extensions are experimental and may change in future releases.
 
 > Please see the [prompt](#prompt) if you want help generating an extension.
+> Looking for the broader extension model? See the [Extensions overview](index.md).
 > Looking for extensions you can install today? See [Community Extensions](community.md).
 
 This document is a guide for authoring Daft native extensions in Rust.
@@ -12,8 +13,8 @@ Daft supports native Rust extensions by leveraging a stable C ABI based on the
 [Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html).
 Extensions are **not coupled** to any particular Arrow library version. The ABI boundary uses
 plain C structs (`ArrowSchema`, `ArrowArray`) so your extension can use any arrow-rs version
-(or even a different Arrow implementation entirely). Today we support authoring native
-scalar functions, but are actively working on additional native extension features.
+(or even a different Arrow implementation entirely). Today Daft native extensions support
+authoring native scalar functions and native aggregate functions / UDAFs.
 
 ## Example
 
