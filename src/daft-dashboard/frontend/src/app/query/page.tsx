@@ -49,13 +49,9 @@ function QueryPageInner() {
 
   // Transient hover preview from the sidebar — not URL-backed (hover would
   // thrash the URL). Drives the amber preview ring on the plan tree.
+  // Hovering a task highlights *all* nodes in its node_ids chain, so this
+  // genuinely needs to be a set; the click filter is a single id (nodeFilter).
   const [hoveredNodeIds, setHoveredNodeIds] = useState<ReadonlySet<number> | null>(null);
-
-  // Sticky highlight set passed to the plan tree: derived from the URL filter.
-  const highlightedNodeIds = useMemo(
-    () => (nodeFilter != null ? new Set([nodeFilter]) : null),
-    [nodeFilter],
-  );
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -356,7 +352,7 @@ function QueryPageInner() {
                   <div className="flex-1 min-w-0 h-full">
                     <PhysicalPlanTree
                       exec_state={query.state as ExecutingState}
-                      highlightedNodeIds={highlightedNodeIds}
+                      highlightedNodeId={nodeFilter}
                       hoveredNodeIds={hoveredNodeIds}
                       onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
                       tasksOpen={isFlotilla && tasksOpen}

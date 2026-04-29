@@ -268,15 +268,15 @@ function PhysicalNodeCard({
 
 export default function PhysicalPlanTree({
   exec_state,
-  highlightedNodeIds,
+  highlightedNodeId,
   hoveredNodeIds,
   onViewTasks,
   tasksOpen,
   onOpenTasks,
 }: {
   exec_state: ExecutingState;
-  /** Sticky highlight set — driven by URL/node filter (click-to-filter). */
-  highlightedNodeIds?: ReadonlySet<number> | null;
+  /** Sticky highlight — driven by the URL/node filter (click-to-filter). */
+  highlightedNodeId?: number | null;
   /** Transient hover preview set — driven by sidebar row hovers. */
   hoveredNodeIds?: ReadonlySet<number> | null;
   onViewTasks?: (nodeId: number) => void;
@@ -404,7 +404,7 @@ export default function PhysicalPlanTree({
                     node={node}
                     operator={op}
                     intensity={intensity}
-                    isHighlighted={highlightedNodeIds?.has(node.id) ?? false}
+                    isHighlighted={highlightedNodeId === node.id}
                     isHovered={hoveredNodeIds?.has(node.id) ?? false}
                     onViewTasks={onViewTasks}
                   />
