@@ -138,6 +138,45 @@ impl AsofJoinFinalizedBuildState {
             total_left_rows,
         })
     }
+
+    /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[r].
+    /// Returns the global left row index, or `None` if no valid match exists.
+    fn search_bucket(
+        &self,
+        bucket: &[u64],
+        on_key_cmp: &DynPartialComparator,
+        r: usize,
+    ) -> Option<usize> {
+        let mut lo = 0usize;
+        let mut hi = bucket.len();
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            match on_key_cmp(bucket[mid] as usize, r) {
+                Some(Ordering::Less) => lo = mid + 1,
+                _ => hi = mid,
+            }
+        }
+        let left_global = *bucket.get(lo)? as usize;
+        self.left_on_series
+            .is_valid(left_global)
+            .then_some(left_global)
+    }
+    /// Find the group index for right row `r`.
+    /// Returns `None` if the row belongs to no group (hash miss or equality miss).
+    fn find_left_group(
+        &self,
+        r: usize,
+        by_key_eval: Option<(&UInt64Array, &(dyn Fn(usize, usize) -> bool + Send + Sync))>,
+    ) -> Option<usize> {
+        match by_key_eval {
+            None => Some(0),
+            Some((hashes, eq_cmp)) => {
+                let h = hashes.values()[r];
+                let candidates = self.group_hash_map.get(&h)?;
+                candidates.iter().copied().find(|&g| eq_cmp(g, r))
+            }
+        }
+    }
 }
 
 pub(crate) struct AsofJoinProbeState {
