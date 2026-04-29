@@ -25,7 +25,8 @@ To use OAuth, create a Databricks service principal and generate an OAuth secret
 === "🐍 Python (PAT)"
 
     ```python
-    from daft.catalog.__unity import UnityCatalogClient as UnityCatalog
+    from daft import Catalog
+    from daft.catalog.unity import UnityCatalog
 
     unity = UnityCatalog(
         endpoint="https://<databricks_workspace_id>.cloud.databricks.com",
@@ -46,8 +47,8 @@ To use OAuth, create a Databricks service principal and generate an OAuth secret
 === "🐍 Python (OAuth client credentials)"
 
     ```python
-    from daft.catalog.__unity import UnityCatalogClient as UnityCatalog
-    from daft.catalog.__unity import OAuth2Credentials
+    from daft import Catalog
+    from daft.catalog.unity import UnityCatalog, OAuth2Credentials
 
     unity = UnityCatalog(
         endpoint="https://<databricks_workspace_id>.cloud.databricks.com",

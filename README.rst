@@ -59,11 +59,11 @@ Telemetry
 
 To help improve Daft, we collect non-identifiable data via Scarf (https://scarf.sh).
 
-To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
+To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``, ``SCARF_NO_ANALYTICS=true``, or ``DAFT_ANALYTICS_ENABLED=false``.
 
 The data that we collect is:
 
-1. **Non-identifiable:** Events are keyed by a session ID which is generated on import of Daft
+1. **Non-identifiable:** No session IDs or user identifiers are collected
 2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
 3. **For development only:** We do not buy or sell any user data
 

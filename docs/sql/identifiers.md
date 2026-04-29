@@ -1,6 +1,6 @@
 # Identifiers
 
-Daft's SQL identifiers are **case-insensitive by default**, but support a case-sensitive and a case-normalize mode. For both the case-insensitive and case-sensitive modes, identifiers are case-preserved and are matched based upon the mode. For the case-normalize mode, unquoted (regular) identifiers are normalized to lowercase and double-quoted (delimited) identifiers are case-preserved. You can configure these modes by setting the `identifer_mode` session option. These modes apply when resolving attached catalogs, attached tables, and columns via the session.
+Daft's SQL identifiers are **case-sensitive by default**, but support a case-insensitive and a case-normalize mode. For both the case-insensitive and case-sensitive modes, identifiers are case-preserved and are matched based upon the mode. For the case-normalize mode, unquoted (regular) identifiers are normalized to lowercase and double-quoted (delimited) identifiers are case-preserved. You can configure these modes via the `SessionOptions` when creating a session. These modes apply when resolving attached catalogs, attached tables, and columns via the session.
 
 !!! warning "Warning"
 
@@ -19,6 +19,7 @@ abc
 ```sql
 -- delimited identifier
 "abc"
+```
 
 ```sql
 -- qualified identifier
@@ -58,21 +59,17 @@ SELECT "🍺" FROM "🍻"
 
 ## Configuration
 
-You can configure the mode using the `identifier_mode` session option.
+You can configure the mode using the `identifier_mode` option when creating a session:
 
 ```python
-# python
-
 from daft import Session
+from daft.session import SessionOptions, IdentifierMode
 
-sess = Session()
-sess.set_option("identifier_mode", "sensitive")
-```
+# Create a session with case-insensitive identifiers
+opts = SessionOptions(identifier_mode=IdentifierMode.INSENSITIVE)
+sess = Session(opts)
 
-```SQL
--- SQL
-
-SET identifier_mode = 'insensitive';  -- duckdb, spark, unity
-SET identifier_mode = 'sensitive';    -- python, iceberg
-SET identifier_mode = 'normalized';   -- postgres, datafusion, standard
+# Or use case-normalize mode
+opts = SessionOptions(identifier_mode=IdentifierMode.NORMALIZE)
+sess = Session(opts)
 ```
