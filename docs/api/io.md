@@ -80,27 +80,7 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
-::: daft.read_text
-    options:
-        heading_level: 3
-
-::: daft.read_paimon
-    options:
-        heading_level: 3
-
-::: daft.read_mcap
-    options:
-        heading_level: 3
-
 ::: daft.read_huggingface
-    options:
-        heading_level: 3
-
-::: daft.from_files
-    options:
-        heading_level: 3
-
-::: daft.range
     options:
         heading_level: 3
 
@@ -153,10 +133,6 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
         heading_level: 3
 
 ::: daft.dataframe.DataFrame.write_turbopuffer
-    options:
-        heading_level: 3
-
-::: daft.dataframe.DataFrame.write_paimon
     options:
         heading_level: 3
 
