@@ -150,11 +150,13 @@ pub struct ResultOutEvent {
 pub struct TaskInfo {
     pub id: u32,
     /// The last distributed plan node in the task's pipeline — the one that
-    /// dispatched the task. Matches `TaskContext::last_node_id`.
-    pub origin_node_id: u32,
+    /// dispatched the task. Matches `TaskContext::last_node_id`. Different
+    /// from `LocalNodeContext::origin_node_id`, which attributes a single
+    /// local plan node back to the distributed node that generated it.
+    pub last_node_id: u32,
     pub node_ids: Vec<u32>,
     /// Fingerprint identifying tasks with functionally identical plans.
-    /// Tasks with the same origin_node_id + plan_fingerprint share a compiled pipeline.
+    /// Tasks with the same last_node_id + plan_fingerprint share a compiled pipeline.
     pub plan_fingerprint: u32,
     /// Optional human-readable task name (pipeline shape), set on submit.
     pub name: Option<Arc<str>>,
