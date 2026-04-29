@@ -115,7 +115,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
 fn task_info_from_context(context: &TaskContext, name: Option<String>) -> Arc<TaskInfo> {
     let info = TaskInfo {
         id: context.task_id,
-        origin_node_id: context.last_node_id,
+        last_node_id: context.last_node_id,
         node_ids: context.node_ids.clone(),
         plan_fingerprint: context.plan_fingerprint,
         name: name.map(Arc::from),
