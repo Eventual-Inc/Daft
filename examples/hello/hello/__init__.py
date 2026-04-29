@@ -11,3 +11,8 @@ if TYPE_CHECKING:
 def greet(name: Expression) -> Expression:
     """Greet someone by name."""
     return daft.get_function("greet", name)
+
+
+def string_count(name: Expression) -> Expression:
+    """Count non-null strings."""
+    return daft.get_aggregate_function("string_count", name)
