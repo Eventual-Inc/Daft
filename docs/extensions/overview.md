@@ -40,21 +40,21 @@ tasks across a Daft query, while users interact with functions like
 
 This pattern also exists inside Daft itself. The
 [`daft.functions.ai`](../api/ai.md) module exposes high-level functions like
-[`prompt`](https://docs.daft.ai/en/latest/api/functions/prompt/),
-[`embed_text`](https://docs.daft.ai/en/latest/api/functions/embed_text/),
-[`embed_image`](https://docs.daft.ai/en/latest/api/functions/embed_image/),
-[`classify_text`](https://docs.daft.ai/en/latest/api/functions/classify_text/), and
-[`classify_image`](https://docs.daft.ai/en/latest/api/functions/classify_image/). To users, these look
+[`prompt`](../api/functions/prompt.md),
+[`embed_text`](../api/functions/embed_text.md),
+[`embed_image`](../api/functions/embed_image.md),
+[`classify_text`](../api/functions/classify_text.md), and
+[`classify_image`](../api/functions/classify_image.md). To users, these look
 like normal Daft expression functions. Under the hood, they use Daft's UDF and
 class-UDF machinery, including batching, concurrency controls, retries, and
 [GPU resource hints](../custom-code/gpu.md).
 
 The file APIs follow a similar product pattern. [`daft.File`](../api/datatypes/file_types.md)
-values and helpers like [`file`](https://docs.daft.ai/en/latest/api/functions/file/),
-[`audio_file`](https://docs.daft.ai/en/latest/api/functions/audio_file/),
-[`video_file`](https://docs.daft.ai/en/latest/api/functions/video_file/),
-[`file_path`](https://docs.daft.ai/en/latest/api/functions/file_path/), and
-[`file_size`](https://docs.daft.ai/en/latest/api/functions/file_size/) give users expression-level
+values and helpers like [`file`](../api/functions/file.md),
+[`audio_file`](../api/functions/audio_file.md),
+[`video_file`](../api/functions/video_file.md),
+[`file_path`](../api/functions/file_path.md), and
+[`file_size`](../api/functions/file_size.md) give users expression-level
 building blocks for working with files. Those file objects can then flow into
 Python UDFs, model pipelines, and domain-specific libraries without users
 needing to think about execution details.
@@ -71,10 +71,11 @@ ship as pip-installable Python packages that bundle a native shared library.
 Users import the package, load it into a Daft [`Session`](../api/sessions.md),
 and call ordinary Python wrappers in their DataFrame expressions.
 
-Rust currently has the most ergonomic SDK through `daft-ext`, while C++ is
-demonstrated through the raw ABI. Other systems languages are possible if they
-can produce a shared library, export the expected C ABI, and read/write Arrow C
-Data Interface arrays.
+Rust currently has the most ergonomic SDK through
+[`daft-ext`](https://github.com/Eventual-Inc/Daft/tree/main/src/daft-ext),
+while C++ is demonstrated through the raw ABI. Other systems languages are
+possible if they can produce a shared library, export the expected C ABI, and
+read/write Arrow C Data Interface arrays.
 
 Daft's own examples include:
 

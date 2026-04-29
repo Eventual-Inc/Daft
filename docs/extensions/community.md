@@ -112,6 +112,12 @@ Euclidean distance, and haversine distance.
 pip install git+https://github.com/daft-engine/daft-geo.git
 ```
 
+!!! note
+
+    `daft-geo` is not yet published to PyPI. The command above installs the
+    latest commit from the repository's default branch, so behavior may change
+    between installs.
+
 ```python
 import daft
 import daft_geo
