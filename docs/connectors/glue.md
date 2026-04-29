@@ -17,10 +17,10 @@ Daft integrates with [AWS Glue](https://docs.aws.amazon.com/glue/latest/dg/what-
 === "🐍 Python"
 
     ```python
-    from daft import Catalog
+    from daft.catalog.__glue import load_glue
 
     # Load a glue catalog instance
-    catalog = Catalog.from_glue(
+    catalog = load_glue(
         name="my_glue_catalog",
         region_name="us-west-2"
     )
@@ -77,8 +77,8 @@ The Daft `GlueCatalog._table_impls` field holds a list of `GlueTable` implementa
 
 ```python
 from typing import Any, Literal
-from daft import Catalog, DataFrame
-from daft.catalog.glue import GlueCatalog, GlueTable
+from daft import DataFrame
+from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue
 
 class GlueTestTable(GlueTable):
     """GlueTestTable shows how we register custom table implementations."""
@@ -95,6 +95,6 @@ class GlueTestTable(GlueTable):
     def write(self, df: DataFrame, mode: Literal['append'] | Literal['overwrite'] = "append", **options) -> None:
         raise NotImplementedError
 
-gc = Catalog.from_glue("my_glue_catalog", region_name="us-west-2")
+gc = load_glue("my_glue_catalog", region_name="us-west-2")
 gc._table_impls.append(GlueTestTable)  # Register custom table implementation
 ```

@@ -59,17 +59,8 @@ SELECT "🍺" FROM "🍻"
 
 ## Configuration
 
-You can configure the mode using the `identifier_mode` option when creating a session:
+The identifier mode is configured at the session level. Currently, Daft uses **case-sensitive** mode by default.
 
-```python
-from daft import Session
-from daft.session import SessionOptions, IdentifierMode
+!!! note "Future Configuration"
 
-# Create a session with case-insensitive identifiers
-opts = SessionOptions(identifier_mode=IdentifierMode.INSENSITIVE)
-sess = Session(opts)
-
-# Or use case-normalize mode
-opts = SessionOptions(identifier_mode=IdentifierMode.NORMALIZE)
-sess = Session(opts)
-```
+    Python APIs for configuring the identifier mode are planned for a future release. For now, the default case-sensitive mode is used.
