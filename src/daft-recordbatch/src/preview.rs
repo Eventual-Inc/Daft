@@ -213,7 +213,7 @@ impl Preview {
             .schema
             .into_iter()
             .enumerate()
-            .map(|(idx, _)| {
+            .map(|(idx, field)| {
                 // Use column overrides if any, falling back to the global settings.
                 let mut max_width = self.options.max_width;
                 let mut align = self.options.align;
@@ -223,7 +223,13 @@ impl Preview {
                 }
                 // If some alignment, translate to comfy_table
                 let align = align.map(|align| match align {
-                    PreviewAlign::Auto => CellAlignment::Left,
+                    PreviewAlign::Auto => {
+                        if field.dtype.is_numeric() {
+                            CellAlignment::Right
+                        } else {
+                            CellAlignment::Left
+                        }
+                    }
                     PreviewAlign::Left => CellAlignment::Left,
                     PreviewAlign::Center => CellAlignment::Center,
                     PreviewAlign::Right => CellAlignment::Right,
@@ -309,4 +315,38 @@ mod presets {
     /// | c     | d     |
     /// ```
     pub const MARKDOWN: &str = "||  |-|||           ";
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_core::{
+        prelude::{Int64Array, Utf8Array},
+        series::IntoSeries,
+    };
+
+    use super::{Preview, PreviewAlign, PreviewFormat, PreviewOptions};
+    use crate::RecordBatch;
+
+    #[test]
+    fn test_auto_aligns_numeric_right_and_non_numeric_left() -> DaftResult<()> {
+        let batch = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("numbers", vec![1i64, 2]).into_series(),
+            Utf8Array::from_slice("words", &["a", "b"]).into_series(),
+        ])?;
+
+        let preview = Preview::new(
+            batch,
+            PreviewFormat::Markdown,
+            PreviewOptions {
+                align: Some(PreviewAlign::Auto),
+                ..PreviewOptions::default()
+            },
+        );
+        let options = preview.column_options();
+
+        assert_eq!(options[0].align, Some(comfy_table::CellAlignment::Right));
+        assert_eq!(options[1].align, Some(comfy_table::CellAlignment::Left));
+        Ok(())
+    }
 }
