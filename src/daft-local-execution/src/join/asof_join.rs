@@ -34,7 +34,9 @@ pub(crate) struct AsofJoinBuildState {
     tables: Vec<MicroPartition>,
 }
 
-pub(crate) struct AsofJoinBuilt {
+// Produced once by finalize_build() and shared with all probe workers.
+// Contains the sorted group structure needed for binary-search matching.
+pub(crate) struct AsofJoinFinalizedBuildState {
     // Original left RecordBatch (all rows concatenated)
     left_rb: RecordBatch,
     // Concatenated on_key as a Daft Series – used for null-validity checks.
@@ -54,7 +56,7 @@ pub(crate) struct AsofJoinBuilt {
     total_left_rows: usize,
 }
 
-impl AsofJoinBuilt {
+impl AsofJoinFinalizedBuildState {
     fn new(
         left_mps: Vec<MicroPartition>,
         left_schema: SchemaRef,
@@ -177,7 +179,7 @@ impl AsofJoinOperator {
 
 impl JoinOperator for AsofJoinOperator {
     type BuildState = AsofJoinBuildState;
-    type FinalizedBuildState = Arc<AsofJoinBuilt>;
+    type FinalizedBuildState = Arc<AsofJoinFinalizedBuildState>;
     type ProbeState = AsofJoinProbeState;
 
     fn build(
@@ -193,7 +195,7 @@ impl JoinOperator for AsofJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        let join_table = AsofJoinBuilt::new(
+        let join_table = AsofJoinFinalizedBuildState::new(
             state.tables,
             self.left_schema.clone(),
             &self.left_by,
