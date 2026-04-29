@@ -109,4 +109,4 @@ Contributors can build:
 - Browse installable projects in [Community Extensions](community.md).
 - Learn how to build a native extension in the [Authoring Guide](authoring.md).
 - Browse projects using Daft in [Built on Daft](projects.md).
-- Learn the Python UDF APIs in [custom code](../custom-code/func.md).
+- Learn more about Daft's [Python UDFs](../custom-code/func.md).
