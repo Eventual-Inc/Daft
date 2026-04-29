@@ -473,7 +473,7 @@ impl DashboardSubscriber {
             &daft_dashboard::engine::TaskSubmitArgs {
                 submit_sec: event.header.timestamp_epoch_secs,
                 task_id: task.id,
-                origin_node_id: task.last_node_id as usize,
+                origin_node_id: task.origin_node_id as usize,
                 node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
                 plan_fingerprint: task.plan_fingerprint,
                 name: task.name.as_deref().map(str::to_string),
@@ -526,7 +526,7 @@ impl DashboardSubscriber {
             &daft_dashboard::engine::TaskEndArgs {
                 end_sec: event.header.timestamp_epoch_secs,
                 task_id: task.id,
-                origin_node_id: task.last_node_id as usize,
+                origin_node_id: task.origin_node_id as usize,
                 node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
                 plan_fingerprint: task.plan_fingerprint,
                 worker_id: event.worker_id.as_deref().map(str::to_string),
