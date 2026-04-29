@@ -42,7 +42,7 @@ DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x
 ╭───────╮
 │ text  │
 │ ---   │
-│ Utf8  │
+│ String │
 ╞═══════╡
 │ hello │
 ├╌╌╌╌╌╌╌┤
