@@ -1,9 +1,7 @@
 use std::{ffi::CStr, sync::Arc};
 
-use arrow::{
-    array::{Array, builder::StringBuilder, cast::AsArray},
-    datatypes::{DataType, Field},
-};
+use arrow_array::{Array, ArrayRef, builder::StringBuilder, cast::AsArray};
+use arrow_schema::{DataType, Field};
 use daft_ext::prelude::*;
 
 // ── Module ──────────────────────────────────────────────────────────
@@ -18,70 +16,20 @@ impl DaftExtension for HelloExtension {
     }
 }
 
-// ── Function ────────────────────────────────────────────────────────
+// ── Scalar Function ────────────────────────────────────────────────
 
-struct Greet;
-
-impl DaftScalarFunction for Greet {
-    fn name(&self) -> &CStr {
-        c"greet"
-    }
-
-    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
-        if args.len() != 1 {
-            return Err(DaftError::TypeError(format!(
-                "greet: expected 1 argument, got {}",
-                args.len()
-            )));
+#[daft_func_batch(return_dtype = DataType::Utf8)]
+fn greet(input: ArrayRef) -> DaftResult<ArrayRef> {
+    let names = input.as_string::<i64>();
+    let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
+    for i in 0..names.len() {
+        if names.is_null(i) {
+            builder.append_null();
+        } else {
+            builder.append_value(format!("Hello, {}!", names.value(i)));
         }
-        let field = Field::try_from(&args[0])?;
-        let dt = field.data_type();
-        if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
-            return Err(DaftError::TypeError(format!(
-                "greet: expected string argument, got {:?}",
-                dt
-            )));
-        }
-        Ok(ArrowSchema::try_from(&Field::new(
-            "greet",
-            DataType::Utf8,
-            true,
-        ))?)
     }
-
-    fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
-        // Extract the first (and only) argument from the function call, this is the mutual type.
-        let data = args.into_iter().next().unwrap();
-
-        // Convert the ArrowData input structs to FFI-compatible Arrow array and schema so we can get it into the arrow-rs library.
-        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
-
-        // Now make it into an arrow-rs string array.
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
-        let input = arrow::array::make_array(arrow_data);
-        let names = input.as_string::<i64>();
-
-        // Actually do the computation: build a result array of "Hello, <name>!" strings.
-        let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
-        for i in 0..names.len() {
-            if names.is_null(i) {
-                builder.append_null();
-            } else {
-                builder.append_value(format!("Hello, {}!", names.value(i)));
-            }
-        }
-        let output = builder.finish();
-
-        // Convert the result array back to FFI-compatible objects required by Daft.
-        let (out_arr, out_sch) = arrow::ffi::to_ffi(&output.to_data())?;
-
-        // Wrap as Daft's ArrowData for integration with Python and Daft machinery.
-        Ok(ArrowData {
-            array: out_arr.into(),
-            schema: out_sch.into(),
-        })
-    }
+    Ok(Arc::new(builder.finish()))
 }
 
 // ── Aggregate Function ─────────────────────────────────────────────
@@ -100,15 +48,11 @@ impl DaftAggregateFunction for StringCount {
                 args.len()
             )));
         }
-        Ok(ArrowSchema::try_from(&Field::new(
-            "string_count",
-            DataType::Int64,
-            false,
-        ))?)
+        export_field(&Field::new("string_count", DataType::Int64, false))
     }
 
     fn state_fields(&self, _args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>> {
-        Ok(vec![ArrowSchema::try_from(&Field::new(
+        Ok(vec![export_field(&Field::new(
             "count",
             DataType::Int64,
             false,
@@ -116,31 +60,17 @@ impl DaftAggregateFunction for StringCount {
     }
 
     fn aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
-        let data = inputs.into_iter().next().unwrap();
-        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
-        let input = arrow::array::make_array(arrow_data);
-
+        let input = import_array(inputs.into_iter().next().unwrap())?;
         let non_null_count = input.len() - input.null_count();
-        let count_array = arrow::array::Int64Array::from(vec![non_null_count as i64]);
-
-        let (out_arr, out_sch) = arrow::ffi::to_ffi(&count_array.to_data())?;
-        Ok(vec![ArrowData {
-            array: out_arr.into(),
-            schema: out_sch.into(),
-        }])
+        let result: ArrayRef = Arc::new(arrow_array::Int64Array::from(vec![non_null_count as i64]));
+        Ok(vec![export_array(result, "count")?])
     }
 
     fn combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>> {
-        let data = states.into_iter().next().unwrap();
-        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
-        let counts = arrow::array::make_array(arrow_data);
+        let counts = import_array(states.into_iter().next().unwrap())?;
         let counts = counts
             .as_any()
-            .downcast_ref::<arrow::array::Int64Array>()
+            .downcast_ref::<arrow_array::Int64Array>()
             .unwrap();
 
         let total: i64 = (0..counts.len())
@@ -148,31 +78,19 @@ impl DaftAggregateFunction for StringCount {
             .map(|i| counts.value(i))
             .sum();
 
-        let result = arrow::array::Int64Array::from(vec![total]);
-        let (out_arr, out_sch) = arrow::ffi::to_ffi(&result.to_data())?;
-        Ok(vec![ArrowData {
-            array: out_arr.into(),
-            schema: out_sch.into(),
-        }])
+        let result: ArrayRef = Arc::new(arrow_array::Int64Array::from(vec![total]));
+        Ok(vec![export_array(result, "count")?])
     }
 
     fn finalize(&self, states: Vec<ArrowData>) -> DaftResult<ArrowData> {
-        let data = states.into_iter().next().unwrap();
-        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
-        let counts = arrow::array::make_array(arrow_data);
+        let counts = import_array(states.into_iter().next().unwrap())?;
         let counts = counts
             .as_any()
-            .downcast_ref::<arrow::array::Int64Array>()
+            .downcast_ref::<arrow_array::Int64Array>()
             .unwrap();
 
         let total: i64 = counts.value(0);
-        let result = arrow::array::Int64Array::from(vec![total]);
-        let (out_arr, out_sch) = arrow::ffi::to_ffi(&result.to_data())?;
-        Ok(ArrowData {
-            array: out_arr.into(),
-            schema: out_sch.into(),
-        })
+        let result: ArrayRef = Arc::new(arrow_array::Int64Array::from(vec![total]));
+        export_array(result, "string_count")
     }
 }
