@@ -278,3 +278,55 @@ def test_frames_raises_informative_error_when_pillow_missing(sample_video_path, 
 
     with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
         list(file.frames())
+
+
+# --- sample_interval_seconds tests ---
+
+
+def test_frames_sample_interval_seconds(sample_video_path):
+    """VideoFile.frames(sample_interval_seconds=1.0) emits one frame per second."""
+    file = daft.VideoFile(sample_video_path)
+    sampled = list(file.frames(sample_interval_seconds=1.0))
+
+    # Sample video is 290 frames at 30 fps ~= 9.67s, so sampling at 1.0s yields t=0,1,...,9 → 10 frames
+    assert len(sampled) == 10
+
+    times = [f["frame_time"] for f in sampled]
+    # First emitted frame is at t=0 (first frame whose time >= 0)
+    assert times[0] == pytest.approx(0.0, abs=0.05)
+    # Each subsequent emitted time is monotonically >= previous + ~1.0
+    for prev, curr in zip(times, times[1:]):
+        assert curr - prev >= 0.95
+
+
+def test_frames_sample_interval_zero_raises(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(ValueError, match="sample_interval_seconds must be positive"):
+        list(file.frames(sample_interval_seconds=0.0))
+
+
+def test_frames_sample_interval_negative_raises(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(ValueError, match="sample_interval_seconds must be positive"):
+        list(file.frames(sample_interval_seconds=-1.0))
+
+
+def test_frames_sample_interval_combined_with_keyframe(sample_video_path):
+    """sample_interval combined with is_key_frame=True samples among keyframes only."""
+    file = daft.VideoFile(sample_video_path)
+    keyframes_only = list(file.frames(is_key_frame=True))
+    sampled_keyframes = list(file.frames(is_key_frame=True, sample_interval_seconds=1.0))
+
+    # Sampling should yield no more frames than the unsampled keyframe set
+    assert len(sampled_keyframes) <= len(keyframes_only)
+    assert all(f["is_key_frame"] for f in sampled_keyframes)
+
+
+def test_video_frames_expression_sample_interval(sample_video_path):
+    """video_frames() expression accepts sample_interval_seconds and applies it."""
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"], sample_interval_seconds=1.0).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 10

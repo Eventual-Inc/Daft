@@ -276,3 +276,12 @@ df = (
 
 df.show(3)
 ```
+
+`video_frames` also accepts `sample_interval_seconds` for time-based downsampling, with the same semantics as the source-side [`daft.read_video_frames`](#sampling-frames-by-time-interval):
+
+```python
+df = df.with_column(
+    "sampled_frames",
+    video_frames(daft.col("video"), sample_interval_seconds=1.0),
+)
+```
