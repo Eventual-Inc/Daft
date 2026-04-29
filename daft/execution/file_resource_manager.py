@@ -30,7 +30,21 @@ logger = logging.getLogger(__name__)
 # File extensions
 _ARCHIVE_EXTENSIONS = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".zip", ".whl")
 
-_REMOTE_SCHEMES = ("s3://", "gs://", "gcs://", "http://", "https://", "az://", "abfs://")
+
+def _is_remote_uri(name: str) -> bool:
+    """Check whether a resource name is a remote URI.
+
+    Instead of maintaining a hard-coded list of schemes, this uses the presence
+    of ``://`` (excluding ``file://``) as the indicator for a remote resource.
+    This way, newly added remote filesystems in the Daft IO layer are
+    automatically supported without modifying this module.
+    """
+    sep = name.find("://")
+    if sep == -1:
+        return False
+    scheme = name[:sep].lower()
+    return scheme != "file"
+
 
 # Retry configuration for remote downloads
 _MAX_DOWNLOAD_RETRIES = 3
@@ -272,7 +286,7 @@ class FileResourceManager:
             return cached_path
 
         # Non-local, non-remote — cannot resolve
-        if not any(name.startswith(s) for s in _REMOTE_SCHEMES):
+        if not _is_remote_uri(name):
             if not os.path.exists(name):
                 raise FileNotFoundError(f"Resource not found: '{name}'")
             raise ValueError(f"Unsupported resource type: '{name}'")
