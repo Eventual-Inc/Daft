@@ -814,7 +814,7 @@ pub struct TaskTotals {
 pub struct TaskSubmitArgs {
     pub submit_sec: f64,
     pub task_id: u32,
-    pub origin_node_id: usize,
+    pub last_node_id: usize,
     pub node_ids: Vec<usize>,
     pub plan_fingerprint: u32,
     pub name: Option<String>,
@@ -825,7 +825,7 @@ pub struct TaskSubmitArgs {
 pub struct TaskEndArgs {
     pub end_sec: f64,
     pub task_id: u32,
-    pub origin_node_id: usize,
+    pub last_node_id: usize,
     pub node_ids: Vec<usize>,
     pub plan_fingerprint: u32,
     pub worker_id: Option<String>,
@@ -858,7 +858,7 @@ pub(crate) fn apply_task_submit(
 
     exec_info.task_store.submit_task(
         args.task_id,
-        args.origin_node_id,
+        args.last_node_id,
         args.node_ids,
         args.plan_fingerprint,
         args.name,
@@ -901,7 +901,7 @@ pub(crate) fn apply_task_end(
 
     exec_info.task_store.end_task(
         args.task_id,
-        args.origin_node_id,
+        args.last_node_id,
         args.node_ids,
         args.plan_fingerprint,
         args.worker_id,

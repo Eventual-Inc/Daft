@@ -56,7 +56,7 @@ pub(crate) enum TaskStatus {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TaskInfo {
     pub task_id: u32,
-    pub origin_node_id: NodeID,
+    pub last_node_id: NodeID,
     pub node_ids: Vec<NodeID>,
     pub plan_fingerprint: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,15 +70,18 @@ pub(crate) struct TaskInfo {
     pub cpu_us: u64,
 }
 
+/// Canonical group identity: the full chain of distributed pipeline nodes that
+/// contributed local plan nodes to the task. Two tasks with identical chains
+/// belong to the same group, regardless of how `task.name` was rendered or
+/// what parameter values varied (limit values, repartition counts, etc.).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct TaskGroupKey {
-    pub origin_node_id: NodeID,
-    pub pipeline_name: String,
+    pub node_ids: Vec<NodeID>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TaskGroupSummary {
-    pub origin_node_id: NodeID,
+    pub last_node_id: NodeID,
     pub node_ids: Vec<NodeID>,
     pub name: String,
     pub task_count: u32,
@@ -98,7 +101,7 @@ pub(crate) struct TaskGroupSummary {
 /// and the top-K longest-duration completed tasks per group.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TaskStore {
-    /// Aggregate summaries per (origin_node_id, plan_fingerprint) group.
+    /// Aggregate summaries per `node_ids` group.
     pub groups: Vec<TaskGroupSummary>,
     /// Retained individual tasks (active, failed, top-K completed per group).
     pub tasks: HashMap<u32, TaskInfo>,
@@ -138,25 +141,35 @@ impl TaskStore {
     }
 
     /// Returns the index into `self.groups` for the given key, creating the
-    /// group if it doesn't exist yet.
+    /// group if it doesn't exist yet. If the group already exists with an
+    /// empty `node_ids` (e.g. when an end-before-submit fallback created it
+    /// with `vec![last_node_id]`), upgrade its `node_ids` to the more
+    /// informative chain when one is supplied.
     fn ensure_group(
         &mut self,
-        origin_node_id: NodeID,
+        last_node_id: NodeID,
         node_ids: &[NodeID],
-        pipeline_name: &str,
+        name: &str,
         initial_sec: f64,
     ) -> usize {
+        // Resolve the canonical key. End-before-submit may arrive with empty
+        // node_ids; fall back to a single-element chain so submit and end
+        // converge to the same group.
+        let key_node_ids: Vec<NodeID> = if node_ids.is_empty() {
+            vec![last_node_id]
+        } else {
+            node_ids.to_vec()
+        };
         let key = TaskGroupKey {
-            origin_node_id,
-            pipeline_name: pipeline_name.to_string(),
+            node_ids: key_node_ids,
         };
         let groups = &mut self.groups;
         *self.group_index.entry(key).or_insert_with_key(|key| {
             let idx = groups.len();
             groups.push(TaskGroupSummary {
-                origin_node_id: key.origin_node_id,
-                node_ids: node_ids.to_vec(),
-                name: key.pipeline_name.clone(),
+                last_node_id,
+                node_ids: key.node_ids.clone(),
+                name: name.to_string(),
                 task_count: 0,
                 pending_count: 0,
                 finished_count: 0,
@@ -171,17 +184,15 @@ impl TaskStore {
         })
     }
 
-    /// Derive the group key for a task. Uses the task's name if available,
-    /// otherwise falls back to a string representation of origin_node_id.
+    /// Derive the group key for a task from its full `node_ids` chain. Falls
+    /// back to a single-element chain if `node_ids` is empty.
     fn group_key_for_task(task: &TaskInfo) -> TaskGroupKey {
-        let pipeline_name = task
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("Node {}", task.origin_node_id));
-        TaskGroupKey {
-            origin_node_id: task.origin_node_id,
-            pipeline_name,
-        }
+        let node_ids = if task.node_ids.is_empty() {
+            vec![task.last_node_id]
+        } else {
+            task.node_ids.clone()
+        };
+        TaskGroupKey { node_ids }
     }
 
     /// Record a task submission. The individual task is always retained while
@@ -189,19 +200,18 @@ impl TaskStore {
     pub fn submit_task(
         &mut self,
         task_id: u32,
-        origin_node_id: NodeID,
+        last_node_id: NodeID,
         node_ids: Vec<NodeID>,
         plan_fingerprint: u32,
         name: Option<String>,
         submit_sec: f64,
     ) {
-        // Use the same nameless-task fallback as `end_task` and
-        // `group_key_for_task` so submit and end resolve to the same group key.
-        let pipeline_name = name
+        // Display label only; the group key is `node_ids`.
+        let display_name = name
             .clone()
-            .unwrap_or_else(|| format!("Node {origin_node_id}"));
+            .unwrap_or_else(|| format!("Node {last_node_id}"));
         let is_new = !self.tasks.contains_key(&task_id);
-        let gi = self.ensure_group(origin_node_id, &node_ids, &pipeline_name, submit_sec);
+        let gi = self.ensure_group(last_node_id, &node_ids, &display_name, submit_sec);
         let group = &mut self.groups[gi];
 
         if is_new {
@@ -215,7 +225,7 @@ impl TaskStore {
 
         let entry = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
             task_id,
-            origin_node_id,
+            last_node_id,
             node_ids: node_ids.clone(),
             plan_fingerprint,
             name: name.clone(),
@@ -228,7 +238,7 @@ impl TaskStore {
 
         // If a prior submit is replayed, keep the earliest submit_sec and sync
         // identifying fields.
-        entry.origin_node_id = origin_node_id;
+        entry.last_node_id = last_node_id;
         entry.node_ids = node_ids;
         entry.plan_fingerprint = plan_fingerprint;
         if name.is_some() {
@@ -246,7 +256,7 @@ impl TaskStore {
     pub fn end_task(
         &mut self,
         task_id: u32,
-        origin_node_id: NodeID,
+        last_node_id: NodeID,
         node_ids: Vec<NodeID>,
         plan_fingerprint: u32,
         worker_id: Option<String>,
@@ -262,20 +272,31 @@ impl TaskStore {
                 Some(TaskStatus::Pending)
             );
 
-        // Derive the pipeline name from the existing task (set by prior submit)
-        // or fall back to a placeholder if end arrived before submit.
-        let pipeline_name = self
+        // Display label for the (possibly new) group. The actual group key
+        // is `node_ids`; this is just what the UI shows.
+        let display_name = self
             .tasks
             .get(&task_id)
             .and_then(|t| t.name.clone())
-            .unwrap_or_else(|| format!("Node {origin_node_id}"));
+            .unwrap_or_else(|| format!("Node {last_node_id}"));
+
+        // Resolve to the same key shape `ensure_group` will use, so retention
+        // bookkeeping below addresses the right group.
+        let key_node_ids: Vec<NodeID> = if node_ids.is_empty() {
+            self.tasks
+                .get(&task_id)
+                .map(|t| t.node_ids.clone())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| vec![last_node_id])
+        } else {
+            node_ids.clone()
+        };
         let key = TaskGroupKey {
-            origin_node_id,
-            pipeline_name: pipeline_name.clone(),
+            node_ids: key_node_ids.clone(),
         };
 
         // Ensure group exists and update summary.
-        let gi = self.ensure_group(origin_node_id, &node_ids, &pipeline_name, end_sec);
+        let gi = self.ensure_group(last_node_id, &key_node_ids, &display_name, end_sec);
         let group = &mut self.groups[gi];
 
         if !was_submitted {
@@ -304,7 +325,7 @@ impl TaskStore {
         // Upsert individual task.
         let task = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
             task_id,
-            origin_node_id,
+            last_node_id,
             node_ids: node_ids.clone(),
             plan_fingerprint,
             name: None,
@@ -315,7 +336,7 @@ impl TaskStore {
             cpu_us: 0,
         });
 
-        task.origin_node_id = origin_node_id;
+        task.last_node_id = last_node_id;
         if !node_ids.is_empty() {
             task.node_ids = node_ids;
         }
@@ -679,3 +700,66 @@ impl DashboardState {
 // Global shared dashboard state for this process.
 pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
     LazyLock::new(|| Arc::new(DashboardState::new()));
+
+#[cfg(test)]
+mod task_store_tests {
+    use super::*;
+
+    fn finished() -> TaskStatus {
+        TaskStatus::Finished
+    }
+
+    /// Two tasks with identical `node_ids` but different `name` strings should
+    /// land in the same group. (Previously, group key included the name and
+    /// these would split.)
+    #[test]
+    fn same_node_ids_different_names_collapse_to_one_group() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Limit(10)".to_string()), 0.0);
+        store.submit_task(2, 7, vec![3, 5, 7], 0, Some("Limit(100)".to_string()), 0.0);
+
+        assert_eq!(store.groups.len(), 1, "expected one group, got {:?}", store.groups);
+        assert_eq!(store.groups[0].task_count, 2);
+        assert_eq!(store.groups[0].node_ids, vec![3, 5, 7]);
+    }
+
+    /// Two tasks with the same `name` but different `node_ids` should land in
+    /// distinct groups (chain identity differs).
+    #[test]
+    fn different_node_ids_same_name_split_into_two_groups() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 5, vec![3, 5], 0, Some("Project".to_string()), 0.0);
+        store.submit_task(2, 9, vec![7, 9], 0, Some("Project".to_string()), 0.0);
+
+        assert_eq!(store.groups.len(), 2);
+    }
+
+    /// End-before-submit with empty node_ids should resolve to the same group
+    /// as the eventual submit, so counts don't double up.
+    #[test]
+    fn end_before_submit_with_empty_node_ids_resolves_to_submit_group() {
+        let mut store = TaskStore::default();
+
+        // End arrives first, with empty node_ids — fallback creates a group
+        // keyed by [last_node_id].
+        store.end_task(
+            42,
+            7,
+            vec![],
+            0,
+            Some("worker-1".to_string()),
+            finished(),
+            1.0,
+            500,
+        );
+        // Submit arrives later with the same single-node chain.
+        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5);
+
+        assert_eq!(store.groups.len(), 1);
+        let g = &store.groups[0];
+        // task_count should not double-count: end (no submit seen) credited 1,
+        // submit found existing task and didn't increment further.
+        assert_eq!(g.task_count, 1);
+        assert_eq!(g.finished_count, 1);
+    }
+}
