@@ -279,7 +279,7 @@ impl ListArrayExtension for ListArray {
                 }
 
                 let flattened_child = growable.build()?;
-                Ok(ListArray::new(
+                Ok(Self::new(
                     Field::new(
                         self.name(),
                         DataType::List(Box::new(inner.child_data_type().clone())),
@@ -339,7 +339,7 @@ impl ListArrayExtension for ListArray {
                 }
 
                 let flattened_child = growable.build()?;
-                Ok(ListArray::new(
+                Ok(Self::new(
                     Field::new(
                         self.name(),
                         DataType::List(Box::new(inner.child_data_type().clone())),

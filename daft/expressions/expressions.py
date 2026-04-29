@@ -2376,7 +2376,7 @@ class Expression:
             [`daft.functions.list_flatten`](https://docs.daft.ai/en/stable/api/functions/list_flatten/)
         """
         from daft.functions import list_flatten
-        
+
         return list_flatten(self)
 
     def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
