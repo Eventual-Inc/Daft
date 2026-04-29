@@ -1339,6 +1339,31 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
+    def simhash(
+        self,
+        *,
+        ngram_size: int = 3,
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+    ) -> Expression:
+        """Compute a SimHash fingerprint of this string expression.
+
+        Tip: See Also
+            [`daft.functions.simhash`](https://docs.daft.ai/en/stable/api/functions/simhash/)
+        """
+        from daft.functions import simhash
+
+        return simhash(self, ngram_size=ngram_size, hash_function=hash_function)
+
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the bitwise Hamming distance between two hash fingerprints.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def encode(self, charset: ENCODING_CHARSET) -> Expression:
         """Encode binary or string values using the specified character set.
 
@@ -2306,6 +2331,16 @@ class Expression:
 
         return length_bytes(self)
 
+    def hamming_distance_str(self, other: Expression) -> Expression:
+        """Compute the character-level Hamming distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance_str`](https://docs.daft.ai/en/stable/api/functions/hamming_distance_str/)
+        """
+        from daft.functions import hamming_distance_str
+
+        return hamming_distance_str(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -2467,6 +2502,16 @@ class Expression:
         from daft.functions import list_map
 
         return list_map(self, mapper)
+
+    def list_filter(self, predicate: Expression) -> Expression:
+        """Filters elements in the list using a boolean predicate over `daft.element()`.
+
+        Tip: See Also
+            [`daft.functions.list_filter`](https://docs.daft.ai/en/stable/api/functions/list_filter/)
+        """
+        from daft.functions import list_filter
+
+        return list_filter(self, predicate)
 
     def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.

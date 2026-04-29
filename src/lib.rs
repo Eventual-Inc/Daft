@@ -118,6 +118,7 @@ pub mod pylib {
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
+        daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
@@ -172,6 +173,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
         functions_registry.register::<daft_functions::random::RandomFunctions>();
+        functions_registry.register::<daft_geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);

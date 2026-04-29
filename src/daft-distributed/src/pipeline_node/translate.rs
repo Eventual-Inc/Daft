@@ -27,7 +27,8 @@ use crate::{
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
+        stage_checkpoint_keys::StageCheckpointKeysNode, top_n::TopNNode, udf::UDFNode,
         unpivot::UnpivotNode, vllm::VLLMNode, window::WindowNode,
     },
     plan::PlanConfig,
@@ -225,6 +226,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
+            LogicalPlan::StageCheckpointKeys(stage) => DistributedPipelineNode::new(
+                Arc::new(StageCheckpointKeysNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    stage.checkpoint_config.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )),
+                &self.meter,
+            ),
             LogicalPlan::IntoBatches(into_batches) => DistributedPipelineNode::new(
                 Arc::new(IntoBatchesNode::new(
                     self.get_next_pipeline_node_id(),
@@ -352,16 +363,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )?
                 }
             },
-            LogicalPlan::IntoPartitions(into_partitions) => DistributedPipelineNode::new(
-                Arc::new(IntoPartitionsNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    into_partitions.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )),
-                &self.meter,
-            ),
+            LogicalPlan::IntoPartitions(into_partitions) => {
+                let backend = self.select_backend();
+                DistributedPipelineNode::new(
+                    Arc::new(IntoPartitionsNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        into_partitions.num_partitions,
+                        node.schema(),
+                        backend,
+                        self.curr_node.pop().unwrap(),
+                    )),
+                    &self.meter,
+                )
+            }
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
@@ -620,16 +635,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
-            LogicalPlan::Shuffle(shuffle) => DistributedPipelineNode::new(
-                Arc::new(RandomShuffleNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    shuffle.seed,
-                    shuffle.input.schema(),
-                    self.curr_node.pop().unwrap(),
-                )),
-                &self.meter,
-            ),
+            LogicalPlan::Shuffle(shuffle) => {
+                let backend = self.select_backend();
+                DistributedPipelineNode::new(
+                    Arc::new(RandomShuffleNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        shuffle.seed,
+                        shuffle.input.schema(),
+                        backend,
+                        self.curr_node.pop().unwrap(),
+                    )),
+                    &self.meter,
+                )
+            }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)

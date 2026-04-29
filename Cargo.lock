@@ -1714,6 +1714,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-checkpoint-config"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-io-config",
+ "pyo3",
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2268,6 +2278,7 @@ dependencies = [
  "daft-functions-tokenize",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-geo",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2342,21 +2353,28 @@ dependencies = [
 name = "daft-checkpoint"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema 57.3.0",
  "async-trait",
  "bytes",
  "chrono",
+ "common-checkpoint-config",
  "common-error",
+ "common-io-config",
+ "common-runtime",
  "daft-checkpoint",
  "daft-core",
  "daft-io",
- "daft-recordbatch",
+ "daft-scan",
+ "daft-schema",
  "futures",
+ "parquet",
+ "pyo3",
  "serde",
  "serde_json",
  "snafu",
  "tempfile",
  "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -2521,6 +2539,8 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2532,11 +2552,12 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
- "daft-checkpoint",
  "daft-context",
+ "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-io",
+ "daft-local-execution",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
@@ -2649,6 +2670,7 @@ name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-buffer 57.3.0",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2660,6 +2682,7 @@ dependencies = [
  "snafu",
  "typetag",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2727,6 +2750,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "chrono",
+ "chrono-tz",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2779,6 +2803,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "arrow-buffer 57.3.0",
  "chrono",
  "chrono-tz",
  "common-error",
@@ -2791,6 +2816,17 @@ dependencies = [
  "serde",
  "typetag",
  "unicode-normalization",
+]
+
+[[package]]
+name = "daft-geo"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-buffer 57.3.0",
+ "daft-core",
+ "daft-dsl",
+ "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2921,8 +2957,12 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-ipc",
+ "arrow-schema 57.3.0",
  "async-trait",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2968,6 +3008,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.9.2",
+ "serde",
  "serde_json",
  "smallvec",
  "snafu",
@@ -2977,6 +3018,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "typetag",
 ]
 
 [[package]]
@@ -2986,6 +3028,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema 57.3.0",
  "bincode",
+ "common-checkpoint-config",
  "common-error",
  "common-io-config",
  "common-metrics",
@@ -3013,6 +3056,7 @@ dependencies = [
 name = "daft-logical-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3024,6 +3068,7 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-algebra",
+ "daft-checkpoint",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -3162,9 +3207,11 @@ dependencies = [
  "num-traits",
  "pyo3",
  "rand 0.9.2",
+ "rayon",
  "serde",
  "serde_json",
  "smallvec",
+ "typetag",
 ]
 
 [[package]]
@@ -3256,6 +3303,8 @@ dependencies = [
  "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
+ "serde",
+ "typetag",
  "uuid",
 ]
 

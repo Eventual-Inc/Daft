@@ -9,8 +9,8 @@ use smallvec::SmallVec;
 
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
-    JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY, ROWS_IN_KEY,
-    ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
+    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -37,6 +37,8 @@ pub struct DefaultSnapshot {
     pub bytes_in: u64,
     #[serde(default)]
     pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
@@ -51,6 +53,7 @@ impl StatSnapshotImpl for DefaultSnapshot {
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -71,6 +74,7 @@ impl DefaultSnapshot {
             rows_out: self.rows_out + other.rows_out,
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -82,6 +86,8 @@ pub struct SourceSnapshot {
     pub bytes_read: u64,
     #[serde(default)]
     pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
@@ -95,6 +101,7 @@ impl StatSnapshotImpl for SourceSnapshot {
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -114,6 +121,7 @@ impl SourceSnapshot {
             rows_out: self.rows_out + other.rows_out,
             bytes_read: self.bytes_read + other.bytes_read,
             bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -128,6 +136,8 @@ pub struct FilterSnapshot {
     pub bytes_in: u64,
     #[serde(default)]
     pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for FilterSnapshot {
@@ -143,6 +153,7 @@ impl StatSnapshotImpl for FilterSnapshot {
             "selectivity"; Stat::Percent(self.selectivity),
             BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -172,6 +183,7 @@ impl FilterSnapshot {
             selectivity,
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -186,6 +198,8 @@ pub struct ExplodeSnapshot {
     pub bytes_in: u64,
     #[serde(default)]
     pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for ExplodeSnapshot {
@@ -201,6 +215,7 @@ impl StatSnapshotImpl for ExplodeSnapshot {
             "amplification"; Stat::Float(self.amplification),
             BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -230,6 +245,7 @@ impl ExplodeSnapshot {
             amplification,
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -244,6 +260,8 @@ pub struct UdfSnapshot {
     pub bytes_in: u64,
     #[serde(default)]
     pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for UdfSnapshot {
@@ -252,7 +270,7 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        let mut entries = SmallVec::with_capacity(5 + self.custom_counters.len());
+        let mut entries = SmallVec::with_capacity(6 + self.custom_counters.len());
 
         entries.push((
             DURATION_KEY.into(),
@@ -262,6 +280,7 @@ impl StatSnapshotImpl for UdfSnapshot {
         entries.push((ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)));
         entries.push((BYTES_IN_KEY.into(), Stat::Bytes(self.bytes_in)));
         entries.push((BYTES_OUT_KEY.into(), Stat::Bytes(self.bytes_out)));
+        entries.push((NUM_TASKS_KEY.into(), Stat::Count(self.num_tasks)));
 
         for (name, value) in &self.custom_counters {
             entries.push((name.clone().into(), Stat::Count(*value)));
@@ -304,6 +323,7 @@ impl UdfSnapshot {
             custom_counters,
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -320,6 +340,8 @@ pub struct JoinSnapshot {
     pub probe_bytes_in: u64,
     #[serde(default)]
     pub probe_bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for JoinSnapshot {
@@ -336,6 +358,7 @@ impl StatSnapshotImpl for JoinSnapshot {
             JOIN_BUILD_BYTES_INSERTED_KEY; Stat::Bytes(self.build_bytes_inserted),
             JOIN_PROBE_BYTES_IN_KEY; Stat::Bytes(self.probe_bytes_in),
             JOIN_PROBE_BYTES_OUT_KEY; Stat::Bytes(self.probe_bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -359,6 +382,7 @@ impl JoinSnapshot {
             build_bytes_inserted: self.build_bytes_inserted + other.build_bytes_inserted,
             probe_bytes_in: self.probe_bytes_in + other.probe_bytes_in,
             probe_bytes_out: self.probe_bytes_out + other.probe_bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -371,6 +395,8 @@ pub struct WriteSnapshot {
     pub bytes_written: u64,
     #[serde(default)]
     pub bytes_in: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
 }
 
 impl StatSnapshotImpl for WriteSnapshot {
@@ -385,6 +411,7 @@ impl StatSnapshotImpl for WriteSnapshot {
             ROWS_WRITTEN_KEY; Stat::Count(self.rows_written),
             BYTES_WRITTEN_KEY; Stat::Bytes(self.bytes_written),
             BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
     }
 
@@ -406,6 +433,7 @@ impl WriteSnapshot {
             rows_written: self.rows_written + other.rows_written,
             bytes_written: self.bytes_written + other.bytes_written,
             bytes_in: self.bytes_in + other.bytes_in,
+            num_tasks: self.num_tasks + other.num_tasks,
         }
     }
 }
@@ -434,6 +462,182 @@ impl StatSnapshot {
             (Self::Join(a), Self::Join(b)) => Self::Join(a.merge(b)),
             (Self::Write(a), Self::Write(b)) => Self::Write(a.merge(b)),
             (s, _) => s,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{NUM_TASKS_KEY, Stat};
+
+    fn num_tasks_stat(snapshot: &StatSnapshot) -> u64 {
+        snapshot
+            .to_stats()
+            .iter()
+            .find_map(|(name, stat)| {
+                (name == NUM_TASKS_KEY).then(|| match stat {
+                    Stat::Count(v) => *v,
+                    other => panic!("expected Count for num_tasks, got {:?}", other),
+                })
+            })
+            .expect("num_tasks key should be present in to_stats output")
+    }
+
+    #[test]
+    fn merge_sums_num_tasks_for_every_variant() {
+        // (left, right, expected_num_tasks)
+        let cases: Vec<(StatSnapshot, StatSnapshot, u64)> = vec![
+            (
+                StatSnapshot::Default(DefaultSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Default(DefaultSnapshot {
+                    num_tasks: 5,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                7,
+            ),
+            (
+                StatSnapshot::Source(SourceSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_out: 0,
+                    bytes_read: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Source(SourceSnapshot {
+                    num_tasks: 3,
+                    cpu_us: 0,
+                    rows_out: 0,
+                    bytes_read: 0,
+                    bytes_out: 0,
+                }),
+                4,
+            ),
+            (
+                StatSnapshot::Filter(FilterSnapshot {
+                    num_tasks: 4,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    selectivity: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Filter(FilterSnapshot {
+                    num_tasks: 6,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    selectivity: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                10,
+            ),
+            (
+                StatSnapshot::Explode(ExplodeSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    amplification: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Explode(ExplodeSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    amplification: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                4,
+            ),
+            (
+                StatSnapshot::Udf(UdfSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    custom_counters: HashMap::new(),
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Udf(UdfSnapshot {
+                    num_tasks: 9,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    custom_counters: HashMap::new(),
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                10,
+            ),
+            (
+                StatSnapshot::Join(JoinSnapshot {
+                    num_tasks: 3,
+                    cpu_us: 0,
+                    build_rows_inserted: 0,
+                    probe_rows_in: 0,
+                    probe_rows_out: 0,
+                    build_bytes_inserted: 0,
+                    probe_bytes_in: 0,
+                    probe_bytes_out: 0,
+                }),
+                StatSnapshot::Join(JoinSnapshot {
+                    num_tasks: 8,
+                    cpu_us: 0,
+                    build_rows_inserted: 0,
+                    probe_rows_in: 0,
+                    probe_rows_out: 0,
+                    build_bytes_inserted: 0,
+                    probe_bytes_in: 0,
+                    probe_bytes_out: 0,
+                }),
+                11,
+            ),
+            (
+                StatSnapshot::Write(WriteSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_written: 0,
+                    bytes_in: 0,
+                }),
+                StatSnapshot::Write(WriteSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_written: 0,
+                    bytes_in: 0,
+                }),
+                3,
+            ),
+        ];
+
+        for (a, b, expected) in cases {
+            let merged = a.merge(&b);
+            assert_eq!(
+                num_tasks_stat(&merged),
+                expected,
+                "merged snapshot: {merged:?}"
+            );
         }
     }
 }

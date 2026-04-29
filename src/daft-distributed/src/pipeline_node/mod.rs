@@ -60,6 +60,7 @@ mod scan_source;
 mod shuffles;
 mod sink;
 mod sort;
+mod stage_checkpoint_keys;
 mod top_n;
 mod translate;
 mod udf;
@@ -449,6 +450,9 @@ impl Stream for TaskBuilderStream {
         self.task_builder_stream.poll_next_unpin(cx)
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_helpers;
 
 #[cfg(test)]
 pub(crate) mod tests {

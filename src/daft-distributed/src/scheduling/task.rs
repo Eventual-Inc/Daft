@@ -4,7 +4,6 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_checkpoint::CheckpointId;
 use daft_local_plan::{
     ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
 };
@@ -62,8 +61,6 @@ pub(crate) struct TaskContext {
     /// Assigned by pipeline nodes: tasks with the same fingerprint have structurally
     /// identical plans and can share a single pipeline for execution.
     pub plan_fingerprint: PlanFingerprint,
-    /// Checkpoint identity for this task. Set at build time.
-    pub checkpoint_id: Option<CheckpointId>,
 }
 
 impl TaskContext {
@@ -75,7 +72,6 @@ impl TaskContext {
         plan_fingerprint: PlanFingerprint,
     ) -> Self {
         Self {
-            checkpoint_id: Some(CheckpointId::generate(task_id)),
             query_idx,
             last_node_id: node_id,
             task_id,
@@ -119,6 +115,10 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     }
 
     fn task_name(&self) -> TaskName;
+
+    fn task_metadata(&self) -> TaskMetadata {
+        TaskMetadata::default()
+    }
 }
 
 #[derive(Clone)]
@@ -161,6 +161,34 @@ impl std::fmt::Debug for TaskDetails {
             self.memory_bytes()
         )
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TaskMetadata {
+    pub sources: Vec<TaskSource>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TaskSource {
+    PhysicalScan(PhysicalScanSource),
+    InMemoryScan(InMemoryScanSource),
+    // TODO: Add glob and flight sources
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PhysicalScanSource {
+    pub source_id: SourceId,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    pub storage_bytes: Option<usize>,
+    pub estimated_memory_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InMemoryScanSource {
+    pub source_id: SourceId,
+    pub partitions: usize,
+    pub total_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -271,6 +299,10 @@ impl Task for SwordfishTask {
             node_id: self.task_context.last_node_id,
             task_id: self.task_context.task_id,
         }
+    }
+
+    fn task_metadata(&self) -> TaskMetadata {
+        self.build_metadata()
     }
 }
 
@@ -459,16 +491,12 @@ impl SwordfishTaskBuilder {
             task_id,
             node_ids: self.pending_node_ids,
             plan_fingerprint,
-            checkpoint_id: Some(CheckpointId::generate(task_id)),
         };
 
-        // Build context HashMap with task_id, plan_fingerprint, and checkpoint_id
+        // Build context HashMap with task_id and plan_fingerprint.
         let mut context = self.context;
         context.insert("task_id".to_string(), task_context.task_id.to_string());
         context.insert("plan_fingerprint".to_string(), plan_fingerprint.to_string());
-        if let Some(ref id) = task_context.checkpoint_id {
-            context.insert("checkpoint_id".to_string(), id.to_string());
-        }
 
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());

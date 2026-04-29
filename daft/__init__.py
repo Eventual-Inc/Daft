@@ -61,6 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
+from daft.checkpoint import CheckpointStore
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -110,6 +111,7 @@ from daft.session import (
     drop_table,
     get_catalog,
     get_function,
+    get_aggregate_function,
     get_provider,
     get_table,
     has_catalog,
@@ -178,6 +180,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointStore",
     "DataFrame",
     "DataType",
     "Expression",
@@ -236,6 +239,7 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "functions",
+    "get_aggregate_function",
     "get_catalog",
     "get_context",
     "get_function",

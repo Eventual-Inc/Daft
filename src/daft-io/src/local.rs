@@ -30,7 +30,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-use crate::strip_file_uri_to_path;
+use crate::{local_path_to_file_uri, strip_file_uri_to_path};
 
 pub struct LocalSource {}
 
@@ -264,8 +264,7 @@ impl ObjectSource for LocalSource {
     }
 
     async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(path) = strip_file_uri_to_path(uri) {
             match tokio::fs::remove_file(path).await {
                 Err(err) => {
                     use std::io::ErrorKind;
@@ -302,7 +301,6 @@ impl ObjectSource for LocalSource {
             unimplemented!("Prefix-listing is not implemented for local.");
         }
 
-        const LOCAL_PROTOCOL: &str = "file://";
         let uri = if uri.is_empty() {
             std::borrow::Cow::Owned(
                 std::env::current_dir()
@@ -324,7 +322,7 @@ impl ObjectSource for LocalSource {
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
+                filepath: local_path_to_file_uri(&uri),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])
@@ -359,9 +357,8 @@ impl ObjectSource for LocalSource {
                 })?;
                 Ok(FileMetadata {
                     filepath: format!(
-                        "{}{}{}",
-                        LOCAL_PROTOCOL,
-                        path,
+                        "{}{}",
+                        local_path_to_file_uri(&path),
                         if meta.is_dir() {
                             PATH_SEGMENT_DELIMITER
                         } else {
@@ -430,6 +427,7 @@ mod tests {
     use crate::{
         HttpSource, LocalSource, Result,
         integrations::test_full_get,
+        local_path_to_file_uri,
         object_io::{FileMetadata, FileType, ObjectSource},
     };
 
@@ -470,38 +468,37 @@ mod tests {
         write_remote_parquet_to_local_file(&mut file2).await?;
         let mut file3 = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         write_remote_parquet_to_local_file(&mut file3).await?;
-        let dir_path = format!("file://{}", dir.path().to_string_lossy().replace('\\', "/"));
+        // Build canonical file:// URIs for both input and expected output. Using the
+        // shared helper so this stays in sync with what `iter_dir` emits — POSIX gets
+        // `file:///tmp/...`, Windows gets `file:///C:/Users/...` (three slashes).
+        let dir_path_str = dir.path().to_string_lossy().replace('\\', "/");
+        let dir_path = local_path_to_file_uri(&dir_path_str);
         let client = LocalSource::get_client().await?;
 
         let ls_result = client.ls(dir_path.as_ref(), true, None, None, None).await?;
         let mut files = ls_result.files.clone();
         // Ensure stable sort ordering of file paths before comparing with expected payload.
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));
+        let expected_filepath = |file: &tempfile::NamedTempFile| {
+            local_path_to_file_uri(&format!(
+                "{}/{}",
+                dir_path_str,
+                file.path().file_name().unwrap().to_string_lossy(),
+            ))
+        };
         let mut expected = vec![
             FileMetadata {
-                filepath: format!(
-                    "file://{}/{}",
-                    dir.path().to_string_lossy().replace('\\', "/"),
-                    file1.path().file_name().unwrap().to_string_lossy(),
-                ),
+                filepath: expected_filepath(&file1),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: format!(
-                    "file://{}/{}",
-                    dir.path().to_string_lossy().replace('\\', "/"),
-                    file2.path().file_name().unwrap().to_string_lossy(),
-                ),
+                filepath: expected_filepath(&file2),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: format!(
-                    "file://{}/{}",
-                    dir.path().to_string_lossy().replace('\\', "/"),
-                    file3.path().file_name().unwrap().to_string_lossy(),
-                ),
+                filepath: expected_filepath(&file3),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },

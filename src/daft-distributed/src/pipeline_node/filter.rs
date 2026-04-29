@@ -26,6 +26,7 @@ pub struct FilterStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     selectivity: Gauge,
     node_kv: Vec<KeyValue>,
 }
@@ -39,6 +40,7 @@ impl FilterStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             selectivity: meter.f64_gauge("selectivity"),
             node_kv,
         }
@@ -84,7 +86,12 @@ impl RuntimeStats for FilterStats {
             selectivity,
             bytes_in: self.bytes_in.load(Ordering::SeqCst),
             bytes_out: self.bytes_out.load(Ordering::SeqCst),
+            num_tasks: self.num_tasks.load(Ordering::SeqCst),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -164,5 +171,88 @@ impl PipelineNodeImpl for FilterNode {
                 LocalNodeContext::new(Some(node_id as usize)),
             )
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+
+    use super::*;
+    use crate::pipeline_node::test_helpers::{
+        build_in_memory_source, make_partition, predicate_x_gt_2, run_pipeline_and_get_stats,
+        test_schema,
+    };
+
+    fn build_filter_pipeline(
+        partitions: Vec<Arc<daft_micropartition::MicroPartition>>,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let (source, plan_config) = build_in_memory_source(0, partitions, meter);
+        let filter_node =
+            FilterNode::new(1, &plan_config, predicate_x_gt_2(), test_schema(), source);
+        DistributedPipelineNode::new(Arc::new(filter_node), meter)
+    }
+
+    /// Filter(x > 2) on [1,2,3,4,5]: rows_in=5, rows_out=3, selectivity=60%.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_stats_aggregation() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_filter_stats");
+        let pipeline = build_filter_pipeline(vec![make_partition(&[1, 2, 3, 4, 5])], &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("filter node stats");
+        match snapshot {
+            StatSnapshot::Filter(s) => {
+                assert_eq!(s.rows_in, 5);
+                assert_eq!(s.rows_out, 3);
+                assert!((s.selectivity - 60.0).abs() < 0.01);
+                assert!(s.cpu_us > 0);
+            }
+            other => panic!("expected Filter snapshot, got: {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// Filter across 3 partitions: verifies stats aggregate correctly.
+    /// [1,2,3] → 1 passes, [4,5] → 2 pass, [1,1,1,1] → 0 pass.
+    /// Total: 9 in, 3 out, selectivity ≈ 33.3%.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_stats_multi_partition() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_filter_multi");
+        let pipeline = build_filter_pipeline(
+            vec![
+                make_partition(&[1, 2, 3]),
+                make_partition(&[4, 5]),
+                make_partition(&[1, 1, 1, 1]),
+            ],
+            &meter,
+        );
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("filter node stats");
+        match snapshot {
+            StatSnapshot::Filter(s) => {
+                assert_eq!(s.rows_in, 9);
+                assert_eq!(s.rows_out, 3);
+                let expected = (3.0 / 9.0) * 100.0;
+                assert!((s.selectivity - expected).abs() < 0.01);
+            }
+            other => panic!("expected Filter snapshot, got: {other:?}"),
+        }
+
+        Ok(())
     }
 }

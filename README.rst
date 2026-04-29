@@ -63,11 +63,11 @@ To disable this behavior, set the environment variable ``DO_NOT_TRACK=true``.
 
 The data that we collect is:
 
-1. **Non-identifiable:** Events are keyed by a session ID which is generated on import of Daft
+1. **Non-identifiable:** No session IDs or user identifiers are collected
 2. **Metadata-only:** We do not collect any of our users’ proprietary code or data
 3. **For development only:** We do not buy or sell any user data
 
-Please see our `documentation <https://docs.daft.ai/en/stable/resources/telemetry/>`_ for more details.
+Please see our `documentation <https://docs.daft.ai/en/stable/telemetry/>`_ for more details.
 
 .. image:: https://static.scarf.sh/a.png?x-pxid=31f8d5ba-7e09-4d75-8895-5252bbf06cf6
 

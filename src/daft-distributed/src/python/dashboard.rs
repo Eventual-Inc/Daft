@@ -4,11 +4,15 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, snapshot::StatSnapshotImpl};
+use common_metrics::{
+    QueryID, Stat, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY,
+    snapshot::StatSnapshotImpl,
+};
 use daft_context::get_context;
 
 use crate::{
     pipeline_node::NodeID,
+    scheduling::task::TaskContext,
     statistics::{StatisticsSubscriber, TaskEvent, stats::RuntimeNodeManager},
 };
 
@@ -26,6 +30,58 @@ impl DashboardStatisticsSubscriber {
             runtime_node_managers: None,
             started_operators: Mutex::new(HashSet::new()),
             initialized_subscriber: Mutex::new(false),
+        }
+    }
+
+    /// Emit the latest per-operator stats (snapshot metrics + task lifecycle
+    /// counters) for every manager whose node participated in `task_ctx`.
+    fn emit_stats_for(&self, task_ctx: &TaskContext) {
+        let Some(managers) = &self.runtime_node_managers else {
+            return;
+        };
+        // Filter by participating node first so we only snapshot + build
+        // Stats for managers this task actually touched — O(participating)
+        // rather than O(all managers) per event.
+        let relevant_stats = managers
+            .values()
+            .filter(|mgr| task_ctx.node_ids.contains(&(mgr.node_id() as u32)))
+            .map(|mgr| {
+                let (info, snapshot) = mgr.export_snapshot();
+                let mut stats = snapshot.to_stats();
+                // `task.count` is already in `stats` via `snapshot.to_stats()`:
+                // it's the per-operator attributed work counter (incremented
+                // once per distributed task whose worker snapshots matched
+                // this node's origin). The four `task.*` counters appended
+                // below are distinct — they are scheduler-lifecycle state
+                // on the manager, incremented for every task whose
+                // `context.node_ids` includes this node regardless of origin
+                // attribution. So `task.completed >= task.count` at any
+                // given node.
+                stats
+                    .0
+                    .push((TASK_ACTIVE_KEY.into(), Stat::Count(mgr.active_task_count())));
+                stats.0.push((
+                    TASK_COMPLETED_KEY.into(),
+                    Stat::Count(mgr.completed_task_count()),
+                ));
+                stats
+                    .0
+                    .push((TASK_FAILED_KEY.into(), Stat::Count(mgr.failed_task_count())));
+                stats.0.push((
+                    TASK_CANCELLED_KEY.into(),
+                    Stat::Count(mgr.cancelled_task_count()),
+                ));
+                // use `id` here because it's a distributed node
+                // these nodes do not have an `origin_node_id`
+                (info.id, stats)
+            })
+            .collect::<Vec<_>>();
+
+        if !relevant_stats.is_empty()
+            && let Err(e) =
+                get_context().notify_exec_emit_stats(self.query_id.clone(), relevant_stats)
+        {
+            tracing::error!("Failed to notify exec emit stats: {}", e);
         }
     }
 }
@@ -69,7 +125,11 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             }
         }
 
-        // Send dashboard notifications
+        // Send dashboard notifications. Lifecycle counters (task.active,
+        // task.completed, task.failed, task.cancelled) are updated on the
+        // manager by StatisticsManager before this subscriber runs, so we
+        // emit stats for every event that changes a counter — otherwise
+        // `task.active` wouldn't be visible until the first task ends.
         match event {
             TaskEvent::Submitted {
                 context: task_ctx, ..
@@ -88,35 +148,16 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                     }
                 }
             }
-            TaskEvent::Completed {
-                context: task_ctx,
-                stats: _,
-            } => {
-                // Read smart-aggregated stats from RuntimeNodeManagers
-                // (already updated by StatisticsManager before this subscriber runs)
-                if let Some(managers) = &self.runtime_node_managers {
-                    // managers give us stats for all operators, but just notify for the
-                    // ones that did something according to this TaskCompleted event
-                    let relevant_stats = managers
-                        .values()
-                        .map(|mgr| {
-                            let (info, snapshot) = mgr.export_snapshot();
-                            // use `id` here because it's a distributed node
-                            // these nodes do not have an `origin_node_id`
-                            (info.id, snapshot.to_stats())
-                        })
-                        .filter(|(node_id, _)| task_ctx.node_ids.contains(&(*node_id as u32)))
-                        .collect::<Vec<_>>();
-
-                    if !relevant_stats.is_empty()
-                        && let Err(e) =
-                            context.notify_exec_emit_stats(self.query_id.clone(), relevant_stats)
-                    {
-                        tracing::error!("Failed to notify exec emit stats: {}", e);
-                    }
-                }
+            TaskEvent::Scheduled { context: task_ctx }
+            | TaskEvent::Completed {
+                context: task_ctx, ..
             }
-            _ => {}
+            | TaskEvent::Failed {
+                context: task_ctx, ..
+            }
+            | TaskEvent::Cancelled { context: task_ctx } => {
+                self.emit_stats_for(task_ctx);
+            }
         }
         Ok(())
     }

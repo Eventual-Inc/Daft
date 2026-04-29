@@ -37,6 +37,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal", default-feature
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
+daft-geo = {path = "src/daft-geo", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
@@ -77,6 +78,8 @@ python = [
   "common-metrics/python",
   "daft-ai/python",
   "daft-catalog/python",
+  "daft-checkpoint/python",
+  "daft-checkpoint/s3",
   "daft-cli/python",
   "daft-context/python",
   "daft-core/python",
@@ -178,6 +181,7 @@ tikv-jemallocator = {version = "0.6.0", features = [
 
 [workspace]
 members = [
+  "src/common/checkpoint-config",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",
@@ -371,7 +375,7 @@ tracing-subscriber = {version = "0.3.22", default-features = false, features = [
 typetag = "0.2.21"
 rustfft = "6"
 url = "2.4.0"
-uuid = {version = "1.19.0", features = ["v4"]}
+uuid = {version = "1.19.0", features = ["v4", "serde"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
 hex = "0.4.3"

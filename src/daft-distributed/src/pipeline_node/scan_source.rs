@@ -26,6 +26,7 @@ pub struct SourceStats {
     rows_out: Counter,
     bytes_read: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -41,6 +42,7 @@ impl SourceStats {
                 Some(UNIT_BYTES.into()),
             ),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -67,7 +69,12 @@ impl RuntimeStats for SourceStats {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -241,5 +248,143 @@ impl PipelineNodeImpl for ScanSourceNode {
                 .map(move |i| slf.make_source_task(slf.scan_tasks[i].clone()));
             TaskBuilderStream::new(stream::iter(builders_iter).boxed())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+    use daft_scan::{
+        CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+        ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    };
+
+    use super::*;
+    use crate::pipeline_node::test_helpers::{
+        run_pipeline_and_get_stats, test_plan_config, test_schema,
+    };
+
+    fn write_csv_file(path: &std::path::Path, values: &[i64]) -> u64 {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).expect("create csv file");
+        writeln!(file, "x").expect("write header");
+        for v in values {
+            writeln!(file, "{v}").expect("write row");
+        }
+        file.sync_all().expect("sync");
+        drop(file);
+        std::fs::metadata(path).expect("metadata").len()
+    }
+
+    fn build_scan_pipeline(
+        file_paths: &[std::path::PathBuf],
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let schema = test_schema();
+        let csv_cfg = CsvSourceConfig {
+            delimiter: None,
+            has_headers: true,
+            double_quote: true,
+            quote: None,
+            escape_char: None,
+            comment: None,
+            allow_variable_columns: false,
+            buffer_size: None,
+            chunk_size: None,
+        };
+        let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
+        let storage_config = Arc::new(StorageConfig::new_internal(false, None));
+        let pushdowns = Pushdowns::default();
+
+        let scan_tasks: Vec<ScanTaskRef> = file_paths
+            .iter()
+            .map(|path| {
+                let size = std::fs::metadata(path).expect("file metadata").len();
+                Arc::new(ScanTask::new(
+                    vec![ScanSource {
+                        size_bytes: Some(size),
+                        metadata: None,
+                        statistics: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: path.to_string_lossy().into_owned(),
+                            chunk_spec: None,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
+                    }],
+                    source_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                    None,
+                ))
+            })
+            .collect();
+
+        let plan_config = test_plan_config();
+        let scan_source_node =
+            ScanSourceNode::new(0, &plan_config, pushdowns, Arc::new(scan_tasks), schema);
+
+        DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
+    }
+
+    /// Regression test: Flotilla correctly reports `bytes_read` on multi-file scans.
+    ///
+    /// Previously (issue #6761), `NativeExecutor`'s plan-sharing caused an N×
+    /// overcount: all scan tasks from one `ScanSourceNode` shared a single
+    /// `IOStatsRef`, so each `take_input_snapshot` read the cumulative counter.
+    /// This test guards against that regression.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_bytes_read_multiple_files() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_scan_bytes_read_multi_file");
+
+        let tmpdir = std::env::temp_dir().join(format!(
+            "daft_flotilla_bytes_read_repro_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::create_dir_all(&tmpdir).expect("create tmpdir");
+
+        let num_files: usize = 5;
+        let rows_per_file: usize = 1_000;
+        let mut file_paths = Vec::with_capacity(num_files);
+        let mut total_bytes_on_disk: u64 = 0;
+        for i in 0..num_files {
+            let path = tmpdir.join(format!("file_{i}.csv"));
+            let values: Vec<i64> = (0..rows_per_file)
+                .map(|j| (i * rows_per_file + j) as i64)
+                .collect();
+            total_bytes_on_disk += write_csv_file(&path, &values);
+            file_paths.push(path);
+        }
+
+        let pipeline = build_scan_pipeline(&file_paths, &meter);
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 0)
+            .expect("scan source stats");
+
+        let bytes_read = match snapshot {
+            StatSnapshot::Source(s) => s.bytes_read,
+            other => panic!("expected Source snapshot, got: {other:?}"),
+        };
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        assert!(
+            bytes_read <= total_bytes_on_disk * 3,
+            "bytes_read ({bytes_read}) > 3x file size ({total_bytes_on_disk}) — overreporting"
+        );
+
+        Ok(())
     }
 }

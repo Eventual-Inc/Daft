@@ -27,7 +27,14 @@ use futures::TryStreamExt;
 /// `file:///absolute/path`.
 fn make_store() -> (tempfile::TempDir, S3CheckpointStore) {
     let dir = tempfile::tempdir().expect("failed to create temp dir");
-    let prefix = format!("file://{}", dir.path().display());
+    // Normalize to forward slashes and ensure the canonical triple-slash `file:///`
+    // form on Windows, where `display()` yields `C:\Users\...` without a leading slash.
+    let raw = dir.path().display().to_string().replace('\\', "/");
+    let prefix = if raw.starts_with('/') {
+        format!("file://{raw}")
+    } else {
+        format!("file:///{raw}")
+    };
     let store = S3CheckpointStore::new(prefix, Arc::new(IOConfig::default())).unwrap();
     (dir, store)
 }
@@ -131,7 +138,7 @@ async fn test_multiple_checkpoints_and_partial_commit() {
     store.stage_files(&id1, vec![file(b"f1")]).await.unwrap();
     store.checkpoint(&id1).await.unwrap();
 
-    // Checkpoint 2: multiple stage_keys calls → multiple keys/*.ipc files
+    // Checkpoint 2: multiple stage_keys calls → multiple keys/*.parquet files
     store.stage_keys(&id2, keys(&["b"])).await.unwrap();
     store.stage_keys(&id2, keys(&["c", "d"])).await.unwrap();
     store.stage_files(&id2, vec![file(b"f2")]).await.unwrap();
@@ -432,15 +439,15 @@ async fn test_mark_committed_idempotent_retry() {
 }
 
 // ---------------------------------------------------------------------------
-// 12. Multiple key batches → multiple IPC files
+// 12. Multiple key batches → multiple parquet files
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_multiple_key_batches_become_separate_ipc_files() {
+async fn test_multiple_key_batches_become_separate_files() {
     let (_dir, store) = make_store();
     let id = CheckpointId::generate(0);
 
-    // 3 separate stage_keys calls → 3 IPC files
+    // 3 separate stage_keys calls → 3 parquet files
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.stage_keys(&id, keys(&["b", "c"])).await.unwrap();
     store.stage_keys(&id, keys(&["d"])).await.unwrap();
@@ -475,4 +482,34 @@ async fn test_parquet_file_metadata_roundtrip() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].format, FileFormat::Parquet);
     assert_eq!(files[0].data, vec![10, 20, 30]);
+}
+
+// ---------------------------------------------------------------------------
+// 14. sealed_file_paths visibility lifecycle
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_sealed_file_paths_lifecycle() {
+    let (_dir, store) = make_store();
+
+    // Empty store → no paths.
+    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+
+    // Staged only → still no paths (staged-only keys must be invisible so the
+    // current run doesn't wrongly skip work that was never durably recorded).
+    let id = CheckpointId::generate(0);
+    store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
+    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+
+    // Sealed → at least one path.
+    store.checkpoint(&id).await.unwrap();
+    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+
+    // After mark_committed, paths remain available — keys remain visible for
+    // skip-on-rerun even after the associated files are committed.
+    store
+        .mark_committed(std::slice::from_ref(&id))
+        .await
+        .unwrap();
+    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
 }
