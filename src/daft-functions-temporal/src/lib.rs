@@ -8,7 +8,6 @@ mod to_string;
 mod total;
 pub mod truncate;
 mod unix_timestamp;
-
 use common_error::{DaftResult, ensure};
 use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
@@ -27,6 +26,7 @@ use epoch_conversions::{
 };
 use serde::{Deserialize, Serialize};
 use time::{ConvertTimeZone, ReplaceTimeZone, Time};
+pub use to_string::ToString;
 use truncate::Truncate;
 use unix_timestamp::UnixTimestamp;
 
@@ -108,7 +108,7 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(Quarter);
         parent.add_fn(Second);
         parent.add_fn(Time);
-        parent.add_fn(to_string::ToString);
+        parent.add_fn(ToString);
         parent.add_fn(ConvertTimeZone);
         parent.add_fn(ReplaceTimeZone);
         parent.add_fn(Truncate);

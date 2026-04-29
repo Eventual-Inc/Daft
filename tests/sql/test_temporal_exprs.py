@@ -193,6 +193,50 @@ def test_date_trunc():
     assert actual.to_pydict() == expected.to_pydict()
 
 
+def test_temporal_sql_aliases():
+    from daft.functions import date_add, date_diff, date_trunc, strftime
+
+    df = daft.from_pydict(
+        {
+            "datetimes": [
+                datetime.datetime(2024, 1, 1, 12, 30, 45),
+                datetime.datetime(2024, 2, 29, 5, 0, 0),
+                datetime.datetime(2024, 12, 31, 23, 59, 59),
+            ]
+        }
+    )
+
+    expected = df.select(
+        daft.col("datetimes").day_of_month().alias("dom"),
+        daft.col("datetimes").day_of_year().alias("doy"),
+        daft.col("datetimes").week_of_year().alias("woy"),
+        strftime(daft.col("datetimes"), format="%Y-%m-%d").alias("fmt"),
+        date_trunc("1 day", daft.col("datetimes")).alias("truncated"),
+        date_add(daft.col("datetimes").date(), daft.lit(2)).alias("added"),
+        date_diff(daft.col("datetimes").date(), daft.col("datetimes").date()).alias("diff_zero"),
+        daft.col("datetimes").year().alias("part_year"),
+        daft.col("datetimes").day_of_month().alias("part_dom"),
+    ).collect()
+
+    actual = daft.sql(
+        """
+        SELECT
+            dayofmonth(datetimes) AS dom,
+            dayofyear(datetimes) AS doy,
+            weekofyear(datetimes) AS woy,
+            date_format(datetimes, '%Y-%m-%d') AS fmt,
+            trunc('day', datetimes) AS truncated,
+            dateadd(date(datetimes), 2) AS added,
+            datediff(date(datetimes), date(datetimes)) AS diff_zero,
+            datepart('year', datetimes) AS part_year,
+            datepart('dayofmonth', datetimes) AS part_dom
+        FROM df
+        """
+    ).collect()
+
+    assert actual.to_pydict() == expected.to_pydict()
+
+
 def test_date_comparison():
     date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
     date_df = date_df.with_column("date", daft.col("date_str").to_date("%Y-%m-%d"))
