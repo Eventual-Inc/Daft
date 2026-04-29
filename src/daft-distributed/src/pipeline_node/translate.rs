@@ -1,19 +1,25 @@
 use core::panic;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use common_metrics::Meter;
 use common_partitioning::PartitionRef;
-use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeVisitor};
+use daft_core::join::JoinSide;
 use daft_dsl::{
+    Expr,
     expr::{
+        Column,
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
     is_partition_compatible, resolved_col,
 };
 use daft_logical_plan::{
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
 use daft_scan::{ScanState, scan_task_iters};
@@ -46,12 +52,67 @@ pub(crate) fn logical_plan_to_pipeline_node(
     Ok(translator.curr_node.pop().unwrap())
 }
 
+/// Spatial function names whose presence in a Filter predicate above a Join triggers
+/// the NLJ R-tree rewrite instead of hash-join + post-filter.
+const SPATIAL_PREDICATES: &[&str] = &[
+    "st_contains",
+    "st_intersects",
+    "st_within",
+    "st_covers",
+    "st_covered_by",
+    "st_disjoint",
+    "st_touches",
+    "st_overlaps",
+    "st_crosses",
+    "st_equals",
+];
+
+/// Check whether `expr` contains at least one spatial predicate call.
+fn is_spatial_predicate(expr: &daft_dsl::ExprRef) -> bool {
+    let mut found = false;
+    let _ = expr.apply(|e: &daft_dsl::ExprRef| {
+        if let Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf)) = e.as_ref() {
+            if SPATIAL_PREDICATES.contains(&sf.func.name()) {
+                found = true;
+                return Ok(common_treenode::TreeNodeRecursion::Stop);
+            }
+        }
+        Ok(common_treenode::TreeNodeRecursion::Continue)
+    });
+    found
+}
+
+/// Re-bind `expr` to `schema` by column name.
+///
+/// `BoundExpr::try_new` only works for fully-unresolved expressions. This helper
+/// first converts every `Bound` column back to an unresolved reference (preserving
+/// the field name) and then calls `BoundExpr::try_new` so indices are correct for
+/// the new schema.  Mirrors the identical function in `daft-local-plan/src/translate.rs`.
+fn rebind_predicate(
+    expr: daft_dsl::ExprRef,
+    schema: &daft_schema::schema::Schema,
+) -> DaftResult<BoundExpr> {
+    let unbound = expr
+        .transform(|e| {
+            if let Expr::Column(Column::Bound(bc)) = e.as_ref() {
+                Ok(Transformed::yes(daft_dsl::unresolved_col(bc.field.name.as_ref())))
+            } else {
+                Ok(Transformed::no(e))
+            }
+        })?
+        .data;
+    BoundExpr::try_new(unbound, schema)
+}
+
 pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pub plan_config: PlanConfig,
     pub meter: Meter,
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
+    /// Pointer values of `Filter` logical-plan nodes that were fully translated in
+    /// `f_down` (spatial NLJ rewrite).  Their `f_up` call must be a no-op.
+    spatial_filter_ptrs: HashSet<*const LogicalPlan>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -66,7 +127,28 @@ impl LogicalPlanToPipelineNodeTranslator {
             pipeline_node_id_counter: 0,
             psets,
             curr_node: Vec::new(),
+            spatial_filter_ptrs: HashSet::new(),
         }
+    }
+
+    /// Translate `plan` using a fresh portion of the `curr_node` stack.
+    ///
+    /// Saves the current stack, runs the visitor on `plan`, extracts the single
+    /// result node, then restores the saved stack.  Used by the spatial NLJ
+    /// rewrite in `f_down` to translate join children before the main traversal
+    /// would visit them.
+    fn translate_subtree(
+        &mut self,
+        plan: &LogicalPlanRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let saved = std::mem::take(&mut self.curr_node);
+        let _ = plan.visit(self)?;
+        let result = self
+            .curr_node
+            .pop()
+            .expect("translate_subtree: visitor produced no node");
+        self.curr_node = saved;
+        Ok(result)
     }
 
     pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
@@ -107,11 +189,168 @@ impl LogicalPlanToPipelineNodeTranslator {
 impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
     type Node = LogicalPlanRef;
 
-    fn f_down(&mut self, _node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+    fn f_down(&mut self, node: &Self::Node) -> DaftResult<TreeNodeRecursion> {
+        // ── Spatial join rewrite ──────────────────────────────────────────────
+        // Detect Filter(spatial_pred) → [Project?] → Join(equi_keys, Inner) and
+        // translate the whole pattern into a SpatialHashJoinNode (hash-shuffle by
+        // equi key, NLJ R-tree locally).  We handle it in f_down so that we can
+        // translate the join children ourselves and skip the automatic subtree
+        // traversal (return Jump).
+        if let LogicalPlan::Filter(filter) = node.as_ref() {
+            if is_spatial_predicate(&filter.predicate) {
+                // Look through an optional intermediate Project (optimizer-inserted)
+                // to find the inner Join.
+                use daft_logical_plan::ops;
+                let inner_join: Option<&ops::Join> = match filter.input.as_ref() {
+                    LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
+                    LogicalPlan::Project(p) => match p.input.as_ref() {
+                        LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
+                if let Some(join) = inner_join {
+                    let (remaining, left_eq_keys, right_eq_keys, null_equals_nulls) =
+                        join.on.split_eq_preds();
+
+                    // Only rewrite when the join has equi-keys and no remaining
+                    // non-equi predicates (those would need separate handling).
+                    if remaining.is_empty() && !left_eq_keys.is_empty() {
+                        // Translate join children into distributed pipeline nodes.
+                        let left_node = self.translate_subtree(&join.left)?;
+                        let right_node = self.translate_subtree(&join.right)?;
+
+                        // Bind equi-join keys to the respective child schemas.
+                        let left_on =
+                            BoundExpr::bind_all(&left_eq_keys, &left_node.config().schema)?;
+                        let right_on =
+                            BoundExpr::bind_all(&right_eq_keys, &right_node.config().schema)?;
+
+                        // Rebind the spatial predicate to the join output schema so
+                        // that column indices are correct for the NLJ executor.
+                        let join_schema = join.output_schema.clone();
+                        let spatial_filter =
+                            rebind_predicate(filter.predicate.clone(), &join_schema)?;
+
+                        // Determine the build side: arg0 of the spatial function is
+                        // the "container" geometry (polygon / building footprint) and
+                        // should be the build side for the R-tree.
+                        let left_schema_len = join.left.schema().len();
+                        let build_on_left: bool = (|| {
+                            fn spatial_arg0_idx(expr: &daft_dsl::ExprRef) -> Option<usize> {
+                                match expr.as_ref() {
+                                    Expr::ScalarFn(
+                                        daft_dsl::functions::scalar::ScalarFn::Builtin(sf),
+                                    ) if SPATIAL_PREDICATES.contains(&sf.func.name()) => {
+                                        let arg0 = sf.inputs.required(0).ok()?;
+                                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
+                                            Some(bc.index)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    Expr::BinaryOp { left, right, .. } => {
+                                        spatial_arg0_idx(left)
+                                            .or_else(|| spatial_arg0_idx(right))
+                                    }
+                                    Expr::Not(inner) => spatial_arg0_idx(inner),
+                                    _ => None,
+                                }
+                            }
+                            // Rebind the raw filter predicate to the join schema to get
+                            // Bound column indices that map into the join output.
+                            if let Ok(bound) = rebind_predicate(
+                                filter.predicate.clone(),
+                                join_schema.as_ref(),
+                            ) {
+                                if let Some(idx) = spatial_arg0_idx(bound.inner()) {
+                                    return idx < left_schema_len;
+                                }
+                            }
+                            // Fallback: build on the side with fewer estimated rows.
+                            let ls = join.left.materialized_stats().approx_stats.num_rows;
+                            let rs = join.right.materialized_stats().approx_stats.num_rows;
+                            ls <= rs
+                        })();
+
+                        let build_side = if build_on_left {
+                            JoinSide::Left
+                        } else {
+                            JoinSide::Right
+                        };
+
+                        let left_stats =
+                            join.left.materialized_stats().approx_stats.clone();
+                        let right_stats =
+                            join.right.materialized_stats().approx_stats.clone();
+
+                        let spatial_node = self.gen_spatial_hash_join_nodes(
+                            left_node,
+                            right_node,
+                            left_on,
+                            right_on,
+                            join.join_type,
+                            build_side,
+                            spatial_filter,
+                            // Output schema: always use the raw join output schema.
+                            // The NLJ produces probe ∪ build columns in that order.
+                            join_schema,
+                            &left_stats,
+                            &right_stats,
+                        )?;
+
+                        // If there is an intermediate Project between the Filter and
+                        // the Join (inserted by the optimizer to deduplicate join-key
+                        // columns), wrap the SHJ with a ProjectNode so that the SHJ
+                        // output matches filter.input.schema() = p.output_schema.
+                        // Without this, downstream nodes (Distinct, outer Project)
+                        // bind their column indices against p.output_schema but
+                        // receive join.output_schema at runtime — causing type
+                        // mismatches (e.g. my_id: Int64 receiving a String array).
+                        let spatial_node =
+                            if let LogicalPlan::Project(p) = filter.input.as_ref() {
+                                let projection = BoundExpr::bind_all(
+                                    &p.projection,
+                                    p.input.schema().as_ref(),
+                                )?;
+                                DistributedPipelineNode::new(
+                                    Arc::new(ProjectNode::new(
+                                        self.get_next_pipeline_node_id(),
+                                        &self.plan_config,
+                                        projection,
+                                        p.projected_schema.clone(),
+                                        spatial_node,
+                                    )),
+                                    &self.meter,
+                                )
+                            } else {
+                                spatial_node
+                            };
+
+                        self.curr_node.push(spatial_node);
+                        // Mark this Filter node so that f_up is a no-op for it.
+                        let ptr = Arc::as_ptr(node) as *const LogicalPlan;
+                        self.spatial_filter_ptrs.insert(ptr);
+                        // Skip the entire subtree — we translated the children above.
+                        return Ok(TreeNodeRecursion::Jump);
+                    }
+                }
+            }
+        }
         Ok(TreeNodeRecursion::Continue)
     }
 
     fn f_up(&mut self, node: &LogicalPlanRef) -> DaftResult<TreeNodeRecursion> {
+        // If this node was fully translated in f_down (spatial NLJ rewrite), the
+        // SpatialHashJoinNode is already on the stack.  Skip the normal translation.
+        {
+            let ptr = Arc::as_ptr(node) as *const LogicalPlan;
+            if self.spatial_filter_ptrs.remove(&ptr) {
+                return Ok(TreeNodeRecursion::Continue);
+            }
+        }
+
         let output = match node.as_ref() {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
