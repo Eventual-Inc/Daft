@@ -1018,7 +1018,7 @@ def test_pmod_negative() -> None:
     )
     result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
-    assert values == [2, -2, -1, -2]
+    assert values == [2, 1, -1, -2]
 
 
 def test_pmod_float() -> None:
@@ -1027,7 +1027,7 @@ def test_pmod_float() -> None:
     table = MicroPartition.from_pydict({"a": [7.5, -7.0, 1.0, -1.0], "b": [2.5, 3.0, -3.0, -3.0]})
     result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
-    assert values == [0.0, 2.0, -2.0, -1.0]
+    assert values == [0.0, 2.0, 1.0, -1.0]
 
 
 def test_pmod_zero_divisor() -> None:
@@ -1050,6 +1050,45 @@ def test_pmod_int_boundary() -> None:
     result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
     assert values == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        pytest.param(float("nan"), 3.0, float("nan"), id="nan_dividend"),
+        pytest.param(1.0, float("nan"), float("nan"), id="nan_divisor"),
+        pytest.param(float("inf"), 3.0, float("nan"), id="inf_dividend"),
+        pytest.param(1.0, float("inf"), 1.0, id="inf_divisor_positive_a"),
+        pytest.param(-1.0, float("inf"), float("nan"), id="inf_divisor_negative_a"),
+    ],
+)
+def test_pmod_float_nan_inf(a: float, b: float, expected: float) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [a], "b": [b]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    [value] = result.get_column_by_name("result").to_pylist()
+    if math.isnan(expected):
+        assert math.isnan(value)
+    else:
+        assert value == expected
+
+
+@pytest.mark.parametrize(
+    "a_arrow, b_arrow",
+    [
+        pytest.param(pa.int8(), pa.int8(), id="i8/i8"),
+        pytest.param(pa.int32(), pa.int64(), id="i32/i64"),
+        pytest.param(pa.int8(), pa.int32(), id="i8/i32"),
+        pytest.param(pa.uint16(), pa.uint32(), id="u16/u32"),
+    ],
+)
+def test_pmod_int_cross_width(a_arrow: pa.DataType, b_arrow: pa.DataType) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": pa.array([7, 5, 0], type=a_arrow), "b": pa.array([3, 4, 2], type=b_arrow)})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [1, 1, 0]
 
 
 def test_pmod_bad_input() -> None:

@@ -47,8 +47,8 @@ impl ScalarUDF for Pmod {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the positive modulo: ((a % b) + b) % b. \
-         Result has the same sign as b. Returns NULL if b is 0."
+        "Returns the positive modulo: a % b if non-negative, otherwise (a % b + b) % b. \
+         Returns NULL if b is 0."
     }
 }
 
@@ -101,7 +101,11 @@ fn pmod_signed(a: Series, b: Series) -> DaftResult<Series> {
     let iter = arr_a.iter().zip(arr_b.iter()).map(|(x, y)| match (x, y) {
         (Some(x), Some(y)) if y != 0 => {
             let r = x.wrapping_rem(y);
-            Some(r.wrapping_add(y).wrapping_rem(y))
+            Some(if r < 0 {
+                r.wrapping_add(y).wrapping_rem(y)
+            } else {
+                r
+            })
         }
         _ => None,
     });
@@ -123,7 +127,10 @@ fn pmod_f32(a: Series, b: Series) -> DaftResult<Series> {
     let arr_a = a.f32().unwrap();
     let arr_b = b.f32().unwrap();
     let iter = arr_a.iter().zip(arr_b.iter()).map(|(x, y)| match (x, y) {
-        (Some(x), Some(y)) if y != 0.0 => Some(((x % y) + y) % y),
+        (Some(x), Some(y)) if y != 0.0 => {
+            let r = x % y;
+            Some(if r < 0.0 { (r + y) % y } else { r })
+        }
         _ => None,
     });
     Ok(Float32Array::from_iter(Field::new(arr_a.name(), DataType::Float32), iter).into_series())
@@ -133,7 +140,10 @@ fn pmod_f64(a: Series, b: Series) -> DaftResult<Series> {
     let arr_a = a.f64().unwrap();
     let arr_b = b.f64().unwrap();
     let iter = arr_a.iter().zip(arr_b.iter()).map(|(x, y)| match (x, y) {
-        (Some(x), Some(y)) if y != 0.0 => Some(((x % y) + y) % y),
+        (Some(x), Some(y)) if y != 0.0 => {
+            let r = x % y;
+            Some(if r < 0.0 { (r + y) % y } else { r })
+        }
         _ => None,
     });
     Ok(Float64Array::from_iter(Field::new(arr_a.name(), DataType::Float64), iter).into_series())

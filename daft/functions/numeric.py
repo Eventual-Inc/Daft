@@ -224,9 +224,10 @@ def power(base: Expression, expr: Expression) -> Expression:
 
 
 def pmod(a: Expression, b: Expression) -> Expression:
-    """Returns the positive modulo: ``((a % b) + b) % b``.
+    """Returns the positive modulo of ``a`` by ``b``.
 
-    The result has the same sign as ``b`` (e.g. ``pmod(-7, 3)`` returns ``2``).
+    Computes ``r = a % b``; returns ``r`` when ``r >= 0`` and ``(r + b) % b`` otherwise.
+    Examples: ``pmod(-7, 3) == 2``, ``pmod(7, -3) == 1``, ``pmod(-7, -3) == -1``.
     Returns NULL when ``b`` is 0.
     """
     return Expression._call_builtin_scalar_fn("pmod", a, b)
