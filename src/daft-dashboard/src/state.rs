@@ -718,7 +718,12 @@ mod task_store_tests {
         store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Limit(10)".to_string()), 0.0);
         store.submit_task(2, 7, vec![3, 5, 7], 0, Some("Limit(100)".to_string()), 0.0);
 
-        assert_eq!(store.groups.len(), 1, "expected one group, got {:?}", store.groups);
+        assert_eq!(
+            store.groups.len(),
+            1,
+            "expected one group, got {:?}",
+            store.groups
+        );
         assert_eq!(store.groups[0].task_count, 2);
         assert_eq!(store.groups[0].node_ids, vec![3, 5, 7]);
     }
