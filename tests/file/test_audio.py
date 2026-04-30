@@ -32,6 +32,14 @@ def test_audio_file_dtype(sample_audio_path):
     assert field.dtype == daft.DataType.file(daft.MediaType.audio())
 
 
+def test_audio_file_from_generic_file(sample_audio_path):
+    df = daft.from_pydict({"path": [sample_audio_path]})
+    df = df.select(daft.functions.audio_file(daft.functions.file(df["path"]), verify=True).alias("audio"))
+
+    assert df.schema() == daft.Schema.from_pydict({"audio": daft.DataType.file(daft.MediaType.audio())})
+    df.collect()
+
+
 def test_audio_file_verify():
     df = daft.from_pydict({"path": ["tests/assets/sampled-tpch.jsonl"]})
 

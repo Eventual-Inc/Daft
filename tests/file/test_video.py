@@ -29,6 +29,14 @@ def test_video_file_dtype(sample_video_path):
     assert field.dtype == daft.DataType.file(daft.MediaType.video())
 
 
+def test_video_file_from_generic_file(sample_video_path):
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(daft.functions.file(df["path"]), verify=True).alias("video"))
+
+    assert df.schema() == daft.Schema.from_pydict({"video": daft.DataType.file(daft.MediaType.video())})
+    df.collect()
+
+
 def test_video_file_verify():
     df = daft.from_pydict({"path": ["tests/assets/sampled-tpch.jsonl"]})
 
