@@ -182,6 +182,35 @@ df.show(5)
 (Showing first 5 rows)
 ```
 
+## Byte-Range Reads
+
+When working with files that pack multiple records into a single blob (e.g. Paimon blob files), you can specify `offset` and `length` to read only a specific byte range instead of the entire file. Both parameters must be provided together.
+
+```python
+import daft
+
+# Read bytes 1024–2047 from a large blob file
+f = daft.File("s3://bucket/data.blob", offset=1024, length=1024)
+with f.open() as fh:
+    data = fh.read()  # returns exactly 1024 bytes
+```
+
+This also works inside UDFs:
+
+```python
+@daft.func
+def read_record(file: daft.File) -> bytes:
+    with file.open() as f:
+        return f.read()
+
+# Construct File references with per-row offsets
+df = daft.from_pydict({
+    "url": ["s3://bucket/blob"] * 3,
+    "offset": [0, 100, 200],
+    "length": [100, 100, 50],
+})
+```
+
 ## Using daft.File to read code and walk the AST
 
 Since `daft.File` works with any file type with a read method, we can use it to read code and walk the AST for use cases like extracting functions and their signatures for codebase intelligence.
