@@ -1224,13 +1224,22 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.checkpoint-`` are reserved when ``checkpoint`` is provided.
+            checkpoint (CheckpointStore, optional): Checkpoint store to make the write idempotent across process restarts. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
             DataFrame: The operations that occurred with this write.
 
         Note:
-            This call is **blocking** and will execute the DataFrame when called
+            This call is **blocking** and will execute the DataFrame when called.
+
+            When ``checkpoint`` is provided and ``write_iceberg`` raises *after* the
+            catalog commit landed (e.g. a transient failure during the
+            post-commit ``mark_committed`` bookkeeping), the user data is
+            already durable in Iceberg. The next call to ``write_iceberg`` with
+            the same ``checkpoint`` will detect the snapshot via its markers,
+            finish the bookkeeping, and exit cleanly without producing a
+            duplicate snapshot.
 
         Examples:
             >>> import pyiceberg
@@ -1414,6 +1423,8 @@ class DataFrame:
         not multi-writer safety.
         """
         import pyarrow as pa
+        import pyiceberg
+        from packaging.version import parse
         from pyiceberg.exceptions import CommitFailedException
 
         from daft import from_pydict
@@ -1453,13 +1464,28 @@ class DataFrame:
         our_ids = [c.id for c in pending]
         store_path = checkpoint.path
 
-        # Pull DataFile objects out of the staged FileMetadata blobs.
-        # Each blob is an Arrow IPC stream of a MicroPartition with a python column
-        # carrying live pyiceberg.DataFile objects.
+        # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
+        # is an Arrow IPC stream of a MicroPartition produced by the iceberg
+        # writer (see `IcebergWriteVisitors.to_metadata` and the encode side in
+        # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
+        # python-typed `data_file` column whose cells are pickled
+        # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
+        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
+        # surfaces deep inside MicroPartition with a confusing error — wrap so
+        # the caller sees a clear message naming the contract.
         data_files: list[Any] = []
         for fm in checkpoint.get_checkpointed_files():
-            mp = MicroPartition.from_ipc_stream(fm.data)
-            data_files.extend(mp.to_pydict()["data_file"])
+            try:
+                mp = MicroPartition.from_ipc_stream(fm.data)
+                data_files.extend(mp.to_pydict()["data_file"])
+            except Exception as e:
+                raise RuntimeError(
+                    "failed to decode iceberg DataFile metadata from the checkpoint store; "
+                    "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
+                    "python `data_file` column carrying pickled pyiceberg.DataFile objects. "
+                    "Did pyiceberg change the DataFile shape, or is the store from a different "
+                    f"writer version? Underlying error: {e}"
+                ) from e
 
         # Pending entries exist but carry no data files. Happens when the source
         # filter drops every input row (e.g. re-run after a fully-committed call)
@@ -1504,6 +1530,18 @@ class DataFrame:
             result._metadata = write_df._metadata
             return result
 
+        # Honor the table's `commit.manifest-merge.enabled` property the same
+        # way the non-checkpoint branch does — users who set it expect manifest
+        # merging regardless of whether they pass `checkpoint=`.
+        from pyiceberg.table import TableProperties
+
+        if parse(pyiceberg.__version__) >= parse("0.8.0"):
+            from pyiceberg.utils.properties import property_as_bool
+        else:
+            from pyiceberg.table import PropertyUtil
+
+            property_as_bool = PropertyUtil.property_as_bool
+
         max_retries = 2  # defensive only; transient catalog errors
         last_err: Exception | None = None
         for _ in range(max_retries):
@@ -1523,7 +1561,13 @@ class DataFrame:
             try:
                 tx = table.transaction()
                 update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
-                with update_snapshot.fast_append() as append_files:
+                manifest_merge_enabled = property_as_bool(
+                    tx.table_metadata.properties,
+                    TableProperties.MANIFEST_MERGE_ENABLED,
+                    TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+                )
+                append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+                with append_method() as append_files:
                     for df_ in data_files:
                         append_files.append_data_file(df_)
                 tx.commit_transaction()
