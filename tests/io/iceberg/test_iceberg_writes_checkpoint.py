@@ -475,6 +475,65 @@ def test_first_write_wins_on_key_collisions(iceberg_table, tmpdir, checkpoint_st
     assert pairs_2 == [("a", 1), ("a", 2), ("b", 3), ("c", 4)], f"first-write-wins violated; got {pairs_2}"
 
 
+def test_multi_partition_input_aggregates_into_single_snapshot(iceberg_table, tmpdir, checkpoint_store):
+    """Multi-partition input must aggregate per-partition entries into one snapshot.
+
+    A multi-partition input produces multiple `Checkpointed` entries — one
+    per input partition. A single `write_iceberg` call must aggregate files
+    across all of them into one snapshot, mark every entry Committed, and
+    preserve the single-query-id invariant across all entries.
+
+    The fixed 3-row / 1-data-file shape every other test uses makes the
+    "iterate all entries" code paths trivially correct. This test exercises
+    the aggregation explicitly by writing three separate parquet files into
+    the input directory; `daft.read_parquet` then sees three parquet files
+    and the Ray pipeline distributes them across input partitions.
+    """
+    inp_dir = str(tmpdir / "multi_in")
+    os.makedirs(inp_dir, exist_ok=True)
+    parts = [
+        (["a", "b"], [1, 2]),
+        (["c", "d"], [3, 4]),
+        (["e", "f"], [5, 6]),
+    ]
+    for i, (file_ids, xs) in enumerate(parts):
+        daft.from_pydict({"file_id": file_ids, "x": xs}).write_parquet(f"{inp_dir}/part_{i}")
+
+    daft.read_parquet(f"{inp_dir}/**", checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1, "all per-partition entries must aggregate into a single snapshot"
+
+    summary = iceberg_table.metadata.snapshots[0].summary
+    # All six rows must land. `added-data-files` should be > 1 — that's the
+    # whole point of this test; if the helper only committed files from the
+    # first entry it iterated, we'd see fewer files than partitions.
+    assert int(summary["added-records"]) == 6, (
+        f"all rows from all partitions must be committed; summary={dict(summary)}"
+    )
+    assert int(summary["added-data-files"]) > 1, (
+        f"expected multiple data files for a multi-partition input; summary={dict(summary)}"
+    )
+
+    # Every entry the pipeline staged must transition to Committed — a regression
+    # that marked only the first id Committed would leave the rest pending.
+    all_entries = list(checkpoint_store.list_checkpoints())
+    assert len(all_entries) > 1, "expected multiple per-partition checkpoint entries"
+    pending = [c for c in all_entries if c.status == CheckpointStatus.Checkpointed]
+    assert not pending, "every per-partition entry must be Committed after the write"
+
+    # Single-query-id invariant must hold across all entries — they were all
+    # staged by the same execution, so they all share the same query_id.
+    query_ids = {c.query_id for c in all_entries}
+    assert len(query_ids) == 1, f"all entries from one execution must share one query_id; got {query_ids}"
+
+    # Data round-trip across the union of partitions.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
+
+
 def test_null_keys_are_deduped(iceberg_table, tmpdir, checkpoint_store):
     """NULL values in the `on=` column are deduped on re-run.
 
