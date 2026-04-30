@@ -244,12 +244,15 @@ impl AsofJoinProbeState {
                 continue;
             }
 
-            let Some(group_idx) = table.find_left_group(right_idx, by_key_hashes_and_comparator_ref) else {
+            let Some(group_idx) =
+                table.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
+            else {
                 continue;
             };
 
             let bucket = &table.group_buckets[group_idx];
-            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx) else {
+            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx)
+            else {
                 continue;
             };
 
@@ -265,7 +268,39 @@ impl AsofJoinProbeState {
         self.right_on_key_arrs.push(right_on_arr);
         Ok(())
     }
-    
+    fn update_best_match(
+        &mut self,
+        candidate_left_idx: usize,
+        right_idx: usize,
+        current_morsel_idx: usize,
+        right_on_arr: &Arc<dyn Array>,
+        cmp_cache: &mut HashMap<usize, DynPartialComparator>,
+    ) -> DaftResult<()> {
+        let is_better = match self.best_match[candidate_left_idx] {
+            None => true,
+            Some(old_packed) => {
+                let (old_morsel_idx, old_row) = (old_packed.0 as usize, old_packed.1 as usize);
+                let cmp = match cmp_cache.entry(old_morsel_idx) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let old_arr = self.right_on_key_arrs[old_morsel_idx].clone();
+                        let c = build_partial_compare_with_nulls(
+                            right_on_arr.as_ref(),
+                            old_arr.as_ref(),
+                            false,
+                        )?;
+                        e.insert(c)
+                    }
+                };
+                matches!(cmp(right_idx, old_row), Some(Ordering::Greater))
+            }
+        };
+        if is_better {
+            self.best_match[candidate_left_idx] =
+                Some((current_morsel_idx as u32, right_idx as u32));
+        }
+        Ok(())
+    }
 }
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
