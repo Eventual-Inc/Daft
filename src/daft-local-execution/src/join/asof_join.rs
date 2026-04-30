@@ -212,6 +212,13 @@ impl AsofJoinProbeState {
             false,
         )?;
 
+        // we use this later for update_best_match()
+        let mut cmp_cache: HashMap<usize, DynPartialComparator> = HashMap::new();
+        cmp_cache.insert(
+            current_morsel_idx,
+            build_partial_compare_with_nulls(right_on_arr.as_ref(), right_on_arr.as_ref(), false)?,
+        );
+
         // we use this later when we call find_left_group()
         let by_key_hashes_and_comparator: Option<(_, _)> = if table.has_by_keys {
             let right_by_rb = right_rb.eval_expression_list(right_by)?;
@@ -239,6 +246,7 @@ impl AsofJoinProbeState {
         let by_key_hashes_and_comparator_ref = by_key_hashes_and_comparator
             .as_ref()
             .map(|(h, eq)| (h, eq.as_ref()));
+
         for right_idx in 0..right_rb.len() {
             if !right_on_series.is_valid(right_idx) {
                 continue;
