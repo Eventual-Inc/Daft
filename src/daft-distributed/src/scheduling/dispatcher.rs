@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
-use common_runtime::{JoinSet, JoinSetId};
+use daft_common::error::DaftResult;
+use daft_common::runtime::{JoinSet, JoinSetId};
 
 use super::{
     scheduler::{PendingTask, ScheduledTask},

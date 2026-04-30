@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::Float64Builder;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::{
     array::{

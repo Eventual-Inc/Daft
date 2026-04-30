@@ -1,7 +1,6 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
-common-ndarray = {workspace = true}
-daft-schema = {path = "../../daft-schema", default-features = false}
+daft-common = {workspace = true}
+daft-schema = {path = "../../daft-schema", version = "0.7.9", default-features = false}
 image = {workspace = true, features = [
   "gif",
   "jpeg",
@@ -26,6 +25,10 @@ python = ["dep:pyo3"]
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "common-image"
 version = {workspace = true}
+description = "Image type definitions for Daft"

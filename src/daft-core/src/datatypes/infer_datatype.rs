@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use super::DataType;
 use crate::utils::supertype::try_get_supertype;

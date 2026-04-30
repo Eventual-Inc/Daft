@@ -26,7 +26,7 @@ impl PythonArray {
     pub fn size_bytes(&self) -> usize {
         use std::cmp::min;
 
-        use common_py_serde::pickle_dumps;
+        use daft_common::py_serde::pickle_dumps;
         use pyo3::Python;
         use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom as _};
 

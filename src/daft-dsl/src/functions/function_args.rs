@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 pub use common_macros::FunctionArgs;
 use serde::{Deserialize, Serialize};
 
@@ -442,7 +442,7 @@ pub struct UnaryArg<T> {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::functions::function_args::{FunctionArg, FunctionArgs};
     #[test]

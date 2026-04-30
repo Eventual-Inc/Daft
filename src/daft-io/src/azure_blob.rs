@@ -11,8 +11,8 @@ use azure_storage_blobs::{
     container::{Container, operations::BlobItem},
     prelude::*,
 };
-use common_io_config::AzureConfig;
-use common_runtime::get_io_pool_num_threads;
+use daft_common::io_config::AzureConfig;
+use daft_common::runtime::get_io_pool_num_threads;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
 

@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{DaftProductAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};

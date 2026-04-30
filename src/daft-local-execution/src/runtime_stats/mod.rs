@@ -8,11 +8,11 @@ use std::{
     time::Duration,
 };
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
-use common_runtime::RuntimeTask;
+use daft_common::runtime::RuntimeTask;
 use daft_context::{
     Subscriber,
     subscribers::{
@@ -23,7 +23,7 @@ use daft_context::{
         },
     },
 };
-use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_common::treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::{ExecutionStats, InputId};
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
@@ -134,13 +134,13 @@ impl RuntimeStatsManagerHandle {
         self.tx
             .send(StatsManagerMessage::TakeInputSnapshot(input_id, tx))
             .map_err(|_| {
-                common_error::DaftError::InternalError(
+                daft_common::error::DaftError::InternalError(
                     "RuntimeStatsManager was already finished; cannot take input snapshot"
                         .to_string(),
                 )
             })?;
         rx.await.map_err(|_| {
-            common_error::DaftError::InternalError(
+            daft_common::error::DaftError::InternalError(
                 "RuntimeStatsManager task ended before responding to snapshot request".to_string(),
             )
         })
@@ -284,7 +284,7 @@ impl RuntimeStatsManager {
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
         let mut process_stats = if enable_process_monitor {
-            let meter = common_metrics::Meter::global_scope("daft-process-monitor");
+            let meter = daft_common::metrics::Meter::global_scope("daft-process-monitor");
             process_stats::ProcessStatsCollector::new(&meter)
         } else {
             None
@@ -502,8 +502,8 @@ mod tests {
         sync::{Arc, Mutex, atomic::AtomicU64},
     };
 
-    use common_error::DaftResult;
-    use common_metrics::{
+    use daft_common::error::DaftResult;
+    use daft_common::metrics::{
         DURATION_KEY, Meter, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
     };
     use daft_context::Subscriber;
@@ -689,7 +689,7 @@ mod tests {
         impl Subscriber for FailingSubscriber {
             fn on_event(&self, event: Event) -> DaftResult<()> {
                 if let Event::Stats(_) = event {
-                    return Err(common_error::DaftError::InternalError(
+                    return Err(daft_common::error::DaftError::InternalError(
                         "Test error".to_string(),
                     ));
                 }

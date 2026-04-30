@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common_daft_config::PyDaftPlanningConfig;
+use daft_common::config::PyDaftPlanningConfig;
 use daft_core::python::PyDataType;
 use daft_dsl::python::PyExpr;
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};

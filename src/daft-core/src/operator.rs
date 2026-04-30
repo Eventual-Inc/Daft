@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 

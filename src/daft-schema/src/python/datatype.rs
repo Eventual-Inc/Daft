@@ -1,7 +1,7 @@
 use arrow_schema::ffi::FFI_ArrowSchema;
 use common_arrow_ffi::ToPyArrow;
-use common_error::DaftError;
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::error::DaftError;
+use daft_common::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
 use pyo3::{
     class::basic::CompareOp,

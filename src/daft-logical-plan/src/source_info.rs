@@ -3,8 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use common_io_config::IOConfig;
-use common_partitioning::PartitionCacheEntry;
+use daft_common::io_config::IOConfig;
+use daft_common::partitioning::PartitionCacheEntry;
 use daft_core::prelude::Schema;
 use daft_scan::{PhysicalScanInfo, Pushdowns};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};

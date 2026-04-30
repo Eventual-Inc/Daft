@@ -4,8 +4,8 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 use daft_dsl::{
@@ -1030,8 +1030,8 @@ impl JoinGraphBuilder {
 mod tests {
     use std::sync::Arc;
 
-    use common_daft_config::DaftExecutionConfig;
-    use common_treenode::TransformedResult;
+    use daft_common::config::DaftExecutionConfig;
+    use daft_common::treenode::TransformedResult;
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;

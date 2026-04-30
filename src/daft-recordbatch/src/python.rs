@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::python::PyOperatorMetrics;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::python::PyOperatorMetrics;
 use daft_core::{
     join::JoinType,
     prelude::*,

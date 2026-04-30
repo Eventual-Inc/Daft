@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow_schema::IntervalUnit;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -254,8 +254,8 @@ impl DataTypePayload {
     pub fn new(datatype: &DataType) -> Self {
         Self {
             datatype: datatype.clone(),
-            daft_version: common_version::VERSION.into(),
-            daft_build_type: common_version::DAFT_BUILD_TYPE.into(),
+            daft_version: daft_common::version::VERSION.into(),
+            daft_build_type: daft_common::version::DAFT_BUILD_TYPE.into(),
         }
     }
 }
@@ -1133,7 +1133,7 @@ impl From<&ImageMode> for DataType {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use rstest::rstest;
 
     use crate::{

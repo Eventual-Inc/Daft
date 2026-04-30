@@ -7,7 +7,7 @@ use arrow::{
     array::Array as ArrowArray,
     buffer::{OffsetBuffer, ScalarBuffer},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

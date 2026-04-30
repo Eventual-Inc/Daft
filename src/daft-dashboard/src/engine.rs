@@ -10,7 +10,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
+use daft_common::metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 

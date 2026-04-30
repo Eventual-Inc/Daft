@@ -1,5 +1,5 @@
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_dsl::{Expr, resolved_col};
 
 use crate::{

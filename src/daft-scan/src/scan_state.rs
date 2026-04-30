@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_display::{DisplayAs, DisplayLevel};
+use daft_common::display::{DisplayAs, DisplayLevel};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 

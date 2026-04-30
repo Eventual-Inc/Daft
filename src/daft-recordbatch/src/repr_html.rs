@@ -6,7 +6,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
     match s.data_type() {
         DataType::Image(_) => {
             let arr = s.image().unwrap();
-            daft_image::ops::image_html_value(arr, idx, truncate)
+            daft_functions::image::ops::image_html_value(arr, idx, truncate)
         }
         DataType::Null => {
             let arr = s.null().unwrap();
@@ -122,7 +122,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
         }
         DataType::FixedShapeImage(_, _, _) => {
             let arr = s.fixed_size_image().unwrap();
-            daft_image::ops::fixed_image_html_value(arr, idx, truncate)
+            daft_functions::image::ops::fixed_image_html_value(arr, idx, truncate)
         }
         DataType::Tensor(_) => {
             let arr = s.tensor().unwrap();

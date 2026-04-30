@@ -1,7 +1,7 @@
 use std::{collections::BinaryHeap, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
 use daft_core::{
     prelude::{SchemaRef, Utf8Array},
     series::IntoSeries,

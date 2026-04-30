@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::get_io_runtime;
 use daft_recordbatch::python::PyRecordBatch;
 use daft_schema::{python::schema::PySchema, schema::SchemaRef};
 use futures::StreamExt;

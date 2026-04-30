@@ -1,9 +1,9 @@
 use std::{cmp::Ordering, collections::HashMap, fmt::Debug, future::Future, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftError;
-use common_partitioning::PartitionRef;
-use common_resource_request::ResourceRequest;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftError;
+use daft_common::partitioning::PartitionRef;
+use daft_common::resource_request::ResourceRequest;
 use daft_local_plan::{
     ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
 };
@@ -568,8 +568,8 @@ impl<H: TaskResultHandle> TaskResultAwaiter<H> {
 pub(super) mod tests {
     use std::{any::Any, sync::Mutex, time::Duration};
 
-    use common_error::DaftError;
-    use common_partitioning::Partition;
+    use daft_common::error::DaftError;
+    use daft_common::partitioning::Partition;
 
     use super::*;
     use crate::utils::channel::OneshotSender;

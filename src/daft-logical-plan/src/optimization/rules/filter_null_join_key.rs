@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 
@@ -167,7 +167,7 @@ impl OptimizerRule for FilterNullJoinKey {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
 

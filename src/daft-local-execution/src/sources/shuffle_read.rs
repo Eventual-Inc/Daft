@@ -4,16 +4,16 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
-use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::FlightPartitionRef;
+use daft_local_plan::partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
+use crate::shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
@@ -130,7 +130,7 @@ impl ShuffleReadSource {
     fn spawn_flight_shuffle_processor(
         self,
         output_sender: Sender<PipelineMessage>,
-    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+    ) -> daft_common::runtime::RuntimeTask<DaftResult<()>> {
         let mut receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
         let local_server = self.local_server;

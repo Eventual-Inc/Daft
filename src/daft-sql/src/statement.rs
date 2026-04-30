@@ -1,4 +1,4 @@
-use daft_catalog::Identifier;
+use daft_session::catalog::Identifier;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::ast;
 

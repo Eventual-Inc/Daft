@@ -5,20 +5,20 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_display::{
+use daft_common::config::DaftExecutionConfig;
+use daft_common::display::{
     DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
 };
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Meter, QueryID,
     ops::{NodeCategory, NodeType},
 };
-use common_partitioning::PartitionRef;
-use common_treenode::ConcreteTreeNode;
+use daft_common::partitioning::PartitionRef;
+use daft_common::treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -458,8 +458,8 @@ pub(crate) mod test_helpers;
 pub(crate) mod tests {
     use std::sync::Arc;
 
-    use common_daft_config::DaftExecutionConfig;
-    use common_metrics::{
+    use daft_common::config::DaftExecutionConfig;
+    use daft_common::metrics::{
         QueryID,
         ops::{NodeCategory, NodeType},
     };

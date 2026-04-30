@@ -1,14 +1,23 @@
 [dependencies]
-common-error = {workspace = true}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
+daft-common = {workspace = true}
 mur3 = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
+serde_arrow = {version = "0.13.7", features = ["arrow-57"]}
 sha1 = {workspace = true}
+sketches-ddsketch = {workspace = true}
+snafu = {workspace = true}
 xxhash-rust = {workspace = true}
 
 [lints]
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-hash"
 version = {workspace = true}
+description = "Hashing utilities and data structures for Daft"

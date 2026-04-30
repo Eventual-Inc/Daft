@@ -7,7 +7,7 @@ use axum::{
     response::{Sse, sse::Event},
     routing::get,
 };
-use common_metrics::QueryID;
+use daft_common::metrics::QueryID;
 use futures::future::ok;
 use tokio::sync::watch;
 use tokio_stream::{
@@ -186,8 +186,8 @@ async fn get_query_results(
                 .operators
                 .iter()
                 .max_by_key(|(id, _)| *id)
-                .and_then(|(_, op)| match op.stats.get(common_metrics::ROWS_OUT_KEY) {
-                    Some(common_metrics::Stat::Count(n)) => Some(*n),
+                .and_then(|(_, op)| match op.stats.get(daft_common::metrics::ROWS_OUT_KEY) {
+                    Some(daft_common::metrics::Stat::Count(n)) => Some(*n),
                     _ => None,
                 });
             (results.clone(), total)

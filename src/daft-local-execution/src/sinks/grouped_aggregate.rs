@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
     bound_col,
@@ -298,7 +298,7 @@ impl GroupedAggregateSink {
             .iter()
             .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::AggFn { .. }));
         if has_map_groups && has_agg_fn {
-            return Err(common_error::DaftError::ValueError(
+            return Err(daft_common::error::DaftError::ValueError(
                 "Cannot mix MapGroups (Python UDFs) and extension aggregations (AggFn) \
                  in the same aggregation; split them into separate operations."
                     .to_string(),
@@ -491,7 +491,7 @@ impl BlockingSink for GroupedAggregateSink {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{
         AggExpr,

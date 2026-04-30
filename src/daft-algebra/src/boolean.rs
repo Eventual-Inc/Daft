@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::{lit::Literal, prelude::Operator};
 use daft_dsl::{Expr, ExprRef, null_lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};

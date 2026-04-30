@@ -4,9 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_error::DaftResult;
-use common_metrics::{Meter, ops::NodeInfo};
-use common_runtime::OrderingAwareJoinSet;
+use daft_common::error::DaftResult;
+use daft_common::metrics::{Meter, ops::NodeInfo};
+use daft_common::runtime::OrderingAwareJoinSet;
 
 use crate::{
     ExecutionTaskSpawner,
@@ -340,7 +340,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                                 let finalized = match bridge.subscribe(input_id) {
                                     FinalizedBuildStateReceiver::Receiver(rx) => {
                                         rx.await.map_err(|e| {
-                                            common_error::DaftError::ValueError(format!(
+                                            daft_common::error::DaftError::ValueError(format!(
                                                 "Failed to receive finalized build state: {e}"
                                             ))
                                         })?

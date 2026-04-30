@@ -1,4 +1,4 @@
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::impl_bincode_py_state_serialization;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};

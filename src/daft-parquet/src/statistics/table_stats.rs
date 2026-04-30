@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::Schema;
-use daft_stats::{ColumnRangeStatistics, TableStatistics};
+use daft_recordbatch::stats::{ColumnRangeStatistics, TableStatistics};
 use indexmap::IndexMap;
 
 use super::column_range::parquet_statistics_to_column_range_statistics;

@@ -1,6 +1,6 @@
 use std::{cmp::max, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::ops::AsofJoin;
 use daft_schema::schema::SchemaRef;

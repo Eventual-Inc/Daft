@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow::datatypes::DataType as ArrowDataType;
-use common_error::DaftResult;
-use common_runtime::get_io_runtime;
-use daft_compression::CompressionCodec;
+use daft_common::error::DaftResult;
+use daft_common::runtime::get_io_runtime;
+use daft_io::compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
@@ -239,7 +239,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;

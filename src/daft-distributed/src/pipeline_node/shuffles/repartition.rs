@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;

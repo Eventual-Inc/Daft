@@ -5,13 +5,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::display::tree::TreeDisplay;
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
+use daft_common::runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -317,11 +317,11 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
         self.node_id().to_string()
     }
 
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        use common_display::DisplayLevel;
+        use daft_common::display::DisplayLevel;
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.intermediate_op.name()).unwrap();

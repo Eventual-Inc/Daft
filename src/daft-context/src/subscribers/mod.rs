@@ -10,8 +10,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryEndState, QueryID, QueryPlan};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{QueryEndState, QueryID, QueryPlan};
 use daft_core::prelude::SchemaRef;
 pub use events::Event;
 

@@ -5,7 +5,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use common_io_config::{HTTPConfig, HuggingFaceConfig};
+use daft_common::io_config::{HTTPConfig, HuggingFaceConfig};
 use futures::{
     StreamExt, TryStreamExt,
     stream::{self, BoxStream},
@@ -695,8 +695,8 @@ async fn try_parquet_api(
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use common_io_config::{HTTPConfig, HuggingFaceConfig};
+    use daft_common::error::DaftResult;
+    use daft_common::io_config::{HTTPConfig, HuggingFaceConfig};
 
     use crate::{
         huggingface::{HFPathParts, HFSource},

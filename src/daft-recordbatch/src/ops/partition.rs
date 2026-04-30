@@ -1,9 +1,9 @@
 use std::ops::Rem;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::datatypes::UInt64Array;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_groupby::IntoGroups;
+use daft_core::groupby::IntoGroups;
 use rand::SeedableRng;
 
 use crate::RecordBatch;

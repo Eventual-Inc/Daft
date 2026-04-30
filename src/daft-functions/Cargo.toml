@@ -1,24 +1,80 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+# Shared deps (already present)
+daft-common = {workspace = true}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-dsl = {path = "../daft-dsl", version = "0.7.9", default-features = false}
 daft-hash = {workspace = true}
 xxhash-rust = {workspace = true}
+arrow = {workspace = true}
 arrow-array = {workspace = true}
 arrow-buffer = {workspace = true}
+arrow-json = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 typetag = {workspace = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 uuid = {workspace = true}
 rand = {workspace = true}
 
+# From daft-functions-binary
+base64 = {workspace = true}
+flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
+hex = {workspace = true}
+simdutf8 = {workspace = true}
+
+# From daft-functions-json
+jaq-core = {workspace = true}
+jaq-json = {workspace = true, features = ["serde_json"]}
+jaq-std = {workspace = true}
+
+# From daft-functions-list
+indexmap = {workspace = true, features = ["serde"]}
+
+# From daft-functions-temporal
+chrono = {workspace = true}
+chrono-tz = {workspace = true}
+paste = "1.0.15"
+
+# From daft-functions-tokenize
+daft-io = {path = "../daft-io", version = "0.7.9", default-features = false}
+tiktoken-rs = {workspace = true}
+rustc-hash = "1.1"
+
+# From daft-functions-uri
+async-trait = {workspace = true}
+bytes = {workspace = true}
+futures = {workspace = true}
+tokio = {workspace = true}
+url = {workspace = true}
+
+# From daft-functions-utf8
+aho-corasick = "1.1.3"
+heck = "0.5.0"
+itertools = {workspace = true}
+regex = {workspace = true}
+unicode-normalization = "0.1.25"
+
+# From daft-image
+common-image = {workspace = true}
+daft-schema = {path = "../daft-schema", version = "0.7.9", default-features = false}
+image = {workspace = true}
+log = {workspace = true}
+rayon = {workspace = true}
+rustfft = {workspace = true}
+
+# From daft-file
+common-macros = {path = "../common/macros", version = "0.7.9"}
+mime_guess = "2.0.5"
+
 [features]
 python = [
-  "common-error/python",
+  "daft-common/python",
   "daft-core/python",
   "daft-dsl/python",
+  "daft-io/python",
+  "common-image/python",
   "dep:pyo3"
 ]
 
@@ -26,6 +82,12 @@ python = [
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 name = "daft-functions"
 edition.workspace = true
 version.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]

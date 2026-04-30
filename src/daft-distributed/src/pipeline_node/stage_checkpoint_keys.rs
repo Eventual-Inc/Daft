@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointConfig;
-use common_metrics::{
+use daft_common::checkpoint_config::CheckpointConfig;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
@@ -73,14 +73,14 @@ impl StageCheckpointKeysStats {
 impl RuntimeStats for StageCheckpointKeysStats {
     fn handle_worker_node_stats(
         &self,
-        _node_info: &common_metrics::ops::NodeInfo,
-        snapshot: &common_metrics::StatSnapshot,
+        _node_info: &daft_common::metrics::ops::NodeInfo,
+        snapshot: &daft_common::metrics::StatSnapshot,
     ) {
-        use common_metrics::snapshot::StatSnapshotImpl as _;
+        use daft_common::metrics::snapshot::StatSnapshotImpl as _;
         self.base.add_duration_us(snapshot.duration_us());
     }
 
-    fn export_snapshot(&self) -> common_metrics::StatSnapshot {
+    fn export_snapshot(&self) -> daft_common::metrics::StatSnapshot {
         self.base.export_default_snapshot()
     }
 

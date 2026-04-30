@@ -2,9 +2,9 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_error::DaftError;
-use common_file_formats::FileFormat;
-use common_io_config::{IOConfig, ObfuscatedString, UnityConfig};
+use daft_common::error::DaftError;
+use daft_common::file_formats::FileFormat;
+use daft_common::io_config::{IOConfig, ObfuscatedString, UnityConfig};
 use futures::stream::BoxStream;
 use itertools::Itertools;
 use pyo3::{intern, prelude::*};
@@ -97,7 +97,7 @@ impl UnitySource {
                 IOConfig::default()
             } else {
                 py_io_config
-                    .extract::<common_io_config::python::IOConfig>()?
+                    .extract::<daft_common::io_config::python::IOConfig>()?
                     .config
             };
 

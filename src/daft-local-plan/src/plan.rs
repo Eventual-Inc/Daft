@@ -3,12 +3,13 @@ use std::{
     sync::{Arc, LockResult},
 };
 
-use common_error::{DaftError, DaftResult, ensure};
-use common_io_config::IOConfig;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::ensure;
+use daft_common::io_config::IOConfig;
 #[cfg(feature = "python")]
-use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
-use common_resource_request::ResourceRequest;
-use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
+use daft_common::py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
+use daft_common::resource_request::ResourceRequest;
+use daft_common::treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     Column, ExprRef, WindowExpr, WindowFrame, WindowSpec,
@@ -23,7 +24,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_partition_refs::FlightPartitionRef;
+use crate::partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -324,7 +325,7 @@ impl LocalPhysicalPlan {
 
     pub fn stage_checkpoint_keys(
         input: LocalPhysicalPlanRef,
-        checkpoint_config: common_checkpoint_config::CheckpointConfig,
+        checkpoint_config: daft_common::checkpoint_config::CheckpointConfig,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -1930,7 +1931,7 @@ pub struct Filter {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct StageCheckpointKeys {
     pub input: LocalPhysicalPlanRef,
-    pub checkpoint_config: common_checkpoint_config::CheckpointConfig,
+    pub checkpoint_config: daft_common::checkpoint_config::CheckpointConfig,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

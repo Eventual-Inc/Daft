@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_checkpoint::BlobStoreCheckpointedKeysScanOperator;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::unresolved_col;
@@ -213,7 +213,7 @@ impl OptimizerRule for RewriteCheckpointSource {
 
 #[cfg(test)]
 mod tests {
-    use common_checkpoint_config::{CheckpointConfig, CheckpointStoreConfig};
+    use daft_common::checkpoint_config::{CheckpointConfig, CheckpointStoreConfig};
     use daft_core::prelude::DataType;
     use daft_schema::field::Field;
 
@@ -256,7 +256,7 @@ mod tests {
         let cfg = CheckpointConfig {
             store: CheckpointStoreConfig::ObjectStore {
                 prefix: "s3://does-not-matter-for-rewrite".to_string(),
-                io_config: Box::new(common_io_config::IOConfig::default()),
+                io_config: Box::new(daft_common::io_config::IOConfig::default()),
             },
             key_column: "key".to_string(),
         };

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::task::{Task, TaskDetails, TaskResultHandle};
 use crate::scheduling::{

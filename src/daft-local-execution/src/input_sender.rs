@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_local_plan::{FlightShuffleReadInput, Input, InputId};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;

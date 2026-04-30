@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::ArrowPrimitiveType;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{DaftCompareAggable, GroupIndices, full::FullNull};
 #[cfg(feature = "python")]

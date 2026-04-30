@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     count_mode::CountMode,
     datatypes::{DataType, Field, UInt64Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, functions::scalar::ScalarFn};
-use daft_functions_list::SeriesListExtension;
+use daft_functions::list::SeriesListExtension;
 
 use crate::RecordBatch;
 

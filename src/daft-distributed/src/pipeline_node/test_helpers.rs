@@ -6,11 +6,11 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_metrics::{Meter, QueryID, StatSnapshot};
-use common_partitioning::PartitionRef;
-use common_runtime::JoinSet;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
+use daft_common::metrics::{Meter, QueryID, StatSnapshot};
+use daft_common::partitioning::PartitionRef;
+use daft_common::runtime::JoinSet;
 use daft_dsl::expr::{BoundColumn, Expr, bound_expr::BoundExpr};
 use daft_local_plan::ExecutionStats;
 use daft_logical_plan::InMemoryInfo;
@@ -130,7 +130,7 @@ pub fn build_in_memory_source(
 pub async fn run_pipeline_and_get_stats(
     pipeline: &DistributedPipelineNode,
     meter: &Meter,
-) -> DaftResult<Vec<(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)>> {
+) -> DaftResult<Vec<(Arc<daft_common::metrics::ops::NodeInfo>, StatSnapshot)>> {
     let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
     run_pipeline_with_manager(pipeline, meter, worker_manager)
         .await

@@ -3,8 +3,8 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Counter, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
     JOIN_PROBE_BYTES_OUT_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter, StatSnapshot,
     UNIT_BYTES, UNIT_ROWS,

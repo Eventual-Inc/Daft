@@ -1,9 +1,12 @@
+pub mod hyperloglog;
+pub mod sketch;
+
 use std::{
     hash::{BuildHasher, Hasher},
     str::FromStr,
 };
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use serde::{Deserialize, Serialize};
 use sha1::Digest;
 

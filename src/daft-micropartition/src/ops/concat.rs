@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::prelude::SchemaRef;
-use daft_stats::TableMetadata;
+use daft_recordbatch::stats::TableMetadata;
 
 use crate::micropartition::MicroPartition;
 

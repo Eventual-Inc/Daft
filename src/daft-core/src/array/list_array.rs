@@ -5,7 +5,7 @@ use arrow::{
     buffer::{NullBuffer, OffsetBuffer, ScalarBuffer},
     compute::kernels::concat::concat,
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::{
     datatypes::{DaftArrayType, DataType, Field},

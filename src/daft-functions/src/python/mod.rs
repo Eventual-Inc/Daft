@@ -75,6 +75,7 @@ pub fn get_function_from_registry(name: &str) -> PyResult<PyScalarFunction> {
 
 pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(get_function_from_registry, parent)?)?;
+    crate::file::python::register_modules(parent)?;
 
     Ok(())
 }

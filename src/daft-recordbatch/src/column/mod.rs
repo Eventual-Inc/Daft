@@ -5,8 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use common_display::table_display::StrValue;
-use common_error::DaftResult;
+use daft_common::display::table_display::StrValue;
+use daft_common::error::DaftResult;
 use daft_core::{
     lit::Literal,
     prelude::{DataType, Field, Series},
@@ -228,7 +228,7 @@ impl Column {
     /// and concatenated via [`Series::concat`].
     pub fn concat(columns: &[&Self]) -> DaftResult<Self> {
         if columns.is_empty() {
-            return Err(common_error::DaftError::ValueError(
+            return Err(daft_common::error::DaftError::ValueError(
                 "Need at least 1 Column to concat".to_string(),
             ));
         }
@@ -275,7 +275,7 @@ impl Column {
     /// Returns the display string for the value at `idx`.
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if idx >= self.len() {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(daft_common::error::DaftError::ValueError(format!(
                 "index {} out of bounds for Column of length {}",
                 idx,
                 self.len()
@@ -325,7 +325,7 @@ impl Hash for Column {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::{lit::Literal, prelude::*, series::IntoSeries};
 
     use super::{Column, ScalarColumn};

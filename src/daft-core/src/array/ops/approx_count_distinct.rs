@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::{
     array::ops::DaftApproxCountDistinctAggable, datatypes::UInt64Array,

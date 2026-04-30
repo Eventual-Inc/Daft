@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
     series::{IntoSeries, Series},
@@ -111,7 +111,7 @@ pub fn coalesce(inputs: Vec<ExprRef>) -> ExprRef {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftError;
+    use daft_common::error::DaftError;
     use daft_core::{
         prelude::{DataType, Field, FullNull, Int8Array, Schema, Utf8Array},
         series::{IntoSeries, Series},

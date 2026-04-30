@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 
-use common_error::DaftResult;
-use common_hashable_float_wrapper::FloatWrapper;
+use daft_common::error::DaftResult;
+use daft_common::hashable_float_wrapper::FloatWrapper;
 
 use super::{DaftIsIn, as_arrow::AsArrow, full::FullNull};
 use crate::{

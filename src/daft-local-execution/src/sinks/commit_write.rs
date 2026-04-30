@@ -1,15 +1,15 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::DaftResult;
-use common_file_formats::{FileFormat, WriteMode};
-use common_metrics::ops::NodeType;
+use daft_common::error::DaftResult;
+use daft_common::file_formats::{FileFormat, WriteMode};
+use daft_common::metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::{Error, IOClient, get_io_client, parse_url};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_writers::WriterFactory;
+use crate::writers::WriterFactory;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -102,7 +102,7 @@ impl BlockingSink for CommitWriteSink {
                         match file_info.file_format {
                             FileFormat::Parquet | FileFormat::Csv => {
                                 let writer_factory =
-                                    daft_writers::physical::PhysicalWriterFactory::new(
+                                    crate::writers::physical::PhysicalWriterFactory::new(
                                         file_info.clone(),
                                         data_schema.clone(),
                                         true,

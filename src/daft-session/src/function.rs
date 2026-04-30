@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 #[cfg(not(feature = "python"))]
-use daft_catalog::error::CatalogError;
-use daft_catalog::{FunctionRef, error::CatalogResult};
+use crate::catalog::error::CatalogError;
+use crate::catalog::{FunctionRef, error::CatalogResult};
 
 /// A Python UDF class (daft.udf.py:UDF).
 type PythonScalarFunction = daft_dsl::functions::python::WrappedUDFClass;

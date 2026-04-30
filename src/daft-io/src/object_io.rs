@@ -2,7 +2,7 @@ use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use futures::{
     StreamExt,
     stream::{BoxStream, Stream},

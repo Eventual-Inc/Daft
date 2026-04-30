@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::Transformed;
+use daft_common::error::DaftResult;
+use daft_common::treenode::Transformed;
 
 use crate::LogicalPlan;
 

@@ -1,5 +1,5 @@
 use arrow::buffer::NullBuffer;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_hash::HashFunctionKind;
 
 use crate::{

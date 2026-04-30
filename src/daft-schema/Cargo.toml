@@ -1,11 +1,14 @@
 [dependencies]
 arrow = {workspace = true}
+arrow-array = {workspace = true}
 arrow-schema = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-version = {path = "../common/version", default-features = false}
+atoi_simd = "0.16.1"
+csv = {workspace = true}
+csv-async = "1.2.6"
+fast-float2 = "0.2.3"
+simdutf8 = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", version = "0.7.9", default-features = false, optional = true}
+daft-common = {workspace = true}
 derive_more = {workspace = true}
 educe = {workspace = true}
 html-escape = {workspace = true}
@@ -23,10 +26,8 @@ rstest = {workspace = true}
 
 [features]
 python = [
+  "daft-common/python",
   "dep:pyo3",
-  "common-error/python",
-  "common-display/python",
-  "common-py-serde/python",
   "dep:common-arrow-ffi"
 ]
 
@@ -34,9 +35,13 @@ python = [
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-schema"
 version = {workspace = true}
+description = "Schema types, data types, and decoding for Daft"
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]  # needed by num-derive

@@ -4,8 +4,8 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-use common_error::{DaftError, DaftResult};
-pub use common_partitioning::*;
+use daft_common::error::{DaftError, DaftResult};
+pub use daft_common::partitioning::*;
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use futures::stream::BoxStream;

@@ -5,7 +5,7 @@ use arrow::{
     buffer::{OffsetBuffer, ScalarBuffer},
     datatypes::ArrowNativeType,
 };
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{DaftConcatAggable, as_arrow::AsArrow};
 use crate::{
@@ -167,7 +167,7 @@ mod test {
     use std::iter::repeat_n;
 
     use arrow::buffer::OffsetBuffer;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use smallvec::smallvec;
 
     use crate::{

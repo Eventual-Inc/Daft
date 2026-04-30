@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_schema::prelude::*;
 
 #[cfg(feature = "python")]
@@ -544,7 +544,7 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::IntervalMonthDayNano;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::{
         array::ops::full::FullNull,

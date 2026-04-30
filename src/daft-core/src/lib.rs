@@ -5,6 +5,7 @@ pub mod array;
 pub mod count_mode;
 pub mod datatypes;
 pub mod file;
+pub mod groupby;
 pub mod join;
 pub mod kernels;
 pub mod lit;

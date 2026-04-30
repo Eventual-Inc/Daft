@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::array::NullBufferBuilder;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use common_image::CowImage;
 use num_traits::FromPrimitive;
 

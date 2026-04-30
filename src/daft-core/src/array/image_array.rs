@@ -1,7 +1,7 @@
 use std::vec;
 
 use arrow::buffer::{NullBuffer, OffsetBuffer};
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::{
     array::prelude::*,

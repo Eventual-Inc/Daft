@@ -58,7 +58,7 @@ pub fn derive_function_args(input: proc_macro::TokenStream) -> proc_macro::Token
                 std::result::Result::Ok(val.clone())
             } else {
                 std::result::Result::Err(
-                    common_error::DaftError::ValueError(format!("Expected argument `{}` to be a literal, received: {}", name, expr))
+                    daft_common::error::DaftError::ValueError(format!("Expected argument `{}` to be a literal, received: {}", name, expr))
                 )
             }
         }
@@ -123,7 +123,7 @@ fn derive_for_type(
                     unnamed
                         .pop_front()
                         .or_else(|| named.remove(#n))
-                        .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?
+                        .ok_or_else(|| daft_common::error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?
                 },
                 (ArgCardinality::Required, ArgType::Concrete(_)) => quote! {
                     #daft_core::lit::FromLiteral::try_from_literal(
@@ -131,7 +131,7 @@ fn derive_for_type(
                             unnamed
                                 .pop_front()
                                 .or_else(|| named.remove(#n))
-                                .ok_or_else(|| common_error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?,
+                                .ok_or_else(|| daft_common::error::DaftError::ValueError(format!("Required argument `{}` not found", #n)))?,
                             #n
                         )?
                     )?
@@ -157,7 +157,7 @@ fn derive_for_type(
                     unnamed
                         .drain(..)
                         .map(|val| #daft_core::lit::FromLiteral::try_from_literal(&to_lit(val, #n)?))
-                        .collect::<common_error::DaftResult<_>>()?
+                        .collect::<daft_common::error::DaftResult<_>>()?
                 },
             }
         });
@@ -181,9 +181,9 @@ fn derive_for_type(
 
     quote! {
         impl std::convert::TryFrom<#daft_dsl::functions::FunctionArgs<#ty>> for #impl_type {
-            type Error = common_error::DaftError;
+            type Error = daft_common::error::DaftError;
 
-            fn try_from(args: #daft_dsl::functions::FunctionArgs<#ty>) -> common_error::DaftResult<Self> {
+            fn try_from(args: #daft_dsl::functions::FunctionArgs<#ty>) -> daft_common::error::DaftResult<Self> {
                 let (unnamed, mut named) = args.into_unnamed_and_named()?;
                 let mut unnamed = std::collections::VecDeque::from(unnamed);
 
@@ -197,13 +197,13 @@ fn derive_for_type(
 
                 if !unnamed.is_empty() {
                     return std::result::Result::Err(
-                        common_error::DaftError::ValueError(format!("Expected {} arguments, received: {}", #num_fields, #num_fields + unnamed.len()))
+                        daft_common::error::DaftError::ValueError(format!("Expected {} arguments, received: {}", #num_fields, #num_fields + unnamed.len()))
                     );
                 }
 
                 if !named.is_empty() {
                     return std::result::Result::Err(
-                        common_error::DaftError::ValueError(format!("Expected argument names [{}], received: {}",
+                        daft_common::error::DaftError::ValueError(format!("Expected argument names [{}], received: {}",
                             #named_args,
                             named.keys()
                                 .map(|s| format!("`{}`", s))

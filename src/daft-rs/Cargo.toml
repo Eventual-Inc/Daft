@@ -1,0 +1,41 @@
+[package]
+name = "daft-rs"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Daft: a high-performance query engine for Rust"
+
+[dependencies]
+daft-common = {path = "../daft-common", version = "0.7.9"}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-schema = {path = "../daft-schema", version = "0.7.9", default-features = false}
+daft-dsl = {path = "../daft-dsl", version = "0.7.9", default-features = false}
+daft-functions = {path = "../daft-functions", version = "0.7.9", default-features = false}
+daft-io = {path = "../daft-io", version = "0.7.9", default-features = false}
+daft-scan = {path = "../daft-scan", version = "0.7.9", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", version = "0.7.9", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", version = "0.7.9", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", version = "0.7.9", default-features = false}
+daft-local-plan = {path = "../daft-local-plan", version = "0.7.9", default-features = false}
+daft-local-execution = {path = "../daft-local-execution", version = "0.7.9", default-features = false}
+daft-context = {path = "../daft-context", version = "0.7.9", default-features = false}
+daft-session = {path = "../daft-session", version = "0.7.9", default-features = false}
+daft-sql = {path = "../daft-sql", version = "0.7.9", default-features = false}
+daft-csv = {path = "../daft-csv", version = "0.7.9", default-features = false, optional = true}
+daft-json = {path = "../daft-json", version = "0.7.9", default-features = false, optional = true}
+daft-parquet = {path = "../daft-parquet", version = "0.7.9", default-features = false, optional = true}
+daft-warc = {path = "../daft-warc", version = "0.7.9", default-features = false, optional = true}
+daft-text = {path = "../daft-text", version = "0.7.9", default-features = false, optional = true}
+
+[features]
+default = ["csv", "json", "parquet"]
+csv = ["dep:daft-csv"]
+json = ["dep:daft-json"]
+parquet = ["dep:daft-parquet"]
+warc = ["dep:daft-warc"]
+text = ["dep:daft-text"]
+
+[lints]
+workspace = true

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;

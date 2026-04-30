@@ -1,10 +1,10 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
-use common_metrics::Meter;
-use common_partitioning::PartitionRef;
-use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
+use daft_common::error::DaftResult;
+use daft_common::metrics::Meter;
+use daft_common::partitioning::PartitionRef;
+use daft_common::treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::{
         agg::extract_agg_expr,

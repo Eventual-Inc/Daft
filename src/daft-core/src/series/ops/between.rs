@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
 use crate::datatypes::BooleanArray;
@@ -55,7 +55,7 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::{datatypes::DataType, series::Series};
 

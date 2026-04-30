@@ -5,12 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use common_py_serde::{
-    deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
-};
+use daft_common::impl_bincode_py_state_serialization;
+use daft_common::py_serde::{deserialize_py_object, serialize_py_object};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_schema::python::schema::PySchema;
-use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use daft_recordbatch::stats::{PartitionSpec, TableMetadata, TableStatistics};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
@@ -211,7 +210,7 @@ impl PyFileFormatConfig {
     }
 
     /// Get the file format for this file format config.
-    fn file_format(&self) -> common_file_formats::FileFormat {
+    fn file_format(&self) -> daft_common::file_formats::FileFormat {
         self.0.as_ref().into()
     }
 
@@ -297,13 +296,13 @@ impl PartialEq for PythonTablesFactoryArgs {
 pub mod pylib {
     use std::{default, sync::Arc};
 
-    use common_daft_config::PyDaftExecutionConfig;
-    use common_error::DaftResult;
-    use common_py_serde::impl_bincode_py_state_serialization;
+    use daft_common::config::PyDaftExecutionConfig;
+    use daft_common::error::DaftResult;
+    use daft_common::impl_bincode_py_state_serialization;
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
-    use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+    use daft_recordbatch::stats::{PartitionSpec, TableMetadata, TableStatistics};
     use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
@@ -377,7 +376,7 @@ pub mod pylib {
             skip_glob: bool,
         ) -> PyResult<Self> {
             py.detach(|| {
-                let executor = common_runtime::get_io_runtime(true);
+                let executor = daft_common::runtime::get_io_runtime(true);
 
                 let task = GlobScanOperator::try_new(
                     glob_path,
@@ -916,7 +915,7 @@ pub mod pylib {
         columns: Option<Vec<String>>,
         has_metadata: Option<bool>,
     ) -> PyResult<usize> {
-        let io_runtime = common_runtime::get_io_runtime(true);
+        let io_runtime = daft_common::runtime::get_io_runtime(true);
         let (schema, metadata) = io_runtime.block_on_current_thread(
             daft_parquet::read::read_parquet_schema_and_metadata(
                 uri,

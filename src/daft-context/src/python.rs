@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
-use common_metrics::QueryEndState;
+use daft_common::config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use daft_common::metrics::QueryEndState;
 use daft_core::python::PySchema;
 use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
@@ -326,10 +326,10 @@ impl PyDaftContext {
         node_id: usize,
         stats: HashMap<String, i64>,
     ) -> PyResult<()> {
-        let stats_map = common_metrics::Stats(
+        let stats_map = daft_common::metrics::Stats(
             stats
                 .into_iter()
-                .map(|(k, v)| (k.into(), common_metrics::Stat::Count(v as u64)))
+                .map(|(k, v)| (k.into(), daft_common::metrics::Stat::Count(v as u64)))
                 .collect(),
         );
         let all_stats = vec![(node_id, stats_map)];

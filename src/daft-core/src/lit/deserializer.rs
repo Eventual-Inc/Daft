@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use indexmap::IndexMap;
 use serde::{
     Deserializer,

@@ -6,9 +6,9 @@ use std::{
     time::SystemTime,
 };
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan};
-use common_runtime::{RuntimeRef, get_io_runtime};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{QueryID, QueryPlan};
+use daft_common::runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};

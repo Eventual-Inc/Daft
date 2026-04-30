@@ -1,7 +1,11 @@
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 name = "daft-checkpoint"
 edition.workspace = true
 version.workspace = true
+description = "Checkpointing and state persistence for Daft"
 
 [dependencies]
 arrow-array = {workspace = true}
@@ -9,13 +13,10 @@ arrow-schema = {workspace = true}
 async-trait = {workspace = true}
 bytes = {workspace = true}
 chrono = {workspace = true}
-common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-scan = {path = "../daft-scan", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
+daft-common = {workspace = true}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-scan = {path = "../daft-scan", version = "0.7.9", default-features = false}
+daft-schema = {path = "../daft-schema", version = "0.7.9", default-features = false}
 futures = {workspace = true}
 parquet = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -26,16 +27,17 @@ snafu = {workspace = true}
 [dependencies.daft-io]
 optional = true
 path = "../daft-io"
+version = "0.7.9"
 default-features = false
 
 [features]
-python = ["dep:pyo3", "common-checkpoint-config/python"]
+python = ["dep:pyo3", "daft-common/python"]
 s3 = ["daft-io"]
 test-utils = []
 
 [dev-dependencies]
 daft-checkpoint = {path = ".", features = ["test-utils", "s3"]}
-daft-core = {path = "../daft-core", default-features = false}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
 futures = {workspace = true}
 tempfile = "3.23.0"
 tokio = {workspace = true, features = ["rt", "macros"]}

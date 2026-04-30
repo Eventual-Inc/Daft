@@ -69,7 +69,7 @@ pub mod pylib {
                 io_config.unwrap_or_default().config.into(),
             )?;
 
-            let runtime = common_runtime::get_io_runtime(multithreaded_io.unwrap_or(true));
+            let runtime = daft_common::runtime::get_io_runtime(multithreaded_io.unwrap_or(true));
 
             let (schema, _) = runtime.block_on_current_thread(async move {
                 crate::metadata::read_csv_schema(

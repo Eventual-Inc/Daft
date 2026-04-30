@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use common_error::DaftError;
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::error::DaftError;
+use daft_common::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};

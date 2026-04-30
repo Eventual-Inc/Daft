@@ -1,5 +1,5 @@
-use common_error::DaftError;
-use daft_catalog::error::CatalogError;
+use daft_common::error::DaftError;
+use daft_session::catalog::error::CatalogError;
 use snafu::Snafu;
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
 

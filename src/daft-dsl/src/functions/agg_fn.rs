@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::{DataType, Field, Literal, Series};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -157,7 +157,7 @@ mod tests {
         sync::Arc,
     };
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use serde::{Deserialize, Serialize};
 

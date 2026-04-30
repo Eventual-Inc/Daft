@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundVLLMExpr;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -61,7 +61,7 @@ impl VLLMNode {
         mut input_task_stream: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        use common_runtime::JoinSet;
+        use daft_common::runtime::JoinSet;
         use daft_dsl::functions::python::RuntimePyObject;
         use pyo3::{PyErr, Python, intern, types::PyAnyMethods};
 

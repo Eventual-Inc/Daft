@@ -1,7 +1,7 @@
 pub mod json;
 use std::fmt::{self, Display};
 
-use common_display::{DisplayLevel, tree::TreeDisplay};
+use daft_common::display::{DisplayLevel, tree::TreeDisplay};
 
 use crate::display::json::to_json_value;
 
@@ -38,11 +38,11 @@ impl Display for crate::LogicalPlan {
 pub(crate) mod test {
     use std::sync::Arc;
 
-    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
-    use common_error::DaftResult;
+    use daft_common::display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions_utf8::{endswith, startswith};
+    use daft_functions::utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
     use crate::{

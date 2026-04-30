@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{
+use daft_common::metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
     TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
     ops::NodeInfo,
@@ -253,7 +253,7 @@ impl RuntimeStats for DefaultRuntimeStats {
 mod tests {
     use std::collections::HashMap;
 
-    use common_metrics::{
+    use daft_common::metrics::{
         Meter, NodeID,
         ops::{NodeCategory, NodeInfo, NodeType},
     };
@@ -270,8 +270,8 @@ mod tests {
             "test-query".into(),
             7,
             "Mock".into(),
-            common_metrics::ops::NodeType::Project,
-            common_metrics::ops::NodeCategory::Intermediate,
+            daft_common::metrics::ops::NodeType::Project,
+            daft_common::metrics::ops::NodeCategory::Intermediate,
         )
     }
 

@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use common_display::table_display::StrValue;
+use daft_common::display::table_display::StrValue;
 use itertools::Itertools;
 
 use crate::{datatypes::TimeUnit, series::Series};

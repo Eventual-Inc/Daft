@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_metrics::{
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };

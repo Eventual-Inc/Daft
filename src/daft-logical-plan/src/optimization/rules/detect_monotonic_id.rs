@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, functions::scalar::ScalarFn};
 
 use crate::{
@@ -117,7 +117,7 @@ impl OptimizerRule for DetectMonotonicId {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
     use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};

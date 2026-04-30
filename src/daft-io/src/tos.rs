@@ -13,8 +13,8 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_io_config::TosConfig;
-use common_runtime::get_io_pool_num_threads;
+use daft_common::io_config::TosConfig;
+use daft_common::runtime::get_io_pool_num_threads;
 use futures::{future::BoxFuture, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
 use tokio::{
@@ -1124,7 +1124,7 @@ mod tests {
     use std::env;
 
     use bytes::Bytes;
-    use common_io_config::ObfuscatedString;
+    use daft_common::io_config::ObfuscatedString;
     use rand::RngCore;
 
     use super::*;

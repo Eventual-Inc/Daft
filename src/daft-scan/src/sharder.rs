@@ -1,7 +1,7 @@
 use core::fmt;
 use std::hash::{Hash, Hasher};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use fnv::FnvHasher;
 use serde::{Deserialize, Serialize};
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNodeIterator};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{DynTreeNode, Transformed, TreeNodeIterator};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanState};

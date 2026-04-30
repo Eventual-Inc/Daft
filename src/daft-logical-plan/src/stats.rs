@@ -1,6 +1,6 @@
 use std::{fmt::Display, hash::Hash, ops::Deref};
 
-use common_display::utils::bytes_to_human_readable;
+use daft_common::display::utils::bytes_to_human_readable;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

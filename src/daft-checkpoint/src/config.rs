@@ -8,7 +8,7 @@
 //! This module is only compiled under the `python` feature (gated at the
 //! `mod config` declaration in `lib.rs`).
 
-use common_checkpoint_config::python::PyCheckpointStoreConfig;
+use daft_common::checkpoint_config::python::PyCheckpointStoreConfig;
 use pyo3::prelude::*;
 
 use crate::CheckpointStoreRef;
@@ -42,13 +42,13 @@ impl PyCheckpointStore {
         use futures::TryStreamExt;
         let store = self.store.clone();
         py.detach(|| {
-            let rt = common_runtime::get_io_runtime(true);
+            let rt = daft_common::runtime::get_io_runtime(true);
             rt.block_on_current_thread(async {
                 let stream = store.list_checkpoints().await?;
                 let checkpoints: Vec<_> = stream.try_collect().await?;
                 Ok(checkpoints.into_iter().map(PyCheckpoint::from).collect())
             })
-            .map_err(|e: common_error::DaftError| {
+            .map_err(|e: daft_common::error::DaftError| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
             })
         })
@@ -59,13 +59,13 @@ impl PyCheckpointStore {
         use futures::TryStreamExt;
         let store = self.store.clone();
         py.detach(|| {
-            let rt = common_runtime::get_io_runtime(true);
+            let rt = daft_common::runtime::get_io_runtime(true);
             rt.block_on_current_thread(async {
                 let stream = store.get_checkpointed_files().await?;
                 let files: Vec<_> = stream.try_collect().await?;
                 Ok(files.into_iter().map(PyFileMetadata::from).collect())
             })
-            .map_err(|e: common_error::DaftError| {
+            .map_err(|e: daft_common::error::DaftError| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
             })
         })
@@ -87,7 +87,7 @@ impl PyCheckpointStore {
             })
             .collect::<PyResult<_>>()?;
         py.detach(|| {
-            let rt = common_runtime::get_io_runtime(true);
+            let rt = daft_common::runtime::get_io_runtime(true);
             rt.block_on_current_thread(async { store.mark_committed(&checkpoint_ids).await })
                 .map_err(|e: crate::CheckpointError| {
                     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())

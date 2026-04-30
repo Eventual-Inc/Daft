@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 mod split_jsonl;
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_parquet::{RowGroupList, read::read_parquet_metadata};
 use indexmap::IndexMap;

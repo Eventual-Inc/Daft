@@ -13,9 +13,11 @@ mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
+pub mod shuffles;
 mod sinks;
 mod sources;
 mod streaming_sink;
+pub mod writers;
 use std::{
     future::Future,
     pin::Pin,
@@ -24,8 +26,8 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use common_error::{DaftError, DaftResult};
-use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::ExecutionEngineResult;
@@ -35,7 +37,7 @@ pub use run::ExecutionEngineResult;
 /// Used by `LocalSwordfishWorker` in `daft-distributed` to exercise real
 /// local execution without Ray.
 pub mod testing {
-    pub use super::run::NativeExecutor;
+    pub use super::run::{ExecutionEngineResult, NativeExecutor};
 }
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};

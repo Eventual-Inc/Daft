@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
@@ -160,7 +160,7 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use common_metrics::{Meter, ops::NodeInfo};
+    use daft_common::metrics::{Meter, ops::NodeInfo};
 
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;

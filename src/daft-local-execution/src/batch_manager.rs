@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_micropartition::MicroPartition;
 
 use crate::{
@@ -178,7 +178,7 @@ mod tests {
         time::Duration,
     };
 
-    use common_metrics::{Meter, ops::NodeInfo};
+    use daft_common::metrics::{Meter, ops::NodeInfo};
 
     use super::*;
     use crate::{dynamic_batching::StaticBatchingStrategy, runtime_stats::RuntimeStats};
@@ -192,7 +192,7 @@ mod tests {
         fn build_snapshot(
             &self,
             _ordering: std::sync::atomic::Ordering,
-        ) -> common_metrics::StatSnapshot {
+        ) -> daft_common::metrics::StatSnapshot {
             unimplemented!()
         }
 

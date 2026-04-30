@@ -7,13 +7,13 @@ use std::{
 };
 
 #[cfg(feature = "python")]
-use common_daft_config::PyDaftExecutionConfig;
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
-use common_display::mermaid::MermaidDisplayOptions;
-use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormat, WriteMode};
-use common_io_config::IOConfig;
-use common_treenode::TreeNode;
+use daft_common::config::PyDaftExecutionConfig;
+use daft_common::config::{DaftExecutionConfig, DaftPlanningConfig};
+use daft_common::display::mermaid::MermaidDisplayOptions;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::file_formats::{FileFormat, WriteMode};
+use daft_common::io_config::IOConfig;
+use daft_common::treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
@@ -28,8 +28,8 @@ use resolve_expr::ExprResolver;
 use {
     crate::PyFormatSinkOption,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    common_daft_config::PyDaftPlanningConfig,
-    common_io_config::python::IOConfig as PyIOConfig,
+    daft_common::config::PyDaftPlanningConfig,
+    daft_common::io_config::python::IOConfig as PyIOConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -149,7 +149,7 @@ impl LogicalPlanBuilder {
     /// Panics if the current plan root is not a `LogicalPlan::Source`.
     pub fn with_checkpoint(
         &self,
-        config: common_checkpoint_config::CheckpointConfig,
+        config: daft_common::checkpoint_config::CheckpointConfig,
     ) -> DaftResult<Self> {
         match self.plan.as_ref() {
             LogicalPlan::Source(source) => {
@@ -165,7 +165,7 @@ impl LogicalPlanBuilder {
 
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: common_partitioning::PartitionCacheEntry,
+        cache_entry: daft_common::partitioning::PartitionCacheEntry,
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
@@ -1161,7 +1161,7 @@ impl LogicalPlanBuilder {
 
     /// Recursively walk the optimized plan and assign node IDs to each node
     fn assign_node_ids(plan: Arc<LogicalPlan>) -> DaftResult<Arc<LogicalPlan>> {
-        use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
+        use daft_common::treenode::{Transformed, TreeNode, TreeNodeRewriter};
 
         struct NodeIdAssigner {
             node_id_counter: usize,
@@ -1211,7 +1211,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
-        use common_display::mermaid::MermaidDisplay;
+        use daft_common::display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
     }
 
@@ -1265,7 +1265,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            common_partitioning::PartitionCacheEntry::Python(Arc::new(cache_entry)),
+            daft_common::partitioning::PartitionCacheEntry::Python(Arc::new(cache_entry)),
             schema.into(),
             num_partitions,
             size_bytes,
@@ -1284,10 +1284,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn with_checkpoint(
         &self,
-        store_config: common_checkpoint_config::python::PyCheckpointStoreConfig,
+        store_config: daft_common::checkpoint_config::python::PyCheckpointStoreConfig,
         key_column: String,
     ) -> PyResult<Self> {
-        let config = common_checkpoint_config::CheckpointConfig {
+        let config = daft_common::checkpoint_config::CheckpointConfig {
             store: store_config.config,
             key_column,
         };
@@ -1686,7 +1686,7 @@ impl PyLogicalPlanBuilder {
         format_option: Option<PyFormatSinkOption>,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1723,7 +1723,7 @@ impl PyLogicalPlanBuilder {
         iceberg_schema: pyo3::Py<pyo3::PyAny>,
         iceberg_properties: pyo3::Py<pyo3::PyAny>,
         catalog_columns: Vec<String>,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1758,7 +1758,7 @@ impl PyLogicalPlanBuilder {
         version: i32,
         large_dtypes: bool,
         partition_cols: Option<Vec<String>>,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1787,7 +1787,7 @@ impl PyLogicalPlanBuilder {
         path: String,
         columns_name: Vec<String>,
         mode: String,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
         kwargs: Option<pyo3::Py<pyo3::PyAny>>,
     ) -> PyResult<Self> {
         let kwargs = Arc::new(kwargs.unwrap_or_else(|| py.None()));

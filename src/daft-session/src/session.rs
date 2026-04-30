@@ -4,9 +4,9 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
-use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
+use crate::catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
 use daft_dsl::functions::AggFnHandle;
 use daft_ext::abi::{FFI_AggregateFunction, FFI_ScalarFunction, FFI_SessionContext};
 use daft_ext_internal::module::ModuleHandle;
@@ -267,7 +267,7 @@ impl Session {
     ///   Rule 2: try to resolve as namespace-qualified using the current catalog.
     ///   Rule 3: try to resolve as catalog-qualified (first part of the identifier).
     pub fn get_function(&self, ident: &Identifier) -> CatalogResult<ScalarFunction> {
-        use daft_catalog::error::CatalogError;
+        use crate::catalog::error::CatalogError;
 
         // Rule 0: check session-scoped functions by the unqualified name.
         if !ident.has_qualifier()
@@ -284,9 +284,9 @@ impl Session {
         let curr_namespace = self.current_namespace()?;
 
         // Helper: try a catalog lookup, returning Ok(None) on not-found/unsupported errors.
-        let try_get = |catalog: &dyn daft_catalog::Catalog,
-                       ident: &daft_catalog::Identifier|
-         -> CatalogResult<Option<daft_catalog::FunctionRef>> {
+        let try_get = |catalog: &dyn crate::catalog::Catalog,
+                       ident: &crate::catalog::Identifier|
+         -> CatalogResult<Option<crate::catalog::FunctionRef>> {
             match catalog.get_function(ident) {
                 Ok(func) => Ok(Some(func)),
                 Err(CatalogError::ObjectNotFound { .. } | CatalogError::Unsupported { .. }) => {
@@ -588,7 +588,7 @@ impl Default for Session {
 mod tests {
     use std::sync::Arc;
 
-    use daft_catalog::View;
+    use crate::catalog::View;
     use daft_core::prelude::*;
     use daft_logical_plan::{
         ClusteringSpec, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo, ops::Source,
@@ -650,8 +650,8 @@ mod tests {
             &self,
             _args: daft_dsl::functions::FunctionArgs<daft_dsl::ExprRef>,
             _schema: &Schema,
-        ) -> common_error::DaftResult<daft_dsl::functions::BuiltinScalarFnVariant> {
-            Err(common_error::DaftError::ValueError(
+        ) -> daft_common::error::DaftResult<daft_dsl::functions::BuiltinScalarFnVariant> {
+            Err(daft_common::error::DaftError::ValueError(
                 "mock: not callable".into(),
             ))
         }
@@ -669,7 +669,7 @@ mod tests {
         session_a.attach_function("my_ext_fn", mock_factory("my_ext_fn"));
 
         // Session A can see it; session B cannot.
-        let ident = daft_catalog::Identifier::simple("my_ext_fn");
+        let ident = crate::catalog::Identifier::simple("my_ext_fn");
         assert!(matches!(
             session_a.get_function(&ident),
             Ok(ScalarFunction::Native(_))
@@ -682,7 +682,7 @@ mod tests {
         let sess = Session::empty();
         sess.attach_function("temp_fn", mock_factory("temp_fn"));
 
-        let ident = daft_catalog::Identifier::simple("temp_fn");
+        let ident = crate::catalog::Identifier::simple("temp_fn");
         assert!(sess.get_function(&ident).is_ok());
         sess.detach_function("temp_fn").unwrap();
         assert!(sess.get_function(&ident).is_err());
@@ -693,7 +693,7 @@ mod tests {
     mod agg_tests {
         use std::sync::Arc;
 
-        use common_error::DaftResult;
+        use daft_common::error::DaftResult;
         use daft_core::prelude::*;
         use daft_dsl::functions::{AggFn, AggFnHandle, State};
 

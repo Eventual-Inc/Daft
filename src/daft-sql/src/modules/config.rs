@@ -1,4 +1,4 @@
-use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
+use daft_common::io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config, TosConfig};
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef};
 

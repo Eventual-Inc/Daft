@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{LogicalPlan, ops::Shard, source_info::SourceInfo};

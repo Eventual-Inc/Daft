@@ -1,6 +1,9 @@
+#![feature(once_cell_try)]
+
 pub mod partition_cache;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod runners;
 pub mod subscribers;
 
 use std::{
@@ -8,9 +11,9 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
-use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan};
+use daft_common::config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{QueryID, QueryPlan};
 use daft_micropartition::{MicroPartitionRef, partitioning::Partition};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -232,7 +235,7 @@ impl DaftContext {
     pub fn notify_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: Vec<(usize, common_metrics::Stats)>,
+        stats: Vec<(usize, daft_common::metrics::Stats)>,
     ) -> DaftResult<()> {
         let event = Event::Stats(StatsEvent {
             header: event_header(query_id),

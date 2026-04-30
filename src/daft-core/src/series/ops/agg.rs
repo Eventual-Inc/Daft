@@ -1,5 +1,5 @@
 use arrow::buffer::OffsetBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use itertools::Itertools;
 
 use crate::{

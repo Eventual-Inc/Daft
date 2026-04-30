@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_ai::python::PyProviderWrapper;
-use daft_catalog::{
+use crate::catalog::{
     Identifier,
     python::{PyCatalogWrapper, PyIdentifier, PyTableSource, PyTableWrapper},
 };
@@ -184,7 +184,7 @@ impl PySession {
             scalar::{BuiltinScalarFn, ScalarFn},
         };
         let parts: Vec<String> = name.split('.').map(str::to_string).collect();
-        let ident = daft_catalog::Identifier::new(parts);
+        let ident = crate::catalog::Identifier::new(parts);
 
         let func = self.0.get_function(&ident)?;
 

@@ -7,8 +7,8 @@ use arrow_array::{
         UInt64Builder,
     },
 };
-use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};

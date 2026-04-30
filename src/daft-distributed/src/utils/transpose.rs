@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 

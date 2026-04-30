@@ -4,7 +4,7 @@ use arrow::{
     array::ArrayRef,
     buffer::{NullBuffer, ScalarBuffer},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::{
     array::ops::from_arrow::FromArrow,
@@ -246,7 +246,7 @@ impl UnionArray {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_schema::union_mode::UnionMode;
 
     use super::*;

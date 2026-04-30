@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::{
     array::{FixedSizeListArray, StructArray},
@@ -19,7 +19,7 @@ impl StructArray {
 
         let mut array_builder =
             arrow::array::Float64Builder::with_capacity(percentiles.len() * self.len());
-        daft_sketch::from_arrow(self.to_arrow()?)?
+        daft_hash::sketch::from_arrow(self.to_arrow()?)?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {

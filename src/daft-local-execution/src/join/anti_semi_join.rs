@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::{IntoSeries, UInt64Array};
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;

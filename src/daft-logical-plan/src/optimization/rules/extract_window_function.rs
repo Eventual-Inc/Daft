@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{Expr, ExprRef, WindowExpr, expr::window::WindowSpec, resolved_col};
 use daft_schema::schema::Schema;
 use indexmap::{IndexMap, IndexSet};
@@ -199,7 +199,7 @@ impl OptimizerRule for ExtractWindowFunction {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_dsl::{Expr, WindowExpr, expr::window::WindowSpec, resolved_col};
     use daft_schema::{dtype::DataType, field::Field};
 

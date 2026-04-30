@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
@@ -11,7 +11,7 @@ use daft_dsl::{
     join::{get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema},
 };
 use daft_recordbatch::{RecordBatch, build_left_to_right_map};
-use daft_stats::TruthValue;
+use daft_recordbatch::stats::TruthValue;
 use rayon::prelude::*;
 
 use crate::micropartition::MicroPartition;

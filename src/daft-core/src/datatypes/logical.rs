@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use arrow::array::ArrayRef;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
@@ -76,7 +76,7 @@ macro_rules! impl_logical_type {
 
         pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
             if arrays.is_empty() {
-                return Err(common_error::DaftError::ValueError(
+                return Err(daft_common::error::DaftError::ValueError(
                     "Need at least 1 logical array to concat".to_string(),
                 ));
             }

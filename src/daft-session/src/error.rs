@@ -1,5 +1,5 @@
 // temporary
-pub use daft_catalog::error::*;
+pub use crate::catalog::error::*;
 
 #[macro_export]
 macro_rules! unsupported_err {

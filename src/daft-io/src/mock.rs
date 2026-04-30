@@ -8,7 +8,7 @@ mod tests {
     use async_stream::stream;
     use async_trait::async_trait;
     use bytes::Bytes;
-    use common_file_formats::FileFormat;
+    use daft_common::file_formats::FileFormat;
     use futures::{StreamExt, stream::BoxStream};
 
     use crate::{

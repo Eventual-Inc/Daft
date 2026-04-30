@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::{NodeCategory, NodeType};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::{
     WindowFrame,
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},

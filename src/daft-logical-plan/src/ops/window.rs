@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{WindowExpr, expr::window::WindowSpec};
 use serde::{Deserialize, Serialize};

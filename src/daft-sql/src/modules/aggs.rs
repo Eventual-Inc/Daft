@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_hashable_float_wrapper::FloatWrapper;
+use daft_common::hashable_float_wrapper::FloatWrapper;
 use daft_core::{prelude::*, utils::stats};
 use daft_dsl::{AggExpr, Expr, ExprRef, lit, unresolved_col};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};

@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
@@ -10,7 +10,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
+use crate::writers::{AsyncFileWriter, WriteResult, WriterFactory};
 use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 

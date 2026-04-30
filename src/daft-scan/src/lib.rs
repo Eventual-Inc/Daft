@@ -8,11 +8,11 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use common_display::DisplayAs;
-use common_error::DaftError;
+use daft_common::display::DisplayAs;
+use daft_common::error::DaftError;
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
-use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use daft_recordbatch::stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub mod glob;
 mod hive;
 mod partitioning;
 mod pushdowns;
-use common_daft_config::DaftExecutionConfig;
+use daft_common::config::DaftExecutionConfig;
 mod scan_operator;
 pub mod scan_state;
 pub mod scan_task_iters;
@@ -322,9 +322,9 @@ impl ScanSource {
 }
 
 impl DisplayAs for ScanSource {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         match level {
-            common_display::DisplayLevel::Compact | common_display::DisplayLevel::Default => {
+            daft_common::display::DisplayLevel::Compact | daft_common::display::DisplayLevel::Default => {
                 match &self.kind {
                     ScanSourceKind::File { path, .. } => {
                         format!("File {{{path}}}")
@@ -338,7 +338,7 @@ impl DisplayAs for ScanSource {
                     }
                 }
             }
-            common_display::DisplayLevel::Verbose => self.multiline_display().join("\n"),
+            daft_common::display::DisplayLevel::Verbose => self.multiline_display().join("\n"),
         }
     }
 }
@@ -822,7 +822,7 @@ impl ScanTask {
 }
 
 impl DisplayAs for ScanTask {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         // take first 3 and last 3 if more than 6 sources
         let mut condensed_sources = if self.sources.len() <= 6 {
             self.sources.iter().map(|s| s.display_as(level)).join(", ")
@@ -851,10 +851,10 @@ impl DisplayAs for ScanTask {
         };
 
         match level {
-            common_display::DisplayLevel::Compact => {
+            daft_common::display::DisplayLevel::Compact => {
                 format!("{{{condensed_sources}}}",).trim_start().to_string()
             }
-            common_display::DisplayLevel::Default => {
+            daft_common::display::DisplayLevel::Default => {
                 format!(
                     "ScanTask:
 Sources = [{condensed_sources}]
@@ -862,10 +862,10 @@ Pushdowns = {pushdowns}
 ",
                     pushdowns = self
                         .pushdowns
-                        .display_as(common_display::DisplayLevel::Default)
+                        .display_as(daft_common::display::DisplayLevel::Default)
                 )
             }
-            common_display::DisplayLevel::Verbose => todo!(),
+            daft_common::display::DisplayLevel::Verbose => todo!(),
         }
     }
 }
@@ -874,10 +874,10 @@ Pushdowns = {pushdowns}
 mod test {
     use std::sync::Arc;
 
-    use common_display::{DisplayAs, DisplayLevel};
-    use common_error::DaftResult;
+    use daft_common::display::{DisplayAs, DisplayLevel};
+    use daft_common::error::DaftResult;
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
-    use daft_stats::TableMetadata;
+    use daft_recordbatch::stats::TableMetadata;
     use itertools::Itertools;
 
     use crate::{

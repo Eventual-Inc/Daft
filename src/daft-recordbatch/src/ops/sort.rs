@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{prelude::UInt64Array, series::Series};
 use daft_dsl::expr::bound_expr::BoundExpr;
 

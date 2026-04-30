@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{count_mode::CountMode, join::JoinType, utils::supertype::get_supertype};
 use daft_dsl::{ExprRef, left_col, lit, null_lit, resolved_col, right_col};
-use daft_functions_list::{explode, list_fill};
+use daft_functions::list::{explode, list_fill};
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};

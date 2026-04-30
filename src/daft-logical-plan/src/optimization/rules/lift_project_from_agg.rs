@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_dsl::{Expr, optimization::requires_computation, resolved_col};
 use indexmap::IndexSet;
 
@@ -109,7 +109,7 @@ impl OptimizerRule for LiftProjectFromAgg {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_dsl::unresolved_col;
     use daft_schema::{dtype::DataType, field::Field};
 

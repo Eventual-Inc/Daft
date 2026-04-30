@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
-use common_runtime::{JoinSet, combine_stream, get_io_runtime};
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::{JoinSet, combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -41,7 +41,7 @@ impl InMemorySource {
         output_sender: Sender<PipelineMessage>,
         schema: SchemaRef,
         stats_provider: StatsProvider,
-    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+    ) -> daft_common::runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {

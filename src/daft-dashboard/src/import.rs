@@ -10,7 +10,7 @@ use std::{
 };
 
 use axum::http::StatusCode;
-use common_metrics::Stat;
+use daft_common::metrics::Stat;
 
 use crate::{
     engine::{

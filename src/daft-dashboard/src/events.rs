@@ -2,7 +2,7 @@
 /// both the log file format and Rust types
 use std::collections::HashMap;
 
-use common_metrics::{BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, QueryEndState};
+use daft_common::metrics::{BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, QueryEndState};
 use serde::{Deserialize, de::Deserializer};
 use serde_json::Value;
 
@@ -80,7 +80,7 @@ pub struct OperatorEnded {
     pub duration_ms: Option<f64>,
 }
 
-/// Public metric representation, decoupled from internal common_metrics::Stat.
+/// Public metric representation, decoupled from internal daft_common::metrics::Stat.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum MetricValue {

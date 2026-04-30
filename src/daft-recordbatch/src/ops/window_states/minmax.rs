@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use arrow::array::NullBufferBuilder;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::*;
 
 use super::WindowAggStateOps;

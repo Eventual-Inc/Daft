@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{Growable, list_growable::ListGrowable};
 use crate::{

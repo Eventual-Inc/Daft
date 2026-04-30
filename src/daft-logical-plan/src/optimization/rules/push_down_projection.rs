@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, optimization::replace_columns_with_expressions,
@@ -690,7 +690,7 @@ impl OptimizerRule for PushDownProjection {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;

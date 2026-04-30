@@ -280,7 +280,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use common_metrics::{Meter, ops::NodeInfo};
+    use daft_common::metrics::{Meter, ops::NodeInfo};
 
     use super::*;
     use crate::runtime_stats::RuntimeStats;
@@ -293,7 +293,7 @@ mod tests {
         fn build_snapshot(
             &self,
             _ordering: std::sync::atomic::Ordering,
-        ) -> common_metrics::StatSnapshot {
+        ) -> daft_common::metrics::StatSnapshot {
             unimplemented!()
         }
         fn add_rows_in(&self, _rows: u64) {

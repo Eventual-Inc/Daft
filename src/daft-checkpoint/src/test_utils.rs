@@ -374,7 +374,7 @@ pub async fn test_object_safety(store: &dyn CheckpointStore) {
 /// use daft_checkpoint::impls::S3CheckpointStore;
 /// use tempfile::tempdir;
 /// use std::sync::Arc;
-/// use common_io_config::IOConfig;
+/// use daft_common::io_config::IOConfig;
 ///
 /// generate_checkpoint_store_tests!({
 ///     let dir = tempdir().unwrap();

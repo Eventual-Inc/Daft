@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::ArrayRef;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::{
     array::ops::from_arrow::FromArrow,

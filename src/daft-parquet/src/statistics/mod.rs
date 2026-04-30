@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use snafu::Snafu;
 
 mod column_range;
@@ -18,13 +18,13 @@ pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
     #[snafu(display("DaftStatsError: {}", source))]
-    DaftStats { source: daft_stats::Error },
+    DaftStats { source: daft_recordbatch::stats::Error },
 }
 
-impl From<daft_stats::Error> for Error {
-    fn from(value: daft_stats::Error) -> Self {
+impl From<daft_recordbatch::stats::Error> for Error {
+    fn from(value: daft_recordbatch::stats::Error) -> Self {
         match value {
-            daft_stats::Error::DaftCoreCompute { source } => Self::DaftCoreCompute { source },
+            daft_recordbatch::stats::Error::DaftCoreCompute { source } => Self::DaftCoreCompute { source },
             _ => Self::DaftStats { source: value },
         }
     }

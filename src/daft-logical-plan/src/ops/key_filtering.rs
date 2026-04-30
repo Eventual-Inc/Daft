@@ -1,5 +1,5 @@
-use common_error::{DaftError, DaftResult};
-use common_hashable_float_wrapper::FloatWrapper;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::hashable_float_wrapper::FloatWrapper;
 use educe::Educe;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

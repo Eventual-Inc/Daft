@@ -2,26 +2,37 @@
     deprecated,
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
+pub mod binary;
 pub mod coalesce;
 pub mod concat_ws;
 pub mod distance;
+pub mod file;
 pub mod float;
+pub mod geo;
 pub mod hash;
+pub mod image;
+pub mod json;
 pub mod length;
+pub mod list;
 pub mod minhash;
 pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod random;
+pub mod serde_funcs;
 pub mod simhash;
 pub mod similarity;
 pub mod slice;
+pub mod temporal;
 pub mod to_struct;
+pub mod tokenize;
+pub mod uri;
+pub mod utf8;
 pub mod uuid;
 pub mod vector_utils;
 
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
 use length::Length;
@@ -58,7 +69,7 @@ impl From<Error> for DaftError {
 macro_rules! invalid_argument_err {
     ($($arg:tt)*)  => {{
         let msg = format!($($arg)*);
-        return Err(common_error::DaftError::TypeError(msg).into());
+        return Err(daft_common::error::DaftError::TypeError(msg).into());
     }};
 }
 

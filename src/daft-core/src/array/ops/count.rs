@@ -1,7 +1,7 @@
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow::buffer::NullBuffer;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{DaftCountAggable, GroupIndices};
 #[cfg(feature = "python")]

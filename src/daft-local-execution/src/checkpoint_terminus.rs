@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointIdMap;
-use common_display::tree::TreeDisplay;
-use common_metrics::{
+use daft_common::checkpoint_config::CheckpointIdMap;
+use daft_common::display::tree::TreeDisplay;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
@@ -73,10 +73,10 @@ impl TreeDisplay for CheckpointTerminusNode {
         self.node_id().to_string()
     }
 
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         use std::fmt::Write;
 
-        use common_display::DisplayLevel;
+        use daft_common::display::DisplayLevel;
         let mut display = String::new();
         match level {
             DisplayLevel::Compact => {

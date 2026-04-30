@@ -1,12 +1,12 @@
 use std::{cmp::max, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
+use daft_common::treenode::{self, TreeNode};
 use daft_dsl::{
     Expr,
-    common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
 };
@@ -92,7 +92,7 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
 
                 projection_batch_size =
                     smallest_batch_size(projection_batch_size, found_batch_size);
-                Ok(common_treenode::TreeNodeRecursion::Continue)
+                Ok(daft_common::treenode::TreeNodeRecursion::Continue)
             })
             .unwrap();
     }
@@ -265,7 +265,7 @@ mod tests {
         functions::{AsyncScalarUDF, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
         lit,
     };
-    use daft_functions_uri::download::UrlDownload;
+    use daft_functions::uri::download::UrlDownload;
 
     use super::*;
 

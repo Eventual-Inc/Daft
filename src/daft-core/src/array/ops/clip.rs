@@ -1,5 +1,5 @@
 use arrow::array::ArrowPrimitiveType;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use num_traits::{clamp, clamp_max, clamp_min};
 
 use crate::{

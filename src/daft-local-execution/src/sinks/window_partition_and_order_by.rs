@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
 use daft_core::{datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     Expr, WindowExpr,
     expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
-use daft_groupby::IntoGroups;
+use daft_core::groupby::IntoGroups;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;

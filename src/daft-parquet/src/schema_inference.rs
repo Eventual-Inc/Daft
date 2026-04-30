@@ -1,5 +1,5 @@
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 /// Infer an arrow-rs schema from arrow-rs parquet metadata, with optional post-processing
 /// for INT96 timestamp coercion and raw string encoding.

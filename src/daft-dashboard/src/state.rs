@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat};
+use daft_common::metrics::{NodeID, QueryID, QueryPlan, Stat};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;

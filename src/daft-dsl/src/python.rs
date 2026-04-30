@@ -7,10 +7,10 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftError;
-use common_hashable_float_wrapper::FloatWrapper;
-use common_py_serde::impl_bincode_py_state_serialization;
-use common_resource_request::ResourceRequest;
+use daft_common::error::DaftError;
+use daft_common::hashable_float_wrapper::FloatWrapper;
+use daft_common::impl_bincode_py_state_serialization;
+use daft_common::resource_request::ResourceRequest;
 use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,

@@ -164,7 +164,7 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
 mod tests {
     use std::sync::Arc;
 
-    use common_resource_request::ResourceRequest;
+    use daft_common::resource_request::ResourceRequest;
 
     use super::*;
     use crate::scheduling::{

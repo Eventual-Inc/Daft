@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use daft_stats::ColumnRangeStatistics;
+use daft_recordbatch::stats::ColumnRangeStatistics;
 use snafu::ResultExt;
 
 use super::{

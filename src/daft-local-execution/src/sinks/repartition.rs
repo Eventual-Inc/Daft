@@ -3,14 +3,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::{
+use daft_local_plan::partition_refs::FlightPartitionRef;
+use crate::shuffles::{
     server::flight_server::ShuffleFlightServer,
     shuffle_cache::{InProgressShuffleCache, partition_ref_id},
 };

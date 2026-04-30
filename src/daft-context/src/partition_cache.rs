@@ -6,7 +6,7 @@
 ///
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     MicroPartition,
@@ -55,7 +55,7 @@ pub fn put_partition_set_into_cache(
     use daft_micropartition::python::PyMicroPartitionSet;
     use pyo3::{Python, types::PyAnyMethods};
 
-    let runner = daft_runners::get_or_create_runner()?;
+    let runner = crate::runners::get_or_create_runner()?;
     Python::attach(|py| {
         // get runner as python object so we can add a partition to the cache
         let py_runner = runner.to_pyobj(py);

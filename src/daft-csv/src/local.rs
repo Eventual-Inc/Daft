@@ -2,9 +2,9 @@ use core::str;
 use std::{io::Read, num::NonZeroUsize, sync::Arc};
 
 use arrow_schema::Field as ArrowField;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::{Schema, Series};
-use daft_decoding::deserialize::deserialize_column;
+use daft_schema::decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;

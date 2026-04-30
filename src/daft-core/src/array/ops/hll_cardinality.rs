@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use arrow::array::{Array, UInt64Builder};
-use common_error::DaftResult;
-use hyperloglog::HyperLogLog;
+use daft_common::error::DaftResult;
+use daft_hash::hyperloglog::HyperLogLog;
 
 use crate::{
     array::ops::as_arrow::AsArrow,

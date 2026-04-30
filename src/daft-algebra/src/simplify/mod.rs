@@ -3,8 +3,8 @@ mod null;
 mod numeric;
 
 use boolean::{simplify_binary_compare, simplify_boolean_expr};
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_core::lit::Literal;
 use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::schema::SchemaRef;
@@ -85,7 +85,7 @@ fn simplify_is_in_expr(expr: ExprRef, _schema: &SchemaRef) -> DaftResult<Transfo
 mod test {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_dsl::{ExprRef, lit, null_lit, resolved_col};
     use daft_schema::{
         dtype::DataType,

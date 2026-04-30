@@ -10,7 +10,7 @@ name = "windowed"
 arrow = {workspace = true}
 fastrand = "2.1.0"
 memchr = "2.7.4"
-common-error.workspace = true
+daft-common = {workspace = true}
 
 [dev-dependencies]
 xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
@@ -23,6 +23,10 @@ tango-bench.workspace = true
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-minhash"
 version = {workspace = true}
+description = "MinHash implementation for near-duplicate detection in Daft"

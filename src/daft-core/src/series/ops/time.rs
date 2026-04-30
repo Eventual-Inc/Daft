@@ -1,5 +1,5 @@
 use arrow::util::display::FormatOptions;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_schema::field::Field;
 
 use crate::{
@@ -423,7 +423,7 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_schema::field::Field;
 
     use crate::{

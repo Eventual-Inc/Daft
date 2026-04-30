@@ -5,7 +5,7 @@ use arrow::{
     buffer::{BooleanBuffer, NullBuffer, OffsetBuffer, ScalarBuffer},
     datatypes::IntervalMonthDayNano,
 };
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny};
 
@@ -327,7 +327,7 @@ impl BooleanArray {
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 
-    pub fn from_null_buffer(name: &str, buf: &NullBuffer) -> common_error::DaftResult<Self> {
+    pub fn from_null_buffer(name: &str, buf: &NullBuffer) -> daft_common::error::DaftResult<Self> {
         Self::from_arrow(
             Field::new(name, DataType::Boolean),
             Arc::new(arrow::array::BooleanArray::new(buf.inner().clone(), None)),
@@ -405,7 +405,7 @@ impl PythonArray {
     /// Create a PythonArray from an iterator of pickled values.
     ///
     /// Assumes that all Python objects are not None.
-    pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> common_error::DaftResult<Self>
+    pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> daft_common::error::DaftResult<Self>
     where
         I: ExactSizeIterator<Item = Option<T>>,
         T: AsRef<[u8]>,
@@ -425,7 +425,7 @@ impl PythonArray {
             let pynone = Arc::new(py.None());
             for v in iter {
                 if let Some(bytes) = v {
-                    use common_py_serde::pickle_loads;
+                    use daft_common::py_serde::pickle_loads;
                     use pyo3::types::PyAnyMethods;
 
                     let obj = pickle_loads(py, bytes)?;

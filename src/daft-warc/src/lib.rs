@@ -7,9 +7,9 @@ use arrow_array::{
     },
 };
 use chrono::{DateTime, Utc};
-use common_error::{DaftError, DaftResult};
-use common_runtime::{get_compute_runtime, get_io_runtime};
-use daft_compression::CompressionCodec;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::{get_compute_runtime, get_io_runtime};
+use daft_io::compression::CompressionCodec;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{GetResult, IOClient, IOStatsRef};
@@ -616,7 +616,7 @@ pub async fn stream_warc(
         }
     });
     let receiver_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-    let combined_stream = common_runtime::combine_stream(receiver_stream, warc_stream_task);
+    let combined_stream = daft_common::runtime::combine_stream(receiver_stream, warc_stream_task);
 
     Ok(combined_stream.boxed())
 }
@@ -625,7 +625,7 @@ pub async fn stream_warc(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::{Field, Schema, TimeUnit};
     use daft_io::{IOConfig, IOStatsContext};
 

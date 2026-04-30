@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{DataType, Field, UInt64Array},
     kernels::search_sorted::search_sorted_multi_array,

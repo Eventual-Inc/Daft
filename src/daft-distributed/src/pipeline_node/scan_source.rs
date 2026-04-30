@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_display::{DisplayAs, DisplayLevel};
-use common_metrics::{
+use daft_common::display::{DisplayAs, DisplayLevel};
+use daft_common::metrics::{
     BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
@@ -255,8 +255,8 @@ impl PipelineNodeImpl for ScanSourceNode {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
-    use common_metrics::{Meter, StatSnapshot};
+    use daft_common::error::DaftResult;
+    use daft_common::metrics::{Meter, StatSnapshot};
     use daft_scan::{
         CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
         ScanTaskRef, SourceConfig, storage_config::StorageConfig,

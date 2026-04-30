@@ -1,9 +1,8 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-common-treenode = {path = "../common/treenode", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
+daft-common = {workspace = true}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-dsl = {path = "../daft-dsl", version = "0.7.9", default-features = false}
+daft-schema = {path = "../daft-schema", version = "0.7.9", default-features = false}
 indexmap = {workspace = true}
 
 [dev-dependencies]
@@ -13,6 +12,10 @@ rstest = {workspace = true}
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-algebra"
 version = {workspace = true}
+description = "Expression algebra and optimization rules for the Daft query engine"

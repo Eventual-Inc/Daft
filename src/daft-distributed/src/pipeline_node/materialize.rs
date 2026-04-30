@@ -1,5 +1,5 @@
-use common_error::DaftResult;
-use common_runtime::{JoinSet, OrderedJoinSet};
+use daft_common::error::DaftResult;
+use daft_common::runtime::{JoinSet, OrderedJoinSet};
 use futures::{Stream, StreamExt};
 
 use super::MaterializedOutput;
@@ -96,7 +96,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use common_partitioning::PartitionRef;
+    use daft_common::partitioning::PartitionRef;
     use futures::{StreamExt, stream};
     use rand::{Rng, SeedableRng};
 

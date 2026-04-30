@@ -1,10 +1,10 @@
 use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
-use daft_stats::{PartitionSpec, TableStatistics};
+use daft_recordbatch::stats::{PartitionSpec, TableStatistics};
 use futures::stream::BoxStream;
 
 use crate::{

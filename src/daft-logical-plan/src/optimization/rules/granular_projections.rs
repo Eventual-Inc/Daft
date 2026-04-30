@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_dsl::{
     Expr,
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
@@ -219,8 +219,8 @@ mod tests {
 
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, ResolvedColumn};
-    use daft_functions_uri::download::UrlDownload;
-    use daft_functions_utf8::{Capitalize, capitalize, lower};
+    use daft_functions::uri::download::UrlDownload;
+    use daft_functions::utf8::{Capitalize, capitalize, lower};
     use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 

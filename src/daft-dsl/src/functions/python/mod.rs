@@ -3,9 +3,9 @@ mod udf;
 
 use std::{hash::Hash, num::NonZeroUsize, str::FromStr, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
-use common_resource_request::ResourceRequest;
-use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::resource_request::ResourceRequest;
+use daft_common::treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
@@ -270,7 +270,7 @@ fn py_udf_initialize(
 /// Initializes all uninitialized UDFs in the expression
 #[cfg(feature = "python")]
 pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
-    use common_treenode::Transformed;
+    use daft_common::treenode::Transformed;
 
     expr.transform(|e| match e.as_ref() {
         Expr::Function {

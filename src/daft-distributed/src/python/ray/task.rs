@@ -1,9 +1,9 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
-use common_daft_config::PyDaftExecutionConfig;
-use common_partitioning::{Partition, PartitionRef};
+use daft_common::config::PyDaftExecutionConfig;
+use daft_common::partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
-use daft_partition_refs::{FlightPartitionRef, PyFlightPartitionRef, RayPartitionRef};
+use daft_local_plan::partition_refs::{FlightPartitionRef, PyFlightPartitionRef, RayPartitionRef};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -93,7 +93,7 @@ impl TaskResultHandle for RayTaskResultHandle {
         let ip_address = self.ip_address.clone();
         let worker_id = self.worker_id.clone();
 
-        let fut = common_runtime::python::execute_python_coroutine::<_, RayTaskResult>(move |py| {
+        let fut = daft_common::runtime::python::execute_python_coroutine::<_, RayTaskResult>(move |py| {
             Ok(coroutine.into_bound(py))
         });
 

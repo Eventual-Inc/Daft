@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use common_error::DaftResult;
-use common_logging::GLOBAL_LOGGER;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::logging::GLOBAL_LOGGER;
+use daft_common::metrics::{
     NodeID, StatSnapshot,
     ops::{NodeCategory, NodeInfo},
     snapshot::StatSnapshotImpl,
@@ -242,7 +242,7 @@ pub fn make_progress_bar_manager(
 mod python {
     use std::collections::HashMap;
 
-    use common_metrics::ops::NodeInfo;
+    use daft_common::metrics::ops::NodeInfo;
     use pyo3::{Python, types::PyAnyMethods};
 
     use super::*;

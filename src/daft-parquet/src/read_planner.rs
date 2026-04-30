@@ -1,7 +1,7 @@
 use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::{Bytes, BytesMut};
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_io::{IOClient, IOStatsRef, range::GetRange};
 use tokio::task::JoinHandle;
 

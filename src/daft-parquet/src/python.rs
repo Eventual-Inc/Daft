@@ -290,7 +290,7 @@ pub mod pylib {
                 io_config.unwrap_or_default().config.into(),
             )?;
 
-            let runtime_handle = common_runtime::get_io_runtime(true);
+            let runtime_handle = daft_common::runtime::get_io_runtime(true);
 
             let task = async move {
                 crate::read::read_parquet_schema_and_metadata(

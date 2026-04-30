@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_micropartition::MicroPartition;
 
 use crate::pipeline::MorselSizeRequirement;
@@ -151,8 +151,8 @@ impl RowBasedBuffer {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use daft_writers::test::make_dummy_mp;
+    use daft_common::error::DaftResult;
+    use crate::writers::test::make_dummy_mp;
 
     use super::*;
 

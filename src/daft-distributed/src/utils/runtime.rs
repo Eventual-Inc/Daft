@@ -1,6 +1,6 @@
 use std::sync::{Once, OnceLock};
 
-use common_runtime::{PoolType, Runtime, RuntimeRef};
+use daft_common::runtime::{PoolType, Runtime, RuntimeRef};
 
 pub static RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 pub static PYO3_RUNTIME_INITIALIZED: Once = Once::new();

@@ -37,8 +37,8 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 pub mod pylib {
     use std::sync::LazyLock;
 
-    use common_logging::GLOBAL_LOGGER;
-    use common_tracing::init_tracing;
+    use daft_common::logging::GLOBAL_LOGGER;
+    use daft_common::tracing::init_tracing;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
@@ -52,12 +52,12 @@ pub mod pylib {
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        common_version::VERSION
+        daft_common::version::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        common_version::DAFT_BUILD_TYPE
+        daft_common::version::DAFT_BUILD_TYPE
     }
 
     #[pyfunction]
@@ -102,7 +102,7 @@ pub mod pylib {
 
     #[pyfunction]
     pub fn set_compute_runtime_num_worker_threads(num_threads: usize) -> PyResult<()> {
-        common_runtime::set_compute_runtime_num_worker_threads(num_threads)?;
+        daft_common::runtime::set_compute_runtime_num_worker_threads(num_threads)?;
         Ok(())
     }
 
@@ -111,16 +111,16 @@ pub mod pylib {
         refresh_logger(py)?;
         init_tracing();
 
-        common_daft_config::register_modules(m)?;
-        common_system_info::register_modules(m)?;
-        common_resource_request::register_modules(m)?;
-        common_file_formats::python::register_modules(m)?;
-        common_metrics::register_modules(m)?;
+        daft_common::config::register_modules(m)?;
+        daft_common::system_info::register_modules(m)?;
+        daft_common::resource_request::register_modules(m)?;
+        daft_common::file_formats::python::register_modules(m)?;
+        daft_common::metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
-        daft_catalog::register_modules(m)?;
+        daft_session::catalog::register_modules(m)?;
         daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
-        daft_runners::register_modules(m)?;
+        daft_context::runners::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_csv::register_modules(m)?;
@@ -133,13 +133,12 @@ pub mod pylib {
         daft_local_plan::register_modules(m)?;
         daft_logical_plan::register_modules(m)?;
         daft_parquet::register_modules(m)?;
-        daft_partition_refs::register_modules(m)?;
+        daft_local_plan::partition_refs::register_modules(m)?;
         daft_micropartition::register_modules(m)?;
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
-        daft_file::python::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
@@ -160,28 +159,28 @@ pub mod pylib {
             .expect("Failed to acquire write lock on function registry");
         functions_registry.register::<daft_functions::numeric::NumericFunctions>();
         functions_registry.register::<daft_functions::float::FloatFunctions>();
-        functions_registry.register::<daft_functions_uri::UriFunctions>();
-        functions_registry.register::<daft_image::functions::ImageFunctions>();
-        functions_registry.register::<daft_functions_binary::BinaryFunctions>();
-        functions_registry.register::<daft_functions_list::ListFunctions>();
-        functions_registry.register::<daft_functions_utf8::Utf8Functions>();
-        functions_registry.register::<daft_functions_json::JsonFunctions>();
-        functions_registry.register::<daft_functions_serde::SerdeFunctions>();
-        functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
+        functions_registry.register::<daft_functions::uri::UriFunctions>();
+        functions_registry.register::<daft_functions::image::functions::ImageFunctions>();
+        functions_registry.register::<daft_functions::binary::BinaryFunctions>();
+        functions_registry.register::<daft_functions::list::ListFunctions>();
+        functions_registry.register::<daft_functions::utf8::Utf8Functions>();
+        functions_registry.register::<daft_functions::json::JsonFunctions>();
+        functions_registry.register::<daft_functions::serde_funcs::SerdeFunctions>();
+        functions_registry.register::<daft_functions::temporal::TemporalFunctions>();
         functions_registry.register::<daft_functions::MiscFunctions>();
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
-        functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+        functions_registry.register::<daft_functions::tokenize::TokenizeFunctions>();
         functions_registry.register::<daft_functions::random::RandomFunctions>();
-        functions_registry.register::<daft_geo::SpatialFunctions>();
+        functions_registry.register::<daft_functions::geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
-        functions_registry.add_fn(daft_file::File);
-        functions_registry.add_fn(daft_file::FilePath);
-        functions_registry.add_fn(daft_file::Size);
-        functions_registry.add_fn(daft_file::VideoFile);
-        functions_registry.add_fn(daft_file::AudioFile);
-        functions_registry.add_fn(daft_file::GuessMimeType);
+        functions_registry.add_fn(daft_functions::file::File);
+        functions_registry.add_fn(daft_functions::file::FilePath);
+        functions_registry.add_fn(daft_functions::file::Size);
+        functions_registry.add_fn(daft_functions::file::VideoFile);
+        functions_registry.add_fn(daft_functions::file::AudioFile);
+        functions_registry.add_fn(daft_functions::file::GuessMimeType);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
 

@@ -17,7 +17,7 @@ mod default;
 mod linear;
 mod scheduler_actor;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 pub(crate) use scheduler_actor::{
     SchedulerHandle, SubmittableTask, SubmittedTask, spawn_scheduler_actor,
 };

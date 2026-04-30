@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use snafu::Snafu;
 
 use crate::CheckpointId;

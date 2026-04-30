@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "rust-standalone"
+edition = "2024"
+version = "0.1.0"
+
+[[bin]]
+name = "example"
+path = "src/main.rs"
+
+[dependencies]
+daft-rs = {path = "../../src/daft-rs"}
+tokio = {version = "1", features = ["rt-multi-thread", "macros"]}

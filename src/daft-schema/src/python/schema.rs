@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 

@@ -4,17 +4,11 @@ arrow = {workspace = true}
 arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}
 comfy-table = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-common-metrics = {path = "../common/metrics", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-groupby = {path = "../daft-groupby", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-functions-list = {path = "../daft-functions-list", default-features = false}
-daft-image = {path = "../daft-image", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", version = "0.7.9", default-features = false, optional = true}
+daft-common = {workspace = true}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-dsl = {path = "../daft-dsl", version = "0.7.9", default-features = false}
+daft-functions = {path = "../daft-functions", version = "0.7.9", default-features = false}
 fnv = "1.0.7"
 futures = {workspace = true}
 smallvec = {workspace = true}
@@ -27,19 +21,16 @@ rand = {workspace = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
+snafu = {workspace = true}
 
 [features]
 python = [
+  "daft-common/python",
   "dep:pyo3",
-  "common-error/python",
   "daft-core/python",
   "daft-dsl/python",
   "dep:common-arrow-ffi",
-  "common-display/python",
-  "common-py-serde/python",
-  "common-metrics/python",
-  "daft-image/python",
-  "daft-functions-list/python"
+  "daft-functions/python"
 ]
 
 [dev-dependencies]
@@ -49,6 +40,10 @@ typetag = {workspace = true}
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-recordbatch"
 version = {workspace = true}
+description = "Record batch operations and statistics for Daft"

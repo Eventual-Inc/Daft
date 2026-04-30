@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{
+use daft_common::metrics::{
     Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::FilterSnapshot,
@@ -178,8 +178,8 @@ impl PipelineNodeImpl for FilterNode {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
-    use common_metrics::{Meter, StatSnapshot};
+    use daft_common::error::DaftResult;
+    use daft_common::metrics::{Meter, StatSnapshot};
 
     use super::*;
     use crate::pipeline_node::test_helpers::{

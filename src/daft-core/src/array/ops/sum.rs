@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};

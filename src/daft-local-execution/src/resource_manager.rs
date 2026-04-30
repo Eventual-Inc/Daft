@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
-use common_error::{DaftError, DaftResult};
-use common_system_info::SystemInfo;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::system_info::SystemInfo;
 use tokio::sync::Notify;
 
 pub(crate) static MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new();

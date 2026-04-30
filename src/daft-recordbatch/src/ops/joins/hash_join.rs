@@ -2,7 +2,7 @@ use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow::array::NullBufferBuilder;
 use arrow_array::builder::BooleanBufferBuilder;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::{
     array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,

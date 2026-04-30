@@ -1,4 +1,5 @@
 pub mod agg;
+pub mod partition_refs;
 #[allow(unused)]
 mod plan;
 #[cfg(feature = "python")]

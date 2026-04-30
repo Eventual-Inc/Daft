@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_io_config::IOConfig;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::io_config::IOConfig;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };

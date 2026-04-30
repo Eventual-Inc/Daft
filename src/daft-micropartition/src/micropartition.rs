@@ -7,8 +7,8 @@ use std::{
 };
 
 use arrow_array::ArrayRef;
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr, ExprRef};
@@ -19,7 +19,7 @@ use daft_parquet::{
     read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
-use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
+use daft_recordbatch::stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream, TryStreamExt};
 use snafu::ResultExt;
@@ -638,7 +638,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     if let Some(so) = start_offset
         && so > 0
     {
-        return Err(common_error::DaftError::ValueError(
+        return Err(daft_common::error::DaftError::ValueError(
             "Micropartition Parquet Reader does not support non-zero start offsets".to_string(),
         ));
     }
@@ -829,7 +829,7 @@ impl MicroPartition {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::{
         datatypes::{DataType, Field, Float64Array, Int32Array, Utf8Array},
         prelude::Schema,

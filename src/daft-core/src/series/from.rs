@@ -1,4 +1,4 @@
-use common_ndarray::NdArray;
+use daft_common::ndarray::NdArray;
 
 use super::Series;
 use crate::{prelude::*, series::array_impl::IntoSeries};
@@ -44,7 +44,7 @@ mod tests {
         buffer::OffsetBuffer,
         datatypes::{DataType as ArrowDataType, Field as ArrowField},
     };
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::series::Series;

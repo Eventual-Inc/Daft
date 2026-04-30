@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common::error::DaftError;
 use snafu::Snafu;
 
 mod arrowrs_reader;
@@ -20,13 +20,13 @@ pub use statistics::row_group_metadata_to_table_stats;
 pub fn infer_schema_from_daft_metadata(
     metadata: &DaftParquetMetadata,
     options: read::ParquetSchemaInferenceOptions,
-) -> common_error::DaftResult<daft_core::prelude::Schema> {
+) -> daft_common::error::DaftResult<daft_core::prelude::Schema> {
     let arrow_schema = schema_inference::infer_schema_from_parquet_metadata_arrowrs(
         metadata.as_arrowrs(),
         Some(options.coerce_int96_timestamp_unit),
         options.string_encoding == read::StringEncoding::Raw,
     )
-    .map_err(|e| common_error::DaftError::External(e.into()))?;
+    .map_err(|e| daft_common::error::DaftError::External(e.into()))?;
     daft_core::prelude::Schema::try_from(&arrow_schema)
 }
 
@@ -143,7 +143,7 @@ pub enum Error {
     ))]
     UnableToRunExpressionOnStats {
         path: String,
-        source: daft_stats::Error,
+        source: daft_recordbatch::stats::Error,
     },
 
     #[snafu(display(

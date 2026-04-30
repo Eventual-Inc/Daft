@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
-use common_metrics::{
+use daft_common::metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::UdfSnapshot,

@@ -186,7 +186,7 @@ impl JoinOrderer for DpCcpJoinOrderer {
 mod tests {
     use std::collections::HashMap;
 
-    use common_treenode::TransformedResult;
+    use daft_common::treenode::TransformedResult;
     use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 

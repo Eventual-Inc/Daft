@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{Float32Array, Float64Array, InferDataType, Int64Array, UInt64Array},
     prelude::{DataType, Field, Schema},

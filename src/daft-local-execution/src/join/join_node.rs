@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use common_display::tree::TreeDisplay;
-use common_metrics::{
+use daft_common::display::tree::TreeDisplay;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo},
 };
-use common_runtime::get_compute_runtime;
+use daft_common::runtime::get_compute_runtime;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use tracing::info_span;
@@ -64,11 +64,11 @@ impl<Op: JoinOperator + 'static> TreeDisplay for JoinNode<Op> {
         self.node_id().to_string()
     }
 
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        use common_display::DisplayLevel;
+        use daft_common::display::DisplayLevel;
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.op.name()).unwrap();

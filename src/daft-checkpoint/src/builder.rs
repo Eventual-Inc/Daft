@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointStoreConfig;
+use daft_common::checkpoint_config::CheckpointStoreConfig;
 
 use crate::CheckpointStoreRef;
 

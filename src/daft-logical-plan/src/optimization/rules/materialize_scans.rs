@@ -8,8 +8,8 @@ impl MaterializeScans {
 }
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_scan::ScanState;
 
 use super::OptimizerRule;
@@ -52,7 +52,7 @@ impl MaterializeScans {
 
 #[cfg(test)]
 mod tests {
-    use common_treenode::TransformedResult;
+    use daft_common::treenode::TransformedResult;
     use daft_scan::{
         Precision, Pushdowns, ScanOperatorRef, Statistics, test_utils::DummyScanOperator,
     };

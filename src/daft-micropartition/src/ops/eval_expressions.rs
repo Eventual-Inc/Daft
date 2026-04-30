@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::{DataType, Field, Schema};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_stats::{ColumnRangeStatistics, TableStatistics};
+use daft_recordbatch::stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
 use crate::{DaftCoreComputeSnafu, micropartition::MicroPartition};

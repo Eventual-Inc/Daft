@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_io_config::HTTPConfig;
+use daft_common::io_config::HTTPConfig;
 use futures::{TryStreamExt, stream::BoxStream};
 use regex::Regex;
 use reqwest::header::ACCEPT_RANGES;

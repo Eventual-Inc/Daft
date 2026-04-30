@@ -453,10 +453,10 @@ impl SQLPlanner<'_> {
             // resolution rules (session-scoped → catalog+namespace → catalog-qualified)
             // to session.get_function.
             let parts: Vec<String> = name.split('.').map(str::to_string).collect();
-            let ident = daft_catalog::Identifier::new(parts);
+            let ident = daft_session::catalog::Identifier::new(parts);
             match session.get_function(&ident) {
                 Ok(func) => Ok(Some(session_func_to_sql(func))),
-                Err(daft_catalog::error::CatalogError::ObjectNotFound { .. }) => Ok(None),
+                Err(daft_session::catalog::error::CatalogError::ObjectNotFound { .. }) => Ok(None),
                 Err(other) => Err(other.into()),
             }
         }
@@ -752,7 +752,7 @@ impl SQLPlanner<'_> {
 
 /// A namespace for function argument parsing helpers.
 pub(crate) mod args {
-    use common_io_config::IOConfig;
+    use daft_common::io_config::IOConfig;
 
     use super::SQLFunctionArguments;
     use crate::{error::PlannerError, modules::config::expr_to_iocfg};

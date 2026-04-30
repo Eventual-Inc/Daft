@@ -1,7 +1,7 @@
 use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
     functions::{BuiltinScalarFn, scalar::ScalarFn},
@@ -9,7 +9,7 @@ use daft_dsl::{
     optimization::{get_required_columns, requires_computation},
     resolved_col,
 };
-use daft_functions_list::{ListFilter, ListMap};
+use daft_functions::list::{ListFilter, ListMap};
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -243,7 +243,7 @@ impl TruncateAnyUDFChildren {
 impl TreeNodeRewriter for TruncateRootUDF {
     type Node = ExprRef;
 
-    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<daft_common::treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
             Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
@@ -255,13 +255,13 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 {
                     self.new_children.push(node.clone());
                 }
-                Ok(common_treenode::Transformed::no(node))
+                Ok(daft_common::treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map()/list.filter() can not be split
             Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
                 if is_list_eval_type(udf.type_id()) =>
             {
-                Ok(common_treenode::Transformed::no(node))
+                Ok(daft_common::treenode::Transformed::no(node))
             }
             // Encountered actor pool UDF: chop off all children and add to self.next_children
             _ if is_udf(&node) => {
@@ -286,9 +286,9 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 });
 
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-                Ok(common_treenode::Transformed::yes(new_truncated_node))
+                Ok(daft_common::treenode::Transformed::yes(new_truncated_node))
             }
-            _ => Ok(common_treenode::Transformed::no(node)),
+            _ => Ok(daft_common::treenode::Transformed::no(node)),
         }
     }
 }
@@ -303,10 +303,10 @@ impl TreeNodeRewriter for TruncateRootUDF {
 impl TreeNodeRewriter for TruncateAnyUDFChildren {
     type Node = ExprRef;
 
-    fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
+    fn f_down(&mut self, node: Self::Node) -> DaftResult<daft_common::treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // Just continue
-            _ if self.is_list_eval => Ok(common_treenode::Transformed::no(node)),
+            _ if self.is_list_eval => Ok(daft_common::treenode::Transformed::no(node)),
             // This rewriter should never encounter a UDF expression (they should always be truncated and replaced)
             _ if is_udf(&node) => {
                 unreachable!("TruncateAnyUDFChildren should never run on a UDF expression");
@@ -321,20 +321,20 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 {
                     self.new_children.push(node.clone());
                 }
-                Ok(common_treenode::Transformed::no(node))
+                Ok(daft_common::treenode::Transformed::no(node))
             }
             // TODO: UDFs inside of list.map()/list.filter() can not be split
             Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
                 if is_list_eval_type(udf.type_id()) =>
             {
                 self.is_list_eval = true;
-                Ok(common_treenode::Transformed::no(node))
+                Ok(daft_common::treenode::Transformed::no(node))
             }
             // Attempt to truncate any children that are UDFs, replacing them with a Expr::Column
             expr => {
                 // None of the direct children are UDFs, so we keep going
                 if !node.children().iter().any(is_udf) {
-                    return Ok(common_treenode::Transformed::no(node));
+                    return Ok(daft_common::treenode::Transformed::no(node));
                 }
 
                 let mut monotonically_increasing_expr_identifier = 0;
@@ -357,7 +357,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 });
 
                 let new_truncated_node = node.with_new_children(new_inputs.collect()).arced();
-                Ok(common_treenode::Transformed::yes(new_truncated_node))
+                Ok(daft_common::treenode::Transformed::yes(new_truncated_node))
             }
         }
     }
@@ -609,8 +609,8 @@ fn recursive_optimize_project(
 mod tests {
     use std::{num::NonZeroUsize, sync::Arc};
 
-    use common_error::DaftResult;
-    use common_resource_request::ResourceRequest;
+    use daft_common::error::DaftResult;
+    use daft_common::resource_request::ResourceRequest;
     use daft_core::prelude::*;
     use daft_dsl::{
         Expr, ExprRef,

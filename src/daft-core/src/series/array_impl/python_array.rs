@@ -1,5 +1,5 @@
 use arrow::array::ArrayRef;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_schema::dtype::DataType;
 
 use crate::{

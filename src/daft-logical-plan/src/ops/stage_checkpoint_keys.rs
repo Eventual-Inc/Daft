@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointConfig;
+use daft_common::checkpoint_config::CheckpointConfig;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 

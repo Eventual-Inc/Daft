@@ -287,10 +287,10 @@ where
 
         let data = url_array.get(idx)?;
         let io_config = io_config_array.get(idx);
-        let io_config: Option<common_io_config::IOConfig> = {
+        let io_config: Option<daft_common::io_config::IOConfig> = {
             io_config
                 .map(|serialized| {
-                    bincode::serde::decode_from_slice::<common_io_config::IOConfig, _>(
+                    bincode::serde::decode_from_slice::<daft_common::io_config::IOConfig, _>(
                         serialized,
                         bincode::config::legacy(),
                     )
@@ -311,7 +311,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::{
         array::FixedSizeListArray,

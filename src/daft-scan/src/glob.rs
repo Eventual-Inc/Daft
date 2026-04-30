@@ -1,8 +1,8 @@
 use std::{sync::Arc, vec};
 
-use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
-use common_runtime::RuntimeRef;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::file_formats::FileFormat;
+use daft_common::runtime::RuntimeRef;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -14,7 +14,7 @@ use daft_schema::{
     field::Field,
     schema::{Schema, SchemaRef},
 };
-use daft_stats::{PartitionSpec, TableMetadata};
+use daft_recordbatch::stats::{PartitionSpec, TableMetadata};
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 

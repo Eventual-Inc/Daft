@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use async_stream::try_stream;
-use common_error::{DaftError, DaftResult};
-use daft_compression::CompressionCodec;
+use daft_common::error::{DaftError, DaftResult};
+use daft_io::compression::CompressionCodec;
 use daft_core::prelude::*;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;

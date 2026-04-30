@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_display::DisplayAs;
+use daft_common::display::DisplayAs;
 use daft_dsl::{ExprRef, estimated_selectivity};
 use daft_schema::schema::Schema;
 use serde::{Deserialize, Serialize};
@@ -154,9 +154,9 @@ impl Pushdowns {
 }
 
 impl DisplayAs for Pushdowns {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         match level {
-            common_display::DisplayLevel::Compact => {
+            daft_common::display::DisplayLevel::Compact => {
                 let mut s = String::new();
                 s.push_str("Pushdowns: {");
                 let mut sub_items = vec![];

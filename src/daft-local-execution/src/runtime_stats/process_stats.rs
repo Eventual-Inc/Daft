@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_metrics::{
+use daft_common::metrics::{
     Gauge, Meter, PROCESS_CPU_PERCENT_KEY, PROCESS_JEMALLOC_ALLOCATED_KEY,
     PROCESS_JEMALLOC_RESIDENT_KEY, PROCESS_RSS_KEY, Stat, Stats, UNIT_BYTES, UNIT_PERCENT,
 };

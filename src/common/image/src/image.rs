@@ -1,7 +1,7 @@
 use core::slice;
 use std::{hash::Hash, ops::Deref};
 
-use common_ndarray::NdArray;
+use daft_common::ndarray::NdArray;
 use image::{DynamicImage, ImageBuffer, Pixel, flat::SampleLayout};
 use ndarray::{Array3, ShapeBuilder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

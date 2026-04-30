@@ -1,9 +1,9 @@
-pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
+pub use daft_common::io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use common_error::DaftResult;
-    use common_runtime::get_io_runtime;
+    use daft_common::error::DaftResult;
+    use daft_common::runtime::get_io_runtime;
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
 
@@ -21,7 +21,7 @@ mod py {
         py: Python,
         input: String,
         multithreaded_io: Option<bool>,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
@@ -69,12 +69,12 @@ mod py {
     /// Creates an S3Config from the current environment, auto-discovering variables such as
     /// credentials, regions and more.
     #[pyfunction]
-    fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
-        let s3_config: DaftResult<common_io_config::S3Config> = py.detach(|| {
+    fn s3_config_from_env(py: Python) -> PyResult<daft_common::io_config::python::S3Config> {
+        let s3_config: DaftResult<daft_common::io_config::S3Config> = py.detach(|| {
             let runtime = get_io_runtime(false);
             runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });
-        Ok(common_io_config::python::S3Config { config: s3_config? })
+        Ok(daft_common::io_config::python::S3Config { config: s3_config? })
     }
 
     #[pyfunction(signature = (
@@ -88,7 +88,7 @@ mod py {
         path: String,
         data: &[u8],
         multithreaded_io: Option<bool>,
-        io_config: Option<common_io_config::python::IOConfig>,
+        io_config: Option<daft_common::io_config::python::IOConfig>,
     ) -> PyResult<()> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_put for {path}"));
@@ -99,7 +99,7 @@ mod py {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )
-            .map_err(|e| common_error::DaftError::External(e.into()))?;
+            .map_err(|e| daft_common::error::DaftError::External(e.into()))?;
 
             // Check if we're already in a runtime context
             let data_bytes = bytes::Bytes::copy_from_slice(data);
@@ -112,11 +112,11 @@ mod py {
                             io_client
                                 .single_url_put(&path, data_bytes, Some(io_stats_handle))
                                 .await
-                                .map_err(|e| common_error::DaftError::External(e.into()))
+                                .map_err(|e| daft_common::error::DaftError::External(e.into()))
                         })
                     })
                     .join()
-                    .map_err(|_| common_error::DaftError::External("Thread join failed".into()))?
+                    .map_err(|_| daft_common::error::DaftError::External("Thread join failed".into()))?
                 }
                 Err(_) => {
                     // No runtime, create one
@@ -125,7 +125,7 @@ mod py {
                         io_client
                             .single_url_put(&path, data_bytes, Some(io_stats_handle))
                             .await
-                            .map_err(|e| common_error::DaftError::External(e.into()))
+                            .map_err(|e| daft_common::error::DaftError::External(e.into()))
                     })
                 }
             }
@@ -135,7 +135,7 @@ mod py {
     }
 
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-        common_io_config::python::register_modules(parent)?;
+        daft_common::io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         parent.add_function(wrap_pyfunction!(io_put, parent)?)?;

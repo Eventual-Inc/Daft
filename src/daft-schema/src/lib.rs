@@ -1,3 +1,4 @@
+pub mod decoding;
 pub mod dtype;
 pub mod field;
 pub mod image_format;

@@ -1,10 +1,10 @@
 use std::{hash::Hash, sync::Arc};
 
-use common_error::DaftResult;
-use common_file_formats::{FileFormat, WriteMode};
-use common_io_config::IOConfig;
+use daft_common::error::DaftResult;
+use daft_common::file_formats::{FileFormat, WriteMode};
+use daft_common::io_config::IOConfig;
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use daft_common::py_serde::{deserialize_py_object, serialize_py_object};
 use daft_core::prelude::Schema;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use educe::Educe;

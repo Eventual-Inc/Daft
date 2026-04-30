@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointIdMap;
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use daft_common::checkpoint_config::CheckpointIdMap;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
 use daft_checkpoint::CheckpointStoreRef;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;

@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use num_traits::Float;
 
 use crate::{array::DataArray, datatypes::DaftFloatType};

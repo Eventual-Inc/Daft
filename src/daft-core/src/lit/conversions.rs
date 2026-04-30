@@ -1,5 +1,5 @@
-use common_error::{DaftError, DaftResult};
-use common_io_config::IOConfig;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{FromPyObject, Py, PyAny, PyClass, Python};
 
@@ -50,7 +50,7 @@ impl_literal!(&'_ str, Utf8, |s: &'_ str| s.to_owned());
 impl_literal!(&'_ [u8], Binary, |s: &'_ [u8]| s.to_vec());
 #[cfg(feature = "python")]
 impl_literal!(Py<PyAny>, Python, |s: Py<PyAny>| {
-    common_py_serde::PyObjectWrapper(std::sync::Arc::new(s))
+    daft_common::py_serde::PyObjectWrapper(std::sync::Arc::new(s))
 });
 
 impl<T> From<Option<T>> for Literal
@@ -221,7 +221,7 @@ impl_int_fromliteral!(usize);
 impl_int_fromliteral!(isize);
 impl_float_fromliteral!(f32);
 impl_float_fromliteral!(f64);
-impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
+impl_pyobj_fromliteral!(IOConfig, daft_common::io_config::python::IOConfig);
 impl_pyobj_fromliteral!(ImageMode, ImageMode);
 impl_pyobj_fromliteral!(ImageProperty, ImageProperty);
 impl_pyobj_fromliteral!(CountMode, CountMode);

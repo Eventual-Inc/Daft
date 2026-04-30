@@ -8,12 +8,13 @@ use std::{
     io::{self, Write},
 };
 
-use common_display::table_display::StrValue;
-use common_error::{DaftError, DaftResult, ensure};
-use common_hashable_float_wrapper::FloatWrapper;
+use daft_common::display::table_display::StrValue;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::ensure;
+use daft_common::hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
-use common_py_serde::PyObjectWrapper;
+use daft_common::py_serde::PyObjectWrapper;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -665,7 +666,7 @@ pub trait FromLiteral: Sized {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use super::{FromLiteral, Literal};
 

@@ -1,4 +1,4 @@
-use common_metrics::{ATTR_NODE_ID, ATTR_NODE_TYPE};
+use daft_common::metrics::{ATTR_NODE_ID, ATTR_NODE_TYPE};
 use opentelemetry::KeyValue;
 
 use super::PipelineNodeContext;

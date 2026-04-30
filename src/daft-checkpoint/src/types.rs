@@ -3,7 +3,7 @@ use std::{fmt, time::SystemTime};
 // `CheckpointId` lives in `common-checkpoint-config` so that consumers
 // outside the store impls (e.g. `daft-distributed` task metadata) can
 // reference it without pulling in the store trait + impls.
-pub use common_checkpoint_config::CheckpointId;
+pub use daft_common::checkpoint_config::CheckpointId;
 use serde::{Deserialize, Serialize};
 
 /// Lifecycle state of a checkpoint.

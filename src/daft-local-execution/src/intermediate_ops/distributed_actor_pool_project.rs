@@ -7,8 +7,8 @@ use std::{
     vec,
 };
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
 use daft_core::prelude::{Schema, SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
 #[cfg(feature = "python")]
@@ -79,7 +79,7 @@ impl ActorHandle {
     async fn eval_input(&self, input: MicroPartition) -> DaftResult<MicroPartition> {
         let inner = self.inner.clone();
         let result =
-            common_runtime::python::execute_python_coroutine::<_, PyMicroPartition>(move |py| {
+            daft_common::runtime::python::execute_python_coroutine::<_, PyMicroPartition>(move |py| {
                 let coroutine = inner.call_method1(
                     py,
                     pyo3::intern!(py, "eval_input"),
@@ -94,8 +94,8 @@ impl ActorHandle {
 }
 
 #[cfg(feature = "python")]
-impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
-    fn from(value: common_py_serde::PyObjectWrapper) -> Self {
+impl From<daft_common::py_serde::PyObjectWrapper> for ActorHandle {
+    fn from(value: daft_common::py_serde::PyObjectWrapper) -> Self {
         Self { inner: value.0 }
     }
 }

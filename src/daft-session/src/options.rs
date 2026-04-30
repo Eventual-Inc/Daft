@@ -1,4 +1,4 @@
-use daft_catalog::LookupMode;
+use crate::catalog::LookupMode;
 
 // TODO make env variables
 pub(crate) const _DAFT_SESSION: &str = "default";

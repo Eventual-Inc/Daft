@@ -77,12 +77,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anes"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1543,12 +1537,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cast"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
-
-[[package]]
 name = "cc"
 version = "1.2.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1594,33 +1582,6 @@ checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
 dependencies = [
  "chrono",
  "phf",
-]
-
-[[package]]
-name = "ciborium"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
-dependencies = [
- "ciborium-io",
- "ciborium-ll",
- "serde",
-]
-
-[[package]]
-name = "ciborium-io"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
-
-[[package]]
-name = "ciborium-ll"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
-dependencies = [
- "ciborium-io",
- "half",
 ]
 
 [[package]]
@@ -1706,7 +1667,7 @@ dependencies = [
 
 [[package]]
 name = "common-arrow-ffi"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "arrow-schema 57.3.0",
@@ -1714,73 +1675,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-checkpoint-config"
-version = "0.3.0-dev0"
-dependencies = [
- "common-io-config",
- "pyo3",
- "serde",
- "uuid",
-]
-
-[[package]]
-name = "common-daft-config"
-version = "0.3.0-dev0"
-dependencies = [
- "common-io-config",
- "common-py-serde",
- "pyo3",
- "serde",
-]
-
-[[package]]
-name = "common-display"
-version = "0.3.0-dev0"
-dependencies = [
- "comfy-table",
- "indexmap",
- "pyo3",
- "serde_json",
- "terminal_size",
- "textwrap",
-]
-
-[[package]]
-name = "common-error"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-schema 57.3.0",
- "pyo3",
- "regex",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "common-file-formats"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-py-serde",
- "pyo3",
- "serde",
-]
-
-[[package]]
-name = "common-hashable-float-wrapper"
-version = "0.3.0-dev0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "common-image"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "bincode",
- "common-error",
- "common-ndarray",
+ "daft-common",
  "daft-schema",
  "image",
  "ndarray",
@@ -1789,33 +1688,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-io-config"
-version = "0.3.0-dev0"
-dependencies = [
- "aws-credential-types",
- "chrono",
- "common-error",
- "common-py-serde",
- "derive_more",
- "educe",
- "log",
- "pyo3",
- "secrecy",
- "serde",
- "typetag",
-]
-
-[[package]]
-name = "common-logging"
-version = "0.3.0-dev0"
-dependencies = [
- "arc-swap",
- "log",
-]
-
-[[package]]
 name = "common-macros"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "proc-macro-crate",
  "proc-macro-error",
@@ -1823,118 +1697,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
-
-[[package]]
-name = "common-metrics"
-version = "0.3.0-dev0"
-dependencies = [
- "atomic_float",
- "bincode",
- "common-py-serde",
- "enum_dispatch",
- "indicatif",
- "itertools 0.14.0",
- "opentelemetry",
- "pyo3",
- "serde",
- "smallvec",
-]
-
-[[package]]
-name = "common-ndarray"
-version = "0.3.0-dev0"
-dependencies = [
- "common-py-serde",
- "ndarray",
- "numpy",
- "pyo3",
-]
-
-[[package]]
-name = "common-partitioning"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-py-serde",
- "futures",
- "pyo3",
- "serde",
-]
-
-[[package]]
-name = "common-pattern"
-version = "0.3.0-dev0"
-dependencies = [
- "regex",
- "regex-syntax",
-]
-
-[[package]]
-name = "common-py-serde"
-version = "0.3.0-dev0"
-dependencies = [
- "bincode",
- "pyo3",
- "serde",
-]
-
-[[package]]
-name = "common-resource-request"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-hashable-float-wrapper",
- "common-py-serde",
- "pyo3",
- "serde",
-]
-
-[[package]]
-name = "common-runtime"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "futures",
- "log",
- "oneshot",
- "pyo3",
- "pyo3-async-runtimes",
- "rand 0.9.2",
- "tokio",
-]
-
-[[package]]
-name = "common-system-info"
-version = "0.3.0-dev0"
-dependencies = [
- "pyo3",
- "sysinfo",
-]
-
-[[package]]
-name = "common-tracing"
-version = "0.3.0-dev0"
-dependencies = [
- "common-runtime",
- "log",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "common-treenode"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
-]
-
-[[package]]
-name = "common-version"
-version = "0.3.0-dev0"
 
 [[package]]
 name = "concurrent-queue"
@@ -2068,39 +1830,6 @@ name = "crc64fast"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26bb92ecea20291efcf0009e2713d64b7e327dedb8ce780545250f24075429e2"
-
-[[package]]
-name = "criterion"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1c047a62b0cc3e145fa84415a3191f628e980b194c2755aa12300a4e6cbd928"
-dependencies = [
- "anes",
- "cast",
- "ciborium",
- "clap",
- "criterion-plot",
- "itertools 0.13.0",
- "num-traits",
- "oorandom",
- "plotters",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "tinytemplate",
- "walkdir",
-]
-
-[[package]]
-name = "criterion-plot"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b1bcc0dc7dfae599d84ad0b1a55f80cde8af3725da8313b528da95ef783e338"
-dependencies = [
- "cast",
- "itertools 0.13.0",
-]
 
 [[package]]
 name = "critical-section"
@@ -2240,47 +1969,22 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "aws-lc-rs",
  "aws-lc-sys",
- "common-daft-config",
- "common-display",
- "common-file-formats",
- "common-hashable-float-wrapper",
- "common-logging",
- "common-metrics",
- "common-partitioning",
- "common-resource-request",
- "common-runtime",
- "common-system-info",
- "common-tracing",
- "common-version",
  "daft-ai",
- "daft-algebra",
- "daft-catalog",
  "daft-checkpoint",
  "daft-cli",
- "daft-compression",
+ "daft-common",
  "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dashboard",
  "daft-distributed",
  "daft-dsl",
- "daft-file",
  "daft-functions",
- "daft-functions-binary",
- "daft-functions-json",
- "daft-functions-list",
- "daft-functions-serde",
- "daft-functions-temporal",
- "daft-functions-tokenize",
- "daft-functions-uri",
- "daft-functions-utf8",
- "daft-geo",
  "daft-hash",
- "daft-image",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -2289,17 +1993,12 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
- "daft-partition-refs",
  "daft-recordbatch",
- "daft-runners",
  "daft-scan",
  "daft-session",
- "daft-shuffles",
  "daft-sql",
- "daft-stats",
  "daft-text",
  "daft-warc",
- "daft-writers",
  "libc",
  "log",
  "lzma-sys",
@@ -2312,17 +2011,16 @@ dependencies = [
 
 [[package]]
 name = "daft-ai"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "pyo3",
 ]
 
 [[package]]
 name = "daft-algebra"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-error",
- "common-treenode",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-schema",
@@ -2331,38 +2029,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-catalog"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-pattern",
- "daft-context",
- "daft-core",
- "daft-dsl",
- "daft-logical-plan",
- "daft-micropartition",
- "daft-runners",
- "indexmap",
- "pyo3",
- "regex",
- "snafu",
- "sqlparser",
-]
-
-[[package]]
 name = "daft-checkpoint"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-array",
  "arrow-schema 57.3.0",
  "async-trait",
  "bytes",
  "chrono",
- "common-checkpoint-config",
- "common-error",
- "common-io-config",
- "common-runtime",
  "daft-checkpoint",
+ "daft-common",
  "daft-core",
  "daft-io",
  "daft-scan",
@@ -2379,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "daft-cli"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "clap",
  "console",
@@ -2391,27 +2067,60 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-compression"
-version = "0.3.0-dev0"
+name = "daft-common"
+version = "0.7.9"
 dependencies = [
- "async-compression",
+ "arc-swap",
+ "arrow-schema 57.3.0",
+ "atomic_float",
+ "aws-credential-types",
+ "bincode",
+ "chrono",
+ "comfy-table",
+ "derive_more",
+ "educe",
+ "enum_dispatch",
+ "futures",
+ "indexmap",
+ "indicatif",
+ "itertools",
+ "log",
+ "ndarray",
+ "numpy",
+ "oneshot",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rand 0.9.2",
+ "regex",
+ "regex-syntax",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "sysinfo",
+ "terminal_size",
+ "textwrap",
+ "thiserror 2.0.18",
  "tokio",
- "url",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "typetag",
+ "uuid",
 ]
 
 [[package]]
 name = "daft-context"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-daft-config",
- "common-error",
- "common-metrics",
- "common-runtime",
+ "daft-common",
  "daft-core",
  "daft-dashboard",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-runners",
  "dashmap",
  "log",
  "pyo3",
@@ -2424,7 +2133,7 @@ dependencies = [
 
 [[package]]
 name = "daft-core"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "arrow-row",
@@ -2434,24 +2143,18 @@ dependencies = [
  "chrono-tz",
  "comfy-table",
  "common-arrow-ffi",
- "common-display",
- "common-error",
- "common-hashable-float-wrapper",
  "common-image",
- "common-io-config",
- "common-ndarray",
- "common-py-serde",
+ "daft-common",
  "daft-hash",
  "daft-minhash",
  "daft-schema",
- "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
+ "hashbrown 0.16.1",
  "html-escape",
- "hyperloglog",
  "image",
  "indexmap",
- "itertools 0.14.0",
+ "itertools",
  "mur3",
  "num-traits",
  "pyo3",
@@ -2466,19 +2169,15 @@ dependencies = [
 
 [[package]]
 name = "daft-csv"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-schema 57.3.0",
  "async-compat",
  "async-stream",
- "common-error",
- "common-py-serde",
- "common-runtime",
  "csv",
  "csv-async",
- "daft-compression",
+ "daft-common",
  "daft-core",
- "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
@@ -2498,11 +2197,11 @@ dependencies = [
 
 [[package]]
 name = "daft-dashboard"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "async-stream",
  "axum",
- "common-metrics",
+ "daft-common",
  "daft-recordbatch",
  "dashmap",
  "futures",
@@ -2521,37 +2220,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-decoding"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "arrow-schema 57.3.0",
- "atoi_simd",
- "chrono",
- "csv",
- "csv-async",
- "daft-schema",
- "fast-float2",
- "simdutf8",
-]
-
-[[package]]
 name = "daft-distributed"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
- "common-checkpoint-config",
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-metrics",
- "common-partitioning",
- "common-py-serde",
- "common-resource-request",
- "common-runtime",
- "common-treenode",
+ "daft-common",
  "daft-context",
  "daft-core",
  "daft-dsl",
@@ -2561,12 +2234,11 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
  "futures",
- "itertools 0.14.0",
+ "itertools",
  "opentelemetry",
  "pyo3",
  "pyo3-async-runtimes",
@@ -2581,23 +2253,16 @@ dependencies = [
 
 [[package]]
 name = "daft-dsl"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "async-trait",
- "common-error",
- "common-hashable-float-wrapper",
  "common-macros",
- "common-metrics",
- "common-py-serde",
- "common-resource-request",
- "common-runtime",
- "common-tracing",
- "common-treenode",
+ "daft-common",
  "daft-core",
- "daft-sketch",
+ "daft-hash",
  "derive_more",
  "indexmap",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -2611,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext"
-version = "0.1.1"
+version = "0.7.9"
 dependencies = [
  "arrow-data 56.2.0",
  "arrow-data 57.3.0",
@@ -2624,12 +2289,12 @@ dependencies = [
 
 [[package]]
 name = "daft-ext-internal"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema 57.3.0",
- "common-error",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-ext",
@@ -2641,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext-macros"
-version = "0.1.1"
+version = "0.7.9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2649,232 +2314,81 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-file"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "common-runtime",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "daft-schema",
- "mime_guess",
- "pyo3",
- "serde",
- "typetag",
- "url",
-]
-
-[[package]]
 name = "daft-functions"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "arrow-buffer 57.3.0",
- "common-error",
- "daft-core",
- "daft-dsl",
- "daft-hash",
- "num-traits",
- "pyo3",
- "rand 0.9.2",
- "serde",
- "snafu",
- "typetag",
- "uuid",
- "xxhash-rust",
-]
-
-[[package]]
-name = "daft-functions-binary"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "base64 0.22.1",
- "common-error",
- "common-macros",
- "daft-core",
- "daft-dsl",
- "flate2",
- "hex",
- "serde",
- "simdutf8",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-json"
-version = "0.0.0"
-dependencies = [
- "common-error",
- "daft-core",
- "daft-dsl",
- "jaq-core",
- "jaq-json",
- "jaq-std",
- "serde",
- "serde_json",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-list"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "common-error",
- "daft-core",
- "daft-dsl",
- "indexmap",
- "serde",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-serde"
-version = "0.0.0"
-dependencies = [
- "arrow",
- "arrow-json",
- "common-error",
- "daft-core",
- "daft-dsl",
- "serde",
- "serde_json",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-temporal"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "chrono",
- "chrono-tz",
- "common-error",
- "daft-core",
- "daft-dsl",
- "paste",
- "serde",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-tokenize"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "base64 0.22.1",
- "common-error",
- "common-runtime",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "rustc-hash 1.1.0",
- "serde",
- "snafu",
- "tiktoken-rs",
- "typetag",
-]
-
-[[package]]
-name = "daft-functions-uri"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "async-trait",
- "bytes",
- "common-error",
- "common-runtime",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "futures",
- "serde",
- "tokio",
- "typetag",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "daft-functions-utf8"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-json",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
  "chrono",
  "chrono-tz",
- "common-error",
+ "common-image",
+ "common-macros",
+ "daft-common",
  "daft-core",
  "daft-dsl",
+ "daft-hash",
+ "daft-io",
+ "daft-schema",
+ "flate2",
+ "futures",
  "heck",
- "itertools 0.14.0",
+ "hex",
+ "image",
+ "indexmap",
+ "itertools",
+ "jaq-core",
+ "jaq-json",
+ "jaq-std",
+ "log",
+ "mime_guess",
  "num-traits",
+ "paste",
+ "pyo3",
+ "rand 0.9.2",
+ "rayon",
  "regex",
+ "rustc-hash 1.1.0",
+ "rustfft",
  "serde",
+ "serde_json",
+ "simdutf8",
+ "snafu",
+ "tiktoken-rs",
+ "tokio",
  "typetag",
  "unicode-normalization",
-]
-
-[[package]]
-name = "daft-geo"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-buffer 57.3.0",
- "daft-core",
- "daft-dsl",
- "serde",
- "typetag",
-]
-
-[[package]]
-name = "daft-groupby"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "common-error",
- "daft-core",
- "hashbrown 0.16.1",
- "smallvec",
+ "url",
+ "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
 name = "daft-hash"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-error",
+ "arrow-array",
+ "arrow-schema 57.3.0",
+ "daft-common",
  "mur3",
  "serde",
+ "serde_arrow",
  "sha1",
+ "sketches-ddsketch",
+ "snafu",
  "xxhash-rust",
 ]
 
 [[package]]
-name = "daft-image"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "base64 0.22.1",
- "common-error",
- "common-image",
- "criterion",
- "daft-core",
- "daft-dsl",
- "daft-schema",
- "image",
- "log",
- "rayon",
- "rustfft",
- "serde",
- "typetag",
-]
-
-[[package]]
 name = "daft-io"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
+ "async-compression",
  "async-recursion",
  "async-stream",
  "async-trait",
@@ -2888,16 +2402,13 @@ dependencies = [
  "azure_storage",
  "azure_storage_blobs",
  "bytes",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-runtime",
+ "daft-common",
  "futures",
  "globset",
  "google-cloud-storage",
  "google-cloud-token",
  "home",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "md5",
  "opendal",
@@ -2921,16 +2432,12 @@ dependencies = [
 
 [[package]]
 name = "daft-json"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "chrono",
- "common-error",
- "common-py-serde",
- "common-runtime",
- "daft-compression",
+ "daft-common",
  "daft-core",
- "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
@@ -2954,56 +2461,49 @@ dependencies = [
 
 [[package]]
 name = "daft-local-execution"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arc-swap",
  "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-csv",
+ "arrow-flight",
  "arrow-ipc",
+ "arrow-json",
  "arrow-schema 57.3.0",
+ "async-channel 2.5.0",
  "async-trait",
- "common-checkpoint-config",
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-logging",
- "common-metrics",
- "common-py-serde",
- "common-resource-request",
- "common-runtime",
- "common-system-info",
- "common-tracing",
+ "chrono",
+ "chrono-tz",
  "console",
  "daft-checkpoint",
+ "daft-common",
  "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",
- "daft-functions-list",
- "daft-functions-uri",
- "daft-groupby",
+ "daft-functions",
  "daft-io",
  "daft-json",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
- "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
- "daft-shuffles",
+ "daft-schema",
  "daft-text",
  "daft-warc",
- "daft-writers",
  "dashmap",
  "futures",
+ "hashbrown 0.16.1",
  "indexmap",
  "indicatif",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "opentelemetry",
+ "parking_lot 0.12.5",
+ "parquet",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",
@@ -3017,31 +2517,27 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tonic",
  "tracing",
  "typetag",
+ "url",
+ "urlencoding",
+ "uuid",
 ]
 
 [[package]]
 name = "daft-local-plan"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-array",
  "arrow-schema 57.3.0",
  "bincode",
- "common-checkpoint-config",
- "common-error",
- "common-io-config",
- "common-metrics",
- "common-py-serde",
- "common-resource-request",
- "common-treenode",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "indexmap",
@@ -3054,34 +2550,21 @@ dependencies = [
 
 [[package]]
 name = "daft-logical-plan"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-checkpoint-config",
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-hashable-float-wrapper",
- "common-io-config",
- "common-partitioning",
- "common-py-serde",
- "common-resource-request",
- "common-treenode",
  "daft-algebra",
  "daft-checkpoint",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-list",
- "daft-functions-uri",
- "daft-functions-utf8",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
  "educe",
  "indexmap",
  "indoc",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "num-format",
  "pretty_assertions",
@@ -3098,14 +2581,12 @@ dependencies = [
 
 [[package]]
 name = "daft-micropartition"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-array",
  "arrow-ipc",
  "bincode",
- "common-error",
- "common-partitioning",
- "common-runtime",
+ "daft-common",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3114,7 +2595,6 @@ dependencies = [
  "daft-parquet",
  "daft-recordbatch",
  "daft-scan",
- "daft-stats",
  "daft-warc",
  "dashmap",
  "futures",
@@ -3127,11 +2607,11 @@ dependencies = [
 
 [[package]]
 name = "daft-minhash"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "approx",
  "arrow",
- "common-error",
+ "daft-common",
  "daft-hash",
  "fastrand 2.3.0",
  "memchr",
@@ -3142,19 +2622,17 @@ dependencies = [
 
 [[package]]
 name = "daft-parquet"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "bincode",
  "bytes",
  "common-arrow-ffi",
- "common-error",
- "common-runtime",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
- "daft-stats",
  "fastrand 2.3.0",
  "futures",
  "indexmap",
@@ -3170,18 +2648,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-partition-refs"
-version = "0.3.0-dev0"
-dependencies = [
- "common-partitioning",
- "common-py-serde",
- "pyo3",
- "serde",
-]
-
-[[package]]
 name = "daft-recordbatch"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -3189,16 +2657,10 @@ dependencies = [
  "async-recursion",
  "comfy-table",
  "common-arrow-ffi",
- "common-display",
- "common-error",
- "common-metrics",
- "common-py-serde",
- "common-runtime",
+ "daft-common",
  "daft-core",
  "daft-dsl",
- "daft-functions-list",
- "daft-groupby",
- "daft-image",
+ "daft-functions",
  "fnv",
  "futures",
  "hashbrown 0.16.1",
@@ -3211,50 +2673,57 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "snafu",
  "typetag",
 ]
 
 [[package]]
-name = "daft-runners"
-version = "0.3.0-dev0"
+name = "daft-rs"
+version = "0.7.9"
 dependencies = [
- "common-error",
+ "daft-common",
+ "daft-context",
+ "daft-core",
+ "daft-csv",
+ "daft-dsl",
+ "daft-functions",
+ "daft-io",
+ "daft-json",
+ "daft-local-execution",
+ "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
- "log",
- "pyo3",
+ "daft-parquet",
+ "daft-recordbatch",
+ "daft-scan",
+ "daft-schema",
+ "daft-session",
+ "daft-sql",
+ "daft-text",
+ "daft-warc",
 ]
 
 [[package]]
 name = "daft-scan"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-schema 57.3.0",
  "async-trait",
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-py-serde",
- "common-runtime",
  "daft-algebra",
- "daft-compression",
+ "daft-common",
  "daft-core",
  "daft-csv",
- "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-json",
  "daft-parquet",
  "daft-recordbatch",
  "daft-schema",
- "daft-stats",
  "either",
  "fnv",
  "futures",
  "indexmap",
- "itertools 0.14.0",
+ "itertools",
  "pyo3",
  "serde",
  "serde_json",
@@ -3267,19 +2736,21 @@ dependencies = [
 
 [[package]]
 name = "daft-schema"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow",
+ "arrow-array",
  "arrow-schema 57.3.0",
+ "atoi_simd",
  "chrono",
  "chrono-tz",
  "common-arrow-ffi",
- "common-display",
- "common-error",
- "common-py-serde",
- "common-version",
+ "csv",
+ "csv-async",
+ "daft-common",
  "derive_more",
  "educe",
+ "fast-float2",
  "html-escape",
  "indexmap",
  "num-derive",
@@ -3288,81 +2759,46 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "simdutf8",
 ]
 
 [[package]]
 name = "daft-session"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-error",
  "daft-ai",
- "daft-catalog",
+ "daft-common",
+ "daft-context",
  "daft-core",
  "daft-dsl",
  "daft-ext",
  "daft-ext-internal",
  "daft-logical-plan",
+ "daft-micropartition",
+ "indexmap",
  "pyo3",
+ "regex",
  "serde",
+ "snafu",
+ "sqlparser",
  "typetag",
  "uuid",
 ]
 
 [[package]]
-name = "daft-shuffles"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-flight",
- "arrow-ipc",
- "arrow-schema 57.3.0",
- "async-channel 2.5.0",
- "common-error",
- "common-runtime",
- "daft-core",
- "daft-io",
- "daft-micropartition",
- "daft-recordbatch",
- "daft-schema",
- "daft-writers",
- "futures",
- "tokio",
- "tonic",
-]
-
-[[package]]
-name = "daft-sketch"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "arrow-schema 57.3.0",
- "common-error",
- "serde_arrow",
- "sketches-ddsketch",
- "snafu",
-]
-
-[[package]]
 name = "daft-sql"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
- "common-daft-config",
- "common-error",
- "common-hashable-float-wrapper",
- "common-io-config",
- "common-runtime",
- "daft-catalog",
+ "daft-common",
  "daft-context",
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-list",
- "daft-functions-temporal",
- "daft-functions-utf8",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
  "daft-session",
- "itertools 0.14.0",
+ "itertools",
  "pyo3",
  "regex",
  "rstest",
@@ -3371,24 +2807,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-stats"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
- "daft-core",
- "daft-dsl",
- "daft-recordbatch",
- "serde",
- "snafu",
-]
-
-[[package]]
 name = "daft-text"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "async-stream",
- "common-error",
- "daft-compression",
+ "daft-common",
  "daft-core",
  "daft-io",
  "daft-recordbatch",
@@ -3402,13 +2825,11 @@ dependencies = [
 
 [[package]]
 name = "daft-warc"
-version = "0.3.0-dev0"
+version = "0.7.9"
 dependencies = [
  "arrow-array",
  "chrono",
- "common-error",
- "common-runtime",
- "daft-compression",
+ "daft-common",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3420,39 +2841,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "uuid",
-]
-
-[[package]]
-name = "daft-writers"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "arrow-csv",
- "arrow-ipc",
- "arrow-json",
- "arrow-schema 57.3.0",
- "async-trait",
- "bytes",
- "chrono",
- "chrono-tz",
- "common-daft-config",
- "common-error",
- "common-file-formats",
- "common-runtime",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "daft-logical-plan",
- "daft-micropartition",
- "daft-recordbatch",
- "hashbrown 0.16.1",
- "parking_lot 0.12.5",
- "parquet",
- "pyo3",
- "tokio",
- "url",
- "urlencoding",
  "uuid",
 ]
 
@@ -4685,10 +4073,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperloglog"
-version = "0.3.0-dev0"
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4975,15 +4359,6 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itertools"
@@ -5662,12 +5037,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
 
 [[package]]
-name = "oorandom"
-version = "11.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
-
-[[package]]
 name = "opendal"
 version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6024,34 +5393,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
-name = "plotters"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aeb6f403d7a4911efb1e33402027fc44f29b5bf6def3effcc22d7bb75f2b747"
-dependencies = [
- "num-traits",
- "plotters-backend",
- "plotters-svg",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "plotters-backend"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df42e13c12958a16b3f7f4386b9ab1f3e7933914ecea48da7139435263a4172a"
-
-[[package]]
-name = "plotters-svg"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
-dependencies = [
- "plotters-backend",
-]
-
-[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6224,7 +5565,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7071,15 +6412,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "same-file"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7906,16 +7238,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinytemplate"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "tinyvec"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8521,16 +7843,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "317211a0dc0ceedd78fb2ca9a44aed3d7b9b26f81870d485c07122b4350673b7"
 
 [[package]]
-name = "walkdir"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
-dependencies = [
- "same-file",
- "winapi-util",
-]
-
-[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8752,15 +8064,6 @@ name = "winapi-i686-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
-name = "winapi-util"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
-dependencies = [
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "winapi-x86_64-pc-windows-gnu"

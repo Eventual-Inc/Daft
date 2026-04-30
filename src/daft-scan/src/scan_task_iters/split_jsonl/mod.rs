@@ -1,8 +1,8 @@
 use std::{convert::TryFrom, fs, path::PathBuf};
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use daft_compression::CompressionCodec;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::{DaftError, DaftResult};
+use daft_io::compression::CompressionCodec;
 use daft_io::{GetRange, SourceType, parse_url, strip_file_uri_to_path};
 use url::Url;
 use urlencoding::decode;
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn test_offsets_non_empty() {
         let st = make_scan_task("file:///dev/null.jsonl", 10_000_000);
-        let cfg = common_daft_config::DaftExecutionConfig::default();
+        let cfg = daft_common::config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
         let out = iter.collect::<Vec<_>>();
         // Should have exactly 1 task since input is a single task with .jsonl extension
@@ -307,7 +307,7 @@ mod tests {
 
         // Build a ScanTask and run split_by_jsonl_ranges
         let st = make_scan_task(&uri, size_bytes);
-        let cfg = common_daft_config::DaftExecutionConfig {
+        let cfg = daft_common::config::DaftExecutionConfig {
             // Lower thresholds to force splitting
             scan_tasks_max_size_bytes: 4 * 1024,
             scan_tasks_min_size_bytes: 0,
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_compressed_not_split() {
         let st = make_scan_task("file:///tmp/f.jsonl.gz", 10_000_000);
-        let cfg = common_daft_config::DaftExecutionConfig::default();
+        let cfg = daft_common::config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
         let out = iter.collect::<Vec<_>>();
         // Compressed files should not be split, exactly 1 task
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn test_json_file_not_split() {
         let st = make_scan_task("file:///tmp/data.json", 10_000_000);
-        let cfg = common_daft_config::DaftExecutionConfig::default();
+        let cfg = daft_common::config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
         let out = iter.collect::<Vec<_>>();
         // .json files should not be split, exactly 1 task
@@ -377,7 +377,7 @@ mod tests {
         let st2 = make_scan_task("file:///tmp/file2.jsonl", 10_000_000); // 10MB file
         let st3 = make_scan_task("file:///tmp/file3.jsonl", 10_000_000); // 10MB file
 
-        let cfg = common_daft_config::DaftExecutionConfig::default();
+        let cfg = daft_common::config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(
             Box::new(
                 vec![

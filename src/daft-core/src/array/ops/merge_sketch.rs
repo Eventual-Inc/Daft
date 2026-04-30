@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use super::{DaftMergeSketchAggable, from_arrow::FromArrow};
 use crate::{
@@ -12,7 +12,7 @@ impl DaftMergeSketchAggable for &StructArray {
     type Output = DaftResult<StructArray>;
 
     fn merge_sketch(&self) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow(self.to_arrow()?)?;
+        let sketches_array = daft_hash::sketch::from_arrow(self.to_arrow()?)?;
         let sketch =
             sketches_array
                 .into_iter()
@@ -26,19 +26,19 @@ impl DaftMergeSketchAggable for &StructArray {
                         Ok(Some(acc))
                     }
                 })?;
-        let arrow_array = daft_sketch::into_arrow(vec![sketch]);
+        let arrow_array = daft_hash::sketch::into_arrow(vec![sketch]);
 
         StructArray::from_arrow(
             Arc::new(Field::new(
                 self.field.name.clone(),
-                DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
+                DataType::try_from(&*daft_hash::sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,
         )
     }
 
     fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow(self.to_arrow()?)?;
+        let sketches_array = daft_hash::sketch::from_arrow(self.to_arrow()?)?;
 
         let sketch_per_group = groups
             .iter()
@@ -63,12 +63,12 @@ impl DaftMergeSketchAggable for &StructArray {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let arrow_array = daft_sketch::into_arrow(sketch_per_group);
+        let arrow_array = daft_hash::sketch::into_arrow(sketch_per_group);
 
         StructArray::from_arrow(
             Arc::new(Field::new(
                 self.field.name.clone(),
-                DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
+                DataType::try_from(&*daft_hash::sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,
         )

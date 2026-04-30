@@ -4,7 +4,7 @@ use arrow::{
     array::{DynComparator, make_comparator},
     compute::SortOptions,
 };
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::{
     prelude::*,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},

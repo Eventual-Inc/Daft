@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow_buffer::NullBufferBuilder;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::{HashFunctionKind, MurBuildHasher, XxHash32BuildHasher};

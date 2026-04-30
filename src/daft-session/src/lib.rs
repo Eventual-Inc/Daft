@@ -1,3 +1,4 @@
+pub mod catalog;
 mod error;
 mod function;
 mod options;

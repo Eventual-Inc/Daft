@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
     lit, null_lit,
 };
-use daft_functions_temporal::{
+use daft_functions::temporal::{
     current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
     date_arithmetic::{DateAdd, DateDiff, DateSub},
     date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz},

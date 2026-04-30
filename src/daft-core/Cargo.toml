@@ -6,23 +6,17 @@ bytemuck = {version = "1", features = ["derive"]}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-arrow-ffi = {path = "../common/arrow-ffi", version = "0.7.9", default-features = false, optional = true}
+daft-common = {workspace = true}
 common-image = {workspace = true}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-ndarray = {workspace = true}
-common-py-serde = {path = "../common/py-serde", default-features = false}
 daft-hash = {workspace = true}
-daft-minhash = {path = "../daft-minhash", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
-daft-sketch = {path = "../daft-sketch", default-features = false}
+daft-minhash = {path = "../daft-minhash", version = "0.7.9", default-features = false}
+daft-schema = {path = "../daft-schema", version = "0.7.9", default-features = false}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
 smallvec = {workspace = true}
+hashbrown = {workspace = true}
 html-escape = {workspace = true}
-hyperloglog = {path = "../hyperloglog"}
 image = {workspace = true, features = [
   "gif",
   "jpeg",
@@ -49,13 +43,9 @@ rstest = {workspace = true}
 
 [features]
 python = [
+  "daft-common/python",
   "dep:common-arrow-ffi",
-  "common-display/python",
-  "common-error/python",
   "common-image/python",
-  "common-io-config/python",
-  "common-ndarray/python",
-  "common-py-serde/python",
   "daft-schema/python",
   "dep:pyo3"
 ]
@@ -64,6 +54,10 @@ python = [
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-core"
 version = {workspace = true}
+description = "Core data types, arrays, and series for the Daft query engine"

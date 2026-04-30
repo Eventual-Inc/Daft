@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_metrics::{
+use daft_common::metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };

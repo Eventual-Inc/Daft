@@ -1,8 +1,8 @@
 use std::{collections::HashMap, io::SeekFrom, num::NonZeroUsize, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
-use daft_compression::CompressionCodec;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::get_io_runtime;
+use daft_io::compression::CompressionCodec;
 use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
@@ -667,7 +667,7 @@ mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
     use arrow::array::ArrayRef;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;

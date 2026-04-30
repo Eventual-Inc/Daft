@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_schema::field::Field;
 use serde::{Deserialize, Serialize};
 

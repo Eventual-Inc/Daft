@@ -99,7 +99,7 @@ impl SQLTableFunction for ReadCsvFunction {
             1, // 1 positional argument (path)
         )?;
 
-        let runtime = common_runtime::get_io_runtime(true);
+        let runtime = daft_common::runtime::get_io_runtime(true);
         let result = runtime.block_within_async_context(builder.finish())??;
         Ok(result)
     }

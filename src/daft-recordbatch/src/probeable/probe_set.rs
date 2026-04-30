@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::arrow::comparison::build_multi_array_is_equal_from_arrays,
     prelude::SchemaRef,

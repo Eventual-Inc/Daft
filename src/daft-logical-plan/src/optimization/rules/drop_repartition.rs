@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::LogicalPlan;
@@ -46,7 +46,7 @@ impl OptimizerRule for DropRepartition {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
 

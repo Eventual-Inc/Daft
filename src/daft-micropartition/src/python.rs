@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_partitioning::{Partition, PartitionId, PartitionSet};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::partitioning::{Partition, PartitionId, PartitionSet};
 use daft_core::{
     join::JoinSide,
     prelude::*,
@@ -18,7 +18,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_scan::{ScanSourceKind, ScanTaskRef, storage_config::StorageConfig};
-use daft_stats::{TableMetadata, TableStatistics};
+use daft_recordbatch::stats::{TableMetadata, TableStatistics};
 use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
 

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Meter, StatSnapshot,
     meters::Counter,
     ops::{NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_functions_list::explode;
+use daft_functions::list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use opentelemetry::KeyValue;

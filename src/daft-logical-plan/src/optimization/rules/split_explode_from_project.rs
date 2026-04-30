@@ -1,5 +1,5 @@
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_dsl::{Expr, functions::scalar::ScalarFn, resolved_col};
 
 use crate::{
@@ -39,7 +39,7 @@ impl OptimizerRule for SplitExplodeFromProject {
                     }
 
                     if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = unaliased_expr.as_ref()
-                        && sf.is_function_type::<daft_functions_list::Explode>()
+                        && sf.is_function_type::<daft_functions::list::Explode>()
                     {
                         let current_ignore_empty_and_null = if sf.inputs.len() == 2 {
                             match sf

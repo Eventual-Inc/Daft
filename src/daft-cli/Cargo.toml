@@ -16,6 +16,10 @@ python = ["dep:pyo3", "dep:clap", "dep:tokio", "dep:daft-dashboard"]
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
 name = "daft-cli"
 edition.workspace = true
 version.workspace = true

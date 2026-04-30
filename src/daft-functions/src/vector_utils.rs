@@ -1,4 +1,5 @@
-use common_error::{DaftError, DaftResult, value_err};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::value_err;
 use daft_core::{datatypes::NumericNative, prelude::*};
 use daft_dsl::functions::prelude::*;
 

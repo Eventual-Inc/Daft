@@ -1,7 +1,7 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_groupby::{IntoGroups, VecIndices};
+use daft_core::groupby::{IntoGroups, VecIndices};
 
 use crate::RecordBatch;
 

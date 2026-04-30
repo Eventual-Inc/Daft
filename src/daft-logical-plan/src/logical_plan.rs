@@ -5,10 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_display::ascii::AsciiTreeDisplay;
-use common_error::{DaftError, DaftResult};
-use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_common::config::DaftExecutionConfig;
+use daft_common::display::ascii::AsciiTreeDisplay;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, Subquery, SubqueryPlan,
@@ -903,7 +903,7 @@ impl LogicalPlan {
     }
 
     pub fn get_aliases(self: Arc<Self>) -> Vec<Arc<str>> {
-        use common_treenode::TreeNode;
+        use daft_common::treenode::TreeNode;
 
         let mut names = Vec::new();
 
@@ -921,7 +921,7 @@ impl LogicalPlan {
     }
 
     pub fn get_schema_for_alias(self: &Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
-        use common_treenode::TreeNode;
+        use daft_common::treenode::TreeNode;
 
         match self.as_ref() {
             Self::Union(union) => {
@@ -984,7 +984,7 @@ impl LogicalPlan {
     }
 
     pub fn get_schema_for_id(self: &Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
-        use common_treenode::TreeNode;
+        use daft_common::treenode::TreeNode;
 
         match self.as_ref() {
             Self::Union(union) => {

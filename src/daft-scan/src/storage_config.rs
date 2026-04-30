@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_io_config::IOConfig;
-use common_py_serde::impl_bincode_py_state_serialization;
-use common_runtime::{RuntimeRef, get_io_runtime};
+use daft_common::error::DaftResult;
+use daft_common::io_config::IOConfig;
+use daft_common::impl_bincode_py_state_serialization;
+use daft_common::runtime::{RuntimeRef, get_io_runtime};
 use daft_io::{IOClient, get_io_client};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
-    common_io_config::python,
+    daft_common::io_config::python,
     pyo3::{PyResult, Python, pyclass, pymethods},
     std::hash::Hash,
 };

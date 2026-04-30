@@ -1,6 +1,6 @@
 use std::ops::Rem;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use num_traits::ToPrimitive;
 
 use crate::{

@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter};
 
 use comfy_table::{CellAlignment, Table as ComfyTable};
-use common_display::table_display::{StrValue, TableBuildOptions, TableColumnOptions, build_table};
-use common_error::DaftError;
+use daft_common::display::table_display::{StrValue, TableBuildOptions, TableColumnOptions, build_table};
+use daft_common::error::DaftError;
 use serde::{Deserialize, Serialize};
 
 use crate::RecordBatch;

@@ -61,7 +61,7 @@ fn infer(json: &BorrowedValue) -> Result<DataType, ArrowError> {
 }
 
 fn infer_string(string: &str) -> DataType {
-    daft_decoding::inference::infer_string(string)
+    daft_schema::decoding::inference::infer_string(string)
 }
 
 fn infer_object(inner: &Object) -> Result<DataType, ArrowError> {

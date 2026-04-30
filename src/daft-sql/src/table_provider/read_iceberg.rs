@@ -1,4 +1,4 @@
-use common_io_config::IOConfig;
+use daft_common::io_config::IOConfig;
 use daft_logical_plan::LogicalPlanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 

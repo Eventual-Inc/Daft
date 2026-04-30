@@ -1,0 +1,288 @@
+use std::sync::Arc;
+
+use daft_core::{prelude::*, python::PySchema};
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use indexmap::IndexMap;
+use pyo3::{intern, prelude::*, types::PyList};
+
+use super::PyIdentifier;
+use super::super::{
+    Catalog, Function, FunctionRef, Identifier, Table, TableRef,
+    error::{CatalogError, CatalogResult},
+    function::PyFunctionWrapper,
+};
+
+/// Newtype to implement the Catalog trait for a Python catalog
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct PyCatalogWrapper(Py<PyAny>);
+
+impl From<Bound<'_, PyAny>> for PyCatalogWrapper {
+    fn from(obj: Bound<'_, PyAny>) -> Self {
+        Self(obj.unbind())
+    }
+}
+
+impl PyCatalogWrapper {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
+}
+
+impl Catalog for PyCatalogWrapper {
+    fn name(&self) -> String {
+        Python::attach(|py| {
+            // catalog = 'python catalog object'
+            let catalog = self.0.bind(py);
+            // name = catalog.name
+            let name = catalog
+                .getattr(intern!(py, "name"))
+                .expect("Catalog.name should never fail");
+            let name: String = name.extract().expect("name must be a string");
+            name
+        })
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(self.0.clone_ref(py))
+    }
+
+    fn create_function(&self, ident: &Identifier, function: FunctionRef) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let func_py = function.to_py(py)?;
+            catalog.call_method1(intern!(py, "_create_function"), (ident_py, func_py))?;
+            Ok(())
+        })
+    }
+
+    fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_create_namespace"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn has_namespace(&self, ident: &Identifier) -> CatalogResult<bool> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            Ok(catalog
+                .call_method1(intern!(py, "_has_namespace"), (ident,))?
+                .extract()?)
+        })
+    }
+
+    fn drop_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_drop_namespace"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let namespaces_py =
+                catalog.call_method1(intern!(py, "_list_namespaces"), (pattern,))?;
+            Ok(namespaces_py
+                .cast::<PyList>()
+                .expect("Catalog._list_namespaces must return a list")
+                .into_iter()
+                .map(|ident| {
+                    Ok(ident
+                        .getattr(intern!(py, "_ident"))?
+                        .extract::<PyIdentifier>()?
+                        .0)
+                })
+                .collect::<PyResult<Vec<_>>>()?)
+        })
+    }
+
+    fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let schema = PySchema { schema };
+            let schema_py = py
+                .import(intern!(py, "daft.schema"))?
+                .getattr(intern!(py, "Schema"))?
+                .call_method1(intern!(py, "_from_pyschema"), (schema,))?;
+
+            let table = catalog.call_method1(intern!(py, "_create_table"), (ident, schema_py))?;
+            Ok(Arc::new(PyTableWrapper(table.unbind())) as Arc<dyn Table>)
+        })
+    }
+
+    fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            Ok(catalog
+                .call_method1(intern!(py, "_has_table"), (ident,))?
+                .extract()?)
+        })
+    }
+
+    fn drop_table(&self, ident: &Identifier) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            catalog.call_method1(intern!(py, "_drop_table"), (ident,))?;
+            Ok(())
+        })
+    }
+
+    fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let namespaces_py = catalog.call_method1(intern!(py, "_list_tables"), (pattern,))?;
+            Ok(namespaces_py
+                .cast::<PyList>()
+                .expect("Catalog._list_tables must return a list")
+                .into_iter()
+                .map(|ident| {
+                    Ok(ident
+                        .getattr(intern!(py, "_ident"))?
+                        .extract::<PyIdentifier>()?
+                        .0)
+                })
+                .collect::<PyResult<Vec<_>>>()?)
+        })
+    }
+
+    fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let table = catalog.call_method1(intern!(py, "_get_table"), (ident,))?;
+            Ok(Arc::new(PyTableWrapper(table.unbind())) as Arc<dyn Table>)
+        })
+    }
+
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            match catalog.call_method1(intern!(py, "_get_function"), (ident_py,)) {
+                Ok(result) => {
+                    Ok(Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>)
+                }
+                Err(err) => {
+                    let not_found_type = py
+                        .import(intern!(py, "daft.catalog"))
+                        .and_then(|m| m.getattr(intern!(py, "NotFoundError")));
+                    if let Ok(not_found_type) = not_found_type
+                        && err.is_instance(py, &not_found_type)
+                    {
+                        return Err(CatalogError::obj_not_found("Function", ident));
+                    }
+                    Err(err.into())
+                }
+            }
+        })
+    }
+}
+
+/// Newtype to implement the Table trait for a Python table
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct PyTableWrapper(Py<PyAny>);
+
+impl From<Bound<'_, PyAny>> for PyTableWrapper {
+    fn from(obj: Bound<'_, PyAny>) -> Self {
+        Self(obj.unbind())
+    }
+}
+
+impl PyTableWrapper {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
+}
+
+impl Table for PyTableWrapper {
+    fn name(&self) -> String {
+        Python::attach(|py| {
+            let table = self.0.bind(py);
+            table
+                .getattr(intern!(py, "name"))
+                .expect("Table.name() should never fail")
+                .extract()
+                .expect("Table.name() must return a string")
+        })
+    }
+
+    fn schema(&self) -> CatalogResult<SchemaRef> {
+        Python::attach(|py| {
+            let table = self.0.bind(py);
+            let schema_py = table.call_method0(intern!(py, "schema"))?;
+            let schema = schema_py
+                .getattr(intern!(py, "_schema"))?
+                .cast::<PySchema>()
+                .expect("downcast to PySchema failed")
+                .borrow();
+            Ok(schema.schema.clone())
+        })
+    }
+
+    fn to_logical_plan(&self) -> CatalogResult<LogicalPlanBuilder> {
+        Python::attach(|py| {
+            // table = 'python table object'
+            let table = self.0.bind(py);
+            // df = table.read()
+            let df = table.call_method0(intern!(py, "read"))?;
+            // builder = df._builder()
+            let builder_py = df
+                .getattr(intern!(py, "_builder"))?
+                .getattr(intern!(py, "_builder"))?;
+            // builder as PyLogicalPlanBuilder
+            let builder = builder_py
+                .cast::<PyLogicalPlanBuilder>()
+                .expect("downcast to PyLogicalPlanBuilder failed")
+                .borrow();
+            Ok(builder.builder.clone())
+        })
+    }
+
+    fn append(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let table = self.0.bind(py);
+            let plan_py = PyLogicalPlanBuilder { builder: plan };
+            let df = py
+                .import(intern!(py, "daft.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .call1((plan_py,))?;
+            table.call_method1(intern!(py, "append"), (df, options))?;
+            Ok(())
+        })
+    }
+
+    fn overwrite(
+        &self,
+        plan: LogicalPlanBuilder,
+        options: IndexMap<String, Literal>,
+    ) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let table = self.0.bind(py);
+            let plan_py = PyLogicalPlanBuilder { builder: plan };
+            let df = py
+                .import(intern!(py, "daft.dataframe"))?
+                .getattr(intern!(py, "DataFrame"))?
+                .call1((plan_py,))?;
+            table.call_method1(intern!(py, "overwrite"), (df, options))?;
+            Ok(())
+        })
+    }
+
+    fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(self.0.clone_ref(py))
+    }
+}

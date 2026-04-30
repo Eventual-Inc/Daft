@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Write};
 
-use common_error::{DaftError, DaftResult};
-use common_treenode::TreeNodeVisitor;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::treenode::TreeNodeVisitor;
 use daft_dsl::resolved_col;
 use serde_json::json;
 
@@ -177,7 +177,7 @@ where
 {
     type Node = LogicalPlanRef;
 
-    fn f_down(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+    fn f_down(&mut self, node: &Self::Node) -> DaftResult<daft_common::treenode::TreeNodeRecursion> {
         let id = self.next_id;
         self.next_id += 1;
         let mut object = to_json_value(node.as_ref());
@@ -191,10 +191,10 @@ where
         }
         self.objects.insert(id, object);
         self.parent_ids.push(id);
-        Ok(common_treenode::TreeNodeRecursion::Continue)
+        Ok(daft_common::treenode::TreeNodeRecursion::Continue)
     }
 
-    fn f_up(&mut self, _node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+    fn f_up(&mut self, _node: &Self::Node) -> DaftResult<daft_common::treenode::TreeNodeRecursion> {
         let id = self.parent_ids.pop().unwrap();
 
         let current_node = self
@@ -223,17 +223,17 @@ where
                 serde_json::to_string(&plan).map_err(DaftError::SerdeJsonError)?
             )?;
         }
-        Ok(common_treenode::TreeNodeRecursion::Continue)
+        Ok(daft_common::treenode::TreeNodeRecursion::Continue)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use common_treenode::TreeNode;
+    use daft_common::error::DaftResult;
+    use daft_common::treenode::TreeNode;
     use daft_core::join::JoinType;
     use daft_dsl::{lit, resolved_col};
-    use daft_functions_utf8::{endswith, startswith};
+    use daft_functions::utf8::{endswith, startswith};
 
     use crate::{
         LogicalPlanBuilder,

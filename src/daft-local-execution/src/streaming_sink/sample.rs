@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::get_compute_pool_num_threads;
 use daft_core::prelude::{SchemaRef, UInt64Array};
 use daft_local_plan::SamplingMethod;
 use daft_micropartition::MicroPartition;

@@ -6,7 +6,7 @@ mod row_wise;
 use std::sync::Arc;
 
 pub use batch::{BatchPyFn, batch_udf};
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 pub use retry::{retry_after_ms_from_error, retry_with_backoff};
@@ -114,7 +114,7 @@ impl PyScalarFn {
 
 #[cfg(feature = "python")]
 pub fn collect_operator_metrics(
-    operator_metrics: &common_metrics::python::PyOperatorMetrics,
+    operator_metrics: &daft_common::metrics::python::PyOperatorMetrics,
     metrics: &mut dyn crate::operator_metrics::MetricsCollector,
 ) {
     for (name, counters) in operator_metrics.inner.snapshot() {

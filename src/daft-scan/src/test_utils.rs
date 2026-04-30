@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
-use daft_stats::TableMetadata;
+use daft_recordbatch::stats::TableMetadata;
 
 use crate::{
     FileFormatConfig, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,

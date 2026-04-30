@@ -4,7 +4,7 @@ use std::{
     ops::Deref,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_schema::prelude::{ImageFormat, ImageMode};
 use image::{ColorType, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 

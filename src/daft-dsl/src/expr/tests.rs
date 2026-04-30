@@ -21,7 +21,7 @@ fn check_alias_type() -> DaftResult<()> {
     let b = a.alias("b");
     match b.as_ref() {
         Expr::Alias(..) => Ok(()),
-        other => Err(common_error::DaftError::ValueError(format!(
+        other => Err(daft_common::error::DaftError::ValueError(format!(
             "expected expression to be a alias, got {other:?}"
         ))),
     }

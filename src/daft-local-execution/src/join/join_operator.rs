@@ -1,6 +1,6 @@
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 
 use crate::{

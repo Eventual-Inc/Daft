@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
-use common_py_serde::PyObjectWrapper;
-use common_runtime::JoinSet;
+use daft_common::py_serde::PyObjectWrapper;
+use daft_common::runtime::JoinSet;
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr,
     utils::remap_used_cols,
@@ -57,7 +57,7 @@ impl UDFActors {
         let actor_name = udf_properties.name.clone();
         let ray_options = udf_properties.ray_options.clone();
         let result =
-            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
+            daft_common::runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
                 // Convert RuntimePyObject option to a Python object (dict) or None

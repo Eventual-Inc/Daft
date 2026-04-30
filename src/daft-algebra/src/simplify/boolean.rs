@@ -1,5 +1,5 @@
-use common_error::DaftResult;
-use common_treenode::Transformed;
+use daft_common::error::DaftResult;
+use daft_common::treenode::Transformed;
 use daft_core::{lit::Literal, prelude::Operator};
 use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
@@ -294,8 +294,8 @@ pub(crate) fn simplify_binary_compare(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
-    use common_treenode::Transformed;
+    use daft_common::error::DaftResult;
+    use daft_common::treenode::Transformed;
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, lit};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};

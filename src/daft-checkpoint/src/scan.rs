@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointStoreConfig;
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
+use daft_common::checkpoint_config::CheckpointStoreConfig;
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::get_io_runtime;
 use daft_scan::{
     ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
     ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
@@ -138,7 +138,7 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
 mod tests {
     use std::sync::Arc as StdArc;
 
-    use common_io_config::IOConfig;
+    use daft_common::io_config::IOConfig;
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
     use super::*;

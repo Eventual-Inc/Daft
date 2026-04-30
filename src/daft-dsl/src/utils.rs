@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_treenode::{Transformed, TreeNode};
+use daft_common::treenode::{Transformed, TreeNode};
 
 use crate::{
     Column, Expr, ExprRef,

@@ -1,8 +1,8 @@
 use std::{any::Any, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use common_io_config::GCSConfig;
-use common_runtime::get_io_pool_num_threads;
+use daft_common::io_config::GCSConfig;
+use daft_common::runtime::get_io_pool_num_threads;
 use futures::{TryStreamExt, stream::BoxStream};
 use google_cloud_storage::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
@@ -618,7 +618,7 @@ impl ObjectSource for GCSSource {
 
 #[cfg(test)]
 mod tests {
-    use common_io_config::GCSConfig;
+    use daft_common::io_config::GCSConfig;
 
     use crate::{google_cloud::GCSSource, integrations::test_full_get, object_io::ObjectSource};
 

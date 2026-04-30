@@ -1,0 +1,64 @@
+[package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+name = "daft-common"
+edition = {workspace = true}
+version = {workspace = true}
+description = "Common utilities, error types, config, and runtime for Daft"
+
+[dependencies]
+# External deps (unioned from all common-* crates)
+arc-swap = {workspace = true}
+arrow-schema = {workspace = true}
+aws-credential-types = "1.2.7"
+bincode = {workspace = true}
+chrono = {workspace = true, features = ["serde"]}
+comfy-table = {workspace = true}
+derive_more = {workspace = true}
+educe = {workspace = true}
+enum_dispatch = "0.3"
+futures = {workspace = true}
+indexmap = {workspace = true}
+indicatif = {workspace = true}
+itertools = {workspace = true}
+log = {workspace = true}
+ndarray = {workspace = true}
+numpy = {workspace = true, optional = true}
+oneshot = "0.1.8"
+opentelemetry = {workspace = true}
+opentelemetry-otlp = {workspace = true}
+opentelemetry_sdk = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-async-runtimes = {workspace = true, optional = true}
+regex = {workspace = true}
+regex-syntax = {version = "0.8"}
+secrecy = {version = "0.8.0", features = ["alloc"], default-features = false}
+serde = {workspace = true}
+serde_json = {workspace = true}
+smallvec = {workspace = true, features = ["serde"]}
+sysinfo = {workspace = true}
+terminal_size = {version = "0.4.3"}
+textwrap = {version = "0.16.1"}
+thiserror = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+tracing-opentelemetry = {version = "0.32", default-features = false, features = ["metrics"]}
+tracing-subscriber = {workspace = true}
+typetag = {workspace = true}
+uuid = {workspace = true}
+atomic_float = "*"
+
+[dev-dependencies]
+bincode = {workspace = true, features = ["serde"]}
+rand = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "dep:numpy",
+  "dep:pyo3-async-runtimes",
+]
+
+[lints]
+workspace = true

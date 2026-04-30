@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
 use crate::{Column, Expr, ExprRef, expr::ResolvedColumn};
 

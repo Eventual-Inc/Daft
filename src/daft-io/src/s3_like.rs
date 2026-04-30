@@ -34,8 +34,8 @@ use aws_smithy_runtime_api::{
     client::retries::classifiers::RetryClassifierPriority, http::Response,
 };
 use bytes::Bytes;
-use common_io_config::S3Config;
-use common_runtime::get_io_pool_num_threads;
+use daft_common::io_config::S3Config;
+use daft_common::runtime::get_io_pool_num_threads;
 use futures::stream::BoxStream;
 use s3::{
     config::{Credentials, Region},
@@ -1814,7 +1814,7 @@ impl S3MultipartWriter {
 #[cfg(test)]
 mod tests {
 
-    use common_io_config::S3Config;
+    use daft_common::io_config::S3Config;
 
     use crate::{Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource};
 

@@ -21,7 +21,7 @@ use arrow::{
     temporal_conversions,
 };
 use chrono::{Datelike, Timelike};
-use daft_decoding::deserialize::{
+use daft_schema::decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
 };
 use indexmap::IndexMap;

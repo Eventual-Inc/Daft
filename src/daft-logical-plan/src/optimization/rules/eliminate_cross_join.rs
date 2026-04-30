@@ -1,8 +1,8 @@
 /// Heavily inspired by DataFusion's EliminateCrossJoin rule: https://github.com/apache/datafusion/blob/b978cf8236436038a106ed94fb0d7eaa6ba99962/datafusion/optimizer/src/eliminate_cross_join.rs
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{
     join::JoinType,
@@ -431,7 +431,7 @@ pub fn can_hash(data_type: &DataType) -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions};
+    use daft_common::display::mermaid::{MermaidDisplay, MermaidDisplayOptions};
     use daft_dsl::{lit, unresolved_col};
     use daft_schema::field::Field;
     use rstest::*;

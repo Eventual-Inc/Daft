@@ -1,6 +1,6 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_stats::TruthValue;
+use daft_recordbatch::stats::TruthValue;
 use snafu::ResultExt;
 
 use crate::{DaftCoreComputeSnafu, micropartition::MicroPartition};

@@ -3,7 +3,7 @@ pub mod python;
 
 use std::{fmt, marker::PhantomData, sync::Arc};
 
-use common_io_config::IOConfig;
+use daft_common::io_config::IOConfig;
 pub use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 

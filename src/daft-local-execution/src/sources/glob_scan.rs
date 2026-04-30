@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
-use common_io_config::IOConfig;
-use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_io_runtime};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::io_config::IOConfig;
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::*;
 use daft_io::get_io_client;
 // InputId now comes from pipeline_message module
@@ -56,7 +56,7 @@ impl GlobScanSource {
         pushdowns: Pushdowns,
         schema: SchemaRef,
         io_config: Option<IOConfig>,
-    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+    ) -> daft_common::runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {

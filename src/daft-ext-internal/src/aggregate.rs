@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::functions::{AggFn, AggFnHandle, State};
 use daft_ext::abi::{ArrowArray, ArrowSchema, FFI_AggregateFunction};

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_core::prelude::CountMode;
 use daft_dsl::{AggExpr, Expr, resolved_col};
 
@@ -93,7 +93,7 @@ impl OptimizerRule for RewriteCountDistinct {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::CountMode;
     use daft_dsl::unresolved_col;
     use daft_schema::{dtype::DataType, field::Field};

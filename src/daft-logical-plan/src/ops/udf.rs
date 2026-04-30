@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::Schema;
 use daft_dsl::{ExprRef, functions::python::UDFProperties};
 use daft_schema::schema::SchemaRef;

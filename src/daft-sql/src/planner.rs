@@ -6,8 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
-use daft_catalog::Identifier;
+use daft_common::error::{DaftError, DaftResult};
+use daft_session::catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
@@ -18,7 +18,7 @@ use daft_functions::{
     invalid_argument_err,
     numeric::{ceil::ceil, floor::floor},
 };
-use daft_functions_utf8::{ilike, like, to_date, to_datetime};
+use daft_functions::utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
     ops::{SetQuantifier, UnionStrategy},
@@ -1762,7 +1762,7 @@ impl SQLPlanner<'_> {
                 syntax: _,
                 expr,
             } => {
-                use daft_functions_temporal as dt;
+                use daft_functions::temporal as dt;
                 let expr = self.plan_expr(expr)?;
 
                 fn scalar<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
@@ -1830,7 +1830,7 @@ impl SQLPlanner<'_> {
 
                 let start = if *shorthand { start } else { start.sub(lit(1)) };
 
-                Ok(daft_functions_utf8::substr(expr, start, length))
+                Ok(daft_functions::utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
@@ -2237,7 +2237,7 @@ impl SQLPlanner<'_> {
                 let expr_field = expr.to_field(schema.as_ref())?;
                 match expr_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        Ok(daft_functions_list::get(expr, index, null_lit()))
+                        Ok(daft_functions::list::get(expr, index, null_lit()))
                     }
                     DataType::Struct(_) => {
                         if let Some(s) = index.as_literal().and_then(|l| l.as_str()) {
@@ -2576,7 +2576,7 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
 /// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(not(feature = "python"))]
 fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
-    Err(common_error::DaftError::InternalError(
+    Err(daft_common::error::DaftError::InternalError(
         "SELECT without FROM requires 'python' feature".to_string(),
     ))
 }

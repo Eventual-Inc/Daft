@@ -4,7 +4,7 @@ use arrow::{
     array::{Array, ArrayRef, AsArray},
     buffer::{OffsetBuffer, ScalarBuffer},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
@@ -422,7 +422,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_schema::field::Field;
     use rstest::rstest;
 

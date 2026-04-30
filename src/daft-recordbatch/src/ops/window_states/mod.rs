@@ -4,7 +4,7 @@ mod mean;
 mod minmax;
 mod sum;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;

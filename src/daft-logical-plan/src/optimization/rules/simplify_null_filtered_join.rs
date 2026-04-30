@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::predicate_removes_nulls;
 use daft_core::join::JoinType;
 use daft_dsl::{ExprRef, resolved_col};

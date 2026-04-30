@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use common_metrics::{Counter, Meter, StatSnapshot, ops::NodeInfo, snapshot::DefaultSnapshot};
+use daft_common::metrics::{Counter, Meter, StatSnapshot, ops::NodeInfo, snapshot::DefaultSnapshot};
 use opentelemetry::KeyValue;
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //

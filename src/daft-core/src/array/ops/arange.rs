@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::{
     array::DataArray,
@@ -11,7 +11,7 @@ where
 {
     pub fn arange<S: AsRef<str>>(name: S, start: i64, end: i64, step: usize) -> DaftResult<Self> {
         if start > end {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(daft_common::error::DaftError::ValueError(format!(
                 "invalid range, start greater than end, {start} vs {end}"
             )));
         }

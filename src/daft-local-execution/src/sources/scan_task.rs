@@ -5,11 +5,11 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_daft_config::DaftExecutionConfig;
-use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
-use common_error::{DaftError, DaftResult};
-use common_metrics::ops::NodeType;
-use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use daft_common::config::DaftExecutionConfig;
+use daft_common::display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::ops::NodeType;
+use daft_common::runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
@@ -69,13 +69,13 @@ impl ScanTaskSource {
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
-    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+    ) -> daft_common::runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
         // When maintain_order is true, spawn flattener so it drains stream outputs in order.
         let mut flattener_state: Option<(
             UnboundedSender<FlattenerMessage>,
-            common_runtime::RuntimeTask<()>,
+            daft_common::runtime::RuntimeTask<()>,
         )> = if maintain_order {
             let (agg_tx, agg_rx) = create_unbounded_channel::<FlattenerMessage>();
             let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(

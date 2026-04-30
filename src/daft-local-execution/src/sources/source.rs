@@ -5,9 +5,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::display::tree::TreeDisplay;
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
@@ -190,10 +190,10 @@ impl TreeDisplay for SourceNode {
         self.node_id().to_string()
     }
 
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
-        use common_display::DisplayLevel;
+        use daft_common::display::DisplayLevel;
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.source.name()).unwrap();
@@ -393,7 +393,7 @@ fn get_or_create_source_stats(
 
 #[cfg(test)]
 mod tests {
-    use common_metrics::{Meter, ops::NodeInfo};
+    use daft_common::metrics::{Meter, ops::NodeInfo};
 
     use super::*;
     use crate::runtime_stats::RuntimeStats;

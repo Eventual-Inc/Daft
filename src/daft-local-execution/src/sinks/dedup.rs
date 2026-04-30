@@ -16,8 +16,8 @@
 
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use daft_common::error::DaftResult;
+use daft_common::metrics::ops::NodeType;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;

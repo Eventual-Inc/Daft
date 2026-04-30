@@ -7,7 +7,7 @@ use arrow::{
     compute::SortOptions,
     datatypes::*,
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]

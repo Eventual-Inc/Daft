@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
-use common_file_formats::FileFormat;
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::file_formats::FileFormat;
+use daft_common::impl_bincode_py_state_serialization;
 use daft_schema::{field::Field, time_unit::TimeUnit};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
-    common_py_serde::{deserialize_py_object, serialize_py_object},
+    daft_common::py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
 };

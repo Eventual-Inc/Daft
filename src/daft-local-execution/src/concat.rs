@@ -1,8 +1,8 @@
 use std::{ops::ControlFlow, sync::Arc};
 
-use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::display::tree::TreeDisplay;
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
@@ -111,11 +111,11 @@ impl TreeDisplay for ConcatNode {
         self.node_id().to_string()
     }
 
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
 
-        use common_display::DisplayLevel;
+        use daft_common::display::DisplayLevel;
         match level {
             DisplayLevel::Compact => {
                 writeln!(display, "Concat").unwrap();

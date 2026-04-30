@@ -1,5 +1,5 @@
-use common_display::table_display::StrValue;
-use common_error::DaftResult;
+use daft_common::display::table_display::StrValue;
+use daft_common::error::DaftResult;
 
 use crate::{
     datatypes::Utf8Array,

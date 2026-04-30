@@ -4,15 +4,13 @@ name = "parquet_read"
 
 [dependencies]
 arrow = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", version = "0.7.9", default-features = false, optional = true}
 bytes = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
-daft-stats = {path = "../daft-stats", default-features = false}
+daft-common = {workspace = true}
+daft-core = {path = "../daft-core", version = "0.7.9", default-features = false}
+daft-dsl = {path = "../daft-dsl", version = "0.7.9", default-features = false}
+daft-io = {path = "../daft-io", version = "0.7.9", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", version = "0.7.9", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 parquet = {workspace = true, features = ["async"]}
@@ -32,13 +30,12 @@ tango-bench.workspace = true
 
 [features]
 python = [
+  "daft-common/python",
   "dep:pyo3",
   "dep:common-arrow-ffi",
-  "common-error/python",
   "daft-core/python",
   "daft-io/python",
   "daft-recordbatch/python",
-  "daft-stats/python",
   "daft-dsl/python"
 ]
 
@@ -46,6 +43,10 @@ python = [
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "daft-parquet"
 version = {workspace = true}
+description = "Parquet reader and writer for Daft"

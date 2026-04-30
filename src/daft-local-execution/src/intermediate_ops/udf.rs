@@ -10,16 +10,16 @@ use std::{
     vec,
 };
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::{
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{
     Meter, StatSnapshot,
     meters::Counter,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
     snapshot::UdfSnapshot,
 };
-use common_resource_request::ResourceRequest;
-use common_runtime::get_compute_pool_num_threads;
+use daft_common::resource_request::ResourceRequest;
+use daft_common::runtime::get_compute_pool_num_threads;
 use daft_core::{prelude::SchemaRef, series::Series};
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
@@ -224,7 +224,7 @@ impl UdfHandle {
         worker_idx: usize,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
-        use common_metrics::python::PyOperatorMetrics;
+        use daft_common::metrics::python::PyOperatorMetrics;
         use daft_recordbatch::python::PyRecordBatch;
 
         use crate::STDOUT;

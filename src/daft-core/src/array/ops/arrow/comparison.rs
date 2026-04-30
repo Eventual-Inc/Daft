@@ -3,7 +3,7 @@ use arrow::{
     compute::SortOptions,
     datatypes::{DataType, Float32Type, Float64Type},
 };
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use num_traits::Float;
 
 use crate::{kernels::search_sorted::cmp_float, series::Series};

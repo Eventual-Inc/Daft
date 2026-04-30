@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_micropartition::MicroPartition;
 
 use crate::{

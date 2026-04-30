@@ -4,11 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use common_display::{
+use daft_common::display::{
     DisplayAs,
     table_display::{make_comfy_table, make_schema_vertical_table},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, prelude::DataType};
@@ -421,11 +421,11 @@ impl Default for Schema {
 }
 
 impl DisplayAs for Schema {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
+    fn display_as(&self, level: daft_common::display::DisplayLevel) -> String {
         match level {
-            common_display::DisplayLevel::Compact => self.short_string(),
-            common_display::DisplayLevel::Default => self.truncated_table_string(),
-            common_display::DisplayLevel::Verbose => self.to_string(),
+            daft_common::display::DisplayLevel::Compact => self.short_string(),
+            daft_common::display::DisplayLevel::Default => self.truncated_table_string(),
+            daft_common::display::DisplayLevel::Verbose => self.to_string(),
         }
     }
 }

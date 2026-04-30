@@ -1,22 +1,30 @@
 [dependencies]
-common-error = {workspace = true}
+daft-common = {workspace = true}
 daft-ai = {workspace = true}
-daft-catalog = {workspace = true}
+daft-context = {path = "../daft-context", version = "0.7.9", default-features = false}
 daft-core = {workspace = true}
 daft-dsl = {workspace = true}
 daft-ext = {workspace = true}
 daft-ext-internal = {workspace = true}
 daft-logical-plan = {workspace = true}
+daft-micropartition = {path = "../daft-micropartition", version = "0.7.9", default-features = false}
+indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+regex = {workspace = true}
+snafu = {workspace = true}
+sqlparser = {workspace = true}
 uuid = {workspace = true}
 
 [features]
 python = [
   "dep:pyo3",
   "daft-ai/python",
-  "daft-catalog/python",
+  "daft-common/python",
+  "daft-context/python",
   "daft-core/python",
-  "daft-logical-plan/python"
+  "daft-dsl/python",
+  "daft-logical-plan/python",
+  "daft-micropartition/python"
 ]
 
 [dev-dependencies]
@@ -27,6 +35,9 @@ typetag = {workspace = true}
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 name = "daft-session"
 edition.workspace = true
 version.workspace = true

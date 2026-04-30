@@ -4,18 +4,18 @@ use std::{
     time::Instant,
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
-use common_error::DaftResult;
-use common_metrics::{QueryEndState, QueryID};
-use common_runtime::RuntimeTask;
-use common_tracing::flush_opentelemetry_providers;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::display::{DisplayLevel, mermaid::MermaidDisplayOptions};
+use daft_common::error::DaftResult;
+use daft_common::metrics::{QueryEndState, QueryID};
+use daft_common::runtime::RuntimeTask;
+use daft_common::tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::server::flight_server::{
+use daft_local_plan::partition_refs::FlightPartitionRef;
+use crate::shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
 use futures::{FutureExt, future::BoxFuture};
@@ -23,12 +23,12 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
-    common_daft_config::PyDaftExecutionConfig,
+    daft_common::config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_partition_refs::PyFlightPartitionRef,
+    daft_local_plan::partition_refs::PyFlightPartitionRef,
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
@@ -325,7 +325,7 @@ async fn run_execution_loop(
             }
             Some(join_result) = runtime_handle.join_next() => {
                 if let Err(e) = join_result {
-                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
+                    if matches!(&e, daft_common::error::DaftError::JoinError(source) if source.is_cancelled()) {
                         break (Ok(()), QueryEndState::Canceled);
                     }
                     break (Err(e), QueryEndState::Failed);
@@ -484,7 +484,7 @@ impl NativeExecutor {
                     result_sender: result_tx,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
-                    return Err(common_error::DaftError::InternalError(
+                    return Err(daft_common::error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
                 }

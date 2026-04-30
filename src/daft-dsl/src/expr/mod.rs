@@ -15,9 +15,9 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
-use common_hashable_float_wrapper::FloatWrapper;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::hashable_float_wrapper::FloatWrapper;
+use daft_common::treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
         InferDataType, try_mean_aggregation_supertype, try_percentile_aggregation_supertype,
@@ -916,7 +916,7 @@ impl AggExpr {
                                 field.dtype, field.name,
                             )));
                         }
-                        DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?
+                        DataType::try_from(&*daft_hash::sketch::ARROW_DDSKETCH_DTYPE)?
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
                 };
@@ -2512,7 +2512,7 @@ where
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {
-    use common_treenode::{TreeNode, TreeNodeRecursion};
+    use daft_common::treenode::{TreeNode, TreeNodeRecursion};
 
     let mut found_agg = false;
 

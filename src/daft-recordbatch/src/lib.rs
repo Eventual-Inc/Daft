@@ -9,9 +9,9 @@ use std::{
 };
 
 use arrow_array::ArrayRef;
-use common_display::table_display::{StrValue, make_comfy_table};
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_compute_runtime;
+use daft_common::display::table_display::{StrValue, make_comfy_table};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::runtime::get_compute_runtime;
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -32,7 +32,7 @@ use daft_dsl::{
     operator_metrics::{MetricsCollector, NoopMetricsCollector},
     resolved_col,
 };
-use daft_functions_list::SeriesListExtension;
+use daft_functions::list::SeriesListExtension;
 use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt, future::try_join_all};
 use num_traits::ToPrimitive;
@@ -44,6 +44,7 @@ mod growable;
 mod ops;
 mod preview;
 mod probeable;
+pub mod stats;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
@@ -60,7 +61,7 @@ pub use repr_html::html_value;
 #[macro_export]
 macro_rules! value_err {
     ($($arg:tt)*) => {
-        return Err(common_error::DaftError::ValueError(format!($($arg)*)))
+        return Err(daft_common::error::DaftError::ValueError(format!($($arg)*)))
     };
 }
 
@@ -2044,7 +2045,7 @@ mod test {
     use std::sync::Arc;
 
     use arrow_array::ArrayRef;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
 

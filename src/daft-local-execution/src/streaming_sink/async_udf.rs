@@ -5,14 +5,14 @@ use std::{
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
-use common_error::DaftResult;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::metrics::{
     Counter, Meter, StatSnapshot,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
     snapshot::UdfSnapshot,
 };
-use common_runtime::JoinSet;
+use daft_common::runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,

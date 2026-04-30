@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use arrow::buffer::NullBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use super::full::FullNull;
 use crate::{

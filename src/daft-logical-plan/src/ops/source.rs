@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointConfig;
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common::checkpoint_config::CheckpointConfig;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
 use daft_scan::{PhysicalScanInfo, Precision, ScanState};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};

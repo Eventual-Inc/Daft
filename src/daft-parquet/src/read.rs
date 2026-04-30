@@ -5,8 +5,8 @@ use std::{
 };
 
 use arrow::array::ArrayRef;
-use common_error::DaftResult;
-use common_runtime::get_io_runtime;
+use daft_common::error::DaftResult;
+use daft_common::runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
@@ -35,13 +35,13 @@ pub enum StringEncoding {
 }
 
 impl std::str::FromStr for StringEncoding {
-    type Err = common_error::DaftError;
+    type Err = daft_common::error::DaftError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "utf-8" => Ok(Self::Utf8),
             "raw" => Ok(Self::Raw),
-            other => Err(common_error::DaftError::ValueError(format!(
+            other => Err(daft_common::error::DaftError::ValueError(format!(
                 "Unrecognized string encoding: {other}"
             ))),
         }
@@ -71,7 +71,7 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
             value
                 .string_encoding
                 .parse()
-                .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
+                .map_err(|e: daft_common::error::DaftError| crate::Error::ArrowError {
                     source: arrow::error::ArrowError::InvalidArgumentError(e.to_string()),
                 })?;
         Ok(Self {
@@ -458,7 +458,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     if let Some(ref row_groups) = row_groups
         && row_groups.len() != uris.len()
     {
-        return Err(common_error::DaftError::ValueError(format!(
+        return Err(daft_common::error::DaftError::ValueError(format!(
             "Mismatch of length of `uris` and `row_groups`. {} vs {}",
             uris.len(),
             row_groups.len()
@@ -602,7 +602,7 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
     if let Some(ref row_groups) = row_groups
         && row_groups.len() != uris.len()
     {
-        return Err(common_error::DaftError::ValueError(format!(
+        return Err(daft_common::error::DaftError::ValueError(format!(
             "Mismatch of length of `uris` and `row_groups`. {} vs {}",
             uris.len(),
             row_groups.len()
@@ -749,7 +749,7 @@ pub fn read_parquet_statistics(
     let runtime_handle = get_io_runtime(true);
 
     if uris.data_type() != &DataType::Utf8 {
-        return Err(common_error::DaftError::ValueError(format!(
+        return Err(daft_common::error::DaftError::ValueError(format!(
             "Expected Utf8 Datatype, got {}",
             uris.data_type()
         )));
@@ -822,7 +822,7 @@ mod tests {
     use std::{ops::Deref, path::PathBuf, sync::Arc};
 
     use arrow::datatypes::DataType;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet::schema::types::Type as ParquetSchemaType;

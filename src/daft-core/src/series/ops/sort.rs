@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::{prelude::UInt64Array, series::Series, with_match_comparable_daft_types};
 

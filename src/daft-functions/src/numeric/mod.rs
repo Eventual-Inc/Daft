@@ -23,7 +23,7 @@ use bin::Bin;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::prelude::{Field, Schema};
 use daft_dsl::{
     Expr,

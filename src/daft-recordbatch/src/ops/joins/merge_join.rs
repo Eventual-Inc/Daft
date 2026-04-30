@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::full::FullNull,
     datatypes::{DataType, UInt64Array},

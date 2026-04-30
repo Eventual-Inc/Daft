@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
-use common_hashable_float_wrapper::FloatWrapper as HashableF64;
-use common_metrics::MetricsCollector;
+use daft_common::error::DaftResult;
+use daft_common::hashable_float_wrapper::FloatWrapper as HashableF64;
+use daft_common::metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use opentelemetry::{
@@ -159,7 +159,7 @@ impl RowWisePyFn {
         args: &[Series],
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
-        use common_error::DaftError;
+        use daft_common::error::DaftError;
 
         use crate::functions::python::OnError;
         let num_rows = args
@@ -197,7 +197,7 @@ impl RowWisePyFn {
                 log::warn!("Python UDF error: {}", err);
                 let num_rows = args.iter().map(Series::len).max().unwrap();
 
-                let logger_provider = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                let logger_provider = daft_common::tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
                 if let Some(logger_provider) = logger_provider.as_ref() {
                     let logger = logger_provider.logger("python-udf-error");
                     let mut log_record = logger.create_log_record();
@@ -312,7 +312,7 @@ impl RowWisePyFn {
         num_rows: usize,
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
-        use common_error::DaftError;
+        use daft_common::error::DaftError;
         use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
 
@@ -348,7 +348,7 @@ impl RowWisePyFn {
                 let f = || {
                     func.call1((cls_ref, method_ref, args_ref, &py_args))
                         .and_then(|res| {
-                            use common_metrics::python::PyOperatorMetrics;
+                            use daft_common::metrics::python::PyOperatorMetrics;
 
                             let (value_obj, operator_metrics): (Bound<PyAny>, PyOperatorMetrics) =
                                 res.extract()?;
@@ -370,7 +370,7 @@ impl RowWisePyFn {
                     Err(e) => match on_error {
                         OnError::Raise => Err(e),
                         OnError::Log => {
-                            let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                            let lg = daft_common::tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
                             if let Some(logger_provider) = lg.as_ref() {
                                 let logger = logger_provider.logger("python-udf-error");
                                 let mut log_record = logger.create_log_record();
@@ -439,8 +439,8 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
-    ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
-        use common_metrics::python::PyOperatorMetrics;
+    ) -> DaftResult<(Series, daft_common::metrics::python::PyOperatorMetrics)> {
+        use daft_common::metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
@@ -450,7 +450,7 @@ impl RowWisePyFn {
         let args = args.to_vec();
         let return_dtype = self.return_dtype.clone();
 
-        let (py_series, operator_metrics) = common_runtime::python::execute_python_coroutine::<
+        let (py_series, operator_metrics) = daft_common::runtime::python::execute_python_coroutine::<
             _,
             (PySeries, PyOperatorMetrics),
         >(move |py| {

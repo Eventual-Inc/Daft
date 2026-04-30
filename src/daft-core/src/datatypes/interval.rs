@@ -1,7 +1,7 @@
 use std::{fmt::Display, ops::Neg};
 
 use arrow::datatypes::IntervalMonthDayNano;
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -285,7 +285,7 @@ impl Display for IntervalValue {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use super::{IntervalValue, IntervalValueBuilder};
 

@@ -1,4 +1,4 @@
-use common_io_config::python::IOConfig;
+use daft_common::io_config::python::IOConfig;
 use daft_schema::media_type::MediaType;
 use pyo3::{
     exceptions::PyTypeError,

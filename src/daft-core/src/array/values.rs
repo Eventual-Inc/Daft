@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use crate::prelude::{AsArrow, BinaryArray, BooleanArray, Utf8Array};
 

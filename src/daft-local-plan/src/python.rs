@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_py_serde::impl_bincode_py_state_serialization;
+use daft_common::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use daft_recordbatch::python::PyRecordBatch;

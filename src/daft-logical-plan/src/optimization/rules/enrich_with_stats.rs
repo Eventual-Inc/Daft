@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode};
 
 use super::OptimizerRule;
 use crate::{LogicalPlan, stats::StatsState};

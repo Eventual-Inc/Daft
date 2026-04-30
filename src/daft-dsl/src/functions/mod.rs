@@ -19,7 +19,7 @@ use std::{
 };
 
 pub use agg_fn::{AggFn, AggFnHandle, State};
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
 use python::LegacyPythonUDF;

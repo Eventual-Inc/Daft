@@ -12,7 +12,7 @@ pub trait AsArrow {
     /// This does not correct for the logical types and will just yield the physical type of the array.
     /// For example, a TimestampArray will yield an arrow Int64Array rather than a arrow Timestamp Array.
     /// To get a corrected arrow type, see `.to_arrow()`.
-    fn as_arrow(&self) -> common_error::DaftResult<&Self::ArrowOutput>;
+    fn as_arrow(&self) -> daft_common::error::DaftResult<&Self::ArrowOutput>;
 }
 
 impl<T> AsArrow for DataArray<T>
@@ -21,12 +21,12 @@ where
 {
     type ArrowOutput = arrow::array::PrimitiveArray<<T::Native as NumericNative>::ARROWTYPE>;
 
-    fn as_arrow(&self) -> common_error::DaftResult<&Self::ArrowOutput> {
+    fn as_arrow(&self) -> daft_common::error::DaftResult<&Self::ArrowOutput> {
         self.data
             .as_any()
             .downcast_ref::<Self::ArrowOutput>()
             .ok_or_else(|| {
-                common_error::DaftError::TypeError(
+                daft_common::error::DaftError::TypeError(
                     "Failed to downcast to arrow array type".to_string(),
                 )
             })
@@ -38,12 +38,12 @@ macro_rules! impl_asarrow_dataarray {
         impl AsArrow for $da {
             type ArrowOutput = $arrow_output;
 
-            fn as_arrow(&self) -> common_error::DaftResult<&Self::ArrowOutput> {
+            fn as_arrow(&self) -> daft_common::error::DaftResult<&Self::ArrowOutput> {
                 self.data
                     .as_any()
                     .downcast_ref::<Self::ArrowOutput>()
                     .ok_or_else(|| {
-                        common_error::DaftError::TypeError(
+                        daft_common::error::DaftError::TypeError(
                             "Failed to downcast to arrow array type".to_string(),
                         )
                     })
@@ -57,13 +57,13 @@ macro_rules! impl_asarrow_logicalarray {
         impl AsArrow for $da {
             type ArrowOutput = $arrow_output;
 
-            fn as_arrow(&self) -> common_error::DaftResult<&Self::ArrowOutput> {
+            fn as_arrow(&self) -> daft_common::error::DaftResult<&Self::ArrowOutput> {
                 self.physical
                     .data
                     .as_any()
                     .downcast_ref::<Self::ArrowOutput>()
                     .ok_or_else(|| {
-                        common_error::DaftError::TypeError(
+                        daft_common::error::DaftError::TypeError(
                             "Failed to downcast to arrow array type".to_string(),
                         )
                     })
@@ -76,7 +76,7 @@ macro_rules! impl_asarrow_nested {
         impl AsArrow for $da {
             type ArrowOutput = $arrow_output;
 
-            fn as_arrow(&self) -> common_error::DaftResult<&Self::ArrowOutput> {
+            fn as_arrow(&self) -> daft_common::error::DaftResult<&Self::ArrowOutput> {
                 unimplemented!()
             }
         }
@@ -102,7 +102,7 @@ impl_asarrow_nested!(UnionArray, arrow::array::UnionArray);
 #[cfg(test)]
 mod test {
     use arrow::array::Array;
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::prelude::*;
 

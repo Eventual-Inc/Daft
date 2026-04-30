@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 
 use crate::series::Series;
 impl Series {
@@ -9,7 +9,7 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
 
     use crate::{
         array::ops::full::FullNull,

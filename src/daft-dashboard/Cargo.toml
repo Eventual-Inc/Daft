@@ -2,7 +2,7 @@
 async-stream = {workspace = true}
 axum = "0.8"
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
-common-metrics = {path = "../common/metrics", default-features = false}
+daft-common = {workspace = true}
 tower = "0.5"
 tower-http = {version = "0.6", features = ["fs", "trace", "cors"]}
 include_dir = "0.7.4"
@@ -20,12 +20,16 @@ mime = "*"
 mime_guess = "*"
 
 [features]
-python = ["dep:pyo3", "daft-recordbatch/python", "common-metrics/python"]
+python = ["dep:pyo3", "daft-recordbatch/python", "daft-common/python"]
 
 [lints]
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
 name = "daft-dashboard"
 edition.workspace = true
 version.workspace = true

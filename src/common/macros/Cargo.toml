@@ -12,6 +12,10 @@ proc-macro = true
 workspace = true
 
 [package]
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 edition = {workspace = true}
 name = "common-macros"
 version = {workspace = true}
+description = "Procedural macros for Daft internals"

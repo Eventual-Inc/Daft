@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use arrow::array::{LargeBinaryBuilder, LargeStringBuilder};
-use common_error::DaftResult;
-use common_io_config::IOConfig;
+use daft_common::error::DaftResult;
+use daft_common::io_config::IOConfig;
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{
@@ -180,7 +180,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use common_io_config::IOConfig;
+    use daft_common::io_config::IOConfig;
 
     use crate::{
         datatypes::FileArray,

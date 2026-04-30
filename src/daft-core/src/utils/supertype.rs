@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 use daft_schema::field::Field;
 use indexmap::IndexMap;
 

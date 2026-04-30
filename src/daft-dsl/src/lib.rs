@@ -6,7 +6,7 @@ pub mod optimization;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod python_udf;
-pub use common_metrics::operator_metrics;
+pub use daft_common::metrics::operator_metrics;
 
 #[cfg(feature = "python")]
 mod visitor;
@@ -14,7 +14,6 @@ mod visitor;
 mod treenode;
 pub mod utils;
 
-pub use common_treenode;
 pub use expr::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, PlanRef, ResolvedColumn, SketchType,
     Subquery, SubqueryPlan, UnresolvedColumn, WindowExpr, binary_op, bound_col,

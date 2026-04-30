@@ -1,20 +1,21 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
-use common_display::{
+use daft_common::config::DaftExecutionConfig;
+use daft_common::display::{
     DisplayLevel,
     ascii::fmt_tree_gitstyle,
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
 };
-use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
-use common_metrics::{
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::file_formats::FileFormat;
+use daft_common::metrics::{
     Meter, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+use daft_common::treenode::ConcreteTreeNode;
+use daft_dsl::join::get_common_join_cols;
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
@@ -27,10 +28,10 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
-use daft_partition_refs::FlightPartitionRef;
+use daft_local_plan::partition_refs::FlightPartitionRef;
 use daft_scan::ScanTaskRef;
-use daft_shuffles::server::flight_server::ShuffleFlightServer;
-use daft_writers::make_physical_writer_factory;
+use crate::shuffles::server::flight_server::ShuffleFlightServer;
+use crate::writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
@@ -109,7 +110,7 @@ pub(crate) enum PipelineEvent<TaskResult> {
 /// Yield the next event from either the task set or the input receiver.
 /// Returns `Ok(None)` when both the input is closed and no tasks remain.
 pub(crate) async fn next_event<TaskResult: Send + 'static>(
-    task_set: &mut common_runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
+    task_set: &mut daft_common::runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
     max_concurrency: usize,
     receiver: &mut crate::channel::Receiver<PipelineMessage>,
     input_closed: &mut bool,
@@ -272,7 +273,7 @@ pub struct BuilderContext {
     checkpoint: std::cell::RefCell<
         Option<(
             daft_checkpoint::CheckpointStoreRef,
-            common_checkpoint_config::CheckpointIdMap,
+            daft_common::checkpoint_config::CheckpointIdMap,
             daft_dsl::expr::bound_expr::BoundExpr,
         )>,
     >,
@@ -306,7 +307,7 @@ impl BuilderContext {
     pub fn set_checkpoint(
         &self,
         store: daft_checkpoint::CheckpointStoreRef,
-        id_map: common_checkpoint_config::CheckpointIdMap,
+        id_map: daft_common::checkpoint_config::CheckpointIdMap,
         key_expr: daft_dsl::expr::bound_expr::BoundExpr,
     ) {
         *self.checkpoint.borrow_mut() = Some((store, id_map, key_expr));
@@ -316,7 +317,7 @@ impl BuilderContext {
         &self,
     ) -> Option<(
         daft_checkpoint::CheckpointStoreRef,
-        common_checkpoint_config::CheckpointIdMap,
+        daft_common::checkpoint_config::CheckpointIdMap,
         daft_dsl::expr::bound_expr::BoundExpr,
     )> {
         self.checkpoint.borrow().clone()
@@ -792,7 +793,7 @@ fn physical_plan_to_pipeline(
             // so `BlockingSinkNode::with_checkpoint` / `CheckpointTerminusNode`
             // mark the same ids committed after the write succeeds.
             let store = daft_checkpoint::build_store(&checkpoint_config.store);
-            let id_map = common_checkpoint_config::CheckpointIdMap::new();
+            let id_map = daft_common::checkpoint_config::CheckpointIdMap::new();
             let key_expr_ref = unresolved_col(checkpoint_config.key_column.clone());
             let key_expr = BoundExpr::try_new(key_expr_ref, schema).with_context(|_| {
                 PipelineCreationSnafu {
@@ -1478,7 +1479,7 @@ fn physical_plan_to_pipeline(
                 _ => daft_checkpoint::FileFormat::Parquet,
             };
             let writer_factory =
-                daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
+                crate::writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,
@@ -1507,7 +1508,7 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
+            let writer_factory = crate::writers::make_lance_writer_factory(lance_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
                 writer_factory,
@@ -1533,7 +1534,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             let writer_factory =
-                daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
+                crate::writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::DataSink(data_sink_info.name.clone()),
                 writer_factory,

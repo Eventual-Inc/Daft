@@ -4,7 +4,7 @@ use arrow::array::{
     Array as _, BooleanBuilder, FixedSizeBinaryBuilder, IntervalMonthDayNanoBuilder,
     LargeBinaryBuilder, LargeStringBuilder, PrimitiveBuilder,
 };
-use common_error::{DaftError, DaftResult};
+use daft_common::error::{DaftError, DaftResult};
 
 use super::full::FullNull;
 #[cfg(feature = "python")]

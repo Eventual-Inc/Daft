@@ -2,9 +2,9 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_error::DaftError;
-use common_file_formats::FileFormat;
-use common_io_config::{GravitinoConfig, IOConfig};
+use daft_common::error::DaftError;
+use daft_common::file_formats::FileFormat;
+use daft_common::io_config::{GravitinoConfig, IOConfig};
 use futures::stream::BoxStream;
 use itertools::Itertools;
 use pyo3::{intern, prelude::*};
@@ -117,7 +117,7 @@ impl GravitinoSource {
                 IOConfig::default()
             } else {
                 py_io_config
-                    .extract::<common_io_config::python::IOConfig>()?
+                    .extract::<daft_common::io_config::python::IOConfig>()?
                     .config
             };
 
@@ -329,7 +329,7 @@ impl ObjectSource for GravitinoSource {
 
 #[cfg(test)]
 mod tests {
-    use common_io_config::GravitinoConfig;
+    use daft_common::io_config::GravitinoConfig;
 
     use super::*;
 

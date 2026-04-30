@@ -20,7 +20,7 @@ pub use types::*;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     use pyo3::types::PyModuleMethods;
-    common_checkpoint_config::python::register_modules(parent)?;
+    daft_common::checkpoint_config::python::register_modules(parent)?;
     parent.add_class::<config::PyCheckpointStore>()?;
     parent.add_class::<config::PyCheckpoint>()?;
     parent.add_class::<config::PyCheckpointStatus>()?;

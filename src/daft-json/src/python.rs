@@ -72,7 +72,7 @@ pub mod pylib {
                 io_config.unwrap_or_default().config.into(),
             )?;
 
-            let runtime_handle = common_runtime::get_io_runtime(true);
+            let runtime_handle = daft_common::runtime::get_io_runtime(true);
 
             let schema = runtime_handle.block_on_current_thread(async {
                 crate::schema::read_json_schema(

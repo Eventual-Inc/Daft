@@ -1,7 +1,8 @@
 use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult, ensure};
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::ensure;
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, Column, Expr, ExprRef, PlanRef, ResolvedColumn, UnresolvedColumn,
@@ -178,8 +179,8 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
     // Functions that can support an eval/map context
 
     let eval_functions: &[TypeId] = &[
-        TypeId::of::<daft_functions_list::ListMap>(),
-        TypeId::of::<daft_functions_list::ListFilter>(),
+        TypeId::of::<daft_functions::list::ListMap>(),
+        TypeId::of::<daft_functions::list::ListFilter>(),
     ];
 
     expr.transform_down(|e| {
@@ -193,7 +194,7 @@ fn resolve_list_evals(expr: ExprRef) -> DaftResult<ExprRef> {
                 DaftError::ValueError("list should have at least one element".to_string())
             })?;
 
-            let exploded = daft_functions_list::explode(list_col.clone(), lit(true));
+            let exploded = daft_functions::list::explode(list_col.clone(), lit(true));
 
             let mut new_inputs = Vec::with_capacity(inputs.len());
             new_inputs.push(FunctionArg::Unnamed(list_col.clone()));
@@ -356,7 +357,7 @@ impl ExprResolver<'_> {
             ));
         }
 
-        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(sf)) if sf.is_function_type::<daft_functions_list::Explode>())) {
+        if !self.allow_explode && expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(sf)) if sf.is_function_type::<daft_functions::list::Explode>())) {
             return Err(DaftError::ValueError(
                 "explode() is only allowed in projections".to_string(),
             ));

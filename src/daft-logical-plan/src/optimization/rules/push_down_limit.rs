@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_dsl::{Expr, ExprRef, functions::scalar::ScalarFn};
 
 use super::OptimizerRule;
@@ -26,7 +26,7 @@ impl PushDownLimit {
     fn contains_explode(expr: &ExprRef) -> bool {
         expr.exists(|e| {
             if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = e.as_ref() {
-                sf.is_function_type::<daft_functions_list::Explode>()
+                sf.is_function_type::<daft_functions::list::Explode>()
             } else {
                 false
             }
@@ -232,7 +232,7 @@ impl PushDownLimit {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
     use daft_scan::Pushdowns;
@@ -385,7 +385,7 @@ mod tests {
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)]).into();
         let plan = LogicalPlanBuilder::in_memory_scan(
             "foo",
-            common_partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
+            daft_common::partitioning::PartitionCacheEntry::Python(Arc::new(py_obj)),
             schema,
             Default::default(),
             5,

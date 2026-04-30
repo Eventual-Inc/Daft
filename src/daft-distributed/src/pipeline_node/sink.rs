@@ -1,8 +1,8 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_error::DaftResult;
-use common_file_formats::FileFormat;
-use common_metrics::{
+use daft_common::error::DaftResult;
+use daft_common::file_formats::FileFormat;
+use daft_common::metrics::{
     BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,

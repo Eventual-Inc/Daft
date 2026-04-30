@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
 use sketches_ddsketch::{Config, DDSketch};
 
 use super::{DaftApproxSketchAggable, from_arrow::FromArrow};
@@ -14,7 +14,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
     fn approx_sketch(&self) -> Self::Output {
         let arrow_array = if self.is_empty() {
-            daft_sketch::into_arrow(vec![])
+            daft_hash::sketch::into_arrow(vec![])
         } else if self.null_count() > 0 {
             let sketch = self
                 .into_iter()
@@ -30,7 +30,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         Some(acc)
                     }
                 });
-            daft_sketch::into_arrow(vec![sketch])
+            daft_hash::sketch::into_arrow(vec![sketch])
         } else {
             let sketch =
                 self.values()
@@ -40,13 +40,13 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         acc
                     });
 
-            daft_sketch::into_arrow(vec![Some(sketch)])
+            daft_hash::sketch::into_arrow(vec![Some(sketch)])
         };
 
         StructArray::from_arrow(
             Arc::new(Field::new(
                 self.field.name.clone(),
-                DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
+                DataType::try_from(&*daft_hash::sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,
         )
@@ -54,7 +54,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output {
         let sketch_per_group = if self.is_empty() {
-            daft_sketch::into_arrow(vec![])
+            daft_hash::sketch::into_arrow(vec![])
         } else if self.null_count() > 0 {
             let sketches: Vec<Option<DDSketch>> = groups
                 .iter()
@@ -77,7 +77,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 })
                 .collect();
 
-            daft_sketch::into_arrow(sketches)
+            daft_hash::sketch::into_arrow(sketches)
         } else {
             let sketches = groups
                 .iter()
@@ -93,13 +93,13 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 })
                 .collect();
 
-            daft_sketch::into_arrow(sketches)
+            daft_hash::sketch::into_arrow(sketches)
         };
 
         StructArray::from_arrow(
             Arc::new(Field::new(
                 self.field.name.clone(),
-                DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
+                DataType::try_from(&*daft_hash::sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             sketch_per_group,
         )

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef,
@@ -737,7 +737,7 @@ fn replace_column_with_semantic_id_aggexpr(
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common::error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{binary_op, lit, resolved_col};
 

@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_metrics::{
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
-use common_partitioning::PartitionRef;
+use daft_common::partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};

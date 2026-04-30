@@ -3,11 +3,11 @@ use std::sync::{
     atomic::{AtomicU16, Ordering},
 };
 
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_metrics::QueryID;
-use common_partitioning::PartitionRef;
-use common_runtime::JoinSet;
+use daft_common::config::DaftExecutionConfig;
+use daft_common::error::DaftResult;
+use daft_common::metrics::QueryID;
+use daft_common::partitioning::PartitionRef;
+use daft_common::runtime::JoinSet;
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use futures::{Stream, StreamExt, stream};
 use serde::{Deserialize, Serialize};

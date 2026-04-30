@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_metrics::{
+use daft_common::error::{DaftError, DaftResult};
+use daft_common::metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
-use common_py_serde::PyObjectWrapper;
-use common_runtime::{JoinSet, python::execute_python_coroutine};
+use daft_common::py_serde::PyObjectWrapper;
+use daft_common::runtime::{JoinSet, python::execute_python_coroutine};
 use daft_dsl::{
     ExprRef, expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr,
 };

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
-use common_metrics::{NodeID, Stats};
+use daft_common::error::DaftResult;
+use daft_common::metrics::{NodeID, Stats};
 use pyo3::{
     Bound, IntoPyObject, Py, PyAny, PyResult, Python, intern,
     types::{PyAnyMethods, PyModule},

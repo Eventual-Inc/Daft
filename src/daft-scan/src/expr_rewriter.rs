@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use common_error::DaftResult;
+use daft_common::error::DaftResult;
+use daft_common::treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_algebra::boolean::split_conjunction;
 use daft_core::prelude::Operator;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
-    common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
     functions::{FunctionExpr, partitioning},
     null_lit, resolved_col,
 };
@@ -157,7 +157,7 @@ pub fn rewrite_predicate_for_partitioning(
             if let Some(ref source_field) = pf.source_field {
                 let prev_value = map.insert(source_field.name.as_ref(), pf);
                 if let Some(prev_value) = prev_value {
-                    return Err(common_error::DaftError::ValueError(format!(
+                    return Err(daft_common::error::DaftError::ValueError(format!(
                         "Duplicate Partitioning Columns found on same source field: {source_field}\n1: {prev_value}\n2: {pf}"
                     )));
                 }
