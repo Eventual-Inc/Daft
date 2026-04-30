@@ -1,7 +1,7 @@
 use std::iter::repeat_n;
 
 use arrow::buffer::{OffsetBuffer, ScalarBuffer};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{

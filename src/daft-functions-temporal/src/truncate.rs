@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
 use serde::{Deserialize, Serialize};

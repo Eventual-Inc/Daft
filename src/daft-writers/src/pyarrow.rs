@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_logical_plan::sink_info::CsvFormatOption;
 use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};

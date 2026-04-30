@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_stats::{PartitionSpec, TableStatistics};

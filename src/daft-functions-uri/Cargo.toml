@@ -2,11 +2,11 @@
 arrow = {workspace = true}
 async-trait = {workspace = true}
 bytes = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-io = {path = "../daft-io", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 serde = {workspace = true}
 tokio = {workspace = true}
@@ -19,5 +19,8 @@ workspace = true
 
 [package]
 name = "daft-functions-uri"
+repository = {workspace = true}
+license = {workspace = true}
+description = "URI functions for Daft"
 edition.workspace = true
 version.workspace = true

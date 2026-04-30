@@ -1,6 +1,6 @@
 use std::hash::BuildHasherDefault;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher, XxHash32BuildHasher};
 
 use crate::{

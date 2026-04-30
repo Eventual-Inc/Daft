@@ -1,7 +1,7 @@
 use std::{ops::ControlFlow, sync::Arc};
 
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},

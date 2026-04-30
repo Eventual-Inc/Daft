@@ -7,7 +7,7 @@ use common_display::{
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
 };
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
     Meter, QueryID,

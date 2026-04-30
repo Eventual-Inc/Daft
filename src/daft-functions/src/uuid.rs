@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow_array::builder::FixedSizeBinaryBuilder;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, FromArrow, Schema, UuidArray},
     series::{IntoSeries, Series},

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_micropartition::MicroPartition;

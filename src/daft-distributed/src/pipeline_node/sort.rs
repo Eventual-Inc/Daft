@@ -1,6 +1,6 @@
 use std::{future, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -102,7 +102,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
             use crate::python::ray::RayPartitionRef;
 
             let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
-                common_error::DaftError::InternalError(
+                daft_common_error::DaftError::InternalError(
                     "Failed to downcast partition ref".to_string(),
                 ),
             )?;
@@ -140,7 +140,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     .await?;
 
     let boundaries = boundaries.inner.concat_or_get()?.ok_or_else(|| {
-        common_error::DaftError::InternalError(
+        daft_common_error::DaftError::InternalError(
             "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
         )
     })?;
@@ -167,7 +167,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
             pr.as_any()
                 .downcast_ref::<MicroPartition>()
                 .ok_or_else(|| {
-                    common_error::DaftError::InternalError(
+                    daft_common_error::DaftError::InternalError(
                         "Expected MicroPartition in local mode".to_string(),
                     )
                 })
@@ -181,7 +181,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     let boundaries = sorted.quantiles(num_partitions)?;
 
     boundaries.concat_or_get()?.ok_or_else(|| {
-        common_error::DaftError::InternalError(
+        daft_common_error::DaftError::InternalError(
             "No boundaries found for range partitioning".to_string(),
         )
     })
@@ -638,7 +638,7 @@ impl PipelineNodeImpl for SortNode {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_metrics::{Meter, StatSnapshot};
     use daft_micropartition::MicroPartition;
 

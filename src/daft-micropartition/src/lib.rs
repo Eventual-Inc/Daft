@@ -1,7 +1,7 @@
 #![feature(iterator_try_reduce)]
 #![feature(iterator_try_collect)]
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use snafu::Snafu;
 mod micropartition;
 mod ops;

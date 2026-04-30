@@ -5,7 +5,7 @@ use arrow::{
     buffer::{NullBuffer, OffsetBuffer, ScalarBuffer},
     compute::kernels::concat::concat,
 };
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use crate::{
     datatypes::{DaftArrayType, DataType, Field},
@@ -287,7 +287,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::buffer::NullBuffer;
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use super::FixedSizeListArray;
     use crate::{

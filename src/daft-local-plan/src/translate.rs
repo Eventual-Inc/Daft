@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::{

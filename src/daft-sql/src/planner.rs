@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -2576,7 +2576,7 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
 /// Helper to do create a singleton plan for SELECT without FROM.
 #[cfg(not(feature = "python"))]
 fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
-    Err(common_error::DaftError::InternalError(
+    Err(daft_common_error::DaftError::InternalError(
         "SELECT without FROM requires 'python' feature".to_string(),
     ))
 }

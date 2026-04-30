@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},

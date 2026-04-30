@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 pub use common_partitioning::*;
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;

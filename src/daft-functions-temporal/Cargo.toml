@@ -2,9 +2,9 @@
 arrow-array = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
 paste = "1.0.15"
 serde = {workspace = true}
 typetag = {workspace = true}
@@ -14,5 +14,8 @@ workspace = true
 
 [package]
 name = "daft-functions-temporal"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Temporal functions for Daft"
 edition.workspace = true
 version.workspace = true

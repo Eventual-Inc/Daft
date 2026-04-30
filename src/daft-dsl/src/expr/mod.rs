@@ -15,7 +15,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{

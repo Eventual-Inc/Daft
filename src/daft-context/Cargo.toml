@@ -1,12 +1,12 @@
 [dependencies]
-common-runtime = {path = "../common/runtime", default-features = false}
-common-daft-config = {path = "../common/daft-config", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-metrics = {path = "../common/metrics", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-dashboard = {path = "../daft-dashboard", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
+common-daft-config = {path = "../common/daft-config", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-metrics = {path = "../common/metrics", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false, version = "0.3.0-dev0"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, version = "0.3.0-dev0"}
+daft-dashboard = {path = "../daft-dashboard", default-features = false, version = "0.3.0-dev0"}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 log = {workspace = true}
@@ -23,7 +23,7 @@ uuid = {workspace = true, features = ["v4"]}
 python = [
   "dep:pyo3",
   "common-daft-config/python",
-  "common-error/python",
+  "daft-common-error/python",
   "common-metrics/python",
   "daft-core/python",
   "daft-logical-plan/python",
@@ -36,5 +36,8 @@ workspace = true
 
 [package]
 name = "daft-context"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Execution context for Daft"
 edition.workspace = true
 version.workspace = true

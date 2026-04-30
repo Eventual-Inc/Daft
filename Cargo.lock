@@ -1780,23 +1780,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-error"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-schema 57.3.0",
- "pyo3",
- "regex",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "common-file-formats"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-py-serde",
+ "daft-common-error",
  "pyo3",
  "serde",
 ]
@@ -1813,8 +1801,8 @@ name = "common-image"
 version = "0.3.0-dev0"
 dependencies = [
  "bincode",
- "common-error",
  "common-ndarray",
+ "daft-common-error",
  "daft-schema",
  "image",
  "ndarray",
@@ -1828,8 +1816,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "aws-credential-types",
  "chrono",
- "common-error",
  "common-py-serde",
+ "daft-common-error",
  "derive_more",
  "educe",
  "log",
@@ -1845,17 +1833,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "log",
-]
-
-[[package]]
-name = "common-macros"
-version = "0.3.0-dev0"
-dependencies = [
- "proc-macro-crate",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -1888,8 +1865,8 @@ dependencies = [
 name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-py-serde",
+ "daft-common-error",
  "futures",
  "pyo3",
  "serde",
@@ -1916,9 +1893,9 @@ dependencies = [
 name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
+ "daft-common-error",
  "pyo3",
  "serde",
 ]
@@ -1927,7 +1904,7 @@ dependencies = [
 name = "common-runtime"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
  "futures",
  "log",
  "oneshot",
@@ -1963,7 +1940,7 @@ dependencies = [
 name = "common-treenode"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
 ]
 
 [[package]]
@@ -2355,8 +2332,8 @@ dependencies = [
 name = "daft-algebra"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-treenode",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-schema",
@@ -2368,8 +2345,8 @@ dependencies = [
 name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-pattern",
+ "daft-common-error",
  "daft-context",
  "daft-core",
  "daft-dsl",
@@ -2393,10 +2370,10 @@ dependencies = [
  "bytes",
  "chrono",
  "common-checkpoint-config",
- "common-error",
  "common-io-config",
  "common-runtime",
  "daft-checkpoint",
+ "daft-common-error",
  "daft-core",
  "daft-io",
  "daft-scan",
@@ -2425,6 +2402,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-common-error"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-schema 57.3.0",
+ "pyo3",
+ "regex",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "daft-common-macros"
+version = "0.3.0-dev0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "daft-compression"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2438,9 +2438,9 @@ name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
- "common-error",
  "common-metrics",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dashboard",
  "daft-logical-plan",
@@ -2469,20 +2469,20 @@ dependencies = [
  "comfy-table",
  "common-arrow-ffi",
  "common-display",
- "common-error",
  "common-hashable-float-wrapper",
  "common-image",
  "common-io-config",
  "common-ndarray",
  "common-py-serde",
+ "daft-common-error",
  "daft-hash",
+ "daft-hyperloglog",
  "daft-minhash",
  "daft-schema",
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
  "html-escape",
- "hyperloglog",
  "image",
  "indexmap",
  "itertools 0.14.0",
@@ -2505,11 +2505,11 @@ dependencies = [
  "arrow-schema 57.3.0",
  "async-compat",
  "async-stream",
- "common-error",
  "common-py-serde",
  "common-runtime",
  "csv",
  "csv-async",
+ "daft-common-error",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -2577,7 +2577,6 @@ dependencies = [
  "common-checkpoint-config",
  "common-daft-config",
  "common-display",
- "common-error",
  "common-file-formats",
  "common-io-config",
  "common-metrics",
@@ -2586,6 +2585,7 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
+ "daft-common-error",
  "daft-context",
  "daft-core",
  "daft-dsl",
@@ -2618,15 +2618,15 @@ name = "daft-dsl"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
- "common-error",
  "common-hashable-float-wrapper",
- "common-macros",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
  "common-tracing",
  "common-treenode",
+ "daft-common-error",
+ "daft-common-macros",
  "daft-core",
  "daft-sketch",
  "derive_more",
@@ -2666,7 +2666,7 @@ dependencies = [
  "arrow",
  "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-ext",
@@ -2689,8 +2689,8 @@ dependencies = [
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2708,7 +2708,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-hash",
@@ -2728,8 +2728,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "base64 0.22.1",
- "common-error",
- "common-macros",
+ "daft-common-error",
+ "daft-common-macros",
  "daft-core",
  "daft-dsl",
  "flate2",
@@ -2741,9 +2741,9 @@ dependencies = [
 
 [[package]]
 name = "daft-functions-json"
-version = "0.0.0"
+version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "jaq-core",
@@ -2759,7 +2759,7 @@ name = "daft-functions-list"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "indexmap",
@@ -2769,11 +2769,11 @@ dependencies = [
 
 [[package]]
 name = "daft-functions-serde"
-version = "0.0.0"
+version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "arrow-json",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "serde",
@@ -2788,7 +2788,7 @@ dependencies = [
  "arrow-array 57.3.0",
  "chrono",
  "chrono-tz",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "paste",
@@ -2802,8 +2802,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "base64 0.22.1",
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2821,8 +2821,8 @@ dependencies = [
  "arrow",
  "async-trait",
  "bytes",
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2843,7 +2843,7 @@ dependencies = [
  "arrow-buffer 57.3.0",
  "chrono",
  "chrono-tz",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "heck",
@@ -2871,7 +2871,7 @@ name = "daft-groupby"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "common-error",
+ "daft-common-error",
  "daft-core",
  "hashbrown 0.16.1",
  "smallvec",
@@ -2881,7 +2881,7 @@ dependencies = [
 name = "daft-hash"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
  "mur3",
  "serde",
  "sha1",
@@ -2889,14 +2889,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-hyperloglog"
+version = "0.3.0-dev0"
+
+[[package]]
 name = "daft-image"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "base64 0.22.1",
- "common-error",
  "common-image",
  "criterion",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-schema",
@@ -2925,10 +2929,10 @@ dependencies = [
  "azure_storage",
  "azure_storage_blobs",
  "bytes",
- "common-error",
  "common-file-formats",
  "common-io-config",
  "common-runtime",
+ "daft-common-error",
  "futures",
  "globset",
  "google-cloud-storage",
@@ -2962,9 +2966,9 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "chrono",
- "common-error",
  "common-py-serde",
  "common-runtime",
+ "daft-common-error",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -3002,7 +3006,6 @@ dependencies = [
  "common-checkpoint-config",
  "common-daft-config",
  "common-display",
- "common-error",
  "common-file-formats",
  "common-io-config",
  "common-logging",
@@ -3014,6 +3017,7 @@ dependencies = [
  "common-tracing",
  "console",
  "daft-checkpoint",
+ "daft-common-error",
  "daft-context",
  "daft-core",
  "daft-csv",
@@ -3066,12 +3070,12 @@ dependencies = [
  "arrow-schema 57.3.0",
  "bincode",
  "common-checkpoint-config",
- "common-error",
  "common-io-config",
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
  "common-treenode",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -3096,7 +3100,6 @@ dependencies = [
  "common-checkpoint-config",
  "common-daft-config",
  "common-display",
- "common-error",
  "common-file-formats",
  "common-hashable-float-wrapper",
  "common-io-config",
@@ -3106,6 +3109,7 @@ dependencies = [
  "common-treenode",
  "daft-algebra",
  "daft-checkpoint",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -3140,9 +3144,9 @@ dependencies = [
  "arrow-array 57.3.0",
  "arrow-ipc",
  "bincode",
- "common-error",
  "common-partitioning",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3168,7 +3172,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "approx",
  "arrow",
- "common-error",
+ "daft-common-error",
  "daft-hash",
  "fastrand 2.3.0",
  "memchr",
@@ -3185,8 +3189,8 @@ dependencies = [
  "bincode",
  "bytes",
  "common-arrow-ffi",
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3227,10 +3231,10 @@ dependencies = [
  "comfy-table",
  "common-arrow-ffi",
  "common-display",
- "common-error",
  "common-metrics",
  "common-py-serde",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-functions-list",
@@ -3255,7 +3259,7 @@ dependencies = [
 name = "daft-runners"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
  "daft-logical-plan",
  "daft-micropartition",
  "log",
@@ -3270,12 +3274,12 @@ dependencies = [
  "async-trait",
  "common-daft-config",
  "common-display",
- "common-error",
  "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-runtime",
  "daft-algebra",
+ "daft-common-error",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -3312,9 +3316,9 @@ dependencies = [
  "chrono-tz",
  "common-arrow-ffi",
  "common-display",
- "common-error",
  "common-py-serde",
  "common-version",
+ "daft-common-error",
  "derive_more",
  "educe",
  "html-escape",
@@ -3331,9 +3335,9 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
  "daft-ai",
  "daft-catalog",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-ext",
@@ -3353,8 +3357,8 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema 57.3.0",
  "async-channel 2.5.0",
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-io",
  "daft-micropartition",
@@ -3372,7 +3376,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
- "common-error",
+ "daft-common-error",
  "serde_arrow",
  "sketches-ddsketch",
  "snafu",
@@ -3383,11 +3387,11 @@ name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
- "common-error",
  "common-hashable-float-wrapper",
  "common-io-config",
  "common-runtime",
  "daft-catalog",
+ "daft-common-error",
  "daft-context",
  "daft-core",
  "daft-dsl",
@@ -3411,7 +3415,7 @@ dependencies = [
 name = "daft-stats"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-recordbatch",
@@ -3424,7 +3428,7 @@ name = "daft-text"
 version = "0.3.0-dev0"
 dependencies = [
  "async-stream",
- "common-error",
+ "daft-common-error",
  "daft-compression",
  "daft-core",
  "daft-io",
@@ -3443,8 +3447,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array 57.3.0",
  "chrono",
- "common-error",
  "common-runtime",
+ "daft-common-error",
  "daft-compression",
  "daft-core",
  "daft-dsl",
@@ -3474,9 +3478,9 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "common-daft-config",
- "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-common-error",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -4720,10 +4724,6 @@ dependencies = [
  "tower-service",
  "tracing",
 ]
-
-[[package]]
-name = "hyperloglog"
-version = "0.3.0-dev0"
 
 [[package]]
 name = "iana-time-zone"

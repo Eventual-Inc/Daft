@@ -1,6 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::lit::{FromLiteral, Literal};
 use serde::{Deserialize, Serialize};
 

@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::{lit::Literal, prelude::Operator};
 use daft_dsl::{Expr, ExprRef, lit, null_lit};

@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 pub type JoinSetId = tokio::task::Id;
 

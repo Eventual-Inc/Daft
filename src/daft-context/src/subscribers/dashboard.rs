@@ -6,7 +6,7 @@ use std::{
     time::SystemTime,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};

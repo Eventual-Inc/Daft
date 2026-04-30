@@ -1,6 +1,6 @@
 use std::ops::{Shl, Shr};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use num_traits::PrimInt;
 
 use crate::{

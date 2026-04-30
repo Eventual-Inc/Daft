@@ -44,7 +44,7 @@ mod tests {
         buffer::OffsetBuffer,
         datatypes::{DataType as ArrowDataType, Field as ArrowField},
     };
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::series::Series;

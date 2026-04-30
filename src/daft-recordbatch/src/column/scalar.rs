@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     lit::Literal,
     prelude::{DataType, Series},

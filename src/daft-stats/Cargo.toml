@@ -1,13 +1,13 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false, version = "0.3.0-dev0"}
 serde = {workspace = true}
 snafu = {workspace = true}
 
 [features]
-python = ["common-error/python", "daft-core/python", "daft-dsl/python", "daft-recordbatch/python"]
+python = ["daft-common-error/python", "daft-core/python", "daft-dsl/python", "daft-recordbatch/python"]
 
 [lints]
 workspace = true
@@ -15,4 +15,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-stats"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Statistics for Daft"
 version = {workspace = true}

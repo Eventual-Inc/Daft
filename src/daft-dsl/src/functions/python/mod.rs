@@ -3,7 +3,7 @@ mod udf;
 
 use std::{hash::Hash, num::NonZeroUsize, str::FromStr, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;

@@ -7,4 +7,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-hashable-float-wrapper"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Hashable float wrapper for Daft"
 version = {workspace = true}

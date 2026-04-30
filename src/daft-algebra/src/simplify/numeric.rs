@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::Transformed;
 use daft_core::{lit::Literal, prelude::Operator};
 use daft_dsl::{Expr, ExprRef};
@@ -118,7 +118,7 @@ pub(crate) fn simplify_numeric_expr(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_treenode::Transformed;
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, lit};

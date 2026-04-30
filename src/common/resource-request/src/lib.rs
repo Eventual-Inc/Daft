@@ -3,7 +3,7 @@ use std::{
     ops::Add,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]

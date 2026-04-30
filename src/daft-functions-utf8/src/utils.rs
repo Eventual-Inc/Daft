@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow::array::{Datum, Scalar};
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::{DataArray, iterator::Utf8Iter},
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},

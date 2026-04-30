@@ -2,7 +2,7 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_runtime::get_io_runtime;
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
@@ -99,7 +99,7 @@ mod py {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )
-            .map_err(|e| common_error::DaftError::External(e.into()))?;
+            .map_err(|e| daft_common_error::DaftError::External(e.into()))?;
 
             // Check if we're already in a runtime context
             let data_bytes = bytes::Bytes::copy_from_slice(data);
@@ -112,11 +112,11 @@ mod py {
                             io_client
                                 .single_url_put(&path, data_bytes, Some(io_stats_handle))
                                 .await
-                                .map_err(|e| common_error::DaftError::External(e.into()))
+                                .map_err(|e| daft_common_error::DaftError::External(e.into()))
                         })
                     })
                     .join()
-                    .map_err(|_| common_error::DaftError::External("Thread join failed".into()))?
+                    .map_err(|_| daft_common_error::DaftError::External("Thread join failed".into()))?
                 }
                 Err(_) => {
                     // No runtime, create one
@@ -125,7 +125,7 @@ mod py {
                         io_client
                             .single_url_put(&path, data_bytes, Some(io_stats_handle))
                             .await
-                            .map_err(|e| common_error::DaftError::External(e.into()))
+                            .map_err(|e| daft_common_error::DaftError::External(e.into()))
                     })
                 }
             }

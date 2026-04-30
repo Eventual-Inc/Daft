@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     array::ops::{VecIndices, arrow::comparison::build_multi_array_is_equal},
     datatypes::UInt64Array,

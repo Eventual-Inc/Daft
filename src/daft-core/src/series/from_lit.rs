@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -459,7 +459,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             .into_iter()
             .map(|(k, v)| format!("{}: {}", k, v))
             .join("\n");
-        Err(common_error::DaftError::ComputeError(format!(
+        Err(daft_common_error::DaftError::ComputeError(format!(
             "Error processing some rows:\n{errs}"
         )))
     }

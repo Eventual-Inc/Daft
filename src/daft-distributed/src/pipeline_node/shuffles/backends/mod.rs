@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,

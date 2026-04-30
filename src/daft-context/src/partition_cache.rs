@@ -6,7 +6,7 @@
 ///
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     MicroPartition,

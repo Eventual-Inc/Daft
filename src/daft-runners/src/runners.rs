@@ -2,7 +2,7 @@
 //! and utilities for runner detection
 use std::sync::{Arc, OnceLock};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{

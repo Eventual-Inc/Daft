@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::{LargeBinaryBuilder, LargeStringBuilder};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 

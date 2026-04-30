@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 use daft_schema::media_type::MediaType;

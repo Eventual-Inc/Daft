@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use arrow_schema::DataType;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use serde_arrow::{
     schema::{SchemaLike, TracingOptions},
     utils::{Item, Items},
@@ -84,7 +84,7 @@ pub fn from_arrow(arrow_array: arrow_array::ArrayRef) -> DaftResult<Vec<Option<D
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use sketches_ddsketch::{Config, DDSketch};
 
     use crate::{from_arrow, into_arrow};

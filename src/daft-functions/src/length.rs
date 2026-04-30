@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{AsArrow, DataType, Field, Schema, UInt64Array},
     series::{IntoSeries, Series},

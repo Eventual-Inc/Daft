@@ -1,6 +1,6 @@
 use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
@@ -609,7 +609,7 @@ fn recursive_optimize_project(
 mod tests {
     use std::{num::NonZeroUsize, sync::Arc};
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_resource_request::ResourceRequest;
     use daft_core::prelude::*;
     use daft_dsl::{

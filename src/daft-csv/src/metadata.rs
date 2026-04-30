@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use async_compat::CompatExt;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use csv_async::{AsyncReaderBuilder, ByteRecord};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
@@ -218,7 +218,7 @@ where
             reader
                 .headers()
                 .await
-                .map_err(|e| common_error::DaftError::External(e.into()))?
+                .map_err(|e| daft_common_error::DaftError::External(e.into()))?
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),
@@ -229,7 +229,7 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| daft_common_error::DaftError::External(e.into()))?
         {
             return Ok((vec![], Default::default()));
         }
@@ -267,7 +267,7 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| daft_common_error::DaftError::External(e.into()))?
         {
             break;
         }
@@ -296,7 +296,7 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;

@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::dtype::DataType;

@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan, LogicalPlanBuilder, SourceInfo, ops::Source};
 use daft_micropartition::{
@@ -358,7 +358,7 @@ impl Table for MemoryTable {
         plan: LogicalPlanBuilder,
         _options: IndexMap<String, Literal>,
     ) -> CatalogResult<()> {
-        use common_error::DaftError;
+        use daft_common_error::DaftError;
 
         let schema = { self.info.read().unwrap().source_schema.clone() };
 

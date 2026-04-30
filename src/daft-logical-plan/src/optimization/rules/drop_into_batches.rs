@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
@@ -46,7 +46,7 @@ impl OptimizerRule for DropIntoBatches {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
 
     use crate::{

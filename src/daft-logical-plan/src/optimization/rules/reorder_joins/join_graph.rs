@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
 use daft_dsl::{

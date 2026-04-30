@@ -1,21 +1,21 @@
 [dependencies]
-common-daft-config = {path = "../common/daft-config"}
-common-error = {path = "../common/error"}
-common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
-common-io-config = {path = "../common/io-config", default-features = false}
+common-daft-config = {path = "../common/daft-config", version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", version = "0.3.0-dev0"}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper", version = "0.3.0-dev0"}
+common-io-config = {path = "../common/io-config", default-features = false, version = "0.3.0-dev0"}
 common-runtime = {workspace = true}
-daft-catalog = {path = "../daft-catalog"}
-daft-context = {path = "../daft-context"}
-daft-core = {path = "../daft-core"}
-daft-dsl = {path = "../daft-dsl"}
-daft-functions = {path = "../daft-functions"}
-daft-functions-list = {path = "../daft-functions-list"}
-daft-functions-temporal = {path = "../daft-functions-temporal"}
-daft-functions-utf8 = {path = "../daft-functions-utf8"}
-daft-logical-plan = {path = "../daft-logical-plan"}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch"}
-daft-session = {path = "../daft-session"}
+daft-catalog = {path = "../daft-catalog", version = "0.3.0-dev0"}
+daft-context = {path = "../daft-context", version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", version = "0.3.0-dev0"}
+daft-functions = {path = "../daft-functions", version = "0.3.0-dev0"}
+daft-functions-list = {path = "../daft-functions-list", version = "0.3.0-dev0"}
+daft-functions-temporal = {path = "../daft-functions-temporal", version = "0.3.0-dev0"}
+daft-functions-utf8 = {path = "../daft-functions-utf8", version = "0.3.0-dev0"}
+daft-logical-plan = {path = "../daft-logical-plan", version = "0.3.0-dev0"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "../daft-recordbatch", version = "0.3.0-dev0"}
+daft-session = {path = "../daft-session", version = "0.3.0-dev0"}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
@@ -29,7 +29,7 @@ rstest = {workspace = true}
 python = [
   "dep:pyo3",
   "common-daft-config/python",
-  "common-error/python",
+  "daft-common-error/python",
   "common-io-config/python",
   "daft-catalog/python",
   "daft-context/python",
@@ -49,5 +49,8 @@ workspace = true
 
 [package]
 name = "daft-sql"
+repository = {workspace = true}
+license = {workspace = true}
+description = "SQL interface for Daft"
 edition.workspace = true
 version.workspace = true

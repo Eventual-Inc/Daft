@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},

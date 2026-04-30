@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_schema::prelude::DataType;
 
 #[cfg(feature = "python")]

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use super::{DaftMergeSketchAggable, from_arrow::FromArrow};
 use crate::{

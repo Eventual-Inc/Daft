@@ -7,7 +7,7 @@ use std::{
     vec,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use daft_core::prelude::{Schema, SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;

@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use pyo3::prelude::*;
 

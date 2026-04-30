@@ -1,6 +1,6 @@
 use std::{hash::Hash, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]

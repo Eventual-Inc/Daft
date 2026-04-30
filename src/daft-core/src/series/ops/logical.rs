@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_schema::dtype::DataType;
 
 #[cfg(feature = "python")]
@@ -52,7 +52,7 @@ fn logical_op_not_implemented(lhs: &Series, rhs: &Series, op: LogicalOp) -> Daft
     let left_dtype = lhs.data_type();
     let right_dtype = rhs.data_type();
     let op_name = op.op_name();
-    Err(common_error::DaftError::ComputeError(format!(
+    Err(daft_common_error::DaftError::ComputeError(format!(
         "Logical Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
     )))
 }

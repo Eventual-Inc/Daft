@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, fs, path::PathBuf};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_compression::CompressionCodec;
 use daft_io::{GetRange, SourceType, parse_url, strip_file_uri_to_path};
 use url::Url;

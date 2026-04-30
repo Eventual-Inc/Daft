@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use pyo3::{FromPyObject, Py, PyAny, PyClass, Python};

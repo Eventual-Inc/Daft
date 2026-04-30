@@ -2,7 +2,7 @@
 use std::sync::OnceLock;
 
 #[cfg(feature = "python")]
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 #[cfg(feature = "python")]
 use pyo3::PyErr;
 #[cfg(feature = "python")]

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use crate::{prelude::*, with_match_integer_daft_types};
 

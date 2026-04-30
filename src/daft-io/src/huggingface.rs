@@ -695,7 +695,7 @@ async fn try_parquet_api(
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_io_config::{HTTPConfig, HuggingFaceConfig};
 
     use crate::{

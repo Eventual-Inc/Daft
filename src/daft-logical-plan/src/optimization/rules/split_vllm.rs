@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_dsl::{Expr, resolved_col};
 

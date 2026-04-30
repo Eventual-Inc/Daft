@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_core::join::JoinType;
@@ -491,7 +491,7 @@ impl PushDownFilter {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{ExprRef, functions::BuiltinScalarFn, lit, resolved_col, unresolved_col};
     use daft_functions_uri::download::UrlDownload;

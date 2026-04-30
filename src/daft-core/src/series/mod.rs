@@ -10,7 +10,7 @@ use std::{hash::Hash, ops::Sub, sync::Arc};
 pub use array_impl::{ArrayWrapper, IntoSeries};
 use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use derive_more::Display;
 use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;

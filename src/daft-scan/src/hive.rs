@@ -1,5 +1,5 @@
 use arrow_schema::DataType;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::series::Series;
 use daft_decoding::{deserialize::deserialize_single_value_to_arrow, inference::infer};
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
@@ -16,7 +16,7 @@ fn parse_hive_value_to_dtype(
         return Ok(Series::full_null(field_name, target_dtype, 1));
     }
     let arrow_dtype = target_dtype.to_arrow().map_err(|e| {
-        common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
+        daft_common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;
     let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;
     Series::from_arrow(Field::new(field_name, target_dtype.clone()), arrow_array)

@@ -178,7 +178,7 @@ impl PipelineNodeImpl for FilterNode {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_metrics::{Meter, StatSnapshot};
 
     use super::*;

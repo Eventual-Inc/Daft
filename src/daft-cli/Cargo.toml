@@ -1,6 +1,6 @@
 [dependencies]
 clap = {version = "4.5", features = ["derive"], optional = true}
-daft-dashboard = {path = "../daft-dashboard", optional = true}
+daft-dashboard = {path = "../daft-dashboard", optional = true, version = "0.3.0-dev0"}
 console = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true, optional = true}
@@ -17,5 +17,8 @@ workspace = true
 
 [package]
 name = "daft-cli"
+publish = false
+repository = {workspace = true}
+license = {workspace = true}
 edition.workspace = true
 version.workspace = true

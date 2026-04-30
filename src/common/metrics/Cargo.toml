@@ -1,5 +1,5 @@
 [dependencies]
-common-py-serde = {path = "../py-serde", default-features = false}
+common-py-serde = {path = "../py-serde", default-features = false, version = "0.3.0-dev0"}
 indicatif = {workspace = true}
 serde = {workspace = true}
 bincode = {workspace = true}
@@ -19,4 +19,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-metrics"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Metrics and statistics for Daft"
 version = {workspace = true}

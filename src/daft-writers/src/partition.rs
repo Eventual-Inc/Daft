@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::JoinSet;
 use daft_core::utils::identity_hash_set::{IdentityBuildHasher, IndexHash};
 use daft_dsl::expr::bound_expr::BoundExpr;

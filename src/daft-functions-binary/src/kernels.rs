@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow::array::{
     Array, ArrayRef, BooleanBufferBuilder, LargeBinaryArray, LargeStringArray, OffsetBufferBuilder,
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     datatypes::{BinaryArray, FixedSizeBinaryArray},
     prelude::{AsArrow, DataType, Field, Utf8Array},

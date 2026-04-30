@@ -1,6 +1,6 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::Span;

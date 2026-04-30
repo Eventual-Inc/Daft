@@ -9,7 +9,7 @@ use std::{
 };
 
 use common_display::DisplayAs;
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -875,7 +875,7 @@ mod test {
     use std::sync::Arc;
 
     use common_display::{DisplayAs, DisplayLevel};
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;

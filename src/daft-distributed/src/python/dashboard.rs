@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     QueryID, Stat, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY,
     snapshot::StatSnapshotImpl,

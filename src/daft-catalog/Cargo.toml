@@ -1,13 +1,13 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-context = {path = "../daft-context", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-runners = {path = "../daft-runners", default-features = false}
-daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-context = {path = "../daft-context", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-runners = {path = "../daft-runners", default-features = false, version = "0.3.0-dev0"}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false, version = "0.3.0-dev0"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, version = "0.3.0-dev0"}
 indexmap = {workspace = true}
-common-pattern = {path = "../common/pattern"}
+common-pattern = {path = "../common/pattern", version = "0.3.0-dev0"}
 regex = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
@@ -16,7 +16,7 @@ snafu.workspace = true
 [features]
 python = [
   "dep:pyo3",
-  "common-error/python",
+  "daft-common-error/python",
   "daft-context/python",
   "daft-core/python",
   "daft-dsl/python",
@@ -30,5 +30,8 @@ workspace = true
 
 [package]
 name = "daft-catalog"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Data catalog for Daft"
 edition.workspace = true
 version.workspace = true

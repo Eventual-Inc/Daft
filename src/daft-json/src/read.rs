@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::SeekFrom, num::NonZeroUsize, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::*;
@@ -667,7 +667,7 @@ mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
     use arrow::array::ArrayRef;
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;

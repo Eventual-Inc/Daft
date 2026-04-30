@@ -1,5 +1,5 @@
 use chrono::Datelike;
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     prelude::{DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
     series::{IntoSeries, Series},

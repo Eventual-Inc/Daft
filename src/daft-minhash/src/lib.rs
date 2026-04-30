@@ -96,7 +96,7 @@ use std::{
 };
 
 use arrow::array::UInt32Array;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use crate::windowed::WindowedWordsExt;
 

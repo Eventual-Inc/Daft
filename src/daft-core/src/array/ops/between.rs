@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use super::{DaftBetween, DaftCompare, DaftLogical};
 use crate::{
@@ -43,7 +43,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use crate::{array::ops::DaftBetween, datatypes::Int64Array};
 

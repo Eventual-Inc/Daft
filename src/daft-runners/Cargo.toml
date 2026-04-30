@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {workspace = true}
+daft-common-error = {workspace = true}
 daft-logical-plan = {workspace = true}
 daft-micropartition = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -8,7 +8,7 @@ log = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
-  "common-error/python",
+  "daft-common-error/python",
   "daft-logical-plan/python",
   "daft-micropartition/python"
 ]
@@ -18,5 +18,8 @@ workspace = true
 
 [package]
 name = "daft-runners"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Runner abstraction for Daft"
 edition.workspace = true
 version.workspace = true

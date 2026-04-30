@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use common_checkpoint_config::CheckpointStoreConfig;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_scan::{
     ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,

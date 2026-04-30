@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use snafu::Snafu;
 
 use crate::Identifier;
@@ -112,7 +112,7 @@ use pyo3::PyErr;
 #[cfg(feature = "python")]
 impl From<CatalogError> for PyErr {
     fn from(value: CatalogError) -> Self {
-        let daft_error: common_error::DaftError = value.into();
+        let daft_error: daft_common_error::DaftError = value.into();
         daft_error.into()
     }
 }

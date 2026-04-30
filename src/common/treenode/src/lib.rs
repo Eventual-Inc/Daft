@@ -21,7 +21,7 @@
 //! This module provides common traits for visiting or rewriting tree
 //! data structures easily.
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 type Result<T> = DaftResult<T>;
 

@@ -8,7 +8,7 @@ use std::{
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{ResultExt, Snafu};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};

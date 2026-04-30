@@ -2,7 +2,7 @@ use arrow::{
     array::BooleanBuilder,
     compute::{bool_and, bool_or},
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use crate::{
     array::{

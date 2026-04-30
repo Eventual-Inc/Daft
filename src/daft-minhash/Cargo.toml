@@ -10,7 +10,7 @@ name = "windowed"
 arrow = {workspace = true}
 fastrand = "2.1.0"
 memchr = "2.7.4"
-common-error.workspace = true
+daft-common-error.workspace = true
 
 [dev-dependencies]
 xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
@@ -25,4 +25,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-minhash"
+description = "MinHash for Daft"
+license = {workspace = true}
+repository = {workspace = true}
 version = {workspace = true}

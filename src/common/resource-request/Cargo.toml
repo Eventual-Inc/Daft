@@ -1,12 +1,12 @@
 [dependencies]
-common-error = {path = "../error"}
-common-hashable-float-wrapper = {path = "../hashable-float-wrapper"}
-common-py-serde = {path = "../py-serde"}
+daft-common-error = {path = "../error", version = "0.3.0-dev0"}
+common-hashable-float-wrapper = {path = "../hashable-float-wrapper", version = "0.3.0-dev0"}
+common-py-serde = {path = "../py-serde", version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-py-serde/python", "common-error/python"]
+python = ["dep:pyo3", "common-py-serde/python", "daft-common-error/python"]
 
 [lints]
 workspace = true
@@ -14,4 +14,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-resource-request"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Resource request types for Daft"
 version = {workspace = true}

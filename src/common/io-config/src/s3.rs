@@ -10,7 +10,7 @@ use aws_credential_types::{
     provider::{ProvideCredentials, error::CredentialsError},
 };
 use chrono::{DateTime, offset::Utc};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 

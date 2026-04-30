@@ -1,7 +1,7 @@
 use std::{ops::ControlFlow, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::Transformed;
 
 use super::{
@@ -402,7 +402,7 @@ impl Optimizer {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{

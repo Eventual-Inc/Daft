@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::{JoinSet, OrderedJoinSet};
 use futures::{Stream, StreamExt};
 

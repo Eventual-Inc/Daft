@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_io::{SourceType, utils::ObjectPath};
 use daft_recordbatch::RecordBatch;
 
@@ -119,7 +119,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow_array::create_array;
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::{DataType, Field},
         series::Series,

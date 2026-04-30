@@ -12,4 +12,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-py-serde"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Python serialization utilities for Daft"
 version = {workspace = true}

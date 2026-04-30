@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_dsl::{Expr, ExprRef, Literal};
 use daft_functions::image::encode::{ImageEncode, encode};
 

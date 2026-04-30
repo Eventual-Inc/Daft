@@ -1,7 +1,7 @@
 use std::ops::{AddAssign, SubAssign};
 
 use arrow::array::ArrowPrimitiveType;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{DaftPrimitiveType, NumericNative, try_mean_aggregation_supertype},
     prelude::*,

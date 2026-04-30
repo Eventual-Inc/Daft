@@ -4,4 +4,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-version"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Version information for Daft"
 version = {workspace = true}

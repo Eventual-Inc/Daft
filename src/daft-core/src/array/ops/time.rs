@@ -7,7 +7,7 @@ use arrow::{
     error::ArrowError,
 };
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_schema::time_unit::{
     ParsedTimezone, datetime_to_timestamp, naive_datetime_to_timestamp, naive_local_to_timestamp,
     parse_timezone, timestamp_to_datetime, timestamp_to_naive_datetime, timestamp_to_naive_local,

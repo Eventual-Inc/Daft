@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};

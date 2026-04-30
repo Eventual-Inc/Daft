@@ -1,7 +1,7 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
+daft-common-error = {path = "../error", default-features = false, version = "0.3.0-dev0"}
 common-ndarray = {workspace = true}
-daft-schema = {path = "../../daft-schema", default-features = false}
+daft-schema = {path = "../../daft-schema", default-features = false, version = "0.3.0-dev0"}
 image = {workspace = true, features = [
   "gif",
   "jpeg",
@@ -28,4 +28,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-image"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Image type definitions for Daft"
 version = {workspace = true}

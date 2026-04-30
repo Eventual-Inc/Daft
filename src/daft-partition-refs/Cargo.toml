@@ -1,6 +1,6 @@
 [dependencies]
-common-partitioning = {path = "../common/partitioning", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false, optional = true}
+common-partitioning = {path = "../common/partitioning", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../common/py-serde", default-features = false, optional = true, version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
@@ -17,4 +17,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-partition-refs"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Partition references for Daft"
 version = {workspace = true}

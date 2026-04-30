@@ -79,7 +79,7 @@ where
     Ok(result)
 }
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_logical_plan::sink_info::CsvFormatOption;

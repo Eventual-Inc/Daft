@@ -1,7 +1,7 @@
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
 use arrow::array::Array as _;
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use common_runtime::get_io_runtime;
 use daft_core::{array::ops::as_arrow::AsArrow, prelude::*};
 use daft_dsl::{

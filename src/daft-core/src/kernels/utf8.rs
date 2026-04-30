@@ -4,7 +4,7 @@
 // ****************************************************************************************
 
 use arrow::array::{Array, LargeStringArray};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 fn concat_strings(l: &str, r: &str) -> String {
     // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs

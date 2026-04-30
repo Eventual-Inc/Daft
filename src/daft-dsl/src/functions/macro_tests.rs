@@ -1,5 +1,5 @@
 mod tests {
-    use common_error::DaftError;
+    use daft_common_error::DaftError;
     use daft_core::prelude::*;
     use rstest::rstest;
 

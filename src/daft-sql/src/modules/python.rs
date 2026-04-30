@@ -1,8 +1,8 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_dsl::{Expr, functions::python::WrappedUDFClass};
 #[cfg(feature = "python")]
 use {
-    common_error::DaftError,
+    daft_common_error::DaftError,
     daft_dsl::python::PyExpr,
     pyo3::{
         IntoPyObjectExt,

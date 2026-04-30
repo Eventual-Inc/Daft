@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LockResult},
 };
 
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};

@@ -1,4 +1,5 @@
 #![feature(if_let_guard)]
+#[cfg(feature = "azure")]
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;
@@ -22,6 +23,7 @@ mod unity;
 
 use std::sync::LazyLock;
 
+#[cfg(feature = "azure")]
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
@@ -44,7 +46,7 @@ pub mod utils;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 pub use common_io_config::{
     AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
 };
@@ -265,9 +267,16 @@ impl IOClient {
             SourceType::S3 => {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
+            #[cfg(feature = "azure")]
             SourceType::AzureBlob => {
                 AzureBlobSource::get_client(&self.config.azure, &path).await?
                     as Arc<dyn ObjectSource>
+            }
+            #[cfg(not(feature = "azure"))]
+            SourceType::AzureBlob => {
+                return Err(Error::NotImplementedSource {
+                    store: "Azure (feature 'azure' not enabled)".to_string(),
+                });
             }
 
             SourceType::GCS => {

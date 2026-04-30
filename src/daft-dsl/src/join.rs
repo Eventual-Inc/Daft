@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use indexmap::IndexSet;
 

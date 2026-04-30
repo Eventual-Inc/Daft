@@ -7,7 +7,7 @@ use arrow_array::{
     },
 };
 use chrono::{DateTime, Utc};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::SchemaRef;
@@ -625,7 +625,7 @@ pub async fn stream_warc(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::{Field, Schema, TimeUnit};
     use daft_io::{IOConfig, IOStatsContext};
 

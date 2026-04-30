@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::cast_series_to_supertype;
 use crate::series::Series;

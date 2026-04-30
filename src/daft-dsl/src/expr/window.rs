@@ -1,6 +1,6 @@
 use std::{fmt, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::lit::Literal;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

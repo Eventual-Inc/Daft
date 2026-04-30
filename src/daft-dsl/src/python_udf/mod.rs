@@ -6,7 +6,7 @@ mod row_wise;
 use std::sync::Arc;
 
 pub use batch::{BatchPyFn, batch_udf};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 pub use retry::{retry_after_ms_from_error, retry_with_backoff};

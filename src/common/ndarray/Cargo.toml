@@ -1,5 +1,5 @@
 [dependencies]
-common-py-serde = {path = "../py-serde", default-features = false}
+common-py-serde = {path = "../py-serde", default-features = false, version = "0.3.0-dev0"}
 ndarray = {workspace = true}
 numpy = {workspace = true, optional = true}
 pyo3 = {workspace = true, optional = true}
@@ -13,4 +13,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-ndarray"
+repository = {workspace = true}
+license = {workspace = true}
+description = "N-dimensional array utilities for Daft"
 version = {workspace = true}

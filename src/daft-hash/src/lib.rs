@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use serde::{Deserialize, Serialize};
 use sha1::Digest;
 

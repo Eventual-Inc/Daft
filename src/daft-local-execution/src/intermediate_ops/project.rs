@@ -1,6 +1,6 @@
 use std::{cmp::max, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;

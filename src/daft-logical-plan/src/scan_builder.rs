@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::prelude::TimeUnit;
 use daft_scan::{

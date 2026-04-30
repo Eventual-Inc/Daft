@@ -39,7 +39,7 @@ pub(crate) mod test {
     use std::sync::Arc;
 
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col};
     use daft_functions_utf8::{endswith, startswith};

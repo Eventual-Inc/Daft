@@ -5,7 +5,7 @@ use std::{
 };
 
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -288,7 +288,7 @@ impl TryFrom<&arrow_schema::Field> for Field {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use rstest::rstest;
 
     use crate::{

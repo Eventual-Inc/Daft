@@ -1,7 +1,7 @@
 use std::io::{ErrorKind, SeekFrom};
 
 use arrow_flight::FlightData;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use futures::Stream;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 

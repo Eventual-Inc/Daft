@@ -1,5 +1,5 @@
 use arrow::buffer::NullBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use crate::{array::StructArray, series::Series};
 
@@ -31,7 +31,7 @@ impl StructArray {
 #[cfg(test)]
 mod tests {
     use arrow::buffer::NullBuffer;
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use crate::prelude::*;
 

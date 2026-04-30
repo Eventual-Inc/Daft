@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {workspace = true}
+daft-common-error = {workspace = true}
 daft-ai = {workspace = true}
 daft-catalog = {workspace = true}
 daft-core = {workspace = true}
@@ -28,5 +28,8 @@ workspace = true
 
 [package]
 name = "daft-session"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Session management for Daft"
 edition.workspace = true
 version.workspace = true

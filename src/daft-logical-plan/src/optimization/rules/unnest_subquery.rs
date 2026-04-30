@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{
@@ -594,7 +594,7 @@ fn get_missing_exprs(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::join::JoinType;
     use daft_dsl::{Column, Expr, PlanRef, ResolvedColumn, Subquery, unresolved_col};
     use daft_schema::{dtype::DataType, field::Field};

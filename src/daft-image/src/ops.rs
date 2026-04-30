@@ -9,7 +9,7 @@ thread_local! {
 
 use arrow::array::{BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
 use base64::Engine;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
 use daft_core::{
     array::{

@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_ext::abi::{DAFT_ABI_VERSION, DAFT_MODULE_MAGIC_SYMBOL, FFI_Module};
 use libloading::Library;
 

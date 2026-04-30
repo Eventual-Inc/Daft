@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};

@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::JoinSet;
 use futures::{Stream, StreamExt};
 
@@ -102,7 +102,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftError;
+    use daft_common_error::DaftError;
 
     use super::*;
     use crate::utils::channel::create_channel;

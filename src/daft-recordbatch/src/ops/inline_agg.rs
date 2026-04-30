@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow_array::Array;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     array::ops::arrow::comparison::build_multi_array_is_equal,
     count_mode::CountMode,
@@ -593,7 +593,7 @@ where
                 Vacant(e) => {
                     let gid = num_groups;
                     num_groups = num_groups.checked_add(1).ok_or_else(|| {
-                        common_error::DaftError::ComputeError(
+                        daft_common_error::DaftError::ComputeError(
                             "Number of groups exceeds u32::MAX in inline aggregation".into(),
                         )
                     })?;
@@ -620,7 +620,7 @@ where
                 Vacant(e) => {
                     let gid = num_groups;
                     num_groups = num_groups.checked_add(1).ok_or_else(|| {
-                        common_error::DaftError::ComputeError(
+                        daft_common_error::DaftError::ComputeError(
                             "Number of groups exceeds u32::MAX in inline aggregation".into(),
                         )
                     })?;
@@ -683,7 +683,7 @@ where
                 Vacant(e) => {
                     let gid = num_groups;
                     num_groups = num_groups.checked_add(1).ok_or_else(|| {
-                        common_error::DaftError::ComputeError(
+                        daft_common_error::DaftError::ComputeError(
                             "Number of groups exceeds u32::MAX in inline aggregation".into(),
                         )
                     })?;
@@ -711,7 +711,7 @@ where
                 Vacant(e) => {
                     let gid = num_groups;
                     num_groups = num_groups.checked_add(1).ok_or_else(|| {
-                        common_error::DaftError::ComputeError(
+                        daft_common_error::DaftError::ComputeError(
                             "Number of groups exceeds u32::MAX in inline aggregation".into(),
                         )
                     })?;
@@ -787,7 +787,7 @@ fn agg_generic_hash_path(
             RawEntryMut::Vacant(entry) => {
                 let gid = num_groups;
                 num_groups = num_groups.checked_add(1).ok_or_else(|| {
-                    common_error::DaftError::ComputeError(
+                    daft_common_error::DaftError::ComputeError(
                         "Number of groups exceeds u32::MAX in inline aggregation".into(),
                     )
                 })?;
@@ -874,7 +874,7 @@ impl RecordBatch {
 
         for agg_expr in to_agg {
             let (acc, name) = try_create_accumulator(agg_expr, self)?.ok_or_else(|| {
-                common_error::DaftError::ComputeError(
+                daft_common_error::DaftError::ComputeError(
                     "Inline aggregation reached an unsupported type; this is a bug".into(),
                 )
             })?;

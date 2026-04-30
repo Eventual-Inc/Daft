@@ -1,6 +1,6 @@
 use std::{sync::Arc, vec};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_runtime::RuntimeRef;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};

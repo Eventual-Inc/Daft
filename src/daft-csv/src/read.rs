@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow_schema::Field as ArrowField;
 use async_compat::{Compat, CompatExt};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use csv_async::{AsyncReader, AsyncReaderBuilder};
 use daft_compression::CompressionCodec;
@@ -740,7 +740,7 @@ mod tests {
     use std::{collections::HashSet, sync::Arc};
 
     use arrow_schema::DataType as ArrowDataType;
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use daft_core::prelude::*;
     use daft_decoding::{deserialize::deserialize_column, inference::infer};
     use daft_io::{IOClient, IOConfig};

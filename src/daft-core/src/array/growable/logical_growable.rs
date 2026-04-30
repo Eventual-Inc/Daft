@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::{Growable, GrowableArray};
 use crate::{

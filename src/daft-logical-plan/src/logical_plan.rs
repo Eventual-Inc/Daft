@@ -7,7 +7,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::ascii::AsciiTreeDisplay;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{

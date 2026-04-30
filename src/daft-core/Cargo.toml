@@ -6,23 +6,23 @@ bytemuck = {version = "1", features = ["derive"]}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true, version = "0.3.0-dev0"}
+common-display = {path = "../common/display", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper", version = "0.3.0-dev0"}
 common-image = {workspace = true}
-common-io-config = {path = "../common/io-config", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false, version = "0.3.0-dev0"}
 common-ndarray = {workspace = true}
-common-py-serde = {path = "../common/py-serde", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false, version = "0.3.0-dev0"}
 daft-hash = {workspace = true}
-daft-minhash = {path = "../daft-minhash", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
-daft-sketch = {path = "../daft-sketch", default-features = false}
+daft-minhash = {path = "../daft-minhash", default-features = false, version = "0.3.0-dev0"}
+daft-schema = {path = "../daft-schema", default-features = false, version = "0.3.0-dev0"}
+daft-sketch = {path = "../daft-sketch", default-features = false, version = "0.3.0-dev0"}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
 smallvec = {workspace = true}
 html-escape = {workspace = true}
-hyperloglog = {path = "../hyperloglog"}
+daft-hyperloglog = {path = "../hyperloglog", version = "0.3.0-dev0"}
 image = {workspace = true, features = [
   "gif",
   "jpeg",
@@ -51,7 +51,7 @@ rstest = {workspace = true}
 python = [
   "dep:common-arrow-ffi",
   "common-display/python",
-  "common-error/python",
+  "daft-common-error/python",
   "common-image/python",
   "common-io-config/python",
   "common-ndarray/python",
@@ -66,4 +66,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-core"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Core data types for Daft"
 version = {workspace = true}

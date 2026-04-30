@@ -11,7 +11,7 @@ use arrow::{
         Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
     },
 };
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use xxhash_rust::{xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64};
 

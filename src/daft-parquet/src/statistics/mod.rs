@@ -1,6 +1,6 @@
 use std::string::FromUtf8Error;
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use snafu::Snafu;
 
 mod column_range;

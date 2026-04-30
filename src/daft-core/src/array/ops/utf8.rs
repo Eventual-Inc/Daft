@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, BufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use crate::{
     datatypes::{DataType, Field},

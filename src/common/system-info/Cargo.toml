@@ -11,4 +11,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-system-info"
+repository = {workspace = true}
+license = {workspace = true}
+description = "System information utilities for Daft"
 version = {workspace = true}

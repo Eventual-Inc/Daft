@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::{JoinSet, JoinSetId};
 
 use super::{

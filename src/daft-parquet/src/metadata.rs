@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bytes::{Bytes, BytesMut};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_io::{GetRange, IOClient, IOStatsRef};
 use snafu::ResultExt;
@@ -156,7 +156,7 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     let new_root = Type::group_type_builder(old_root.name())
         .with_fields(new_fields)
         .build()
-        .map_err(|e| common_error::DaftError::External(e.into()))?;
+        .map_err(|e| daft_common_error::DaftError::External(e.into()))?;
     let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
 
     // 2. Build field_id → new ColumnDescriptor mapping
@@ -220,7 +220,7 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
                 .set_total_byte_size(total_byte_size)
                 .set_column_metadata(new_columns)
                 .build()
-                .map_err(|e| common_error::DaftError::External(e.into()))
+                .map_err(|e| daft_common_error::DaftError::External(e.into()))
         })
         .collect();
 
@@ -266,7 +266,7 @@ pub(crate) fn strip_string_types_from_parquet_metadata(
     let new_root = Type::group_type_builder(old_root.name())
         .with_fields(new_fields)
         .build()
-        .map_err(|e| common_error::DaftError::External(e.into()))?;
+        .map_err(|e| daft_common_error::DaftError::External(e.into()))?;
     let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
 
     // Rebuild row groups with the new schema descriptor.
@@ -279,7 +279,7 @@ pub(crate) fn strip_string_types_from_parquet_metadata(
                 .set_total_byte_size(rg.total_byte_size())
                 .set_column_metadata(rg.columns().to_vec())
                 .build()
-                .map_err(|e| common_error::DaftError::External(e.into()))
+                .map_err(|e| daft_common_error::DaftError::External(e.into()))
         })
         .collect();
 
@@ -529,7 +529,7 @@ pub(crate) async fn read_parquet_metadata(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_io::{IOClient, IOConfig};
 
     use super::read_parquet_metadata;

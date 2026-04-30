@@ -1,7 +1,7 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
 daft-hash = {workspace = true}
 xxhash-rust = {workspace = true}
 arrow-array = {workspace = true}
@@ -16,7 +16,7 @@ rand = {workspace = true}
 
 [features]
 python = [
-  "common-error/python",
+  "daft-common-error/python",
   "daft-core/python",
   "daft-dsl/python",
   "dep:pyo3"
@@ -27,5 +27,8 @@ workspace = true
 
 [package]
 name = "daft-functions"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Built-in functions for Daft"
 edition.workspace = true
 version.workspace = true

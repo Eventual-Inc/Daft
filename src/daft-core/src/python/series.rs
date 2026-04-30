@@ -5,7 +5,7 @@ use std::{
 
 use arrow::array::make_array;
 use common_arrow_ffi::{ToPyArrow, array_to_rust};
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
 use pyo3::{

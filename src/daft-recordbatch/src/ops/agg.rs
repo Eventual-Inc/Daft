@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr,
@@ -357,7 +357,7 @@ impl RecordBatch {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{
         AggExpr,
@@ -498,7 +498,7 @@ mod tests {
         let x_col = get_column_by_name(&result, "x")?;
         let mut pairs: Vec<(String, i64)> = (0..result.len())
             .map(|i| {
-                Ok::<_, common_error::DaftError>((
+                Ok::<_, daft_common_error::DaftError>((
                     g_col.utf8()?.get(i).unwrap().to_string(),
                     x_col.i64()?.get(i).unwrap(),
                 ))
@@ -608,7 +608,7 @@ mod tests {
         let x_col = get_column_by_name(&final_result, "x")?;
         let mut pairs: Vec<(String, i64)> = (0..final_result.len())
             .map(|i| {
-                Ok::<_, common_error::DaftError>((
+                Ok::<_, daft_common_error::DaftError>((
                     g_col.utf8()?.get(i).unwrap().to_string(),
                     x_col.i64()?.get(i).unwrap(),
                 ))

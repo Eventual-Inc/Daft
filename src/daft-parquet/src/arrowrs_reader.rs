@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -53,8 +53,8 @@ use crate::{
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
 /// Convert a parquet error to a DaftError.
-fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> common_error::DaftError {
-    common_error::DaftError::External(e.into())
+fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> daft_common_error::DaftError {
+    daft_common_error::DaftError::External(e.into())
 }
 
 /// Build a `ProjectionMask` from the given column names and arrow schema.
@@ -1360,7 +1360,7 @@ fn prune_row_groups(
             .map(|&i| {
                 let idx = i as usize;
                 if idx >= num_row_groups {
-                    Err(common_error::DaftError::ValueError(format!(
+                    Err(daft_common_error::DaftError::ValueError(format!(
                         "Row group index {} out of bounds for '{}' (has {} row groups)",
                         i, uri, num_row_groups
                     )))
@@ -1383,7 +1383,7 @@ fn prune_row_groups(
 
     // Bind the predicate to the schema.
     let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
-        common_error::DaftError::ValueError(format!(
+        daft_common_error::DaftError::ValueError(format!(
             "Failed to bind predicate for row group pruning on '{}': {}",
             uri, e
         ))

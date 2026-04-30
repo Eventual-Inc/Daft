@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::predicate_removes_nulls;
 use daft_core::join::JoinType;

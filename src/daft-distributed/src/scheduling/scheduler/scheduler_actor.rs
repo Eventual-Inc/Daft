@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::JoinSet;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;

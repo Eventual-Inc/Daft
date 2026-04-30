@@ -9,7 +9,7 @@ use std::{
 };
 
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
 use daft_micropartition::{MicroPartitionRef, partitioning::Partition};
 #[cfg(feature = "python")]

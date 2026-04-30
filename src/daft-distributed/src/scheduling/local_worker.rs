@@ -19,7 +19,7 @@ use std::{
     },
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_execution::testing::NativeExecutor;
 use daft_local_plan::{ExecutionStats, Input, InputId, SourceId};
@@ -223,7 +223,7 @@ async fn execute_swordfish_task_on_executor(
                     .downcast_ref::<MicroPartition>()
                     .map(|mp| Arc::new(mp.clone()))
                     .ok_or_else(|| {
-                        common_error::DaftError::InternalError(
+                        daft_common_error::DaftError::InternalError(
                             "LocalSwordfishWorker: PartitionRef is not a MicroPartition"
                                 .to_string(),
                         )
@@ -298,7 +298,7 @@ impl WorkerManager for LocalSwordfishWorkerManager {
         let workers = self.workers.lock().unwrap();
         for (worker_id, tasks) in tasks_per_worker {
             let worker = workers.get(&worker_id).ok_or_else(|| {
-                common_error::DaftError::InternalError(format!(
+                daft_common_error::DaftError::InternalError(format!(
                     "LocalSwordfishWorkerManager: unknown worker_id {worker_id}"
                 ))
             })?;

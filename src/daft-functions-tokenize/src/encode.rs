@@ -4,7 +4,7 @@ use arrow::{
     array::{ArrayBuilder, ArrayRef, UInt32Builder},
     buffer::OffsetBuffer,
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
 use daft_io::IOConfig;

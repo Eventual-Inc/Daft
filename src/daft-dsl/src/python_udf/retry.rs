@@ -1,5 +1,5 @@
 #[cfg(feature = "python")]
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use pyo3::{Python, import_exception, types::PyAnyMethods};
 #[cfg(feature = "python")]

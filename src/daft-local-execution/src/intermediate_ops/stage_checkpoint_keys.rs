@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_checkpoint_config::CheckpointIdMap;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_checkpoint::CheckpointStoreRef;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr};

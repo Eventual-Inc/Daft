@@ -2,7 +2,7 @@ pub mod flight_client;
 
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};

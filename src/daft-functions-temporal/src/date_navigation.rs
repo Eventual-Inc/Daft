@@ -99,7 +99,7 @@ fn parse_weekday(s: &str) -> DaftResult<Weekday> {
         "friday" | "fri" | "fr" => Ok(Weekday::Fri),
         "saturday" | "sat" | "sa" => Ok(Weekday::Sat),
         "sunday" | "sun" | "su" => Ok(Weekday::Sun),
-        _ => Err(common_error::DaftError::ValueError(format!(
+        _ => Err(daft_common_error::DaftError::ValueError(format!(
             "Invalid day of week: '{s}'. Expected: Monday/Mon, Tuesday/Tue, etc."
         ))),
     }

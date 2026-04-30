@@ -5,7 +5,7 @@ use arrow::{
     compute::cast,
     datatypes::{DataType as ArrowDataType, Int64Type},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
     prelude::*,
