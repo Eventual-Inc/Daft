@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use common_checkpoint_config::CheckpointSettings;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_checkpoint::BlobStoreCheckpointedKeysScanOperator;
@@ -168,14 +169,16 @@ impl OptimizerRule for RewriteCheckpointSource {
             let r = unresolved_col(cfg.key_column.as_str()).to_right_cols(right_schema)?;
             let on_expr = l.eq(r);
 
-            // TODO: These KFJ parameters are hardcoded. They should
-            // scale with the cluster or be configurable via CheckpointConfig.
+            // Pull strategy-specific knobs from `cfg.settings`. Today there's
+            // only one variant (`KeyFiltering`); future variants would dispatch
+            // to different filter strategies entirely, not just different knobs.
+            let CheckpointSettings::KeyFiltering(kf) = &cfg.settings;
             let kfc = KeyFilteringConfig::new(
-                Some(2),   // num_workers
-                Some(1.0), // cpus_per_worker
-                None,      // keys_load_batch_size (unused by bridge)
-                Some(1),   // max_concurrency_per_worker
-                None,      // filter_batch_size (unused by bridge)
+                kf.num_workers.or(Some(2)),
+                kf.cpus_per_worker.as_ref().map(|w| w.0).or(Some(1.0)),
+                kf.keys_load_batch_size,
+                kf.max_concurrency_per_worker.or(Some(1)),
+                kf.filter_batch_size,
             )
             .map_err(|e| DaftError::ComputeError(format!("{e}")))?
             .with_key_columns(vec![cfg.key_column.clone()], vec![cfg.key_column.clone()])
@@ -213,7 +216,8 @@ impl OptimizerRule for RewriteCheckpointSource {
 
 #[cfg(test)]
 mod tests {
-    use common_checkpoint_config::{CheckpointConfig, CheckpointStoreConfig};
+    use common_checkpoint_config::{CheckpointConfig, CheckpointStoreConfig, KeyFilteringSettings};
+    use common_hashable_float_wrapper::FloatWrapper;
     use daft_core::prelude::DataType;
     use daft_schema::field::Field;
 
@@ -259,6 +263,7 @@ mod tests {
                 io_config: Box::new(common_io_config::IOConfig::default()),
             },
             key_column: "key".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::default(),
         };
         let plan = scan_with_checkpoint(Some(cfg));
 
@@ -290,6 +295,15 @@ mod tests {
         assert_eq!(kfc.left_key_columns, vec!["key".to_string()]);
         assert_eq!(kfc.right_key_columns, vec!["key".to_string()]);
 
+        // Default settings must preserve today's hardcoded values exactly.
+        // Pins the rule's `.or(Some(2))` / `.or(Some(1.0))` / `.or(Some(1))`
+        // fallbacks against accidental changes.
+        assert_eq!(kfc.num_workers, Some(2));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        assert_eq!(kfc.filter_batch_size, None);
+
         // Left side: Source with `checkpoint` stripped — staging responsibility
         // lives on the wrapping StageCheckpointKeys node, not on the Source.
         let LogicalPlan::Source(left) = join.left.as_ref() else {
@@ -308,5 +322,92 @@ mod tests {
             physical.scan_state.get_scan_op().0.name(),
             "BlobStoreCheckpointedKeysScanOperator"
         );
+    }
+
+    /// Non-default `KeyFilteringSettings` on `CheckpointConfig` must flow through
+    /// to the `KeyFilteringConfig` produced by the rule. Pins the wiring against
+    /// regressions where someone reintroduces hardcoded values in the rewrite.
+    #[test]
+    fn user_supplied_settings_flow_through_to_key_filtering_config() {
+        let cfg = CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://does-not-matter-for-rewrite".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_column: "key".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::KeyFiltering(
+                KeyFilteringSettings {
+                    num_workers: Some(7),
+                    cpus_per_worker: Some(FloatWrapper(2.5)),
+                    keys_load_batch_size: Some(1024),
+                    max_concurrency_per_worker: Some(3),
+                    filter_batch_size: Some(512),
+                },
+            ),
+        };
+        let plan = scan_with_checkpoint(Some(cfg));
+
+        let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
+        let LogicalPlan::StageCheckpointKeys(stage) = result.data.as_ref() else {
+            panic!("expected StageCheckpointKeys at root");
+        };
+        let LogicalPlan::Join(join) = stage.input.as_ref() else {
+            panic!("expected Join under StageCheckpointKeys");
+        };
+        let kfc = join
+            .key_filtering_config
+            .as_ref()
+            .expect("KeyFilteringConfig must be attached");
+
+        assert_eq!(kfc.num_workers, Some(7));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(2.5));
+        assert_eq!(kfc.keys_load_batch_size, Some(1024));
+        assert_eq!(kfc.max_concurrency_per_worker, Some(3));
+        assert_eq!(kfc.filter_batch_size, Some(512));
+    }
+
+    /// Partial overrides: a user who sets only `num_workers` must still get
+    /// the hardcoded fallbacks for `cpus_per_worker` / `max_concurrency_per_worker`,
+    /// not `None`. Pins per-field independence in the rule's fallback chain
+    /// (`x.or(Some(default))`) — a regression that gates one fallback on
+    /// another field being unset would slip past the all-default and
+    /// all-override tests above.
+    #[test]
+    fn partial_settings_override_keeps_per_field_fallbacks() {
+        let cfg = CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://does-not-matter-for-rewrite".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_column: "key".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::KeyFiltering(
+                KeyFilteringSettings {
+                    num_workers: Some(7),
+                    ..Default::default()
+                },
+            ),
+        };
+        let plan = scan_with_checkpoint(Some(cfg));
+
+        let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
+        let LogicalPlan::StageCheckpointKeys(stage) = result.data.as_ref() else {
+            panic!("expected StageCheckpointKeys at root");
+        };
+        let LogicalPlan::Join(join) = stage.input.as_ref() else {
+            panic!("expected Join under StageCheckpointKeys");
+        };
+        let kfc = join
+            .key_filtering_config
+            .as_ref()
+            .expect("KeyFilteringConfig must be attached");
+
+        // User-supplied — preserved.
+        assert_eq!(kfc.num_workers, Some(7));
+        // Untouched — must fall back to hardcoded rule defaults.
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        // Untouched fields with no rule fallback — stay `None`.
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.filter_batch_size, None);
     }
 }

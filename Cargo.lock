@@ -1751,6 +1751,7 @@ dependencies = [
 name = "common-checkpoint-config"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-hashable-float-wrapper",
  "common-io-config",
  "pyo3",
  "serde",
