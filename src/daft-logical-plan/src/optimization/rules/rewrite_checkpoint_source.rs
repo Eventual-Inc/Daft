@@ -4,13 +4,14 @@
 
 use std::sync::Arc;
 
+use common_checkpoint_config::SEALED_KEYS_COLUMN;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_checkpoint::BlobStoreCheckpointedKeysScanOperator;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::unresolved_col;
 use daft_scan::ScanOperatorRef;
-use daft_schema::schema::Schema;
+use daft_schema::{field::Field, schema::Schema};
 
 use super::OptimizerRule;
 use crate::{
@@ -150,9 +151,15 @@ impl OptimizerRule for RewriteCheckpointSource {
                 Arc::new(LogicalPlan::Source(source_copy))
             };
 
-            // Right: scan over checkpointed key files.
-            let key_field = source.output_schema.get_field(&cfg.key_column)?;
-            let key_schema = Arc::new(Schema::new(vec![key_field.clone()]));
+            // Right: scan over checkpointed key files. The on-disk schema uses
+            // a canonical column name (`SEALED_KEYS_COLUMN`) regardless of
+            // what the source calls its key column — see `stage_keys` in the
+            // store impl. This means renaming the source's key column between
+            // runs does not invalidate previously sealed key files.
+            let source_key_field = source.output_schema.get_field(&cfg.key_column)?;
+            let canonical_key_field =
+                Field::new(SEALED_KEYS_COLUMN, source_key_field.dtype.clone());
+            let key_schema = Arc::new(Schema::new(vec![canonical_key_field]));
             let scan_op = ScanOperatorRef(Arc::new(BlobStoreCheckpointedKeysScanOperator::new(
                 cfg.store.clone(),
                 key_schema,
@@ -161,11 +168,12 @@ impl OptimizerRule for RewriteCheckpointSource {
 
             let left_schema = left_plan.schema();
             let right_schema = right_plan.schema();
-            // TODO: Decouple key column naming — the right side (checkpointed
-            // keys scan) should use a canonical column name (e.g. "key") instead
-            // of matching the source's column name.
+            // Left side resolves to the source's key column; right side resolves
+            // to the canonical sealed-keys column. The two are joined for
+            // equality, so the source can be renamed without breaking the
+            // anti-join against existing sealed key files.
             let l = unresolved_col(cfg.key_column.as_str()).to_left_cols(left_schema)?;
-            let r = unresolved_col(cfg.key_column.as_str()).to_right_cols(right_schema)?;
+            let r = unresolved_col(SEALED_KEYS_COLUMN).to_right_cols(right_schema)?;
             let on_expr = l.eq(r);
 
             // TODO: These KFJ parameters are hardcoded. They should
@@ -178,7 +186,10 @@ impl OptimizerRule for RewriteCheckpointSource {
                 None,      // filter_batch_size (unused by bridge)
             )
             .map_err(|e| DaftError::ComputeError(format!("{e}")))?
-            .with_key_columns(vec![cfg.key_column.clone()], vec![cfg.key_column.clone()])
+            .with_key_columns(
+                vec![cfg.key_column.clone()],
+                vec![SEALED_KEYS_COLUMN.to_string()],
+            )
             .map_err(|e| DaftError::ComputeError(format!("{e}")))?;
 
             let joined = LogicalPlanBuilder::from(left_plan).join(
@@ -224,8 +235,12 @@ mod tests {
     };
 
     fn scan_with_checkpoint(cfg: Option<CheckpointConfig>) -> Arc<LogicalPlan> {
+        // Use a source column name that is *not* the canonical sealed-keys
+        // column name, so assertions that the right side of the anti-join
+        // uses the canonical name (rather than the source's name) catch the
+        // decoupling.
         let scan_op = dummy_scan_operator(vec![
-            Field::new("key", DataType::Utf8),
+            Field::new("file_id", DataType::Utf8),
             Field::new("value", DataType::Int64),
         ]);
         let plan = dummy_scan_node(scan_op).build();
@@ -258,7 +273,7 @@ mod tests {
                 prefix: "s3://does-not-matter-for-rewrite".to_string(),
                 io_config: Box::new(common_io_config::IOConfig::default()),
             },
-            key_column: "key".to_string(),
+            key_column: "file_id".to_string(),
         };
         let plan = scan_with_checkpoint(Some(cfg));
 
@@ -272,7 +287,7 @@ mod tests {
                 result.data
             );
         };
-        assert_eq!(stage.checkpoint_config.key_column, "key");
+        assert_eq!(stage.checkpoint_config.key_column, "file_id");
 
         let LogicalPlan::Join(join) = stage.input.as_ref() else {
             panic!(
@@ -287,8 +302,10 @@ mod tests {
             .key_filtering_config
             .as_ref()
             .expect("KeyFilteringConfig must be attached");
-        assert_eq!(kfc.left_key_columns, vec!["key".to_string()]);
-        assert_eq!(kfc.right_key_columns, vec!["key".to_string()]);
+        // Left side resolves to the source's column; right side to the
+        // canonical sealed-keys column. They must NOT have to match.
+        assert_eq!(kfc.left_key_columns, vec!["file_id".to_string()]);
+        assert_eq!(kfc.right_key_columns, vec![SEALED_KEYS_COLUMN.to_string()]);
 
         // Left side: Source with `checkpoint` stripped — staging responsibility
         // lives on the wrapping StageCheckpointKeys node, not on the Source.

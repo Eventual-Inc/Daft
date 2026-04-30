@@ -22,6 +22,17 @@ use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Canonical column name used when persisting sealed keys to the checkpoint
+/// store, and when reading them back at filter time.
+///
+/// Decouples the on-disk key file schema from the source's key column name —
+/// re-running with a renamed source column does not invalidate previously
+/// sealed key files, because they always live under this canonical name.
+/// Callers that read the sealed key files (the scan operator) and the
+/// optimizer rule that wires the anti-join must reference this constant
+/// rather than the source's column name on the right side of the join.
+pub const SEALED_KEYS_COLUMN: &str = "key";
+
 /// Opaque identifier for a checkpoint.
 ///
 /// The inner string is guaranteed to be safe for use as a path segment in

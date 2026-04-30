@@ -496,7 +496,11 @@ impl S3CheckpointStore {
 impl CheckpointStore for S3CheckpointStore {
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
         self.check_first_error(id)?;
-        let parquet_bytes = super::keys_codec::write_series_as_parquet(&keys)?;
+        // Persist under the canonical column name so the on-disk key files
+        // are stable across renames of the source column. The scan operator
+        // and the optimizer rule both read using `SEALED_KEYS_COLUMN`.
+        let canonical = keys.rename(common_checkpoint_config::SEALED_KEYS_COLUMN);
+        let parquet_bytes = super::keys_codec::write_series_as_parquet(&canonical)?;
         let idx = self
             .reserve_slots(id, |e| {
                 let i = e.num_key_files;
