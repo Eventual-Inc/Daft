@@ -367,3 +367,149 @@ def test_retry_loop_recovers_from_transient_commit_failure(iceberg_table, parque
 
     rows = daft.read_iceberg(iceberg_table).to_pydict()
     assert sorted(rows["file_id"]) == ["a", "b", "c"]
+
+
+def test_table_with_pre_existing_legacy_snapshots(iceberg_table, parquet_input, checkpoint_store):
+    """Adopting checkpoint=... on a table that already has snapshots without markers.
+
+    The migration path for every existing user. The recovery walk must not
+    false-positive on a legacy snapshot (which has no `daft.checkpoint-*` keys),
+    and the new write must land as a fresh snapshot on top of the existing one.
+    """
+    # Pre-populate the table with a plain non-checkpoint write — produces a
+    # legacy snapshot whose summary has no `daft.checkpoint-*` markers.
+    legacy = daft.from_pydict({"file_id": ["x", "y"], "x": [10, 20]})
+    legacy.write_iceberg(iceberg_table)
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+    legacy_summary = iceberg_table.metadata.snapshots[0].summary
+    assert legacy_summary.get("daft.checkpoint-store") is None, "legacy snapshot must not carry our markers"
+
+    # Now enable checkpoint and write new data. Recovery walks history, sees
+    # the legacy snapshot with no matching markers, falls through to commit.
+    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 2, (
+        "checkpoint write must land as a new snapshot on top of the legacy one"
+    )
+
+    new_summary = iceberg_table.metadata.snapshots[-1].summary
+    assert new_summary["daft.checkpoint-store"] == checkpoint_store.path
+    assert new_summary.get("added-records") == "3"
+
+    # Final table is the union: legacy {x, y} + new {a, b, c}.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "x", "y"]
+
+
+def test_empty_input_on_fresh_store(iceberg_table, tmpdir, checkpoint_store):
+    """Writing an empty DataFrame on a fresh store is a clean no-op.
+
+    A scheduled pipeline whose upstream produced zero rows is normal. The
+    feature must not crash (e.g. by sealing an empty checkpoint entry that
+    was never staged), nor land a polluted empty snapshot.
+    """
+    import pyarrow as pa
+
+    empty_path = str(tmpdir / "empty_in")
+    os.makedirs(empty_path, exist_ok=True)
+    # Write a parquet with the right schema but zero rows.
+    daft.from_pydict(
+        {
+            "file_id": pa.array([], type=pa.string()),
+            "x": pa.array([], type=pa.int64()),
+        }
+    ).write_parquet(empty_path)
+
+    df = daft.read_parquet(empty_path, checkpoint=checkpoint_store, on="file_id")
+    df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert iceberg_table.metadata.snapshots == [], "empty input must not land a snapshot"
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not pending, "no Checkpointed entries should remain after an empty write"
+
+
+def test_first_write_wins_on_key_collisions(iceberg_table, tmpdir, checkpoint_store):
+    """The `on=` column is checkpoint identity, not a primary key.
+
+    Once a key is committed, subsequent rows with the same key are dropped by
+    the source filter — even if the new row's other columns differ. This
+    codifies first-write-wins semantics so a regression toward upsert-style
+    behavior would fail loudly.
+
+    Also covers duplicates within a single input: both occurrences land on
+    the first call (no within-input dedup), then both are dropped on re-run.
+    """
+    # Call 1: input has a duplicate key 'a'. Both rows must land.
+    inp1 = str(tmpdir / "in1")
+    os.makedirs(inp1, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "a", "b"], "x": [1, 2, 3]}).write_parquet(inp1)
+    daft.read_parquet(inp1, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+    iceberg_table.refresh()
+    rows_1 = daft.read_iceberg(iceberg_table).to_pydict()
+    pairs_1 = sorted(zip(rows_1["file_id"], rows_1["x"]))
+    assert pairs_1 == [("a", 1), ("a", 2), ("b", 3)], "duplicates within one input must both land"
+
+    # Call 2: same keys 'a' and 'b' with DIFFERENT data, plus a new key 'c'.
+    # First-write-wins: a's and b's new x values are dropped, only 'c' lands.
+    inp2 = str(tmpdir / "in2")
+    os.makedirs(inp2, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "a", "b", "c"], "x": [100, 200, 300, 4]}).write_parquet(inp2)
+    daft.read_parquet(inp2, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 2
+
+    # Final table: original a, a, b rows preserved with their *first-write*
+    # x values; only c is new. A regression to upsert-semantics would replace
+    # the a rows with x=100, x=200.
+    rows_2 = daft.read_iceberg(iceberg_table).to_pydict()
+    pairs_2 = sorted(zip(rows_2["file_id"], rows_2["x"]))
+    assert pairs_2 == [("a", 1), ("a", 2), ("b", 3), ("c", 4)], f"first-write-wins violated; got {pairs_2}"
+
+
+def test_null_keys_are_deduped(iceberg_table, tmpdir, checkpoint_store):
+    """NULL values in the `on=` column are deduped on re-run.
+
+    Daft's anti-join uses NULL-equals-NULL semantics (not SQL's NULL != NULL),
+    so a NULL key gets recorded in the checkpoint store on the first run and
+    matched against on re-runs — same as any other value. This test pins the
+    behavior so a regression toward SQL-style NULL handling would fail.
+    """
+    import pyarrow as pa
+
+    inp = str(tmpdir / "null_in")
+    os.makedirs(inp, exist_ok=True)
+    # Two non-null keys plus one NULL.
+    daft.from_pydict(
+        {
+            "file_id": pa.array(["a", "b", None], type=pa.string()),
+            "x": pa.array([1, 2, 3], type=pa.int64()),
+        }
+    ).write_parquet(inp)
+
+    # Call 1: all three rows land.
+    daft.read_parquet(inp, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+    iceberg_table.refresh()
+    rows_1 = daft.read_iceberg(iceberg_table).to_pydict()
+    assert len(rows_1["file_id"]) == 3
+    assert sum(1 for fid in rows_1["file_id"] if fid is None) == 1, "first run lands the single NULL-keyed row"
+
+    # Call 2: same input. Filter must drop the NULL row too — same dedup as
+    # for non-null keys.
+    daft.read_parquet(inp, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+    iceberg_table.refresh()
+    rows_2 = daft.read_iceberg(iceberg_table).to_pydict()
+    assert len(rows_2["file_id"]) == 3, f"re-run with same input must not duplicate NULL-keyed rows; got {rows_2}"
+    assert sum(1 for fid in rows_2["file_id"] if fid is None) == 1, "NULL key must be deduped on re-run"
