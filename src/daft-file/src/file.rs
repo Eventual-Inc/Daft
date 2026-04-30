@@ -26,6 +26,20 @@ impl DaftFile {
             .get_source_and_path(&file_ref.url)
             .await
             .map_err(DaftError::from)?;
+
+        if let (Some(offset), Some(length)) = (file_ref.offset, file_ref.length) {
+            let range = Some(GetRange::Bounded(offset as usize..(offset + length) as usize));
+            let result = source
+                .get(&path, range, None)
+                .await
+                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+            let bytes = result
+                .bytes()
+                .await
+                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+            return Ok(Self::from_bytes(media_type, bytes.to_vec()));
+        }
+
         // getting the size is pretty cheap, so we do it upfront
         // we grab the size upfront so we can use it to determine if we are at the end of the file
         let file_size = source

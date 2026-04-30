@@ -49,9 +49,14 @@ class File:
         return instance
 
     def __init__(
-        self, url: str, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+        self,
+        url: str,
+        io_config: IOConfig | None = None,
+        media_type: MediaType = MediaType.unknown(),
+        offset: int | None = None,
+        length: int | None = None,
     ) -> None:
-        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, offset, length))  # type: ignore
 
     def open(self) -> PyDaftFile:
         return PyDaftFile._from_file_reference(self._inner)
@@ -100,6 +105,14 @@ class File:
             'data.csv'
         """
         return self._inner.name()
+
+    @property
+    def offset(self) -> int | None:
+        return self._inner.offset()
+
+    @property
+    def length(self) -> int | None:
+        return self._inner.length()
 
     def size(self) -> int:
         return PyDaftFile._from_file_reference(self._inner).size()

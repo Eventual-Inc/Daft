@@ -56,6 +56,10 @@ pub struct FileReference {
     pub media_type: MediaType,
     pub url: String,
     pub io_config: Option<Arc<IOConfig>>,
+    #[serde(default)]
+    pub offset: Option<u64>,
+    #[serde(default)]
+    pub length: Option<u64>,
 }
 
 impl FileReference {
@@ -64,19 +68,37 @@ impl FileReference {
             media_type,
             url,
             io_config: io_config.map(Arc::new),
+            offset: None,
+            length: None,
+        }
+    }
+
+    pub fn new_with_range(
+        media_type: MediaType,
+        url: String,
+        io_config: Option<IOConfig>,
+        offset: Option<u64>,
+        length: Option<u64>,
+    ) -> Self {
+        Self {
+            media_type,
+            url,
+            io_config: io_config.map(Arc::new),
+            offset,
+            length,
         }
     }
 }
 
 impl fmt::Display for FileReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.io_config {
-            Some(_) => {
-                write!(f, "{}(path: {} [with config])", self.media_type, self.url)
-            }
-            None => {
-                write!(f, "{}(path: {})", self.media_type, self.url)
-            }
+        write!(f, "{}(path: {}", self.media_type, self.url)?;
+        if self.io_config.is_some() {
+            write!(f, " [with config]")?;
         }
+        if let (Some(offset), Some(length)) = (self.offset, self.length) {
+            write!(f, " [range: {}..{}]", offset, offset + length)?;
+        }
+        write!(f, ")")
     }
 }
