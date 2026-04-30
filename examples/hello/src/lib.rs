@@ -12,6 +12,8 @@ struct HelloExtension;
 impl DaftExtension for HelloExtension {
     fn install(session: &mut dyn DaftSession) {
         session.define_function(Arc::new(Greet));
+        session.define_function(Arc::new(ByteLengthStr));
+        session.define_function(Arc::new(ByteLengthBin));
         session.define_aggregate_function(Arc::new(StringCount));
     }
 }
@@ -21,6 +23,20 @@ impl DaftExtension for HelloExtension {
 #[daft_func]
 fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
+}
+
+// ── Overloaded Function ────────────────────────────────────────────
+// Two variants registered under the same name "byte_length".
+// The host selects the right one at plan time based on input types.
+
+#[daft_func(name = "byte_length")]
+fn byte_length_str(input: &str) -> i64 {
+    input.len() as i64
+}
+
+#[daft_func(name = "byte_length")]
+fn byte_length_bin(input: &[u8]) -> i64 {
+    input.len() as i64
 }
 
 // ── Aggregate Function ─────────────────────────────────────────────
