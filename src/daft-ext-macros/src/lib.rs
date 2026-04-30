@@ -107,11 +107,13 @@ pub fn daft_func_batch(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 struct DaftFuncBatchArgs {
     return_dtype: syn::Expr,
+    name: Option<String>,
 }
 
 impl syn::parse::Parse for DaftFuncBatchArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut return_dtype = None;
+        let mut name = None;
 
         while !input.is_empty() {
             let ident: syn::Ident = input.parse()?;
@@ -119,6 +121,9 @@ impl syn::parse::Parse for DaftFuncBatchArgs {
 
             if ident == "return_dtype" {
                 return_dtype = Some(input.parse::<syn::Expr>()?);
+            } else if ident == "name" {
+                let lit: syn::LitStr = input.parse()?;
+                name = Some(lit.value());
             } else {
                 return Err(syn::Error::new(
                     ident.span(),
@@ -138,7 +143,7 @@ impl syn::parse::Parse for DaftFuncBatchArgs {
             )
         })?;
 
-        Ok(DaftFuncBatchArgs { return_dtype })
+        Ok(DaftFuncBatchArgs { return_dtype, name })
     }
 }
 
@@ -150,8 +155,9 @@ fn daft_func_batch_impl(
     let struct_name = format_ident!("{}", snake_to_pascal(&fn_name.to_string()));
     let return_dtype = &args.return_dtype;
 
+    let ffi_name_str = args.name.unwrap_or_else(|| fn_name.to_string());
     let fn_name_str = fn_name.to_string();
-    let mut name_bytes = fn_name_str.clone().into_bytes();
+    let mut name_bytes = ffi_name_str.clone().into_bytes();
     name_bytes.push(0);
     let name_lit = Literal::byte_string(&name_bytes);
 
@@ -266,12 +272,45 @@ fn daft_func_batch_impl(
 /// // Register with: session.define_function(Arc::new(Greet));
 /// ```
 #[proc_macro_attribute]
-pub fn daft_func(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn daft_func(attr: TokenStream, item: TokenStream) -> TokenStream {
     let func = parse_macro_input!(item as ItemFn);
+    let attr_args = if attr.is_empty() {
+        DaftFuncArgs::default()
+    } else {
+        parse_macro_input!(attr as DaftFuncArgs)
+    };
 
-    match daft_func_impl(func) {
+    match daft_func_impl(func, attr_args.name) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[derive(Default)]
+struct DaftFuncArgs {
+    name: Option<String>,
+}
+
+impl syn::parse::Parse for DaftFuncArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut name = None;
+        while !input.is_empty() {
+            let ident: syn::Ident = input.parse()?;
+            let _eq: syn::Token![=] = input.parse()?;
+            if ident == "name" {
+                let lit: syn::LitStr = input.parse()?;
+                name = Some(lit.value());
+            } else {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("unknown attribute `{ident}`"),
+                ));
+            }
+            if !input.is_empty() {
+                let _comma: syn::Token![,] = input.parse()?;
+            }
+        }
+        Ok(DaftFuncArgs { name })
     }
 }
 
@@ -297,11 +336,15 @@ enum ReturnKind {
     FallibleNullable,
 }
 
-fn daft_func_impl(func: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
+fn daft_func_impl(
+    func: ItemFn,
+    override_name: Option<String>,
+) -> syn::Result<proc_macro2::TokenStream> {
     let fn_name = &func.sig.ident;
     let struct_name = format_ident!("{}", snake_to_pascal(&fn_name.to_string()));
+    let ffi_name_str = override_name.unwrap_or_else(|| fn_name.to_string());
     let fn_name_str = fn_name.to_string();
-    let mut name_bytes = fn_name_str.clone().into_bytes();
+    let mut name_bytes = ffi_name_str.clone().into_bytes();
     name_bytes.push(0);
     let name_lit = Literal::byte_string(&name_bytes);
 

@@ -261,6 +261,66 @@ pub fn into_scalar_function_factory(
     Arc::new(ScalarFunctionHandle::new(ffi, module))
 }
 
+/// Create a concrete [`ScalarFunctionHandle`] from an `FFI_ScalarFunction` vtable.
+///
+/// Unlike [`into_scalar_function_factory`], this returns the concrete type so callers
+/// can build [`OverloadedScalarFunctionFactory`] from multiple handles.
+pub fn into_scalar_function_handle(
+    ffi: FFI_ScalarFunction,
+    module: Arc<ModuleHandle>,
+) -> Arc<ScalarFunctionHandle> {
+    Arc::new(ScalarFunctionHandle::new(ffi, module))
+}
+
+/// Overloaded function factory holding multiple type-signature variants.
+///
+/// At plan time, probes each variant's `get_return_field` with the actual input
+/// types — the first variant that succeeds is selected. This follows the same
+/// overload resolution model as PostgreSQL.
+#[derive(Clone)]
+pub struct OverloadedScalarFunctionFactory {
+    name: &'static str,
+    variants: Vec<Arc<ScalarFunctionHandle>>,
+}
+
+impl OverloadedScalarFunctionFactory {
+    pub fn new(name: &'static str, first: Arc<ScalarFunctionHandle>) -> Self {
+        Self {
+            name,
+            variants: vec![first],
+        }
+    }
+
+    pub fn add_variant(&mut self, variant: Arc<ScalarFunctionHandle>) {
+        self.variants.push(variant);
+    }
+}
+
+impl ScalarFunctionFactory for OverloadedScalarFunctionFactory {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn get_function(
+        &self,
+        args: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<BuiltinScalarFnVariant> {
+        for variant in &self.variants {
+            if variant.get_return_field(args.clone(), schema).is_ok() {
+                return Ok(BuiltinScalarFnVariant::Sync(Arc::new(
+                    variant.as_ref().clone(),
+                )));
+            }
+        }
+        Err(DaftError::TypeError(format!(
+            "no matching overload for function '{}' ({} variant(s) available)",
+            self.name,
+            self.variants.len(),
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::{CString, c_int, c_void};

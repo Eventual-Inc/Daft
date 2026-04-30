@@ -1,7 +1,8 @@
 use std::{
+    collections::HashMap,
     ffi::{CStr, c_int, c_void},
     path::Path,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -454,6 +455,9 @@ impl Session {
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
+            pending: Mutex<
+                HashMap<String, daft_ext_internal::function::OverloadedScalarFunctionFactory>,
+            >,
         }
 
         unsafe extern "C" fn define_function_cb(
@@ -466,12 +470,27 @@ impl Session {
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let factory = daft_ext_internal::function::into_scalar_function_factory(
+            let handle = daft_ext_internal::function::into_scalar_function_handle(
                 ffi,
                 init_ctx.module.clone(),
             );
             let session = unsafe { &*init_ctx.session };
-            session.attach_function(name, factory);
+            let mut pending = init_ctx.pending.lock().unwrap();
+            if let Some(overloaded) = pending.get_mut(&name) {
+                overloaded.add_variant(handle);
+                let factory: Arc<dyn daft_dsl::functions::ScalarFunctionFactory> =
+                    Arc::new(overloaded.clone());
+                session.attach_function(name, factory);
+            } else {
+                let overloaded = daft_ext_internal::function::OverloadedScalarFunctionFactory::new(
+                    daft_dsl::functions::ScalarUDF::name(handle.as_ref()),
+                    handle,
+                );
+                let factory: Arc<dyn daft_dsl::functions::ScalarFunctionFactory> =
+                    Arc::new(overloaded.clone());
+                pending.insert(name.clone(), overloaded);
+                session.attach_function(name, factory);
+            }
             0
         }
 
@@ -497,6 +516,7 @@ impl Session {
         let init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
+            pending: Mutex::new(HashMap::new()),
         };
 
         let mut ffi_ctx = FFI_SessionContext {
