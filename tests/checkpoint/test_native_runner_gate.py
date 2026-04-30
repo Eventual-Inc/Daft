@@ -84,3 +84,32 @@ def test_attach_checkpoint_helper_passthrough_when_none():
 
     sentinel_builder = object()
     assert attach_checkpoint(sentinel_builder, None) is sentinel_builder
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        daft.read_parquet,
+        daft.read_csv,
+        daft.read_json,
+        daft.read_warc,
+        daft.read_iceberg,
+        daft.read_hudi,
+        daft.read_lance,
+    ],
+)
+def test_reader_signature_includes_checkpoint_kwarg(reader):
+    """Every non-streaming reader must surface `checkpoint=` in its public signature.
+
+    Pins the API contract for catalog/warc readers without needing real
+    fixtures. A reader that forgot the kwarg or accepted but dropped it
+    in a refactor would fail this.
+    """
+    import inspect
+
+    params = inspect.signature(reader).parameters
+    assert "checkpoint" in params, f"{reader.__name__} is missing the `checkpoint` kwarg"
+    # Default must be None so omitting the kwarg is a no-op.
+    assert params["checkpoint"].default is None, (
+        f"{reader.__name__}'s `checkpoint` kwarg must default to None, got {params['checkpoint'].default!r}"
+    )
