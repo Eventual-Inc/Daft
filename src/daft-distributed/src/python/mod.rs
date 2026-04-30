@@ -1,4 +1,5 @@
 mod dashboard;
+mod operator_lifecycle;
 mod progress_bar;
 pub mod ray;
 use std::{collections::HashMap, sync::Arc};
@@ -13,6 +14,9 @@ use daft_logical_plan::PyLogicalPlanBuilder;
 use daft_partition_refs::RayPartitionRef;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
+use operator_lifecycle::{
+    OperatorLifecycleEvent, OperatorLifecycleEventSubscriber, OperatorLifecycleQueue,
+};
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
@@ -36,6 +40,7 @@ use crate::{
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
     statistics_manager: StatisticsManagerRef,
+    lifecycle_queue: OperatorLifecycleQueue,
 }
 
 #[pymethods]
@@ -66,6 +71,30 @@ impl PythonPartitionRefStream {
             };
             Ok(next)
         })
+    }
+
+    /// Drain queued operator lifecycle transitions observed since the last
+    /// drain. Returns a list of `(kind, node_id)` tuples where `kind` is
+    /// `"start"` or `"end"`. The driver re-dispatches these on its own
+    /// subscriber list so user-attached subscribers see events in real time
+    /// instead of in a single batch at query end.
+    fn take_lifecycle_events(&self) -> Vec<(&'static str, u32)> {
+        self.lifecycle_queue
+            .drain()
+            .into_iter()
+            .map(|e| match e {
+                OperatorLifecycleEvent::Start { node_id } => ("start", node_id),
+                OperatorLifecycleEvent::End { node_id } => ("end", node_id),
+            })
+            .collect()
+    }
+
+    /// Emit `End` for every node that started but hasn't ended yet, then
+    /// drain. Called once the partition stream is exhausted so a final batch
+    /// of End events is delivered to the driver before query end.
+    fn finalize_lifecycle_events(&self) -> Vec<(&'static str, u32)> {
+        self.lifecycle_queue.finalize_remaining();
+        self.take_lifecycle_events()
     }
 
     fn finish(&self) -> PyResult<PyExecutionStats> {
@@ -232,9 +261,17 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
+        // Lifecycle queue is shared between the per-task subscriber and the
+        // partition stream the driver drains over Ray.
+        let lifecycle_queue = OperatorLifecycleQueue::new();
+
         // Create subscribers list with progress bar always included
-        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
-            vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> = vec![
+            Box::new(FlotillaProgressBar::try_new(py)?),
+            Box::new(OperatorLifecycleEventSubscriber::new(
+                lifecycle_queue.clone(),
+            )),
+        ];
 
         // Add the TaskLifecycleEventSubscriber if task emitting enabled
         if task_events_enabled() {
@@ -273,6 +310,7 @@ impl PyDistributedPhysicalPlanRunner {
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
             statistics_manager,
+            lifecycle_queue,
         };
         Ok(part_stream)
     }

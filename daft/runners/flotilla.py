@@ -440,22 +440,37 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | PyExecutionStats | None:
+    async def get_next_partition(
+        self, plan_id: str
+    ) -> tuple[list[tuple[str, int]], RayMaterializedResult | PyExecutionStats | None]:
+        """Return the next partition along with any operator lifecycle events
+        observed since the previous call.
+
+        The events are drained from the Rust partition stream and re-dispatched
+        on the driver so user-attached subscribers see per-node Start/End
+        notifications in real time. When the underlying generator is exhausted
+        we additionally call ``finalize_lifecycle_events`` to emit End events
+        for any nodes that started but had no completion observed.
+        """
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
         )
 
+        result_gen = self.curr_result_gens[plan_id]
         try:
-            next_partition_ref = await self.curr_result_gens[plan_id].__anext__()
+            next_partition_ref = await result_gen.__anext__()
         except StopAsyncIteration:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            stats: PyExecutionStats = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
+            lifecycle_events = result_gen.finalize_lifecycle_events()  # type: ignore[attr-defined]
+            stats: PyExecutionStats = result_gen.finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
-            return stats
+            return list(lifecycle_events), stats
+
+        lifecycle_events = result_gen.take_lifecycle_events()  # type: ignore[attr-defined]
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
@@ -465,7 +480,7 @@ class RemoteFlotillaRunner:
             metadatas=metadata_accessor,
             metadata_idx=0,
         )
-        return materialized_result
+        return list(lifecycle_events), materialized_result
 
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
@@ -564,12 +579,22 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
+        query_id: str,
     ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
         plan_id = plan.idx()
+        ctx = get_context()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
-            result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            lifecycle_events, result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            for kind, node_id in lifecycle_events:
+                try:
+                    if kind == "start":
+                        ctx._notify_exec_operator_start(query_id, node_id)
+                    elif kind == "end":
+                        ctx._notify_exec_operator_end(query_id, node_id)
+                except Exception as e:
+                    logger.warning("Failed to dispatch operator %s event for node %s: %s", kind, node_id, e)
             if isinstance(result, PyExecutionStats):
                 return result
             yield result

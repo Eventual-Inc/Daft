@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import platform
@@ -650,7 +649,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(
-                distributed_plan, self._part_set_cache.get_all_partition_sets()
+                distributed_plan, self._part_set_cache.get_all_partition_sets(), query_id
             )
 
             try:
@@ -662,20 +661,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             except StopIteration as e:
                 stats: PyExecutionStats = e.value
 
-            # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
-            try:
-                plan_dict = json.loads(physical_plan_json)
-
-                def notify_end(node: dict[str, Any]) -> None:
-                    if "children" in node:
-                        for child in node["children"]:
-                            notify_end(child)
-                    if "id" in node:
-                        ctx._notify_exec_operator_end(query_id, node["id"])
-
-                notify_end(plan_dict)
-            except Exception as e:
-                logger.warning("Failed to send operator end notifications: %s", e)
+            # Operator start/end events are dispatched per-node by stream_plan as
+            # tasks are submitted and the plan winds down — no tree walk needed
+            # here.
 
             try:
                 ctx._notify_exec_end(query_id)
