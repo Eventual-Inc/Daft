@@ -112,6 +112,12 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
         f"unexpected query_id shape (caught empty/default failure mode?): {snapshot_query_id!r}"
     )
 
+    # Verify: the input rows actually round-trip through the table — guards
+    # against a snapshot landing with zero data files (which would still
+    # satisfy the snapshot-count assertion above).
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c"]
+
 
 def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_input, checkpoint_store):
     """Scenario B: crash after stage_files+checkpoint, before tx.commit_transaction.
@@ -156,3 +162,119 @@ def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_in
     summary = iceberg_table.metadata.snapshots[0].summary
     assert summary["daft.checkpoint-store"] == checkpoint_store.path
     assert summary["daft.checkpoint-query"] == crashed_query_id
+
+    # Verify: rows round-trip through the table.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c"]
+
+
+def test_fresh_run_lands_snapshot_with_markers_and_data(iceberg_table, parquet_input, checkpoint_store):
+    """Scenario C: fresh run with checkpoint, no crash. The most-traveled path.
+
+    Pipeline runs, store gets populated, snapshot lands with markers,
+    `mark_committed` runs. All input rows round-trip through the table.
+    """
+    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+
+    # Markers present and well-shaped.
+    summary = iceberg_table.metadata.snapshots[0].summary
+    assert summary["daft.checkpoint-store"] == checkpoint_store.path
+    qid = summary["daft.checkpoint-query"]
+    assert re.match(r"^[a-z]+-[a-z]+-[0-9a-f]{6}$", qid), f"unexpected query_id shape: {qid!r}"
+
+    # All entries Committed (no leftover Checkpointed state).
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not pending
+
+    # Data round-trip.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c"]
+    assert sorted(rows["x"]) == [1, 2, 3]
+
+
+def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpoint_store):
+    """Two successive write_iceberg calls; second call's input is a superset.
+
+    The source filter drops keys already Committed by the first call, so
+    snapshot 2 only contains the *new* rows. Each call lands its own
+    snapshot with a distinct query_id; the final table is the input union.
+    """
+    # Call 1: input {a, b, c}.
+    inp1 = str(tmpdir / "in1")
+    os.makedirs(inp1, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]}).write_parquet(inp1)
+    daft.read_parquet(inp1, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+    qid_1 = iceberg_table.metadata.snapshots[0].summary["daft.checkpoint-query"]
+
+    # Call 2: input {a, b, c, d, e, f} — superset. Source filter must drop
+    # {a, b, c}; only {d, e, f} should flow through to a new snapshot.
+    inp2 = str(tmpdir / "in2")
+    os.makedirs(inp2, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "b", "c", "d", "e", "f"], "x": [1, 2, 3, 4, 5, 6]}).write_parquet(inp2)
+    daft.read_parquet(inp2, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 2
+    qid_2 = iceberg_table.metadata.snapshots[-1].summary["daft.checkpoint-query"]
+    assert qid_1 != qid_2, "each execution must use its own query_id"
+
+    # All entries Committed across both runs.
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not pending
+
+    # Final table is the union; the dedup ensures no duplicates of {a, b, c}.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
+
+
+def test_rerun_after_full_commit_is_noop(iceberg_table, parquet_input, checkpoint_store):
+    """Re-running write_iceberg with already-Committed input is a no-op.
+
+    Call 1 commits everything. Call 2 with the same input: source filter
+    drops every key, the pipeline produces zero pending entries, no second
+    snapshot lands, and the helper returns an empty result.
+    """
+    df1 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df1.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+
+    # Re-run with identical input — should be a no-op.
+    df2 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    result = df2.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1, "no second snapshot should land on a no-op re-run"
+
+    # The result DataFrame for an empty short-circuit is empty.
+    assert result.to_pydict() == {"operation": [], "rows": [], "file_size": [], "file_name": []}
+
+
+def test_overwrite_with_checkpoint_raises(iceberg_table, checkpoint_store):
+    """`mode='overwrite'` + checkpoint is unsupported; must raise NotImplementedError."""
+    df = daft.from_pydict({"file_id": ["a"], "x": [1]})
+    with pytest.raises(NotImplementedError, match="overwrite"):
+        df.write_iceberg(iceberg_table, mode="overwrite", checkpoint=checkpoint_store)
+
+
+def test_reserved_snapshot_property_key_raises(iceberg_table, checkpoint_store):
+    """User-provided `snapshot_properties` keys prefixed `daft.checkpoint-` are reserved."""
+    df = daft.from_pydict({"file_id": ["a"], "x": [1]})
+    with pytest.raises(ValueError, match="reserved"):
+        df.write_iceberg(
+            iceberg_table,
+            checkpoint=checkpoint_store,
+            snapshot_properties={"daft.checkpoint-store": "spoofed"},
+        )
