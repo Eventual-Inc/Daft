@@ -25,6 +25,7 @@ use indexmap::{
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
+    fn list_flatten(&self) -> DaftResult<ListArray>;
     fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series>;
@@ -211,6 +212,148 @@ impl ListArrayExtension for ListArray {
                 .collect(),
         };
         UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
+    }
+
+    fn list_flatten(&self) -> DaftResult<ListArray> {
+        let offsets = self.offsets();
+
+        match self.child_data_type() {
+            DataType::List(_) => {
+                let inner = self.flat_child.list()?;
+                let inner_offsets = inner.offsets();
+
+                let total_capacity: usize = (0..self.len())
+                    .map(|i| {
+                        if !self.is_valid(i) {
+                            return 0;
+                        }
+
+                        let outer_start = *offsets.get(i).unwrap() as usize;
+                        let outer_end = *offsets.get(i + 1).unwrap() as usize;
+                        (outer_start..outer_end)
+                            .filter(|&inner_idx| inner.is_valid(inner_idx))
+                            .map(|inner_idx| {
+                                (*inner_offsets.get(inner_idx + 1).unwrap()
+                                    - *inner_offsets.get(inner_idx).unwrap())
+                                    as usize
+                            })
+                            .sum::<usize>()
+                    })
+                    .sum();
+
+                let mut growable: Box<dyn Growable> = make_growable(
+                    self.name(),
+                    inner.child_data_type(),
+                    vec![&inner.flat_child],
+                    true,
+                    total_capacity,
+                );
+
+                let mut row_lengths = Vec::with_capacity(self.len());
+                for i in 0..self.len() {
+                    if !self.is_valid(i) {
+                        row_lengths.push(0);
+                        continue;
+                    }
+
+                    let outer_start = *offsets.get(i).unwrap() as usize;
+                    let outer_end = *offsets.get(i + 1).unwrap() as usize;
+                    let mut row_len = 0usize;
+
+                    for inner_idx in outer_start..outer_end {
+                        if !inner.is_valid(inner_idx) {
+                            continue;
+                        }
+
+                        let start = *inner_offsets.get(inner_idx).unwrap() as usize;
+                        let len = (*inner_offsets.get(inner_idx + 1).unwrap()
+                            - *inner_offsets.get(inner_idx).unwrap())
+                            as usize;
+                        row_len += len;
+                        if len > 0 {
+                            growable.extend(0, start, len);
+                        }
+                    }
+
+                    row_lengths.push(row_len);
+                }
+
+                let flattened_child = growable.build()?;
+                Ok(Self::new(
+                    Field::new(
+                        self.name(),
+                        DataType::List(Box::new(inner.child_data_type().clone())),
+                    ),
+                    flattened_child,
+                    OffsetBuffer::from_lengths(row_lengths),
+                    self.nulls().cloned(),
+                ))
+            }
+            DataType::FixedSizeList(_, _) => {
+                let inner = self.flat_child.fixed_size_list()?;
+                let fixed_size = inner.fixed_element_len();
+
+                let total_capacity: usize = (0..self.len())
+                    .map(|i| {
+                        if !self.is_valid(i) {
+                            return 0;
+                        }
+
+                        let outer_start = *offsets.get(i).unwrap() as usize;
+                        let outer_end = *offsets.get(i + 1).unwrap() as usize;
+                        (outer_start..outer_end)
+                            .map(|inner_idx| usize::from(inner.is_valid(inner_idx)) * fixed_size)
+                            .sum::<usize>()
+                    })
+                    .sum();
+
+                let mut growable: Box<dyn Growable> = make_growable(
+                    self.name(),
+                    inner.child_data_type(),
+                    vec![&inner.flat_child],
+                    true,
+                    total_capacity,
+                );
+
+                let mut row_lengths = Vec::with_capacity(self.len());
+                for i in 0..self.len() {
+                    if !self.is_valid(i) {
+                        row_lengths.push(0);
+                        continue;
+                    }
+
+                    let outer_start = *offsets.get(i).unwrap() as usize;
+                    let outer_end = *offsets.get(i + 1).unwrap() as usize;
+                    let mut row_len = 0usize;
+
+                    for inner_idx in outer_start..outer_end {
+                        if !inner.is_valid(inner_idx) {
+                            continue;
+                        }
+
+                        row_len += fixed_size;
+                        growable.extend(0, inner_idx * fixed_size, fixed_size);
+                    }
+
+                    row_lengths.push(row_len);
+                }
+
+                let flattened_child = growable.build()?;
+                Ok(Self::new(
+                    Field::new(
+                        self.name(),
+                        DataType::List(Box::new(inner.child_data_type().clone())),
+                    ),
+                    flattened_child,
+                    OffsetBuffer::from_lengths(row_lengths),
+                    self.nulls().cloned(),
+                ))
+            }
+            dtype => Err(daft_common::error::DaftError::TypeError(format!(
+                "Expected list child dtype for list_flatten, got {}",
+                dtype
+            ))),
+        }
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
@@ -593,6 +736,10 @@ impl ListArrayExtension for FixedSizeListArray {
             ),
         };
         counts.with_nulls(self.nulls().cloned())
+    }
+
+    fn list_flatten(&self) -> DaftResult<ListArray> {
+        self.to_list().list_flatten()
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.

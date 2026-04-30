@@ -1762,6 +1762,27 @@ impl StructArray {
                         .into_series(),
                 )
             }
+            (DataType::Struct(..), DataType::File(media_type)) => {
+                use daft_schema::media_type::MediaType;
+                let casted_struct_array = self.cast(&dtype.to_physical())?.struct_()?.clone();
+                match media_type {
+                    MediaType::Video => Ok(FileArray::<MediaTypeVideo>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    MediaType::Audio => Ok(FileArray::<MediaTypeAudio>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    _ => Ok(FileArray::<MediaTypeUnknown>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                }
+            }
             (DataType::Struct(..), DataType::List(child_dtype)) => {
                 let casted_children = self
                     .children
