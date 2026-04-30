@@ -1458,8 +1458,11 @@ class DataFrame:
             offending = sorted({c.query_id for c in pending})
             raise RuntimeError(
                 "Checkpoint store contains pending entries with mismatched or empty query_ids; "
-                f"single-query-id invariant violated (query_ids: {offending}). This indicates "
-                "concurrent writers against the same path or store corruption."
+                f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
+                "concurrent writers against the same path; the store was reused across "
+                "different destinations (one store per destination — see CheckpointStore docs); "
+                "or pre-feature legacy entries left behind in the store (empty query_id). "
+                "Resolve by using a fresh checkpoint path or clearing the store."
             )
         our_ids = [c.id for c in pending]
         store_path = checkpoint.path
@@ -1574,6 +1577,11 @@ class DataFrame:
                 checkpoint.mark_committed(our_ids)
                 return _build_result()
             except CommitFailedException as e:
+                # Narrow on purpose: only optimistic-concurrency conflicts (the
+                # catalog raised because the branch head moved) retry. Other
+                # transient catalog errors — REST/network 5xx, auth blips,
+                # pyiceberg internals — propagate to the caller, who can wrap
+                # this whole `write_iceberg` in their own retry policy.
                 last_err = e
                 continue
 
