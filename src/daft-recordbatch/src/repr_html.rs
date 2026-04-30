@@ -48,6 +48,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.u64().unwrap();
             arr.html_value(idx, truncate)
         }
+        DataType::Float16 => {
+            let arr = s.f16().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::Float32 => {
             let arr = s.f32().unwrap();
             arr.html_value(idx, truncate)

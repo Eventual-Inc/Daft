@@ -189,6 +189,17 @@ where
                 let result_array =
                     if arrow::compute::can_cast_types(&self_arrow_type, &target_arrow_type) {
                         arrow::compute::cast(data_to_cast.as_ref(), &target_arrow_type)?
+                    } else if matches!(dtype, DataType::Float16)
+                        && arrow::compute::can_cast_types(
+                            &self_arrow_type,
+                            &arrow::datatypes::DataType::Float32,
+                        )
+                    {
+                        let intermediate = arrow::compute::cast(
+                            data_to_cast.as_ref(),
+                            &arrow::datatypes::DataType::Float32,
+                        )?;
+                        arrow::compute::cast(intermediate.as_ref(), &target_arrow_type)?
                     } else if target_arrow_physical_type != target_arrow_type
                         && arrow::compute::can_cast_types(
                             &self_physical_arrow_type,
@@ -1087,7 +1098,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     use_offset_indices: bool,
 ) -> DaftResult<Series> {
     let item: Series = with_match_numeric_daft_types!(inner_dtype, |$T| {
-            let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
+            let mut values = vec![<<$T as DaftNumericType>::Native as num_traits::Zero>::zero(); n_values];
             let nulls = non_zero_values_array.nulls();
             for i in 0..non_zero_values_array.len() {
                 let is_valid = nulls.is_none_or(|v| v.is_valid(i));

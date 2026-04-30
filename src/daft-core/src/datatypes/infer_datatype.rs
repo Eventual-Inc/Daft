@@ -580,6 +580,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int8, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int8, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int8, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int8, DataType::Float16) => Some(DataType::Float16),
 
             (DataType::Int16, DataType::Int16) => Some(DataType::Int16),
             (DataType::Int16, DataType::Int32) => Some(DataType::Int32),
@@ -590,6 +591,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int16, DataType::Float16) => Some(DataType::Float16),
 
             (DataType::Int32, DataType::Int32) => Some(DataType::Int32),
             (DataType::Int32, DataType::Int64) => Some(DataType::Int64),
@@ -599,6 +601,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int32, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int32, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Int64, DataType::Int64) => Some(DataType::Int64),
             (DataType::Int64, DataType::UInt8) => Some(DataType::Int64),
@@ -607,6 +610,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int64, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int64, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::UInt8, DataType::UInt8) => Some(DataType::UInt8),
             (DataType::UInt8, DataType::UInt16) => Some(DataType::UInt16),
@@ -614,26 +618,34 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::UInt8, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt8, DataType::Float32) => Some(DataType::Float32),
             (DataType::UInt8, DataType::Float64) => Some(DataType::Float64),
+            (DataType::UInt8, DataType::Float16) => Some(DataType::Float16),
 
             (DataType::UInt16, DataType::UInt16) => Some(DataType::UInt16),
             (DataType::UInt16, DataType::UInt32) => Some(DataType::UInt32),
             (DataType::UInt16, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt16, DataType::Float32) => Some(DataType::Float32),
             (DataType::UInt16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::UInt16, DataType::Float16) => Some(DataType::Float16),
 
             (DataType::UInt32, DataType::UInt32) => Some(DataType::UInt32),
             (DataType::UInt32, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt32, DataType::Float32) => Some(DataType::Float64),
             (DataType::UInt32, DataType::Float64) => Some(DataType::Float64),
+            (DataType::UInt32, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::UInt64, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt64, DataType::Float32) => Some(DataType::Float64),
             (DataType::UInt64, DataType::Float64) => Some(DataType::Float64),
+            (DataType::UInt64, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Float32, DataType::Float32) => Some(DataType::Float32),
             (DataType::Float32, DataType::Float64) => Some(DataType::Float64),
 
             (DataType::Float64, DataType::Float64) => Some(DataType::Float64),
+
+            (DataType::Float16, DataType::Float16) => Some(DataType::Float16),
+            (DataType::Float16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Float16, DataType::Float64) => Some(DataType::Float64),
 
             _ => None,
         }
@@ -659,6 +671,9 @@ pub fn try_integer_widen_for_rem(l: &DataType, r: &DataType) -> DaftResult<DataT
             }
             (DataType::Float32, other) | (other, DataType::Float32) if other.is_numeric() => {
                 Some(DataType::Float32)
+            }
+            (DataType::Float16, other) | (other, DataType::Float16) if other.is_numeric() => {
+                Some(DataType::Float16)
             }
 
             (DataType::Int8, DataType::Int8) => Some(DataType::Int8),

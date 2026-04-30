@@ -157,6 +157,7 @@ class DataType:
         uint16: ClassVar[_CallableSingletonDataType]
         uint32: ClassVar[_CallableSingletonDataType]
         uint64: ClassVar[_CallableSingletonDataType]
+        float16: ClassVar[_CallableSingletonDataType]
         float32: ClassVar[_CallableSingletonDataType]
         float64: ClassVar[_CallableSingletonDataType]
         string: ClassVar[_CallableSingletonDataType]
@@ -408,6 +409,8 @@ class DataType:
             return cls.int64()
         elif t is np.uint64:
             return cls.uint64()
+        elif t is np.float16:
+            return cls.float16()
         elif t is np.float32:
             return cls.float32()
         elif t is np.float64:
@@ -730,6 +733,8 @@ class DataType:
             return cls.uint32()
         elif pa.types.is_uint64(arrow_type):
             return cls.uint64()
+        elif pa.types.is_float16(arrow_type):
+            return cls.float16()
         elif pa.types.is_float32(arrow_type):
             return cls.float32()
         elif pa.types.is_float64(arrow_type):
@@ -975,6 +980,10 @@ class DataType:
             >>> assert dtype.is_uint64()
         """
         return self._dtype.is_uint64()
+
+    def is_float16(self) -> builtins.bool:
+        """Check if this is a 16-bit float type."""
+        return self._dtype.is_float16()
 
     def is_float32(self) -> builtins.bool:
         """Check if this is a 32-bit float type.
@@ -1608,6 +1617,7 @@ for _simple_name in (
     "uint16",
     "uint32",
     "uint64",
+    "float16",
     "float32",
     "float64",
     "string",

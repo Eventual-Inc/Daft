@@ -75,6 +75,7 @@ pub fn series_round(s: &Series, decimal: i32) -> DaftResult<Series> {
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64 => s.clone().cast(&s.to_floating_data_type()?),
+        DataType::Float16 => Ok(s.f16().unwrap().round(decimal)?.into_series()),
         DataType::Float32 => Ok(f32_round(s.f32().unwrap(), decimal)?.into_series()),
         DataType::Float64 => Ok(f64_round(s.f64().unwrap(), decimal)?.into_series()),
         dt => Err(DaftError::TypeError(format!(

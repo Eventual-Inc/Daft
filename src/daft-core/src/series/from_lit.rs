@@ -181,7 +181,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         .into_series(),
         DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
         | DataType::Int32 | DataType::UInt32 | DataType::Int64 | DataType::UInt64
-        | DataType::Float32 | DataType::Float64 => {
+        | DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             macro_rules! primitive_arm {
                 ($($dt:ident => $arr:ident),+ $(,)?) => {
                     match &downcasted {
@@ -202,6 +202,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 UInt32 => UInt32Array,
                 Int64 => Int64Array,
                 UInt64 => UInt64Array,
+                Float16 => Float16Array,
                 Float32 => Float32Array,
                 Float64 => Float64Array,
             )

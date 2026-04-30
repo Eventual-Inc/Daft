@@ -15,6 +15,7 @@ impl Series {
             DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
                 Ok(self.clone())
             }
+            DataType::Float16 => Ok(self.f16().unwrap().abs()?.into_series()),
             DataType::Float32 => Ok(self.f32().unwrap().abs()?.into_series()),
             DataType::Float64 => Ok(self.f64().unwrap().abs()?.into_series()),
             dt => Err(DaftError::TypeError(format!(

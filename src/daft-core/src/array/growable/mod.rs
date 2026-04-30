@@ -166,6 +166,7 @@ impl_growable_array!(UInt8Array, arrow_growable::ArrowGrowable<'a, UInt8Type>);
 impl_growable_array!(UInt16Array, arrow_growable::ArrowGrowable<'a, UInt16Type>);
 impl_growable_array!(UInt32Array, arrow_growable::ArrowGrowable<'a, UInt32Type>);
 impl_growable_array!(UInt64Array, arrow_growable::ArrowGrowable<'a, UInt64Type>);
+impl_growable_array!(Float16Array, arrow_growable::ArrowGrowable<'a, Float16Type>);
 impl_growable_array!(Float32Array, arrow_growable::ArrowGrowable<'a, Float32Type>);
 impl_growable_array!(Float64Array, arrow_growable::ArrowGrowable<'a, Float64Type>);
 impl_growable_array!(BinaryArray, arrow_growable::ArrowGrowable<'a, BinaryType>);

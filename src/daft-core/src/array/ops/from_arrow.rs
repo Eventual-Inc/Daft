@@ -428,9 +428,10 @@ mod tests {
 
     use crate::{
         array::ListArray,
+        hf16,
         prelude::{
-            Float32Array, Float64Array, FromArrow, Int8Array, Int16Array, Int32Array, Int64Array,
-            UInt8Array, UInt16Array, UInt32Array, UInt64Array, *,
+            Float16Array, Float32Array, Float64Array, FromArrow, Int8Array, Int16Array, Int32Array,
+            Int64Array, UInt8Array, UInt16Array, UInt32Array, UInt64Array, *,
         },
         series,
         series::Series,
@@ -461,6 +462,11 @@ mod tests {
     test_arrow_roundtrip!(test_arrow_roundtrip_u32, UInt32Array, vec![1, 2, 3]);
     test_arrow_roundtrip!(test_arrow_roundtrip_i64, Int64Array, vec![1, 2, 3]);
     test_arrow_roundtrip!(test_arrow_roundtrip_u64, UInt64Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(
+        test_arrow_roundtrip_f16,
+        Float16Array,
+        vec![hf16!(1.0), hf16!(2.0), hf16!(3.0)]
+    );
     test_arrow_roundtrip!(test_arrow_roundtrip_f32, Float32Array, vec![1.0, 2.0, 3.0]);
     test_arrow_roundtrip!(test_arrow_roundtrip_f64, Float64Array, vec![1.0, 2.0, 3.0]);
 
@@ -470,6 +476,7 @@ mod tests {
     #[case(series![1i16, 2i16, 3i16])]
     #[case(series![1i32, 2i32, 3i32])]
     #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![hf16!(1.0), hf16!(2.0)])]
     #[case(series![1f32, 2f32, 3f32])]
     #[case(series![1f64, 2f64, 3f64])]
     #[case(series!["a", "b", "c"])]

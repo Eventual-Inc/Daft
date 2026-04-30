@@ -8,9 +8,9 @@ use daft_core::{
         ops::{VecIndices, as_arrow::AsArrow},
     },
     datatypes::{
-        BinaryArray, BooleanArray, Decimal128Type, FixedSizeBinaryArray, Float32Array,
-        Float64Array, Int8Type, Int16Type, Int32Type, Int64Type, NullArray, UInt8Type, UInt16Type,
-        UInt32Type, UInt64Type, Utf8Array,
+        BinaryArray, BooleanArray, Decimal128Type, FixedSizeBinaryArray, Float16Array,
+        Float32Array, Float64Array, Int8Type, Int16Type, Int32Type, Int64Type, NullArray,
+        UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Array,
     },
 };
 use hashbrown::{DefaultHashBuilder, HashMap, hash_map::Entry};
@@ -150,6 +150,54 @@ impl_into_groups_primitive_array!(Decimal128Type);
 
 // Floats (canonicalize NaN)
 // Canonicalize all NaN payloads so every NaN hashes/equates into one group.
+
+impl IntoGroups for Float16Array {
+    fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
+        if self.null_count() > 0 {
+            make_groups(self.into_iter().map(|f| {
+                f.map(|v| {
+                    match v.is_nan() {
+                        true => half::f16::NAN,
+                        false => v,
+                    }
+                    .to_bits()
+                })
+            }))
+        } else {
+            make_groups(self.values().iter().map(|f| {
+                match f.is_nan() {
+                    true => half::f16::NAN,
+                    false => *f,
+                }
+                .to_bits()
+            }))
+        }
+    }
+}
+
+impl IntoUniqueIdxs for Float16Array {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter().map(|f| {
+                f.map(|v| {
+                    match v.is_nan() {
+                        true => half::f16::NAN,
+                        false => v,
+                    }
+                    .to_bits()
+                })
+            }))
+        } else {
+            make_unique_idxs(self.values().iter().map(|f| {
+                match f.is_nan() {
+                    true => half::f16::NAN,
+                    false => *f,
+                }
+                .to_bits()
+            }))
+        }
+    }
+}
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {

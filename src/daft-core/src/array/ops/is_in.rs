@@ -42,7 +42,7 @@ where
 }
 
 macro_rules! impl_is_in_floating_array {
-    ($arr:ident, $T:ident) => {
+    ($arr:ident, $T:ty) => {
         impl DaftIsIn<&$arr> for $arr {
             type Output = DaftResult<BooleanArray>;
 
@@ -64,6 +64,7 @@ macro_rules! impl_is_in_floating_array {
         }
     };
 }
+impl_is_in_floating_array!(Float16Array, half::f16);
 impl_is_in_floating_array!(Float32Array, f32);
 impl_is_in_floating_array!(Float64Array, f64);
 

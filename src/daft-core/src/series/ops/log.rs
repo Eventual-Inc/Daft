@@ -19,6 +19,10 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log2()?.into_series())
             }
+            DataType::Float16 => {
+                let s = self.cast(&DataType::Float32)?;
+                s.log2()
+            }
             DataType::Float32 => Ok(self.f32()?.log2()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log2()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -41,6 +45,10 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log10()?.into_series())
             }
+            DataType::Float16 => {
+                let s = self.cast(&DataType::Float32)?;
+                s.log10()
+            }
             DataType::Float32 => Ok(self.f32()?.log10()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log10()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -62,6 +70,10 @@ impl Series {
             | DataType::UInt64 => {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log(base)?.into_series())
+            }
+            DataType::Float16 => {
+                let s = self.cast(&DataType::Float32)?;
+                s.log(base)
             }
             DataType::Float32 => Ok(self.f32()?.log(base as f32)?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log(base)?.into_series()),
@@ -86,6 +98,10 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.ln()?.into_series())
             }
+            DataType::Float16 => {
+                let s = self.cast(&DataType::Float32)?;
+                s.ln()
+            }
             DataType::Float32 => Ok(self.f32()?.ln()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.ln()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -108,6 +124,10 @@ impl Series {
             | DataType::UInt64 => {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log1p()?.into_series())
+            }
+            DataType::Float16 => {
+                let s = self.cast(&DataType::Float32)?;
+                s.log1p()
             }
             DataType::Float32 => Ok(self.f32()?.log1p()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log1p()?.into_series()),

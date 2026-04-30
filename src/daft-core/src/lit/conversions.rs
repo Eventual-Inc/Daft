@@ -39,6 +39,7 @@ impl_literal!(i32, Int32);
 impl_literal!(u32, UInt32);
 impl_literal!(i64, Int64);
 impl_literal!(u64, UInt64);
+impl_literal!(half::f16, Float16);
 impl_literal!(f32, Float32);
 impl_literal!(f64, Float64);
 impl_literal!(IntervalValue, Interval);
@@ -96,6 +97,14 @@ macro_rules! impl_int_fromliteral {
                     Literal::UInt32(v) => num_traits::cast(*v),
                     Literal::Int64(v) => num_traits::cast(*v),
                     Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float16(v) => {
+                        let f = v.to_f32();
+                        if f.fract() == 0.0 {
+                            num_traits::cast(f)
+                        } else {
+                            None
+                        }
+                    }
                     Literal::Float32(v) => {
                         if v.fract() == 0.0 {
                             num_traits::cast(*v)
@@ -142,6 +151,7 @@ macro_rules! impl_float_fromliteral {
                     Literal::UInt32(v) => num_traits::cast(*v),
                     Literal::Int64(v) => num_traits::cast(*v),
                     Literal::UInt64(v) => num_traits::cast(*v),
+                    Literal::Float16(v) => num_traits::cast(v.to_f32()),
                     Literal::Float32(v) => num_traits::cast(*v),
                     Literal::Float64(v) => num_traits::cast(*v),
                     _ => {
@@ -219,6 +229,7 @@ impl_int_fromliteral!(i64);
 impl_int_fromliteral!(u64);
 impl_int_fromliteral!(usize);
 impl_int_fromliteral!(isize);
+impl_float_fromliteral!(half::f16);
 impl_float_fromliteral!(f32);
 impl_float_fromliteral!(f64);
 impl_pyobj_fromliteral!(IOConfig, common_io_config::python::IOConfig);
