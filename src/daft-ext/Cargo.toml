@@ -16,23 +16,29 @@ ignored = [
   "arrow-data-58",
   "arrow-schema-56",
   "arrow-schema-57",
-  "arrow-schema-58"
+  "arrow-schema-58",
+  "arrow-array-56",
+  "arrow-array-57",
+  "arrow-array-58"
 ]
 
 [features]
-arrow-56 = ["dep:arrow-schema-56", "dep:arrow-data-56"]
-arrow-57 = ["dep:arrow-schema-57", "dep:arrow-data-57"]
-arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58"]
+arrow-56 = ["dep:arrow-schema-56", "dep:arrow-data-56", "dep:arrow-array-56"]
+arrow-57 = ["dep:arrow-schema-57", "dep:arrow-data-57", "dep:arrow-array-57"]
+arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58", "dep:arrow-array-58"]
 
 [dependencies]
 daft-ext-macros = {path = "../daft-ext-macros", version = "0.1.1"}
 # Arrow C Data Interface compatibility (optional, feature-gated)
 arrow-schema-56 = {package = "arrow-schema", version = "56", features = ["ffi"], optional = true}
 arrow-data-56 = {package = "arrow-data", version = "56", features = ["ffi"], optional = true}
+arrow-array-56 = {package = "arrow-array", version = "56", features = ["ffi"], optional = true}
 arrow-schema-57 = {package = "arrow-schema", version = "57", features = ["ffi"], optional = true}
 arrow-data-57 = {package = "arrow-data", version = "57", features = ["ffi"], optional = true}
+arrow-array-57 = {package = "arrow-array", version = "57", features = ["ffi"], optional = true}
 arrow-schema-58 = {package = "arrow-schema", version = "58", features = ["ffi"], optional = true}
 arrow-data-58 = {package = "arrow-data", version = "58", features = ["ffi"], optional = true}
+arrow-array-58 = {package = "arrow-array", version = "58", features = ["ffi"], optional = true}
 
 [lints]
 workspace = true
