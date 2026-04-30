@@ -54,8 +54,6 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     group_buckets: Vec<Vec<u64>>,
     group_reps: RecordBatch,
     group_hash_map: HashMap<u64, Vec<usize>>,
-    // Whether the join has by_key columns.
-    has_by_keys: bool,
     // Total number of left rows.
     total_left_rows: usize,
 }
@@ -80,7 +78,6 @@ impl AsofJoinFinalizedBuildState {
                     group_buckets: vec![],
                     group_reps: RecordBatch::empty(None),
                     group_hash_map: HashMap::new(),
-                    has_by_keys: !left_by.is_empty(),
                     total_left_rows: 0,
                 });
             }
@@ -132,7 +129,6 @@ impl AsofJoinFinalizedBuildState {
             group_buckets,
             group_reps,
             group_hash_map,
-            has_by_keys: !left_by.is_empty(),
             total_left_rows,
         })
     }
@@ -217,7 +213,7 @@ impl AsofJoinProbeState {
         );
 
         // we use this later when we call find_left_group()
-        let by_key_hashes_and_comparator: Option<(_, _)> = if table.has_by_keys {
+        let by_key_hashes_and_comparator: Option<(_, _)> = if !table.group_hash_map.is_empty() {
             let right_by_rb = right_rb.eval_expression_list(right_by)?;
             let hashes = right_by_rb.hash_rows()?;
             let num_by_cols = table.group_reps.num_columns();
