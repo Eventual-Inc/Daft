@@ -44,9 +44,7 @@ pub(crate) struct AsofJoinBuildState {
 pub(crate) struct AsofJoinFinalizedBuildState {
     // Original left RecordBatch (all rows concatenated)
     left_rb: RecordBatch,
-    // Concatenated on_key as a Daft Series – used for null-validity checks.
-    left_on_series: Series,
-    // Concatenated on_key as an Arrow array – used for sort and binary search comparators.
+    // Concatenated on_key as an Arrow array – used for sort, binary search comparators, and null-validity checks.
     left_on_arr: Arc<dyn Array>,
     // group_hash_map maps a by_key hash to a list of candidate group indices (Vec<usize>).
     // Multiple candidates exist only on hash collision; typically there is just one.
@@ -74,11 +72,10 @@ impl AsofJoinFinalizedBuildState {
             Some(rb) => rb,
             None => {
                 let empty_left = RecordBatch::empty(Some(left_schema));
-                let left_on_series = empty_left.eval_expression(left_on)?;
-                let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
+                let left_on_arr: Arc<dyn Array> =
+                    empty_left.eval_expression(left_on)?.to_arrow()?;
                 return Ok(Self {
                     left_rb: empty_left,
-                    left_on_series,
                     left_on_arr,
                     group_buckets: vec![],
                     group_reps: RecordBatch::empty(None),
@@ -90,8 +87,7 @@ impl AsofJoinFinalizedBuildState {
         };
 
         let total_left_rows = left_rb.len();
-        let left_on_series = left_rb.eval_expression(left_on)?;
-        let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
+        let left_on_arr: Arc<dyn Array> = left_rb.eval_expression(left_on)?.to_arrow()?;
 
         let on_key_sort_cmp =
             build_partial_compare_with_nulls(left_on_arr.as_ref(), left_on_arr.as_ref(), false)?;
@@ -132,7 +128,6 @@ impl AsofJoinFinalizedBuildState {
 
         Ok(Self {
             left_rb,
-            left_on_series,
             left_on_arr,
             group_buckets,
             group_reps,
@@ -160,7 +155,7 @@ impl AsofJoinFinalizedBuildState {
             }
         }
         let candidate_left_idx = *bucket.get(lo)? as usize;
-        self.left_on_series
+        self.left_on_arr
             .is_valid(candidate_left_idx)
             .then_some(candidate_left_idx)
     }
@@ -463,7 +458,7 @@ impl JoinOperator for AsofJoinOperator {
                             let prev_global = bucket[i - 1] as usize;
                             let curr_global = bucket[i] as usize;
                             // Skip null-on-key left rows: they are invalid match targets.
-                            if !table.left_on_series.is_valid(curr_global) {
+                            if !table.left_on_arr.is_valid(curr_global) {
                                 continue;
                             }
                             if state.best_match[curr_global].is_none()
