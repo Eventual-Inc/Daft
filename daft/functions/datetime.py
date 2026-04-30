@@ -1224,7 +1224,11 @@ def trunc(expr: Expression, interval: str, relative_to: Expression | None = None
         interval: The truncation unit/interval (e.g. ``"day"``, ``"month"``, ``"1 hour"``).
         relative_to (optional): Timestamp to truncate relative to.
     """
-    return date_trunc(interval, expr, relative_to)
+    normalized_interval = interval
+    stripped = interval.strip()
+    if stripped and not stripped[0].isdigit():
+        normalized_interval = f"1 {stripped}"
+    return date_trunc(normalized_interval, expr, relative_to)
 
 
 def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> Expression:
