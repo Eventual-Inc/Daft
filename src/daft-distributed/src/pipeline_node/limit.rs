@@ -266,28 +266,62 @@ impl LimitNode {
     ) -> DaftResult<()> {
         let node_id = self.node_id();
         let mut limit_state = LimitState::new(self.limit, self.offset);
-        let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
 
-        let mut input = std::pin::pin!(input.peekable());
+        let mut input = std::pin::pin!(input);
 
-        // Try to estimate initial concurrency from scan task metadata (e.g. Parquet row counts).
-        // This avoids the bottleneck of running one task sequentially just to measure output size.
-        if let Some(first) = input.as_mut().peek().await
-            && let Some(est_rows) = first.estimated_num_rows()
-            && est_rows > 0
-        {
-            max_concurrent_tasks = limit_state.total_remaining().div_ceil(est_rows);
+        // Estimate initial concurrency by pulling builders off the input stream and summing
+        // their per-builder row estimates (e.g. Parquet row counts) until the cumulative
+        // estimate covers `total_remaining`. The pulled builders form the first batch and
+        // their count becomes `max_concurrent_tasks`.
+        //
+        // This avoids the bottleneck of running one task sequentially just to measure output
+        // size, and unlike a single-sample estimate (peek the first builder, extrapolate from
+        // it), it handles per-builder row-count skew.
+        //
+        // Stops accumulating on the first builder without an estimate (still queued for
+        // submission) — we don't trust a partial sum to extrapolate. Capped at
+        // `scantask_max_parallel` to bound buffering and avoid over-launching.
+        let mut prefetched: VecDeque<SwordfishTaskBuilder> = VecDeque::new();
+        let prefetch_cap = self
+            .config
+            .execution_config
+            .scantask_max_parallel
+            .max(1);
+        let target = limit_state.total_remaining();
+        let mut cumulative_est_rows: usize = 0;
+        while cumulative_est_rows < target && prefetched.len() < prefetch_cap {
+            let Some(builder) = input.next().await else {
+                input_exhausted = true;
+                break;
+            };
+            match builder.estimated_num_rows() {
+                Some(est) if est > 0 => {
+                    cumulative_est_rows = cumulative_est_rows.saturating_add(est);
+                    prefetched.push_back(builder);
+                }
+                _ => {
+                    prefetched.push_back(builder);
+                    break;
+                }
+            }
         }
+        let mut max_concurrent_tasks = prefetched.len().max(1);
 
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
             let mut local_limits = VecDeque::new();
             let local_limit_per_task = limit_state.total_remaining();
 
-            // Submit tasks until we have max_concurrent_tasks or we run out of input
+            // Submit tasks until we have max_concurrent_tasks or we run out of input.
+            // Drain the prefetch buffer first, then fall back to the input stream.
             for _ in 0..max_concurrent_tasks {
-                if let Some(builder) = input.next().await {
+                let next_builder = if let Some(b) = prefetched.pop_front() {
+                    Some(b)
+                } else {
+                    input.next().await
+                };
+                if let Some(builder) = next_builder {
                     let builder_with_limit = builder
                         .map_plan(self.as_ref(), move |input| {
                             LocalPhysicalPlan::limit(
@@ -516,10 +550,8 @@ mod tests {
         }
     }
 
-    /// Limit on an `InMemorySource`: input task builders carry `psets` rather
-    /// than scan tasks, so `estimated_num_rows()` returns `None` and the
-    /// execution loop takes the fallback `max_concurrent_tasks = 1` branch.
-    /// Verifies the limit is correctly enforced.
+    /// Limit on an `InMemorySource`. Verifies the limit is correctly enforced
+    /// regardless of which prefetch path the execution loop takes.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_limit_without_estimated_rows() -> DaftResult<()> {
         let meter = Meter::test_scope("test_limit_without_estimated_rows");
@@ -540,9 +572,8 @@ mod tests {
     }
 
     /// Limit on a CSV-backed `ScanSource`: scan tasks carry `size_bytes`, so
-    /// `estimated_num_rows()` returns `Some(_)` and the execution loop takes
-    /// the estimated-concurrency branch. Verifies the limit is correctly
-    /// enforced.
+    /// `estimated_num_rows()` returns `Some(_)` and the execution loop accumulates
+    /// estimates across builders. Verifies the limit is correctly enforced.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_limit_with_estimated_rows() -> DaftResult<()> {
         let meter = Meter::test_scope("test_limit_with_estimated_rows");
