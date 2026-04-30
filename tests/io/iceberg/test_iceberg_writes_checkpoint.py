@@ -112,6 +112,12 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
         f"unexpected query_id shape (caught empty/default failure mode?): {snapshot_query_id!r}"
     )
 
+    # The recovered snapshot was committed by the *first* call (this scenario
+    # restarts after a successful catalog commit); its summary therefore still
+    # records the original 3 added rows / 1 added data file.
+    assert summary.get("added-records") == "3"
+    assert summary.get("added-data-files") == "1"
+
     # Verify: the input rows actually round-trip through the table — guards
     # against a snapshot landing with zero data files (which would still
     # satisfy the snapshot-count assertion above).
@@ -162,6 +168,12 @@ def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_in
     summary = iceberg_table.metadata.snapshots[0].summary
     assert summary["daft.checkpoint-store"] == checkpoint_store.path
     assert summary["daft.checkpoint-query"] == crashed_query_id
+
+    # The recovery commit pulled the staged files out of the checkpoint store
+    # (no pipeline re-run); a regression that lands a snapshot with markers but
+    # zero data would pass everything above. This assertion makes that explicit.
+    assert summary.get("added-records") == "3"
+    assert summary.get("added-data-files") == "1"
 
     # Verify: rows round-trip through the table.
     rows = daft.read_iceberg(iceberg_table).to_pydict()
@@ -226,9 +238,15 @@ def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpo
 
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 2
+    summary_1 = iceberg_table.metadata.snapshots[0].summary
     summary_2 = iceberg_table.metadata.snapshots[-1].summary
     qid_2 = summary_2["daft.checkpoint-query"]
     assert qid_1 != qid_2, "each execution must use its own query_id"
+
+    # Snapshot 1's marker must be unchanged after the second call lands —
+    # nothing in the second-call code path should rewrite earlier snapshot
+    # summaries.
+    assert summary_1["daft.checkpoint-query"] == qid_1
 
     # Snapshot 2 must contain only the new rows ({d, e, f}). The summary's
     # `added-records` / `added-data-files` fields are populated by pyiceberg's
@@ -279,12 +297,35 @@ def test_overwrite_with_checkpoint_raises(iceberg_table, checkpoint_store):
         df.write_iceberg(iceberg_table, mode="overwrite", checkpoint=checkpoint_store)
 
 
-def test_reserved_snapshot_property_key_raises(iceberg_table, checkpoint_store):
-    """User-provided `snapshot_properties` keys prefixed `daft.checkpoint-` are reserved."""
+@pytest.mark.parametrize(
+    "reserved_key",
+    ["daft.checkpoint-store", "daft.checkpoint-query", "daft.checkpoint-foo"],
+)
+def test_reserved_snapshot_property_key_raises(iceberg_table, checkpoint_store, reserved_key):
+    """Any user-provided `snapshot_properties` key prefixed `daft.checkpoint-` is reserved."""
     df = daft.from_pydict({"file_id": ["a"], "x": [1]})
     with pytest.raises(ValueError, match="reserved"):
         df.write_iceberg(
             iceberg_table,
             checkpoint=checkpoint_store,
-            snapshot_properties={"daft.checkpoint-store": "spoofed"},
+            snapshot_properties={reserved_key: "spoofed"},
         )
+
+
+def test_user_snapshot_properties_pass_through(iceberg_table, parquet_input, checkpoint_store):
+    """Non-reserved user snapshot_properties must reach the snapshot summary alongside daft markers."""
+    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df.write_iceberg(
+        iceberg_table,
+        checkpoint=checkpoint_store,
+        snapshot_properties={"author": "rohit", "release": "v1"},
+    )
+
+    iceberg_table.refresh()
+    summary = iceberg_table.metadata.snapshots[0].summary
+    # User props preserved.
+    assert summary["author"] == "rohit"
+    assert summary["release"] == "v1"
+    # Daft markers also injected — user props don't displace them.
+    assert summary["daft.checkpoint-store"] == checkpoint_store.path
+    assert "daft.checkpoint-query" in summary.additional_properties
