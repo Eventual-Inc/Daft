@@ -14,6 +14,7 @@ pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod random;
+pub mod simhash;
 pub mod similarity;
 pub mod slice;
 pub mod to_struct;
@@ -27,6 +28,7 @@ use length::Length;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
+use simhash::SimHashFunction;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
 use uuid::Uuid;
@@ -67,6 +69,7 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(ConcatWs);
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
+        parent.add_fn(SimHashFunction);
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);

@@ -1417,7 +1417,7 @@ class DataFrame:
         except ImportError:
             raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
 
-        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+        from daft.io.paimon import PaimonDataSink
 
         return self.write_sink(PaimonDataSink(table, mode))
 
