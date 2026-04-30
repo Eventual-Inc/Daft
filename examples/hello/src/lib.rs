@@ -1,6 +1,6 @@
 use std::{ffi::CStr, sync::Arc};
 
-use arrow_array::{Array, ArrayRef, builder::StringBuilder, cast::AsArray};
+use arrow_array::{Array, ArrayRef};
 use arrow_schema::{DataType, Field};
 use daft_ext::prelude::*;
 
@@ -16,20 +16,11 @@ impl DaftExtension for HelloExtension {
     }
 }
 
-// ── Scalar Function ────────────────────────────────────────────────
+// ── Scalar Function (row-level macro) ──────────────────────────────
 
-#[daft_func_batch(return_dtype = DataType::Utf8)]
-fn greet(input: ArrayRef) -> DaftResult<ArrayRef> {
-    let names = input.as_string::<i64>();
-    let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
-    for i in 0..names.len() {
-        if names.is_null(i) {
-            builder.append_null();
-        } else {
-            builder.append_value(format!("Hello, {}!", names.value(i)));
-        }
-    }
-    Ok(Arc::new(builder.finish()))
+#[daft_func]
+fn greet(name: &str) -> String {
+    format!("Hello, {}!", name)
 }
 
 // ── Aggregate Function ─────────────────────────────────────────────

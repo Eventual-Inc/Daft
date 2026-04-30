@@ -1,4 +1,4 @@
-pub use daft_ext_macros::{daft_extension, daft_func_batch};
+pub use daft_ext_macros::{daft_extension, daft_func, daft_func_batch};
 
 #[cfg(any(feature = "arrow-56", feature = "arrow-57", feature = "arrow-58"))]
 pub use crate::helpers::{export_array, export_field, import_array, import_field};

@@ -60,6 +60,27 @@ macro_rules! impl_helpers {
         pub fn new_field(name: &str, dtype: $arrow_schema_crate::DataType) -> Field {
             Field::new(name, dtype, true)
         }
+
+        /// Internal re-exports for `#[daft_func]` generated code.
+        /// Not part of the public API.
+        #[doc(hidden)]
+        pub mod _codegen {
+            pub use std::sync::Arc;
+
+            pub use $arrow_array_crate::{
+                Array, ArrayRef, BooleanArray, FixedSizeListArray, LargeBinaryArray,
+                LargeListArray, LargeStringArray, PrimitiveArray,
+                builder::{
+                    BooleanBuilder, FixedSizeListBuilder, LargeBinaryBuilder, LargeListBuilder,
+                    PrimitiveBuilder, StringBuilder,
+                },
+                types::{
+                    ArrowPrimitiveType, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type,
+                    Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
+                },
+            };
+            pub use $arrow_schema_crate::{DataType, Field as ArrowField};
+        }
     };
 }
 
