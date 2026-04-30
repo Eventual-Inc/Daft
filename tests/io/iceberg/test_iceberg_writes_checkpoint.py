@@ -534,6 +534,130 @@ def test_multi_partition_input_aggregates_into_single_snapshot(iceberg_table, tm
     assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
 
 
+def _write_multi_partition_input(parent_dir: str, parts: list[tuple[list[str], list[int]]]) -> str:
+    """Write each (file_ids, xs) pair as its own parquet file under `parent_dir`.
+
+    Returns a glob path suitable for `daft.read_parquet` that picks up every
+    written file as a separate input partition.
+    """
+    os.makedirs(parent_dir, exist_ok=True)
+    for i, (file_ids, xs) in enumerate(parts):
+        daft.from_pydict({"file_id": file_ids, "x": xs}).write_parquet(f"{parent_dir}/part_{i}")
+    return f"{parent_dir}/**"
+
+
+def test_multi_partition_recovery_after_crash_between_stage_and_commit(iceberg_table, tmpdir, checkpoint_store):
+    """Scenario B with multi-partition input.
+
+    The single-partition Scenario B test exercises a single Checkpointed entry
+    on the recovery path. With multiple per-partition entries, the helper must
+    iterate every blob in `get_checkpointed_files()`, decode each one, and
+    aggregate the resulting DataFiles into one commit. A regression that
+    decoded only the first blob, or marked only the first id Committed, would
+    leak files and pending entries.
+    """
+    inp_glob = _write_multi_partition_input(
+        str(tmpdir / "multi_in"),
+        [(["a", "b"], [1, 2]), (["c", "d"], [3, 4]), (["e", "f"], [5, 6])],
+    )
+
+    # First call: crash between sink seal and tx.commit_transaction. Multiple
+    # per-partition entries get sealed before the patched commit raises.
+    df = daft.read_parquet(inp_glob, checkpoint=checkpoint_store, on="file_id")
+    with patch.object(Transaction, "commit_transaction", side_effect=RuntimeError("simulated crash")):
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    iceberg_table.refresh()
+    assert iceberg_table.metadata.snapshots == [], "no snapshot must land when commit raises"
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert len(pending) > 1, (
+        f"expected multiple per-partition Checkpointed entries to remain after crash; got {len(pending)}"
+    )
+    crashed_query_id = pending[0].query_id
+    # All staged entries must share the run's query_id (the invariant the
+    # recovery path relies on to read it from any single entry).
+    assert all(c.query_id == crashed_query_id for c in pending), (
+        "single-query-id invariant must hold across all per-partition entries"
+    )
+
+    # Second call: recovery aggregates files across all staged entries.
+    daft.read_parquet(inp_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+    summary = iceberg_table.metadata.snapshots[0].summary
+    assert summary["daft.checkpoint-store"] == checkpoint_store.path
+    assert summary["daft.checkpoint-query"] == crashed_query_id
+    assert int(summary["added-records"]) == 6, f"recovery must aggregate every staged entry; summary={dict(summary)}"
+    assert int(summary["added-data-files"]) > 1, "recovery must commit data files from every per-partition entry"
+
+    # Every per-partition entry must transition to Committed.
+    still_pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not still_pending
+
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
+
+
+def test_multi_partition_incremental_writes(iceberg_table, tmpdir, checkpoint_store):
+    """Incremental write with multi-partition inputs on both calls.
+
+    Realistic large-ingest pattern: each call ingests many parquet files at
+    once, and the user re-runs with an overlapping superset. The source
+    filter must drop the prior call's keys per-partition, the helper must
+    aggregate per-partition entries into call 2's snapshot, and the two calls
+    must produce two snapshots with distinct query_ids.
+    """
+    # Call 1: input split across 2 parquet files → 2 partitions, all 4 rows land.
+    inp1_glob = _write_multi_partition_input(
+        str(tmpdir / "in1"),
+        [(["a", "b"], [1, 2]), (["c", "d"], [3, 4])],
+    )
+    daft.read_parquet(inp1_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+    summary_1 = iceberg_table.metadata.snapshots[0].summary
+    qid_1 = summary_1["daft.checkpoint-query"]
+    assert int(summary_1["added-records"]) == 4
+    assert int(summary_1["added-data-files"]) > 1, "call 1 must produce multi-file output"
+
+    # Call 2: superset across 3 parquet files. Two of the partitions overlap
+    # with call 1's keys, one is entirely new — source filter must drop the
+    # overlap, only the new rows land.
+    inp2_glob = _write_multi_partition_input(
+        str(tmpdir / "in2"),
+        [
+            (["a", "b", "g"], [1, 2, 7]),  # 'a','b' overlap; 'g' new
+            (["c", "d", "h"], [3, 4, 8]),  # 'c','d' overlap; 'h' new
+            (["i", "j"], [9, 10]),  # entirely new partition
+        ],
+    )
+    daft.read_parquet(inp2_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+        iceberg_table, checkpoint=checkpoint_store
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 2
+    summary_2 = iceberg_table.metadata.snapshots[-1].summary
+    qid_2 = summary_2["daft.checkpoint-query"]
+    assert qid_1 != qid_2, "each call must have its own query_id"
+
+    # Snapshot 2 must contain only the four new rows. Filter dedup must work
+    # per-partition: each of call 2's partitions had overlap with call 1, but
+    # only the new keys (g, h, i, j) get committed.
+    assert int(summary_2["added-records"]) == 4, f"snapshot 2 must add only the new rows; summary={dict(summary_2)}"
+
+    # Final table is the union; no duplicates of {a, b, c, d}.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "g", "h", "i", "j"]
+
+
 def test_null_keys_are_deduped(iceberg_table, tmpdir, checkpoint_store):
     """NULL values in the `on=` column are deduped on re-run.
 
