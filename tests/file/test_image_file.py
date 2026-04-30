@@ -10,7 +10,7 @@ from PIL import Image
 import daft
 from daft import DataType as dt
 from daft.datatype import MediaType
-from daft.functions import file, image_file, image_file_metadata, decode_image_file
+from daft.functions import file, image_file
 from tests.conftest import get_tests_daft_runner_name
 
 

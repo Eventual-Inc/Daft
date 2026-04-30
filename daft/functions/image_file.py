@@ -62,8 +62,7 @@ def image_file_metadata(
 
     if not pil_image.module_available():
         raise ImportError(
-            "The 'pillow' module is required to get image metadata. "
-            "Please install it with: pip install 'daft[image]'"
+            "The 'pillow' module is required to get image metadata. Please install it with: pip install 'daft[image]'"
         )
 
     return image_file_metadata_fn(file_expr)
@@ -106,8 +105,7 @@ def decode_image_file(
 
     if not pil_image.module_available():
         raise ImportError(
-            "The 'pillow' module is required to decode image files. "
-            "Please install it with: pip install 'daft[image]'"
+            "The 'pillow' module is required to decode image files. Please install it with: pip install 'daft[image]'"
         )
 
     return decode_image_file_fn(file_expr)
