@@ -228,10 +228,6 @@ async fn test_idempotency() {
 async fn test_error_paths() {
     let (_dir, store) = make_store();
 
-    // checkpoint() on an unknown ID is a tolerated no-op (covers
-    // empty-pipeline-run flows that auto-generate ids without staging).
-    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
-
     // mark_committed() on an unknown ID
     let err = store
         .mark_committed(&[CheckpointId::generate(0)])
@@ -584,4 +580,25 @@ async fn test_sealed_file_paths_lifecycle() {
         .await
         .unwrap();
     assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// 15. checkpoint() on empty source seals an empty manifest
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_checkpoint_empty_source_seals_empty_manifest() {
+    let (_dir, store) = make_store();
+    let id = CheckpointId::generate(0);
+
+    // Never call stage_keys / stage_files. Empty-source case: a task processed
+    // 0 rows after the anti-join, so nothing was staged.
+    store.checkpoint(&id).await.unwrap();
+
+    let ckpt = store.get_checkpoint(&id).await.unwrap();
+    assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
+    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+
+    // Idempotent retry on already-sealed empty checkpoint.
+    store.checkpoint(&id).await.unwrap();
 }

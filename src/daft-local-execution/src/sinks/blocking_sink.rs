@@ -403,10 +403,27 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     )
                 }
                 PipelineEvent::Flush(input_id) => {
-                    if let Some(p) = inputs.get_mut(&input_id) {
-                        p.flushed = true;
+                    // A Flush can arrive for an input that received zero morsels (e.g.
+                    // an empty source after the checkpoint anti-join). Without a
+                    // PerInputState the flush was silently dropped and finalize never
+                    // ran, leaving the checkpoint unsealed. Create one on demand,
+                    // mirroring the Vacant arm in the partition handler above.
+                    if let Entry::Vacant(e) = inputs.entry(input_id) {
+                        let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                        stats_manager.register_runtime_stats(
+                            node_id,
+                            input_id,
+                            runtime_stats.clone(),
+                        );
+                        e.insert(PerInputState::new(
+                            &op,
+                            max_concurrency,
+                            runtime_stats,
+                            input_id,
+                        )?);
                     }
-                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
+                    inputs.get_mut(&input_id).unwrap().flushed = true;
+                    if inputs[&input_id].ready_to_finalize() {
                         Self::spawn_finalize(
                             op.clone(),
                             inputs.remove(&input_id).unwrap(),
