@@ -1461,6 +1461,24 @@ class DataFrame:
             mp = MicroPartition.from_ipc_stream(fm.data)
             data_files.extend(mp.to_pydict()["data_file"])
 
+        # Pending entries exist but carry no data files. Happens when the source
+        # filter drops every input row (e.g. re-run after a fully-committed call)
+        # — the sink still seals an empty Checkpointed entry. There is nothing
+        # to commit; mark the empty entries Committed so they don't persist as
+        # pending forever, and return an empty result.
+        if not data_files:
+            checkpoint.mark_committed(our_ids)
+            empty = from_pydict(
+                {
+                    "operation": pa.array([], type=pa.string()),
+                    "rows": pa.array([], type=pa.int64()),
+                    "file_size": pa.array([], type=pa.int64()),
+                    "file_name": pa.array([], type=pa.string()),
+                }
+            )
+            empty._metadata = write_df._metadata
+            return empty
+
         full_props = dict(snapshot_properties or {})
         full_props["daft.checkpoint-store"] = store_path
         full_props["daft.checkpoint-query"] = our_query_id
