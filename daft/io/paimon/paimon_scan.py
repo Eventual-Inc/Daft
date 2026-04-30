@@ -174,8 +174,9 @@ class PaimonDataSource(DataSource):
                 if pv is not None and len(pv.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0:
                     continue
 
-            has_deletion_vectors = getattr(split, "data_deletion_files", None) is not None and any(
-                df is not None for df in split.data_deletion_files
+            _deletion_files = getattr(split, "data_deletion_files", None)
+            has_deletion_vectors = _deletion_files is not None and any(
+                df is not None for df in _deletion_files
             )
             can_use_native_reader = (
                 self._use_native_parquet
