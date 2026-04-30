@@ -50,14 +50,14 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
         match event {
             TaskEvent::Submitted {
                 context,
-                name: _,
+                name,
                 metadata,
             } => {
                 let sources: Vec<EventTaskSource> =
                     metadata.sources.iter().map(Into::into).collect();
                 let submit_event = Event::TaskSubmit(TaskSubmitEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_info_from_context(context),
+                    task: task_info_from_context(context, Some(name.clone())),
                     sources: Arc::new(sources),
                 });
                 self.dispatch_event(&submit_event)
@@ -69,7 +69,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
             } => {
                 let end_event = Event::TaskEnd(TaskEndEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_info_from_context(context),
+                    task: task_info_from_context(context, None),
                     worker_id: Some(worker_id.clone()),
                     outcome: TaskOutcome::Success,
                     stats: stats.nodes.clone(),
@@ -87,7 +87,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 } else {
                     let end_event = Event::TaskEnd(TaskEndEvent {
                         header: event_header(self.query_id.clone()),
-                        task: task_info_from_context(context),
+                        task: task_info_from_context(context, None),
                         worker_id: worker_id.clone(),
                         outcome: TaskOutcome::Failed {
                             message: reason.into(),
@@ -100,7 +100,7 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
             TaskEvent::Cancelled { context } => {
                 let end_event = Event::TaskEnd(TaskEndEvent {
                     header: event_header(self.query_id.clone()),
-                    task: task_info_from_context(context),
+                    task: task_info_from_context(context, None),
                     worker_id: None,
                     outcome: TaskOutcome::Cancelled,
                     stats: vec![],
@@ -112,10 +112,13 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
     }
 }
 
-fn task_info_from_context(context: &TaskContext) -> Arc<TaskInfo> {
+fn task_info_from_context(context: &TaskContext, name: Option<String>) -> Arc<TaskInfo> {
     let info = TaskInfo {
         id: context.task_id,
+        last_node_id: context.last_node_id,
         node_ids: context.node_ids.clone(),
+        plan_fingerprint: context.plan_fingerprint,
+        name: name.map(Arc::from),
     };
     Arc::new(info)
 }

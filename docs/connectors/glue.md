@@ -76,17 +76,17 @@ you must append your custom table's class to the catalog's `_table_impls` field.
 The Daft `GlueCatalog._table_impls` field holds a list of `GlueTable` implementation classes. When we resolve a table, we call Glue's `GetTable` API and call `from_table_info` with the [Glue Table object](https://docs.aws.amazon.com/glue/latest/dg/aws-glue-api-catalog-tables.html#aws-glue-api-catalog-tables-Table). It is expected that each `GlueTable` implementation will throw a `ValueError` if the table metadata does not match.
 
 ```python
+from typing import Any, Literal
 from daft.catalog.__glue import GlueCatalog, GlueTable, load_glue
 
 class GlueTestTable(GlueTable):
     """GlueTestTable shows how we register custom table implementations."""
 
     @classmethod
-    def from_table_info(cls, catalog: GlueCatalog, table: dict[str,Any]) -> GlueTable:
+    def from_table_info(cls, catalog: GlueCatalog, table: dict[str, Any]) -> GlueTable:
         if bool(table["Parameters"].get("pytest")):
             return cls(catalog, table)
         raise ValueError("Expected Parameter pytest='True'")
-
 
     def read(self, **options) -> DataFrame:
         raise NotImplementedError
@@ -95,5 +95,5 @@ class GlueTestTable(GlueTable):
         raise NotImplementedError
 
 gc = load_glue("my_glue_catalog", region_name="us-west-2")
-gc._table_impls.append(GlueTestTable) # !! REGISTER GLUE TEST TABLE !!
+gc._table_impls.append(GlueTestTable)  # Register custom table implementation
 ```

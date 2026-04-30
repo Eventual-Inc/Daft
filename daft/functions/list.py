@@ -71,6 +71,21 @@ def list_join(list_expr: Expression, delimiter: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_join", list_expr, delimiter)
 
 
+def list_flatten(list_expr: Expression) -> Expression:
+    """Flattens one level of nesting in each list.
+
+    Outer null rows are preserved as null. Null inner lists are skipped while flattening,
+    and null leaf values are preserved in the output.
+
+    Args:
+        list_expr (List Expression): expression to flatten one level.
+
+    Returns:
+        Expression (List Expression): an expression with one fewer level of list nesting.
+    """
+    return Expression._call_builtin_scalar_fn("list_flatten", list_expr)
+
+
 def list_count(
     list_expr: Expression, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid
 ) -> Expression:

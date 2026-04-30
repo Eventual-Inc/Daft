@@ -55,6 +55,32 @@ def test_stderr_without_trailing_newline_does_not_deadlock_on_divider_merge():
 
 
 @pytest.mark.timeout(30)
+def test_large_stderr_without_trailing_newline_does_not_deadlock():
+    r"""Combines both deadlock pathologies: pipe-buffer fill AND no trailing newline.
+
+    The earlier two tests cover each pathology in isolation:
+    - Large stderr WITH newline (covered by `mp.connection.wait()`-based drain).
+    - Small stderr WITHOUT newline (covered by the prepended-`\\n` divider fix).
+
+    Per a review concern: even with the drain in place, if the child writes
+    >64 KiB without ever emitting a newline, the parent's `readline()`-based
+    scan in `trace_output()` could still block waiting for a delimiter while
+    the child writes are stalled against a full OS pipe buffer.
+    """
+    STDERR_BYTES_PER_ROW = 100_000  # well over any OS pipe buffer (~64 KiB)
+
+    @daft.func(use_process=True)
+    def noisy_no_newline(x: int) -> int:
+        sys.stderr.buffer.write(b"x" * STDERR_BYTES_PER_ROW)
+        sys.stderr.flush()
+        return x + 1
+
+    df = daft.from_pydict({"x": list(range(4))})
+    actual = df.with_column("y", noisy_no_newline(df["x"])).to_pydict()
+    assert actual == {"x": [0, 1, 2, 3], "y": [1, 2, 3, 4]}
+
+
+@pytest.mark.timeout(30)
 def test_silent_udf_produces_no_spurious_stdout_lines(monkeypatch):
     r"""trace_output() must not surface the divider-padding newline as a line.
 
