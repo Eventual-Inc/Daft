@@ -311,3 +311,60 @@ def test_file_path_expression_method():
     df = df.with_column("extracted_path", daft.col("file").file_path())
     result = df.to_pydict()
     assert result["extracted_path"] == paths
+
+
+def test_file_offset_and_length_properties():
+    f = daft.File("s3://bucket/blob", offset=100, length=50)
+    assert f.offset == 100
+    assert f.length == 50
+
+
+def test_file_offset_and_length_default_to_none():
+    f = daft.File("s3://bucket/blob")
+    assert f.offset is None
+    assert f.length is None
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read(tmp_path: Path):
+    data = b"0123456789abcdef"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()), offset=4, length=6)
+    with f.open() as fh:
+        result = fh.read()
+    assert result == b"456789"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read_in_udf(tmp_path: Path):
+    data = b"AAABBBCCC"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    @daft.func
+    def read_bytes(file: daft.File) -> bytes:
+        with file.open() as f:
+            return f.read()
+
+    df = daft.from_pydict({"file": [daft.File(str(temp_file.absolute()), offset=3, length=3)]})
+    df = df.select(read_bytes(df["file"]).alias("data"))
+    assert df.to_pydict()["data"] == [b"BBB"]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_partial_range_raises(tmp_path: Path):
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(b"some data")
+    path = str(temp_file.absolute())
+
+    f_offset_only = daft.File(path, offset=10)
+    with pytest.raises(Exception):
+        with f_offset_only.open() as fh:
+            fh.read()
+
+    f_length_only = daft.File(path, length=10)
+    with pytest.raises(Exception):
+        with f_length_only.open() as fh:
+            fh.read()
