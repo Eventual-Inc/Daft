@@ -183,6 +183,7 @@ fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
         Event::ProcessStats(event) => build_process_stats(py, &event).map(Some),
         Event::ResultOut(event) => build_result_produced(py, &event).map(Some),
         Event::TaskSubmit(_event) => Ok(None),
+        Event::TaskStart(_event) => Ok(None),
         Event::TaskEnd(_event) => Ok(None),
     }
 }
