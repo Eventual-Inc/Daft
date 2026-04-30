@@ -229,6 +229,40 @@ impl DaftContext {
         self.dispatch_event(&event, "notify exec operator end")
     }
 
+    pub fn notify_exec_operator_start_with_meta(
+        &self,
+        query_id: QueryID,
+        node_id: usize,
+        name: Arc<str>,
+        origin_node_id: Option<usize>,
+    ) -> DaftResult<()> {
+        let mut meta = OperatorMeta::from_id(node_id);
+        meta.name = name;
+        meta.origin_node_id = origin_node_id;
+        let event = Event::OperatorStart(OperatorStartEvent {
+            header: event_header(query_id),
+            operator: Arc::new(meta),
+        });
+        self.dispatch_event(&event, "notify exec operator start")
+    }
+
+    pub fn notify_exec_operator_end_with_meta(
+        &self,
+        query_id: QueryID,
+        node_id: usize,
+        name: Arc<str>,
+        origin_node_id: Option<usize>,
+    ) -> DaftResult<()> {
+        let mut meta = OperatorMeta::from_id(node_id);
+        meta.name = name;
+        meta.origin_node_id = origin_node_id;
+        let event = Event::OperatorEnd(OperatorEndEvent {
+            header: event_header(query_id),
+            operator: Arc::new(meta),
+        });
+        self.dispatch_event(&event, "notify exec operator end")
+    }
+
     pub fn notify_exec_emit_stats(
         &self,
         query_id: QueryID,

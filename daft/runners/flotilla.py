@@ -467,6 +467,19 @@ class RemoteFlotillaRunner:
         )
         return materialized_result
 
+    def take_pending_operator_events(self, plan_id: str) -> list[tuple[str, str, int, str, int | None, float]]:
+        """Drain operator-lifecycle events buffered by the Rust StatisticsManager.
+
+        Returns a list of `(kind, query_id, node_id, name, origin_node_id,
+        timestamp_secs)` tuples. The driver wrapper polls this and re-dispatches
+        each event on its own `DaftContext` so subscribers attached on the
+        driver can observe per-operator start/end timings.
+        """
+        result_gen = self.curr_result_gens.get(plan_id)
+        if result_gen is None:
+            return []
+        return result_gen.take_pending_operator_events()  # type: ignore[attr-defined]
+
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
 FLOTILLA_RUNNER_NAME = "flotilla-plan-runner"
@@ -570,6 +583,31 @@ class FlotillaRunner:
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            # Pull any operator-lifecycle events the actor has buffered since
+            # the previous fetch and re-dispatch on the driver context. This
+            # is the bridge that lets driver-attached subscribers see
+            # per-operator start/end timings instead of all-batched-at-end.
+            self._dispatch_pending_operator_events(plan_id)
             if isinstance(result, PyExecutionStats):
                 return result
             yield result
+
+    def _dispatch_pending_operator_events(self, plan_id: str) -> None:
+        from daft.context import get_context
+
+        try:
+            events = ray.get(self.runner.take_pending_operator_events.remote(plan_id))
+        except Exception as e:
+            logger.warning("Failed to drain pending operator events: %s", e)
+            return
+        if not events:
+            return
+        ctx = get_context()
+        for kind, query_id, node_id, name, origin_node_id, _ts in events:
+            try:
+                if kind == "start":
+                    ctx._notify_exec_operator_start(query_id, node_id, name, origin_node_id)
+                elif kind == "end":
+                    ctx._notify_exec_operator_end(query_id, node_id, name, origin_node_id)
+            except Exception as e:
+                logger.warning("Failed to dispatch operator %s event: %s", kind, e)

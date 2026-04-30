@@ -319,6 +319,44 @@ impl PyDaftContext {
         Ok(())
     }
 
+    pub fn notify_exec_operator_start_with_meta(
+        &self,
+        py: Python,
+        query_id: String,
+        node_id: usize,
+        name: String,
+        origin_node_id: Option<usize>,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner.notify_exec_operator_start_with_meta(
+                query_id.into(),
+                node_id,
+                name.into(),
+                origin_node_id,
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn notify_exec_operator_end_with_meta(
+        &self,
+        py: Python,
+        query_id: String,
+        node_id: usize,
+        name: String,
+        origin_node_id: Option<usize>,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner.notify_exec_operator_end_with_meta(
+                query_id.into(),
+                node_id,
+                name.into(),
+                origin_node_id,
+            )
+        })?;
+        Ok(())
+    }
+
     pub fn notify_exec_emit_stats(
         &self,
         py: Python,

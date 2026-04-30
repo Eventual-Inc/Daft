@@ -144,7 +144,8 @@ pub async fn run_pipeline_with_manager(
     meter: &Meter,
     worker_manager: Arc<LocalSwordfishWorkerManager>,
 ) -> DaftResult<ExecutionStats> {
-    let stats_manager = StatisticsManager::from_pipeline_node(pipeline, vec![], meter)?;
+    let stats_manager =
+        StatisticsManager::from_pipeline_node(pipeline, vec![], meter, "".into())?;
 
     let mut scheduler_joinset = JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(
@@ -153,7 +154,8 @@ pub async fn run_pipeline_with_manager(
         stats_manager.clone(),
     );
 
-    let mut plan_context = PlanExecutionContext::new(0, scheduler_handle.clone());
+    let mut plan_context =
+        PlanExecutionContext::new(0, scheduler_handle.clone(), stats_manager.clone());
     let task_stream = pipeline.clone().produce_tasks(&mut plan_context);
     let running_plan = RunningPlan::new(task_stream, plan_context);
 

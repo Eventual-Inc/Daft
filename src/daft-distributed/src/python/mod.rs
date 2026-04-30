@@ -72,6 +72,37 @@ impl PythonPartitionRefStream {
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }
+
+    /// Drain operator-lifecycle events buffered since the last call.
+    ///
+    /// Each tuple is `(kind, query_id, node_id, name, origin_node_id,
+    /// timestamp_epoch_secs)` where `kind` is `"start"` or `"end"`.
+    /// The driver-side Flotilla wrapper polls this between partition
+    /// fetches and re-dispatches the events on the driver's
+    /// `DaftContext`, since events fired in the Ray actor's local
+    /// context don't reach driver-attached subscribers.
+    fn take_pending_operator_events(
+        &self,
+    ) -> Vec<(String, String, u32, String, Option<u32>, f64)> {
+        self.statistics_manager
+            .take_pending_operator_events()
+            .into_iter()
+            .map(|e| {
+                let kind = match e.kind {
+                    crate::statistics::PendingOperatorKind::Start => "start".to_string(),
+                    crate::statistics::PendingOperatorKind::End => "end".to_string(),
+                };
+                (
+                    kind,
+                    e.query_id.to_string(),
+                    e.node_id,
+                    e.name.to_string(),
+                    e.origin_node_id,
+                    e.timestamp_epoch_secs,
+                )
+            })
+            .collect()
+    }
 }
 
 #[pyclass(module = "daft.daft", name = "DistributedPhysicalPlan", frozen)]
@@ -254,7 +285,7 @@ impl PyDistributedPhysicalPlanRunner {
         let query_id = plan.plan.query_id();
         let logical_plan = plan.plan.logical_plan().clone();
 
-        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
+        let meter = Meter::query_scope(query_id.clone(), "daft.execution.distributed");
 
         let pipeline_node = logical_plan_to_pipeline_node(
             (&plan.plan).into(),
@@ -263,8 +294,12 @@ impl PyDistributedPhysicalPlanRunner {
             &meter,
         )?;
 
-        let statistics_manager =
-            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
+        let statistics_manager = StatisticsManager::from_pipeline_node(
+            &pipeline_node,
+            subscribers,
+            &meter,
+            query_id,
+        )?;
 
         let plan_result =
             self.runner

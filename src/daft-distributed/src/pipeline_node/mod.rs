@@ -69,6 +69,50 @@ mod vllm;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
+
+/// Stream wrapper that fires a one-shot callback the first time the
+/// underlying stream returns `Poll::Ready(None)` *or* the wrapper itself
+/// is dropped (whichever comes first). Used to notify the
+/// `StatisticsManager` that a distributed pipeline node has finished
+/// producing tasks, including via cancellation / early termination.
+struct OnEndStream<S> {
+    inner: S,
+    on_end: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl<S> OnEndStream<S> {
+    fn new<F: FnOnce() + Send + 'static>(inner: S, on_end: F) -> Self {
+        Self {
+            inner,
+            on_end: Some(Box::new(on_end)),
+        }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for OnEndStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(None) => {
+                if let Some(cb) = self.on_end.take() {
+                    cb();
+                }
+                Poll::Ready(None)
+            }
+            other => other,
+        }
+    }
+}
+
+impl<S> Drop for OnEndStream<S> {
+    fn drop(&mut self) {
+        if let Some(cb) = self.on_end.take() {
+            cb();
+        }
+    }
+}
+
 pub(crate) type NodeID = u32;
 pub(crate) type NodeName = Arc<str>;
 /// Fingerprint identifying tasks with functionally identical plans.
@@ -316,7 +360,15 @@ impl DistributedPipelineNode {
         self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
-        self.op.produce_tasks(plan_context)
+        let node_id = self.node_id();
+        let stats_manager = plan_context.statistics_manager().clone();
+        let inner = self.op.produce_tasks(plan_context);
+        TaskBuilderStream::new(
+            OnEndStream::new(inner.task_builder_stream, move || {
+                stats_manager.notify_produce_complete(node_id);
+            })
+            .boxed(),
+        )
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

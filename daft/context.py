@@ -87,11 +87,29 @@ class DaftContext:
     def _notify_exec_end(self, query_id: str) -> None:
         self._ctx.notify_exec_end(query_id)
 
-    def _notify_exec_operator_start(self, query_id: str, node_id: int) -> None:
-        self._ctx.notify_exec_operator_start(query_id, node_id)
+    def _notify_exec_operator_start(
+        self,
+        query_id: str,
+        node_id: int,
+        name: str | None = None,
+        origin_node_id: int | None = None,
+    ) -> None:
+        if name is not None:
+            self._ctx.notify_exec_operator_start_with_meta(query_id, node_id, name, origin_node_id)
+        else:
+            self._ctx.notify_exec_operator_start(query_id, node_id)
 
-    def _notify_exec_operator_end(self, query_id: str, node_id: int) -> None:
-        self._ctx.notify_exec_operator_end(query_id, node_id)
+    def _notify_exec_operator_end(
+        self,
+        query_id: str,
+        node_id: int,
+        name: str | None = None,
+        origin_node_id: int | None = None,
+    ) -> None:
+        if name is not None:
+            self._ctx.notify_exec_operator_end_with_meta(query_id, node_id, name, origin_node_id)
+        else:
+            self._ctx.notify_exec_operator_end(query_id, node_id)
 
     def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
         self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
