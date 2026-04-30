@@ -228,12 +228,9 @@ async fn test_idempotency() {
 async fn test_error_paths() {
     let (_dir, store) = make_store();
 
-    // checkpoint() on an unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
+    // checkpoint() on an unknown ID is a tolerated no-op (covers
+    // empty-pipeline-run flows that auto-generate ids without staging).
+    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
 
     // mark_committed() on an unknown ID
     let err = store

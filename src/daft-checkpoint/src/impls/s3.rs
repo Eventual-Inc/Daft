@@ -485,8 +485,18 @@ impl CheckpointStore for S3CheckpointStore {
         let (num_key_files, num_file_files, created_at, query_id) = match staged_data {
             Some(data) => data,
             None => {
+                // No in-memory staged entry for this id. Either:
+                // - The manifest already exists on disk — idempotent re-call
+                //   (e.g. post-restart retry). Treat as success.
+                // - No manifest either — nothing was ever staged for this id.
+                //   Happens when a sink finalizes an empty pipeline run; the
+                //   id was generated for the input_id but no SCKO/sink calls
+                //   landed any keys or files. There's nothing to seal, so
+                //   succeed quietly rather than surfacing CheckpointNotFound
+                //   from a legitimate empty-input flow.
                 return match self.read_manifest(id).await {
                     Ok(_) => Ok(()),
+                    Err(CheckpointError::CheckpointNotFound { .. }) => Ok(()),
                     Err(e) => Err(e),
                 };
             }

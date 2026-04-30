@@ -185,12 +185,9 @@ pub async fn test_idempotency(store: &dyn CheckpointStore) {
 }
 
 pub async fn test_error_paths(store: &dyn CheckpointStore) {
-    // Seal unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
+    // Sealing an unknown ID is a tolerated no-op (covers empty-pipeline-run
+    // flows where an id is auto-generated but never staged).
+    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
 
     // mark_committed unknown ID
     let err = store
