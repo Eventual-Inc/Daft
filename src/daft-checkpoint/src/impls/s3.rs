@@ -59,20 +59,26 @@ struct Manifest {
     committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
+    /// Identifier of the execution that staged this checkpoint. Older manifests
+    /// predate this field; `serde(default)` yields empty on absence.
+    #[serde(default)]
+    query_id: String,
 }
 
 struct StagedEntry {
     num_key_files: usize,
     num_file_files: usize,
     created_at: SystemTime,
+    query_id: String,
 }
 
 impl StagedEntry {
-    fn new() -> Self {
+    fn new(query_id: String) -> Self {
         Self {
             num_key_files: 0,
             num_file_files: 0,
             created_at: SystemTime::now(),
+            query_id,
         }
     }
 }
@@ -304,6 +310,7 @@ impl S3CheckpointStore {
     async fn reserve_slots(
         &self,
         id: &CheckpointId,
+        query_id: &str,
         update: impl FnOnce(&mut StagedEntry) -> usize,
     ) -> CheckpointResult<usize> {
         {
@@ -325,7 +332,9 @@ impl S3CheckpointStore {
         let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
             message: format!("staged lock poisoned: {e}"),
         })?;
-        let entry = staged.entry(id.clone()).or_insert_with(StagedEntry::new);
+        let entry = staged
+            .entry(id.clone())
+            .or_insert_with(|| StagedEntry::new(query_id.to_string()));
         Ok(update(entry))
     }
 
@@ -437,10 +446,15 @@ impl S3CheckpointStore {
 
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
-    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
+    async fn stage_keys(
+        &self,
+        id: &CheckpointId,
+        query_id: &str,
+        keys: Series,
+    ) -> CheckpointResult<()> {
         let parquet_bytes = super::keys_codec::write_series_as_parquet(&keys)?;
         let idx = self
-            .reserve_slots(id, |e| {
+            .reserve_slots(id, query_id, |e| {
                 let i = e.num_key_files;
                 e.num_key_files += 1;
                 i
@@ -452,6 +466,7 @@ impl CheckpointStore for S3CheckpointStore {
     async fn stage_files(
         &self,
         id: &CheckpointId,
+        query_id: &str,
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()> {
         if files.is_empty() {
@@ -459,7 +474,7 @@ impl CheckpointStore for S3CheckpointStore {
         }
         let blob = Self::encode_file_metadata(&files)?;
         let idx = self
-            .reserve_slots(id, |e| {
+            .reserve_slots(id, query_id, |e| {
                 let i = e.num_file_files;
                 e.num_file_files += 1;
                 i
@@ -475,12 +490,17 @@ impl CheckpointStore for S3CheckpointStore {
             let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            staged
-                .get(id)
-                .map(|e| (e.num_key_files, e.num_file_files, e.created_at))
+            staged.get(id).map(|e| {
+                (
+                    e.num_key_files,
+                    e.num_file_files,
+                    e.created_at,
+                    e.query_id.clone(),
+                )
+            })
         }; // lock released here, before any await
 
-        let (num_key_files, num_file_files, created_at) = match staged_data {
+        let (num_key_files, num_file_files, created_at, query_id) = match staged_data {
             Some(data) => data,
             None => {
                 return match self.read_manifest(id).await {
@@ -499,6 +519,7 @@ impl CheckpointStore for S3CheckpointStore {
             committed_at: None,
             num_key_files,
             num_file_files,
+            query_id,
         };
         self.write_manifest(id, &manifest).await?;
         self.invalidate_manifest_cache().await;
@@ -567,6 +588,7 @@ impl CheckpointStore for S3CheckpointStore {
                 return Ok(Checkpoint::new(
                     id.clone(),
                     CheckpointStatus::Staged,
+                    Arc::from(entry.query_id.as_str()),
                     entry.created_at,
                     None,
                     None,
@@ -585,6 +607,7 @@ impl CheckpointStore for S3CheckpointStore {
         Ok(Checkpoint::new(
             id.clone(),
             status,
+            Arc::from(manifest.query_id.as_str()),
             system_time_from_rfc3339(&manifest.created_at)?,
             Some(system_time_from_rfc3339(&manifest.sealed_at)?),
             manifest
@@ -617,6 +640,7 @@ impl CheckpointStore for S3CheckpointStore {
                 checkpoints.push(Checkpoint::new(
                     id.clone(),
                     CheckpointStatus::Staged,
+                    Arc::from(entry.query_id.as_str()),
                     entry.created_at,
                     None,
                     None,
@@ -633,6 +657,7 @@ impl CheckpointStore for S3CheckpointStore {
             checkpoints.push(Checkpoint::new(
                 id.clone(),
                 status,
+                Arc::from(manifest.query_id.as_str()),
                 system_time_from_rfc3339(&manifest.created_at)?,
                 Some(system_time_from_rfc3339(&manifest.sealed_at)?),
                 manifest
@@ -830,6 +855,7 @@ mod tests {
             committed_at: None,
             num_key_files: 3,
             num_file_files: 1,
+            query_id: "eager-phoenix-a4f821".to_string(),
         };
         let raw = serde_json::to_vec(&manifest).unwrap();
         let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
@@ -840,6 +866,7 @@ mod tests {
         assert_eq!(decoded.committed_at, None);
         assert_eq!(decoded.num_key_files, 3);
         assert_eq!(decoded.num_file_files, 1);
+        assert_eq!(decoded.query_id, "eager-phoenix-a4f821");
     }
 
     #[test]
@@ -853,11 +880,29 @@ mod tests {
             committed_at: Some(now.clone()),
             num_key_files: 1,
             num_file_files: 0,
+            query_id: "swift-otter-1c2b3a".to_string(),
         };
         let raw = serde_json::to_vec(&manifest).unwrap();
         let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
         assert_eq!(decoded.status, ManifestStatus::Committed);
         assert_eq!(decoded.committed_at, Some(now));
+    }
+
+    #[test]
+    fn test_manifest_query_id_default_on_old_payload() {
+        let now = rfc3339_from(SystemTime::now());
+        // Synthetic "old" manifest without the query_id field.
+        let raw = serde_json::json!({
+            "checkpoint_id": "task-0-checkpoint-abc",
+            "status": "checkpointed",
+            "created_at": &now,
+            "sealed_at": &now,
+            "committed_at": null,
+            "num_key_files": 0,
+            "num_file_files": 0,
+        });
+        let decoded: Manifest = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded.query_id, "");
     }
 
     #[test]
