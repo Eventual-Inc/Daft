@@ -1360,7 +1360,10 @@ fn physical_plan_to_pipeline(
                 right_on.clone(),
                 left.schema().clone(),
                 right.schema().clone(),
-            );
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: "AsofJoin",
+            })?;
 
             JoinNode::new(
                 Arc::new(asof_join_op),
