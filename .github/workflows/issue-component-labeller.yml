@@ -2,7 +2,7 @@ name: Issue Component Labeller
 
 on:
   issues:
-    types: [opened, edited, reopened]
+    types: [opened]
 
 permissions:
   issues: write
@@ -35,8 +35,7 @@ jobs:
 
           const componentSection = extractSection(body, "Component(s)");
           if (!componentSection) {
-            await removeManagedLabels(Array.from(managedLabels));
-            core.info("No Component(s) section found. Cleared managed component labels.");
+            core.info("No Component(s) section found. Skipping component label management.");
             return;
           }
 
