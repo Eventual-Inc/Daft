@@ -20,6 +20,7 @@ pyiceberg = pytest.importorskip("pyiceberg")
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
+from pyiceberg.table import Transaction
 from pyiceberg.types import LongType, NestedField, StringType
 
 from daft.daft import CheckpointStatus
@@ -110,3 +111,48 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
     assert re.match(r"^[a-z]+-[a-z]+-[0-9a-f]{6}$", snapshot_query_id), (
         f"unexpected query_id shape (caught empty/default failure mode?): {snapshot_query_id!r}"
     )
+
+
+def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_input, checkpoint_store):
+    """Scenario B: crash after stage_files+checkpoint, before tx.commit_transaction.
+
+    Files exist on object store, file metadata is in the checkpoint store, status
+    is `Checkpointed`. The catalog has no snapshot. A fresh call to
+    `write_iceberg(checkpoint=...)` must skip `write_df.collect()`, pull files
+    out of the store, and commit exactly one snapshot using the original run's
+    query_id (no fresh generation).
+    """
+    # First call: simulate the crash by patching tx.commit_transaction to raise.
+    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    with patch.object(Transaction, "commit_transaction", side_effect=RuntimeError("simulated crash")):
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    # State: catalog has zero snapshots (commit didn't land); store has Checkpointed
+    # entries with files staged (sink sealed before the commit attempt).
+    iceberg_table.refresh()
+    assert iceberg_table.metadata.snapshots == [], "no snapshot should land when commit raises"
+    pending_after_crash = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert pending_after_crash, "expected Checkpointed entries to remain after crash"
+    crashed_query_id = pending_after_crash[0].query_id
+    assert checkpoint_store.get_checkpointed_files(), "expected staged file metadata in store"
+
+    # Second call: should skip the pipeline, pull files from the store, commit once.
+    df2 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df2.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    # Verify: exactly one snapshot landed.
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+
+    # Verify: previously-Checkpointed entries are now Committed.
+    still_checkpointed = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not still_checkpointed, "all entries should be Committed after recovery"
+
+    # Verify: the snapshot's query_id matches what was staged before the crash —
+    # i.e. the recovery used the existing entries' query_id, not a freshly
+    # generated one. This is the load-bearing single-query-id-across-restart
+    # invariant.
+    summary = iceberg_table.metadata.snapshots[0].summary
+    assert summary["daft.checkpoint-store"] == checkpoint_store.path
+    assert summary["daft.checkpoint-query"] == crashed_query_id
