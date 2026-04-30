@@ -17,7 +17,10 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
+    events::{
+        OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskStatsUpdateEvent,
+        TaskSubmitEvent,
+    },
 };
 
 const TOTAL_ROWS: usize = 10;
@@ -460,6 +463,30 @@ impl DashboardSubscriber {
         Ok(())
     }
 
+    fn on_task_stats_update(&self, event: &TaskStatsUpdateEvent) -> DaftResult<()> {
+        if event.tasks.is_empty() {
+            return Ok(());
+        }
+        let query_id = event.header.query_id.clone();
+        self.enqueue_json(
+            format!("engine/query/{}/tasks/stats", query_id),
+            "tasks_stats_update",
+            &daft_dashboard::engine::TasksStatsUpdateArgsSend {
+                timestamp_sec: event.header.timestamp_epoch_secs,
+                worker_id: self.worker_id.clone(),
+                tasks: event
+                    .tasks
+                    .iter()
+                    .map(|t| daft_dashboard::engine::TaskStatsEntry {
+                        task_id: t.task_id,
+                        totals: daft_dashboard::engine::TaskTotals { cpu_us: t.cpu_us },
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
     fn on_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -490,10 +517,7 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
 
-        // CPU duration is the only task-level total we currently report; it
-        // sums correctly across all nodes in the fused pipeline. rows/bytes
-        // I/O totals require head/leaf identification (see follow-up ticket)
-        // and are intentionally omitted to avoid double-counting.
+        // See `TaskTotals` for why only `cpu_us` is reported here.
         let mut totals = daft_dashboard::engine::TaskTotals::default();
         for (_, snapshot) in &event.stats {
             let stats = snapshot.to_stats();
@@ -597,6 +621,9 @@ impl Subscriber for DashboardSubscriber {
             }
             Event::Stats(e) => {
                 self.on_stats(&e)?;
+            }
+            Event::TaskStatsUpdate(e) => {
+                self.on_task_stats_update(&e)?;
             }
             Event::ProcessStats(_e) => {}
             Event::ResultOut(e) => {

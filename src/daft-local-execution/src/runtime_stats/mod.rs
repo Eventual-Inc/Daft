@@ -5,12 +5,13 @@ mod values;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    DURATION_KEY, NodeID, QueryEndState, QueryID, Stat, StatSnapshot, ops::NodeInfo,
+    snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -19,7 +20,8 @@ use daft_context::{
         event_header,
         events::{
             Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
-            OperatorStartEvent, ProcessStatsEvent, StatsEvent,
+            OperatorStartEvent, ProcessStatsEvent, StatsEvent, TaskStatsSnapshot,
+            TaskStatsUpdateEvent,
         },
     },
 };
@@ -48,6 +50,16 @@ fn should_enable_process_monitor() -> bool {
         matches!(val.trim().to_lowercase().as_str(), "1" | "true")
     } else {
         false // Disabled by default; enable with DAFT_PROCESS_MONITOR_ENABLED=true
+    }
+}
+
+/// Mirrors `daft_distributed::statistics::task_lifecycle::task_events_enabled`.
+/// Duplicated here to avoid pulling daft-distributed into daft-local-execution.
+fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false
     }
 }
 
@@ -259,6 +271,7 @@ impl RuntimeStatsManager {
             throttle_interval,
             enable_process_monitor,
             operator_meta_map,
+            is_flotilla_worker,
         ))
     }
 
@@ -274,6 +287,7 @@ impl RuntimeStatsManager {
         throttle_interval: Duration,
         enable_process_monitor: bool,
         operators: HashMap<NodeID, Arc<OperatorMeta>>,
+        is_flotilla_worker: bool,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<StatsManagerMessage>();
         let node_tx = Arc::new(node_tx);
@@ -291,6 +305,13 @@ impl RuntimeStatsManager {
         };
 
         let finished_snapshots_for_task = finished_snapshots.clone();
+        let task_events_enabled_now = task_events_enabled();
+        // TaskStatsUpdate is emitted on a separate (slower) cadence than the
+        // 200ms ProcessStats / Event::Stats tick. Per-task amplification means
+        // each tick produces one event per active task per worker; at 5Hz with
+        // num_cpus tasks per worker that saturated the dashboard's POST queue.
+        // 1Hz is plenty for human progress observation.
+        let task_stats_min_interval = Duration::from_secs(1);
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_info_map.len());
@@ -298,6 +319,7 @@ impl RuntimeStatsManager {
             let mut input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> = HashMap::new();
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
+            let mut last_task_stats_emit: Option<Instant> = None;
 
             loop {
                 tokio::select! {
@@ -380,22 +402,42 @@ impl RuntimeStatsManager {
                             continue;
                         }
 
-                        for node_id in &active_nodes {
-                            if let Some(snapshot) = aggregate_node_stats(&input_stats, *node_id) {
-                                if let Some(progress_bar) = &progress_bar {
-                                    progress_bar.handle_event(*node_id, &snapshot);
-                                }
-                                snapshot_container.push((*node_id, snapshot.to_stats()));
+                        if is_flotilla_worker {
+                            // One batched TaskStatsUpdate per worker per
+                            // task_stats_min_interval, gated on the same env
+                            // var as task submit/end events.
+                            let now = Instant::now();
+                            let due = match last_task_stats_emit {
+                                Some(prev) => now.duration_since(prev) >= task_stats_min_interval,
+                                None => true,
+                            };
+                            if task_events_enabled_now && due {
+                                emit_per_task_stats_updates(
+                                    &query_id,
+                                    &active_nodes,
+                                    &input_stats,
+                                    &subscribers,
+                                );
+                                last_task_stats_emit = Some(now);
                             }
-                        }
+                        } else {
+                            for node_id in &active_nodes {
+                                if let Some(snapshot) = aggregate_node_stats(&input_stats, *node_id) {
+                                    if let Some(progress_bar) = &progress_bar {
+                                        progress_bar.handle_event(*node_id, &snapshot);
+                                    }
+                                    snapshot_container.push((*node_id, snapshot.to_stats()));
+                                }
+                            }
 
-                        if !snapshot_container.is_empty() {
-                            let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
-                            let event = Event::Stats(StatsEvent {
-                                header: event_header(query_id.clone()),
-                                stats: snapshot_container.clone(),
-                            });
-                            dispatch_event(&subscribers, &event, "notify runtime stats");
+                            if !snapshot_container.is_empty() {
+                                let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
+                                let event = Event::Stats(StatsEvent {
+                                    header: event_header(query_id.clone()),
+                                    stats: snapshot_container.clone(),
+                                });
+                                dispatch_event(&subscribers, &event, "notify runtime stats");
+                            }
                         }
                     }
                 }
@@ -477,6 +519,51 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
     }
 }
 
+/// Emit a single batched `TaskStatsUpdate` containing scalar totals for every
+/// active task on this worker. Scalars are summed across the local pipeline
+/// nodes that contributed to each task — we don't carry per-node breakdown
+/// because the local NodeID doesn't cleanly map to either a distributed plan
+/// node id or a stable within-task position (see `TaskStatsUpdateEvent`'s
+/// docstring). One event per worker per tick replaces the previous
+/// one-per-active-task pattern, which was producing N×ticks events per second
+/// and saturating the dashboard's POST queue on multi-CPU workers.
+fn emit_per_task_stats_updates(
+    query_id: &QueryID,
+    active_nodes: &HashSet<NodeID>,
+    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    subscribers: &[Arc<dyn Subscriber>],
+) {
+    let mut by_input: HashMap<InputId, TaskStatsSnapshot> = HashMap::new();
+    for (&(node_id, input_id), stats) in input_stats {
+        if !active_nodes.contains(&node_id) {
+            continue;
+        }
+        let snapshot = stats.snapshot();
+        let stats_vec = snapshot.to_stats();
+        let acc = by_input
+            .entry(input_id)
+            .or_insert_with(|| TaskStatsSnapshot {
+                task_id: input_id,
+                cpu_us: 0,
+            });
+        for (key, stat) in &stats_vec.0 {
+            if let (DURATION_KEY, Stat::Duration(d)) = (key.as_ref(), stat) {
+                acc.cpu_us += d.as_micros() as u64;
+            }
+        }
+    }
+
+    if by_input.is_empty() {
+        return;
+    }
+
+    let event = Event::TaskStatsUpdate(TaskStatsUpdateEvent {
+        header: event_header(query_id.clone()),
+        tasks: Arc::new(by_input.into_values().collect()),
+    });
+    dispatch_event(subscribers, &event, "notify task stats update");
+}
+
 /// Aggregate stats for a given node_id across all input_ids.
 fn aggregate_node_stats(
     input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
@@ -528,6 +615,7 @@ mod tests {
             throttle_interval,
             enable_process_monitor,
             HashMap::from([(0, Arc::new(OperatorMeta::from(&NodeInfo::default())))]),
+            false,
         );
         // Register stats via the handle (mimics what nodes do in start())
         stats_manager

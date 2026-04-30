@@ -95,15 +95,20 @@ function localPlanChain(name: string | null | undefined): string[] {
 export const TOP_K_RUNNING = 10;
 
 /**
- * Extract active (running) tasks from the store, sorted by wall-clock duration
- * descending. TODO: sort by cpu_us instead once within-task metric updates land
- * (currently cpu_us is only populated on task end).
+ * Extract active (running) tasks from the store, sorted by busy time (cpu_us)
+ * descending. cpu_us is refreshed mid-flight from TaskStatsUpdate events, so
+ * the ordering reflects cumulative operator work rather than how long the task
+ * has been sitting in flight. Tied (e.g. brand-new tasks with no stats yet)
+ * fall back to submit_sec ascending so the oldest is shown first.
  */
 export function getActiveTasks(taskStore: TaskStore | undefined): TaskInfo[] {
   if (!taskStore) return [];
   return Object.values(taskStore.tasks)
     .filter((t) => t.status.status === "Pending" && t.end_sec == null)
-    .sort((a, b) => a.submit_sec - b.submit_sec); // oldest first = longest running
+    .sort((a, b) => {
+      if (b.cpu_us !== a.cpu_us) return b.cpu_us - a.cpu_us;
+      return a.submit_sec - b.submit_sec;
+    });
 }
 
 /**
