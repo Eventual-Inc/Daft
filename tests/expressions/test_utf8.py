@@ -115,7 +115,7 @@ def test_regexp_replace(test_expression):
     )
 
 
-def test_hamming_distance(test_binary_expression):
+def test_hamming_distance_str(test_binary_expression):
     left = ["ronald", "ronald", "ronald", "ronald", "ronald", None]
     right = ["ronald", "renuld", "ronaldo", "r", None, None]
     expected = [0, 2, None, None, None, None]
@@ -123,6 +123,6 @@ def test_hamming_distance(test_binary_expression):
     test_binary_expression(
         left=left,
         right=right,
-        name="hamming_distance",
+        name="hamming_distance_str",
         expected=expected,
     )

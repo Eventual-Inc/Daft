@@ -1339,6 +1339,31 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
+    def simhash(
+        self,
+        *,
+        ngram_size: int = 3,
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+    ) -> Expression:
+        """Compute a SimHash fingerprint of this string expression.
+
+        Tip: See Also
+            [`daft.functions.simhash`](https://docs.daft.ai/en/stable/api/functions/simhash/)
+        """
+        from daft.functions import simhash
+
+        return simhash(self, ngram_size=ngram_size, hash_function=hash_function)
+
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the bitwise Hamming distance between two hash fingerprints.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def encode(self, charset: ENCODING_CHARSET) -> Expression:
         """Encode binary or string values using the specified character set.
 
@@ -2306,15 +2331,15 @@ class Expression:
 
         return length_bytes(self)
 
-    def hamming_distance(self, other: Expression) -> Expression:
-        """Compute the Hamming distance between two strings.
+    def hamming_distance_str(self, other: Expression) -> Expression:
+        """Compute the character-level Hamming distance between two strings.
 
         Tip: See Also
-            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+            [`daft.functions.hamming_distance_str`](https://docs.daft.ai/en/stable/api/functions/hamming_distance_str/)
         """
-        from daft.functions import hamming_distance
+        from daft.functions import hamming_distance_str
 
-        return hamming_distance(self, other)
+        return hamming_distance_str(self, other)
 
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
@@ -2365,6 +2390,19 @@ class Expression:
         from daft.functions import list_join
 
         return list_join(self, delimiter)
+
+    def list_flatten(self) -> Expression:
+        """Flattens one level of nesting in each list.
+
+        Outer null rows are preserved as null. Null inner lists are skipped while flattening,
+        and null leaf values are preserved in the output.
+
+        Tip: See Also
+            [`daft.functions.list_flatten`](https://docs.daft.ai/en/stable/api/functions/list_flatten/)
+        """
+        from daft.functions import list_flatten
+
+        return list_flatten(self)
 
     def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.

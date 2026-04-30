@@ -936,6 +936,7 @@ jobs:
         GRAVITINO_METALAKE: metalake_demo
       # Paimon tests: pypaimon is installed separately here because its dependencies conflict with the project's main dependencies
     - name: Install pypaimon
+      if: always()
       run: |
         source .venv/bin/activate
         uv pip install pypaimon==1.4.1

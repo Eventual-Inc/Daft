@@ -344,19 +344,13 @@ The `hash` column has dtype `FixedSizeBinary(8)` — 64 bits per image for the d
 
 ### Finding near-duplicates
 
-Compare hashes within a dataset by joining the DataFrame with itself and computing Hamming distance in a UDF:
+Compare hashes within a dataset by joining the DataFrame with itself and computing the bitwise Hamming distance using the built-in [`hamming_distance`][daft.functions.hamming_distance]:
 
 === "🐍 Python"
 
     ```python
     import daft
-    from daft.functions import image_hash
-
-    @daft.func(return_dtype=daft.DataType.int32())
-    def hamming(a, b):
-        if a is None or b is None:
-            return None
-        return sum(bin(x ^ y).count("1") for x, y in zip(a, b))
+    from daft.functions import image_hash, hamming_distance
 
     df = daft.from_pydict({
         "id": [1, 2, 3],
@@ -371,7 +365,7 @@ Compare hashes within a dataset by joining the DataFrame with itself and computi
     pairs = (
         left.join(right, how="cross")
             .where(daft.col("id_a") < daft.col("id_b"))
-            .with_column("dist", hamming(daft.col("hash_a"), daft.col("hash_b")))
+            .with_column("dist", hamming_distance(daft.col("hash_a"), daft.col("hash_b")))
             .where(daft.col("dist") <= 10)  # threshold: ≤10 bits differ
     )
     pairs.show()
