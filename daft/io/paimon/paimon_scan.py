@@ -38,6 +38,7 @@ class _PaimonFallbackSplitTask(DataSourceTask):
     - split.raw_convertible is False (LSM-tree merge required for PK tables)
     - The file format is not Parquet (ORC, Avro)
     - The split has associated deletion vectors that must be applied
+    - The split contains blob files (.blob) which are not Parquet-readable
     """
 
     def __init__(self, table: FileStoreTable, split: Split, schema: Schema) -> None:
@@ -175,13 +176,13 @@ class PaimonDataSource(DataSource):
                     continue
 
             _deletion_files = getattr(split, "data_deletion_files", None)
-            has_deletion_vectors = _deletion_files is not None and any(
-                df is not None for df in _deletion_files
-            )
+            has_deletion_vectors = _deletion_files is not None and any(df is not None for df in _deletion_files)
+            has_blob_files = any(getattr(data_file, "file_name", "").endswith(".blob") for data_file in split.files)
             can_use_native_reader = (
                 self._use_native_parquet
                 and (not self._table.is_primary_key_table or split.raw_convertible)
                 and not has_deletion_vectors
+                and not has_blob_files
             )
 
             if can_use_native_reader:
@@ -208,6 +209,8 @@ class PaimonDataSource(DataSource):
                     reason = "non-parquet format"
                 elif has_deletion_vectors:
                     reason = "deletion vectors present"
+                elif has_blob_files:
+                    reason = "blob files present"
                 else:
                     reason = "LSM merge required"
                 logger.debug(
