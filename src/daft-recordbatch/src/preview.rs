@@ -213,7 +213,7 @@ impl Preview {
             .schema
             .into_iter()
             .enumerate()
-            .map(|(idx, _)| {
+            .map(|(idx, field)| {
                 // Use column overrides if any, falling back to the global settings.
                 let mut max_width = self.options.max_width;
                 let mut align = self.options.align;
@@ -223,7 +223,13 @@ impl Preview {
                 }
                 // If some alignment, translate to comfy_table
                 let align = align.map(|align| match align {
-                    PreviewAlign::Auto => CellAlignment::Left,
+                    PreviewAlign::Auto => {
+                        if field.dtype.is_numeric() || field.dtype.is_decimal128() {
+                            CellAlignment::Right
+                        } else {
+                            CellAlignment::Left
+                        }
+                    }
                     PreviewAlign::Left => CellAlignment::Left,
                     PreviewAlign::Center => CellAlignment::Center,
                     PreviewAlign::Right => CellAlignment::Right,
@@ -309,4 +315,37 @@ mod presets {
     /// | c     | d     |
     /// ```
     pub const MARKDOWN: &str = "||  |-|||           ";
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::{Int64Array, Utf8Array};
+    use daft_core::series::IntoSeries;
+
+    use super::*;
+
+    #[test]
+    fn test_auto_aligns_numeric_right_and_non_numeric_left() {
+        let rb = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("n", vec![1, 22]).into_series(),
+            Utf8Array::from_slice("s", &["a", "bb"]).into_series(),
+        ])
+        .unwrap();
+
+        let preview = Preview::new(
+            rb,
+            PreviewFormat::Markdown,
+            PreviewOptions {
+                verbose: false,
+                null: "None".to_string(),
+                max_width: Some(30),
+                align: Some(PreviewAlign::Auto),
+                columns: None,
+            },
+        );
+
+        let out = preview.to_string();
+        assert!(out.contains("|  1 | a  |"));
+        assert!(out.contains("| 22 | bb |"));
+    }
 }

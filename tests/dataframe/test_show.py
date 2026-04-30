@@ -8,7 +8,7 @@ import re
 
 import daft
 from daft.dataframe import DataFrame
-from daft.dataframe.preview import PreviewFormat, PreviewFormatter
+from daft.dataframe.preview import PreviewFormat, PreviewFormatter, resolve_show_defaults
 from daft.runners import get_or_create_runner
 
 
@@ -160,6 +160,24 @@ def test_show_with_options():
     )
 
 
+def test_show_with_auto_align():
+    df = daft.from_pydict(
+        {
+            "N": [1, 22],
+            "S": ["a", "bb"],
+        }
+    )
+
+    assert (
+        show(df, format="markdown", align="auto")
+        == """
+| N  | S  |
+|----|----|
+|  1 | a  |
+| 22 | bb |"""[1:]
+    )
+
+
 def test_show_with_wide_columns():
     df = daft.from_pydict(
         {
@@ -201,6 +219,34 @@ def test_show_default_respects_options():
 ╞══════════════════════════════════════════════════════════════╡
 │ this is a really long string that should not be be truncated │
 ╰──────────────────────────────────────────────────────────────╯"""[1:]
+
+
+def test_resolve_show_defaults_from_env(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_FORMAT", "markdown")
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    format, verbose, max_width, align = resolve_show_defaults(None, False, 30, "auto")
+
+    assert format == "markdown"
+    assert verbose is True
+    assert max_width == 12
+    assert align == "right"
+
+
+def test_resolve_show_defaults_respects_explicit_args(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_FORMAT", "markdown")
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    format, verbose, max_width, align = resolve_show_defaults("grid", True, 50, "left")
+
+    assert format == "grid"
+    assert verbose is True
+    assert max_width == 50
+    assert align == "left"
 
 
 def test_show_with_many_columns():
