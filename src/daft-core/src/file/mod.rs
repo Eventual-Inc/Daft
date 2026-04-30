@@ -97,8 +97,49 @@ impl fmt::Display for FileReference {
             write!(f, " [with config]")?;
         }
         if let (Some(offset), Some(length)) = (self.offset, self.length) {
-            write!(f, " [range: {}..{}]", offset, offset + length)?;
+            write!(f, " [range: {}..{}]", offset, offset.saturating_add(length))?;
         }
         write!(f, ")")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_display_without_range() {
+        let file_ref =
+            FileReference::new(MediaType::Unknown, "s3://bucket/file.bin".to_string(), None);
+        assert_eq!(file_ref.to_string(), "Unknown(path: s3://bucket/file.bin)");
+    }
+
+    #[test]
+    fn test_display_with_range() {
+        let file_ref = FileReference::new_with_range(
+            MediaType::Unknown,
+            "s3://bucket/blob".to_string(),
+            None,
+            Some(10),
+            Some(20),
+        );
+        assert_eq!(
+            file_ref.to_string(),
+            "Unknown(path: s3://bucket/blob [range: 10..30])"
+        );
+    }
+
+    #[test]
+    fn test_display_with_config_and_range() {
+        let file_ref = FileReference::new_with_range(
+            MediaType::Video,
+            "s3://bucket/video.mp4".to_string(),
+            Some(IOConfig::default()),
+            Some(0),
+            Some(1024),
+        );
+        let display = file_ref.to_string();
+        assert!(display.contains("[with config]"));
+        assert!(display.contains("[range: 0..1024]"));
     }
 }

@@ -27,17 +27,27 @@ impl DaftFile {
             .await
             .map_err(DaftError::from)?;
 
-        if let (Some(offset), Some(length)) = (file_ref.offset, file_ref.length) {
-            let range = Some(GetRange::Bounded(offset as usize..(offset + length) as usize));
-            let result = source
-                .get(&path, range, None)
-                .await
-                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-            let bytes = result
-                .bytes()
-                .await
-                .map_err(|e| DaftError::ComputeError(e.to_string()))?;
-            return Ok(Self::from_bytes(media_type, bytes.to_vec()));
+        match (file_ref.offset, file_ref.length) {
+            (Some(offset), Some(length)) => {
+                let range = Some(GetRange::Bounded(
+                    offset as usize..(offset + length) as usize,
+                ));
+                let result = source
+                    .get(&path, range, None)
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                let bytes = result
+                    .bytes()
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                return Ok(Self::from_bytes(media_type, bytes.to_vec()));
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Both offset and length must be specified for byte-range reads".to_string(),
+                ));
+            }
+            (None, None) => {}
         }
 
         // getting the size is pretty cheap, so we do it upfront

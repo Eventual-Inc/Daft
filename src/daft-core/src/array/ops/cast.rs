@@ -1764,8 +1764,7 @@ impl StructArray {
             }
             (DataType::Struct(..), DataType::File(media_type)) => {
                 use daft_schema::media_type::MediaType;
-                let casted_struct_array =
-                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                let casted_struct_array = self.cast(&dtype.to_physical())?.struct_()?.clone();
                 match media_type {
                     MediaType::Video => Ok(FileArray::<MediaTypeVideo>::new(
                         Field::new(self.name(), dtype.clone()),

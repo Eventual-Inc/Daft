@@ -108,10 +108,12 @@ class File:
 
     @property
     def offset(self) -> int | None:
+        """The byte offset for range reads, or None for full-file reads."""
         return self._inner.offset()
 
     @property
     def length(self) -> int | None:
+        """The byte length for range reads, or None for full-file reads."""
         return self._inner.length()
 
     def size(self) -> int:

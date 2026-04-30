@@ -100,7 +100,7 @@ where
         )?;
         let offset_series = Series::from_arrow(
             Arc::new(Field::new("offset", DataType::Int64)),
-            Arc::new(arrow::array::Int64Array::from(offset_arr.clone())),
+            Arc::new(arrow::array::Int64Array::from(offset_arr)),
         )?;
         let length_series = Series::from_arrow(
             Arc::new(Field::new("length", DataType::Int64)),
@@ -248,5 +248,47 @@ mod tests {
         assert_eq!(io_config, io_conf.map(Arc::new));
         assert_eq!(offset, None);
         assert_eq!(length, None);
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_with_offset_and_length() {
+        let io_conf = Some(IOConfig::default());
+        let refs = vec![
+            Ok(Some(FileReference::new_with_range(
+                daft_schema::media_type::MediaType::Unknown,
+                "file://example.com/blob".to_string(),
+                io_conf,
+                Some(100),
+                Some(50),
+            ))),
+            Ok(Some(FileReference::new_with_range(
+                daft_schema::media_type::MediaType::Unknown,
+                "file://example.com/blob2".to_string(),
+                None,
+                None,
+                None,
+            ))),
+            Ok(None),
+        ];
+
+        let arr =
+            FileArray::<MediaTypeUnknown>::new_from_file_references("files", refs.into_iter())
+                .expect("Failed to create FileArray");
+        let arrow_data = arr.to_arrow().unwrap();
+
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+
+        let ref0 = new_arr.get(0).expect("Failed to get data");
+        assert_eq!(ref0.url, "file://example.com/blob");
+        assert_eq!(ref0.offset, Some(100));
+        assert_eq!(ref0.length, Some(50));
+
+        let ref1 = new_arr.get(1).expect("Failed to get data");
+        assert_eq!(ref1.url, "file://example.com/blob2");
+        assert_eq!(ref1.offset, None);
+        assert_eq!(ref1.length, None);
+
+        assert!(new_arr.get(2).is_none());
     }
 }
