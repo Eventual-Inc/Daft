@@ -177,6 +177,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                     daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
                     daft_schema::media_type::MediaType::Video => intern!(py, "VideoFile"),
                     daft_schema::media_type::MediaType::Audio => intern!(py, "AudioFile"),
+                    daft_schema::media_type::MediaType::Image => intern!(py, "ImageFile"),
                 };
 
                 let pytuple = f.into_bound_py_any(py)?;

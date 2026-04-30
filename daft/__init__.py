@@ -155,7 +155,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile
+from daft.file import File, VideoFile, AudioFile, ImageFile
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -188,6 +188,7 @@ __all__ = [
     "File",
     "IOConfig",
     "Identifier",
+    "ImageFile",
     "ImageFormat",
     "ImageMode",
     "ImageProperty",

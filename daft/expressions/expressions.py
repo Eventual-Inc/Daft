@@ -2948,6 +2948,21 @@ class Expression:
             is_key_frame=is_key_frame,
         )
 
+    def image_file_metadata(self) -> Expression:
+        """Gets metadata for an image file (width, height, format, mode).
+
+        Reads only the file header without decoding pixel data.
+        """
+        from daft.functions import image_file_metadata
+
+        return image_file_metadata(self)
+
+    def decode_image_file(self) -> Expression:
+        """Decodes an image file into an Image column."""
+        from daft.functions import decode_image_file
+
+        return decode_image_file(self)
+
 
 class WhenExpr(Expression):
     """Helper class for building a SQL-style CASE WHEN expression.
