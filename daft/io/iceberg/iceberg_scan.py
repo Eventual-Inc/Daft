@@ -89,19 +89,16 @@ class IcebergScanOperator(ScanOperator):
         storage_config: StorageConfig,
     ) -> None:
         super().__init__()
-        self._table = iceberg_table
+        iceberg_schema = (
+            iceberg_table.schema() if snapshot_id is None else iceberg_table.scan(snapshot_id=snapshot_id).projection()
+        )
+        self._iceberg_table = iceberg_table
+        self._iceberg_schema = iceberg_schema
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
-
-        iceberg_schema = (
-            iceberg_table.schema()
-            if self._snapshot_id is None
-            else self._table.scan(snapshot_id=self._snapshot_id).projection()
-        )
         self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         self._schema = convert_iceberg_schema(iceberg_schema)
-        self._iceberg_schema = iceberg_schema
-        self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._table.spec())
+        self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
 
     def schema(self) -> Schema:
         return self._schema
@@ -110,7 +107,7 @@ class IcebergScanOperator(ScanOperator):
         return "IcebergScanOperator"
 
     def display_name(self) -> str:
-        return f"IcebergScanOperator({'.'.join(self._table.name())})"
+        return f"IcebergScanOperator({'.'.join(self._iceberg_table.name())})"
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
@@ -118,7 +115,7 @@ class IcebergScanOperator(ScanOperator):
     def _iceberg_record_to_partition_spec(
         self, spec: IcebergPartitionSpec, record: Record
     ) -> daft.recordbatch.RecordBatch | None:
-        partition_fields = iceberg_partition_spec_to_fields(self._table.schema(), spec)
+        partition_fields = iceberg_partition_spec_to_fields(self._iceberg_table.schema(), spec)
         arrays = dict()
         assert len(record) == len(partition_fields)
         for idx, pfield in enumerate(partition_fields):
@@ -174,7 +171,7 @@ class IcebergScanOperator(ScanOperator):
         limit = pushdowns.limit
         row_filter = convert_row_filter(pushdowns, self._iceberg_schema)
 
-        iceberg_tasks = self._table.scan(
+        iceberg_tasks = self._iceberg_table.scan(
             row_filter=row_filter,
             limit=limit,
             snapshot_id=self._snapshot_id,
@@ -212,7 +209,7 @@ class IcebergScanOperator(ScanOperator):
             iceberg_delete_files = [f.file_path for f in task.delete_files]
 
             # TODO: Thread in Statistics to each ScanTask: P2
-            pspec = self._iceberg_record_to_partition_spec(self._table.specs()[file.spec_id], file.partition)
+            pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -234,7 +231,7 @@ class IcebergScanOperator(ScanOperator):
     def _create_count_scan_task(self, pushdowns: PyPushdowns, field_name: str) -> Iterator[ScanTask]:
         """Create count pushdown scan task using Iceberg metadata."""
         try:
-            iceberg_tasks = self._table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+            iceberg_tasks = self._iceberg_table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
             total_count = 0
 
             # Aggregate row counts from all data files
@@ -279,7 +276,7 @@ class IcebergScanOperator(ScanOperator):
         """
         try:
             # Get a limited scan to check for delete files
-            iceberg_tasks = self._table.scan(
+            iceberg_tasks = self._iceberg_table.scan(
                 limit=1,  # Only need to check if any delete files exist
                 snapshot_id=self._snapshot_id,
             ).plan_files()
