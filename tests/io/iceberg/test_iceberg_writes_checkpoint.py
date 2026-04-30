@@ -226,14 +226,24 @@ def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpo
 
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 2
-    qid_2 = iceberg_table.metadata.snapshots[-1].summary["daft.checkpoint-query"]
+    summary_2 = iceberg_table.metadata.snapshots[-1].summary
+    qid_2 = summary_2["daft.checkpoint-query"]
     assert qid_1 != qid_2, "each execution must use its own query_id"
+
+    # Snapshot 2 must contain only the new rows ({d, e, f}). The summary's
+    # `added-records` / `added-data-files` fields are populated by pyiceberg's
+    # fast_append; if the source filter failed to drop {a, b, c} we would see
+    # 6 added records here instead of 3.
+    assert summary_2.get("added-records") == "3", (
+        f"snapshot 2 must add only the new rows; got summary: {dict(summary_2)}"
+    )
+    assert summary_2.get("added-data-files") == "1"
 
     # All entries Committed across both runs.
     pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
     assert not pending
 
-    # Final table is the union; the dedup ensures no duplicates of {a, b, c}.
+    # Final table is the union; no duplicates of {a, b, c}.
     rows = daft.read_iceberg(iceberg_table).to_pydict()
     assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
 
