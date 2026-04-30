@@ -310,6 +310,7 @@ impl AsofJoinProbeState {
         Ok(())
     }
 }
+
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
     right_by: Vec<BoundExpr>,
@@ -317,6 +318,8 @@ pub struct AsofJoinOperator {
     right_on: BoundExpr,
     left_schema: SchemaRef,
     right_schema: SchemaRef,
+    right_cols_to_drop: std::collections::HashSet<String>,
+    join_schema: SchemaRef,
 }
 
 impl AsofJoinOperator {
@@ -327,15 +330,26 @@ impl AsofJoinOperator {
         right_on: BoundExpr,
         left_schema: SchemaRef,
         right_schema: SchemaRef,
-    ) -> Self {
-        Self {
+    ) -> DaftResult<Self> {
+        let right_cols_to_drop = get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
+            let (unwrapped, _) = e.inner().clone().unwrap_alias();
+            match unwrapped.as_ref() {
+                Expr::Column(_) => Some(unwrapped.name().to_string()),
+                _ => None,
+            }
+        });
+        let join_schema = infer_asof_join_schema(&left_schema, &right_schema, &right_cols_to_drop)?;
+
+        Ok(Self {
             left_by,
             right_by,
             left_on,
             right_on,
             left_schema,
             right_schema,
-        }
+            right_cols_to_drop,
+            join_schema,
+        })
     }
 }
 
@@ -422,24 +436,86 @@ impl JoinOperator for AsofJoinOperator {
         let state = states
             .into_iter()
             .next()
-            .expect("Expect exactly one state for AsofJoin probe finalize");
-        let left_by = self.left_by.clone();
-        let right_by = self.right_by.clone();
-        let left_on = self.left_on.clone();
-        let right_on = self.right_on.clone();
-        let left_schema = self.left_schema.clone();
+            .expect("AsofJoin probe finalize: expected exactly one state");
+
+        let join_schema = self.join_schema.clone();
+        let right_cols_to_drop = self.right_cols_to_drop.clone();
         let right_schema = self.right_schema.clone();
 
         spawner
             .spawn(
                 async move {
-                    let left_mp =
-                        MicroPartition::concat_or_empty(state.build_contents, left_schema)?;
-                    let right_mp =
-                        MicroPartition::concat_or_empty(state.probe_contents, right_schema)?;
-                    let joined =
-                        left_mp.asof_join(&right_mp, &left_by, &right_by, &left_on, &right_on)?;
-                    Ok(Some(joined))
+                    let mut state = state;
+                    let table = state.build_contents.clone();
+
+                    if table.total_left_rows == 0 {
+                        return Ok(Some(MicroPartition::new_loaded(
+                            join_schema.clone(),
+                            Arc::new(vec![RecordBatch::empty(Some(join_schema))]),
+                            None,
+                        )));
+                    }
+                    // backfill
+                    for bucket in &table.group_buckets {
+                        for i in 1..bucket.len() {
+                            let prev_global = bucket[i - 1] as usize;
+                            let curr_global = bucket[i] as usize;
+                            // Skip null-on-key left rows: they are invalid match targets.
+                            if !table.left_on_series.is_valid(curr_global) {
+                                continue;
+                            }
+                            if state.best_match[curr_global].is_none()
+                                && state.best_match[prev_global].is_some()
+                            {
+                                state.best_match[curr_global] = state.best_match[prev_global];
+                            }
+                        }
+                    }
+                    let mut morsel_offsets = vec![0usize; state.right_tables.len() + 1];
+                    for (i, rb) in state.right_tables.iter().enumerate() {
+                        morsel_offsets[i + 1] = morsel_offsets[i] + rb.len();
+                    }
+
+                    let n = table.total_left_rows;
+                    let right_idx_arr = UInt64Array::from_iter(
+                        Field::new("right_idx", DaftDataType::UInt64),
+                        (0..n).map(|i| {
+                            state.best_match[i].map(|(morsel_idx, row_idx)| {
+                                (morsel_offsets[morsel_idx as usize] + row_idx as usize) as u64
+                            })
+                        }),
+                    );
+
+                    let right_rb_concat = if state.right_tables.is_empty() {
+                        RecordBatch::empty(Some(right_schema))
+                    } else {
+                        RecordBatch::concat(
+                            state.right_tables.iter().collect::<Vec<_>>().as_slice(),
+                        )?
+                    };
+                    let right_out = right_rb_concat.take(&right_idx_arr)?;
+
+                    //build final table
+                    let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
+
+                    for s in table.left_rb.as_materialized_series() {
+                        join_series.push(s.clone());
+                    }
+
+                    for s in right_out.as_materialized_series() {
+                        if !right_cols_to_drop.contains(s.name()) {
+                            join_series.push(s.clone());
+                        }
+                    }
+
+                    let output_rb =
+                        RecordBatch::new_with_size(join_schema.clone(), join_series, n)?;
+
+                    Ok(Some(MicroPartition::new_loaded(
+                        join_schema,
+                        Arc::new(vec![output_rb]),
+                        None,
+                    )))
                 },
                 Span::current(),
             )
