@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
     NodeID, StatSnapshot,

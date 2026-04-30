@@ -4,7 +4,7 @@ use arrow::{
     array::{ArrayData, BooleanBufferBuilder, NullBufferBuilder, make_array},
     buffer::{Buffer, MutableBuffer, ScalarBuffer},
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::Growable;
 use crate::{

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema, UInt8Array, UInt64Array, Utf8Array},
     series::IntoSeries,
@@ -152,7 +152,7 @@ impl AsyncFileWriter for FailingWriter {
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         if self.fail_on_write {
-            return Err(common_error::DaftError::ValueError(
+            return Err(daft_common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::write".to_string(),
             ));
         }
@@ -176,7 +176,7 @@ impl AsyncFileWriter for FailingWriter {
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         if self.fail_on_close {
-            return Err(common_error::DaftError::ValueError(
+            return Err(daft_common_error::DaftError::ValueError(
                 "Intentional failure in FailingWriter::close".to_string(),
             ));
         }

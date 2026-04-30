@@ -42,7 +42,7 @@ mod tests {
     use std::vec;
 
     use arrow::buffer::OffsetBuffer;
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
 

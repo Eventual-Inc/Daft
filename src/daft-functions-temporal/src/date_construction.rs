@@ -144,7 +144,7 @@ impl ScalarUDF for MakeTimestamp {
         // If a timezone is provided, parse it for offset conversion
         let src_tz: Option<chrono_tz::Tz> = match &timezone {
             Some(tz_str) => Some(tz_str.parse::<chrono_tz::Tz>().map_err(|_| {
-                common_error::DaftError::ValueError(format!("Invalid timezone: {tz_str}"))
+                daft_common_error::DaftError::ValueError(format!("Invalid timezone: {tz_str}"))
             })?),
             None => None,
         };
@@ -311,7 +311,7 @@ impl ScalarUDF for MakeTimestampLtz {
         // If a source timezone is provided, parse it for offset conversion
         let src_tz: Option<chrono_tz::Tz> = match &timezone {
             Some(tz_str) => Some(tz_str.parse::<chrono_tz::Tz>().map_err(|_| {
-                common_error::DaftError::ValueError(format!("Invalid timezone: {tz_str}"))
+                daft_common_error::DaftError::ValueError(format!("Invalid timezone: {tz_str}"))
             })?),
             None => None,
         };

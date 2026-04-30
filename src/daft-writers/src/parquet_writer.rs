@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};

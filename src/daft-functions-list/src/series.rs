@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::buffer::OffsetBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     array::{ListArray, ops::GroupIndices},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},

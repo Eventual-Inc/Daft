@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
@@ -137,7 +137,7 @@ fn is_count_mode_supported(count_mode: &CountMode) -> bool {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, lit, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;

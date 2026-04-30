@@ -47,7 +47,7 @@ impl ScalarUDF for Jq {
 
 /// Encapsulate all jq functionality, could be pulled out if needs reuse later!
 mod jaq {
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::{DataType, Utf8Array},
         series::Series,

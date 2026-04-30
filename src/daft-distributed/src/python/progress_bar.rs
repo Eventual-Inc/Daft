@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
 use crate::{

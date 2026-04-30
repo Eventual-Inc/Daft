@@ -4,7 +4,7 @@ use arrow::{
     array::{ArrayRef, AsArray, BooleanBufferBuilder, BooleanBuilder, make_comparator},
     buffer::{NullBuffer, OffsetBuffer},
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
@@ -349,7 +349,7 @@ impl ListArrayExtension for ListArray {
                     self.nulls().cloned(),
                 ))
             }
-            dtype => Err(common_error::DaftError::TypeError(format!(
+            dtype => Err(daft_common_error::DaftError::TypeError(format!(
                 "Expected list child dtype for list_flatten, got {}",
                 dtype
             ))),

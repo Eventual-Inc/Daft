@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 #[cfg(feature = "python")]
 use crate::series::utils::python_fn::py_membership_op_utilfn;

@@ -1,7 +1,7 @@
 use std::{fmt, ops::Deref, sync::Arc};
 
 use arrow::{array::ArrayRef, buffer::NullBuffer};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
 use daft_schema::{dtype::DataType, field::Field};
 use pyo3::{Py, PyAny, PyResult, Python};

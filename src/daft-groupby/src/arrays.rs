@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use arrow::array::Array;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -418,7 +418,7 @@ impl IntoUniqueIdxs for StructArray {
 mod tests {
     use std::collections::BTreeMap;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::{
         array::ops::{VecIndices, full::FullNull},
         datatypes::{DataType, Field, FixedSizeBinaryArray, Float64Array, Int64Array, NullArray},

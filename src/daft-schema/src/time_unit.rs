@@ -2,7 +2,7 @@ use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
 use chrono::{LocalResult, TimeZone};
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]

@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::DaftLogical;
 use crate::{

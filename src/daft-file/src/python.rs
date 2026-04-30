@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_core::file::FileReference;
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},

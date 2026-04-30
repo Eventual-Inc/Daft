@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use sketches_ddsketch::{Config, DDSketch};
 
 use super::{DaftApproxSketchAggable, from_arrow::FromArrow};

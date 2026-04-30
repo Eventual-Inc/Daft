@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::{LargeListBuilder, LargeStringBuilder};
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::ListArray,
     prelude::{DataType, Field, FromArrow, FullNull, Schema, Utf8Array},

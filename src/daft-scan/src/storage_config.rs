@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_runtime::{RuntimeRef, get_io_runtime};

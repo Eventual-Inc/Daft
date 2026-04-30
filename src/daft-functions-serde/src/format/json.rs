@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::{LargeStringArray, OffsetBufferBuilder};
 use arrow_json::{EncoderOptions, ReaderBuilder, writer::make_encoder};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, FullNull, Utf8Array},
     series::Series,

@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow::buffer::{Buffer, NullBuffer, ScalarBuffer};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
 use xxhash_rust::{const_xxh3, xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64};
@@ -299,7 +299,7 @@ impl StructArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         if self.children.is_empty() {
-            return Err(common_error::DaftError::ValueError(
+            return Err(daft_common_error::DaftError::ValueError(
                 "Cannot hash struct with no children".into(),
             ));
         }

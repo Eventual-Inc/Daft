@@ -1,7 +1,7 @@
 [dependencies]
 arrow-buffer = {workspace = true}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
 serde = {workspace = true}
 typetag = {workspace = true}
 
@@ -10,5 +10,8 @@ workspace = true
 
 [package]
 name = "daft-geo"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Geospatial operations for Daft"
 edition.workspace = true
 version.workspace = true

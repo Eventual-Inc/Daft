@@ -1,10 +1,13 @@
 [package]
 edition = {workspace = true}
 name = "common-checkpoint-config"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Checkpoint configuration for Daft"
 version = {workspace = true}
 
 [dependencies]
-common-io-config = {path = "../io-config", default-features = false}
+common-io-config = {path = "../io-config", default-features = false, version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 uuid = {workspace = true}

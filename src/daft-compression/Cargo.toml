@@ -9,4 +9,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-compression"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Compression utilities for Daft"
 version = {workspace = true}

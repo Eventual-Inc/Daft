@@ -1,16 +1,16 @@
 [dependencies]
 async-trait = {workspace = true}
-common-runtime = {path = "../common/runtime", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
-common-macros = {path = "../common/macros"}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
-common-treenode = {path = "../common/treenode", default-features = false}
-common-metrics = {path = "../common/metrics", default-features = false}
-common-tracing = {path = "../common/tracing", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-sketch = {path = "../daft-sketch", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper", version = "0.3.0-dev0"}
+daft-common-macros = {path = "../common/macros", version = "0.3.0-dev0"}
+common-py-serde = {path = "../common/py-serde", default-features = false, version = "0.3.0-dev0"}
+common-resource-request = {path = "../common/resource-request", default-features = false, version = "0.3.0-dev0"}
+common-treenode = {path = "../common/treenode", default-features = false, version = "0.3.0-dev0"}
+common-metrics = {path = "../common/metrics", default-features = false, version = "0.3.0-dev0"}
+common-tracing = {path = "../common/tracing", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-sketch = {path = "../daft-sketch", default-features = false, version = "0.3.0-dev0"}
 derive_more = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
@@ -30,7 +30,7 @@ opentelemetry_sdk = {workspace = true, features = ["testing"]}
 python = [
   "dep:pyo3",
   "dep:tokio",
-  "common-error/python",
+  "daft-common-error/python",
   "common-runtime/python",
   "daft-core/python",
   "common-treenode/python",
@@ -46,4 +46,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-dsl"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Domain-specific language for Daft expressions"
 version = {workspace = true}

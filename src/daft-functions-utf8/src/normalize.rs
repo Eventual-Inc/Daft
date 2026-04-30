@@ -1,4 +1,4 @@
-use common_error::{DaftResult, ensure};
+use daft_common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{Field, Schema, Utf8Array},
     series::{IntoSeries, Series},

@@ -1,7 +1,7 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::Meter;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};

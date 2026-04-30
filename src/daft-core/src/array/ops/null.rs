@@ -1,6 +1,6 @@
 use std::{iter::repeat, ops::Not, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::{DaftIsNull, DaftNotNull};
 #[cfg(feature = "python")]

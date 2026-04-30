@@ -4,6 +4,9 @@
 workspace = true
 
 [package]
-name = "hyperloglog"
+name = "daft-hyperloglog"
+repository = {workspace = true}
+license = {workspace = true}
+description = "HyperLogLog for Daft"
 edition.workspace = true
 version.workspace = true

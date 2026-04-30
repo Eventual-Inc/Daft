@@ -1,10 +1,10 @@
 [dependencies]
 arrow = {workspace = true}
 arrow-schema = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
-common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true, version = "0.3.0-dev0"}
+common-display = {path = "../common/display", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../common/py-serde", default-features = false, version = "0.3.0-dev0"}
 common-version = {path = "../common/version", default-features = false}
 derive_more = {workspace = true}
 educe = {workspace = true}
@@ -24,7 +24,7 @@ rstest = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
-  "common-error/python",
+  "daft-common-error/python",
   "common-display/python",
   "common-py-serde/python",
   "dep:common-arrow-ffi"
@@ -36,6 +36,9 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-schema"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Schema types for Daft"
 version = {workspace = true}
 
 [package.metadata.cargo-machete]

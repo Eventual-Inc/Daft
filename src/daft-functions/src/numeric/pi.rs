@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow_array::Float64Array;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -38,7 +38,7 @@ impl ScalarUDF for Pi {
         _schema: &Schema,
     ) -> DaftResult<Field> {
         if !inputs.is_empty() {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(daft_common_error::DaftError::ValueError(format!(
                 "Expected 0 input args, got {}",
                 inputs.len()
             )));

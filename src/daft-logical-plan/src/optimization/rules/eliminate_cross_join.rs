@@ -1,7 +1,7 @@
 /// Heavily inspired by DataFusion's EliminateCrossJoin rule: https://github.com/apache/datafusion/blob/b978cf8236436038a106ed94fb0d7eaa6ba99962/datafusion/optimizer/src/eliminate_cross_join.rs
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{

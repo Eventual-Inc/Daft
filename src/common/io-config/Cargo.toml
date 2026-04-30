@@ -1,8 +1,8 @@
 [dependencies]
 aws-credential-types = "1.2.7"
 chrono = {workspace = true, features = ["serde"]}
-common-error = {path = "../error", default-features = false}
-common-py-serde = {path = "../py-serde", default-features = false}
+daft-common-error = {path = "../error", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../py-serde", default-features = false, version = "0.3.0-dev0"}
 derive_more = {workspace = true}
 educe = {workspace = true}
 log = {workspace = true}
@@ -12,7 +12,7 @@ serde = {workspace = true}
 typetag = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
+python = ["dep:pyo3", "daft-common-error/python", "common-py-serde/python"]
 
 [lints]
 workspace = true
@@ -20,4 +20,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-io-config"
+repository = {workspace = true}
+license = {workspace = true}
+description = "I/O configuration for Daft"
 version = {workspace = true}

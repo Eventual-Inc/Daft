@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
 use common_arrow_ffi::ToPyArrow;
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use common_ndarray::NumpyArray;
 use daft_schema::{
     dtype::DataType,

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use arrow::{array::Array, buffer::Buffer};
-use common_error::DaftResult;
-use hyperloglog::{HyperLogLog, NUM_REGISTERS};
+use daft_common_error::DaftResult;
+use daft_hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
 use crate::{
     array::ops::{DaftHllSketchAggable, GroupIndices, as_arrow::AsArrow},

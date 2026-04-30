@@ -1,18 +1,18 @@
 [dependencies]
-common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
-common-metrics = {path = "../common/metrics", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-py-serde = {path = "../common/py-serde", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
-common-treenode = {path = "../common/treenode", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-partition-refs = {path = "../daft-partition-refs", default-features = false}
-daft-scan = {path = "../daft-scan", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false, version = "0.3.0-dev0"}
+common-metrics = {path = "../common/metrics", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-io-config = {path = "../common/io-config", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../common/py-serde", default-features = false, version = "0.3.0-dev0"}
+common-resource-request = {path = "../common/resource-request", default-features = false, version = "0.3.0-dev0"}
+common-treenode = {path = "../common/treenode", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false, version = "0.3.0-dev0"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, version = "0.3.0-dev0"}
+daft-partition-refs = {path = "../daft-partition-refs", default-features = false, version = "0.3.0-dev0"}
+daft-scan = {path = "../daft-scan", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false, version = "0.3.0-dev0"}
 bincode = {workspace = true}
 arrow-schema = {workspace = true}
 arrow-array = {workspace = true}
@@ -22,13 +22,13 @@ serde = {workspace = true}
 serde_json = {workspace = true}
 strum = {version = "0.27", features = ["derive"]}
 indexmap = {workspace = true}
-daft-functions = {path = "../daft-functions", default-features = false}
-daft-functions-list = {path = "../daft-functions-list", default-features = false}
+daft-functions = {path = "../daft-functions", default-features = false, version = "0.3.0-dev0"}
+daft-functions-list = {path = "../daft-functions-list", default-features = false, version = "0.3.0-dev0"}
 
 [features]
 python = [
   "dep:pyo3",
-  "common-error/python",
+  "daft-common-error/python",
   "common-resource-request/python",
   "common-py-serde/python",
   "daft-core/python",
@@ -45,4 +45,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-local-plan"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Local physical plan for Daft"
 version = {workspace = true}

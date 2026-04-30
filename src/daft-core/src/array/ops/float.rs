@@ -1,5 +1,5 @@
 use arrow::datatypes::ArrowPrimitiveType;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use num_traits::Float;
 
 use super::{DaftIsInf, DaftIsNan, DaftNotNan, full::FullNull};

@@ -5,7 +5,7 @@ use std::{
 };
 
 use arrow::buffer::NullBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{

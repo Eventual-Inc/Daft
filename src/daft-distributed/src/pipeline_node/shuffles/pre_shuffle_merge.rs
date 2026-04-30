@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;

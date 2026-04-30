@@ -1,9 +1,9 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-compression = {path = "../daft-compression", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-compression = {path = "../daft-compression", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-io = {path = "../daft-io", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 async-stream = {workspace = true}
 serde = {workspace = true}
@@ -16,7 +16,7 @@ flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
 
 [features]
 python = [
-  "common-error/python",
+  "daft-common-error/python",
   "daft-core/python",
   "daft-io/python",
   "daft-recordbatch/python"
@@ -28,4 +28,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-text"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Text file reader for Daft"
 version = {workspace = true}

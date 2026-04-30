@@ -14,5 +14,8 @@ workspace = true
 
 [package]
 edition = {workspace = true}
-name = "common-error"
+name = "daft-common-error"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Error types for Daft"
 version = {workspace = true}

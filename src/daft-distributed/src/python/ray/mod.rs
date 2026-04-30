@@ -2,7 +2,7 @@ mod task;
 mod worker;
 mod worker_manager;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 pub use daft_partition_refs::RayPartitionRef;
 use pyo3::prelude::*;
 pub(crate) use task::{RaySwordfishTask, RayTaskResult};

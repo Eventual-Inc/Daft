@@ -12,7 +12,7 @@ use common_display::{
     mermaid::{MermaidDisplayVisitor, SubgraphOptions},
     tree::TreeDisplay,
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Meter, QueryID,
     ops::{NodeCategory, NodeType},

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use pyo3::{IntoPyObjectExt, PyResult, Python, pyfunction};
 
 use crate::runners::{self, DAFT_RUNNER, NativeRunner, RayRunner, Runner, RunnerConfig};

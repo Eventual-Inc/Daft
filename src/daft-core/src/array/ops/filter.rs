@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 #[cfg(feature = "python")]

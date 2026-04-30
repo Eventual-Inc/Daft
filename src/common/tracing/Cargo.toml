@@ -1,5 +1,5 @@
 [dependencies]
-common-runtime = {path = "../runtime", default-features = false}
+common-runtime = {path = "../runtime", default-features = false, version = "0.3.0-dev0"}
 opentelemetry = {workspace = true}
 opentelemetry-otlp = {workspace = true}
 opentelemetry_sdk = {workspace = true}
@@ -14,4 +14,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-tracing"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Tracing utilities for Daft"
 version = {workspace = true}

@@ -1,6 +1,6 @@
 use std::{any::TypeId, collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{

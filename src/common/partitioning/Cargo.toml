@@ -1,17 +1,20 @@
 [dependencies]
-common-py-serde = {path = "../py-serde", optional = true}
+common-py-serde = {path = "../py-serde", optional = true, version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
-common-error.workspace = true
+daft-common-error.workspace = true
 futures.workspace = true
 serde.workspace = true
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-py-serde"]
+python = ["dep:pyo3", "daft-common-error/python", "common-py-serde"]
 
 [lints]
 workspace = true
 
 [package]
 name = "common-partitioning"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Partitioning types for Daft"
 edition.workspace = true
 version.workspace = true

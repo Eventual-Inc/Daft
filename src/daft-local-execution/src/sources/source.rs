@@ -6,7 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},

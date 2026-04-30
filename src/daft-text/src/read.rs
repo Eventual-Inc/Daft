@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_stream::try_stream;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::*;
 use daft_io::{GetResult, IOClient, IOStatsRef};

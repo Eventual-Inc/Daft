@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     array::{growable::make_growable, ops::arrow::comparison::build_multi_array_is_equal},
     join::JoinSide,

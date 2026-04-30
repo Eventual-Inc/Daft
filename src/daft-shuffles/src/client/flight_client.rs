@@ -5,7 +5,7 @@ use std::{
 };
 
 use arrow_flight::{Ticket, client::FlightClient, decode::FlightRecordBatchStream};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;

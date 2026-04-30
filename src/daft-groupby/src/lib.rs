@@ -1,6 +1,6 @@
 //! Physical grouping helpers (`make_groups`, `make_unique_idxs`) for Daft arrays and series.
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::array::ops::GroupIndices;
 pub use daft_core::array::ops::VecIndices;
 

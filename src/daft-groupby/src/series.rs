@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{series::Series, with_match_hashable_daft_types};
 
 use crate::{GroupIndicesPair, Indices, IntoGroups, IntoUniqueIdxs};

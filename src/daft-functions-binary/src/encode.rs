@@ -1,4 +1,4 @@
-use common_error::{DaftResult, ensure};
+use daft_common_error::{DaftResult, ensure};
 use daft_core::{
     datatypes::{DataType, Field},
     prelude::{BinaryArray, FixedSizeBinaryArray, Schema, Utf8Array},

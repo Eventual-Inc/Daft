@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},

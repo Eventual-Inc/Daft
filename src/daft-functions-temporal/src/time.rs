@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_core::prelude::TimeUnit;
 use daft_dsl::functions::{UnaryArg, prelude::*};
 

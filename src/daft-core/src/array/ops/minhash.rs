@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with, sync::Arc};
 
 use arrow::array::UInt32Builder;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_minhash::load_simd;
 
 use super::{DaftMinHash, as_arrow::AsArrow};

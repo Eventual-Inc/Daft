@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use comfy_table::{CellAlignment, Table as ComfyTable};
 use common_display::table_display::{StrValue, TableBuildOptions, TableColumnOptions, build_table};
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
 use crate::RecordBatch;

@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{DaftAtan2, trigonometry::TrigonometricFunction},
     prelude::{DataType, Field, Schema},

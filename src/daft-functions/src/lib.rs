@@ -21,7 +21,7 @@ pub mod to_struct;
 pub mod uuid;
 pub mod vector_utils;
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
 use length::Length;
@@ -58,7 +58,7 @@ impl From<Error> for DaftError {
 macro_rules! invalid_argument_err {
     ($($arg:tt)*)  => {{
         let msg = format!($($arg)*);
-        return Err(common_error::DaftError::TypeError(msg).into());
+        return Err(daft_common_error::DaftError::TypeError(msg).into());
     }};
 }
 

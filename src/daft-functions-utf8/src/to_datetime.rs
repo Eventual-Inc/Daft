@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
     prelude::*,

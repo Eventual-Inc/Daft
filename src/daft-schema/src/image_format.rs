@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 #[cfg(feature = "python")]

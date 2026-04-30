@@ -3,7 +3,7 @@ use arrow::{
     buffer::{NullBuffer, OffsetBuffer},
     datatypes::ArrowNativeType,
 };
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use crate::{
     array::{

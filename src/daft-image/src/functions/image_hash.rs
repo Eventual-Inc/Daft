@@ -67,7 +67,7 @@ impl ScalarUDF for ImageHash {
             DataType::Image(_) | DataType::FixedShapeImage(..) => {
                 Ok(Field::new(field.name, DataType::FixedSizeBinary(n_bytes)))
             }
-            _ => Err(common_error::DaftError::TypeError(format!(
+            _ => Err(daft_common_error::DaftError::TypeError(format!(
                 "image_hash requires an Image or FixedShapeImage input, got {field}"
             ))),
         }

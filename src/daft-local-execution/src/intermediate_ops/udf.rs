@@ -10,7 +10,7 @@ use std::{
     vec,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_metrics::{
     Meter, StatSnapshot,
     meters::Counter,

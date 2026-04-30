@@ -1,5 +1,8 @@
 [package]
 name = "daft-checkpoint"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Checkpointing for Daft"
 edition.workspace = true
 version.workspace = true
 
@@ -9,13 +12,13 @@ arrow-schema = {workspace = true}
 async-trait = {workspace = true}
 bytes = {workspace = true}
 chrono = {workspace = true}
-common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
-common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-scan = {path = "../daft-scan", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
+common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-io-config = {path = "../common/io-config", default-features = false, version = "0.3.0-dev0"}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-scan = {path = "../daft-scan", default-features = false, version = "0.3.0-dev0"}
+daft-schema = {path = "../daft-schema", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 parquet = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -27,6 +30,7 @@ snafu = {workspace = true}
 optional = true
 path = "../daft-io"
 default-features = false
+version = "0.3.0-dev0"
 
 [features]
 python = ["dep:pyo3", "common-checkpoint-config/python"]
@@ -34,8 +38,8 @@ s3 = ["daft-io"]
 test-utils = []
 
 [dev-dependencies]
-daft-checkpoint = {path = ".", features = ["test-utils", "s3"]}
-daft-core = {path = "../daft-core", default-features = false}
+daft-checkpoint = {path = ".", features = ["test-utils", "s3"], version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 tempfile = "3.23.0"
 tokio = {workspace = true, features = ["rt", "macros"]}

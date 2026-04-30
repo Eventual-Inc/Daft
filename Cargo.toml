@@ -2,62 +2,62 @@
 # Pin aws-lc-rs/sys to avoid __builtin_bswap MSVC linking bug on Windows (aws/aws-lc-rs#780)
 aws-lc-rs = "=1.15.2"
 aws-lc-sys = "=0.35.0"
-common-daft-config = {path = "src/common/daft-config", default-features = false}
-common-display = {path = "src/common/display", default-features = false}
-common-file-formats = {path = "src/common/file-formats", default-features = false}
-common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
-common-logging = {path = "src/common/logging", default-features = false}
-common-metrics = {path = "src/common/metrics", default-features = false}
-common-partitioning = {path = "src/common/partitioning", default-features = false}
-common-resource-request = {path = "src/common/resource-request", default-features = false}
-common-runtime = {path = "src/common/runtime", default-features = false}
-common-system-info = {path = "src/common/system-info", default-features = false}
-common-tracing = {path = "src/common/tracing", default-features = false}
-common-version = {path = "src/common/version", default-features = false}
-daft-ai = {path = "src/daft-ai", default-features = false}
-daft-algebra = {path = "src/daft-algebra", default-features = false}
-daft-catalog = {path = "src/daft-catalog", default-features = false}
-daft-checkpoint = {path = "src/daft-checkpoint", default-features = false}
-daft-cli = {path = "src/daft-cli", default-features = false}
-daft-compression = {path = "src/daft-compression", default-features = false}
-daft-context = {path = "src/daft-context", default-features = false}
-daft-core = {path = "src/daft-core", default-features = false}
-daft-csv = {path = "src/daft-csv", default-features = false}
-daft-text = {path = "src/daft-text", default-features = false}
-daft-dashboard = {path = "src/daft-dashboard", default-features = false}
-daft-distributed = {path = "src/daft-distributed", default-features = false}
-daft-dsl = {path = "src/daft-dsl", default-features = false}
-daft-file = {path = "src/daft-file", default-features = false}
-daft-functions = {path = "src/daft-functions"}
-daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
-daft-functions-json = {path = "src/daft-functions-json", default-features = false}
-daft-functions-list = {path = "src/daft-functions-list", default-features = false}
-daft-functions-serde = {path = "src/daft-functions-serde", default-features = false}
-daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false}
-daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
-daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
-daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
-daft-geo = {path = "src/daft-geo", default-features = false}
-daft-hash = {path = "src/daft-hash", default-features = false}
-daft-image = {path = "src/daft-image", default-features = false}
-daft-io = {path = "src/daft-io", default-features = false}
-daft-json = {path = "src/daft-json", default-features = false}
-daft-local-execution = {path = "src/daft-local-execution", default-features = false}
-daft-local-plan = {path = "src/daft-local-plan", default-features = false}
-daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
-daft-micropartition = {path = "src/daft-micropartition", default-features = false}
-daft-minhash = {path = "src/daft-minhash", default-features = false}
-daft-parquet = {path = "src/daft-parquet", default-features = false}
-daft-partition-refs = {path = "src/daft-partition-refs", default-features = false}
-daft-runners = {path = "src/daft-runners", default-features = false}
-daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
-daft-scan = {path = "src/daft-scan", default-features = false}
-daft-session = {path = "src/daft-session", default-features = false}
-daft-shuffles = {path = "src/daft-shuffles", default-features = false}
-daft-sql = {path = "src/daft-sql", default-features = false}
-daft-stats = {path = "src/daft-stats", default-features = false}
-daft-warc = {path = "src/daft-warc", default-features = false}
-daft-writers = {path = "src/daft-writers", default-features = false}
+common-daft-config = {path = "src/common/daft-config", default-features = false, version = "0.3.0-dev0"}
+common-display = {path = "src/common/display", default-features = false, version = "0.3.0-dev0"}
+common-file-formats = {path = "src/common/file-formats", default-features = false, version = "0.3.0-dev0"}
+common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false, version = "0.3.0-dev0"}
+common-logging = {path = "src/common/logging", default-features = false, version = "0.3.0-dev0"}
+common-metrics = {path = "src/common/metrics", default-features = false, version = "0.3.0-dev0"}
+common-partitioning = {path = "src/common/partitioning", default-features = false, version = "0.3.0-dev0"}
+common-resource-request = {path = "src/common/resource-request", default-features = false, version = "0.3.0-dev0"}
+common-runtime = {path = "src/common/runtime", default-features = false, version = "0.3.0-dev0"}
+common-system-info = {path = "src/common/system-info", default-features = false, version = "0.3.0-dev0"}
+common-tracing = {path = "src/common/tracing", default-features = false, version = "0.3.0-dev0"}
+common-version = {path = "src/common/version", default-features = false, version = "0.3.0-dev0"}
+daft-ai = {path = "src/daft-ai", default-features = false, version = "0.3.0-dev0"}
+daft-algebra = {path = "src/daft-algebra", default-features = false, version = "0.3.0-dev0"}
+daft-catalog = {path = "src/daft-catalog", default-features = false, version = "0.3.0-dev0"}
+daft-checkpoint = {path = "src/daft-checkpoint", default-features = false, version = "0.3.0-dev0"}
+daft-cli = {path = "src/daft-cli", default-features = false, version = "0.3.0-dev0"}
+daft-compression = {path = "src/daft-compression", default-features = false, version = "0.3.0-dev0"}
+daft-context = {path = "src/daft-context", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "src/daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-csv = {path = "src/daft-csv", default-features = false, version = "0.3.0-dev0"}
+daft-text = {path = "src/daft-text", default-features = false, version = "0.3.0-dev0"}
+daft-dashboard = {path = "src/daft-dashboard", default-features = false, version = "0.3.0-dev0"}
+daft-distributed = {path = "src/daft-distributed", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "src/daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-file = {path = "src/daft-file", default-features = false, version = "0.3.0-dev0"}
+daft-functions = {path = "src/daft-functions", version = "0.3.0-dev0"}
+daft-functions-binary = {path = "src/daft-functions-binary", default-features = false, version = "0.3.0-dev0"}
+daft-functions-json = {path = "src/daft-functions-json", default-features = false, version = "0.3.0-dev0"}
+daft-functions-list = {path = "src/daft-functions-list", default-features = false, version = "0.3.0-dev0"}
+daft-functions-serde = {path = "src/daft-functions-serde", default-features = false, version = "0.3.0-dev0"}
+daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false, version = "0.3.0-dev0"}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false, version = "0.3.0-dev0"}
+daft-functions-uri = {path = "src/daft-functions-uri", default-features = false, version = "0.3.0-dev0"}
+daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false, version = "0.3.0-dev0"}
+daft-geo = {path = "src/daft-geo", default-features = false, version = "0.3.0-dev0"}
+daft-hash = {path = "src/daft-hash", default-features = false, version = "0.3.0-dev0"}
+daft-image = {path = "src/daft-image", default-features = false, version = "0.3.0-dev0"}
+daft-io = {path = "src/daft-io", default-features = false, version = "0.3.0-dev0"}
+daft-json = {path = "src/daft-json", default-features = false, version = "0.3.0-dev0"}
+daft-local-execution = {path = "src/daft-local-execution", default-features = false, version = "0.3.0-dev0"}
+daft-local-plan = {path = "src/daft-local-plan", default-features = false, version = "0.3.0-dev0"}
+daft-logical-plan = {path = "src/daft-logical-plan", default-features = false, version = "0.3.0-dev0"}
+daft-micropartition = {path = "src/daft-micropartition", default-features = false, version = "0.3.0-dev0"}
+daft-minhash = {path = "src/daft-minhash", default-features = false, version = "0.3.0-dev0"}
+daft-parquet = {path = "src/daft-parquet", default-features = false, version = "0.3.0-dev0"}
+daft-partition-refs = {path = "src/daft-partition-refs", default-features = false, version = "0.3.0-dev0"}
+daft-runners = {path = "src/daft-runners", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "src/daft-recordbatch", default-features = false, version = "0.3.0-dev0"}
+daft-scan = {path = "src/daft-scan", default-features = false, version = "0.3.0-dev0"}
+daft-session = {path = "src/daft-session", default-features = false, version = "0.3.0-dev0"}
+daft-shuffles = {path = "src/daft-shuffles", default-features = false, version = "0.3.0-dev0"}
+daft-sql = {path = "src/daft-sql", default-features = false, version = "0.3.0-dev0"}
+daft-stats = {path = "src/daft-stats", default-features = false, version = "0.3.0-dev0"}
+daft-warc = {path = "src/daft-warc", default-features = false, version = "0.3.0-dev0"}
+daft-writers = {path = "src/daft-writers", default-features = false, version = "0.3.0-dev0"}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
@@ -95,6 +95,7 @@ python = [
   "daft-functions-utf8/python",
   "daft-functions/python",
   "daft-image/python",
+  "daft-io/azure",
   "daft-io/python",
   "daft-json/python",
   "daft-local-execution/python",
@@ -235,7 +236,26 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/daft-cli",
-  "src/daft-text"
+  "src/daft-text",
+  "src/common/arrow-ffi",
+  "src/common/file-formats",
+  "src/common/hashable-float-wrapper",
+  "src/common/image",
+  "src/common/logging",
+  "src/common/ndarray",
+  "src/common/py-serde",
+  "src/common/resource-request",
+  "src/common/runtime",
+  "src/common/tracing",
+  "src/common/version",
+  "src/daft-compression",
+  "src/daft-decoding",
+  "src/daft-distributed",
+  "src/daft-functions-serde",
+  "src/daft-geo",
+  "src/daft-minhash",
+  "src/daft-schema",
+  "src/daft-stats",
 ]
 exclude = [
   "examples/hello"
@@ -268,45 +288,45 @@ chrono-tz = "0.10.4"
 comfy-table = "7.1.1"
 criterion = {version = "0.7", features = ["html_reports"]}
 csv = "1.3"
-common-daft-config = {path = "src/common/daft-config"}
-common-display = {path = "src/common/display", default-features = false}
-common-error = {path = "src/common/error", default-features = false}
-common-file-formats = {path = "src/common/file-formats"}
-common-image = {path = "src/common/image", default-features = false}
-common-metrics = {path = "src/common/metrics"}
-common-pattern = {path = "src/common/pattern"}
-common-ndarray = {path = "src/common/ndarray"}
-common-runtime = {path = "src/common/runtime", default-features = false}
-daft-ai = {path = "src/daft-ai"}
-daft-algebra = {path = "src/daft-algebra"}
-daft-catalog = {path = "src/daft-catalog"}
-daft-context = {path = "src/daft-context"}
-daft-core = {path = "src/daft-core"}
-daft-groupby = {path = "src/daft-groupby"}
-daft-dsl = {path = "src/daft-dsl"}
-daft-ext-internal = {path = "src/daft-ext-internal"}
+common-daft-config = {path = "src/common/daft-config", version = "0.3.0-dev0"}
+common-display = {path = "src/common/display", default-features = false, version = "0.3.0-dev0"}
+daft-common-error = {path = "src/common/error", default-features = false, version = "0.3.0-dev0"}
+common-file-formats = {path = "src/common/file-formats", version = "0.3.0-dev0"}
+common-image = {path = "src/common/image", default-features = false, version = "0.3.0-dev0"}
+common-metrics = {path = "src/common/metrics", version = "0.3.0-dev0"}
+common-pattern = {path = "src/common/pattern", version = "0.3.0-dev0"}
+common-ndarray = {path = "src/common/ndarray", version = "0.3.0-dev0"}
+common-runtime = {path = "src/common/runtime", default-features = false, version = "0.3.0-dev0"}
+daft-ai = {path = "src/daft-ai", version = "0.3.0-dev0"}
+daft-algebra = {path = "src/daft-algebra", version = "0.3.0-dev0"}
+daft-catalog = {path = "src/daft-catalog", version = "0.3.0-dev0"}
+daft-context = {path = "src/daft-context", version = "0.3.0-dev0"}
+daft-core = {path = "src/daft-core", version = "0.3.0-dev0"}
+daft-groupby = {path = "src/daft-groupby", version = "0.3.0-dev0"}
+daft-dsl = {path = "src/daft-dsl", version = "0.3.0-dev0"}
+daft-ext-internal = {path = "src/daft-ext-internal", version = "0.3.0-dev0"}
 daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
 daft-ext = {path = "src/daft-ext", version = "0.1.1"}
-daft-file = {path = "src/daft-file"}
-daft-functions = {path = "src/daft-functions"}
-daft-functions-binary = {path = "src/daft-functions-binary"}
-daft-functions-json = {path = "src/daft-functions-json"}
-daft-functions-list = {path = "src/daft-functions-list"}
-daft-functions-temporal = {path = "src/daft-functions-temporal"}
-daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
-daft-functions-uri = {path = "src/daft-functions-uri"}
-daft-functions-utf8 = {path = "src/daft-functions-utf8"}
-daft-hash = {path = "src/daft-hash"}
-daft-io = {path = "src/daft-io"}
-daft-local-execution = {path = "src/daft-local-execution"}
-daft-logical-plan = {path = "src/daft-logical-plan"}
-daft-micropartition = {path = "src/daft-micropartition"}
-daft-runners = {path = "src/daft-runners"}
-daft-recordbatch = {path = "src/daft-recordbatch"}
-daft-scan = {path = "src/daft-scan"}
-daft-schema = {path = "src/daft-schema"}
-daft-session = {path = "src/daft-session"}
-daft-sql = {path = "src/daft-sql"}
+daft-file = {path = "src/daft-file", version = "0.3.0-dev0"}
+daft-functions = {path = "src/daft-functions", version = "0.3.0-dev0"}
+daft-functions-binary = {path = "src/daft-functions-binary", version = "0.3.0-dev0"}
+daft-functions-json = {path = "src/daft-functions-json", version = "0.3.0-dev0"}
+daft-functions-list = {path = "src/daft-functions-list", version = "0.3.0-dev0"}
+daft-functions-temporal = {path = "src/daft-functions-temporal", version = "0.3.0-dev0"}
+daft-functions-tokenize = {path = "src/daft-functions-tokenize", version = "0.3.0-dev0"}
+daft-functions-uri = {path = "src/daft-functions-uri", version = "0.3.0-dev0"}
+daft-functions-utf8 = {path = "src/daft-functions-utf8", version = "0.3.0-dev0"}
+daft-hash = {path = "src/daft-hash", version = "0.3.0-dev0"}
+daft-io = {path = "src/daft-io", version = "0.3.0-dev0"}
+daft-local-execution = {path = "src/daft-local-execution", version = "0.3.0-dev0"}
+daft-logical-plan = {path = "src/daft-logical-plan", version = "0.3.0-dev0"}
+daft-micropartition = {path = "src/daft-micropartition", version = "0.3.0-dev0"}
+daft-runners = {path = "src/daft-runners", version = "0.3.0-dev0"}
+daft-recordbatch = {path = "src/daft-recordbatch", version = "0.3.0-dev0"}
+daft-scan = {path = "src/daft-scan", version = "0.3.0-dev0"}
+daft-schema = {path = "src/daft-schema", version = "0.3.0-dev0"}
+daft-session = {path = "src/daft-session", version = "0.3.0-dev0"}
+daft-sql = {path = "src/daft-sql", version = "0.3.0-dev0"}
 dashmap = "6.1.0"
 educe = "0.6.0"
 futures = "0.3.30"
@@ -349,7 +369,7 @@ simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.9.0", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
+spark-connect = {path = "src/generated/spark-connect", default-features = false, version = "0.3.0-dev0"}
 sqlparser = "0.59.0"
 sysinfo = "0.38.4"
 tango-bench = "0.6.0"
@@ -485,3 +505,6 @@ zero_sized_map_values = "allow"
 [workspace.package]
 edition = "2024"
 version = "0.3.0-dev0"
+license = "Apache-2.0"
+repository = "https://github.com/Eventual-Inc/Daft"
+homepage = "https://www.getdaft.io"

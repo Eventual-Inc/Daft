@@ -255,7 +255,7 @@ impl PipelineNodeImpl for ScanSourceNode {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_metrics::{Meter, StatSnapshot};
     use daft_scan::{
         CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,

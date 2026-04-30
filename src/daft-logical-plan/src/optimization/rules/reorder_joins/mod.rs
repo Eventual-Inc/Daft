@@ -8,7 +8,7 @@ mod relation_set;
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use join_graph::JoinGraphBuilder;
 

@@ -48,7 +48,7 @@ impl PyCheckpointStore {
                 let checkpoints: Vec<_> = stream.try_collect().await?;
                 Ok(checkpoints.into_iter().map(PyCheckpoint::from).collect())
             })
-            .map_err(|e: common_error::DaftError| {
+            .map_err(|e: daft_common_error::DaftError| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
             })
         })
@@ -65,7 +65,7 @@ impl PyCheckpointStore {
                 let files: Vec<_> = stream.try_collect().await?;
                 Ok(files.into_iter().map(PyFileMetadata::from).collect())
             })
-            .map_err(|e: common_error::DaftError| {
+            .map_err(|e: daft_common_error::DaftError| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
             })
         })

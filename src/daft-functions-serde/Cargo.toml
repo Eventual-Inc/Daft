@@ -1,16 +1,16 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
 arrow = {workspace = true}
 arrow-json = {workspace = true}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
 serde = {workspace = true}
 serde_json = {workspace = true}
 typetag = {workspace = true}
 
 [features]
 python = [
-  "common-error/python",
+  "daft-common-error/python",
   "daft-core/python",
   "daft-dsl/python"
 ]
@@ -20,4 +20,8 @@ workspace = true
 
 [package]
 name = "daft-functions-serde"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Serde functions for Daft"
 edition.workspace = true
+version.workspace = true

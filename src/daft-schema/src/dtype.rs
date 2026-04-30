@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow_schema::IntervalUnit;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -1135,7 +1135,7 @@ impl From<&ImageMode> for DataType {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use rstest::rstest;
 
     use crate::{

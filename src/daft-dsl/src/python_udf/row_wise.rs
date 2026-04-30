@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_hashable_float_wrapper::FloatWrapper as HashableF64;
 use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
@@ -159,7 +159,7 @@ impl RowWisePyFn {
         args: &[Series],
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
-        use common_error::DaftError;
+        use daft_common_error::DaftError;
 
         use crate::functions::python::OnError;
         let num_rows = args
@@ -312,7 +312,7 @@ impl RowWisePyFn {
         num_rows: usize,
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
-        use common_error::DaftError;
+        use daft_common_error::DaftError;
         use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
 

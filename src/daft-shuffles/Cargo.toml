@@ -3,14 +3,14 @@ arrow-schema = {workspace = true}
 arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
 async-channel = "2.5.0"
-common-error = {path = "../common/error", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
-daft-writers = {path = "../daft-writers", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-io = {path = "../daft-io", default-features = false, version = "0.3.0-dev0"}
+daft-micropartition = {path = "../daft-micropartition", default-features = false, version = "0.3.0-dev0"}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false, version = "0.3.0-dev0"}
+daft-schema = {path = "../daft-schema", default-features = false, version = "0.3.0-dev0"}
+daft-writers = {path = "../daft-writers", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 tokio = {workspace = true, features = ["fs", "io-util"]}
 tonic = {workspace = true}
@@ -20,5 +20,8 @@ workspace = true
 
 [package]
 name = "daft-shuffles"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Shuffle operations for Daft"
 edition.workspace = true
 version.workspace = true

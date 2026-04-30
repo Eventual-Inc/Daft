@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::UInt64Array;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState};

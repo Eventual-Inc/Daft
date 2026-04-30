@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     prelude::{BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},

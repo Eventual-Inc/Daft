@@ -1,4 +1,4 @@
-use common_error::{DaftResult, ensure};
+use daft_common_error::{DaftResult, ensure};
 use daft_core::{
     datatypes::{DataType, Field},
     prelude::{BinaryArray, FixedSizeBinaryArray, Schema},
@@ -20,7 +20,7 @@ use crate::kernels::BinaryArrayExtension;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BinaryDecode;
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, common_macros::FunctionArgs)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, daft_common_macros::FunctionArgs)]
 struct Args<T> {
     input: T,
     codec: Codec,

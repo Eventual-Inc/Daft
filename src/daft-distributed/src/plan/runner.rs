@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::QueryID;
 use common_runtime::{JoinSet, create_join_set};
 use futures::{Stream, StreamExt};

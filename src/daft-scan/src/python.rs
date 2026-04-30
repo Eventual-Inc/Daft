@@ -298,7 +298,7 @@ pub mod pylib {
     use std::{default, sync::Arc};
 
     use common_daft_config::PyDaftExecutionConfig;
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_py_serde::impl_bincode_py_state_serialization;
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};

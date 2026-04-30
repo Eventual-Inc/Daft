@@ -1,5 +1,5 @@
 use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::arrow::comparison::build_multi_array_is_equal, prelude::*};
 use daft_dsl::{
     AggExpr, WindowBoundary, WindowFrame,

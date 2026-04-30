@@ -90,7 +90,7 @@ macro_rules! ensure {
 #[macro_export]
 macro_rules! value_err {
     ($($arg:tt)*) => {
-        return Err(common_error::DaftError::ValueError(format!($($arg)*)))
+        return Err(daft_common_error::DaftError::ValueError(format!($($arg)*)))
     };
 }
 

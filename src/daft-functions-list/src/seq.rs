@@ -1,5 +1,5 @@
 use arrow::buffer::OffsetBuffer;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::{DataType, Field},
     prelude::{Schema, Series, UInt64Array},

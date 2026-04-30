@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use common_file_formats::FileFormat;
 use common_io_config::{GravitinoConfig, IOConfig};
 use futures::stream::BoxStream;

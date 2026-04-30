@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     datatypes::InferDataType,
     prelude::{DataType, Field, Schema},

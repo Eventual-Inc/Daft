@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
 use daft_dsl::functions::AggFnHandle;
@@ -650,8 +650,8 @@ mod tests {
             &self,
             _args: daft_dsl::functions::FunctionArgs<daft_dsl::ExprRef>,
             _schema: &Schema,
-        ) -> common_error::DaftResult<daft_dsl::functions::BuiltinScalarFnVariant> {
-            Err(common_error::DaftError::ValueError(
+        ) -> daft_common_error::DaftResult<daft_dsl::functions::BuiltinScalarFnVariant> {
+            Err(daft_common_error::DaftError::ValueError(
                 "mock: not callable".into(),
             ))
         }
@@ -693,7 +693,7 @@ mod tests {
     mod agg_tests {
         use std::sync::Arc;
 
-        use common_error::DaftResult;
+        use daft_common_error::DaftResult;
         use daft_core::prelude::*;
         use daft_dsl::functions::{AggFn, AggFnHandle, State};
 

@@ -1,7 +1,7 @@
 [dependencies]
 arrow = {workspace = true}
-common-error = {workspace = true}
-daft-core = {path = "../daft-core", default-features = false}
+daft-common-error = {workspace = true}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
 hashbrown = {workspace = true}
 smallvec = {workspace = true}
 
@@ -11,4 +11,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-groupby"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Group-by operations for Daft"
 version = {workspace = true}

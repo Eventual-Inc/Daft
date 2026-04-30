@@ -74,7 +74,7 @@ mod tests {
         sync::Arc,
     };
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col};
 

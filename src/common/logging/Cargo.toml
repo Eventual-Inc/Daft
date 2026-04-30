@@ -8,4 +8,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-logging"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Logging utilities for Daft"
 version = {workspace = true}

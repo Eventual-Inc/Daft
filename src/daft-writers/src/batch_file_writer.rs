@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use arrow_array::RecordBatch as ArrowRecordBatch;
 use async_trait::async_trait;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_micropartition::MicroPartition;

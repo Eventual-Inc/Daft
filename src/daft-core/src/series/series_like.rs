@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use arrow::array::ArrayRef;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 
 use super::Series;
 use crate::{

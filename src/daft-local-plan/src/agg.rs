@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::{CountMode, DataType, Field, Schema};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
@@ -384,7 +384,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 final_stage(final_col);
             }
             AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
-                return Err(common_error::DaftError::InternalError(
+                return Err(daft_common_error::DaftError::InternalError(
                     "AggFnMap / AggFnReduce must not appear in the top-level aggregation list"
                         .to_string(),
                 ));

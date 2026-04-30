@@ -1,4 +1,4 @@
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use snafu::Snafu;
 
 pub mod local;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 
 use crate::{
@@ -80,7 +80,7 @@ impl RewriteOffset {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use daft_schema::{dtype::DataType, field::Field};
     use rstest::rstest;
 

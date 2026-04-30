@@ -9,7 +9,7 @@ use std::{
 };
 
 use common_display::table_display::StrValue;
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_image::{CowImage, Image};
 #[cfg(feature = "python")]
@@ -665,7 +665,7 @@ pub trait FromLiteral: Sized {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use super::{FromLiteral, Literal};
 

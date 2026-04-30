@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult, ensure};
+use daft_common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::ops::DaftIsNan,
     prelude::{DataType, Field, Schema},

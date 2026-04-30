@@ -1,7 +1,7 @@
 use std::{collections::HashSet, num::ParseIntError, str::Utf8Error, sync::Arc};
 
 use base64::{DecodeError, Engine, engine::general_purpose};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_io::{IOConfig, get_io_client};
 use rustc_hash::FxHashMap;

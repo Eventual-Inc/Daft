@@ -1,11 +1,11 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
-common-py-serde = {path = "../py-serde", default-features = false}
+daft-common-error = {path = "../error", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../py-serde", default-features = false, version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
+python = ["dep:pyo3", "daft-common-error/python", "common-py-serde/python"]
 
 [lints]
 workspace = true
@@ -13,4 +13,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-file-formats"
+repository = {workspace = true}
+license = {workspace = true}
+description = "File format definitions for Daft"
 version = {workspace = true}

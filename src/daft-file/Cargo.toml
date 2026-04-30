@@ -1,9 +1,9 @@
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
-daft-schema = {path = "../daft-schema", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
+daft-io = {path = "../daft-io", default-features = false, version = "0.3.0-dev0"}
+daft-schema = {path = "../daft-schema", default-features = false, version = "0.3.0-dev0"}
 mime_guess = "2.0.5"
 pyo3 = {workspace = true, optional = true}
 common-runtime.workspace = true
@@ -13,7 +13,7 @@ url.workspace = true
 
 [features]
 python = [
-  "common-error/python",
+  "daft-common-error/python",
   "daft-dsl/python",
   "daft-io/python",
   "daft-core/python",
@@ -25,5 +25,8 @@ workspace = true
 
 [package]
 name = "daft-file"
+repository = {workspace = true}
+license = {workspace = true}
+description = "File operations for Daft"
 edition.workspace = true
 version.workspace = true

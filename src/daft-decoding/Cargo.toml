@@ -3,7 +3,7 @@ arrow-array = {workspace = true}
 arrow-schema = {workspace = true}
 atoi_simd = "0.16.1"
 csv = {workspace = true}
-daft-schema = {path = "../daft-schema"}
+daft-schema = {path = "../daft-schema", version = "0.3.0-dev0"}
 chrono = {workspace = true}
 csv-async = "1.2.6"
 fast-float2 = "0.2.3"
@@ -15,4 +15,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-decoding"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Data decoding for Daft"
 version = {workspace = true}

@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use arrow::array::builder::ArrayBuilder;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;

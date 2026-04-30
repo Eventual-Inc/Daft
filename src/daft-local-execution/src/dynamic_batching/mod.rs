@@ -3,7 +3,7 @@ mod latency_constrained_strategy;
 mod static_strategy;
 use std::time::Duration;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 pub use dyn_strategy::*;
 pub use latency_constrained_strategy::*;

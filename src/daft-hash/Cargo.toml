@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {workspace = true}
+daft-common-error = {workspace = true}
 mur3 = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 sha1 = {workspace = true}
@@ -11,4 +11,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-hash"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Hashing functions for Daft"
 version = {workspace = true}

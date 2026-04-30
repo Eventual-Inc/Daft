@@ -1,6 +1,6 @@
 use std::iter::RepeatN;
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
     prelude::{DaftIntegerType, DaftNumericType, DataType, FullNull, Utf8Array},

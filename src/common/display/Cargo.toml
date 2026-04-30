@@ -15,4 +15,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-display"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Display utilities for Daft"
 version = {workspace = true}

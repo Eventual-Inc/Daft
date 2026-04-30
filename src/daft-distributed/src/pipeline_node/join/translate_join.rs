@@ -1,6 +1,6 @@
 use std::{cmp::max, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
 use daft_logical_plan::{
     ClusteringSpec, JoinStrategy, JoinType,
@@ -184,7 +184,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             (JoinType::Right, _) => false,
             (JoinType::Inner, left_is_larger) => left_is_larger,
             (JoinType::Outer, _) => {
-                return Err(common_error::DaftError::ValueError(
+                return Err(daft_common_error::DaftError::ValueError(
                     "Broadcast join does not support outer joins.".to_string(),
                 ));
             }

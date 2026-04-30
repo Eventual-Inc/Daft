@@ -1,5 +1,5 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
+daft-common-error = {path = "../error", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 log = {workspace = true}
 oneshot = "0.1.8"
@@ -14,7 +14,7 @@ rand = {workspace = true}
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",
-  "common-error/python"
+  "daft-common-error/python"
 ]
 
 [lints]
@@ -23,4 +23,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-runtime"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Async runtime utilities for Daft"
 version = {workspace = true}

@@ -6,7 +6,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
@@ -325,7 +325,7 @@ async fn run_execution_loop(
             }
             Some(join_result) = runtime_handle.join_next() => {
                 if let Err(e) = join_result {
-                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
+                    if matches!(&e, daft_common_error::DaftError::JoinError(source) if source.is_cancelled()) {
                         break (Ok(()), QueryEndState::Canceled);
                     }
                     break (Err(e), QueryEndState::Failed);
@@ -484,7 +484,7 @@ impl NativeExecutor {
                     result_sender: result_tx,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
-                    return Err(common_error::DaftError::InternalError(
+                    return Err(daft_common_error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
                 }

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinSide, prelude::*};

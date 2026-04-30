@@ -234,7 +234,7 @@ impl FullNull for PythonArray {
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
 
     use crate::{
         array::{FixedSizeListArray, StructArray, ops::full::FullNull},

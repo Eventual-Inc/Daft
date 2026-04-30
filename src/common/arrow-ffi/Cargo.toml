@@ -9,4 +9,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-arrow-ffi"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Arrow FFI utilities for Daft"
 version = {workspace = true}

@@ -13,5 +13,8 @@ workspace = true
 
 [package]
 edition = {workspace = true}
-name = "common-macros"
+name = "daft-common-macros"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Procedural macros for Daft"
 version = {workspace = true}

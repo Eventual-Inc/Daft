@@ -15,7 +15,7 @@ use arrow::{
     error::ArrowError,
 };
 use arrow_row::{RowConverter, SortField};
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use num_traits::{NumCast, ToPrimitive};
 
 use super::{DaftCompare, DaftLogical, as_arrow::AsArrow};
@@ -1013,7 +1013,7 @@ impl_scalar_compare!(
 #[cfg(test)]
 mod tests {
     use arrow::buffer::NullBuffer;
-    use common_error::{DaftError, DaftResult};
+    use daft_common_error::{DaftError, DaftResult};
     use rstest::rstest;
 
     use crate::{

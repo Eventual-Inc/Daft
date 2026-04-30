@@ -1,7 +1,7 @@
 [dependencies]
 arrow-array = {workspace = true}
 arrow-schema = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
 serde_arrow = {version = "0.13.7", features = ["arrow-57"]}
 sketches-ddsketch = {workspace = true}
 snafu = {workspace = true}
@@ -12,4 +12,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-sketch"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Sketch data structures for Daft"
 version = {workspace = true}

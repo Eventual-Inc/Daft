@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_io_runtime};

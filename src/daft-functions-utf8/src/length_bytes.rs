@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema, UInt64Array, Utf8Array},
     series::{IntoSeries, Series},

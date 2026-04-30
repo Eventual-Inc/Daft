@@ -1,6 +1,6 @@
 [dependencies]
-common-io-config = {path = "../io-config", default-features = false}
-common-py-serde = {path = "../py-serde", default-features = false, optional = true}
+common-io-config = {path = "../io-config", default-features = false, version = "0.3.0-dev0"}
+common-py-serde = {path = "../py-serde", default-features = false, optional = true, version = "0.3.0-dev0"}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 
@@ -13,4 +13,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-daft-config"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Configuration types for Daft"
 version = {workspace = true}

@@ -1,8 +1,8 @@
 [dependencies]
-common-error = {path = "../error", default-features = false}
+daft-common-error = {path = "../error", default-features = false, version = "0.3.0-dev0"}
 
 [features]
-python = ["common-error/python"]
+python = ["daft-common-error/python"]
 
 [lints]
 workspace = true
@@ -10,4 +10,7 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "common-treenode"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Tree node traversal for Daft"
 version = {workspace = true}

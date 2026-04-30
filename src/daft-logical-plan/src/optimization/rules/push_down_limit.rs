@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_dsl::{Expr, ExprRef, functions::scalar::ScalarFn};
 
@@ -232,7 +232,7 @@ impl PushDownLimit {
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
     use daft_scan::Pushdowns;

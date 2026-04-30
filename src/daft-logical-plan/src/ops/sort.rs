@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, exprs_to_schema};
 use itertools::Itertools;

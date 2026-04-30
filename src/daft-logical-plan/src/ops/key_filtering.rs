@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use educe::Educe;
 #[cfg(feature = "python")]

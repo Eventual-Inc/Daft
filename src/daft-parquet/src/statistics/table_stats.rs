@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use daft_core::prelude::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use indexmap::IndexMap;

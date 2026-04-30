@@ -1,10 +1,10 @@
 [dependencies]
 arrow = {workspace = true}
 base64 = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-common-macros = {path = "../common/macros"}
-daft-core = {path = "../daft-core", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+daft-common-macros = {path = "../common/macros", version = "0.3.0-dev0"}
+daft-core = {path = "../daft-core", default-features = false, version = "0.3.0-dev0"}
+daft-dsl = {path = "../daft-dsl", default-features = false, version = "0.3.0-dev0"}
 flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
 hex = {workspace = true}
 serde = {workspace = true}
@@ -13,7 +13,7 @@ simdutf8.workspace = true
 
 [features]
 python = [
-  "common-error/python",
+  "daft-common-error/python",
   "daft-core/python",
   "daft-dsl/python"
 ]
@@ -23,5 +23,8 @@ workspace = true
 
 [package]
 name = "daft-functions-binary"
+repository = {workspace = true}
+license = {workspace = true}
+description = "Binary functions for Daft"
 edition.workspace = true
 version.workspace = true

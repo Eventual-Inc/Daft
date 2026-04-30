@@ -1,6 +1,6 @@
 use std::{any::Any, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]

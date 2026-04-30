@@ -7,15 +7,15 @@ aws-credential-types = {version = "1.2.7", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.119.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
-azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
-azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
+azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false, optional = true}
+azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false, optional = true}
+azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false, optional = true}
+azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false, optional = true}
 bytes = {workspace = true}
-common-error = {path = "../common/error", default-features = false}
-common-file-formats = {path = "../common/file-formats", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
-common-runtime = {path = "../common/runtime", default-features = false}
+daft-common-error = {path = "../common/error", default-features = false, version = "0.3.0-dev0"}
+common-file-formats = {path = "../common/file-formats", default-features = false, version = "0.3.0-dev0"}
+common-io-config = {path = "../common/io-config", default-features = false, version = "0.3.0-dev0"}
+common-runtime = {path = "../common/runtime", default-features = false, version = "0.3.0-dev0"}
 futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
@@ -57,9 +57,10 @@ md5 = "0.8.0"
 tempfile = "3.23.0"
 
 [features]
+azure = ["dep:azure_core", "dep:azure_identity", "dep:azure_storage", "dep:azure_storage_blobs"]
 python = [
   "dep:pyo3",
-  "common-error/python",
+  "daft-common-error/python",
   "common-io-config/python",
   "common-file-formats/python"
 ]
@@ -70,4 +71,6 @@ workspace = true
 [package]
 edition = {workspace = true}
 name = "daft-io"
+license = {workspace = true}
+description = "I/O operations for Daft"
 version = {workspace = true}

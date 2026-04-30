@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Write};
 
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_treenode::TreeNodeVisitor;
 use daft_dsl::resolved_col;
 use serde_json::json;
@@ -229,7 +229,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
+    use daft_common_error::DaftResult;
     use common_treenode::TreeNode;
     use daft_core::join::JoinType;
     use daft_dsl::{lit, resolved_col};

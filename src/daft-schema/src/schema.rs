@@ -8,7 +8,7 @@ use common_display::{
     DisplayAs,
     table_display::{make_comfy_table, make_schema_vertical_table},
 };
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, prelude::DataType};

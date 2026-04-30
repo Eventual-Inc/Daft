@@ -1,6 +1,6 @@
 use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::MetricsCollector;
 #[cfg(feature = "python")]
 use common_metrics::python::PyOperatorMetrics;

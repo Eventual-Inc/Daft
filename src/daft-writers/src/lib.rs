@@ -33,7 +33,7 @@ use std::{
 use async_trait::async_trait;
 use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;

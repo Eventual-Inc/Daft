@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common_error::{DaftError, DaftResult};
+use daft_common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{IOConfig, get_io_client, multipart::MultipartBuffer};
 use parking_lot::Mutex;

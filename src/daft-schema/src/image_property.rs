@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use common_error::DaftError;
+use daft_common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

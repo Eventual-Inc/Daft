@@ -7,7 +7,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{Meter, QueryID, StatSnapshot};
 use common_partitioning::PartitionRef;
 use common_runtime::JoinSet;

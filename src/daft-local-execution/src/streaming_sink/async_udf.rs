@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, atomic::Ordering},
 };
 
-use common_error::DaftResult;
+use daft_common_error::DaftResult;
 use common_metrics::{
     Counter, Meter, StatSnapshot,
     operator_metrics::OperatorCounter,
