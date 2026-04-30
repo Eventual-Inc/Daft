@@ -154,8 +154,12 @@ impl OptimizerRule for RewriteCheckpointSource {
             // Right: scan over checkpointed key files. The on-disk schema uses
             // a canonical column name (`SEALED_KEYS_COLUMN`) regardless of
             // what the source calls its key column — see `stage_keys` in the
-            // store impl. This means renaming the source's key column between
-            // runs does not invalidate previously sealed key files.
+            // store impl. This means a user can rename the source's key column
+            // between runs (updating `cfg.key_column` to match) and existing
+            // sealed key files stay valid — only the *physical* on-disk format
+            // is decoupled from the source schema, not the config. If
+            // `cfg.key_column` ever disagrees with the source's actual schema,
+            // `get_field` below errors loudly at rule time.
             let source_key_field = source.output_schema.get_field(&cfg.key_column)?;
             let canonical_key_field =
                 Field::new(SEALED_KEYS_COLUMN, source_key_field.dtype.clone());
@@ -238,10 +242,13 @@ mod tests {
         // Use a source column name that is *not* the canonical sealed-keys
         // column name, so assertions that the right side of the anti-join
         // uses the canonical name (rather than the source's name) catch the
-        // decoupling.
+        // decoupling. Use `Int64` for the key dtype (instead of the typical
+        // `Utf8`) so the dtype-propagation assertion downstream is
+        // load-bearing — a regression that hardcoded Utf8 for the canonical
+        // field would fail loudly here.
         let scan_op = dummy_scan_operator(vec![
-            Field::new("file_id", DataType::Utf8),
-            Field::new("value", DataType::Int64),
+            Field::new("file_id", DataType::Int64),
+            Field::new("value", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op).build();
         if let Some(cfg) = cfg {
@@ -324,6 +331,26 @@ mod tests {
         assert_eq!(
             physical.scan_state.get_scan_op().0.name(),
             "BlobStoreCheckpointedKeysScanOperator"
+        );
+
+        // Right plan's *actual schema* must carry the canonical column name
+        // with the source key column's dtype — guards against a regression
+        // that wires `kfc` correctly but builds the schema with the source's
+        // column name (or the wrong dtype). A schema mismatch would only
+        // surface at execution time, when the optimizer test wouldn't catch it.
+        let right_schema = join.right.schema();
+        let canonical_field = right_schema
+            .get_field(SEALED_KEYS_COLUMN)
+            .expect("right plan schema must carry the canonical sealed-keys column");
+        assert_eq!(
+            canonical_field.dtype,
+            DataType::Int64,
+            "canonical column dtype must propagate from the source key column dtype, not be hardcoded"
+        );
+        assert_eq!(
+            right_schema.len(),
+            1,
+            "right plan schema should have only the canonical key column"
         );
     }
 }
