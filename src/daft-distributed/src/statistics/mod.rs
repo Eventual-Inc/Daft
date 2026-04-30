@@ -264,9 +264,6 @@ impl StatisticsManager {
     }
 
     fn dispatch_operator_start(&self, node_info: &Arc<NodeInfo>) {
-        if self.query_id.is_empty() {
-            return;
-        }
         let header = event_header(self.query_id.clone());
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         // Fire on the local (actor-process) context so dashboard /
@@ -293,9 +290,6 @@ impl StatisticsManager {
     }
 
     fn dispatch_operator_end(&self, node_info: &Arc<NodeInfo>) {
-        if self.query_id.is_empty() {
-            return;
-        }
         let header = event_header(self.query_id.clone());
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         let event = Event::OperatorEnd(OperatorEndEvent {

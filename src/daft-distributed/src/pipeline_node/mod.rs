@@ -507,6 +507,9 @@ impl Stream for TaskBuilderStream {
 pub(crate) mod test_helpers;
 
 #[cfg(test)]
+mod lifecycle_tests;
+
+#[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Arc;
 
