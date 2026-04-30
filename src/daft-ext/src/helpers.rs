@@ -72,7 +72,7 @@ macro_rules! impl_helpers {
                 LargeListArray, LargeStringArray, PrimitiveArray,
                 builder::{
                     BooleanBuilder, FixedSizeListBuilder, LargeBinaryBuilder, LargeListBuilder,
-                    PrimitiveBuilder, StringBuilder,
+                    LargeStringBuilder, PrimitiveBuilder, StringBuilder,
                 },
                 types::{
                     ArrowPrimitiveType, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type,
@@ -80,6 +80,17 @@ macro_rules! impl_helpers {
                 },
             };
             pub use $arrow_schema_crate::{DataType, Field as ArrowField};
+
+            pub type Int8Array = PrimitiveArray<Int8Type>;
+            pub type Int16Array = PrimitiveArray<Int16Type>;
+            pub type Int32Array = PrimitiveArray<Int32Type>;
+            pub type Int64Array = PrimitiveArray<Int64Type>;
+            pub type UInt8Array = PrimitiveArray<UInt8Type>;
+            pub type UInt16Array = PrimitiveArray<UInt16Type>;
+            pub type UInt32Array = PrimitiveArray<UInt32Type>;
+            pub type UInt64Array = PrimitiveArray<UInt64Type>;
+            pub type Float32Array = PrimitiveArray<Float32Type>;
+            pub type Float64Array = PrimitiveArray<Float64Type>;
         }
     };
 }

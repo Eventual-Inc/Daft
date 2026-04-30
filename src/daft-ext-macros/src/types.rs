@@ -254,8 +254,8 @@ pub fn map_return_type(ty: &Type) -> syn::Result<ReturnTypeMapping> {
             finish: quote! { #cg::Arc::new(__builder.finish()) as #cg::ArrayRef },
         }),
         "String" => Ok(ReturnTypeMapping {
-            data_type: quote! { #cg::DataType::Utf8 },
-            builder_init: quote! { let mut __builder = #cg::StringBuilder::with_capacity(__len, __len * 32); },
+            data_type: quote! { #cg::DataType::LargeUtf8 },
+            builder_init: quote! { let mut __builder = #cg::LargeStringBuilder::with_capacity(__len, __len * 32); },
             append_value: quote! { __builder.append_value(__val); },
             append_null: quote! { __builder.append_null(); },
             finish: quote! { #cg::Arc::new(__builder.finish()) as #cg::ArrayRef },
