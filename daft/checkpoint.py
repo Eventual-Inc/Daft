@@ -17,7 +17,7 @@ class CheckpointStore:
     On re-run, rows with keys already in the store are skipped.
 
     Args:
-        prefix: URI prefix for the store (e.g. ``s3://bucket/checkpoints``).
+        path: URI for the store root (e.g. ``s3://bucket/checkpoints``).
         io_config: Optional IO configuration for the object store backend.
 
     Example:
@@ -38,14 +38,21 @@ class CheckpointStore:
           anti-join must be able to see the newly checkpointed keys.
     """
 
+    _path: str
     _config: CheckpointStoreConfig
     _store: Any
 
-    def __init__(self, prefix: str, io_config: IOConfig | None = None) -> None:
+    def __init__(self, path: str, io_config: IOConfig | None = None) -> None:
         if io_config is None:
             io_config = _IOConfig()
-        self._config = CheckpointStoreConfig.object_store(prefix, io_config)
+        self._path = path
+        self._config = CheckpointStoreConfig.object_store(path, io_config)
         self._store = None
+
+    @property
+    def path(self) -> str:
+        """URI for the store root (e.g. ``s3://bucket/checkpoints``)."""
+        return self._path
 
     @property
     def config(self) -> CheckpointStoreConfig:
