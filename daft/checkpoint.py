@@ -36,6 +36,26 @@ class CheckpointStore:
         - **Strong consistency.** The backing object store must provide
           read-after-write consistency. After ``checkpoint()``, the next run's
           anti-join must be able to see the newly checkpointed keys.
+
+    Semantics of the ``on=`` column:
+        - **Checkpoint identity, not a primary key.** A key value records "this
+          input has already been processed" — it is not a uniqueness constraint
+          on the destination. Daft does not enforce uniqueness of the column;
+          duplicates within a single input are passed through to the sink.
+        - **First-write-wins on collisions.** If a re-run produces rows with a
+          key that was committed in a prior run, the source filter drops those
+          rows on the way in — the prior run's data is preserved unchanged.
+          This is checkpoint semantics, not upsert; if your workflow needs to
+          *update* previously-written rows, use a different mechanism.
+        - **NULL keys are deduped like any other value.** Daft's anti-join
+          uses NULL-equals-NULL semantics (not SQL's NULL != NULL), so a row
+          with NULL in the key column is recorded once on the first run and
+          dropped on subsequent runs the same way a non-null key would be.
+        - **One store per destination.** A single ``CheckpointStore`` should
+          be paired with a single destination (one Iceberg table, one Delta
+          table, etc.). Sharing a store across distinct sinks causes the
+          second sink to silently see the first sink's keys as already-
+          processed and drop them. Use distinct paths per destination.
     """
 
     _path: str
