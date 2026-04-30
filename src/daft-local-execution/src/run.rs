@@ -162,6 +162,7 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
+    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String)>>>,
 }
 
 #[cfg_attr(
@@ -466,6 +467,7 @@ impl NativeExecutor {
                     enqueue_input_sender: enqueue_input_tx,
                     stats_handle,
                     active_input_ids: HashSet::new(),
+                    skipped_corrupt_files: ctx.skipped_corrupt_files.clone(),
                 },
             );
         }
@@ -522,17 +524,30 @@ impl NativeExecutor {
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
                 plan_state.task_handle.await??;
+                let skipped = plan_state
+                    .skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
-                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                Ok(stats
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         } else {
             let stats_handle = plan_state.stats_handle.clone();
+            let skipped_corrupt_files = plan_state.skipped_corrupt_files.clone();
             Ok(async move {
+                let skipped = skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 Ok(stats_handle
                     .take_input_snapshot(input_id)
                     .await
-                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         }

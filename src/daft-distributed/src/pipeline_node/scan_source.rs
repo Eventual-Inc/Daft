@@ -294,6 +294,7 @@ mod tests {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         };
         let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
         let storage_config = Arc::new(StorageConfig::new_internal(false, None));

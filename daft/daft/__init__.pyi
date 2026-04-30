@@ -266,6 +266,7 @@ class ParquetSourceConfig:
         field_id_mapping: dict[int, PyField] | None = None,
         row_groups: list[list[int]] | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class CsvSourceConfig:
@@ -292,6 +293,7 @@ class CsvSourceConfig:
         comment: str | None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class JsonSourceConfig:
@@ -2328,6 +2330,8 @@ class PyExecutionStats:
     def query_plan(self) -> str | None: ...
     def encode(self) -> bytes: ...
     def to_recordbatch(self) -> PyRecordBatch: ...
+    @property
+    def skipped_corrupt_files(self) -> list[tuple[str, str]]: ...
 
 class PyResultReceiver:
     def __aiter__(self) -> PyResultReceiver: ...

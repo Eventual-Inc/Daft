@@ -30,6 +30,7 @@ def read_csv(
     io_config: IOConfig | None = None,
     file_path_column: str | None = None,
     hive_partitioning: bool = False,
+    ignore_corrupt_files: bool = False,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
 ) -> DataFrame:
@@ -48,6 +49,9 @@ def read_csv(
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        ignore_corrupt_files: If True, corrupt or unreadable CSV files are silently skipped instead
+            of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after collection.
+            Defaults to False.
 
     Returns:
         DataFrame: parsed DataFrame
@@ -84,6 +88,7 @@ def read_csv(
         allow_variable_columns=allow_variable_columns,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     storage_config = StorageConfig(True, io_config)

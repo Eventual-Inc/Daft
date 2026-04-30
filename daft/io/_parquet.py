@@ -29,6 +29,7 @@ def read_parquet(
     file_path_column: str | None = None,
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: str | TimeUnit | None = None,
+    ignore_corrupt_files: bool = False,
     _multithreaded_io: bool | None = None,
     _chunk_size: int | None = None,  # A hidden parameter for testing purposes.
     checkpoint: "CheckpointStore | None" = None,
@@ -45,6 +46,11 @@ def read_parquet(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
+        ignore_corrupt_files: If True, corrupt or unreadable Parquet files are silently skipped
+            instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after
+            collection. Only genuine format errors (bad magic bytes, truncated footer, corrupt
+            row-group data) are ignored; network errors and permission errors are still raised.
+            Defaults to False.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
@@ -86,7 +92,12 @@ def read_parquet(
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
     file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
+        ParquetSourceConfig(
+            coerce_int96_timestamp_unit=pytimeunit,
+            row_groups=row_groups,
+            chunk_size=_chunk_size,
+            ignore_corrupt_files=ignore_corrupt_files,
+        )
     )
     storage_config = StorageConfig(multithreaded_io, io_config)
 

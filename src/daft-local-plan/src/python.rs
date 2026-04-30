@@ -121,6 +121,11 @@ impl PyExecutionStats {
     fn to_recordbatch(&self) -> PyResult<PyRecordBatch> {
         Ok(self.inner.to_recordbatch()?.into())
     }
+
+    #[getter]
+    pub fn skipped_corrupt_files(&self) -> Vec<(String, String)> {
+        self.inner.skipped_corrupt_files.clone()
+    }
 }
 
 impl From<ExecutionStats> for PyExecutionStats {

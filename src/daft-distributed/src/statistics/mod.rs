@@ -117,6 +117,7 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 pub struct StatisticsManager {
     runtime_node_managers: Arc<HashMap<NodeID, RuntimeNodeManager>>,
     subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
+    skipped_corrupt_files: Mutex<Vec<(String, String)>>,
 }
 
 impl StatisticsManager {
@@ -152,10 +153,19 @@ impl StatisticsManager {
         Ok(Arc::new(Self {
             runtime_node_managers,
             subscribers: Mutex::new(subscribers),
+            skipped_corrupt_files: Mutex::new(vec![]),
         }))
     }
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
+        // Accumulate skipped files from completed tasks so they are available in export_metrics().
+        if let TaskEvent::Completed { ref stats, .. } = event
+            && !stats.skipped_corrupt_files.is_empty()
+            && let Ok(mut v) = self.skipped_corrupt_files.lock()
+        {
+            v.extend(stats.skipped_corrupt_files.iter().cloned());
+        }
+
         for node_id in &event.context().node_ids {
             let node_manager = self
                 .runtime_node_managers
@@ -180,6 +190,11 @@ impl StatisticsManager {
             .values()
             .map(RuntimeNodeManager::export_snapshot)
             .collect();
-        ExecutionStats::new("".into(), nodes)
+        let skipped_corrupt_files = self
+            .skipped_corrupt_files
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default();
+        ExecutionStats::new("".into(), nodes).with_skipped_corrupt_files(skipped_corrupt_files)
     }
 }
