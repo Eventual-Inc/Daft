@@ -18,6 +18,7 @@ import daft
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
 from pyiceberg.schema import Schema
 from pyiceberg.table import Transaction
@@ -328,4 +329,41 @@ def test_user_snapshot_properties_pass_through(iceberg_table, parquet_input, che
     assert summary["release"] == "v1"
     # Daft markers also injected — user props don't displace them.
     assert summary["daft.checkpoint-store"] == checkpoint_store.path
-    assert "daft.checkpoint-query" in summary.additional_properties
+    assert summary.get("daft.checkpoint-query") is not None
+
+
+def test_retry_loop_recovers_from_transient_commit_failure(iceberg_table, parquet_input, checkpoint_store):
+    """The defensive retry loop must recover from a transient commit failure.
+
+    Patch `Transaction.commit_transaction` so the first invocation raises
+    `CommitFailedException` and the second calls through to the real method.
+    The helper's retry loop should swallow attempt 1's failure, loop, and
+    commit successfully on attempt 2 — yielding exactly one snapshot.
+    """
+    original_commit = Transaction.commit_transaction
+    call_count = {"n": 0}
+
+    def fail_first_then_succeed(self, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise CommitFailedException("simulated transient catalog conflict")
+        return original_commit(self, *args, **kwargs)
+
+    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    with patch.object(Transaction, "commit_transaction", fail_first_then_succeed):
+        df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
+
+    # The retry loop must have actually fired — otherwise the test is vacuous.
+    assert call_count["n"] >= 2, "expected at least two commit attempts"
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1, "exactly one snapshot must land despite the transient failure"
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not pending, "all entries should be Committed after a successful retry"
+
+    summary = iceberg_table.metadata.snapshots[0].summary
+    assert summary["daft.checkpoint-store"] == checkpoint_store.path
+    assert summary.get("added-records") == "3"
+
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c"]
