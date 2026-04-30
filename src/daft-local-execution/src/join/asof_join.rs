@@ -18,6 +18,11 @@ use daft_dsl::{
     join::{get_right_cols_to_drop, infer_asof_join_schema},
 };
 use daft_groupby::IntoGroups;
+
+type ByKeyHashesAndComparator<'a> = (
+    &'a UInt64Array,
+    &'a (dyn Fn(usize, usize) -> bool + Send + Sync),
+);
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use tracing::Span;
@@ -165,10 +170,7 @@ impl AsofJoinFinalizedBuildState {
     fn find_left_group(
         &self,
         right_idx: usize,
-        by_key_hashes_and_comparator: Option<(
-            &UInt64Array,
-            &(dyn Fn(usize, usize) -> bool + Send + Sync),
-        )>,
+        by_key_hashes_and_comparator: Option<ByKeyHashesAndComparator<'_>>,
     ) -> Option<usize> {
         match by_key_hashes_and_comparator {
             None => Some(0),
