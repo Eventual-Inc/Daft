@@ -343,7 +343,6 @@ fn daft_func_impl(
     let fn_name = &func.sig.ident;
     let struct_name = format_ident!("{}", snake_to_pascal(&fn_name.to_string()));
     let ffi_name_str = override_name.unwrap_or_else(|| fn_name.to_string());
-    let fn_name_str = fn_name.to_string();
     let mut name_bytes = ffi_name_str.clone().into_bytes();
     name_bytes.push(0);
     let name_lit = Literal::byte_string(&name_bytes);
@@ -498,6 +497,30 @@ fn daft_func_impl(
         }
     };
 
+    // Generate type validation for return_field (enables overload resolution).
+    let type_validations: Vec<_> = params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let expected_dtype = &p.mapping.data_type;
+            let idx = i;
+            quote! {
+                {
+                    let __field = ::daft_ext::prelude::import_field(&args[#idx])?;
+                    let __expected = #expected_dtype;
+                    if *__field.data_type() != __expected {
+                        return Err(::daft_ext::prelude::DaftError::TypeError(
+                            format!(
+                                "{}: argument {} has type {:?}, expected {:?}",
+                                #ffi_name_str, #idx, __field.data_type(), __expected,
+                            ),
+                        ));
+                    }
+                }
+            }
+        })
+        .collect();
+
     Ok(quote! {
         #func
 
@@ -516,12 +539,15 @@ fn daft_func_impl(
                     return Err(::daft_ext::prelude::DaftError::TypeError(
                         format!(
                             "{}: expected {} argument(s), got {}",
-                            #fn_name_str, #param_count, args.len()
+                            #ffi_name_str, #param_count, args.len()
                         ),
                     ));
                 }
+                // Validate input types for overload resolution.
+                #(#type_validations)*
+
                 let name = if args.is_empty() {
-                    #fn_name_str.to_string()
+                    #ffi_name_str.to_string()
                 } else {
                     ::daft_ext::prelude::import_field(&args[0])?
                         .name()
@@ -539,7 +565,7 @@ fn daft_func_impl(
                     return Err(::daft_ext::prelude::DaftError::TypeError(
                         format!(
                             "{}: expected {} argument(s) in call, got {}",
-                            #fn_name_str, #param_count, args.len()
+                            #ffi_name_str, #param_count, args.len()
                         ),
                     ));
                 }
@@ -548,7 +574,9 @@ fn daft_func_impl(
                     .map(::daft_ext::prelude::import_array)
                     .collect::<::daft_ext::prelude::DaftResult<_>>()?;
 
-                let __len = #cg::Array::len(arrays[0].as_ref());
+                let __len = if arrays.is_empty() { 0 } else {
+                    #cg::Array::len(arrays[0].as_ref())
+                };
 
                 #(#array_downcasts)*
 
@@ -559,7 +587,7 @@ fn daft_func_impl(
                 }
 
                 let __output = #finish;
-                ::daft_ext::prelude::export_array(__output, #fn_name_str)
+                ::daft_ext::prelude::export_array(__output, #ffi_name_str)
             }
         }
     })
