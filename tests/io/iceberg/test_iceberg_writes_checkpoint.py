@@ -84,6 +84,7 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
     # still in Checkpointed state because mark_committed never ran.
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 1
+    snapshot_id_after_crash = iceberg_table.metadata.snapshots[0].snapshot_id
     pending_after_crash = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
     assert pending_after_crash, "expected Checkpointed entries to remain after crash"
     crashed_query_id = pending_after_crash[0].query_id
@@ -95,6 +96,14 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
     # Verify: still exactly one snapshot, no double-write.
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 1, "recovery must not produce a second snapshot"
+
+    # Verify: it's the *same* snapshot — recovery did not retire the original
+    # and replace it with a fresh one. The "exactly 1 snapshot" check above
+    # would still pass if recovery had committed a new snapshot whose data
+    # superseded the first; the snapshot_id continuity check rules that out.
+    assert iceberg_table.metadata.snapshots[0].snapshot_id == snapshot_id_after_crash, (
+        "recovery must keep the original snapshot, not replace it with a new one"
+    )
 
     # Verify: previously-Checkpointed entries are now Committed.
     still_checkpointed = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
