@@ -263,6 +263,20 @@ impl StatisticsManager {
         }
     }
 
+    /// Best-effort end-of-query flush: fire a synthetic `OperatorEnd` for
+    /// every node that fired `OperatorStart` but hasn't yet emitted End.
+    /// Use this on query teardown / shutdown paths where in-flight tasks
+    /// may have been aborted without producing terminal `TaskEvent`s
+    /// (which would have decremented `pending_tasks` and triggered End
+    /// naturally). Idempotent — already-ended nodes are skipped.
+    pub fn flush_started_operators(&self) {
+        for mgr in self.runtime_node_managers.values() {
+            if mgr.force_end() {
+                self.dispatch_operator_end(mgr.node_info());
+            }
+        }
+    }
+
     fn dispatch_operator_start(&self, node_info: &Arc<NodeInfo>) {
         let header = event_header(self.query_id.clone());
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));

@@ -421,6 +421,11 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
+        # Operator-lifecycle events synthesized during `finish()` for plans
+        # that have already been popped from `curr_result_gens`. The driver
+        # picks these up on its next `take_pending_operator_events` call so
+        # forced-shutdown End events still reach driver-side subscribers.
+        self.final_operator_events: dict[str, list[tuple[str, str, int, str, int | None, float]]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
@@ -452,7 +457,15 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            stats: PyExecutionStats = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
+            result_gen = self.curr_result_gens[plan_id]
+            # `finish()` synthesizes any missing OperatorEnd events for
+            # nodes that started but never naturally drained. Drain the
+            # buffer one last time before popping the result_gen so the
+            # driver's next `take_pending_operator_events` still sees them.
+            stats: PyExecutionStats = result_gen.finish()  # type: ignore[attr-defined]
+            leftover = result_gen.take_pending_operator_events()  # type: ignore[attr-defined]
+            if leftover:
+                self.final_operator_events[plan_id] = leftover
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
             return stats
@@ -474,11 +487,18 @@ class RemoteFlotillaRunner:
         timestamp_secs)` tuples. The driver wrapper polls this and re-dispatches
         each event on its own `DaftContext` so subscribers attached on the
         driver can observe per-operator start/end timings.
+
+        Also drains any final events stashed during `get_next_partition`'s
+        post-`finish()` cleanup (covers the case where End events are
+        synthesized for orphan started-but-not-ended operators after the
+        `result_gen` has been popped).
         """
+        events: list[tuple[str, str, int, str, int | None, float]] = []
         result_gen = self.curr_result_gens.get(plan_id)
-        if result_gen is None:
-            return []
-        return result_gen.take_pending_operator_events()  # type: ignore[attr-defined]
+        if result_gen is not None:
+            events.extend(result_gen.take_pending_operator_events())  # type: ignore[attr-defined]
+        events.extend(self.final_operator_events.pop(plan_id, []))
+        return events
 
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"

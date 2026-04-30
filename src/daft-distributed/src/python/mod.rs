@@ -69,6 +69,12 @@ impl PythonPartitionRefStream {
     }
 
     fn finish(&self) -> PyResult<PyExecutionStats> {
+        // Best-effort: synthesize OperatorEnd for any node that fired
+        // OperatorStart but didn't naturally drain its in-flight tasks
+        // (e.g. forced shutdown / aborted scheduler). Idempotent — if
+        // every node already finalized through the normal path, this is
+        // a no-op.
+        self.statistics_manager.flush_started_operators();
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }

@@ -132,6 +132,22 @@ impl RuntimeNodeManager {
         }
     }
 
+    /// Force-finalize the lifecycle for this node: if it ever started but
+    /// hasn't ended yet, mark it ended and tell the caller to fire a
+    /// synthetic `OperatorEnd`. Used at query teardown to flush operators
+    /// whose in-flight tasks were aborted before emitting terminal
+    /// `TaskEvent`s (e.g. scheduler crash, KeyboardInterrupt, actor death).
+    /// Idempotent: returns `false` if already ended or never started.
+    pub fn force_end(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        if s.started && !s.ended {
+            s.ended = true;
+            true
+        } else {
+            false
+        }
+    }
+
     /// The distributed node id (cheap accessor — avoids snapshotting when a
     /// caller only needs to route by id).
     pub fn node_id(&self) -> usize {
