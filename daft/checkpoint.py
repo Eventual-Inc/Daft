@@ -56,6 +56,14 @@ class CheckpointStore:
           table, etc.). Sharing a store across distinct sinks causes the
           second sink to silently see the first sink's keys as already-
           processed and drop them. Use distinct paths per destination.
+        - **Source and sink must share the same store.** Within a single
+          execution, the ``checkpoint=`` argument passed to the source
+          (e.g. ``daft.read_parquet(checkpoint=store, on=...)``) and the
+          one passed to the sink (e.g. ``df.write_iceberg(checkpoint=store)``)
+          must point at the same path. The source stages keys/files into
+          the store; the sink reads them out at commit time. If the two
+          paths diverge the sink can't see what the pipeline staged and
+          silently commits nothing.
     """
 
     _path: str
