@@ -193,9 +193,15 @@ fn daft_func_batch_impl(
                         ),
                     ));
                 }
-                let first_field = ::daft_ext::prelude::import_field(&args[0])?;
+                let name = if args.is_empty() {
+                    #fn_name_str.to_string()
+                } else {
+                    ::daft_ext::prelude::import_field(&args[0])?
+                        .name()
+                        .clone()
+                };
                 let field = ::daft_ext::helpers::new_field(
-                    first_field.name(),
+                    &name,
                     #return_dtype,
                 );
                 ::daft_ext::prelude::export_field(&field)
@@ -205,6 +211,14 @@ fn daft_func_batch_impl(
                 &self,
                 args: Vec<::daft_ext::abi::ArrowData>,
             ) -> ::daft_ext::prelude::DaftResult<::daft_ext::abi::ArrowData> {
+                if args.len() != #param_count {
+                    return Err(::daft_ext::prelude::DaftError::TypeError(
+                        format!(
+                            "{}: expected {} argument(s) in call, got {}",
+                            #fn_name_str, #param_count, args.len()
+                        ),
+                    ));
+                }
                 let arrays: Vec<_> = args
                     .into_iter()
                     .map(::daft_ext::prelude::import_array)
