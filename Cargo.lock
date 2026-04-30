@@ -2599,6 +2599,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-stats",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
