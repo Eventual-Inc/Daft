@@ -91,7 +91,7 @@ from .similarity import (
     jaccard_similarity,
 )
 
-from .image_file import image_file_metadata, decode_image_file
+from .image_file_ import image_file_metadata, decode_image_file
 from .file_ import file, file_path, file_size, video_file, audio_file, image_file, guess_mime_type
 
 from .image import (
