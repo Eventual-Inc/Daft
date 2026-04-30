@@ -5041,9 +5041,9 @@ class DataFrame:
         self,
         n: int = 8,
         format: PreviewFormat | None = None,
-        verbose: bool = False,
-        max_width: int | None = 30,
-        align: PreviewAlign = "auto",
+        verbose: bool | None = None,
+        max_width: int | None = None,
+        align: PreviewAlign | None = None,
         columns: list[PreviewColumn] | None = None,
     ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.

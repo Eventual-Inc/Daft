@@ -227,7 +227,7 @@ def test_resolve_show_defaults_from_env(monkeypatch):
     monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
     monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
 
-    format, verbose, max_width, align = resolve_show_defaults(None, False, 30, "auto")
+    format, verbose, max_width, align = resolve_show_defaults(None, None, None, None)
 
     assert format == "markdown"
     assert verbose is True
@@ -246,6 +246,18 @@ def test_resolve_show_defaults_respects_explicit_args(monkeypatch):
     assert format == "grid"
     assert verbose is True
     assert max_width == 50
+    assert align == "left"
+
+
+def test_resolve_show_defaults_respects_explicit_default_values(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    _, verbose, max_width, align = resolve_show_defaults(None, False, 30, "left")
+
+    assert verbose is False
+    assert max_width == 30
     assert align == "left"
 
 

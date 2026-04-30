@@ -36,13 +36,14 @@ PreviewAlign = Literal[
 
 _SHOW_DEFAULT_VERBOSE = False
 _SHOW_DEFAULT_MAX_WIDTH = 30
-_SHOW_DEFAULT_ALIGN: PreviewAlign = "auto"
+_SHOW_DEFAULT_ALIGN: PreviewAlign = "left"
 
 _SHOW_FORMATS = {"fancy", "plain", "simple", "grid", "markdown", "html"}
 _SHOW_ALIGNS = {"auto", "left", "center", "right"}
 _SHOW_TRUTHY = {"1", "true", "yes", "on"}
 _SHOW_FALSY = {"0", "false", "no", "off"}
-_SHOW_NONE = {"none", "null", "off"}
+_SHOW_NONE = {"none", "null"}
+
 
 def _parse_bool_env(name: str) -> bool | None:
     value = os.environ.get(name)
@@ -94,9 +95,9 @@ def _parse_show_align_env() -> PreviewAlign | None:
 
 def resolve_show_defaults(
     format: PreviewFormat | None,
-    verbose: bool,
+    verbose: bool | None,
     max_width: int | None,
-    align: PreviewAlign,
+    align: PreviewAlign | None,
 ) -> tuple[PreviewFormat | None, bool, int | None, PreviewAlign]:
     """Resolve .show() defaults from env vars when arguments are left at defaults.
 
@@ -111,20 +112,20 @@ def resolve_show_defaults(
         if env_format is not None:
             format = env_format
 
-    if verbose is _SHOW_DEFAULT_VERBOSE:
+    if verbose is None:
         env_verbose = _parse_bool_env("DAFT_SHOW_VERBOSE")
-        if env_verbose is not None:
-            verbose = env_verbose
+        verbose = env_verbose if env_verbose is not None else _SHOW_DEFAULT_VERBOSE
 
-    if max_width == _SHOW_DEFAULT_MAX_WIDTH:
+    if max_width is None:
         max_width_set, env_max_width = _parse_max_width_env("DAFT_SHOW_MAX_WIDTH")
         if max_width_set:
             max_width = env_max_width
+        else:
+            max_width = _SHOW_DEFAULT_MAX_WIDTH
 
-    if align == _SHOW_DEFAULT_ALIGN:
+    if align is None:
         env_align = _parse_show_align_env()
-        if env_align is not None:
-            align = env_align
+        align = env_align if env_align is not None else _SHOW_DEFAULT_ALIGN
 
     return format, verbose, max_width, align
 
