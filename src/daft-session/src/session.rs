@@ -452,12 +452,18 @@ impl Session {
     pub fn load_and_init_extension(&self, path: &Path) -> DaftResult<()> {
         let module = daft_ext_internal::module::load_module(path)?;
 
+        use daft_dsl::functions::{ScalarFunctionFactory, ScalarUDF};
+        use daft_ext_internal::function::{
+            OverloadedScalarFunctionFactory, into_scalar_function_handle,
+        };
+
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
-            pending: Mutex<
-                HashMap<String, daft_ext_internal::function::OverloadedScalarFunctionFactory>,
-            >,
+            // Tracks overload sets being built during a single extension init.
+            // When the same function name is registered multiple times, variants
+            // accumulate here and the session binding is updated each time.
+            pending: Mutex<HashMap<String, OverloadedScalarFunctionFactory>>,
         }
 
         unsafe extern "C" fn define_function_cb(
@@ -470,24 +476,17 @@ impl Session {
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = daft_ext_internal::function::into_scalar_function_handle(
-                ffi,
-                init_ctx.module.clone(),
-            );
+            let handle = into_scalar_function_handle(ffi, init_ctx.module.clone());
             let session = unsafe { &*init_ctx.session };
             let mut pending = init_ctx.pending.lock().unwrap();
             if let Some(overloaded) = pending.get_mut(&name) {
                 overloaded.add_variant(handle);
-                let factory: Arc<dyn daft_dsl::functions::ScalarFunctionFactory> =
-                    Arc::new(overloaded.clone());
+                let factory: Arc<dyn ScalarFunctionFactory> = Arc::new(overloaded.clone());
                 session.attach_function(name, factory);
             } else {
-                let overloaded = daft_ext_internal::function::OverloadedScalarFunctionFactory::new(
-                    daft_dsl::functions::ScalarUDF::name(handle.as_ref()),
-                    handle,
-                );
-                let factory: Arc<dyn daft_dsl::functions::ScalarFunctionFactory> =
-                    Arc::new(overloaded.clone());
+                let overloaded =
+                    OverloadedScalarFunctionFactory::new(ScalarUDF::name(handle.as_ref()), handle);
+                let factory: Arc<dyn ScalarFunctionFactory> = Arc::new(overloaded.clone());
                 pending.insert(name.clone(), overloaded);
                 session.attach_function(name, factory);
             }

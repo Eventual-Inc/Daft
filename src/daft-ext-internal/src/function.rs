@@ -275,8 +275,8 @@ pub fn into_scalar_function_handle(
 /// Overloaded function factory holding multiple type-signature variants.
 ///
 /// At plan time, probes each variant's `get_return_field` with the actual input
-/// types — the first variant that succeeds is selected. This follows the same
-/// overload resolution model as PostgreSQL.
+/// types — the first variant whose arguments are an exact match is selected.
+/// No implicit coercions are attempted.
 #[derive(Clone)]
 pub struct OverloadedScalarFunctionFactory {
     name: &'static str,
