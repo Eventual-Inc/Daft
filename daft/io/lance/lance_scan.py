@@ -17,7 +17,6 @@ from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
-from ..pushdowns import SupportsPushdownFilters
 from .point_lookup import detect_point_lookup_columns
 from .utils import combine_filters_to_arrow
 
@@ -127,7 +126,7 @@ def _lancedb_count_result_function(
     return (result_batch for _ in [1])
 
 
-class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
+class LanceDBScanOperator(ScanOperator):
     def __init__(
         self,
         ds: "lance.LanceDataset",
@@ -135,8 +134,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         include_fragment_id: bool | None = False,
     ):
         self._ds = ds
-        self._pushed_filters: list[PyExpr] | None = None
-        self._remaining_filters: list[PyExpr] | None = None
         self._fragment_group_size = fragment_group_size
         self._include_fragment_id = include_fragment_id
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
@@ -152,23 +149,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def name(self) -> str:
         return "LanceDBScanOperator"
 
-    def display_name(self) -> str:
-        return f"LanceDBScanOperator({self._ds.uri})"
-
     def schema(self) -> Schema:
         return self._schema
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
-
-    def can_absorb_filter(self) -> bool:
-        return isinstance(self, SupportsPushdownFilters)
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return True
 
     def supports_count_pushdown(self) -> bool:
         """Returns whether this scan operator supports count pushdown."""
@@ -178,33 +163,23 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         """Returns the count modes supported by this scan operator."""
         return [CountMode.All]
 
-    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
-        return self
-
     def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
             f"Schema = {self.schema()}",
         ]
 
-    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
-        pushed = []
-        remaining = []
-
+    def _classify_filters(self, filters: list[PyExpr] | None) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Split filters into Arrow-convertible (pushed) and remaining."""
+        if not filters:
+            return [], []
+        pushed, remaining = [], []
         for expr in filters:
             try:
                 Expression._from_pyexpr(expr).to_arrow_expr()
                 pushed.append(expr)
             except NotImplementedError:
                 remaining.append(expr)
-
-        if pushed:
-            self._pushed_filters = pushed
-        else:
-            self._pushed_filters = None
-
-        self._remaining_filters = remaining if remaining else None
-
         return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
@@ -224,6 +199,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 required_columns.append("fragment_id")
 
         nearest_option = self._nearest_default_option()
+        pushed_filters, remaining_filters = self._classify_filters(pushdowns.filters)
 
         # Check if there is a count aggregation pushdown
         if (
@@ -237,21 +213,20 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     "Count mode %s is not supported for pushdown, falling back to original logic",
                     pushdowns.aggregation_count_mode(),
                 )
-                yield from self._create_regular_scan_tasks(pushdowns, required_columns, nearest_option)
+                yield from self._create_regular_scan_tasks(pushdowns, pushed_filters, remaining_filters, required_columns, nearest_option)
             else:
-                yield from self._create_count_rows_scan_task(pushdowns)
+                yield from self._create_count_rows_scan_task(pushdowns, pushed_filters)
         # Check if there is a limit pushdown and no filters and no nearest search
         elif (
             pushdowns.limit is not None
-            and self._pushed_filters is None
             and pushdowns.filters is None
             and nearest_option is None
         ):
             yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
-            yield from self._create_regular_scan_tasks(pushdowns, required_columns, nearest_option)
+            yield from self._create_regular_scan_tasks(pushdowns, pushed_filters, remaining_filters, required_columns, nearest_option)
 
-    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns, pushed_filters: list[PyExpr]) -> Iterator[ScanTask]:
         """Create scan task for counting rows."""
         fields = pushdowns.aggregation_required_column_names()
         new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
@@ -259,7 +234,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         yield ScanTask.python_factory_func_scan_task(
             module=_lancedb_count_result_function.__module__,
             func_name=_lancedb_count_result_function.__name__,
-            func_args=(self._ds.uri, open_kwargs, fields[0], self._combine_filters_to_arrow()),
+            func_args=(self._ds.uri, open_kwargs, fields[0], combine_filters_to_arrow(pushed_filters)),
             schema=new_schema._schema,
             num_rows=1,
             size_bytes=None,
@@ -272,7 +247,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self, pushdowns: PyPushdowns, required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create scan tasks optimized for limit pushdown with no filters."""
-        assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
+        assert pushdowns.filters is None, "Expected no filters when creating scan tasks with limit and no filters"
         assert pushdowns.limit is not None, "Expected a limit when creating scan tasks with limit and no filters"
 
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
@@ -322,12 +297,17 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 )
 
     def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: list[str] | None, nearest_option: dict[str, Any] | None = None
+        self,
+        pushdowns: PyPushdowns,
+        pushed_filters: list[PyExpr],
+        remaining_filters: list[PyExpr],
+        required_columns: list[str] | None,
+        nearest_option: dict[str, Any] | None = None,
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
         fragments = self._ds.get_fragments()
-        pushed_expr = self._combine_filters_to_arrow()
+        pushed_expr = combine_filters_to_arrow(pushed_filters)
 
         def _python_factory_func_scan_task(
             fragment_ids: list[int] | None = None,
@@ -344,7 +324,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     fragment_ids,
                     required_columns,
                     pushed_expr,
-                    self._compute_limit_pushdown_with_filter(pushdowns),
+                    self._compute_limit_pushdown_with_filter(pushdowns, remaining_filters),
                     self._include_fragment_id,
                     nearest_option,
                 ),
@@ -357,7 +337,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             )
 
         # Use index-driven scan for point lookups with BTREE indices or nearest search.
-        if self._should_use_index_for_point_lookup() or nearest_option is not None:
+        if self._should_use_index_for_point_lookup(pushed_filters) or nearest_option is not None:
             yield _python_factory_func_scan_task(fragment_ids=None, num_rows=None, size_bytes=None)
             return
 
@@ -403,31 +383,28 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 fragment_ids = [fragment.fragment_id for fragment in fragment_group]
                 yield _python_factory_func_scan_task(fragment_ids, num_rows=num_rows, size_bytes=size_bytes)
 
-    def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
-        return combine_filters_to_arrow(self._pushed_filters)
-
-    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> int | None:
+    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns, remaining_filters: list[PyExpr]) -> int | None:
         """Decide whether to push down `limit` when filters are present."""
         if not self._enable_strict_filter_pushdown and pushdowns.filters is not None:
             return None
 
-        if self._enable_strict_filter_pushdown and self._remaining_filters is not None:
+        if self._enable_strict_filter_pushdown and remaining_filters:
             return None
 
         return pushdowns.limit
 
-    def _should_use_index_for_point_lookup(self) -> bool:
+    def _should_use_index_for_point_lookup(self, pushed_filters: list[PyExpr]) -> bool:
         """Use index-driven scan only when all point-lookup columns have BTREE.
 
         Otherwise fall back to fragment enumeration. Passing fragment_ids=None signals
         index-driven scan; factory omits fragments so Lance selects them using indices.
         """
-        if not self._pushed_filters:
+        if not pushed_filters:
             return False
 
         try:
             point_columns = detect_point_lookup_columns(
-                [Expression._from_pyexpr(expr) for expr in self._pushed_filters]
+                [Expression._from_pyexpr(expr) for expr in pushed_filters]
             )
         except (ValueError, TypeError, AttributeError) as e:
             logger.warning("Failed to analyze filters for point lookup: %s", e, exc_info=True)

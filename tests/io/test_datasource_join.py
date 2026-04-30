@@ -2,10 +2,10 @@
 
 Regression test for https://github.com/Eventual-Inc/Daft/issues/6500
 
-When ``can_absorb_select()`` returns ``False`` (the default for custom
-DataSource implementations), the optimizer may push down an incomplete
-column set that omits columns required by downstream operators such as
-joins and aggregations.  This caused a HashJoin schema assertion panic.
+For custom DataSource implementations that do not absorb projection
+pushdowns, the optimizer may push down an incomplete column set that
+omits columns required by downstream operators such as joins and
+aggregations. This caused a HashJoin schema assertion panic.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
 # ---------------------------------------------------------------------------
-# Minimal in-memory DataSource (can_absorb_select=False by default)
+# Minimal in-memory DataSource that does not absorb projections.
 # ---------------------------------------------------------------------------
 
 

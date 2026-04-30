@@ -160,7 +160,7 @@ impl OptimizerBuilder {
                 vec![
                     Box::new(DropRepartition::new()),
                     Box::new(DropIntoBatches::new()),
-                    Box::new(PushDownFilter::new(self.config.strict_pushdown)),
+                    Box::new(PushDownFilter),
                     Box::new(PushDownProjection::new()),
                     Box::new(EliminateCrossJoin::new()),
                     Box::new(SimplifyNullFilteredJoin::new()),
@@ -205,9 +205,7 @@ impl OptimizerBuilder {
             ),
             // --- Push down aggregations ---
             RuleBatch::new(
-                vec![Box::new(PushDownAggregation::new(
-                    self.config.strict_pushdown,
-                ))],
+                vec![Box::new(PushDownAggregation)],
                 RuleExecutionStrategy::Once,
             ),
             // --- Shard pushdowns ---
@@ -247,7 +245,7 @@ impl OptimizerBuilder {
         self.rule_batches.push(RuleBatch::new(
             vec![
                 Box::new(ReorderJoins::new(cfg.clone(), use_dp_ccp)),
-                Box::new(PushDownFilter::new(self.config.strict_pushdown)),
+                Box::new(PushDownFilter),
                 Box::new(PushDownProjection::new()),
                 Box::new(EnrichWithStats::new(cfg)),
             ],

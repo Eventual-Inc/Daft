@@ -80,9 +80,6 @@ class SQLScanOperator(ScanOperator):
     def name(self) -> str:
         return "SQLScanOperator"
 
-    def display_name(self) -> str:
-        return f"SQLScanOperator(sql={self.sql}, conn={self.conn})"
-
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
 
@@ -142,15 +139,6 @@ class SQLScanOperator(ScanOperator):
             scan_tasks.append(scan_task)
 
         return iter(scan_tasks)
-
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return False
 
     def _attempt_schema_read(
         self,

@@ -139,9 +139,6 @@ class IcebergScanOperator(ScanOperator):
     def name(self) -> str:
         return "IcebergScanOperator"
 
-    def display_name(self) -> str:
-        return f"IcebergScanOperator({'.'.join(self._table.name())})"
-
     def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
@@ -168,7 +165,7 @@ class IcebergScanOperator(ScanOperator):
         return [
             self.display_name(),
             f"Schema = {self._schema}",
-            f"Partitioning keys = {self.partitioning_keys}",
+            f"Partitioning keys = {self.partitioning_keys()}",
             # TODO(Clark): Improve repr of storage config here.
             f"Storage config = {self._storage_config}",
         ]
@@ -311,15 +308,6 @@ class IcebergScanOperator(ScanOperator):
         except Exception as e:
             logger.warning("Error checking for delete files: %s, disabling count pushdown as precaution", e)
             return True
-
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return True
 
     def supports_count_pushdown(self) -> bool:
         return not self._has_delete_files()

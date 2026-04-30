@@ -446,16 +446,6 @@ impl ScanOperator for GlobScanOperator {
         Some(self.generated_fields.clone())
     }
 
-    fn can_absorb_filter(&self) -> bool {
-        false
-    }
-    fn can_absorb_select(&self) -> bool {
-        false
-    }
-    fn can_absorb_limit(&self) -> bool {
-        false
-    }
-
     fn can_absorb_shard(&self) -> bool {
         false
     }

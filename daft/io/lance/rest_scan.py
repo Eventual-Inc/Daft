@@ -13,7 +13,6 @@ from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
-from ..pushdowns import SupportsPushdownFilters
 from .rest_config import LanceRestConfig
 
 if TYPE_CHECKING:
@@ -153,7 +152,7 @@ def _lance_rest_count_function(
         raise
 
 
-class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
+class LanceRestScanOperator(ScanOperator):
     """Scan operator for Lance tables accessed via REST API."""
 
     def __init__(
@@ -166,8 +165,6 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
         self._rest_config = rest_config
         self._namespace = namespace
         self._table_name = table_name
-        self._pushed_filters: list[PyExpr] | None = None
-        self._remaining_filters: list[PyExpr] | None = None
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
 
         # Get schema from REST API or use provided schema
@@ -179,23 +176,11 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
     def name(self) -> str:
         return "LanceRestScanOperator"
 
-    def display_name(self) -> str:
-        return f"LanceRestScanOperator({self._rest_config.base_url}/{self._namespace}/{self._table_name})"
-
     def schema(self) -> Schema:
         return self._schema
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
-
-    def can_absorb_filter(self) -> bool:
-        return isinstance(self, SupportsPushdownFilters)
-
-    def can_absorb_limit(self) -> bool:
-        return True
-
-    def can_absorb_select(self) -> bool:
-        return True
 
     def supports_count_pushdown(self) -> bool:
         """Returns whether this scan operator supports count pushdown."""
@@ -205,35 +190,23 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
         """Returns the count modes supported by this scan operator."""
         return [CountMode.All]
 
-    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
-        return self
-
     def multiline_display(self) -> list[str]:
         return [
             self.display_name(),
             f"Schema = {self.schema()}",
         ]
 
-    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
-        """Push filters down to the REST API."""
-        pushed = []
-        remaining = []
-
+    def _classify_filters(self, filters: list[PyExpr] | None) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Split filters into Arrow-convertible (pushed) and remaining."""
+        if not filters:
+            return [], []
+        pushed, remaining = [], []
         for expr in filters:
             try:
-                # Try to convert to SQL-like filter expression for REST API
                 Expression._from_pyexpr(expr).to_arrow_expr()
                 pushed.append(expr)
             except NotImplementedError:
                 remaining.append(expr)
-
-        if pushed:
-            self._pushed_filters = pushed
-        else:
-            self._pushed_filters = None
-
-        self._remaining_filters = remaining if remaining else None
-
         return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
@@ -249,6 +222,8 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
                 )
             )
 
+        pushed_filters, _ = self._classify_filters(pushdowns.filters)
+
         # Check if there is a count aggregation pushdown
         if (
             pushdowns.aggregation is not None
@@ -261,18 +236,18 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
                     "Count mode %s is not supported for pushdown, falling back to original logic",
                     pushdowns.aggregation_count_mode(),
                 )
-                yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+                yield from self._create_regular_scan_tasks(pushdowns, pushed_filters, required_columns)
             else:
-                yield from self._create_count_rows_scan_task(pushdowns)
+                yield from self._create_count_rows_scan_task(pushdowns, pushed_filters)
         else:
-            yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+            yield from self._create_regular_scan_tasks(pushdowns, pushed_filters, required_columns)
 
-    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns, pushed_filters: list[PyExpr]) -> Iterator[ScanTask]:
         """Create scan task for counting rows."""
         fields = pushdowns.aggregation_required_column_names()
         new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
 
-        filter_expr = self._convert_filters_to_sql()
+        filter_expr = self._convert_filters_to_sql(pushed_filters)
 
         yield ScanTask.python_factory_func_scan_task(
             module=_lance_rest_count_function.__module__,
@@ -287,7 +262,7 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
         )
 
     def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: list[str] | None
+        self, pushdowns: PyPushdowns, pushed_filters: list[PyExpr], required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks for data retrieval."""
         query_params: dict[str, Any] = {}
@@ -297,7 +272,7 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
             query_params["columns"] = required_columns
 
         # Add filters
-        filter_expr = self._convert_filters_to_sql()
+        filter_expr = self._convert_filters_to_sql(pushed_filters)
         if filter_expr:
             query_params["filter"] = filter_expr
 
@@ -360,15 +335,15 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
             # Return a basic schema as fallback
             return Schema.from_pyarrow_schema(pa.schema([pa.field("data", pa.string())]))
 
-    def _convert_filters_to_sql(self) -> str | None:
+    def _convert_filters_to_sql(self, pushed_filters: list[PyExpr]) -> str | None:
         """Convert pushed filters to SQL expression for REST API."""
-        if not self._pushed_filters:
+        if not pushed_filters:
             return None
 
         try:
             # Simple conversion - this would need to be more sophisticated in practice
             filter_parts = []
-            for expr in self._pushed_filters:
+            for expr in pushed_filters:
                 # Convert PyExpr to SQL-like string
                 # This is a simplified implementation
                 filter_parts.append(str(expr))

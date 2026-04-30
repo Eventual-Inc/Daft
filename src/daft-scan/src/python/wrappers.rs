@@ -17,7 +17,6 @@ use super::{
 use crate::{
     DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
     ScanTask, ScanTaskRef, SourceConfig,
-    pushdowns::SupportsPushdownFilters,
     source::{DataSource, DataSourceTask, DataSourceTaskStream, ReadOptions, RecordBatchStream},
     storage_config::StorageConfig,
 };
@@ -239,18 +238,6 @@ impl ScanOperator for PyDataSourceWrapper {
         None
     }
 
-    fn can_absorb_filter(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_select(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_limit(&self) -> bool {
-        false
-    }
-
     fn can_absorb_shard(&self) -> bool {
         false
     }
@@ -278,10 +265,6 @@ impl ScanOperator for PyDataSourceWrapper {
             }
         }
         Ok(scan_tasks)
-    }
-
-    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
-        None
     }
 }
 

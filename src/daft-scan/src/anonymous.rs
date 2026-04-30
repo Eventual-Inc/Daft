@@ -52,21 +52,7 @@ impl ScanOperator for AnonymousScanOperator {
         None
     }
 
-    fn can_absorb_filter(&self) -> bool {
-        false
-    }
-    fn can_absorb_select(&self) -> bool {
-        false
-    }
-    fn can_absorb_limit(&self) -> bool {
-        false
-    }
-
     fn can_absorb_shard(&self) -> bool {
-        false
-    }
-
-    fn supports_count_pushdown(&self) -> bool {
         false
     }
 

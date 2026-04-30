@@ -15,8 +15,6 @@ if TYPE_CHECKING:
 
     from daft.logical.schema import Field, Schema
 
-    from .pushdowns import SupportsPushdownFilters
-
 
 def make_partition_field(
     field: Field, source_field: Field | None = None, transform: PyPartitionTransform | None = None
@@ -41,30 +39,26 @@ class ScanOperator(abc.ABC):
         """Returns the schema of the data source."""
         raise NotImplementedError()
 
-    @abc.abstractmethod
     def display_name(self) -> str:
         """Returns a human-readable name for this scan operator."""
-        return self.__class__.__name__
+        return self.name()
 
     @abc.abstractmethod
     def partitioning_keys(self) -> list[PyPartitionField]:
         """Returns the partitioning keys for this data source."""
         raise NotImplementedError()
 
-    @abc.abstractmethod
     def can_absorb_filter(self) -> bool:
-        """Returns true if this scan can accept predicate pushdowns."""
-        raise NotImplementedError()
+        """Deprecated. Ignored by the engine; pushdowns follow the contract model where the source applies what it can and the engine applies the rest."""
+        return False
 
-    @abc.abstractmethod
     def can_absorb_limit(self) -> bool:
-        """Returns true if this scan can accept limit pushdowns."""
-        raise NotImplementedError()
+        """Deprecated. Ignored by the engine; the Limit operator above the scan is always retained and enforces the global cutoff."""
+        return False
 
-    @abc.abstractmethod
     def can_absorb_select(self) -> bool:
-        """Returns true if this scan can accept projection pushdowns."""
-        raise NotImplementedError()
+        """Deprecated. Ignored by the engine; sources MUST emit tasks with the requested projection schema."""
+        return False
 
     @abc.abstractmethod
     def multiline_display(self) -> list[str]:
@@ -76,9 +70,9 @@ class ScanOperator(abc.ABC):
         """Converts this scan operator into scan tasks with the given pushdowns."""
         raise NotImplementedError()
 
-    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
-        """Returns this scan operator as a SupportsPushdownFilters if it supports pushdown filters."""
-        raise NotImplementedError()
+    def name(self) -> str:
+        """Returns a stable type identifier used by the engine. Defaults to the class name."""
+        return self.__class__.__name__
 
     def supports_count_pushdown(self) -> bool:
         """Returns true if this scan can accept count pushdowns."""

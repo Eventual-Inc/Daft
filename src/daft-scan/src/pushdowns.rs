@@ -7,10 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::Sharder;
 
-pub trait SupportsPushdownFilters {
-    /// Applies filters to the scan operator and returns the pushable filters and the remaining filters.
-    fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
@@ -24,11 +20,6 @@ pub struct Pushdowns {
     pub limit: Option<usize>,
     /// Sharding information.
     pub sharder: Option<Sharder>,
-    /// Optional filters that have been pushed down to the scan operator.
-    /// The `filters` field is kept for backward compatibility;
-    /// it represents all current filters.
-    pub pushed_filters: Option<Vec<ExprRef>>,
-
     // /// Optional aggregation pushdown.
     /// This is used to indicate that the scan operator can perform an aggregation.
     /// This is useful for scans that can perform aggregations like `count`
@@ -51,7 +42,6 @@ impl Pushdowns {
             columns,
             limit,
             sharder,
-            pushed_filters: None,
             aggregation,
         }
     }
@@ -100,14 +90,6 @@ impl Pushdowns {
     pub fn with_sharder(&self, sharder: Option<Sharder>) -> Self {
         Self {
             sharder,
-            ..self.clone()
-        }
-    }
-
-    #[must_use]
-    pub fn with_pushed_filters(&self, pushed_filters: Option<Vec<ExprRef>>) -> Self {
-        Self {
-            pushed_filters,
             ..self.clone()
         }
     }

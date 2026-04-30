@@ -34,9 +34,6 @@ class HudiScanOperator(ScanOperator):
     def name(self) -> str:
         return "HudiScanOperator"
 
-    def display_name(self) -> str:
-        return f"HudiScanOperator({self._table.props.name})"
-
     def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
@@ -129,11 +126,3 @@ class HudiScanOperator(ScanOperator):
             scan_tasks.append(st)
         return iter(scan_tasks)
 
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return True

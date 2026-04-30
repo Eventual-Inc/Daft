@@ -312,7 +312,6 @@ pub mod pylib {
     use crate::{
         DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns, ScanOperator,
         ScanOperatorRef, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
-        SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
@@ -431,9 +430,6 @@ pub mod pylib {
         operator: pyo3::Py<pyo3::PyAny>,
         schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
-        can_absorb_filter: bool,
-        can_absorb_limit: bool,
-        can_absorb_select: bool,
         supports_count_pushdown: bool,
         display_name: String,
     }
@@ -463,21 +459,6 @@ pub mod pylib {
             Ok(pyschema.schema)
         }
 
-        fn _can_absorb_filter(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_filter"))?
-                .extract::<bool>(py)
-        }
-
-        fn _can_absorb_limit(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_limit"))?
-                .extract::<bool>(py)
-        }
-
-        fn _can_absorb_select(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<bool> {
-            abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
-                .extract::<bool>(py)
-        }
-
         fn _display_name(abc: &pyo3::Py<pyo3::PyAny>, py: Python) -> PyResult<String> {
             abc.call_method0(py, pyo3::intern!(py, "display_name"))?
                 .extract::<String>(py)
@@ -496,9 +477,6 @@ pub mod pylib {
             let name = Self::_name(&abc, py)?;
             let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
             let schema = Self::_schema(&abc, py)?;
-            let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
-            let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
-            let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
             let display_name = Self::_display_name(&abc, py)?;
             let supports_count_pushdown = Self::_supports_count_pushdown(&abc, py)?;
 
@@ -507,76 +485,8 @@ pub mod pylib {
                 operator: abc,
                 schema,
                 partitioning_keys,
-                can_absorb_filter,
-                can_absorb_limit,
-                can_absorb_select,
                 display_name,
                 supports_count_pushdown,
-            })
-        }
-    }
-
-    impl SupportsPushdownFilters for PythonScanOperatorBridge {
-        fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
-            Python::attach(|py| {
-                let py_filters: Vec<pyo3::Py<pyo3::PyAny>> = filters
-                    .iter()
-                    .map(|expr| Py::new(py, PyExpr::from(expr.clone())).unwrap().into())
-                    .collect();
-
-                let result = match self
-                    .operator
-                    .call_method1(py, "push_filters", (py_filters,))
-                {
-                    Ok(res) => res,
-                    Err(e) => {
-                        e.print_and_set_sys_last_vars(py);
-                        panic!(
-                            "Python method call failed, please ensure return value is a tuple of (pushed_filters, post_filters)"
-                        );
-                    }
-                };
-
-                let (pushed_pyexpr, post_pyexpr): (Vec<PyExpr>, Vec<PyExpr>) = match result
-                    .extract(py)
-                {
-                    Ok(res) => res,
-                    Err(_) => {
-                        let py_result = result.bind(py);
-
-                        let elem1_type = py_result
-                            .get_item(0)
-                            .map(|e| {
-                                let type_ = e.get_type();
-                                let name = type_.name().unwrap();
-                                name.to_string_lossy().into_owned()
-                            })
-                            .unwrap_or_else(|_| "unknown".to_string());
-
-                        let elem2_type = py_result
-                            .get_item(1)
-                            .map(|e| {
-                                let type_ = e.get_type();
-                                let name = type_.name().unwrap();
-                                name.to_string_lossy().into_owned()
-                            })
-                            .unwrap_or_else(|_| "unknown".to_string());
-
-                        let full_type = py_result.get_type();
-                        let type_name_obj = full_type.name().unwrap();
-                        let type_name = type_name_obj.to_string_lossy();
-
-                        panic!(
-                            "Python return type mismatch. Expected tuple[list[Expr], list[Expr]]\nActual:\nElement 1 type: {}\nElement 2 type: {}\nFull type: {}",
-                            elem1_type, elem2_type, type_name
-                        );
-                    }
-                };
-
-                (
-                    pushed_pyexpr.into_iter().map(|e| e.expr).collect(),
-                    post_pyexpr.into_iter().map(|e| e.expr).collect(),
-                )
             })
         }
     }
@@ -597,16 +507,6 @@ pub mod pylib {
         fn generated_fields(&self) -> Option<SchemaRef> {
             None
         }
-        fn can_absorb_filter(&self) -> bool {
-            self.can_absorb_filter
-        }
-        fn can_absorb_limit(&self) -> bool {
-            self.can_absorb_limit
-        }
-        fn can_absorb_select(&self) -> bool {
-            self.can_absorb_select
-        }
-
         fn can_absorb_shard(&self) -> bool {
             false
         }
@@ -616,8 +516,7 @@ pub mod pylib {
         }
 
         fn multiline_display(&self) -> Vec<String> {
-            let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
-            lines
+            vec![format!("PythonScanOperator: {}", self.display_name)]
         }
 
         fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
@@ -638,14 +537,6 @@ pub mod pylib {
             })?;
 
             scan_tasks.into_iter().collect()
-        }
-
-        fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
-            if self.can_absorb_filter {
-                Some(self)
-            } else {
-                None
-            }
         }
     }
 

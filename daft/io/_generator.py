@@ -82,9 +82,6 @@ class GeneratorScanOperator(ScanOperator):
         self._schema = schema
 
     def name(self) -> str:
-        return self.display_name()
-
-    def display_name(self) -> str:
         return "GeneratorScanOperator"
 
     def schema(self) -> Schema:
@@ -92,15 +89,6 @@ class GeneratorScanOperator(ScanOperator):
 
     def partitioning_keys(self) -> list[PyPartitionField]:
         return []
-
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return False
 
     def multiline_display(self) -> list[str]:
         return [

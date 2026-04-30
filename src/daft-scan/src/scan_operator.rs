@@ -7,7 +7,7 @@ use std::{
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns, ScanTaskRef, Statistics, SupportsPushdownFilters};
+use crate::{PartitionField, Pushdowns, ScanTaskRef, Statistics};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -27,9 +27,6 @@ pub trait ScanOperator: Send + Sync + Debug {
     // Thus, we maintain separate representations for partitioning keys and generated fields.
     fn generated_fields(&self) -> Option<SchemaRef>;
 
-    fn can_absorb_filter(&self) -> bool;
-    fn can_absorb_select(&self) -> bool;
-    fn can_absorb_limit(&self) -> bool;
     fn can_absorb_shard(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
 
@@ -53,9 +50,6 @@ pub trait ScanOperator: Send + Sync + Debug {
     /// (merging, splitting) to the outputted scan tasks
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>>;
 
-    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
-        None
-    }
 }
 
 impl Display for dyn ScanOperator {

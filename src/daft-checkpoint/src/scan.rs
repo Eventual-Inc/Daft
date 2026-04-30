@@ -6,8 +6,8 @@ use common_checkpoint_config::CheckpointStoreConfig;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_scan::{
-    ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
-    ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator, ScanSource,
+    ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
 };
 use daft_schema::schema::SchemaRef;
 
@@ -48,18 +48,6 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
         None
     }
 
-    fn can_absorb_filter(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_select(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_limit(&self) -> bool {
-        false
-    }
-
     fn can_absorb_shard(&self) -> bool {
         false
     }
@@ -81,7 +69,7 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
 
         let rt = get_io_runtime(true);
         let prefix = prefix.clone();
-        let io_config_arc = std::sync::Arc::new(io_config.as_ref().clone());
+        let io_config_arc = Arc::new(io_config.as_ref().clone());
         let paths = rt
             .block_on_current_thread(async move {
                 let store =
@@ -118,7 +106,7 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
                         partition_spec: None,
                         kind: ScanSourceKind::File {
                             path,
-                            chunk_spec: None::<ChunkSpec>,
+                            chunk_spec: None,
                             iceberg_delete_files: None,
                             parquet_metadata: None,
                         },

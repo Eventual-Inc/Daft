@@ -39,9 +39,6 @@ class TestLanceRestScanOperator:
         assert operator.display_name() == "LanceRestScanOperator(https://api.lancedb.com/test_ns/test_table)"
         assert operator.schema() == schema
         assert operator.partitioning_keys() == []
-        assert operator.can_absorb_filter() is True
-        assert operator.can_absorb_limit() is True
-        assert operator.can_absorb_select() is True
         assert operator.supports_count_pushdown() is True
         assert operator.supported_count_modes() == [CountMode.All]
         assert operator.as_pushdown_filter() is operator

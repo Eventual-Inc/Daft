@@ -161,9 +161,6 @@ class DeltaLakeScanOperator(ScanOperator):
     def name(self) -> str:
         return "DeltaLakeScanOperator"
 
-    def display_name(self) -> str:
-        return f"DeltaLakeScanOperator({self._table.metadata().name})"
-
     def partitioning_keys(self) -> list[PyPartitionField]:
         return self._partition_keys
 
@@ -330,14 +327,6 @@ class DeltaLakeScanOperator(ScanOperator):
             scan_tasks.append(st)
         return iter(scan_tasks)
 
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return True
 
 
 # Returns True if the Delta Lake library does not return the deletion vectors in the add_actions.

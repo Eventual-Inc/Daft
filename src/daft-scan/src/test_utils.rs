@@ -7,7 +7,7 @@ use daft_stats::TableMetadata;
 
 use crate::{
     FileFormatConfig, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-    ScanTask, ScanTaskRef, SourceConfig, Statistics, SupportsPushdownFilters,
+    ScanTask, ScanTaskRef, SourceConfig, Statistics,
     storage_config::StorageConfig,
 };
 
@@ -39,18 +39,6 @@ impl ScanOperator for DummyScanOperator {
 
     fn generated_fields(&self) -> Option<SchemaRef> {
         None
-    }
-
-    fn can_absorb_filter(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_select(&self) -> bool {
-        false
-    }
-
-    fn can_absorb_limit(&self) -> bool {
-        false
     }
 
     fn can_absorb_shard(&self) -> bool {
@@ -95,24 +83,8 @@ impl ScanOperator for DummyScanOperator {
             .collect())
     }
 
-    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
-        Some(self)
-    }
-
     fn statistics(&self) -> Option<Statistics> {
         self.stats.clone()
-    }
-}
-
-impl SupportsPushdownFilters for DummyScanOperator {
-    fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
-        // Split predicates: those containing IsIn expressions are not pushable
-        let (pushable, unpushable): (Vec<_>, Vec<_>) = filters
-            .iter()
-            .cloned()
-            .partition(|expr| !contains_in_expression(expr));
-
-        (pushable, unpushable)
     }
 }
 
