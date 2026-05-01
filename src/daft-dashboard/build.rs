@@ -71,34 +71,18 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Run `next build`. If it fails, retry with DAFT_DASHBOARD_OFFLINE_FONT=1,
-    // which makes next.config.ts replace next/font/google with a system-mono
-    // stub. Common cause of first-attempt failure: sandboxed/offline build
-    // environments where fetching Geist Mono from fonts.googleapis.com fails.
-    // The retry still runs `next build` end-to-end so TS/React code gets
-    // typechecked — only the served font is degraded.
+    // Run `next build`. In sandboxed/offline environments where
+    // fonts.googleapis.com is unreachable, set DAFT_DASHBOARD_OFFLINE_FONT=1
+    // — see src/daft-dashboard/AGENTS.md.
     let status = Command::new("npm")
         .current_dir("./frontend")
         .args(["run", "build"])
         .status()?;
 
-    let status = if status.success() {
-        status
-    } else {
-        println!(
-            "cargo:warning=Dashboard frontend build failed; retrying with DAFT_DASHBOARD_OFFLINE_FONT=1 (system mono fallback)"
-        );
-        Command::new("npm")
-            .current_dir("./frontend")
-            .args(["run", "build"])
-            .env("DAFT_DASHBOARD_OFFLINE_FONT", "1")
-            .status()?
-    };
-
     if !status.success() {
         if cfg!(debug_assertions) {
             println!(
-                "cargo:warning=Failed to build dashboard frontend assets even with offline font fallback; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence)"
+                "cargo:warning=Failed to build dashboard frontend assets; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence, or DAFT_DASHBOARD_OFFLINE_FONT=1 if the cause is offline font fetch)"
             );
             return Ok(());
         } else {
