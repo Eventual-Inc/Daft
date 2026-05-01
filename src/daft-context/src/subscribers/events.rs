@@ -111,13 +111,19 @@ pub struct TaskStatsUpdateEvent {
 /// Per-task scalar totals reported mid-flight.
 ///
 /// `cpu_us` is summed `DURATION_KEY` across the task's local pipeline
-/// operators (busy time, not wall-clock since submit). See
-/// `daft_dashboard::engine::TaskTotals` for the rationale on which fields
-/// are present here.
-#[derive(Debug, Clone)]
+/// operators (busy time, not wall-clock since submit). The rows/bytes I/O
+/// fields are filtered by `is_task_root`/`is_task_leaf` on each snapshot's
+/// `NodeInfo` to avoid double-counting fused chains: only root snapshots
+/// contribute external `rows.out`/`bytes.out`, only leaf snapshots contribute
+/// external `rows.in`/`bytes.in`. See `daft_dashboard::engine::TaskTotals`.
+#[derive(Debug, Clone, Default)]
 pub struct TaskStatsSnapshot {
     pub task_id: u32,
     pub cpu_us: u64,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
 }
 
 #[derive(Debug, Clone)]

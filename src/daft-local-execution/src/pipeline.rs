@@ -362,6 +362,8 @@ impl BuilderContext {
             node_category,
             node_phase,
             context,
+            is_task_root: node_context.is_task_root,
+            is_task_leaf: node_context.is_task_leaf,
         }
     }
 }
