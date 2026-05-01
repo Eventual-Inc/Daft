@@ -27,6 +27,7 @@ mod sink;
 
 use std::{
     cmp::min,
+    collections::HashSet,
     sync::{Arc, Mutex},
 };
 
@@ -35,8 +36,8 @@ use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use daft_core::prelude::SchemaRef;
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_core::prelude::{Schema, SchemaRef};
+use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -93,16 +94,50 @@ pub trait WriterFactory: Send + Sync {
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
+/// Strip plain-column partition refs from file_schema (Hive: values in paths).
+/// `keep_indices` is `None` when nothing to strip or stripping would empty the schema.
+fn split_schema_for_partitioned_write(
+    partition_cols: Option<&[BoundExpr]>,
+    file_schema: &SchemaRef,
+) -> (SchemaRef, Option<Arc<[usize]>>) {
+    let strip: HashSet<&str> = partition_cols
+        .unwrap_or(&[])
+        .iter()
+        .filter(|e| matches!(e.inner().as_ref(), Expr::Column(_)))
+        .map(|e| e.inner().name())
+        .collect();
+
+    let mut keep_indices = Vec::with_capacity(file_schema.len());
+    let mut kept_fields = Vec::with_capacity(file_schema.len());
+    for (i, field) in file_schema.fields().iter().enumerate() {
+        if !strip.contains(field.name.as_ref()) {
+            keep_indices.push(i);
+            kept_fields.push(field.clone());
+        }
+    }
+
+    let nothing_stripped = kept_fields.len() == file_schema.len();
+    let everything_stripped = kept_fields.is_empty();
+    if nothing_stripped || everything_stripped {
+        return (file_schema.clone(), None);
+    }
+
+    (
+        Arc::new(Schema::new(kept_fields)),
+        Some(Arc::from(keep_indices)),
+    )
+}
+
 pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo<BoundExpr>,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>> {
-    let base_writer_factory = PhysicalWriterFactory::new(
-        file_info.clone(),
-        file_schema.clone(),
-        cfg.native_parquet_writer,
-    )?;
+    let (data_schema, keep_indices) =
+        split_schema_for_partitioned_write(file_info.partition_cols.as_deref(), file_schema);
+
+    let base_writer_factory =
+        PhysicalWriterFactory::new(file_info.clone(), data_schema, cfg.native_parquet_writer)?;
     match file_info.file_format {
         FileFormat::Parquet => {
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
@@ -129,6 +164,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    keep_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -150,6 +186,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    keep_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -171,6 +208,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    keep_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -241,8 +279,11 @@ pub fn make_catalog_writer_factory(
     );
 
     if let Some(partition_cols) = partition_cols {
-        let partitioned_writer_factory =
-            PartitionedWriterFactory::new(Arc::new(file_writer_factory), partition_cols.clone());
+        let partitioned_writer_factory = PartitionedWriterFactory::new(
+            Arc::new(file_writer_factory),
+            partition_cols.clone(),
+            None,
+        );
         Arc::new(partitioned_writer_factory)
     } else {
         Arc::new(file_writer_factory)

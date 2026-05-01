@@ -515,6 +515,6 @@ def test_write_json_target_filesize_with_partitioning(tmp_path):
 
     assert len(output_files) >= 3, "Expected at least 3 partitions"
 
-    read_back = daft.read_json(str(tmp_path) + "/**/*.json").sort(by="x").to_pydict()
+    read_back = daft.read_json(str(tmp_path) + "/**/*.json", hive_partitioning=True).sort(by="x").to_pydict()
     assert read_back["x"] == data["x"]
     assert read_back["partition"] == data["partition"]

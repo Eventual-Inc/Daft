@@ -65,11 +65,16 @@ def write(
         raise ValueError(f"Unsupported format: {format}")
 
 
-def read(path: str, format: str, io_config: daft.io.IOConfig | None = None):
+def read(
+    path: str,
+    format: str,
+    io_config: daft.io.IOConfig | None = None,
+    hive_partitioning: bool = False,
+):
     if format == "parquet":
-        return daft.read_parquet(path, io_config=io_config)
+        return daft.read_parquet(path, io_config=io_config, hive_partitioning=hive_partitioning)
     elif format == "csv":
-        return daft.read_csv(path, io_config=io_config)
+        return daft.read_csv(path, io_config=io_config, hive_partitioning=hive_partitioning)
     else:
         raise ValueError(f"Unsupported format: {format}")
 
@@ -89,9 +94,14 @@ def arrange_write_mode_test(
     # Write some new data
     write(new_data, path, format, write_mode, partition_cols, io_config)
 
-    # Read back the data
+    # Partition columns live only in directory paths; need hive_partitioning to recover them.
     read_path = path + "/**" if partition_cols is not None else path
-    read_back = read(read_path, format, io_config).collect()
+    read_back = read(
+        read_path,
+        format,
+        io_config,
+        hive_partitioning=partition_cols is not None,
+    ).collect()
     read_back = read_back.sort(sort_cols).to_pydict()
 
     return read_back
