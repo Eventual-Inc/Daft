@@ -33,6 +33,36 @@ pub(crate) type SchedulerReceiver<T> = UnboundedReceiver<PendingTask<T>>;
 const SCHEDULER_LOG_TARGET: &str = "DaftFlotillaScheduler";
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(1);
 
+#[derive(Clone, Copy, Debug)]
+struct DownscaleConfig {
+    enabled: bool,
+    min_survivor_workers: usize,
+}
+
+impl DownscaleConfig {
+    fn from_env() -> Self {
+        // Downscaling configuration for Ray autoscaler integration.
+        //
+        // - `DAFT_AUTOSCALING_DOWNSCALE_ENABLED`: Enables or disables the downscaling feature.
+        //   Use "1" or "true" (case-insensitive) to enable. Defaults to `false`.
+        // - `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS`: The minimum number of workers to keep
+        //   running even if they are idle. This prevents the cluster from scaling down to
+        //   zero workers during brief idle periods. Defaults to `1`.
+        let enabled = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let min_survivor_workers: usize = std::env::var("DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1);
+
+        Self {
+            enabled,
+            min_survivor_workers,
+        }
+    }
+}
+
 /// Owned state for the scheduler event loop — one instance per plan run.
 /// Runs until `task_rx` closes and both scheduler + dispatcher are drained.
 struct SchedulerLoop<W: Worker, S: Scheduler<W::Task>> {
@@ -41,6 +71,7 @@ struct SchedulerLoop<W: Worker, S: Scheduler<W::Task>> {
     dispatcher: Dispatcher<W>,
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     statistics_manager: StatisticsManagerRef,
+    downscale_config: DownscaleConfig,
     input_exhausted: bool,
 }
 
@@ -55,6 +86,22 @@ where
         worker_manager: Arc<dyn WorkerManager<Worker = W>>,
         statistics_manager: StatisticsManagerRef,
     ) -> Self {
+        Self::new_with_downscale_config(
+            scheduler,
+            task_rx,
+            worker_manager,
+            statistics_manager,
+            DownscaleConfig::from_env(),
+        )
+    }
+
+    fn new_with_downscale_config(
+        scheduler: S,
+        task_rx: SchedulerReceiver<W::Task>,
+        worker_manager: Arc<dyn WorkerManager<Worker = W>>,
+        statistics_manager: StatisticsManagerRef,
+        downscale_config: DownscaleConfig,
+    ) -> Self {
         let dispatcher = Dispatcher::new(statistics_manager.clone());
         Self {
             scheduler,
@@ -62,6 +109,7 @@ where
             dispatcher,
             worker_manager,
             statistics_manager,
+            downscale_config,
             input_exhausted: false,
         }
     }
@@ -101,32 +149,57 @@ where
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run(mut self) -> DaftResult<()> {
         let mut tick_interval = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
+        let DownscaleConfig {
+            enabled: downscale_enabled,
+            min_survivor_workers,
+        } = self.downscale_config;
+
         while !self.input_exhausted
             || self.scheduler.num_pending_tasks() > 0
             || self.dispatcher.has_running_tasks()
         {
             let worker_snapshots = self.worker_manager.worker_snapshots()?;
-            tracing::info!(target: SCHEDULER_LOG_TARGET,
+            tracing::info!(
+                target: SCHEDULER_LOG_TARGET,
                 num_workers = worker_snapshots.len(),
                 pending_tasks = self.scheduler.num_pending_tasks(),
-                "Received worker snapshots");
-            tracing::debug!(target: SCHEDULER_LOG_TARGET, worker_snapshots = %format!("{:#?}", worker_snapshots));
+                "Received worker snapshots"
+            );
+            tracing::debug!(
+                target: SCHEDULER_LOG_TARGET,
+                worker_snapshots = %format!("{:#?}", worker_snapshots)
+            );
 
             self.scheduler.update_worker_state(&worker_snapshots);
 
-            // 1: Send autoscaling request if needed
-            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand and not just the residual demand after scheduling.
-            if let Some(request) = self.scheduler.get_autoscaling_request() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
+            // 1: Send autoscaling request if needed (scale up).
+            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand
+            // and not just the residual demand after scheduling.
+            let autoscaling_request = self.scheduler.get_autoscaling_request();
+            let sent_scale_up_request = autoscaling_request.is_some();
+            if let Some(request) = autoscaling_request {
+                tracing::info!(
+                    target: SCHEDULER_LOG_TARGET,
+                    autoscaling_request = %format!("{:#?}", request),
+                    "Sending autoscaling request"
+                );
                 self.worker_manager.try_autoscale(request)?;
             }
 
-            // 2: Get all tasks that are ready to be scheduled
+            // 2: Get all tasks that are ready to be scheduled.
             let scheduled_tasks = self.scheduler.schedule_tasks();
-            // 3: Dispatch tasks directly to the dispatcher
+
+            // 3: Dispatch tasks directly to the dispatcher.
             if !scheduled_tasks.is_empty() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
-                tracing::debug!(target: SCHEDULER_LOG_TARGET, scheduled_tasks = %format!("{:#?}", scheduled_tasks));
+                tracing::info!(
+                    target: SCHEDULER_LOG_TARGET,
+                    num_tasks = scheduled_tasks.len(),
+                    "Scheduling tasks for dispatch"
+                );
+                tracing::debug!(
+                    target: SCHEDULER_LOG_TARGET,
+                    scheduled_tasks = %format!("{:#?}", scheduled_tasks)
+                );
 
                 for task in &scheduled_tasks {
                     self.statistics_manager.handle_event(TaskEvent::Scheduled {
@@ -136,6 +209,31 @@ where
 
                 self.dispatcher
                     .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
+            }
+
+            // 3b: If no scale-up is needed, evaluate downscaling of idle workers while respecting
+            // `min_survivor_workers`.
+            //
+            // The scheduler only computes the maximum number of workers that can be retired
+            // (respecting `min_survivor_workers`). The worker manager owns the policy for
+            // determining *which* workers are eligible for retirement (idle time thresholds,
+            // head node protection, blacklist TTLs, etc).
+            if downscale_enabled && !sent_scale_up_request && !worker_snapshots.is_empty() {
+                let num_workers = worker_snapshots.len();
+                let allowed_to_retire = num_workers.saturating_sub(min_survivor_workers);
+                if allowed_to_retire > 0 {
+                    let retired = self
+                        .worker_manager
+                        .retire_idle_workers(allowed_to_retire, false)?;
+                    if retired > 0 {
+                        tracing::info!(
+                            target: SCHEDULER_LOG_TARGET,
+                            allowed_to_retire,
+                            retired,
+                            "Downscale: retired idle workers"
+                        );
+                    }
+                }
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
@@ -170,6 +268,18 @@ where
                     // Worker snapshots refreshed at top of next iteration.
                 }
             }
+        }
+
+        // Final downscale on job completion: best-effort clear of Ray demand and idle actors.
+        if downscale_enabled {
+            let final_snapshots = self.worker_manager.worker_snapshots()?;
+            let num_workers = final_snapshots.len();
+            self.worker_manager.retire_idle_workers(num_workers, true)?;
+            tracing::info!(
+                target: SCHEDULER_LOG_TARGET,
+                num_workers,
+                "Final downscale completed"
+            );
         }
 
         tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
@@ -415,6 +525,7 @@ mod tests {
 
     struct SchedulerActorTestContext {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
+        worker_manager: Arc<MockWorkerManager>,
         joinset: JoinSet<DaftResult<()>>,
     }
 
@@ -431,18 +542,88 @@ mod tests {
     fn setup_scheduler_actor_test_context(
         worker_configs: &[(WorkerId, usize)],
     ) -> SchedulerActorTestContext {
+        setup_scheduler_actor_test_context_with_downscale_config(
+            worker_configs,
+            DownscaleConfig {
+                enabled: false,
+                min_survivor_workers: 1,
+            },
+        )
+    }
+
+    fn setup_scheduler_actor_test_context_with_downscale_config(
+        worker_configs: &[(WorkerId, usize)],
+        downscale_config: DownscaleConfig,
+    ) -> SchedulerActorTestContext {
         let workers = setup_workers(worker_configs);
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
         let mut joinset = JoinSet::new();
-        let scheduler_handle = spawn_default_scheduler_actor(
-            worker_manager,
-            &mut joinset,
+
+        let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
+        let loop_state = SchedulerLoop::new_with_downscale_config(
+            DefaultScheduler::<MockTask>::default(),
+            scheduler_receiver,
+            worker_manager.clone(),
             StatisticsManagerRef::default(),
+            downscale_config,
         );
+        joinset.spawn(loop_state.run());
+        let scheduler_handle = SchedulerHandle::new(scheduler_sender);
+
         SchedulerActorTestContext {
             scheduler_handle_ref: Arc::new(scheduler_handle),
+            worker_manager,
             joinset,
         }
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_downscale_disabled_by_default() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context(&[
+            (Arc::from("worker1"), 1),
+            (Arc::from("worker2"), 1),
+        ]);
+
+        tokio::task::yield_now().await;
+        assert_eq!(ctx.worker_manager.retire_call_count(), 0);
+
+        ctx.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_downscale_calls_retire_when_enabled() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context_with_downscale_config(
+            &[(Arc::from("worker1"), 1), (Arc::from("worker2"), 1)],
+            DownscaleConfig {
+                enabled: true,
+                min_survivor_workers: 1,
+            },
+        );
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(ctx.worker_manager.retire_call_count() > 0);
+        assert_eq!(ctx.worker_manager.last_retire_args(), Some((1, false)));
+
+        ctx.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_downscale_respects_min_survivor_workers() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context_with_downscale_config(
+            &[(Arc::from("worker1"), 1), (Arc::from("worker2"), 1)],
+            DownscaleConfig {
+                enabled: true,
+                min_survivor_workers: 2,
+            },
+        );
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(ctx.worker_manager.retire_call_count(), 0);
+
+        ctx.cleanup().await?;
+        Ok(())
     }
 
     #[tokio::test]

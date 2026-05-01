@@ -25,6 +25,7 @@ struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     last_refresh: Option<Instant>,
     max_resources_requested: ResourceRequest,
+    pending_release_blacklist: HashMap<WorkerId, Instant>,
     last_autoscale_request_time: Option<Instant>,
     autoscale_interval_secs: Duration,
 }
@@ -40,14 +41,27 @@ impl RayWorkerManagerState {
             return Ok(());
         }
 
+        // Exclude pending-release workers for a grace TTL to prevent immediate respawn.
+        let ttl_secs: u64 = std::env::var("DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(120);
+        self.pending_release_blacklist
+            .retain(|_, ts| ts.elapsed() < Duration::from_secs(ttl_secs));
+
         let ray_workers = Python::attach(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
-            let existing_worker_ids = self
+            let mut existing_worker_ids = self
                 .ray_workers
                 .keys()
                 .map(|id| id.as_ref().to_string())
                 .collect::<Vec<_>>();
+            existing_worker_ids.extend(
+                self.pending_release_blacklist
+                    .keys()
+                    .map(|id| id.as_ref().to_string()),
+            );
 
             let ray_workers = flotilla_module
                 .call_method1(
@@ -79,6 +93,7 @@ impl RayWorkerManager {
                 ray_workers: HashMap::new(),
                 last_refresh: None,
                 max_resources_requested: ResourceRequest::default(),
+                pending_release_blacklist: HashMap::new(),
                 last_autoscale_request_time: None,
                 autoscale_interval_secs: Duration::from_secs(
                     std::env::var(RAY_AUTOSCALER_UPDATE_INTERVAL_ENV)
@@ -294,6 +309,11 @@ impl WorkerManager for RayWorkerManager {
             Ok(())
         })?;
 
+        // Scaling up should immediately allow workers on recently retired nodes to be re-created,
+        // and force a refresh so we can observe newly provisioned nodes quickly.
+        state.pending_release_blacklist.clear();
+        state.last_refresh = None;
+
         // 6. Record this request as the new high-water mark so the next cycle will
         //    request exactly one bundle more, and so we never send a smaller request.
         state.max_resources_requested =
@@ -301,5 +321,138 @@ impl WorkerManager for RayWorkerManager {
         state.last_autoscale_request_time = Some(Instant::now());
 
         Ok(())
+    }
+
+    fn retire_idle_workers(
+        &self,
+        max_to_retire: usize,
+        force_all_when_cluster_idle: bool,
+    ) -> DaftResult<usize> {
+        if force_all_when_cluster_idle {
+            Python::attach(|py| -> DaftResult<()> {
+                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+                flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+                Ok(())
+            })?;
+        }
+
+        if max_to_retire == 0 {
+            return Ok(0);
+        }
+
+        let idle_secs_threshold: Option<u64> = if force_all_when_cluster_idle {
+            None
+        } else {
+            Some(
+                std::env::var("DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(60),
+            )
+        };
+
+        let now = Instant::now();
+
+        // Determine the Ray head node id so we can avoid retiring its worker.
+        let head_node_id: Option<String> = Python::attach(|py| {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            let head_id_obj =
+                flotilla_module.call_method0(pyo3::intern!(py, "get_head_node_id"))?;
+            let head_id = head_id_obj.extract::<Option<String>>()?;
+            DaftResult::Ok(head_id)
+        })?;
+
+        let (workers_to_release, survivors_after, blacklisted_after) = {
+            let mut state = self
+                .state
+                .lock()
+                .expect("Failed to lock RayWorkerManagerState");
+
+            let mut candidates: Vec<(WorkerId, Duration)> = state
+                .ray_workers
+                .iter()
+                .filter_map(|(wid, w)| {
+                    // Skip the head node entirely from retirement consideration.
+                    if let Some(ref head_id) = head_node_id
+                        && wid.as_ref() == head_id
+                    {
+                        return None;
+                    }
+
+                    if w.is_idle() {
+                        let idle_for = w.idle_duration(now);
+                        if let Some(threshold) = idle_secs_threshold {
+                            if idle_for.as_secs() >= threshold {
+                                Some((wid.clone(), idle_for))
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some((wid.clone(), idle_for))
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            candidates.sort_by_key(|(_, d)| std::cmp::Reverse(d.as_secs()));
+
+            let selected: Vec<(WorkerId, Duration)> =
+                candidates.into_iter().take(max_to_retire).collect();
+
+            let mut workers_to_release = Vec::with_capacity(selected.len());
+            for (wid, _idle_for) in selected {
+                if let Some(worker) = state.ray_workers.remove(&wid) {
+                    state
+                        .pending_release_blacklist
+                        .insert(wid.clone(), Instant::now());
+                    workers_to_release.push(worker);
+                }
+            }
+
+            let survivors_after = state.ray_workers.len();
+            let blacklisted_after = state.pending_release_blacklist.len();
+
+            state.max_resources_requested = ResourceRequest::default();
+            state.last_refresh = None;
+
+            (workers_to_release, survivors_after, blacklisted_after)
+        };
+
+        if workers_to_release.is_empty() {
+            return Ok(0);
+        }
+
+        tracing::info!(
+            target: "ray_worker_manager",
+            "Preparing to release {} workers",
+            workers_to_release.len()
+        );
+
+        let mut released = 0usize;
+        Python::attach(|py| -> DaftResult<()> {
+            for mut worker in workers_to_release {
+                worker.release(py);
+                released += 1;
+            }
+            Ok(())
+        })?;
+
+        Python::attach(|py| -> DaftResult<()> {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+            Ok(())
+        })?;
+
+        tracing::info!(
+            target: "ray_worker_manager",
+            released,
+            survivors = survivors_after,
+            blacklisted = blacklisted_after,
+            "Idle cleanup completed"
+        );
+
+        Ok(released)
     }
 }
