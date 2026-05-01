@@ -37,3 +37,11 @@ Learn more in the [User Guide](../custom-code/func.md).
 ::: daft.udf._MethodDecorator
 
 ::: daft.udf.udf_v2.Func
+
+## Aggregate UDFs
+
+`@daft.udaf` lets you define custom aggregation functions with a three-stage pipeline (aggregate, combine, finalize) that plugs into Daft's distributed aggregation engine.
+
+Learn more in the [User Guide](../custom-code/udaf.md).
+
+::: daft.udaf

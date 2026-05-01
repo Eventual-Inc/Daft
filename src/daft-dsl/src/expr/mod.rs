@@ -479,8 +479,17 @@ pub enum AggExpr {
         inputs: Vec<ExprRef>,
     },
 
-    /// Planner-internal step 2: folds the Struct partial states from
-    /// `AggFnMap` per group and produces the final typed output.
+    /// Planner-internal: merges Struct partial states from `AggFnMap`
+    /// (or other `AggFnCombine` outputs) without finalizing.
+    /// Idempotent: combine(combine(s)) == combine(s).
+    #[display("{handle}.__combine({partial})")]
+    AggFnCombine {
+        handle: AggFnHandle,
+        partial: ExprRef,
+    },
+
+    /// Planner-internal final step: merges Struct partial states and
+    /// then finalizes to produce the typed output.
     #[display("{handle}.__reduce({partial})")]
     AggFnReduce {
         handle: AggFnHandle,
@@ -591,6 +600,7 @@ impl AggExpr {
             Self::MapGroups { .. } => "Map Groups",
             Self::AggFn { .. } => "Extension Agg",
             Self::AggFnMap { .. } => "Extension Agg (Map)",
+            Self::AggFnCombine { .. } => "Extension Agg (Combine)",
             Self::AggFnReduce { .. } => "Extension Agg (Reduce)",
         }
     }
@@ -622,6 +632,7 @@ impl AggExpr {
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
             Self::AggFn { handle, .. }
             | Self::AggFnMap { handle, .. }
+            | Self::AggFnCombine { handle, .. }
             | Self::AggFnReduce { handle, .. } => handle.name(),
         }
     }
@@ -749,6 +760,12 @@ impl AggExpr {
                     .join(", ");
                 FieldID::new(format!("AggFnMap_{}({inputs_str})", handle.name()))
             }
+            Self::AggFnCombine {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnCombine_{}({partial_id})", handle.name()))
+            }
             Self::AggFnReduce {
                 handle, partial, ..
             } => {
@@ -784,7 +801,9 @@ impl AggExpr {
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
             Self::AggFn { inputs, .. } | Self::AggFnMap { inputs, .. } => inputs.clone(),
-            Self::AggFnReduce { partial, .. } => vec![partial.clone()],
+            Self::AggFnCombine { partial, .. } | Self::AggFnReduce { partial, .. } => {
+                vec![partial.clone()]
+            }
         }
     }
 
@@ -828,6 +847,10 @@ impl AggExpr {
             Self::AggFnMap { handle, inputs: _ } => Self::AggFnMap {
                 handle: handle.clone(),
                 inputs: children,
+            },
+            Self::AggFnCombine { handle, .. } => Self::AggFnCombine {
+                handle: handle.clone(),
+                partial: children.remove(0),
             },
             Self::AggFnReduce {
                 handle,
@@ -1060,6 +1083,7 @@ impl AggExpr {
                     DataType::Struct(state_fields),
                 ))
             }
+            Self::AggFnCombine { partial, .. } => partial.to_field(schema),
             Self::AggFnReduce { return_field, .. } => Ok(return_field.clone()),
         }
     }

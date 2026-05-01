@@ -61,7 +61,6 @@ impl AggStrategy {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
             state.partially_aggregated.push(p);
-            Self::try_eager_combine(state, params)?;
         }
         Ok(())
     }
@@ -85,7 +84,6 @@ impl AggStrategy {
                 )?;
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
-                Self::try_eager_combine(state, params)?;
             } else {
                 state.unaggregated_size += p.len();
                 state.unaggregated.push(p);
@@ -106,32 +104,6 @@ impl AggStrategy {
             state.unaggregated_size += p.len();
             state.unaggregated.push(p);
         }
-        Ok(())
-    }
-
-    /// How many partial-aggregate partitions may accumulate per hash-bucket before
-    /// an eager map-side combine is triggered. Only active when `AggFn` expressions are present.
-    const PARTIAL_AGG_COMBINE_THRESHOLD: usize = 4;
-
-    /// Map-side combine to keep memory bounded. Uses `agg_combine_only` (not `agg`) so
-    /// `AggFnReduce` columns stay as Struct and remain valid input for the final `agg()`.
-    fn try_eager_combine(
-        state: &mut SinglePartitionAggregateState,
-        params: &GroupedAggregateParams,
-    ) -> DaftResult<()> {
-        let needs_combine = params
-            .final_agg_exprs
-            .iter()
-            .any(|e| matches!(e.as_ref(), daft_dsl::AggExpr::AggFnReduce { .. }));
-        if !needs_combine || state.partially_aggregated.len() < Self::PARTIAL_AGG_COMBINE_THRESHOLD
-        {
-            return Ok(());
-        }
-        let partitions = std::mem::take(&mut state.partially_aggregated);
-        let concated = MicroPartition::concat(partitions)?;
-        let combined =
-            concated.agg_combine_only(&params.final_agg_exprs, &params.final_group_by)?;
-        state.partially_aggregated = vec![combined];
         Ok(())
     }
 }
@@ -484,216 +456,5 @@ impl BlockingSink for GroupedAggregateSink {
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use common_error::DaftResult;
-    use daft_core::prelude::*;
-    use daft_dsl::{
-        AggExpr,
-        expr::bound_expr::BoundAggExpr,
-        functions::{AggFn, AggFnHandle, State},
-        unresolved_col,
-    };
-    use daft_micropartition::MicroPartition;
-    use daft_recordbatch::RecordBatch;
-
-    use super::{AggStrategy, GroupedAggregateParams, SinglePartitionAggregateState};
-
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct TestSumAggSink;
-
-    #[typetag::serde(name = "TestSumAggSink")]
-    impl AggFn for TestSumAggSink {
-        fn name(&self) -> &'static str {
-            "test_sum_sink"
-        }
-
-        fn return_dtype(&self, _input_types: &[DataType]) -> DaftResult<DataType> {
-            Ok(DataType::Int64)
-        }
-
-        fn state_fields(&self, _inputs: &[Field]) -> DaftResult<Vec<Field>> {
-            Ok(vec![Field::new("sum", DataType::Int64)])
-        }
-
-        fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<State>> {
-            let sum: i64 = inputs[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
-            Ok(vec![Literal::Int64(sum)])
-        }
-
-        fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<State>> {
-            let sum: i64 = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
-            Ok(vec![Literal::Int64(sum)])
-        }
-
-        fn call_agg_finalize(&self, state: Vec<State>) -> DaftResult<State> {
-            Ok(state.into_iter().next().unwrap_or(Literal::Null))
-        }
-    }
-
-    fn make_handle() -> AggFnHandle {
-        AggFnHandle::new(Arc::new(TestSumAggSink))
-    }
-
-    fn partial_col_name() -> String {
-        "test_sum_sink(x)".to_string()
-    }
-
-    fn state_dtype() -> DataType {
-        DataType::Struct(vec![Field::new("sum", DataType::Int64)])
-    }
-
-    fn make_struct_mp(value: i64) -> MicroPartition {
-        let col_name = partial_col_name();
-        let sum_series = Int64Array::from_vec("sum", vec![value]).into_series();
-        let struct_field = Field::new(col_name.as_str(), state_dtype());
-        let struct_series = StructArray::new(struct_field, vec![sum_series], None).into_series();
-        let rb = RecordBatch::from_nonempty_columns(vec![struct_series]).unwrap();
-        MicroPartition::new_loaded(rb.schema.clone(), Arc::new(vec![rb]), None)
-    }
-
-    fn make_reduce_params() -> GroupedAggregateParams {
-        let col_name = partial_col_name();
-        let schema = Arc::new(Schema::new(std::iter::once(Field::new(
-            col_name.as_str(),
-            state_dtype(),
-        ))));
-        let return_field = Field::new("x", DataType::Int64);
-        let final_agg = BoundAggExpr::try_new(
-            AggExpr::AggFnReduce {
-                handle: make_handle(),
-                partial: unresolved_col(col_name.as_str()),
-                return_field,
-            },
-            &schema,
-        )
-        .unwrap();
-        GroupedAggregateParams {
-            original_aggregations: vec![],
-            group_by: vec![],
-            partial_agg_exprs: vec![],
-            final_agg_exprs: vec![final_agg],
-            final_group_by: vec![],
-            final_projections: vec![],
-        }
-    }
-
-    fn make_empty_params() -> GroupedAggregateParams {
-        GroupedAggregateParams {
-            original_aggregations: vec![],
-            group_by: vec![],
-            partial_agg_exprs: vec![],
-            final_agg_exprs: vec![],
-            final_group_by: vec![],
-            final_projections: vec![],
-        }
-    }
-
-    #[test]
-    fn test_try_eager_combine_below_threshold() -> DaftResult<()> {
-        let params = make_reduce_params();
-        let mut state = SinglePartitionAggregateState::default();
-        for i in 1..(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
-            state.partially_aggregated.push(make_struct_mp(i));
-        }
-        let before = state.partially_aggregated.len();
-        AggStrategy::try_eager_combine(&mut state, &params)?;
-        assert_eq!(state.partially_aggregated.len(), before);
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_eager_combine_no_agg_fn_reduce() -> DaftResult<()> {
-        let params = make_empty_params();
-        let mut state = SinglePartitionAggregateState::default();
-        for i in 0..(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 2) {
-            state.partially_aggregated.push(make_struct_mp(i));
-        }
-        let before = state.partially_aggregated.len();
-        AggStrategy::try_eager_combine(&mut state, &params)?;
-        assert_eq!(state.partially_aggregated.len(), before);
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_eager_combine_triggers() -> DaftResult<()> {
-        let params = make_reduce_params();
-        let mut state = SinglePartitionAggregateState::default();
-        for i in 1..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
-            state.partially_aggregated.push(make_struct_mp(i));
-        }
-        AggStrategy::try_eager_combine(&mut state, &params)?;
-        assert_eq!(state.partially_aggregated.len(), 1);
-
-        // Finalize the combined struct state — should be 1+2+3+4 = 10.
-        let col_name = partial_col_name();
-        let schema = Arc::new(Schema::new(std::iter::once(Field::new(
-            col_name.as_str(),
-            state_dtype(),
-        ))));
-        let return_field = Field::new("x", DataType::Int64);
-        let final_agg = BoundAggExpr::try_new(
-            AggExpr::AggFnReduce {
-                handle: make_handle(),
-                partial: unresolved_col(col_name.as_str()),
-                return_field,
-            },
-            &schema,
-        )
-        .unwrap();
-        let finalized = state.partially_aggregated[0].agg(&[final_agg], &[])?;
-        let rb = &finalized.record_batches()[0];
-        let col = daft_recordbatch::get_column_by_name(rb, "x")?;
-        assert_eq!(col.i64()?.get(0), Some(10i64));
-        Ok(())
-    }
-
-    // Verifies that the Struct output of one combine round is valid input for a
-    // subsequent round: the combined state must survive re-entry into call_agg_combine.
-    #[test]
-    fn test_try_eager_combine_multiple_rounds() -> DaftResult<()> {
-        let params = make_reduce_params();
-        let mut state = SinglePartitionAggregateState::default();
-
-        // Round 1: push exactly threshold MPs (1+2+3+4=10) → collapses to 1.
-        for i in 1..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
-            state.partially_aggregated.push(make_struct_mp(i));
-        }
-        AggStrategy::try_eager_combine(&mut state, &params)?;
-        assert_eq!(state.partially_aggregated.len(), 1);
-
-        // Round 2: add 3 more MPs (5+6+7) so total len=4 hits the threshold again.
-        for i in 5..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 3) {
-            state.partially_aggregated.push(make_struct_mp(i));
-        }
-        AggStrategy::try_eager_combine(&mut state, &params)?;
-        assert_eq!(state.partially_aggregated.len(), 1);
-
-        // Finalize — expected: 1+2+3+4+5+6+7 = 28.
-        let col_name = partial_col_name();
-        let schema = Arc::new(Schema::new(std::iter::once(Field::new(
-            col_name.as_str(),
-            state_dtype(),
-        ))));
-        let return_field = Field::new("x", DataType::Int64);
-        let final_agg = BoundAggExpr::try_new(
-            AggExpr::AggFnReduce {
-                handle: make_handle(),
-                partial: unresolved_col(col_name.as_str()),
-                return_field,
-            },
-            &schema,
-        )
-        .unwrap();
-        let finalized = state.partially_aggregated[0].agg(&[final_agg], &[])?;
-        let rb = &finalized.record_batches()[0];
-        let col = daft_recordbatch::get_column_by_name(rb, "x")?;
-        assert_eq!(col.i64()?.get(0), Some(28i64));
-        Ok(())
     }
 }
