@@ -213,24 +213,20 @@ function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
       <span className={`${main.className} text-xs text-zinc-600 font-mono`}>—</span>
     );
   }
-  if (sources.length === 1) {
-    const { label, tooltip } = summarizeSource(sources[0]);
-    return (
-      <span
-        className={`${main.className} text-xs text-zinc-300 font-mono truncate`}
-        title={tooltip}
-      >
-        {label}
-      </span>
-    );
-  }
-  const tooltip = sources.map((s) => summarizeSource(s).label).join("\n");
+  const { label, tooltip } =
+    sources.length === 1
+      ? summarizeSource(sources[0])
+      : {
+          label: `${sources.length} sources`,
+          tooltip: sources.map((s) => summarizeSource(s).label).join("\n"),
+        };
+  // `block` is required for `truncate` to take effect on a span.
   return (
     <span
-      className={`${main.className} text-xs text-zinc-300 font-mono truncate`}
+      className={`${main.className} block text-xs text-zinc-300 font-mono truncate`}
       title={tooltip}
     >
-      {sources.length} sources
+      {label}
     </span>
   );
 }
@@ -238,8 +234,10 @@ function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
 // ---------------------------------------------------------------------------
 // Running tasks "top" section.
 // ---------------------------------------------------------------------------
+// Local Plan and Source share remaining width 1:2 so the (typically long)
+// source path gets enough room before the fixed-width Duration column.
 const RUNNING_GRID_COLS =
-  "grid-cols-[minmax(200px,2fr)_minmax(160px,1fr)_90px]";
+  "grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_90px]";
 
 function RunningTasksSection({
   tasks,
@@ -596,7 +594,7 @@ function StatusSummary({
 // Per-task rows/bytes stats are not surfaced yet — they require correct
 // head/leaf identification across the fused pipeline. See follow-up ticket.
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_minmax(140px,1.5fr)_minmax(140px,1.5fr)_110px_100px_100px]";
+  "grid-cols-[32px_80px_minmax(180px,2fr)_minmax(120px,1fr)_110px_100px_100px]";
 
 function ExpandedTaskList({
   tasks,
