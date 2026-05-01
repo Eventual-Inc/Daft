@@ -157,7 +157,7 @@ def test_image_file_metadata_expr(sample_png: Path):
     meta = result["meta"][0]
     assert meta["width"] == 80
     assert meta["height"] == 50
-    assert meta["format"] == "PNG"
+    assert meta["format"] == "png"
     assert meta["mode"] == "RGB"
 
 

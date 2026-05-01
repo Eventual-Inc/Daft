@@ -117,6 +117,31 @@ impl DaftFile {
     }
 }
 
+impl Read for DaftFile {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.read(buf),
+            None => Err(io::Error::other("File not open")),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.read_to_end(buf),
+            None => Err(io::Error::other("File not open")),
+        }
+    }
+}
+
+impl Seek for DaftFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.seek(pos),
+            None => Err(io::Error::other("File not open")),
+        }
+    }
+}
+
 // Simple wrapper around ObjectSource
 pub(crate) struct ObjectSourceReader {
     pub(crate) source: Arc<dyn ObjectSource>,
@@ -343,6 +368,7 @@ impl Seek for FileCursor {
         }
     }
 }
+
 fn map_get_error(e: daft_io::Error) -> io::Error {
     io::Error::other(format!("Get failed: {}", e))
 }

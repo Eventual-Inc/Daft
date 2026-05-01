@@ -2,110 +2,52 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import daft
-from daft.udf.udf_v2 import Func
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    import PIL
-
-    from daft import Expression
-    from daft.file.typing import ImageMetadata
-
-
-def get_metadata_impl(
-    file: daft.ImageFile,
-) -> ImageMetadata:
-    return file.metadata()
-
-
-image_file_metadata_fn = Func._from_func(
-    get_metadata_impl,
-    return_dtype=daft.DataType.struct(
-        {
-            "width": daft.DataType.int64(),
-            "height": daft.DataType.int64(),
-            "format": daft.DataType.string(),
-            "mode": daft.DataType.string(),
-        }
-    ),
-    unnest=False,
-    use_process=None,
-    is_batch=False,
-    batch_size=None,
-    max_retries=None,
-    on_error=None,
-    name_override="image_file_metadata",
-)
+    from daft.expressions import Expression
 
 
 def image_file_metadata(
     file_expr: Expression,
 ) -> Expression:
-    """Get metadata for an image file.
-
-    Reads only the file header to extract dimensions, format, and mode
-    without decoding pixel data.
+    """Extract image metadata (width, height, format, mode) from a File column.
 
     Args:
-        file_expr (ImageFile Expression): The image file to get metadata for.
+        file_expr (File Expression): The file expression to extract metadata from.
 
     Returns:
         Expression (Struct Expression): A struct containing:
-            - width: int - Image width in pixels
-            - height: int - Image height in pixels
-            - format: str - Image format (e.g. "PNG", "JPEG")
+            - width: uint32 - Image width in pixels
+            - height: uint32 - Image height in pixels
+            - format: str - Image format (e.g. "png", "jpeg")
             - mode: str - Image mode (e.g. "RGB", "RGBA", "L")
     """
-    from daft.dependencies import pil_image
+    from daft.expressions import Expression
 
-    if not pil_image.module_available():
-        raise ImportError(
-            "The 'pillow' module is required to get image metadata. Please install it with: pip install 'daft[image]'"
-        )
-
-    return image_file_metadata_fn(file_expr)
-
-
-def decode_image_file_impl(
-    file: daft.ImageFile,
-) -> PIL.Image.Image:
-    return file.decode()
-
-
-decode_image_file_fn = Func._from_func(
-    decode_image_file_impl,
-    return_dtype=daft.DataType.image(),
-    unnest=False,
-    use_process=None,
-    is_batch=False,
-    batch_size=None,
-    max_retries=None,
-    on_error=None,
-    name_override="decode_image_file",
-)
+    return Expression._call_builtin_scalar_fn("image_file_metadata", file_expr)
 
 
 def decode_image_file(
     file_expr: Expression,
+    mode: str | None = None,
+    on_error: Literal["raise", "null"] = "raise",
 ) -> Expression:
-    """Decode an image file into an Image column.
-
-    Downloads and decodes the image file referenced by the File(Image) column
-    into the Daft Image data type.
+    """Decode image files from a File column into an Image column.
 
     Args:
-        file_expr (ImageFile Expression): The image file to decode.
+        file_expr (File Expression): The file expression to decode.
+        mode (str | None, default=None): Target image mode (e.g. "RGB", "RGBA").
+            If None, the mode is inferred from the image data.
+        on_error (str, default="raise"): Error handling strategy.
+            "raise" raises on decode failure, "null" returns null.
 
     Returns:
         Expression (Image Expression): The decoded image.
     """
-    from daft.dependencies import pil_image
+    from daft.daft import ImageMode
+    from daft.expressions import Expression
 
-    if not pil_image.module_available():
-        raise ImportError(
-            "The 'pillow' module is required to decode image files. Please install it with: pip install 'daft[image]'"
-        )
+    image_mode = ImageMode.from_mode_string(mode.upper()) if isinstance(mode, str) else mode
 
-    return decode_image_file_fn(file_expr)
+    return Expression._call_builtin_scalar_fn("decode_image_file", file_expr, mode=image_mode, on_error=on_error)
