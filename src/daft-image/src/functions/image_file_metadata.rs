@@ -19,15 +19,15 @@ pub struct ImageFileMetadata;
 
 fn image_format_to_string(format: image::ImageFormat) -> &'static str {
     match format {
-        image::ImageFormat::Png => "png",
-        image::ImageFormat::Jpeg => "jpeg",
-        image::ImageFormat::Gif => "gif",
-        image::ImageFormat::WebP => "webp",
-        image::ImageFormat::Tiff => "tiff",
-        image::ImageFormat::Bmp => "bmp",
-        image::ImageFormat::Ico => "ico",
-        image::ImageFormat::Hdr => "hdr",
-        _ => "unknown",
+        image::ImageFormat::Png => "PNG",
+        image::ImageFormat::Jpeg => "JPEG",
+        image::ImageFormat::Gif => "GIF",
+        image::ImageFormat::WebP => "WEBP",
+        image::ImageFormat::Tiff => "TIFF",
+        image::ImageFormat::Bmp => "BMP",
+        image::ImageFormat::Ico => "ICO",
+        image::ImageFormat::Hdr => "HDR",
+        _ => "UNKNOWN",
     }
 }
 
