@@ -759,7 +759,7 @@ impl DataType {
             Self::Int16 => Self::Float32,
             Self::UInt8 => Self::Float32,
             Self::UInt16 => Self::Float32,
-            Self::Float16 => Self::Float32,
+            Self::Float16 => Self::Float16,
             Self::Float32 => Self::Float32,
 
             // All numeric types that coerce to `f64`

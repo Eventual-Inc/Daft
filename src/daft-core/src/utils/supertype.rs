@@ -143,7 +143,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Date, DataType::Int64) => Some(DataType::Int64),
             (DataType::Date, DataType::Float32) => Some(DataType::Float32),
             (DataType::Date, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Date, DataType::Float16) => Some(DataType::Float16),
+            (DataType::Date, DataType::Float16) => Some(DataType::Float32),
             (DataType::Date, DataType::Timestamp(tu, tz)) => Some(DataType::Timestamp(*tu, tz.clone())),
 
             (DataType::Timestamp(_, _), DataType::UInt32) => Some(DataType::Int64),
