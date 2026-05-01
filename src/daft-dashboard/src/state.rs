@@ -754,9 +754,17 @@ pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
 #[cfg(test)]
 mod task_store_tests {
     use super::*;
+    use crate::engine::{TaskStatsEntry, TaskTotals};
 
     fn finished() -> TaskStatus {
         TaskStatus::Finished
+    }
+
+    fn stats_entry(task_id: u32, cpu_us: u64) -> TaskStatsEntry {
+        TaskStatsEntry {
+            task_id,
+            totals: TaskTotals { cpu_us },
+        }
     }
 
     /// Two tasks with identical `node_ids` but different `name` strings should
@@ -787,6 +795,94 @@ mod task_store_tests {
         store.submit_task(2, 9, vec![7, 9], 0, Some("Project".to_string()), 0.0);
 
         assert_eq!(store.groups.len(), 2);
+    }
+
+    /// Mid-flight stats update on a pending task writes cpu_us through to the
+    /// task and the parent group's total, and stamps latest_stats_sec.
+    #[test]
+    fn update_task_stats_applies_cpu_us_to_task_and_group() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Filter".to_string()), 0.0);
+
+        store.update_task_stats(stats_entry(1, 300), Some("worker-1".to_string()), 1.0);
+
+        let task = store.tasks.get(&1).expect("task retained");
+        assert_eq!(task.cpu_us, 300);
+        assert_eq!(task.latest_stats_sec, Some(1.0));
+        assert_eq!(task.worker_id.as_deref(), Some("worker-1"));
+        assert_eq!(store.groups.len(), 1);
+        assert_eq!(store.groups[0].total_cpu_us, 300);
+    }
+
+    /// Successive updates apply only the delta to the group total, so the
+    /// group running sum equals the latest per-task value (not their sum).
+    #[test]
+    fn update_task_stats_accumulates_as_deltas() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+
+        store.update_task_stats(stats_entry(1, 200), None, 1.0);
+        store.update_task_stats(stats_entry(1, 500), None, 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.groups[0].total_cpu_us, 500);
+    }
+
+    /// An out-of-order update older than the last seen timestamp is dropped
+    /// (cpu_us and latest_stats_sec stay at the newer value).
+    #[test]
+    fn update_task_stats_drops_stale_timestamp() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+
+        store.update_task_stats(stats_entry(1, 400), None, 5.0);
+        store.update_task_stats(stats_entry(1, 999), None, 2.0); // stale
+
+        let task = store.tasks.get(&1).unwrap();
+        assert_eq!(task.cpu_us, 400);
+        assert_eq!(task.latest_stats_sec, Some(5.0));
+        assert_eq!(store.groups[0].total_cpu_us, 400);
+    }
+
+    /// After end_task the task is no longer Pending; a late stats update must
+    /// be ignored so it can't overwrite the final cpu_us.
+    #[test]
+    fn update_task_stats_after_end_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600);
+
+        store.update_task_stats(stats_entry(1, 9_999), None, 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 600);
+        assert_eq!(store.groups[0].total_cpu_us, 600);
+    }
+
+    /// end_task following a mid-flight update must add only the remaining
+    /// delta (final - last seen) so the group total isn't double-counted.
+    #[test]
+    fn end_task_after_update_does_not_double_count() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+
+        store.update_task_stats(stats_entry(1, 300), None, 1.0);
+        store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.groups[0].total_cpu_us, 500);
+    }
+
+    /// Stats updates for an unknown task_id (never submitted) are dropped
+    /// silently — they may arrive during the submit/exec_start race.
+    #[test]
+    fn update_task_stats_unknown_task_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+
+        store.update_task_stats(stats_entry(999, 1_000), None, 1.0);
+
+        assert!(!store.tasks.contains_key(&999));
+        assert_eq!(store.groups[0].total_cpu_us, 0);
     }
 
     /// End-before-submit with empty node_ids should resolve to the same group
