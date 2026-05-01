@@ -17,7 +17,8 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{
-    DistributedPipelineNode, filter::FilterNode,
+    DistributedPipelineNode,
+    filter::FilterNode,
     test_helpers::{
         CapturedRun, build_in_memory_source, make_partition, predicate_x_gt_2,
         run_pipeline_and_capture_events, test_schema,
@@ -130,8 +131,11 @@ async fn source_filter_pipeline_emits_paired_events() -> DaftResult<()> {
     assert!(start_ids.contains(&0) && start_ids.contains(&1));
     assert!(end_ids.contains(&0) && end_ids.contains(&1));
 
-    let names: std::collections::HashMap<_, _> =
-        captured.events.iter().map(|e| (e.node_id, e.name.as_ref())).collect();
+    let names: std::collections::HashMap<_, _> = captured
+        .events
+        .iter()
+        .map(|e| (e.node_id, e.name.as_ref()))
+        .collect();
     assert_eq!(names.get(&0).copied(), Some("InMemorySource"));
     assert_eq!(names.get(&1).copied(), Some("Filter"));
 
@@ -180,13 +184,8 @@ async fn dropping_result_stream_still_finalizes_operators() -> DaftResult<()> {
             .map(|i| make_partition(&[i as i64, i as i64 + 1]))
             .collect();
         let (source, plan_config) = build_in_memory_source(0, parts, &meter);
-        let filter_node = FilterNode::new(
-            1,
-            &plan_config,
-            predicate_x_gt_2(),
-            test_schema(),
-            source,
-        );
+        let filter_node =
+            FilterNode::new(1, &plan_config, predicate_x_gt_2(), test_schema(), source);
         DistributedPipelineNode::new(Arc::new(filter_node), &meter)
     };
 
@@ -221,23 +220,14 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
             .map(|i| make_partition(&[i as i64, i as i64 + 1]))
             .collect();
         let (source, plan_config) = build_in_memory_source(0, parts, &meter);
-        let filter_node = FilterNode::new(
-            1,
-            &plan_config,
-            predicate_x_gt_2(),
-            test_schema(),
-            source,
-        );
+        let filter_node =
+            FilterNode::new(1, &plan_config, predicate_x_gt_2(), test_schema(), source);
         DistributedPipelineNode::new(Arc::new(filter_node), &meter)
     };
 
     let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
-    let stats_manager = StatisticsManager::from_pipeline_node(
-        &pipeline,
-        vec![],
-        &meter,
-        "test-query".into(),
-    )?;
+    let stats_manager =
+        StatisticsManager::from_pipeline_node(&pipeline, vec![], &meter, "test-query".into())?;
 
     let mut scheduler_joinset = common_runtime::JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(
@@ -319,12 +309,8 @@ async fn run_pipeline_and_capture_first_n(
     n: usize,
 ) -> DaftResult<CapturedRun> {
     let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
-    let stats_manager = StatisticsManager::from_pipeline_node(
-        pipeline,
-        vec![],
-        meter,
-        "test-query".into(),
-    )?;
+    let stats_manager =
+        StatisticsManager::from_pipeline_node(pipeline, vec![], meter, "test-query".into())?;
 
     let mut scheduler_joinset = common_runtime::JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(

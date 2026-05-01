@@ -87,9 +87,7 @@ impl PythonPartitionRefStream {
     /// fetches and re-dispatches the events on the driver's
     /// `DaftContext`, since events fired in the Ray actor's local
     /// context don't reach driver-attached subscribers.
-    fn take_pending_operator_events(
-        &self,
-    ) -> Vec<(String, String, u32, String, Option<u32>, f64)> {
+    fn take_pending_operator_events(&self) -> Vec<(String, String, u32, String, Option<u32>, f64)> {
         self.statistics_manager
             .take_pending_operator_events()
             .into_iter()
@@ -300,12 +298,8 @@ impl PyDistributedPhysicalPlanRunner {
             &meter,
         )?;
 
-        let statistics_manager = StatisticsManager::from_pipeline_node(
-            &pipeline_node,
-            subscribers,
-            &meter,
-            query_id,
-        )?;
+        let statistics_manager =
+            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter, query_id)?;
 
         let plan_result =
             self.runner
