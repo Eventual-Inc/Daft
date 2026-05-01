@@ -140,8 +140,12 @@ def test_series_casting_integer_to_non_integer_or_float(source_dtype, dest_dtype
     ],
 )
 def test_series_casting_float_to_non_integer_or_float(source_dtype, dest_dtype, expected) -> None:
-    if source_dtype == pa.float16() and dest_dtype in (DataType.decimal128(16, 8),):
-        pytest.skip("arrow does not support Float16 -> Decimal128 cast")
+    if source_dtype == pa.float16() and dest_dtype in (
+        DataType.decimal128(16, 8),
+        DataType.string(),
+        DataType.binary(),
+    ):
+        pytest.skip("arrow Float16 cast: Decimal128 unsupported, string repr differs from Float32/Float64")
 
     data = pa.array([1.0, 2.0, 3.0, None, 5.0, None])
 
@@ -150,10 +154,7 @@ def test_series_casting_float_to_non_integer_or_float(source_dtype, dest_dtype, 
     assert s.datatype() == DataType.from_arrow_type(source_dtype)
     t = s.cast(dest_dtype)
     assert t.datatype() == dest_dtype
-    if source_dtype == pa.float16() and dest_dtype in (DataType.string(), DataType.binary()):
-        pass
-    else:
-        assert t.to_pylist() == expected
+    assert t.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -374,7 +375,7 @@ def test_series_cast_python_to_null() -> None:
     assert t.to_pylist() == [None, None, None]
 
 
-@pytest.mark.parametrize("dtype", [t for t in ARROW_FLOAT_TYPES if t != pa.float16()] + ARROW_INT_TYPES)
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES)
 def test_series_cast_python_to_list(dtype) -> None:
     data = [
         [1, 2, 3],

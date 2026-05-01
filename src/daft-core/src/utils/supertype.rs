@@ -73,7 +73,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int16, DataType::Float16) => Some(DataType::Float16),
+            (DataType::Int16, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Int32, DataType::Boolean) => Some(DataType::Int32),
             (DataType::Int32, DataType::Int8) => Some(DataType::Int32),
@@ -129,7 +129,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Float16, DataType::Boolean) => Some(DataType::Float16),
 
             (DataType::Float16, DataType::UInt8) => Some(DataType::Float16),
-            (DataType::Float16, DataType::UInt16) => Some(DataType::Float16),
+            (DataType::Float16, DataType::UInt16) => Some(DataType::Float32),
             (DataType::Float16, DataType::UInt32) => Some(DataType::Float32),
             (DataType::Float16, DataType::UInt64) => Some(DataType::Float32),
 

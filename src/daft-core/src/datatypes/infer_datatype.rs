@@ -591,7 +591,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int16, DataType::Float16) => Some(DataType::Float16),
+            (DataType::Int16, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Int32, DataType::Int32) => Some(DataType::Int32),
             (DataType::Int32, DataType::Int64) => Some(DataType::Int64),
@@ -625,7 +625,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::UInt16, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt16, DataType::Float32) => Some(DataType::Float32),
             (DataType::UInt16, DataType::Float64) => Some(DataType::Float64),
-            (DataType::UInt16, DataType::Float16) => Some(DataType::Float16),
+            (DataType::UInt16, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::UInt32, DataType::UInt32) => Some(DataType::UInt32),
             (DataType::UInt32, DataType::UInt64) => Some(DataType::UInt64),
