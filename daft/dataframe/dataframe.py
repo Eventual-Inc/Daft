@@ -5891,7 +5891,7 @@ class GroupedDataFrame:
             >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
             >>>
-            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            >>> @daft.func.batch(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data)]
             >>>
