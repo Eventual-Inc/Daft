@@ -18,6 +18,7 @@ use daft_dsl::{
     join::{get_right_cols_to_drop, infer_asof_join_schema},
 };
 use daft_groupby::IntoGroups;
+use rayon::prelude::*;
 
 type ByKeyHashesAndComparator<'a> = (
     &'a UInt64Array,
@@ -426,11 +427,6 @@ impl JoinOperator for AsofJoinOperator {
         states: Vec<Self::ProbeState>,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeFinalizeResult {
-        let state = states
-            .into_iter()
-            .next()
-            .expect("AsofJoin probe finalize: expected exactly one state");
-
         let join_schema = self.join_schema.clone();
         let right_cols_to_drop = self.right_cols_to_drop.clone();
         let right_schema = self.right_schema.clone();
@@ -438,8 +434,11 @@ impl JoinOperator for AsofJoinOperator {
         spawner
             .spawn(
                 async move {
-                    let mut state = state;
-                    let table = state.build_contents.clone();
+                    let table = states
+                        .first()
+                        .expect("AsofJoin probe finalize: expected at least one state")
+                        .build_contents
+                        .clone();
 
                     if table.total_left_rows == 0 {
                         return Ok(Some(MicroPartition::new_loaded(
@@ -448,61 +447,155 @@ impl JoinOperator for AsofJoinOperator {
                             None,
                         )));
                     }
+
+                    // Each state's best_match stores a local_morsel_idx scoped to that state.
+                    // global_morsel_offsets[k] converts state k's local_morsel_idx to a
+                    // global_morsel_idx into the flat global_right_on_key_arrs / all_right_tables.
+                    let global_morsel_offsets: Vec<usize> = states
+                        .iter()
+                        .scan(0usize, |acc, state| {
+                            let offset = *acc;
+                            *acc += state.right_tables.len();
+                            Some(offset)
+                        })
+                        .collect();
+
+                    let global_right_on_key_arrs: Vec<Arc<dyn Array>> = states
+                        .iter()
+                        .flat_map(|s| s.right_on_key_arrs.iter().cloned())
+                        .collect();
+
+                    // Parallel merge: each chunk of left rows independently scans all states
+                    // and picks the globally best right match, using a thread-local cmp_cache
+                    // to amortise comparator builds across rows in the same chunk.
+                    let rows_per_chunk =
+                        (table.total_left_rows / rayon::current_num_threads()).max(1024);
+                    let mut global_best: Vec<Option<(u32, u32)>> =
+                        vec![None; table.total_left_rows];
+
+                    global_best
+                        .par_chunks_mut(rows_per_chunk)
+                        .enumerate()
+                        .try_for_each(|(chunk_idx, chunk)| -> DaftResult<()> {
+                            let left_chunk_base = chunk_idx * rows_per_chunk;
+                            let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> =
+                                HashMap::new();
+
+                            for (chunk_row_idx, curr_best_match) in chunk.iter_mut().enumerate() {
+                                let global_left_idx = left_chunk_base + chunk_row_idx;
+                                for (state_idx, state) in states.iter().enumerate() {
+                                    let Some((local_morsel_idx, local_right_idx)) =
+                                        state.best_match[global_left_idx]
+                                    else {
+                                        continue;
+                                    };
+                                    let global_morsel_idx = (global_morsel_offsets[state_idx]
+                                        + local_morsel_idx as usize)
+                                        as u32;
+
+                                    let is_better = match *curr_best_match {
+                                        None => true,
+                                        Some((winner_morsel_idx, winner_right_idx)) => {
+                                            let cmp = match cmp_cache.entry((
+                                                global_morsel_idx as usize,
+                                                winner_morsel_idx as usize,
+                                            )) {
+                                                Entry::Occupied(e) => e.into_mut(),
+                                                Entry::Vacant(e) => {
+                                                    e.insert(build_partial_compare_with_nulls(
+                                                        global_right_on_key_arrs
+                                                            [global_morsel_idx as usize]
+                                                            .as_ref(),
+                                                        global_right_on_key_arrs
+                                                            [winner_morsel_idx as usize]
+                                                            .as_ref(),
+                                                        false,
+                                                    )?)
+                                                }
+                                            };
+                                            matches!(
+                                                cmp(
+                                                    local_right_idx as usize,
+                                                    winner_right_idx as usize
+                                                ),
+                                                Some(Ordering::Greater)
+                                            )
+                                        }
+                                    };
+
+                                    if is_better {
+                                        *curr_best_match =
+                                            Some((global_morsel_idx, local_right_idx));
+                                    }
+                                }
+                            }
+                            Ok(())
+                        })?;
+
+                    // Collect all right tables in state order, matching global_morsel_offsets.
+                    let all_right_tables: Vec<RecordBatch> = states
+                        .into_iter()
+                        .flat_map(|s| s.right_tables.into_iter())
+                        .collect();
+
                     // backfill
                     for bucket in &table.group_buckets {
                         for i in 1..bucket.len() {
-                            let prev_global = bucket[i - 1] as usize;
-                            let curr_global = bucket[i] as usize;
-                            // Skip null-on-key left rows: they are invalid match targets.
-                            if !table.left_on_arr.is_valid(curr_global) {
+                            let prev_left_idx = bucket[i - 1] as usize;
+                            let curr_left_idx = bucket[i] as usize;
+                            if !table.left_on_arr.is_valid(curr_left_idx) {
                                 continue;
                             }
-                            if state.best_match[curr_global].is_none()
-                                && state.best_match[prev_global].is_some()
+                            if global_best[curr_left_idx].is_none()
+                                && global_best[prev_left_idx].is_some()
                             {
-                                state.best_match[curr_global] = state.best_match[prev_global];
+                                global_best[curr_left_idx] = global_best[prev_left_idx];
                             }
                         }
                     }
-                    let mut morsel_offsets = vec![0usize; state.right_tables.len() + 1];
-                    for (i, rb) in state.right_tables.iter().enumerate() {
-                        morsel_offsets[i + 1] = morsel_offsets[i] + rb.len();
+
+                    // global_right_idx = right_row_offsets[global_morsel_idx] + local_right_idx.
+                    let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
+                    for (i, rb) in all_right_tables.iter().enumerate() {
+                        right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
                     }
 
-                    let n = table.total_left_rows;
                     let right_idx_arr = UInt64Array::from_iter(
                         Field::new("right_idx", DaftDataType::UInt64),
-                        (0..n).map(|i| {
-                            state.best_match[i].map(|(morsel_idx, row_idx)| {
-                                (morsel_offsets[morsel_idx as usize] + row_idx as usize) as u64
-                            })
+                        (0..table.total_left_rows).map(|global_left_idx| {
+                            global_best[global_left_idx].map(
+                                |(global_morsel_idx, local_right_idx)| {
+                                    let global_right_idx = right_row_offsets
+                                        [global_morsel_idx as usize]
+                                        + local_right_idx as usize;
+                                    global_right_idx as u64
+                                },
+                            )
                         }),
                     );
 
-                    let right_rb_concat = if state.right_tables.is_empty() {
+                    let right_rb_concat = if all_right_tables.is_empty() {
                         RecordBatch::empty(Some(right_schema))
                     } else {
-                        RecordBatch::concat(
-                            state.right_tables.iter().collect::<Vec<_>>().as_slice(),
-                        )?
+                        RecordBatch::concat(all_right_tables.iter().collect::<Vec<_>>().as_slice())?
                     };
                     let right_out = right_rb_concat.take(&right_idx_arr)?;
 
-                    //build final table
                     let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
-
                     for s in table.left_rb.as_materialized_series() {
                         join_series.push(s.clone());
                     }
-
                     for s in right_out.as_materialized_series() {
                         if !right_cols_to_drop.contains(s.name()) {
                             join_series.push(s.clone());
                         }
                     }
 
-                    let output_rb =
-                        RecordBatch::new_with_size(join_schema.clone(), join_series, n)?;
+                    let output_rb = RecordBatch::new_with_size(
+                        join_schema.clone(),
+                        join_series,
+                        table.total_left_rows,
+                    )?;
 
                     Ok(Some(MicroPartition::new_loaded(
                         join_schema,
@@ -525,10 +618,6 @@ impl JoinOperator for AsofJoinOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         vec!["Asof Join".to_string()]
-    }
-
-    fn max_probe_concurrency(&self) -> usize {
-        1
     }
 
     fn needs_probe_finalization(&self) -> bool {
