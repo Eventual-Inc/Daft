@@ -7,9 +7,15 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_dsl::functions::AggFnHandle;
+use daft_dsl::functions::{AggFnHandle, ScalarUDF};
 use daft_ext::abi::{FFI_AggregateFunction, FFI_ScalarFunction, FFI_SessionContext};
-use daft_ext_internal::module::ModuleHandle;
+use daft_ext_internal::{
+    aggregate::into_aggregate_fn_handle,
+    function::{
+        OverloadedScalarFunctionFactory, ScalarFunctionHandle, into_scalar_function_handle,
+    },
+    module::ModuleHandle,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -120,6 +126,25 @@ impl Session {
         self.state_mut()
             .functions
             .bind(name.into(), function.into());
+    }
+
+    /// Attaches a native extension function, accumulating overloads under the same name.
+    pub fn attach_native_function(&self, name: String, handle: Arc<ScalarFunctionHandle>) {
+        let mut state = self.state_mut();
+        if let Some(crate::ScalarFunction::Native(factory)) = state.functions.get_mut(&name)
+            && let Some(overloaded) = Arc::get_mut(factory).and_then(|f| {
+                f.as_any_mut()
+                    .downcast_mut::<OverloadedScalarFunctionFactory>()
+            })
+        {
+            overloaded.add_variant(handle);
+            return;
+        }
+        let factory =
+            OverloadedScalarFunctionFactory::new(ScalarUDF::name(handle.as_ref()), handle);
+        state
+            .functions
+            .bind(name, crate::ScalarFunction::Native(Arc::new(factory)));
     }
 
     /// Attaches an aggregate function to this session. Does NOT err if it already exists.
@@ -466,12 +491,9 @@ impl Session {
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let factory = daft_ext_internal::function::into_scalar_function_factory(
-                ffi,
-                init_ctx.module.clone(),
-            );
+            let handle = into_scalar_function_handle(ffi, init_ctx.module.clone());
             let session = unsafe { &*init_ctx.session };
-            session.attach_function(name, factory);
+            session.attach_native_function(name, handle);
             0
         }
 
@@ -485,10 +507,7 @@ impl Session {
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = daft_ext_internal::aggregate::into_aggregate_fn_handle(
-                ffi,
-                init_ctx.module.clone(),
-            );
+            let handle = into_aggregate_fn_handle(ffi, init_ctx.module.clone());
             let session = unsafe { &*init_ctx.session };
             session.attach_aggregate_function(name, handle);
             0
@@ -654,6 +673,14 @@ mod tests {
             Err(common_error::DaftError::ValueError(
                 "mock: not callable".into(),
             ))
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
         }
     }
 
