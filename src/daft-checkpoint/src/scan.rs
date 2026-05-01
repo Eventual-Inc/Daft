@@ -223,4 +223,35 @@ mod tests {
 
         assert_eq!(task_paths, expected_paths);
     }
+
+    #[tokio::test]
+    async fn advertised_schema_is_passed_through_verbatim() {
+        // The scan operator advertises whatever schema is handed to it, so
+        // callers (the optimizer rule) are responsible for passing the
+        // canonical sealed-keys column name. Pin that the operator does
+        // expose the schema given at construction — a regression that
+        // rewrote the schema internally would silently break the anti-join's
+        // right-side resolution.
+        use common_checkpoint_config::SEALED_KEYS_COLUMN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _store) = make_store(dir.path());
+
+        let canonical_schema = Arc::new(Schema::new(vec![Field::new(
+            SEALED_KEYS_COLUMN,
+            DataType::Utf8,
+        )]));
+        let op = BlobStoreCheckpointedKeysScanOperator::new(config, canonical_schema);
+
+        let advertised = op.schema();
+        assert_eq!(
+            advertised.len(),
+            1,
+            "expected single-column schema, got: {advertised:?}"
+        );
+        assert!(
+            advertised.get_field(SEALED_KEYS_COLUMN).is_ok(),
+            "advertised schema must carry the canonical column name; got: {advertised:?}"
+        );
+    }
 }

@@ -61,7 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointStore
+from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -180,6 +180,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointConfig",
     "CheckpointStore",
     "DataFrame",
     "DataType",
@@ -190,6 +191,7 @@ __all__ = [
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "KeyFilteringSettings",
     "MediaType",
     "ResourceRequest",
     "Schema",

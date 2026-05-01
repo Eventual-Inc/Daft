@@ -118,6 +118,13 @@ pub trait CheckpointStore: Send + Sync {
     /// Stream all checkpointed source keys (both checkpointed and committed)
     /// as columnar [`Series`] chunks. Useful for building a filter to skip
     /// already-processed inputs on re-run.
+    ///
+    /// Each streamed [`Series`] is named
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN)
+    /// regardless of what column name was passed to [`stage_keys`](Self::stage_keys).
+    /// Implementations must rename on staging so the read side is stable
+    /// across renames of the source's key column — see
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN).
     async fn get_checkpointed_keys(
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Series>>>;
