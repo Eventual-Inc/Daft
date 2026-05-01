@@ -160,6 +160,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::Interval(_) => {
                 Err(DaftError::NotImplemented("Interval literal to Python".to_string()).into())
             }
+            Self::Float16(val) => val.to_f32().into_bound_py_any(py),
             Self::Float32(val) => val.into_bound_py_any(py),
             Self::Float64(val) => val.into_bound_py_any(py),
             Self::Decimal(val, p, s) => py
@@ -423,6 +424,8 @@ impl Literal {
             Self::Int64(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "uint64") {
             Self::UInt64(get_numpy_scalar(ob)?.extract()?)
+        } else if isinstance!(ob, "numpy", "float16") {
+            Self::Float16(half::f16::from_f32(get_numpy_scalar(ob)?.extract()?))
         } else if isinstance!(ob, "numpy", "float32") {
             Self::Float32(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "float64") {

@@ -140,6 +140,13 @@ def test_series_casting_integer_to_non_integer_or_float(source_dtype, dest_dtype
     ],
 )
 def test_series_casting_float_to_non_integer_or_float(source_dtype, dest_dtype, expected) -> None:
+    if source_dtype == pa.float16() and dest_dtype in (
+        DataType.decimal128(16, 8),
+        DataType.string(),
+        DataType.binary(),
+    ):
+        pytest.skip("arrow Float16 cast: Decimal128 unsupported, string repr differs from Float32/Float64")
+
     data = pa.array([1.0, 2.0, 3.0, None, 5.0, None])
 
     s = Series.from_arrow(data.cast(source_dtype))

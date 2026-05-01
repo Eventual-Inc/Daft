@@ -283,6 +283,7 @@ impl_array_get_lit!(UInt8Array, UInt8);
 impl_array_get_lit!(UInt16Array, UInt16);
 impl_array_get_lit!(UInt32Array, UInt32);
 impl_array_get_lit!(UInt64Array, UInt64);
+impl_array_get_lit!(Float16Array, Float16);
 impl_array_get_lit!(Float32Array, Float32);
 impl_array_get_lit!(Float64Array, Float64);
 impl_array_get_lit!(Utf8Array, Utf8);

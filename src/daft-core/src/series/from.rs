@@ -16,6 +16,7 @@ impl Series {
             NdArray::U32(arr) => UInt32Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             NdArray::I64(arr) => Int64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             NdArray::U64(arr) => UInt64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::F16(arr) => Float16Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             NdArray::F32(arr) => Float32Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             NdArray::F64(arr) => Float64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             #[cfg(feature = "python")]

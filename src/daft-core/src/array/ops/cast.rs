@@ -197,6 +197,17 @@ where
                 let result_array =
                     if arrow::compute::can_cast_types(&self_arrow_type, &target_arrow_type) {
                         arrow::compute::cast(data_to_cast.as_ref(), &target_arrow_type)?
+                    } else if matches!(dtype, DataType::Float16)
+                        && arrow::compute::can_cast_types(
+                            &self_arrow_type,
+                            &arrow::datatypes::DataType::Float32,
+                        )
+                    {
+                        let intermediate = arrow::compute::cast(
+                            data_to_cast.as_ref(),
+                            &arrow::datatypes::DataType::Float32,
+                        )?;
+                        arrow::compute::cast(intermediate.as_ref(), &target_arrow_type)?
                     } else if target_arrow_physical_type != target_arrow_type
                         && arrow::compute::can_cast_types(
                             &self_physical_arrow_type,
@@ -1094,7 +1105,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     use_offset_indices: bool,
 ) -> DaftResult<Series> {
     let item: Series = with_match_numeric_daft_types!(inner_dtype, |$T| {
-            let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
+            let mut values = vec![<<$T as DaftNumericType>::Native as num_traits::Zero>::zero(); n_values];
             let nulls = non_zero_values_array.nulls();
             for i in 0..non_zero_values_array.len() {
                 let is_valid = nulls.is_none_or(|v| v.is_valid(i));
@@ -1892,9 +1903,10 @@ mod tests {
     use super::*;
     use crate::{
         datatypes::DataArray,
+        hf16,
         prelude::{
             BinaryArray, BooleanArray, Decimal128Array, Decimal128Type, ExtensionArray,
-            Float64Array,
+            Float16Array, Float32Array, Float64Array, Int32Array, Utf8Array,
         },
     };
 
@@ -2168,6 +2180,95 @@ mod tests {
         assert!(values[1].is_some(), "Second date should parse successfully");
         assert!(values[2].is_some(), "Third date should parse successfully");
     }
+
+    #[test]
+    fn test_float16_to_float32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(2.5), Some(-3.0)]);
+    }
+
+    #[test]
+    fn test_float32_to_float16() {
+        let arr = Float32Array::from_vec("test", vec![1.0, 2.5, -3.0]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_float16_to_int32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Int32).unwrap();
+        let values: Vec<Option<i32>> = result.i32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1), Some(2), Some(-3)]);
+    }
+
+    #[test]
+    fn test_int32_to_float16() {
+        let arr = Int32Array::from_vec("test", vec![1, 2, -3]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.0)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_utf8_to_float16() {
+        let arr = Utf8Array::from_iter(
+            "test",
+            vec![Some("  1.5  "), Some("-2.5"), None].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.5)), Some(hf16!(-2.5)), None]);
+    }
+
+    #[test]
+    fn test_float16_to_float64() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(0.0), hf16!(-0.5)]);
+        let result = arr.cast(&DataType::Float64).unwrap();
+        let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(0.0), Some(-0.5)]);
+    }
+
+    #[test]
+    fn test_float16_with_nulls() {
+        let arr = Float16Array::from_iter(
+            Field::new("test", DataType::Float16),
+            vec![Some(hf16!(1.0)), None, Some(hf16!(3.0))].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), None, Some(3.0)]);
+    }
+
+    #[test]
+    fn test_float16_roundtrip_through_float32() {
+        let original = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let as_f32 = original.cast(&DataType::Float32).unwrap();
+        let back = as_f32.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = back.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_bool_to_float16() {
+        let arr = BooleanArray::from_iter("test", vec![Some(true), Some(false), None].into_iter());
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.0)), Some(hf16!(0.0)), None]);
+    }
+
     #[test]
     fn test_cast_utf8_to_extension() {
         let extension_type =

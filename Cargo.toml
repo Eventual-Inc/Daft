@@ -243,6 +243,7 @@ exclude = [
 
 [workspace.dependencies]
 arrow = "57.1.0"
+half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
 arrow-csv = "57.1.0"
@@ -326,7 +327,7 @@ ndarray = "0.17"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.28"
+numpy = {version = "0.28", features = ["half"]}
 opendal = {version = "0.55", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}

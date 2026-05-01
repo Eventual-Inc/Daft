@@ -61,6 +61,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int8, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int8, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int8, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int8, DataType::Float16) => Some(DataType::Float16),
 
             (DataType::Int16, DataType::Boolean) => Some(DataType::Int16),
             (DataType::Int16, DataType::Int8) => Some(DataType::Int16),
@@ -72,6 +73,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int16, DataType::Float32) => Some(DataType::Float32),
             (DataType::Int16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int16, DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Int32, DataType::Boolean) => Some(DataType::Int32),
             (DataType::Int32, DataType::Int8) => Some(DataType::Int32),
@@ -83,6 +85,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int32, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
             (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int32, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::Int64, DataType::Boolean) => Some(DataType::Int64),
             (DataType::Int64, DataType::Int8) => Some(DataType::Int64),
@@ -94,6 +97,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int64, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
             (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Int64, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::UInt16, DataType::UInt8) => Some(DataType::UInt16),
             (DataType::UInt16, DataType::UInt32) => Some(DataType::UInt32),
@@ -120,6 +124,15 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
             (DataType::Float64, DataType::Float32) => Some(DataType::Float64),
 
+            (DataType::Float16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::Float16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Float16, DataType::Boolean) => Some(DataType::Float16),
+
+            (DataType::Float16, DataType::UInt8) => Some(DataType::Float16),
+            (DataType::Float16, DataType::UInt16) => Some(DataType::Float32),
+            (DataType::Float16, DataType::UInt32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Float16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
+
             (DataType::Date, DataType::UInt8) => Some(DataType::Int64),
             (DataType::Date, DataType::UInt16) => Some(DataType::Int64),
             (DataType::Date, DataType::UInt32) => Some(DataType::Int64),
@@ -130,6 +143,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Date, DataType::Int64) => Some(DataType::Int64),
             (DataType::Date, DataType::Float32) => Some(DataType::Float32),
             (DataType::Date, DataType::Float64) => Some(DataType::Float64),
+            (DataType::Date, DataType::Float16) => Some(DataType::Float32),
             (DataType::Date, DataType::Timestamp(tu, tz)) => Some(DataType::Timestamp(*tu, tz.clone())),
 
             (DataType::Timestamp(_, _), DataType::UInt32) => Some(DataType::Int64),
@@ -138,6 +152,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Timestamp(_, _), DataType::Int64) => Some(DataType::Int64),
             (DataType::Timestamp(_, _), DataType::Float32) => Some(DataType::Float64),
             (DataType::Timestamp(_, _), DataType::Float64) => Some(DataType::Float64),
+            (DataType::Timestamp(_, _), DataType::Float16) => Some(DataType::Float32),
             (DataType::Timestamp(tu, tz), DataType::Date) => Some(DataType::Timestamp(*tu, tz.clone())),
 
             (DataType::Duration(_), DataType::UInt32) => Some(DataType::Int64),
@@ -146,11 +161,13 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Duration(_), DataType::Int64) => Some(DataType::Int64),
             (DataType::Duration(_), DataType::Float32) => Some(DataType::Float64),
             (DataType::Duration(_), DataType::Float64) => Some(DataType::Float64),
+            (DataType::Duration(_), DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Time(_), DataType::Int32) => Some(DataType::Int64),
             (DataType::Time(_), DataType::Int64) => Some(DataType::Int64),
             (DataType::Time(_), DataType::Float32) => Some(DataType::Float64),
             (DataType::Time(_), DataType::Float64) => Some(DataType::Float64),
+            (DataType::Time(_), DataType::Float16) => Some(DataType::Float32),
 
             (DataType::Duration(lu), DataType::Timestamp(ru, Some(tz))) | (DataType::Timestamp(lu, Some(tz)), DataType::Duration(ru)) => {
                 if tz.is_empty() {

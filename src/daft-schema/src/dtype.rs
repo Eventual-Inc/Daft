@@ -46,6 +46,9 @@ pub enum DataType {
     /// An [`u64`]
     UInt64,
 
+    /// A [`f16`] (IEEE 754 half-precision)
+    Float16,
+
     /// A [`f32`]
     Float32,
 
@@ -161,6 +164,7 @@ impl Display for DataType {
             Self::UInt16 => write!(f, "UInt16"),
             Self::UInt32 => write!(f, "UInt32"),
             Self::UInt64 => write!(f, "UInt64"),
+            Self::Float16 => write!(f, "Float16"),
             Self::Float32 => write!(f, "Float32"),
             Self::Float64 => write!(f, "Float64"),
             Self::Decimal128(precision, scale) => {
@@ -286,6 +290,7 @@ impl DataType {
             Self::UInt16 => arrow_schema::DataType::UInt16,
             Self::UInt32 => arrow_schema::DataType::UInt32,
             Self::UInt64 => arrow_schema::DataType::UInt64,
+            Self::Float16 => arrow_schema::DataType::Float16,
             Self::Float32 => arrow_schema::DataType::Float32,
             Self::Float64 => arrow_schema::DataType::Float64,
             Self::Timestamp(unit, tz) => {
@@ -456,11 +461,11 @@ impl DataType {
             | Self::UInt16
             | Self::UInt32
             | Self::UInt64
-            // DataType::Float16
+            | Self::Float16
             | Self::Float32
             | Self::Float64 => true,
             Self::Extension(_, inner, _) => inner.is_numeric(),
-            _ => false
+            _ => false,
         }
     }
 
@@ -475,12 +480,12 @@ impl DataType {
             | Self::UInt16
             | Self::UInt32
             | Self::UInt64
-            // DataType::Float16
+            | Self::Float16
             | Self::Float32
             | Self::Float64
             | Self::Decimal128(..) => true,
             Self::Extension(_, inner, _) => inner.is_primitive(),
-            _ => false
+            _ => false,
         }
     }
 
@@ -524,11 +529,7 @@ impl DataType {
 
     #[inline]
     pub fn is_floating(&self) -> bool {
-        matches!(
-            self,
-            // DataType::Float16 |
-            Self::Float32 | Self::Float64
-        )
+        matches!(self, Self::Float16 | Self::Float32 | Self::Float64)
     }
 
     #[inline]
@@ -653,6 +654,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_float16(&self) -> bool {
+        matches!(self, Self::Float16)
+    }
+
+    #[inline]
     pub fn is_float32(&self) -> bool {
         matches!(self, Self::Float32)
     }
@@ -754,6 +760,7 @@ impl DataType {
             Self::Int16 => Self::Float32,
             Self::UInt8 => Self::Float32,
             Self::UInt16 => Self::Float32,
+            Self::Float16 => Self::Float16,
             Self::Float32 => Self::Float32,
 
             // All numeric types that coerce to `f64`
@@ -789,6 +796,7 @@ impl DataType {
             Self::UInt16 => Some(2.),
             Self::UInt32 => Some(4.),
             Self::UInt64 => Some(8.),
+            Self::Float16 => Some(2.),
             Self::Float32 => Some(4.),
             Self::Float64 => Some(8.),
             Self::Utf8 => Some(VARIABLE_TYPE_SIZE),
@@ -1030,6 +1038,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::UInt32 => Self::UInt32,
             arrow_schema::DataType::UInt64 => Self::UInt64,
 
+            arrow_schema::DataType::Float16 => Self::Float16,
             arrow_schema::DataType::Float32 => Self::Float32,
             arrow_schema::DataType::Float64 => Self::Float64,
             arrow_schema::DataType::Timestamp(time_unit, tz) => Self::Timestamp(

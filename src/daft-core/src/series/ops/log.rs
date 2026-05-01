@@ -19,6 +19,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log2()?.into_series())
             }
+            DataType::Float16 => Ok(self.f16()?.log2()?.into_series()),
             DataType::Float32 => Ok(self.f32()?.log2()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log2()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -41,6 +42,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log10()?.into_series())
             }
+            DataType::Float16 => Ok(self.f16()?.log10()?.into_series()),
             DataType::Float32 => Ok(self.f32()?.log10()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log10()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -63,6 +65,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log(base)?.into_series())
             }
+            DataType::Float16 => Ok(self.f16()?.log(half::f16::from_f64(base))?.into_series()),
             DataType::Float32 => Ok(self.f32()?.log(base as f32)?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log(base)?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -86,6 +89,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.ln()?.into_series())
             }
+            DataType::Float16 => Ok(self.f16()?.ln()?.into_series()),
             DataType::Float32 => Ok(self.f32()?.ln()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.ln()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -109,6 +113,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.log1p()?.into_series())
             }
+            DataType::Float16 => Ok(self.f16()?.log1p()?.into_series()),
             DataType::Float32 => Ok(self.f32()?.log1p()?.into_series()),
             DataType::Float64 => Ok(self.f64()?.log1p()?.into_series()),
             dt => Err(DaftError::TypeError(format!(

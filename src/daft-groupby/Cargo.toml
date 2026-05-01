@@ -2,6 +2,7 @@
 arrow = {workspace = true}
 common-error = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
+half = {workspace = true}
 hashbrown = {workspace = true}
 smallvec = {workspace = true}
 

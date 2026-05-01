@@ -1806,6 +1806,7 @@ dependencies = [
 name = "common-hashable-float-wrapper"
 version = "0.3.0-dev0"
 dependencies = [
+ "half",
  "serde",
 ]
 
@@ -1880,6 +1881,7 @@ name = "common-ndarray"
 version = "0.3.0-dev0"
 dependencies = [
  "common-py-serde",
+ "half",
  "ndarray",
  "numpy",
  "pyo3",
@@ -2361,6 +2363,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-schema",
+ "half",
  "indexmap",
  "rstest",
 ]
@@ -2482,6 +2485,7 @@ dependencies = [
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
+ "half",
  "html-escape",
  "hyperloglog",
  "image",
@@ -2875,6 +2879,7 @@ dependencies = [
  "arrow",
  "common-error",
  "daft-core",
+ "half",
  "hashbrown 0.16.1",
  "smallvec",
 ]
@@ -4331,6 +4336,7 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "num-traits",
+ "serde",
  "zerocopy",
 ]
 
@@ -5622,6 +5628,7 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778da78c64ddc928ebf5ad9df5edf0789410ff3bdbf3619aed51cd789a6af1e2"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",
