@@ -1210,6 +1210,7 @@ mod test {
     #[case(DataType::FixedShapeSparseTensor(Box::new(DataType::Float32), vec![100, 100],true))]
     #[case(DataType::File(MediaType::Video))]
     #[case(DataType::File(MediaType::Audio))]
+    #[case(DataType::File(MediaType::Image))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Binary), None))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Int32), Some("meta".to_string())))]
     // To convert extension types to arrow_rs, you must use `Field::to_arrow`

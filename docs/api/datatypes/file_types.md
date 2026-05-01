@@ -8,6 +8,10 @@ The `File` DataType provides first-class support for handling file data across l
     options:
         filters: ["!^_"]
 
+::: daft.file.ImageFile
+    options:
+        filters: ["!^_"]
+
 ::: daft.file.VideoFile
     options:
         filters: ["!^_"]

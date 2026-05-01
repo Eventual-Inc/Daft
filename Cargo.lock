@@ -2901,6 +2901,7 @@ dependencies = [
  "criterion",
  "daft-core",
  "daft-dsl",
+ "daft-file",
  "daft-schema",
  "image",
  "log",
