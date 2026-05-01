@@ -1,14 +1,19 @@
 # daft-dashboard agent notes
 
+See [README.md](./README.md) for general build requirements (Node.js, npm) and
+architecture. This file documents pitfalls specific to agents running in
+sandboxed or offline build environments.
+
 ## Offline / sandboxed builds
 
-The dashboard frontend (`frontend/`) is a Next.js app. `frontend/src/lib/utils.ts`
-imports `Geist_Mono` from `next/font/google`, which causes Next.js to fetch the
-font from `fonts.googleapis.com` during `npm run build`. In an offline or
-network-restricted container that fetch fails and the Next.js build aborts.
+The dashboard frontend (`frontend/`) imports `Geist_Mono` from
+`next/font/google` in `frontend/src/lib/utils.ts`, which causes Next.js to
+fetch the font from `fonts.googleapis.com` during `npm run build`. In an
+offline or network-restricted container that fetch fails and the Next.js build
+aborts.
 
-`build.rs` invokes `npm run build` as part of `cargo build` for this crate, so a
-failed font fetch will cause `make build` for the whole Daft project to fail
+`build.rs` invokes `npm run build` as part of `cargo build` for this crate, so
+a failed font fetch will cause `make build` for the whole Daft project to fail
 with a "Frontend asset build failed" error.
 
 ### Recommended workaround in sandboxed agents
@@ -28,26 +33,12 @@ setup so it is set for every `make build` invocation.
 
 ### Behavior without the env var
 
-`build.rs` still degrades gracefully in debug builds: if `npm ci` or
-`npm run build` fails, it emits a `cargo:warning` and returns successfully
-rather than panicking. So `make build` should now succeed in offline
-containers even without `DAFT_DASHBOARD_SKIP_BUILD`, but you will lose the
-bundled dashboard assets and see a warning. Release builds (`build-release`,
-`build-whl`) still hard-fail on a failed frontend build by design.
-
-### Fixing properly (online dev machines)
-
-If you are an agent with network access and want to actually produce the
-dashboard assets:
-
-```sh
-cd src/daft-dashboard/frontend
-npm ci
-npm run build
-```
-
-After the first successful build, Next.js caches the Google font under
-`frontend/.next/cache/`, so subsequent builds work even offline.
+`build.rs` degrades gracefully in debug builds: if `npm ci` or `npm run build`
+fails, it emits a `cargo:warning` and returns successfully rather than
+panicking. So `make build` should succeed in offline containers even without
+`DAFT_DASHBOARD_SKIP_BUILD`, but you will lose the bundled dashboard assets
+and see a warning. Release builds (`build-release`, `build-whl`) still
+hard-fail on a failed frontend build by design.
 
 ### Permanent fix (not yet applied)
 
