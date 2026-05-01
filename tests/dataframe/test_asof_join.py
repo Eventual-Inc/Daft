@@ -322,6 +322,36 @@ class TestAsofJoinBackwardMatchCorrectness:
         assert result.column_names == ["g", "ts", "v", "w"]
         assert result.to_pydict()["w"] == [10, None]
 
+    def test_sandwiched_left_row_backfilled_with_by(self):
+        """A left row with no direct match is backfilled from its left neighbour within the same group."""
+        left = daft.from_pydict({"entity": ["A", "A", "A"], "ts": [3, 7, 10], "v": [1, 2, 3]})
+        right = daft.from_pydict({"entity": ["A", "A"], "ts": [2, 8], "w": [20, 80]})
+        result = left.join_asof(right, on="ts", by="entity").sort("ts")
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "A"],
+            "ts": [3, 7, 10],
+            "v": [1, 2, 3],
+            "w": [20, 20, 80],
+        }
+
+    def test_backfill_does_not_cross_group_boundaries(self):
+        """Backfill within one group must not propagate into a different group."""
+        left = daft.from_pydict(
+            {
+                "entity": ["A", "A", "A", "B", "B", "B"],
+                "ts": [3, 7, 10, 15, 20, 25],
+                "v": [1, 2, 3, 4, 5, 6],
+            }
+        )
+        right = daft.from_pydict({"entity": ["A", "A"], "ts": [2, 8], "w": [20, 80]})
+        result = left.join_asof(right, on="ts", by="entity").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "A", "B", "B", "B"],
+            "ts": [3, 7, 10, 15, 20, 25],
+            "v": [1, 2, 3, 4, 5, 6],
+            "w": [20, 20, 80, None, None, None],
+        }
+
 
 # ---------------------------------------------------------------------------
 # 4. Empty Table Edge Cases
