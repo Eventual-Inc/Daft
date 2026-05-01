@@ -17,8 +17,34 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
+    events::{
+        OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSource,
+        TaskSubmitEvent,
+    },
 };
+
+fn task_source_to_args(source: &TaskSource) -> daft_dashboard::engine::TaskSourceArgs {
+    match source {
+        TaskSource::PhysicalScan(p) => {
+            daft_dashboard::engine::TaskSourceArgs::PhysicalScan(
+                daft_dashboard::engine::PhysicalScanSourceArgs {
+                    source_id: p.source_id,
+                    scan_tasks: p.scan_tasks,
+                    paths: p.paths.clone(),
+                    storage_bytes: p.storage_bytes.map(|b| b as u64),
+                    estimated_memory_bytes: p.estimated_memory_bytes.map(|b| b as u64),
+                },
+            )
+        }
+        TaskSource::InMemoryScan(m) => daft_dashboard::engine::TaskSourceArgs::InMemoryScan(
+            daft_dashboard::engine::InMemoryScanSourceArgs {
+                source_id: m.source_id,
+                partitions: m.partitions as u64,
+                total_bytes: m.total_bytes.map(|b| b as u64),
+            },
+        ),
+    }
+}
 
 const TOTAL_ROWS: usize = 10;
 const DASHBOARD_EVENT_LIMIT: usize = 512;
@@ -467,6 +493,11 @@ impl DashboardSubscriber {
 
         let query_id = event.header.query_id.clone();
         let task = &event.task;
+        let sources = event
+            .sources
+            .iter()
+            .map(task_source_to_args)
+            .collect::<Vec<_>>();
         self.enqueue_json(
             format!("engine/query/{}/task/submit", query_id),
             "task_submit",
@@ -477,6 +508,7 @@ impl DashboardSubscriber {
                 node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
                 plan_fingerprint: task.plan_fingerprint,
                 name: task.name.as_deref().map(str::to_string),
+                sources,
             },
         );
         Ok(())

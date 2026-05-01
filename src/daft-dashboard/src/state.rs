@@ -68,6 +68,8 @@ pub(crate) struct TaskInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_id: Option<String>,
     pub cpu_us: u64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<crate::engine::TaskSourceArgs>,
 }
 
 /// Canonical group identity: the full chain of distributed pipeline nodes that
@@ -205,6 +207,7 @@ impl TaskStore {
         plan_fingerprint: u32,
         name: Option<String>,
         submit_sec: f64,
+        sources: Vec<crate::engine::TaskSourceArgs>,
     ) {
         // Display label only; the group key is `node_ids`.
         let display_name = name
@@ -234,6 +237,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            sources: sources.clone(),
         });
 
         // If a prior submit is replayed, keep the earliest submit_sec and sync
@@ -246,6 +250,9 @@ impl TaskStore {
         }
         if submit_sec < entry.submit_sec {
             entry.submit_sec = submit_sec;
+        }
+        if !sources.is_empty() {
+            entry.sources = sources;
         }
     }
 
@@ -334,6 +341,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            sources: Vec::new(),
         });
 
         task.last_node_id = last_node_id;
@@ -715,8 +723,24 @@ mod task_store_tests {
     #[test]
     fn same_node_ids_different_names_collapse_to_one_group() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Limit(10)".to_string()), 0.0);
-        store.submit_task(2, 7, vec![3, 5, 7], 0, Some("Limit(100)".to_string()), 0.0);
+        store.submit_task(
+            1,
+            7,
+            vec![3, 5, 7],
+            0,
+            Some("Limit(10)".to_string()),
+            0.0,
+            vec![],
+        );
+        store.submit_task(
+            2,
+            7,
+            vec![3, 5, 7],
+            0,
+            Some("Limit(100)".to_string()),
+            0.0,
+            vec![],
+        );
 
         assert_eq!(
             store.groups.len(),
@@ -733,8 +757,24 @@ mod task_store_tests {
     #[test]
     fn different_node_ids_same_name_split_into_two_groups() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 5, vec![3, 5], 0, Some("Project".to_string()), 0.0);
-        store.submit_task(2, 9, vec![7, 9], 0, Some("Project".to_string()), 0.0);
+        store.submit_task(
+            1,
+            5,
+            vec![3, 5],
+            0,
+            Some("Project".to_string()),
+            0.0,
+            vec![],
+        );
+        store.submit_task(
+            2,
+            9,
+            vec![7, 9],
+            0,
+            Some("Project".to_string()),
+            0.0,
+            vec![],
+        );
 
         assert_eq!(store.groups.len(), 2);
     }
@@ -758,7 +798,15 @@ mod task_store_tests {
             500,
         );
         // Submit arrives later with the same single-node chain.
-        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5);
+        store.submit_task(
+            42,
+            7,
+            vec![7],
+            0,
+            Some("Filter".to_string()),
+            0.5,
+            vec![],
+        );
 
         assert_eq!(store.groups.len(), 1);
         let g = &store.groups[0];
@@ -766,5 +814,39 @@ mod task_store_tests {
         // submit found existing task and didn't increment further.
         assert_eq!(g.task_count, 1);
         assert_eq!(g.finished_count, 1);
+    }
+
+    /// Sources passed to `submit_task` should be retained on the per-task
+    /// record so the dashboard UI can render them.
+    #[test]
+    fn submit_task_retains_sources() {
+        use crate::engine::{PhysicalScanSourceArgs, TaskSourceArgs};
+
+        let mut store = TaskStore::default();
+        let source = TaskSourceArgs::PhysicalScan(PhysicalScanSourceArgs {
+            source_id: 0,
+            scan_tasks: 1,
+            paths: vec!["s3://bucket/file.parquet".to_string()],
+            storage_bytes: Some(1024),
+            estimated_memory_bytes: Some(4096),
+        });
+        store.submit_task(
+            1,
+            7,
+            vec![3, 5, 7],
+            0,
+            Some("ScanTaskSource->Project".to_string()),
+            0.0,
+            vec![source],
+        );
+
+        let task = store.tasks.get(&1).expect("task should be retained");
+        assert_eq!(task.sources.len(), 1);
+        match &task.sources[0] {
+            TaskSourceArgs::PhysicalScan(p) => {
+                assert_eq!(p.paths, vec!["s3://bucket/file.parquet".to_string()]);
+            }
+            _ => panic!("expected PhysicalScan source"),
+        }
     }
 }

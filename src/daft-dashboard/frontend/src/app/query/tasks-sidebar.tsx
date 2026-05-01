@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
+import { ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
 import {
   formatDuration,
   getStatusIcon,
@@ -168,9 +168,78 @@ export default function TasksSidebar({
 }
 
 // ---------------------------------------------------------------------------
+// Source cell — shared between the Running mini-table and the expanded
+// per-task sub-table. Optimized for the common case of a single
+// PhysicalScan source with one path: shows the basename and reveals the full
+// path on hover.
+// ---------------------------------------------------------------------------
+function basename(path: string): string {
+  // Strip query string / fragment first, then split on both / and \.
+  const clean = path.split(/[?#]/)[0];
+  const segments = clean.split(/[/\\]/);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].length > 0) return segments[i];
+  }
+  return path;
+}
+
+function summarizeSource(source: TaskSource): { label: string; tooltip: string } {
+  if ("PhysicalScan" in source) {
+    const { paths } = source.PhysicalScan;
+    if (paths.length === 0) {
+      return { label: "scan", tooltip: "PhysicalScan (no paths reported)" };
+    }
+    if (paths.length === 1) {
+      return { label: basename(paths[0]), tooltip: paths[0] };
+    }
+    const head = paths.slice(0, 10).join("\n");
+    const more = paths.length > 10 ? `\n…and ${paths.length - 10} more` : "";
+    return {
+      label: `${basename(paths[0])} +${paths.length - 1} more`,
+      tooltip: `${head}${more}`,
+    };
+  }
+  const { partitions, total_bytes } = source.InMemoryScan;
+  const bytes = total_bytes != null ? ` (${total_bytes.toLocaleString()} B)` : "";
+  return {
+    label: `in-memory (${partitions}p)`,
+    tooltip: `InMemoryScan: ${partitions} partition(s)${bytes}`,
+  };
+}
+
+function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
+  if (sources.length === 0) {
+    return (
+      <span className={`${main.className} text-xs text-zinc-600 font-mono`}>—</span>
+    );
+  }
+  if (sources.length === 1) {
+    const { label, tooltip } = summarizeSource(sources[0]);
+    return (
+      <span
+        className={`${main.className} text-xs text-zinc-300 font-mono truncate`}
+        title={tooltip}
+      >
+        {label}
+      </span>
+    );
+  }
+  const tooltip = sources.map((s) => summarizeSource(s).label).join("\n");
+  return (
+    <span
+      className={`${main.className} text-xs text-zinc-300 font-mono truncate`}
+      title={tooltip}
+    >
+      {sources.length} sources
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Running tasks "top" section.
 // ---------------------------------------------------------------------------
-const RUNNING_GRID_COLS = "grid-cols-[minmax(200px,2fr)_90px]";
+const RUNNING_GRID_COLS =
+  "grid-cols-[minmax(200px,2fr)_minmax(160px,1fr)_90px]";
 
 function RunningTasksSection({
   tasks,
@@ -202,6 +271,7 @@ function RunningTasksSection({
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Local Plan</RunningHeader>
+          <RunningHeader align="left">Source</RunningHeader>
           <RunningHeader align="right">Duration</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
@@ -267,6 +337,9 @@ function RunningTaskRow({
     >
       <div className="px-3">
         <PipelineChips pipeline={pipeline} />
+      </div>
+      <div className="px-3 min-w-0">
+        <TaskSourceCell sources={task.sources ?? []} />
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
         {duration}
@@ -523,7 +596,7 @@ function StatusSummary({
 // Per-task rows/bytes stats are not surfaced yet — they require correct
 // head/leaf identification across the fused pipeline. See follow-up ticket.
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_100px_100px]";
+  "grid-cols-[32px_80px_minmax(140px,1.5fr)_minmax(140px,1.5fr)_110px_100px_100px]";
 
 function ExpandedTaskList({
   tasks,
@@ -544,6 +617,7 @@ function ExpandedTaskList({
       >
         <SubHeader />
         <SubHeader align="left">Task ID</SubHeader>
+        <SubHeader align="left">Source</SubHeader>
         <SubHeader align="left">Worker</SubHeader>
         <SubHeader align="left">Status</SubHeader>
         <SubHeader align="right">Duration</SubHeader>
@@ -605,6 +679,9 @@ function TaskSubRow({ task }: { task: TaskInfo }) {
       </div>
       <div className={`${main.className} px-3 text-xs text-zinc-400 font-mono`}>
         {task.task_id}
+      </div>
+      <div className="px-3 min-w-0">
+        <TaskSourceCell sources={task.sources ?? []} />
       </div>
       <div
         className={`${main.className} px-3 text-xs text-zinc-300 font-mono truncate`}

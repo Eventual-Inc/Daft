@@ -179,8 +179,8 @@ impl DebugSubscriber {
 
     fn handle_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
         eprintln!(
-            "task_submit query_id={} task_id={} node_ids={:?}",
-            event.header.query_id, event.task.id, event.task.node_ids
+            "task_submit query_id={} task_id={} node_ids={:?} sources={:?}",
+            event.header.query_id, event.task.id, event.task.node_ids, event.sources
         );
         Ok(())
     }
