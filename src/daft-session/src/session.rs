@@ -7,9 +7,15 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_dsl::functions::AggFnHandle;
+use daft_dsl::functions::{AggFnHandle, ScalarUDF};
 use daft_ext::abi::{FFI_AggregateFunction, FFI_ScalarFunction, FFI_SessionContext};
-use daft_ext_internal::module::ModuleHandle;
+use daft_ext_internal::{
+    aggregate::into_aggregate_fn_handle,
+    function::{
+        OverloadedScalarFunctionFactory, ScalarFunctionHandle, into_scalar_function_handle,
+    },
+    module::ModuleHandle,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -123,13 +129,7 @@ impl Session {
     }
 
     /// Attaches a native extension function, accumulating overloads under the same name.
-    pub fn attach_native_function(
-        &self,
-        name: String,
-        handle: Arc<daft_ext_internal::function::ScalarFunctionHandle>,
-    ) {
-        use daft_ext_internal::function::OverloadedScalarFunctionFactory;
-
+    pub fn attach_native_function(&self, name: String, handle: Arc<ScalarFunctionHandle>) {
         let mut state = self.state_mut();
         if let Some(crate::ScalarFunction::Native(factory)) = state.functions.get_mut(&name)
             && let Some(overloaded) = Arc::get_mut(factory).and_then(|f| {
@@ -140,10 +140,8 @@ impl Session {
             overloaded.add_variant(handle);
             return;
         }
-        let factory = OverloadedScalarFunctionFactory::new(
-            daft_dsl::functions::ScalarUDF::name(handle.as_ref()),
-            handle,
-        );
+        let factory =
+            OverloadedScalarFunctionFactory::new(ScalarUDF::name(handle.as_ref()), handle);
         state
             .functions
             .bind(name, crate::ScalarFunction::Native(Arc::new(factory)));
@@ -478,8 +476,6 @@ impl Session {
     pub fn load_and_init_extension(&self, path: &Path) -> DaftResult<()> {
         let module = daft_ext_internal::module::load_module(path)?;
 
-        use daft_ext_internal::function::into_scalar_function_handle;
-
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
@@ -511,10 +507,7 @@ impl Session {
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = daft_ext_internal::aggregate::into_aggregate_fn_handle(
-                ffi,
-                init_ctx.module.clone(),
-            );
+            let handle = into_aggregate_fn_handle(ffi, init_ctx.module.clone());
             let session = unsafe { &*init_ctx.session };
             session.attach_aggregate_function(name, handle);
             0
