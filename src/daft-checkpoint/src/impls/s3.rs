@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::SystemTime,
 };
 
@@ -16,6 +16,7 @@ use futures::{
     stream::{self, BoxStream},
 };
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 
 use crate::{
     Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
@@ -65,6 +66,13 @@ struct StagedEntry {
     num_key_files: usize,
     num_file_files: usize,
     created_at: SystemTime,
+    /// In-flight PUTs spawned by `stage_keys` / `stage_files`.
+    /// Drained by `checkpoint()`. Aborts on drop (e.g. abandoned checkpoint).
+    pending: JoinSet<CheckpointResult<()>>,
+    /// First background-PUT failure for this checkpoint, as a formatted message.
+    /// Read by `stage_*` and `checkpoint()` to fail fast.
+    /// `Arc` so spawned futures can write to it without re-locking the staged map.
+    first_error: Arc<OnceLock<String>>,
 }
 
 impl StagedEntry {
@@ -73,6 +81,8 @@ impl StagedEntry {
             num_key_files: 0,
             num_file_files: 0,
             created_at: SystemTime::now(),
+            pending: JoinSet::new(),
+            first_error: Arc::new(OnceLock::new()),
         }
     }
 }
@@ -132,7 +142,7 @@ impl S3CheckpointStore {
         format!("{}/*/manifest.json", self.prefix)
     }
 
-    async fn put_bytes(&self, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
+    async fn put_bytes(client: &IOClient, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
         // Local filesystem backend (`file://`) requires parent directories
         // to exist before writing — S3 does not. Use `strip_file_uri_to_path`
         // (rather than a hand-rolled `strip_prefix("file://")`) so the
@@ -146,7 +156,7 @@ impl S3CheckpointStore {
                 message: format!("failed to create directory {}: {e}", parent.display()),
             })?;
         }
-        self.client
+        client
             .single_url_put(path, Bytes::from(data), None)
             .await
             .map_err(|e| CheckpointError::Internal {
@@ -292,7 +302,7 @@ impl S3CheckpointStore {
         let raw = serde_json::to_vec(manifest).map_err(|e| CheckpointError::Internal {
             message: format!("failed to serialize manifest: {e}"),
         })?;
-        self.put_bytes(&path, raw).await
+        Self::put_bytes(&self.client, &path, raw).await
     }
 
     /// Ensures the checkpoint is not yet sealed, then atomically reserves index
@@ -422,6 +432,53 @@ impl S3CheckpointStore {
         )
     }
 
+    /// Returns Err early if a prior background PUT for this id failed,
+    /// so callers fail fast on the next operation rather than waiting for `checkpoint()`.
+    fn check_first_error(&self, id: &CheckpointId) -> CheckpointResult<()> {
+        let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+            message: format!("staged lock poisoned: {e}"),
+        })?;
+        if let Some(entry) = staged.get(id)
+            && let Some(msg) = entry.first_error.get()
+        {
+            return Err(CheckpointError::Internal {
+                message: msg.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Spawn a PUT onto the I/O runtime and push the handle into the entry's `pending` JoinSet.
+    /// Failure of the spawned PUT records the message in `first_error` (first one wins).
+    fn spawn_put(&self, id: &CheckpointId, path: String, data: Vec<u8>) -> CheckpointResult<()> {
+        let io_runtime = common_runtime::get_io_runtime(true);
+        let client = Arc::clone(&self.client);
+
+        let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+            message: format!("staged lock poisoned: {e}"),
+        })?;
+        let entry = staged
+            .get_mut(id)
+            .ok_or_else(|| CheckpointError::Internal {
+                message: format!(
+                    "staged entry for {id} disappeared between reserve_slots and spawn_put"
+                ),
+            })?;
+        let first_error = Arc::clone(&entry.first_error);
+
+        entry.pending.spawn_on(
+            async move {
+                let result = Self::put_bytes(&client, &path, data).await;
+                if let Err(ref e) = result {
+                    let _ = first_error.set(format!("{e}"));
+                }
+                result
+            },
+            io_runtime.runtime.handle(),
+        );
+        Ok(())
+    }
+
     /// Enumerate paths of sealed (checkpointed or committed) key parquet files.
     pub async fn sealed_file_paths(&self) -> CheckpointResult<Vec<String>> {
         let sealed = self.sealed_manifests().await?;
@@ -438,7 +495,12 @@ impl S3CheckpointStore {
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
-        let parquet_bytes = super::keys_codec::write_series_as_parquet(&keys)?;
+        self.check_first_error(id)?;
+        // Persist under the canonical column name so the on-disk key files
+        // are stable across renames of the source column. The scan operator
+        // and the optimizer rule both read using `SEALED_KEYS_COLUMN`.
+        let canonical = keys.rename(common_checkpoint_config::SEALED_KEYS_COLUMN);
+        let parquet_bytes = super::keys_codec::write_series_as_parquet(&canonical)?;
         let idx = self
             .reserve_slots(id, |e| {
                 let i = e.num_key_files;
@@ -446,7 +508,7 @@ impl CheckpointStore for S3CheckpointStore {
                 i
             })
             .await?;
-        self.put_bytes(&self.key_path(id, idx), parquet_bytes).await
+        self.spawn_put(id, self.key_path(id, idx), parquet_bytes)
     }
 
     async fn stage_files(
@@ -457,6 +519,7 @@ impl CheckpointStore for S3CheckpointStore {
         if files.is_empty() {
             return Ok(());
         }
+        self.check_first_error(id)?;
         let blob = Self::encode_file_metadata(&files)?;
         let idx = self
             .reserve_slots(id, |e| {
@@ -465,30 +528,52 @@ impl CheckpointStore for S3CheckpointStore {
                 i
             })
             .await?;
-        self.put_bytes(&self.file_path(id, idx), blob).await
+        self.spawn_put(id, self.file_path(id, idx), blob)
     }
 
     async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
-        // If staged by this process, reserve_slots already verified no manifest exists —
-        // skip the S3 GET. Otherwise (e.g. post-restart retry), read the manifest.
-        let staged_data = {
-            let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+        // Take ownership of the staged entry's `pending` JoinSet (replacing with empty)
+        // and copy its scalar fields. Holding the lock for the swap is fine — the swap
+        // doesn't await, and keeping the entry in the map lets a retry of `checkpoint()`
+        // after a write_manifest failure proceed (drained pending → empty → re-write).
+        let drain = {
+            let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            staged
-                .get(id)
-                .map(|e| (e.num_key_files, e.num_file_files, e.created_at))
-        }; // lock released here, before any await
+            staged.get_mut(id).map(|entry| {
+                let pending = std::mem::replace(&mut entry.pending, JoinSet::new());
+                (
+                    entry.num_key_files,
+                    entry.num_file_files,
+                    entry.created_at,
+                    pending,
+                )
+            })
+        };
 
-        let (num_key_files, num_file_files, created_at) = match staged_data {
+        let (num_key_files, num_file_files, created_at, pending) = match drain {
             Some(data) => data,
             None => {
-                return match self.read_manifest(id).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(e),
-                };
+                // No staged entry. Two sub-cases:
+                //   (a) Already sealed in a prior call — idempotent retry. read_manifest succeeds.
+                //   (b) Never staged at all (e.g. 0-row source after anti-join). Write empty manifest.
+                match self.read_manifest(id).await {
+                    Ok(_) => return Ok(()),
+                    Err(CheckpointError::CheckpointNotFound { .. }) => {
+                        (0, 0, SystemTime::now(), JoinSet::new())
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         };
+
+        // Drain all in-flight PUTs; surface the first one that returned `Err`.
+        // `join_all` resumes panics — those are bugs in `put_bytes` and should propagate.
+        // Cancellation can't occur in this flow: the JoinSet was just `mem::replace`d
+        // out of the staged entry and is owned solely by this stack.
+        for r in pending.join_all().await {
+            r?;
+        }
 
         // manifest.json is written last — its presence is the atomic seal.
         let manifest = Manifest {

@@ -1751,6 +1751,7 @@ dependencies = [
 name = "common-checkpoint-config"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-hashable-float-wrapper",
  "common-io-config",
  "pyo3",
  "serde",
@@ -2599,6 +2600,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-stats",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",

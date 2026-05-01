@@ -17,8 +17,11 @@ use crate::{
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Use a non-canonical input column name so every contract test that
+/// round-trips through `stage_keys` -> `get_checkpointed_keys` actually
+/// exercises the canonical-name rename inside the store impl.
 pub fn keys(values: &[&str]) -> Series {
-    Utf8Array::from_slice("key", values).into_series()
+    Utf8Array::from_slice("src_key", values).into_series()
 }
 
 pub fn file(data: &[u8]) -> FileMetadata {

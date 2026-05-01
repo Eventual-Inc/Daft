@@ -242,6 +242,8 @@ class DataType:
             return cls.duration(TimeUnit.us())
         elif check_type(daft.file.VideoFile):
             return cls.file(MediaType.video())
+        elif check_type(daft.file.AudioFile):
+            return cls.file(MediaType.audio())
         elif check_type(daft.file.File):
             return cls.file(MediaType.unknown())
         elif check_type(list):

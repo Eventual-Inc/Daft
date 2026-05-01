@@ -75,7 +75,7 @@ A Maintainer is a recognized Contributor who has demonstrated sustained, meaning
 | -------------------------------------------------- | ------------- | ----------------------------------------------------------------------- |
 | [@conceptofmind](https://github.com/conceptofmind) | Teraflop AI   | Performance and UDF bug reports                                         |
 | [@everySympathy](https://github.com/everySympathy) | ByteDance     | Series slicing, partition optimization                                  |
-| [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements                                     |
+| [@gweaverbiodev](https://github.com/gweaverbiodev) | Atoms         | pyiceberg support, UDF improvements                                     |
 | [@kevinzwang](https://github.com/kevinzwang)       | SkyPilot      | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
 | [@pdames](https://github.com/pdames)               | Nvidia        | Catalog support and improvements                                        |
 | [@VOID001](https://github.com/VOID001)             | ByteDance     | Dashboard features, SQL error handling                                  |

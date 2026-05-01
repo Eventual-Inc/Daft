@@ -1,24 +1,33 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.io._checkpoint import attach_checkpoint
 from daft.logical.builder import LogicalPlanBuilder
+
+if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointConfig
 
 
 @PublicAPI
 def read_hudi(
     table_uri: str,
     io_config: IOConfig | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Create a DataFrame from a Hudi table.
 
     Args:
         table_uri: URI to the Hudi table (supports remote URLs to object stores such as ``s3://`` or ``gs://``).
         io_config: A custom IOConfig to use when accessing Hudi table object storage data. Defaults to None.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Hudi table.
@@ -49,4 +58,5 @@ def read_hudi(
 
     handle = ScanOperatorHandle.from_python_scan_operator(hudi_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
