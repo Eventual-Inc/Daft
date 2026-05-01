@@ -425,7 +425,7 @@ class RemoteFlotillaRunner:
         # that have already been popped from `curr_result_gens`. The driver
         # picks these up on its next `take_pending_operator_events` call so
         # forced-shutdown End events still reach driver-side subscribers.
-        self.final_operator_events: dict[str, list[tuple[str, str, int, str, int | None, float]]] = {}
+        self.final_operator_events: dict[str, list[tuple[str, str, int, str]]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
@@ -480,20 +480,20 @@ class RemoteFlotillaRunner:
         )
         return materialized_result
 
-    def take_pending_operator_events(self, plan_id: str) -> list[tuple[str, str, int, str, int | None, float]]:
+    def take_pending_operator_events(self, plan_id: str) -> list[tuple[str, str, int, str]]:
         """Drain operator-lifecycle events buffered by the Rust StatisticsManager.
 
-        Returns a list of `(kind, query_id, node_id, name, origin_node_id,
-        timestamp_secs)` tuples. The driver wrapper polls this and re-dispatches
-        each event on its own `DaftContext` so subscribers attached on the
-        driver can observe per-operator start/end timings.
+        Returns a list of `(kind, query_id, node_id, name)` tuples. The driver
+        wrapper polls this and re-dispatches each event on its own
+        `DaftContext` so subscribers attached on the driver can observe
+        per-operator start/end timings.
 
         Also drains any final events stashed during `get_next_partition`'s
         post-`finish()` cleanup (covers the case where End events are
         synthesized for orphan started-but-not-ended operators after the
         `result_gen` has been popped).
         """
-        events: list[tuple[str, str, int, str, int | None, float]] = []
+        events: list[tuple[str, str, int, str]] = []
         result_gen = self.curr_result_gens.get(plan_id)
         if result_gen is not None:
             events.extend(result_gen.take_pending_operator_events())  # type: ignore[attr-defined]
@@ -621,11 +621,11 @@ class FlotillaRunner:
         if not events:
             return
         ctx = get_context()
-        for kind, query_id, node_id, name, origin_node_id, _ts in events:
+        for kind, query_id, node_id, name in events:
             try:
                 if kind == "start":
-                    ctx._notify_exec_operator_start(query_id, node_id, name, origin_node_id)
+                    ctx._notify_exec_operator_start(query_id, node_id, name)
                 elif kind == "end":
-                    ctx._notify_exec_operator_end(query_id, node_id, name, origin_node_id)
+                    ctx._notify_exec_operator_end(query_id, node_id, name)
             except Exception as e:
                 logger.warning("Failed to dispatch operator %s event: %s", kind, e)

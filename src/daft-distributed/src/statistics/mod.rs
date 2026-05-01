@@ -131,8 +131,6 @@ pub struct PendingOperatorEvent {
     pub query_id: QueryID,
     pub node_id: NodeID,
     pub name: Arc<str>,
-    pub origin_node_id: Option<NodeID>,
-    pub timestamp_epoch_secs: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,12 +276,11 @@ impl StatisticsManager {
     }
 
     fn dispatch_operator_start(&self, node_info: &Arc<NodeInfo>) {
-        let header = event_header(self.query_id.clone());
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         // Fire on the local (actor-process) context so dashboard /
         // event-log subscribers running in the actor see the event.
         let event = Event::OperatorStart(OperatorStartEvent {
-            header: header.clone(),
+            header: event_header(self.query_id.clone()),
             operator: meta.clone(),
         });
         if let Err(e) = get_context().notify(&event) {
@@ -298,16 +295,13 @@ impl StatisticsManager {
                 query_id: self.query_id.clone(),
                 node_id: meta.node_id as NodeID,
                 name: meta.name.clone(),
-                origin_node_id: meta.origin_node_id.map(|id| id as NodeID),
-                timestamp_epoch_secs: header.timestamp_epoch_secs,
             });
     }
 
     fn dispatch_operator_end(&self, node_info: &Arc<NodeInfo>) {
-        let header = event_header(self.query_id.clone());
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         let event = Event::OperatorEnd(OperatorEndEvent {
-            header: header.clone(),
+            header: event_header(self.query_id.clone()),
             operator: meta.clone(),
         });
         if let Err(e) = get_context().notify(&event) {
@@ -321,8 +315,6 @@ impl StatisticsManager {
                 query_id: self.query_id.clone(),
                 node_id: meta.node_id as NodeID,
                 name: meta.name.clone(),
-                origin_node_id: meta.origin_node_id.map(|id| id as NodeID),
-                timestamp_epoch_secs: header.timestamp_epoch_secs,
             });
     }
 
