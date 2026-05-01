@@ -13,6 +13,7 @@ from daft.daft import (
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
+from daft.io._checkpoint import attach_checkpoint
 from daft.io.common import get_tabular_files_scan
 
 if TYPE_CHECKING:
@@ -102,17 +103,6 @@ def read_parquet(
         hive_partitioning=hive_partitioning,
     )
 
-    # Attach checkpoint config to the source node for progress tracking.
-    if checkpoint is not None:
-        # Checkpoint filtering requires the Ray runner.
-        runner_type = runners.get_or_infer_runner_type()
-        if runner_type == "native":
-            raise ValueError(
-                "checkpoint= is not supported on the native runner "
-                "(single-process, no distributed actor infrastructure). "
-                "Use the Ray runner: call daft.context.set_runner_ray() "
-                "or set DAFT_RUNNER=ray."
-            )
-        builder = builder.with_checkpoint(checkpoint._inner)
+    builder = attach_checkpoint(builder, checkpoint)
 
     return DataFrame(builder)

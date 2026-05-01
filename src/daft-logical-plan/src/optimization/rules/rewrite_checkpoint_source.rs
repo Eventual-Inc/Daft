@@ -327,6 +327,15 @@ mod tests {
         assert_eq!(kfc.max_concurrency_per_worker, Some(1));
         assert_eq!(kfc.filter_batch_size, None);
 
+        // Default settings must preserve today's hardcoded values exactly.
+        // Pins the rule's `.or(Some(2))` / `.or(Some(1.0))` / `.or(Some(1))`
+        // fallbacks against accidental changes.
+        assert_eq!(kfc.num_workers, Some(2));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        assert_eq!(kfc.filter_batch_size, None);
+
         // Left side: Source with `checkpoint` stripped — staging responsibility
         // lives on the wrapping StageCheckpointKeys node, not on the Source.
         let LogicalPlan::Source(left) = join.left.as_ref() else {
