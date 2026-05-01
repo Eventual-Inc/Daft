@@ -198,6 +198,7 @@ impl AsofJoinProbeState {
 
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
+        self.right_on_key_arrs.push(right_on_arr.clone());
 
         //we use this later when we call search_bucket()
         let on_key_cmp = build_partial_compare_with_nulls(
@@ -207,9 +208,9 @@ impl AsofJoinProbeState {
         )?;
 
         // we use this later for update_best_match()
-        let mut cmp_cache: HashMap<usize, DynPartialComparator> = HashMap::new();
+        let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
         cmp_cache.insert(
-            current_morsel_idx,
+            (current_morsel_idx, current_morsel_idx),
             build_partial_compare_with_nulls(right_on_arr.as_ref(), right_on_arr.as_ref(), false)?,
         );
 
@@ -267,7 +268,6 @@ impl AsofJoinProbeState {
             )?;
         }
 
-        self.right_on_key_arrs.push(right_on_arr);
         Ok(())
     }
     fn update_best_match(
@@ -276,25 +276,21 @@ impl AsofJoinProbeState {
         right_idx: usize,
         current_morsel_idx: usize,
         right_on_arr: &Arc<dyn Array>,
-        cmp_cache: &mut HashMap<usize, DynPartialComparator>,
+        cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
     ) -> DaftResult<()> {
         let is_better = match self.best_match[candidate_left_idx] {
             None => true,
-            Some(old_packed) => {
-                let (old_morsel_idx, old_row) = (old_packed.0 as usize, old_packed.1 as usize);
-                let cmp = match cmp_cache.entry(old_morsel_idx) {
-                    Entry::Occupied(e) => e.into_mut(),
-                    Entry::Vacant(e) => {
-                        let old_arr = self.right_on_key_arrs[old_morsel_idx].clone();
-                        let c = build_partial_compare_with_nulls(
-                            right_on_arr.as_ref(),
-                            old_arr.as_ref(),
-                            false,
-                        )?;
-                        e.insert(c)
-                    }
-                };
-                matches!(cmp(right_idx, old_row), Some(Ordering::Greater))
+            Some((old_morsel_idx, old_row)) => {
+                let existing_arr = self.right_on_key_arrs[old_morsel_idx as usize].clone();
+                is_candidate_better(
+                    current_morsel_idx,
+                    right_idx,
+                    right_on_arr.as_ref(),
+                    old_morsel_idx as usize,
+                    old_row as usize,
+                    existing_arr.as_ref(),
+                    cmp_cache,
+                )?
             }
         };
         if is_better {
@@ -303,6 +299,29 @@ impl AsofJoinProbeState {
         }
         Ok(())
     }
+}
+
+fn is_candidate_better(
+    candidate_morsel_idx: usize,
+    candidate_right_idx: usize,
+    candidate_arr: &dyn Array,
+    existing_morsel_idx: usize,
+    existing_right_idx: usize,
+    existing_arr: &dyn Array,
+    cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+) -> DaftResult<bool> {
+    let cmp = match cmp_cache.entry((candidate_morsel_idx, existing_morsel_idx)) {
+        Entry::Occupied(e) => e.into_mut(),
+        Entry::Vacant(e) => e.insert(build_partial_compare_with_nulls(
+            candidate_arr,
+            existing_arr,
+            false,
+        )?),
+    };
+    Ok(matches!(
+        cmp(candidate_right_idx, existing_right_idx),
+        Some(Ordering::Greater)
+    ))
 }
 
 pub struct AsofJoinOperator {
@@ -496,30 +515,19 @@ impl JoinOperator for AsofJoinOperator {
                                     let is_better = match *curr_best_match {
                                         None => true,
                                         Some((winner_morsel_idx, winner_right_idx)) => {
-                                            let cmp = match cmp_cache.entry((
+                                            is_candidate_better(
                                                 global_morsel_idx as usize,
+                                                local_right_idx as usize,
+                                                global_right_on_key_arrs
+                                                    [global_morsel_idx as usize]
+                                                    .as_ref(),
                                                 winner_morsel_idx as usize,
-                                            )) {
-                                                Entry::Occupied(e) => e.into_mut(),
-                                                Entry::Vacant(e) => {
-                                                    e.insert(build_partial_compare_with_nulls(
-                                                        global_right_on_key_arrs
-                                                            [global_morsel_idx as usize]
-                                                            .as_ref(),
-                                                        global_right_on_key_arrs
-                                                            [winner_morsel_idx as usize]
-                                                            .as_ref(),
-                                                        false,
-                                                    )?)
-                                                }
-                                            };
-                                            matches!(
-                                                cmp(
-                                                    local_right_idx as usize,
-                                                    winner_right_idx as usize
-                                                ),
-                                                Some(Ordering::Greater)
-                                            )
+                                                winner_right_idx as usize,
+                                                global_right_on_key_arrs
+                                                    [winner_morsel_idx as usize]
+                                                    .as_ref(),
+                                                &mut cmp_cache,
+                                            )?
                                         }
                                     };
 
