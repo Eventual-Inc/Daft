@@ -298,10 +298,11 @@ impl PyDaftContext {
         py: Python,
         query_id: String,
         node_id: usize,
+        name: String,
     ) -> PyResult<()> {
         py.detach(|| {
             self.inner
-                .notify_exec_operator_start(query_id.into(), node_id)
+                .notify_exec_operator_start(query_id.into(), node_id, name.into())
         })?;
         Ok(())
     }
@@ -311,10 +312,11 @@ impl PyDaftContext {
         py: Python,
         query_id: String,
         node_id: usize,
+        name: String,
     ) -> PyResult<()> {
         py.detach(|| {
             self.inner
-                .notify_exec_operator_end(query_id.into(), node_id)
+                .notify_exec_operator_end(query_id.into(), node_id, name.into())
         })?;
         Ok(())
     }

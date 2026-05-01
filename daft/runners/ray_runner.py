@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import platform
@@ -662,20 +661,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             except StopIteration as e:
                 stats: PyExecutionStats = e.value
 
-            # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
-            try:
-                plan_dict = json.loads(physical_plan_json)
-
-                def notify_end(node: dict[str, Any]) -> None:
-                    if "children" in node:
-                        for child in node["children"]:
-                            notify_end(child)
-                    if "id" in node:
-                        ctx._notify_exec_operator_end(query_id, node["id"])
-
-                notify_end(plan_dict)
-            except Exception as e:
-                logger.warning("Failed to send operator end notifications: %s", e)
+            # OperatorEnd events are emitted per-node from the Rust side
+            # (`StatisticsManager`) as each distributed pipeline node finishes
+            # producing tasks and its in-flight task count drains.
 
             try:
                 ctx._notify_exec_end(query_id)

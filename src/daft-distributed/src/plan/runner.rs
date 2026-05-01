@@ -51,12 +51,14 @@ pub(crate) struct PlanExecutionContext {
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
     shuffle_dirs: Vec<String>,
+    statistics_manager: StatisticsManagerRef,
 }
 
 impl PlanExecutionContext {
     pub(crate) fn new(
         query_idx: QueryIdx,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        statistics_manager: StatisticsManagerRef,
     ) -> Self {
         let joinset = JoinSet::new();
         Self {
@@ -65,11 +67,16 @@ impl PlanExecutionContext {
             joinset,
             task_id_counter: TaskIDCounter::new(),
             shuffle_dirs: Vec::new(),
+            statistics_manager,
         }
     }
 
     pub fn scheduler_handle(&self) -> SchedulerHandle<SwordfishTask> {
         self.scheduler_handle.clone()
+    }
+
+    pub fn statistics_manager(&self) -> &StatisticsManagerRef {
+        &self.statistics_manager
     }
 
     pub fn spawn(&mut self, task: impl Future<Output = DaftResult<()>> + Send + 'static) {
@@ -163,12 +170,18 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             let scheduler_handle = spawn_scheduler_actor(
                 self.worker_manager.clone(),
                 &mut joinset,
-                statistics_manager,
+                statistics_manager.clone(),
             );
 
             joinset.spawn(async move {
-                this.run_plan_impl(pipeline_node, query_idx, scheduler_handle, result_sender)
-                    .await
+                this.run_plan_impl(
+                    pipeline_node,
+                    query_idx,
+                    scheduler_handle,
+                    statistics_manager,
+                    result_sender,
+                )
+                .await
             });
             joinset
         });
@@ -180,9 +193,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         pipeline_node: DistributedPipelineNode,
         query_idx: QueryIdx,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        statistics_manager: StatisticsManagerRef,
         sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
+        let mut plan_context =
+            PlanExecutionContext::new(query_idx, scheduler_handle.clone(), statistics_manager);
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);

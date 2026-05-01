@@ -27,8 +27,14 @@ use super::{DistributedPipelineNode, in_memory_source::InMemorySourceNode};
 use crate::{
     plan::{PlanConfig, PlanExecutionContext, RunningPlan},
     scheduling::{local_worker::LocalSwordfishWorkerManager, scheduler::spawn_scheduler_actor},
-    statistics::StatisticsManager,
+    statistics::{PendingOperatorEvent, StatisticsManager, StatisticsManagerRef},
 };
+
+/// Default query id used by the test harness. Non-empty so
+/// `StatisticsManager` populates its operator-event buffer (and would
+/// dispatch into the global `DaftContext`, harmlessly — there are no
+/// subscribers attached in pure-Rust test runs).
+const TEST_QUERY_ID: &str = "test-query";
 
 /// Standard test schema: one Int64 column named "x".
 pub fn test_schema() -> SchemaRef {
@@ -144,7 +150,44 @@ pub async fn run_pipeline_with_manager(
     meter: &Meter,
     worker_manager: Arc<LocalSwordfishWorkerManager>,
 ) -> DaftResult<ExecutionStats> {
-    let stats_manager = StatisticsManager::from_pipeline_node(pipeline, vec![], meter)?;
+    let (_, stats) = drive_pipeline_to_completion(pipeline, meter, worker_manager).await?;
+    Ok(stats)
+}
+
+/// Aggregated output of a test pipeline run, including the per-node
+/// `OperatorStart` / `OperatorEnd` events buffered by `StatisticsManager`.
+/// Use this from integration tests to assert on operator lifecycle.
+pub struct CapturedRun {
+    pub events: Vec<PendingOperatorEvent>,
+    /// Aggregated per-node stats for tests that want to combine
+    /// lifecycle assertions with stats assertions in the same run.
+    #[allow(dead_code)]
+    pub stats: ExecutionStats,
+}
+
+/// Drive a pipeline to completion and return both the aggregated
+/// `ExecutionStats` and the operator-lifecycle event buffer drained from
+/// the `StatisticsManager`. The events are observed via the same buffer
+/// the driver-side Flotilla wrapper drains in production, so this
+/// exercises the real lifecycle path.
+pub async fn run_pipeline_and_capture_events(
+    pipeline: &DistributedPipelineNode,
+    meter: &Meter,
+) -> DaftResult<CapturedRun> {
+    let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
+    let (stats_manager, stats) =
+        drive_pipeline_to_completion(pipeline, meter, worker_manager).await?;
+    let events = stats_manager.take_pending_operator_events();
+    Ok(CapturedRun { events, stats })
+}
+
+async fn drive_pipeline_to_completion(
+    pipeline: &DistributedPipelineNode,
+    meter: &Meter,
+    worker_manager: Arc<LocalSwordfishWorkerManager>,
+) -> DaftResult<(StatisticsManagerRef, ExecutionStats)> {
+    let stats_manager =
+        StatisticsManager::from_pipeline_node(pipeline, vec![], meter, TEST_QUERY_ID.into())?;
 
     let mut scheduler_joinset = JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(
@@ -153,7 +196,8 @@ pub async fn run_pipeline_with_manager(
         stats_manager.clone(),
     );
 
-    let mut plan_context = PlanExecutionContext::new(0, scheduler_handle.clone());
+    let mut plan_context =
+        PlanExecutionContext::new(0, scheduler_handle.clone(), stats_manager.clone());
     let task_stream = pipeline.clone().produce_tasks(&mut plan_context);
     let running_plan = RunningPlan::new(task_stream, plan_context);
 
@@ -165,5 +209,6 @@ pub async fn run_pipeline_with_manager(
     drop(scheduler_handle);
     scheduler_joinset.abort_all();
 
-    Ok(stats_manager.export_metrics())
+    let stats = stats_manager.export_metrics();
+    Ok((stats_manager, stats))
 }

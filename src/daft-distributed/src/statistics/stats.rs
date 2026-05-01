@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
@@ -29,6 +29,18 @@ pub trait RuntimeStats: Send + Sync + 'static {
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
+/// Per-node operator lifecycle state used to drive `OperatorStart` /
+/// `OperatorEnd` event emission. Lives inside `RuntimeNodeManager` so the
+/// per-event hot path can update it via a single short-lived per-node
+/// lock instead of a query-wide one.
+#[derive(Default)]
+struct OperatorLifecycle {
+    started: bool,
+    ended: bool,
+    pending_tasks: u64,
+    produce_complete: bool,
+}
+
 pub struct RuntimeNodeManager {
     node_info: Arc<NodeInfo>,
     pub node_kv: Vec<KeyValue>,
@@ -38,6 +50,8 @@ pub struct RuntimeNodeManager {
     completed_tasks: Counter,
     failed_tasks: Counter,
     cancelled_tasks: Counter,
+
+    lifecycle: Mutex<OperatorLifecycle>,
 }
 
 impl RuntimeNodeManager {
@@ -63,12 +77,75 @@ impl RuntimeNodeManager {
                 None,
                 Some(UNIT_TASKS.into()),
             ),
+            lifecycle: Mutex::new(OperatorLifecycle::default()),
         }
     }
 
     /// Returns the accumulated stats for this node as (NodeInfo, StatSnapshot) for export to the driver.
     pub fn export_snapshot(&self) -> (Arc<NodeInfo>, StatSnapshot) {
         (self.node_info.clone(), self.runtime_stats.export_snapshot())
+    }
+
+    pub fn node_info(&self) -> &Arc<NodeInfo> {
+        &self.node_info
+    }
+
+    /// Record that a task touching this node has been submitted. Returns
+    /// `true` iff this is the first such submission, i.e. the caller should
+    /// fire an `OperatorStart` event for this node.
+    pub fn on_task_submitted(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.pending_tasks += 1;
+        if !s.started {
+            s.started = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Record that a task touching this node has finished (Completed,
+    /// Failed, or Cancelled — including retryable failures, which mirror
+    /// the unconditional active-counter decrement in `handle_task_event`).
+    /// Returns `true` iff the caller should now fire `OperatorEnd`.
+    pub fn on_task_finished(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.pending_tasks = s.pending_tasks.saturating_sub(1);
+        Self::check_end(&mut s)
+    }
+
+    /// Record that this node's pipeline-task stream has been fully drained
+    /// or dropped — i.e. no further tasks will reference this node. Returns
+    /// `true` iff the caller should fire `OperatorEnd`.
+    pub fn on_produce_complete(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.produce_complete = true;
+        Self::check_end(&mut s)
+    }
+
+    fn check_end(s: &mut OperatorLifecycle) -> bool {
+        if s.started && s.produce_complete && s.pending_tasks == 0 && !s.ended {
+            s.ended = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Force-finalize the lifecycle for this node: if it ever started but
+    /// hasn't ended yet, mark it ended and tell the caller to fire a
+    /// synthetic `OperatorEnd`. Used at query teardown to flush operators
+    /// whose in-flight tasks were aborted before emitting terminal
+    /// `TaskEvent`s (e.g. scheduler crash, KeyboardInterrupt, actor death).
+    /// Idempotent: returns `false` if already ended or never started.
+    pub fn force_end(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        if s.started && !s.ended {
+            s.ended = true;
+            true
+        } else {
+            false
+        }
     }
 
     /// The distributed node id (cheap accessor — avoids snapshotting when a

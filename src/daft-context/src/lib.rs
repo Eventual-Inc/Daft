@@ -213,18 +213,32 @@ impl DaftContext {
         self.dispatch_event(&event, "notify exec end")
     }
 
-    pub fn notify_exec_operator_start(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
+    pub fn notify_exec_operator_start(
+        &self,
+        query_id: QueryID,
+        node_id: usize,
+        name: Arc<str>,
+    ) -> DaftResult<()> {
+        let mut meta = OperatorMeta::from_id(node_id);
+        meta.name = name;
         let event = Event::OperatorStart(OperatorStartEvent {
             header: event_header(query_id),
-            operator: Arc::new(OperatorMeta::from_id(node_id)),
+            operator: Arc::new(meta),
         });
         self.dispatch_event(&event, "notify exec operator start")
     }
 
-    pub fn notify_exec_operator_end(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
+    pub fn notify_exec_operator_end(
+        &self,
+        query_id: QueryID,
+        node_id: usize,
+        name: Arc<str>,
+    ) -> DaftResult<()> {
+        let mut meta = OperatorMeta::from_id(node_id);
+        meta.name = name;
         let event = Event::OperatorEnd(OperatorEndEvent {
             header: event_header(query_id),
-            operator: Arc::new(OperatorMeta::from_id(node_id)),
+            operator: Arc::new(meta),
         });
         self.dispatch_event(&event, "notify exec operator end")
     }
