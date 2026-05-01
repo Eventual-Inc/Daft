@@ -105,3 +105,24 @@ def test_float_fill_nan_all_null() -> None:
     fill = Series.from_arrow(pa.array([2.0]))
     result = s.float.fill_nan(fill)
     assert result.to_pylist() == [None, None, None]
+
+
+def test_float16_is_nan() -> None:
+    arr = pa.array([1.0, float("nan"), 3.0, float("nan")], type=pa.float16())
+    s = Series.from_arrow(arr)
+    result = s.float.is_nan()
+    assert result.to_pylist() == [False, True, False, True]
+
+
+def test_float16_is_inf() -> None:
+    arr = pa.array([-float("inf"), 0.0, float("inf")], type=pa.float16())
+    s = Series.from_arrow(arr)
+    result = s.float.is_inf()
+    assert result.to_pylist() == [True, False, True]
+
+
+def test_float16_not_nan() -> None:
+    arr = pa.array([1.0, float("nan"), None, 3.0], type=pa.float16())
+    s = Series.from_arrow(arr)
+    result = s.float.not_nan()
+    assert result.to_pylist() == [True, False, None, True]

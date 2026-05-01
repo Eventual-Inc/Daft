@@ -19,10 +19,7 @@ impl Series {
                 let s = self.cast(&DataType::Float64)?;
                 Ok(s.f64()?.pow(exp)?.into_series())
             }
-            DataType::Float16 => {
-                let s = self.cast(&DataType::Float32)?;
-                s.pow(exp)
-            }
+            DataType::Float16 => Ok(self.f16()?.pow(half::f16::from_f64(exp))?.into_series()),
             DataType::Float32 => Ok(self.f32()?.pow(exp as f32)?.into_series()),
             DataType::Float64 => Ok(self.f64()?.pow(exp)?.into_series()),
             dt => Err(DaftError::TypeError(format!(
