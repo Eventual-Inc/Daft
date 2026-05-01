@@ -75,7 +75,7 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
     `mark_committed`, and NOT produce a second snapshot.
     """
     # First call: simulate the crash by patching mark_committed to raise.
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     with patch.object(checkpoint_store, "mark_committed", side_effect=RuntimeError("simulated crash")):
         with pytest.raises(RuntimeError, match="simulated crash"):
             df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
@@ -90,7 +90,7 @@ def test_recovery_after_crash_between_commit_and_mark(iceberg_table, parquet_inp
     crashed_query_id = pending_after_crash[0].query_id
 
     # Second call: should hit the recovery path. mark_committed is no longer patched.
-    df2 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df2 = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df2.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     # Verify: still exactly one snapshot, no double-write.
@@ -145,7 +145,7 @@ def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_in
     query_id (no fresh generation).
     """
     # First call: simulate the crash by patching tx.commit_transaction to raise.
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     with patch.object(Transaction, "commit_transaction", side_effect=RuntimeError("simulated crash")):
         with pytest.raises(RuntimeError, match="simulated crash"):
             df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
@@ -160,7 +160,7 @@ def test_recovery_after_crash_between_stage_and_commit(iceberg_table, parquet_in
     assert checkpoint_store.get_checkpointed_files(), "expected staged file metadata in store"
 
     # Second call: should skip the pipeline, pull files from the store, commit once.
-    df2 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df2 = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df2.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     # Verify: exactly one snapshot landed.
@@ -196,7 +196,7 @@ def test_fresh_run_lands_snapshot_with_markers_and_data(iceberg_table, parquet_i
     Pipeline runs, store gets populated, snapshot lands with markers,
     `mark_committed` runs. All input rows round-trip through the table.
     """
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
@@ -229,7 +229,7 @@ def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpo
     inp1 = str(tmpdir / "in1")
     os.makedirs(inp1, exist_ok=True)
     daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]}).write_parquet(inp1)
-    daft.read_parquet(inp1, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp1, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -242,7 +242,7 @@ def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpo
     inp2 = str(tmpdir / "in2")
     os.makedirs(inp2, exist_ok=True)
     daft.from_pydict({"file_id": ["a", "b", "c", "d", "e", "f"], "x": [1, 2, 3, 4, 5, 6]}).write_parquet(inp2)
-    daft.read_parquet(inp2, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp2, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -283,14 +283,14 @@ def test_rerun_after_full_commit_is_noop(iceberg_table, parquet_input, checkpoin
     drops every key, the pipeline produces zero pending entries, no second
     snapshot lands, and the helper returns an empty result.
     """
-    df1 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df1 = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df1.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 1
 
     # Re-run with identical input — should be a no-op.
-    df2 = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df2 = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     result = df2.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
@@ -324,7 +324,7 @@ def test_reserved_snapshot_property_key_raises(iceberg_table, checkpoint_store, 
 
 def test_user_snapshot_properties_pass_through(iceberg_table, parquet_input, checkpoint_store):
     """Non-reserved user snapshot_properties must reach the snapshot summary alongside daft markers."""
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df.write_iceberg(
         iceberg_table,
         checkpoint=checkpoint_store,
@@ -358,7 +358,7 @@ def test_retry_loop_recovers_from_transient_commit_failure(iceberg_table, parque
             raise CommitFailedException("simulated transient catalog conflict")
         return original_commit(self, *args, **kwargs)
 
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     with patch.object(Transaction, "commit_transaction", fail_first_then_succeed):
         df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
@@ -396,7 +396,7 @@ def test_table_with_pre_existing_legacy_snapshots(iceberg_table, parquet_input, 
 
     # Now enable checkpoint and write new data. Recovery walks history, sees
     # the legacy snapshot with no matching markers, falls through to commit.
-    df = daft.read_parquet(parquet_input, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
@@ -432,7 +432,7 @@ def test_empty_input_on_fresh_store(iceberg_table, tmpdir, checkpoint_store):
         }
     ).write_parquet(empty_path)
 
-    df = daft.read_parquet(empty_path, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(empty_path, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
@@ -456,7 +456,7 @@ def test_first_write_wins_on_key_collisions(iceberg_table, tmpdir, checkpoint_st
     inp1 = str(tmpdir / "in1")
     os.makedirs(inp1, exist_ok=True)
     daft.from_pydict({"file_id": ["a", "a", "b"], "x": [1, 2, 3]}).write_parquet(inp1)
-    daft.read_parquet(inp1, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp1, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
     iceberg_table.refresh()
@@ -469,7 +469,7 @@ def test_first_write_wins_on_key_collisions(iceberg_table, tmpdir, checkpoint_st
     inp2 = str(tmpdir / "in2")
     os.makedirs(inp2, exist_ok=True)
     daft.from_pydict({"file_id": ["a", "a", "b", "c"], "x": [100, 200, 300, 4]}).write_parquet(inp2)
-    daft.read_parquet(inp2, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp2, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -508,9 +508,9 @@ def test_multi_partition_input_aggregates_into_single_snapshot(iceberg_table, tm
     for i, (file_ids, xs) in enumerate(parts):
         daft.from_pydict({"file_id": file_ids, "x": xs}).write_parquet(f"{inp_dir}/part_{i}")
 
-    daft.read_parquet(f"{inp_dir}/**", checkpoint=checkpoint_store, on="file_id").write_iceberg(
-        iceberg_table, checkpoint=checkpoint_store
-    )
+    daft.read_parquet(
+        f"{inp_dir}/**", checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")
+    ).write_iceberg(iceberg_table, checkpoint=checkpoint_store)
 
     iceberg_table.refresh()
     assert len(iceberg_table.metadata.snapshots) == 1, "all per-partition entries must aggregate into a single snapshot"
@@ -572,7 +572,7 @@ def test_multi_partition_recovery_after_crash_between_stage_and_commit(iceberg_t
 
     # First call: crash between sink seal and tx.commit_transaction. Multiple
     # per-partition entries get sealed before the patched commit raises.
-    df = daft.read_parquet(inp_glob, checkpoint=checkpoint_store, on="file_id")
+    df = daft.read_parquet(inp_glob, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     with patch.object(Transaction, "commit_transaction", side_effect=RuntimeError("simulated crash")):
         with pytest.raises(RuntimeError, match="simulated crash"):
             df.write_iceberg(iceberg_table, checkpoint=checkpoint_store)
@@ -591,7 +591,7 @@ def test_multi_partition_recovery_after_crash_between_stage_and_commit(iceberg_t
     )
 
     # Second call: recovery aggregates files across all staged entries.
-    daft.read_parquet(inp_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp_glob, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -625,7 +625,7 @@ def test_multi_partition_incremental_writes(iceberg_table, tmpdir, checkpoint_st
         str(tmpdir / "in1"),
         [(["a", "b"], [1, 2]), (["c", "d"], [3, 4])],
     )
-    daft.read_parquet(inp1_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp1_glob, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -647,7 +647,7 @@ def test_multi_partition_incremental_writes(iceberg_table, tmpdir, checkpoint_st
             (["i", "j"], [9, 10]),  # entirely new partition
         ],
     )
-    daft.read_parquet(inp2_glob, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp2_glob, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
 
@@ -688,7 +688,7 @@ def test_null_keys_are_deduped(iceberg_table, tmpdir, checkpoint_store):
     ).write_parquet(inp)
 
     # Call 1: all three rows land.
-    daft.read_parquet(inp, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
     iceberg_table.refresh()
@@ -698,7 +698,7 @@ def test_null_keys_are_deduped(iceberg_table, tmpdir, checkpoint_store):
 
     # Call 2: same input. Filter must drop the NULL row too — same dedup as
     # for non-null keys.
-    daft.read_parquet(inp, checkpoint=checkpoint_store, on="file_id").write_iceberg(
+    daft.read_parquet(inp, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
         iceberg_table, checkpoint=checkpoint_store
     )
     iceberg_table.refresh()
