@@ -319,8 +319,10 @@ mod presets {
 
 #[cfg(test)]
 mod tests {
-    use daft_core::prelude::{Int64Array, Utf8Array};
-    use daft_core::series::IntoSeries;
+    use daft_core::{
+        prelude::{Int64Array, Utf8Array},
+        series::IntoSeries,
+    };
 
     use super::*;
 
