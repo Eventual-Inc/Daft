@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
-from daft.dependencies import av, sf
+from daft.dependencies import av, pil_image, sf
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
     from daft.file.audio import AudioFile
+    from daft.file.image import ImageFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
 
@@ -49,9 +50,14 @@ class File:
         return instance
 
     def __init__(
-        self, url: str, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+        self,
+        url: str,
+        io_config: IOConfig | None = None,
+        media_type: MediaType = MediaType.unknown(),
+        offset: int | None = None,
+        length: int | None = None,
     ) -> None:
-        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, offset, length))  # type: ignore
 
     def open(self) -> PyDaftFile:
         return PyDaftFile._from_file_reference(self._inner)
@@ -100,6 +106,16 @@ class File:
             'data.csv'
         """
         return self._inner.name()
+
+    @property
+    def offset(self) -> int | None:
+        """The byte offset for range reads, or None for full-file reads."""
+        return self._inner.offset()
+
+    @property
+    def length(self) -> int | None:
+        """The byte length for range reads, or None for full-file reads."""
+        return self._inner.length()
 
     def size(self) -> int:
         return PyDaftFile._from_file_reference(self._inner).size()
@@ -153,6 +169,12 @@ class File:
             return True
         return False
 
+    def is_image(self) -> bool:
+        mimetype = self.mime_type()
+        if mimetype.startswith("image/"):
+            return True
+        return False
+
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
         if not av.module_available():
@@ -184,6 +206,23 @@ class File:
             raise ValueError(f"File {self} is not an audio file")
 
         cls = AudioFile.__new__(AudioFile)
+        cls._inner = self._inner
+
+        return cls
+
+    def as_image(self) -> ImageFile:
+        """Convert to ImageFile if this file contains image data."""
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required to convert files to images. "
+                "Please install it with: pip install 'daft[image]'"
+            )
+        from daft.file.image import ImageFile
+
+        if not self.is_image():
+            raise ValueError(f"File {self} is not an image file")
+
+        cls = ImageFile.__new__(ImageFile)
         cls._inner = self._inner
 
         return cls

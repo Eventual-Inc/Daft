@@ -26,6 +26,30 @@ impl DaftFile {
             .get_source_and_path(&file_ref.url)
             .await
             .map_err(DaftError::from)?;
+
+        match (file_ref.offset, file_ref.length) {
+            (Some(offset), Some(length)) => {
+                let range = Some(GetRange::Bounded(
+                    offset as usize..(offset + length) as usize,
+                ));
+                let result = source
+                    .get(&path, range, None)
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                let bytes = result
+                    .bytes()
+                    .await
+                    .map_err(|e| DaftError::ComputeError(e.to_string()))?;
+                return Ok(Self::from_bytes(media_type, bytes.to_vec()));
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Both offset and length must be specified for byte-range reads".to_string(),
+                ));
+            }
+            (None, None) => {}
+        }
+
         // getting the size is pretty cheap, so we do it upfront
         // we grab the size upfront so we can use it to determine if we are at the end of the file
         let file_size = source
@@ -90,6 +114,31 @@ impl DaftFile {
     /// If we are unable to determine the MIME type, returns None.
     pub fn guess_mime_type(&mut self) -> Option<String> {
         self.cursor.as_mut().and_then(|c| c.mime_type())
+    }
+}
+
+impl Read for DaftFile {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.read(buf),
+            None => Err(io::Error::other("File not open")),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.read_to_end(buf),
+            None => Err(io::Error::other("File not open")),
+        }
+    }
+}
+
+impl Seek for DaftFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match self.cursor.as_mut() {
+            Some(cursor) => cursor.seek(pos),
+            None => Err(io::Error::other("File not open")),
+        }
     }
 }
 
@@ -319,6 +368,7 @@ impl Seek for FileCursor {
         }
     }
 }
+
 fn map_get_error(e: daft_io::Error) -> io::Error {
     io::Error::other(format!("Get failed: {}", e))
 }

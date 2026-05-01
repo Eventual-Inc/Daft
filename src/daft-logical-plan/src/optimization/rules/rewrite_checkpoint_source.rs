@@ -4,13 +4,14 @@
 
 use std::sync::Arc;
 
+use common_checkpoint_config::{CheckpointSettings, SEALED_KEYS_COLUMN};
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_checkpoint::BlobStoreCheckpointedKeysScanOperator;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::unresolved_col;
 use daft_scan::ScanOperatorRef;
-use daft_schema::schema::Schema;
+use daft_schema::{field::Field, schema::Schema};
 
 use super::OptimizerRule;
 use crate::{
@@ -150,9 +151,19 @@ impl OptimizerRule for RewriteCheckpointSource {
                 Arc::new(LogicalPlan::Source(source_copy))
             };
 
-            // Right: scan over checkpointed key files.
-            let key_field = source.output_schema.get_field(&cfg.key_column)?;
-            let key_schema = Arc::new(Schema::new(vec![key_field.clone()]));
+            // Right: scan over checkpointed key files. The on-disk schema uses
+            // a canonical column name (`SEALED_KEYS_COLUMN`) regardless of
+            // what the source calls its key column — see `stage_keys` in the
+            // store impl. This means a user can rename the source's key column
+            // between runs (updating `cfg.key_column` to match) and existing
+            // sealed key files stay valid — only the *physical* on-disk format
+            // is decoupled from the source schema, not the config. If
+            // `cfg.key_column` ever disagrees with the source's actual schema,
+            // `get_field` below errors loudly at rule time.
+            let source_key_field = source.output_schema.get_field(&cfg.key_column)?;
+            let canonical_key_field =
+                Field::new(SEALED_KEYS_COLUMN, source_key_field.dtype.clone());
+            let key_schema = Arc::new(Schema::new(vec![canonical_key_field]));
             let scan_op = ScanOperatorRef(Arc::new(BlobStoreCheckpointedKeysScanOperator::new(
                 cfg.store.clone(),
                 key_schema,
@@ -161,24 +172,30 @@ impl OptimizerRule for RewriteCheckpointSource {
 
             let left_schema = left_plan.schema();
             let right_schema = right_plan.schema();
-            // TODO: Decouple key column naming — the right side (checkpointed
-            // keys scan) should use a canonical column name (e.g. "key") instead
-            // of matching the source's column name.
+            // Left side resolves to the source's key column; right side resolves
+            // to the canonical sealed-keys column. The two are joined for
+            // equality, so the source can be renamed without breaking the
+            // anti-join against existing sealed key files.
             let l = unresolved_col(cfg.key_column.as_str()).to_left_cols(left_schema)?;
-            let r = unresolved_col(cfg.key_column.as_str()).to_right_cols(right_schema)?;
+            let r = unresolved_col(SEALED_KEYS_COLUMN).to_right_cols(right_schema)?;
             let on_expr = l.eq(r);
 
-            // TODO: These KFJ parameters are hardcoded. They should
-            // scale with the cluster or be configurable via CheckpointConfig.
+            // Pull strategy-specific knobs from `cfg.settings`. Today there's
+            // only one variant (`KeyFiltering`); future variants would dispatch
+            // to different filter strategies entirely, not just different knobs.
+            let CheckpointSettings::KeyFiltering(kf) = &cfg.settings;
             let kfc = KeyFilteringConfig::new(
-                Some(2),   // num_workers
-                Some(1.0), // cpus_per_worker
-                None,      // keys_load_batch_size (unused by bridge)
-                Some(1),   // max_concurrency_per_worker
-                None,      // filter_batch_size (unused by bridge)
+                kf.num_workers.or(Some(2)),
+                kf.cpus_per_worker.as_ref().map(|w| w.0).or(Some(1.0)),
+                kf.keys_load_batch_size,
+                kf.max_concurrency_per_worker.or(Some(1)),
+                kf.filter_batch_size,
             )
             .map_err(|e| DaftError::ComputeError(format!("{e}")))?
-            .with_key_columns(vec![cfg.key_column.clone()], vec![cfg.key_column.clone()])
+            .with_key_columns(
+                vec![cfg.key_column.clone()],
+                vec![SEALED_KEYS_COLUMN.to_string()],
+            )
             .map_err(|e| DaftError::ComputeError(format!("{e}")))?;
 
             let joined = LogicalPlanBuilder::from(left_plan).join(
@@ -213,7 +230,8 @@ impl OptimizerRule for RewriteCheckpointSource {
 
 #[cfg(test)]
 mod tests {
-    use common_checkpoint_config::{CheckpointConfig, CheckpointStoreConfig};
+    use common_checkpoint_config::{CheckpointConfig, CheckpointStoreConfig, KeyFilteringSettings};
+    use common_hashable_float_wrapper::FloatWrapper;
     use daft_core::prelude::DataType;
     use daft_schema::field::Field;
 
@@ -224,9 +242,16 @@ mod tests {
     };
 
     fn scan_with_checkpoint(cfg: Option<CheckpointConfig>) -> Arc<LogicalPlan> {
+        // Use a source column name that is *not* the canonical sealed-keys
+        // column name, so assertions that the right side of the anti-join
+        // uses the canonical name (rather than the source's name) catch the
+        // decoupling. Use `Int64` for the key dtype (instead of the typical
+        // `Utf8`) so the dtype-propagation assertion downstream is
+        // load-bearing — a regression that hardcoded Utf8 for the canonical
+        // field would fail loudly here.
         let scan_op = dummy_scan_operator(vec![
-            Field::new("key", DataType::Utf8),
-            Field::new("value", DataType::Int64),
+            Field::new("file_id", DataType::Int64),
+            Field::new("value", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op).build();
         if let Some(cfg) = cfg {
@@ -258,7 +283,8 @@ mod tests {
                 prefix: "s3://does-not-matter-for-rewrite".to_string(),
                 io_config: Box::new(common_io_config::IOConfig::default()),
             },
-            key_column: "key".to_string(),
+            key_column: "file_id".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::default(),
         };
         let plan = scan_with_checkpoint(Some(cfg));
 
@@ -272,7 +298,7 @@ mod tests {
                 result.data
             );
         };
-        assert_eq!(stage.checkpoint_config.key_column, "key");
+        assert_eq!(stage.checkpoint_config.key_column, "file_id");
 
         let LogicalPlan::Join(join) = stage.input.as_ref() else {
             panic!(
@@ -287,8 +313,28 @@ mod tests {
             .key_filtering_config
             .as_ref()
             .expect("KeyFilteringConfig must be attached");
-        assert_eq!(kfc.left_key_columns, vec!["key".to_string()]);
-        assert_eq!(kfc.right_key_columns, vec!["key".to_string()]);
+        // Left side resolves to the source's column; right side to the
+        // canonical sealed-keys column. They must NOT have to match.
+        assert_eq!(kfc.left_key_columns, vec!["file_id".to_string()]);
+        assert_eq!(kfc.right_key_columns, vec![SEALED_KEYS_COLUMN.to_string()]);
+
+        // Default settings must preserve today's hardcoded values exactly.
+        // Pins the rule's `.or(Some(2))` / `.or(Some(1.0))` / `.or(Some(1))`
+        // fallbacks against accidental changes.
+        assert_eq!(kfc.num_workers, Some(2));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        assert_eq!(kfc.filter_batch_size, None);
+
+        // Default settings must preserve today's hardcoded values exactly.
+        // Pins the rule's `.or(Some(2))` / `.or(Some(1.0))` / `.or(Some(1))`
+        // fallbacks against accidental changes.
+        assert_eq!(kfc.num_workers, Some(2));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        assert_eq!(kfc.filter_batch_size, None);
 
         // Left side: Source with `checkpoint` stripped — staging responsibility
         // lives on the wrapping StageCheckpointKeys node, not on the Source.
@@ -308,5 +354,112 @@ mod tests {
             physical.scan_state.get_scan_op().0.name(),
             "BlobStoreCheckpointedKeysScanOperator"
         );
+
+        // Right plan's *actual schema* must carry the canonical column name
+        // with the source key column's dtype — guards against a regression
+        // that wires `kfc` correctly but builds the schema with the source's
+        // column name (or the wrong dtype). A schema mismatch would only
+        // surface at execution time, when the optimizer test wouldn't catch it.
+        let right_schema = join.right.schema();
+        let canonical_field = right_schema
+            .get_field(SEALED_KEYS_COLUMN)
+            .expect("right plan schema must carry the canonical sealed-keys column");
+        assert_eq!(
+            canonical_field.dtype,
+            DataType::Int64,
+            "canonical column dtype must propagate from the source key column dtype, not be hardcoded"
+        );
+        assert_eq!(
+            right_schema.len(),
+            1,
+            "right plan schema should have only the canonical key column"
+        );
+    }
+
+    /// Non-default `KeyFilteringSettings` on `CheckpointConfig` must flow through
+    /// to the `KeyFilteringConfig` produced by the rule. Pins the wiring against
+    /// regressions where someone reintroduces hardcoded values in the rewrite.
+    #[test]
+    fn user_supplied_settings_flow_through_to_key_filtering_config() {
+        let cfg = CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://does-not-matter-for-rewrite".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_column: "file_id".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::KeyFiltering(
+                KeyFilteringSettings {
+                    num_workers: Some(7),
+                    cpus_per_worker: Some(FloatWrapper(2.5)),
+                    keys_load_batch_size: Some(1024),
+                    max_concurrency_per_worker: Some(3),
+                    filter_batch_size: Some(512),
+                },
+            ),
+        };
+        let plan = scan_with_checkpoint(Some(cfg));
+
+        let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
+        let LogicalPlan::StageCheckpointKeys(stage) = result.data.as_ref() else {
+            panic!("expected StageCheckpointKeys at root");
+        };
+        let LogicalPlan::Join(join) = stage.input.as_ref() else {
+            panic!("expected Join under StageCheckpointKeys");
+        };
+        let kfc = join
+            .key_filtering_config
+            .as_ref()
+            .expect("KeyFilteringConfig must be attached");
+
+        assert_eq!(kfc.num_workers, Some(7));
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(2.5));
+        assert_eq!(kfc.keys_load_batch_size, Some(1024));
+        assert_eq!(kfc.max_concurrency_per_worker, Some(3));
+        assert_eq!(kfc.filter_batch_size, Some(512));
+    }
+
+    /// Partial overrides: a user who sets only `num_workers` must still get
+    /// the hardcoded fallbacks for `cpus_per_worker` / `max_concurrency_per_worker`,
+    /// not `None`. Pins per-field independence in the rule's fallback chain
+    /// (`x.or(Some(default))`) — a regression that gates one fallback on
+    /// another field being unset would slip past the all-default and
+    /// all-override tests above.
+    #[test]
+    fn partial_settings_override_keeps_per_field_fallbacks() {
+        let cfg = CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://does-not-matter-for-rewrite".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_column: "file_id".to_string(),
+            settings: common_checkpoint_config::CheckpointSettings::KeyFiltering(
+                KeyFilteringSettings {
+                    num_workers: Some(7),
+                    ..Default::default()
+                },
+            ),
+        };
+        let plan = scan_with_checkpoint(Some(cfg));
+
+        let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
+        let LogicalPlan::StageCheckpointKeys(stage) = result.data.as_ref() else {
+            panic!("expected StageCheckpointKeys at root");
+        };
+        let LogicalPlan::Join(join) = stage.input.as_ref() else {
+            panic!("expected Join under StageCheckpointKeys");
+        };
+        let kfc = join
+            .key_filtering_config
+            .as_ref()
+            .expect("KeyFilteringConfig must be attached");
+
+        // User-supplied — preserved.
+        assert_eq!(kfc.num_workers, Some(7));
+        // Untouched — must fall back to hardcoded rule defaults.
+        assert_eq!(kfc.cpus_per_worker.as_ref().map(|w| w.0), Some(1.0));
+        assert_eq!(kfc.max_concurrency_per_worker, Some(1));
+        // Untouched fields with no rule fallback — stay `None`.
+        assert_eq!(kfc.keys_load_batch_size, None);
+        assert_eq!(kfc.filter_batch_size, None);
     }
 }

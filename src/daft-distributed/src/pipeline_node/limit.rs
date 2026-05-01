@@ -259,7 +259,7 @@ impl LimitNode {
 
     async fn limit_execution_loop(
         self: Arc<Self>,
-        mut input: TaskBuilderStream,
+        input: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
@@ -268,6 +268,17 @@ impl LimitNode {
         let mut limit_state = LimitState::new(self.limit, self.offset);
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
+
+        let mut input = std::pin::pin!(input.peekable());
+
+        // Try to estimate initial concurrency from scan task metadata (e.g. Parquet row counts).
+        // This avoids the bottleneck of running one task sequentially just to measure output size.
+        if let Some(first) = input.as_mut().peek().await
+            && let Some(est_rows) = first.estimated_num_rows()
+            && est_rows > 0
+        {
+            max_concurrent_tasks = limit_state.total_remaining().div_ceil(est_rows);
+        }
 
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
@@ -392,5 +403,181 @@ impl PipelineNodeImpl for LimitNode {
             plan_context.task_id_counter(),
         ));
         TaskBuilderStream::from(result_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, sync::Arc};
+
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+    use daft_scan::{
+        CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+        ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    };
+
+    use super::*;
+    use crate::pipeline_node::{
+        scan_source::ScanSourceNode,
+        test_helpers::{
+            build_in_memory_source, make_partition, run_pipeline_and_get_stats, test_plan_config,
+            test_schema,
+        },
+    };
+
+    /// Wrap a child source in a `LimitNode` and return the resulting pipeline.
+    fn wrap_with_limit(
+        source: DistributedPipelineNode,
+        plan_config: &PlanConfig,
+        limit: usize,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let limit_node = LimitNode::new(1, plan_config, limit, None, test_schema(), source);
+        DistributedPipelineNode::new(Arc::new(limit_node), meter)
+    }
+
+    fn write_csv_file(path: &std::path::Path, values: &[i64]) {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).expect("create csv file");
+        writeln!(file, "x").expect("write header");
+        for v in values {
+            writeln!(file, "{v}").expect("write row");
+        }
+        file.sync_all().expect("sync");
+    }
+
+    /// Build a CSV-backed `ScanSourceNode`. The scan tasks carry `size_bytes`,
+    /// which is what makes `SwordfishTaskBuilder::estimated_num_rows()` return
+    /// `Some(_)` via the `approx_num_rows` size-inflation path.
+    fn build_csv_scan_source(
+        file_paths: &[PathBuf],
+        plan_config: &PlanConfig,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let schema = test_schema();
+        let csv_cfg = CsvSourceConfig {
+            delimiter: None,
+            has_headers: true,
+            double_quote: true,
+            quote: None,
+            escape_char: None,
+            comment: None,
+            allow_variable_columns: false,
+            buffer_size: None,
+            chunk_size: None,
+        };
+        let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
+        let storage_config = Arc::new(StorageConfig::new_internal(false, None));
+        let pushdowns = Pushdowns::default();
+
+        let scan_tasks: Vec<ScanTaskRef> = file_paths
+            .iter()
+            .map(|path| {
+                let size = std::fs::metadata(path).expect("file metadata").len();
+                Arc::new(ScanTask::new(
+                    vec![ScanSource {
+                        size_bytes: Some(size),
+                        metadata: None,
+                        statistics: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: path.to_string_lossy().into_owned(),
+                            chunk_spec: None,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
+                    }],
+                    source_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                    None,
+                ))
+            })
+            .collect();
+
+        let scan_source_node =
+            ScanSourceNode::new(0, plan_config, pushdowns, Arc::new(scan_tasks), schema);
+        DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
+    }
+
+    fn assert_limit_rows_out(
+        stats: &[(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)],
+        expected: u64,
+    ) {
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("limit node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => assert_eq!(s.rows_out, expected),
+            other => panic!("expected Default snapshot for limit, got: {other:?}"),
+        }
+    }
+
+    /// Limit on an `InMemorySource`: input task builders carry `psets` rather
+    /// than scan tasks, so `estimated_num_rows()` returns `None` and the
+    /// execution loop takes the fallback `max_concurrent_tasks = 1` branch.
+    /// Verifies the limit is correctly enforced.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_without_estimated_rows() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_without_estimated_rows");
+        let (source, plan_config) = build_in_memory_source(
+            0,
+            vec![
+                make_partition(&[1, 2, 3, 4, 5]),
+                make_partition(&[6, 7, 8, 9, 10]),
+                make_partition(&[11, 12, 13, 14, 15]),
+            ],
+            &meter,
+        );
+        let pipeline = wrap_with_limit(source, &plan_config, 7, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+        assert_limit_rows_out(&stats, 7);
+        Ok(())
+    }
+
+    /// Limit on a CSV-backed `ScanSource`: scan tasks carry `size_bytes`, so
+    /// `estimated_num_rows()` returns `Some(_)` and the execution loop takes
+    /// the estimated-concurrency branch. Verifies the limit is correctly
+    /// enforced.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_with_estimated_rows() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_with_estimated_rows");
+
+        let tmpdir = std::env::temp_dir().join(format!(
+            "daft_flotilla_limit_estimated_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::create_dir_all(&tmpdir).expect("create tmpdir");
+
+        let num_files: usize = 3;
+        let rows_per_file: usize = 5;
+        let mut file_paths = Vec::with_capacity(num_files);
+        for i in 0..num_files {
+            let path = tmpdir.join(format!("file_{i}.csv"));
+            let values: Vec<i64> = (0..rows_per_file)
+                .map(|j| (i * rows_per_file + j) as i64)
+                .collect();
+            write_csv_file(&path, &values);
+            file_paths.push(path);
+        }
+
+        let plan_config = test_plan_config();
+        let source = build_csv_scan_source(&file_paths, &plan_config, &meter);
+        let pipeline = wrap_with_limit(source, &plan_config, 7, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        assert_limit_rows_out(&stats, 7);
+        Ok(())
     }
 }

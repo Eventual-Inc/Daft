@@ -17,7 +17,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 [`daft.from_glob_path`](../api/io.md#daft.from_glob_path) helps discover and size files, accepting wildcards and lists of paths. When paired with [`daft.functions.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
 
 === "🐍 Python"
-`python
+    ```python
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
@@ -26,10 +26,10 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
     })
     df = df.with_column("data", df["urls"].download())
     df.collect()
-   `
+    ```
 
 === "⚙️ SQL"
-`python
+    ```python
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
@@ -43,7 +43,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
         FROM df
     """)
     df.collect()
-    `
+    ```
 
 ```{title="Output"}
 
@@ -64,13 +64,13 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 ## The [`daft.File`](../api/datatypes/file_types.md) Datatype
 
-[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio or video data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the [`daft.AudioFile`](../api/datatypes/file_types.md) and [`daft.VideoFile`](../api/datatypes/file_types.md) types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities:
+[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio, video, or image data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the [`daft.AudioFile`](../api/datatypes/file_types.md), [`daft.ImageFile`](../api/datatypes/file_types.md), and [`daft.VideoFile`](../api/datatypes/file_types.md) types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities:
 
 === "🐍 Python"
-``` python
-import daft
-from daft.functions import file
-from daft.io import IOConfig, S3Config
+    ```python
+    import daft
+    from daft.functions import file
+    from daft.io import IOConfig, S3Config
 
     io_config = IOConfig(s3=S3Config(anonymous=True))
 
@@ -180,6 +180,35 @@ df.show(5)
 ╰────────────────────────────────┴─────────┴────────────────────────────────┴────────────────────────────────╯
 
 (Showing first 5 rows)
+```
+
+## Byte-Range Reads
+
+When working with files that pack multiple records into a single blob (e.g. Paimon blob files), you can specify `offset` and `length` to read only a specific byte range instead of the entire file. Both parameters must be provided together.
+
+```python
+import daft
+
+# Read bytes 1024–2047 from a large blob file
+f = daft.File("s3://bucket/data.blob", offset=1024, length=1024)
+with f.open() as fh:
+    data = fh.read()  # returns exactly 1024 bytes
+```
+
+This also works inside UDFs:
+
+```python
+@daft.func
+def read_record(file: daft.File) -> bytes:
+    with file.open() as f:
+        return f.read()
+
+# Construct File references with per-row offsets
+df = daft.from_pydict({
+    "url": ["s3://bucket/blob"] * 3,
+    "offset": [0, 100, 200],
+    "length": [100, 100, 50],
+})
 ```
 
 ## Using daft.File to read code and walk the AST

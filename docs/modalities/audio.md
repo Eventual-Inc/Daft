@@ -2,7 +2,7 @@
 
 Daft supports working with audio natively via the new `daft.AudioFile` and its parent `daft.File`.
 
-Audio data is usually stored in file formats such as MP3, WAV, or OGG. As a continuous waveform, the length of an audio file is directly proportional to its size. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
+Audio data is usually stored in file formats such as MP3, WAV, or OGG. Audio files can grow large quickly since their size scales with duration. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
 
 !!! note "Contribute to `daft.AudioFile`"
 If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).

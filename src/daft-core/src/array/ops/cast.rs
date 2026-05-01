@@ -32,7 +32,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
+    file::{DaftMediaType, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
     prelude::ExtensionArray,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -633,17 +633,16 @@ where
         use daft_schema::media_type::MediaType::*;
         match dtype {
             DataType::File(media_type) => match (media_type, T::get_type()) {
-                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) => {
+                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) | (Image, Image) => {
                     Ok(self.clone().into_series())
                 }
                 (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Unknown, Audio) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
-                (Video, Unknown) | (Audio, Unknown) => {
+                (Unknown, Image) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
+                (Video, Unknown) | (Audio, Unknown) | (Image, Unknown) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
-                (Video, Audio) | (Audio, Video) => {
-                    Err(DaftError::TypeError("invalid cast".to_string()))
-                }
+                _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
@@ -1783,6 +1782,27 @@ impl StructArray {
                     ImageArray::new(Field::new(self.name(), dtype.clone()), casted_struct_array)
                         .into_series(),
                 )
+            }
+            (DataType::Struct(..), DataType::File(media_type)) => {
+                use daft_schema::media_type::MediaType;
+                let casted_struct_array = self.cast(&dtype.to_physical())?.struct_()?.clone();
+                match media_type {
+                    MediaType::Video => Ok(FileArray::<MediaTypeVideo>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    MediaType::Audio => Ok(FileArray::<MediaTypeAudio>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    _ => Ok(FileArray::<MediaTypeUnknown>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                }
             }
             (DataType::Struct(..), DataType::List(child_dtype)) => {
                 let casted_children = self

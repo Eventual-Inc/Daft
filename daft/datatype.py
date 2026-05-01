@@ -46,6 +46,11 @@ class MediaType:
         """Represents an audio media type."""
         return cls._from_pyfileformat(PyMediaType.audio())
 
+    @classmethod
+    def image(cls) -> MediaType:
+        """Represents an image media type."""
+        return cls._from_pyfileformat(PyMediaType.image())
+
 
 class TimeUnit:
     _timeunit: PyTimeUnit
@@ -242,6 +247,10 @@ class DataType:
             return cls.duration(TimeUnit.us())
         elif check_type(daft.file.VideoFile):
             return cls.file(MediaType.video())
+        elif check_type(daft.file.AudioFile):
+            return cls.file(MediaType.audio())
+        elif check_type(daft.file.ImageFile):
+            return cls.file(MediaType.image())
         elif check_type(daft.file.File):
             return cls.file(MediaType.unknown())
         elif check_type(list):

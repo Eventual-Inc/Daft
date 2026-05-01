@@ -154,7 +154,7 @@ pip install daft --pre --extra-index-url https://nightly.daft.ai
 ```
 
 !!! warning "Stability"
-Nightly builds may contain unstable or experimental changes. They are not recommended for production use.
+    Nightly builds may contain unstable or experimental changes. They are not recommended for production use.
 
 ## Troubleshooting Legacy CPU Support
 
@@ -165,7 +165,7 @@ pip install -U daft-lts
 ```
 
 !!! warning "Performance Impact"
-The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
+    The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
 
 <style>
 .daft-install-tool {

@@ -71,6 +71,21 @@ def list_join(list_expr: Expression, delimiter: str | Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_join", list_expr, delimiter)
 
 
+def list_flatten(list_expr: Expression) -> Expression:
+    """Flattens one level of nesting in each list.
+
+    Outer null rows are preserved as null. Null inner lists are skipped while flattening,
+    and null leaf values are preserved in the output.
+
+    Args:
+        list_expr (List Expression): expression to flatten one level.
+
+    Returns:
+        Expression (List Expression): an expression with one fewer level of list nesting.
+    """
+    return Expression._call_builtin_scalar_fn("list_flatten", list_expr)
+
+
 def list_count(
     list_expr: Expression, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid
 ) -> Expression:
@@ -329,6 +344,39 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
         (Showing first 2 of 2 rows)
     """
     return Expression._call_builtin_scalar_fn("list_map", list_expr, mapper)
+
+
+def list_filter(list_expr: Expression, predicate: Expression) -> Expression:
+    """Filters elements in a list using a boolean predicate expression.
+
+    Elements where the predicate evaluates to `False` or `null` are removed.
+    Null list rows remain null. Empty list rows remain empty.
+
+    Args:
+        list_expr (List Expression): expression to filter.
+        predicate: Boolean expression to evaluate on each element. Use `daft.element()` to reference the current element.
+
+    Returns:
+        Expression (List Expression): an expression representing the filtered list.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_filter
+        >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+        >>> df.with_column("no_b", list_filter(df["letters"], daft.element() != "b")).collect()
+        ╭──────────────┬──────────────╮
+        │ letters      ┆ no_b         │
+        │ ---          ┆ ---          │
+        │ List[String] ┆ List[String] │
+        ╞══════════════╪══════════════╡
+        │ [a, b, a]    ┆ [a, a]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [b, c, b, c] ┆ [c, c]       │
+        ╰──────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_filter", list_expr, predicate)
 
 
 def explode(list_expr: Expression, ignore_empty_and_null: bool = False) -> Expression:

@@ -24,7 +24,9 @@ impl CompressionCodec {
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
         let path = if let Some(stripped) = uri.strip_prefix("file://") {
-            // Handle file URLs properly by stripping the scheme.
+            // Handle file URLs properly by stripping the scheme. We only use
+            // `path` for extension detection below, so the leading `/` before
+            // a Windows drive letter (`/C:/...`) is harmless here.
             stripped
         } else {
             match &url {

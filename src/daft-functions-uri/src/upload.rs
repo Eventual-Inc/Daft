@@ -128,10 +128,8 @@ fn instantiate_and_trim_path(
     // the appropriate source. However, most sources such as the object stores don't have the concept of "folders".
     let (source, folder_path) = daft_io::parse_url(folder_path)?;
     if matches!(source, SourceType::File) {
-        let local_prefixless_folder_path = match folder_path.strip_prefix("file://") {
-            Some(p) => p,
-            None => folder_path.as_ref(),
-        };
+        let local_prefixless_folder_path = daft_io::strip_file_uri_to_path(folder_path.as_ref())
+            .unwrap_or_else(|| folder_path.as_ref());
         if is_single_folder {
             // If we were given a single folder, create a directory at the given path.
             if instantiated_folder_paths.insert(local_prefixless_folder_path.to_string()) {
