@@ -217,7 +217,7 @@ class TestBlobType:
     """Tests for BLOB type support (pypaimon 1.4+)."""
 
     def test_write_read_blob_type(self, local_paimon_catalog):
-        """Test that BLOB columns are returned as lazy struct references."""
+        """Test that BLOB columns are returned as FileReference objects."""
         catalog, tmp_path = local_paimon_catalog
 
         pa_schema = pa.schema([("id", pa.int64()), ("blob_data", pa.large_binary())])
@@ -236,17 +236,20 @@ class TestBlobType:
         df = daft.from_pydict({"id": [1, 2], "blob_data": [b"hello", b"world"]})
         df.write_paimon(table, mode="append")
 
-        result = daft.read_paimon(table).sort("id").to_pydict()
+        result_df = daft.read_paimon(table).sort("id")
+        assert str(result_df.schema()["blob_data"].dtype) == "File[Unknown]"
+
+        result = result_df.to_pydict()
         assert result["id"] == [1, 2]
 
         blob_refs = result["blob_data"]
         assert len(blob_refs) == 2
         for ref in blob_refs:
-            assert "url" in ref
-            assert "offset" in ref
-            assert "length" in ref
-            assert isinstance(ref["url"], str)
-            assert ".blob" in ref["url"]
+            assert isinstance(ref, daft.File)
+            assert isinstance(ref.path, str)
+            assert ".blob" in ref.path
+            assert ref.offset is not None
+            assert ref.length is not None
 
 
 # ---------------------------------------------------------------------------

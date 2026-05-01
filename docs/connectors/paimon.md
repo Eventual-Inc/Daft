@@ -11,7 +11,7 @@ Daft currently supports:
 3. **Column Projection:** Only the requested columns are read from disk.
 4. **Append-only and Primary-Key Tables:** Both table types are supported; append-only tables use Daft's native high-performance Parquet reader, while PK tables that require LSM merge fall back to pypaimon's built-in reader.
 5. **Catalog Abstraction:** Paimon catalogs integrate with Daft's unified `Catalog` / `Table` interfaces, enabling SQL queries and `daft.read_table()` access.
-6. **BLOB Type:** Tables with BLOB columns (pypaimon 1.4+) are read as lazy struct references (`{url, offset, length}`) instead of materializing the full binary content.
+6. **BLOB Type:** Tables with BLOB columns (pypaimon 1.4+) are read as `DataType.file()` references with byte-range support (`url`, `offset`, `length`) instead of materializing the full binary content.
 7. **Truncate:** Full table and partition-level truncation via `PaimonTable.truncate()` and `PaimonTable.truncate_partitions()`.
 
 ## Installation
@@ -263,7 +263,7 @@ Paimon types are mapped through PyArrow to Daft types:
 | `TIMESTAMP_LTZ(precision)`      | `daft.DataType.timestamp(timeunit=..., timezone="UTC")` |
 | `CHAR(n)` / `VARCHAR(n)` / `STRING` | `daft.DataType.string()`                           |
 | `BINARY(n)` / `VARBINARY(n)` / `BYTES` | `daft.DataType.binary()`                       |
-| `BLOB`                          | `daft.DataType.struct({url: string, offset: int64, length: int64})` (lazy reference) |
+| `BLOB`                          | `daft.DataType.file()` (lazy `FileReference` with byte-range) |
 | `ARRAY<element_type>`           | `daft.DataType.list(element_type)`                      |
 | `MAP<key_type, value_type>`     | `daft.DataType.map(key_type, value_type)`               |
 | `ROW<[field_name: field_type]>` | `daft.DataType.struct(fields)`                          |

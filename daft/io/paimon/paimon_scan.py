@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
-from daft.io.paimon._blob import BLOB_STRUCT_TYPE, blob_column_to_struct
+from daft.io.paimon._blob import FILE_PHYSICAL_TYPE, blob_column_to_file_array
 from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
@@ -62,22 +62,39 @@ class _PaimonPKSplitTask(DataSourceTask):
         for batch in iter(reader.read_next_batch, None):
             if self._blob_column_names:
                 batch = _convert_blob_columns(batch, self._blob_column_names)
-            yield RecordBatch.from_arrow_record_batches([batch], batch.schema)
+            rb = RecordBatch.from_arrow_record_batches([batch], batch.schema)
+            if self._blob_column_names:
+                rb = _cast_blob_columns_to_file(rb, self._blob_column_names)
+            yield rb
 
 
 def _convert_blob_columns(batch: pa.RecordBatch, blob_column_names: set[str]) -> pa.RecordBatch:
-    """Replace serialized BlobDescriptor columns with struct{url, offset, length}."""
+    """Replace serialized BlobDescriptor columns with the File physical struct layout."""
     arrays = []
     fields = []
     for i, field in enumerate(batch.schema):
         col = batch.column(i)
         if field.name in blob_column_names and (pa.types.is_large_binary(field.type) or pa.types.is_binary(field.type)):
-            arrays.append(blob_column_to_struct(col))
-            fields.append(pa.field(field.name, BLOB_STRUCT_TYPE, nullable=field.nullable))
+            arrays.append(blob_column_to_file_array(col))
+            fields.append(pa.field(field.name, FILE_PHYSICAL_TYPE, nullable=field.nullable))
         else:
             arrays.append(col)
             fields.append(field)
     return pa.RecordBatch.from_arrays(arrays, schema=pa.schema(fields))
+
+
+def _cast_blob_columns_to_file(rb: RecordBatch, blob_column_names: set[str]) -> RecordBatch:
+    """Cast struct-typed blob columns in a RecordBatch to DataType.file()."""
+    from daft.datatype import DataType
+
+    file_dtype = DataType.file()
+    columns = {}
+    for i, field in enumerate(rb.schema()):
+        col = rb.get_column(i)
+        if field.name in blob_column_names:
+            col = col.cast(file_dtype)
+        columns[field.name] = col
+    return RecordBatch.from_pydict(columns)
 
 
 class PaimonDataSource(DataSource):
@@ -112,15 +129,18 @@ class PaimonDataSource(DataSource):
         self._has_blob_columns = bool(self._blob_column_names)
 
         if self._has_blob_columns:
-            new_fields = []
-            for field in pa_schema:
-                if field.name in self._blob_column_names:
-                    new_fields.append(pa.field(field.name, BLOB_STRUCT_TYPE, nullable=field.nullable))
-                else:
-                    new_fields.append(field)
-            pa_schema = pa.schema(new_fields, metadata=pa_schema.metadata)
+            from daft.datatype import DataType
 
-        self._schema = Schema.from_pyarrow_schema(pa_schema)
+            base_schema = Schema.from_pyarrow_schema(pa_schema)
+            fields = []
+            for f in base_schema:
+                if f.name in self._blob_column_names:
+                    fields.append((f.name, DataType.file()))
+                else:
+                    fields.append((f.name, f.dtype))
+            self._schema = Schema.from_field_name_and_types(fields)
+        else:
+            self._schema = Schema.from_pyarrow_schema(pa_schema)
 
         warehouse = catalog_options.get("warehouse", "")
         self._warehouse_scheme = urlparse(warehouse).scheme
