@@ -277,6 +277,10 @@ impl IOClient {
                 HFSource::get_client(&self.config.hf, &self.config.http).await?
                     as Arc<dyn ObjectSource>
             }
+            SourceType::HFBucket => {
+                HFSource::get_client(&self.config.hf, &self.config.http).await?
+                    as Arc<dyn ObjectSource>
+            }
             SourceType::Unity => {
                 #[cfg(feature = "python")]
                 {
@@ -496,6 +500,7 @@ pub enum SourceType {
     AzureBlob,
     GCS,
     HF,
+    HFBucket,
     Unity,
     Tos,
     Gravitino,
@@ -511,6 +516,7 @@ impl std::fmt::Display for SourceType {
             Self::AzureBlob => write!(f, "AzureBlob"),
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
+            Self::HFBucket => write!(f, "hf_bucket"),
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
@@ -525,7 +531,12 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File
+                | Self::S3
+                | Self::HFBucket
+                | Self::Tos
+                | Self::Gravitino
+                | Self::OpenDAL { .. }
         )
     }
 }
@@ -623,7 +634,10 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
-        "hf" => Ok((SourceType::HF, fixed_input)),
+        "hf" => match url.host_str() {
+            Some("buckets") => Ok((SourceType::HFBucket, fixed_input)),
+            _ => Ok((SourceType::HF, fixed_input)),
+        },
         "tos" => Ok((SourceType::Tos, fixed_input)),
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
@@ -755,5 +769,32 @@ mod resolve_alias_tests {
         let config = config_with_aliases(&[("custom", "s3")]);
         let result = resolve_url_alias("custom://my-bucket/some/deep/path?query=1", &config);
         assert_eq!(result.as_ref(), "s3://my-bucket/some/deep/path?query=1");
+    }
+}
+
+#[cfg(test)]
+mod parse_url_tests {
+    use super::{SourceType, parse_url};
+
+    #[test]
+    fn test_parse_hf_bucket_uri_uses_bucket_source_type() {
+        let (source_type, path) =
+            parse_url("hf://buckets/user/bucket/path/to/file.parquet").unwrap();
+
+        assert_eq!(source_type, SourceType::HFBucket);
+        assert_eq!(
+            path.as_ref(),
+            "hf://buckets/user/bucket/path/to/file.parquet"
+        );
+        assert!(source_type.supports_native_writer());
+    }
+
+    #[test]
+    fn test_parse_hf_singular_bucket_prefix_is_not_special_cased() {
+        let (source_type, path) = parse_url("hf://bucket/user/repo/path/to/file.parquet").unwrap();
+
+        assert_eq!(source_type, SourceType::HF);
+        assert_eq!(path.as_ref(), "hf://bucket/user/repo/path/to/file.parquet");
+        assert!(!source_type.supports_native_writer());
     }
 }
