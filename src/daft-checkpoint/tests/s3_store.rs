@@ -583,22 +583,29 @@ async fn test_sealed_file_paths_lifecycle() {
 }
 
 // ---------------------------------------------------------------------------
-// 15. checkpoint() on empty source seals an empty manifest
+// 15. checkpoint() on never-staged id is a tolerated no-op
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_checkpoint_empty_source_seals_empty_manifest() {
+async fn test_checkpoint_on_never_staged_id_is_a_noop() {
     let (_dir, store) = make_store();
     let id = CheckpointId::generate(0);
 
-    // Never call stage_keys / stage_files. Empty-source case: a task processed
-    // 0 rows after the anti-join, so nothing was staged.
+    // Empty-source case: pipeline produced 0 rows after the anti-join, sink
+    // generated an id but no SCKO/sink call ever staged keys or files. We
+    // succeed quietly rather than sealing a content-less manifest — that
+    // marker would carry an empty query_id, which violates the downstream
+    // single-query-id invariant for no observable benefit (consumers can
+    // already tell "this id sealed nothing" from the absence of a manifest).
     store.checkpoint(&id).await.unwrap();
 
-    let ckpt = store.get_checkpoint(&id).await.unwrap();
-    assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
+    let ckpt = store.get_checkpoint(&id).await;
+    assert!(matches!(
+        ckpt,
+        Err(CheckpointError::CheckpointNotFound { .. })
+    ));
     assert!(store.sealed_file_paths().await.unwrap().is_empty());
 
-    // Idempotent retry on already-sealed empty checkpoint.
+    // Idempotent retry — still a no-op.
     store.checkpoint(&id).await.unwrap();
 }

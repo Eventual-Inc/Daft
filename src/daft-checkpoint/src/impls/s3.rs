@@ -548,18 +548,23 @@ impl CheckpointStore for S3CheckpointStore {
         let (num_key_files, num_file_files, created_at, query_id, pending) = match drain {
             Some(data) => data,
             None => {
-                // No staged entry. Two sub-cases:
-                //   (a) Already sealed in a prior call — idempotent retry. read_manifest succeeds.
-                //   (b) Never staged at all (e.g. 0-row source after anti-join). Write empty
-                //       manifest. There's no query_id to record (nothing was ever staged), so
-                //       use an empty string — readers can treat it as "no associated query."
-                match self.read_manifest(id).await {
-                    Ok(_) => return Ok(()),
-                    Err(CheckpointError::CheckpointNotFound { .. }) => {
-                        (0, 0, SystemTime::now(), String::new(), JoinSet::new())
-                    }
-                    Err(e) => return Err(e),
-                }
+                // No in-memory staged entry for this id. Two sub-cases, both
+                // handled as a no-op success:
+                //   (a) Already sealed in a prior call — idempotent retry.
+                //       read_manifest succeeds; nothing more to do.
+                //   (b) Never staged at all (e.g. 0-row source after the
+                //       anti-join — the sink generated an id but no SCKO or
+                //       sink call ever landed keys/files). There's no query_id
+                //       to record, so we *cannot* write a manifest without
+                //       violating the downstream single-query-id invariant.
+                //       Succeed quietly — consumers using `list_checkpoints`
+                //       simply see no Checkpointed entry for this id, which
+                //       matches the empty-input flow's expected semantics.
+                return match self.read_manifest(id).await {
+                    Ok(_) => Ok(()),
+                    Err(CheckpointError::CheckpointNotFound { .. }) => Ok(()),
+                    Err(e) => Err(e),
+                };
             }
         };
 
