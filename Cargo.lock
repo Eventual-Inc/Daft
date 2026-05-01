@@ -3158,7 +3158,6 @@ dependencies = [
  "dashmap",
  "futures",
  "pyo3",
- "rayon",
  "snafu",
  "tokio",
  "tracing",
