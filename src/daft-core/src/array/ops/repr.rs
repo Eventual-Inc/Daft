@@ -7,8 +7,8 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
-        FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
-        Utf8Array,
+        Field, FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray,
+        UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
@@ -38,7 +38,20 @@ macro_rules! impl_array_str_value {
 }
 
 impl_array_str_value!(BooleanArray, "{}");
-impl_array_str_value!(ExtensionArray, "{:?}");
+
+impl ExtensionArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if !self.is_valid(idx) {
+            return Ok("None".to_string());
+        }
+        let DataType::Extension(_, inner_dtype, _) = &self.field.dtype else {
+            return Ok(format!("{:?}", self.get(idx)));
+        };
+        let inner_field = Field::new(&*self.field.name, inner_dtype.as_ref().clone());
+        let inner_series = Series::from_arrow(inner_field, self.to_arrow())?;
+        inner_series.str_value_result(idx)
+    }
+}
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
