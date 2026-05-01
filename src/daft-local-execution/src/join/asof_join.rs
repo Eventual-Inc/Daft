@@ -18,14 +18,9 @@ use daft_dsl::{
     join::{get_right_cols_to_drop, infer_asof_join_schema},
 };
 use daft_groupby::IntoGroups;
-use rayon::prelude::*;
-
-type ByKeyHashesAndComparator<'a> = (
-    &'a UInt64Array,
-    &'a (dyn Fn(usize, usize) -> bool + Send + Sync),
-);
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use rayon::prelude::*;
 use tracing::Span;
 
 use crate::{
@@ -36,6 +31,12 @@ use crate::{
     },
     pipeline::NodeName,
 };
+
+type ByKeyHashesAndComparator<'a> = (
+    &'a UInt64Array,
+    &'a (dyn Fn(usize, usize) -> bool + Send + Sync),
+);
+
 pub(crate) struct AsofJoinBuildState {
     tables: Vec<MicroPartition>,
 }
@@ -200,7 +201,7 @@ impl AsofJoinProbeState {
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
         self.right_on_key_arrs.push(right_on_arr.clone());
 
-        //we use this later when we call search_bucket()
+        // we use this later when we call search_bucket()
         let on_key_cmp = build_partial_compare_with_nulls(
             table.left_on_arr.as_ref(),
             right_on_arr.as_ref(),
