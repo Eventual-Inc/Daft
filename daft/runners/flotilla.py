@@ -613,8 +613,6 @@ class FlotillaRunner:
             yield result
 
     def _dispatch_pending_operator_events(self, plan_id: str) -> None:
-        from daft.context import get_context
-
         try:
             events = ray.get(self.runner.take_pending_operator_events.remote(plan_id))
         except Exception as e:

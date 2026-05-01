@@ -159,6 +159,9 @@ pub async fn run_pipeline_with_manager(
 /// Use this from integration tests to assert on operator lifecycle.
 pub struct CapturedRun {
     pub events: Vec<PendingOperatorEvent>,
+    /// Aggregated per-node stats for tests that want to combine
+    /// lifecycle assertions with stats assertions in the same run.
+    #[allow(dead_code)]
     pub stats: ExecutionStats,
 }
 

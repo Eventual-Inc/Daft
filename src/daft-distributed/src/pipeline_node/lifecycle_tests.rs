@@ -274,10 +274,11 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
         !started_pre.is_empty(),
         "expected Start events to have fired before abort"
     );
-    assert!(
-        ended_pre.len() < started_pre.len(),
-        "abort should leave at least one orphan Start; started={started_pre:?} ended={ended_pre:?}",
-    );
+    // We don't assert that abort produced orphans (started > ended): on a
+    // fast machine all 32 tasks may complete before `abort_all` lands, in
+    // which case there's nothing to flush. The contract we care about is
+    // unconditional — after `flush_started_operators`, every started node
+    // has a matching End — so we check that directly.
 
     // Now flush — the hook PythonPartitionRefStream::finish uses.
     stats_manager.flush_started_operators();
