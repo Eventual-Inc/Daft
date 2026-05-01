@@ -803,6 +803,13 @@ pub enum TaskOutcomeArgs {
     Cancelled,
 }
 
+/// Scalar totals for a single task. Shared between `TaskEndArgs` (final
+/// numbers) and mid-flight `TaskStatsEntry` (in-progress refresh).
+///
+/// CPU duration is the only task-level total we currently report; it sums
+/// correctly across all nodes in the fused pipeline. rows/bytes I/O totals
+/// require head/leaf identification (see follow-up ticket) and are
+/// intentionally omitted to avoid double-counting.
 #[derive(Clone, Deserialize, Serialize, Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskTotals {
@@ -875,6 +882,64 @@ async fn task_end(
     Json(args): Json<TaskEndArgs>,
 ) -> StatusCode {
     apply_task_end(&state, query_id, args)
+}
+
+/// One task's scalar totals inside a `TasksStatsUpdateArgs*` batch. Reuses
+/// `TaskTotals` so end-of-task and mid-task progress share a payload shape.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskStatsEntry {
+    pub task_id: u32,
+    pub totals: TaskTotals,
+}
+
+#[derive(Clone, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TasksStatsUpdateArgsSend {
+    pub timestamp_sec: f64,
+    pub worker_id: Option<String>,
+    pub tasks: Vec<TaskStatsEntry>,
+}
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TasksStatsUpdateArgsRecv {
+    pub timestamp_sec: f64,
+    pub worker_id: Option<String>,
+    pub tasks: Vec<TaskStatsEntry>,
+}
+
+async fn tasks_stats_update(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TasksStatsUpdateArgsRecv>,
+) -> StatusCode {
+    apply_tasks_stats_update(&state, query_id, args)
+}
+
+pub(crate) fn apply_tasks_stats_update(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TasksStatsUpdateArgsRecv,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        // Stats updates may arrive before the dashboard knows about the query
+        // (race during exec_start) or after the query ends. Drop silently.
+        return StatusCode::OK;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    for entry in args.tasks {
+        exec_info
+            .task_store
+            .update_task_stats(entry, args.worker_id.clone(), args.timestamp_sec);
+    }
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
 }
 
 pub(crate) fn apply_task_end(
@@ -952,5 +1017,6 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/task/submit", post(task_submit))
         .route("/query/{query_id}/task/end", post(task_end))
+        .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))
 }

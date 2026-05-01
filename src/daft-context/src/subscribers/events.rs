@@ -22,6 +22,7 @@ pub enum Event {
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
+    TaskStatsUpdate(TaskStatsUpdateEvent),
     ProcessStats(ProcessStatsEvent),
     ResultOut(ResultOutEvent),
 }
@@ -89,6 +90,34 @@ pub struct OperatorEndEvent {
 pub struct StatsEvent {
     pub header: EventHeader,
     pub stats: Arc<Vec<(NodeID, Stats)>>,
+}
+
+/// Mid-execution per-task progress emitted by flotilla workers.
+///
+/// Batches all active tasks' scalar totals into a single event per worker per
+/// tick so the dashboard can show in-flight progress separately from the
+/// coordinator-aggregated operator stats. Per-operator breakdown is omitted
+/// here on purpose — the local NodeID scope doesn't cleanly map to either the
+/// distributed plan node id or a stable within-task position, and the only
+/// current consumer is task-level scalars (cpu_us, rows, bytes). Bigger
+/// breakdowns can be added as a separate event variant if a "drill into
+/// running task" view ever needs them.
+#[derive(Debug, Clone)]
+pub struct TaskStatsUpdateEvent {
+    pub header: EventHeader,
+    pub tasks: Arc<Vec<TaskStatsSnapshot>>,
+}
+
+/// Per-task scalar totals reported mid-flight.
+///
+/// `cpu_us` is summed `DURATION_KEY` across the task's local pipeline
+/// operators (busy time, not wall-clock since submit). See
+/// `daft_dashboard::engine::TaskTotals` for the rationale on which fields
+/// are present here.
+#[derive(Debug, Clone)]
+pub struct TaskStatsSnapshot {
+    pub task_id: u32,
+    pub cpu_us: u64,
 }
 
 #[derive(Debug, Clone)]

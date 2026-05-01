@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
@@ -181,15 +181,6 @@ function RunningTasksSection({
   totalRunning: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  const hasRunning = tasks.length > 0;
-
-  useEffect(() => {
-    if (!hasRunning) return;
-    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => clearInterval(id);
-  }, [hasRunning]);
-
   return (
     <div className="border-b border-zinc-700">
       <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800">
@@ -202,7 +193,7 @@ function RunningTasksSection({
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Local Plan</RunningHeader>
-          <RunningHeader align="right">Duration</RunningHeader>
+          <RunningHeader align="right">CPU</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
           const task = tasks[i];
@@ -210,7 +201,6 @@ function RunningTasksSection({
             <RunningTaskRow
               key={task.task_id}
               task={task}
-              now={now}
               onHoverNodes={onHoverNodes}
             />
           ) : (
@@ -219,7 +209,7 @@ function RunningTasksSection({
         })}
         {totalRunning > tasks.length && (
           <div className={`${main.className} px-4 py-1.5 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
-            Showing {tasks.length} of {totalRunning} running tasks (longest first)
+            Showing {tasks.length} of {totalRunning} running tasks (highest busy time first)
           </div>
         )}
       </div>
@@ -246,14 +236,17 @@ function RunningHeader({
 
 function RunningTaskRow({
   task,
-  now,
   onHoverNodes,
 }: {
   task: TaskInfo;
-  now: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
-  const duration = formatDuration(Math.max(0, now - task.submit_sec)) + "\u2026";
+  // CPU time (busy time, sum of operator DURATION_KEY across this task's
+  // pipeline) rather than wall-clock since submit. Refreshed mid-flight from
+  // TaskStatsUpdate events; re-renders driven by taskStore prop changes
+  // upstream, so no per-second timer needed. Trailing ellipsis hints this is
+  // a running snapshot, not final.
+  const cpu = formatDuration(task.cpu_us / 1_000_000) + "\u2026";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
     : [`Node ${task.last_node_id}`];
@@ -269,7 +262,7 @@ function RunningTaskRow({
         <PipelineChips pipeline={pipeline} />
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
-        {duration}
+        {cpu}
       </div>
     </div>
   );
@@ -557,7 +550,7 @@ function ExpandedTaskList({
       {retainedTaskCount < taskCount && (
         <div className={`${main.className} px-6 py-2 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
           Showing {retainedTaskCount} of {taskCount.toLocaleString()} tasks
-          (longest by duration, plus active and failed)
+          (highest busy time, plus active and failed)
         </div>
       )}
     </div>

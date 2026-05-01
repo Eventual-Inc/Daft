@@ -242,6 +242,7 @@ impl Subscriber for DebugSubscriber {
             Event::OperatorStart(e) => self.handle_operator_start(&e)?,
             Event::OperatorEnd(e) => self.handle_operator_end(&e)?,
             Event::Stats(e) => self.handle_stats(&e)?,
+            Event::TaskStatsUpdate(_e) => (),
             Event::ProcessStats(e) => self.handle_process_stats(&e)?,
             Event::ResultOut(e) => self.handle_result_out(&e)?,
             Event::TaskSubmit(e) => self.handle_task_submit(&e)?,

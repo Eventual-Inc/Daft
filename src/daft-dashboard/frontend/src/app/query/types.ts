@@ -103,7 +103,7 @@ export type TaskGroupSummary = {
 /**
  * Bounded task store. Contains per-group aggregate summaries (always accurate)
  * and a bounded set of retained individual tasks (active, failed, and top-K
- * longest-duration completed tasks per group).
+ * highest-busy-time completed tasks per group).
  */
 export type TaskStore = {
   groups: TaskGroupSummary[];
