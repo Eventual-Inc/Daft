@@ -10,7 +10,13 @@ use common_error::DaftResult;
 use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
-use daft_context::{DaftContext, Subscriber};
+use daft_context::{
+    DaftContext, Subscriber,
+    subscribers::{
+        Event, event_header,
+        events::{TaskInfo, TaskStartEvent},
+    },
+};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
@@ -276,7 +282,7 @@ impl PyNativeExecutor {
     }
 }
 
-fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
+fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option<u32>) {
     let query_id = ctx
         .as_ref()
         .and_then(|c| c.get("query_id"))
@@ -287,7 +293,22 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
         .and_then(|c| c.get("plan_fingerprint"))
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
-    (query_id, fingerprint)
+    let task_id = ctx
+        .as_ref()
+        .and_then(|c| c.get("task_id"))
+        .and_then(|s| s.parse::<u32>().ok());
+
+    (query_id, fingerprint, task_id)
+}
+
+// TODO: fix configuration for events
+// This is copied from task_lifecycle.rs to avoid the daft-distributed dependency
+pub fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_TASK_EVENTS_ENABLED=true
+    }
 }
 
 /// The core execution loop that drives a pipeline to completion.
@@ -420,7 +441,37 @@ impl NativeExecutor {
         input_id: InputId,
         maintain_order: bool,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
-        let (query_id, fingerprint) = parse_context(additional_context.as_ref());
+        let (query_id, fingerprint, task_id) = parse_context(additional_context.as_ref());
+
+        if self.is_flotilla_worker {
+            debug_assert_eq!(
+                task_id,
+                Some(input_id),
+                "Flotilla invariant violated: task_id must match input_id"
+            );
+        }
+
+        let task_start = if self.is_flotilla_worker
+            && task_events_enabled()
+            && let Some(task_id) = task_id
+        {
+            Some(TaskStartNotification {
+                event: Event::TaskStart(TaskStartEvent {
+                    header: event_header(query_id.clone()),
+                    task: Arc::new(TaskInfo {
+                        id: task_id,
+                        last_node_id: 0,  // TODO: propagate last_node_id
+                        node_ids: vec![], // TODO: propagate node_ids
+                        plan_fingerprint: fingerprint as u32,
+                        name: None,
+                    }),
+                    worker_id: None, // TODO: propagate worker id
+                }),
+                subscribers: subscribers.clone(),
+            })
+        } else {
+            None
+        };
 
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
@@ -488,6 +539,12 @@ impl NativeExecutor {
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
                 }
+
+                // Send the event since the task has been dispatched to the executor
+                if let Some(task_start) = task_start {
+                    task_start.dispatch();
+                }
+
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
                 })
@@ -682,5 +739,20 @@ impl PyResultReceiver {
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
         })
+    }
+}
+
+struct TaskStartNotification {
+    event: Event,
+    subscribers: Vec<Arc<dyn Subscriber>>,
+}
+
+impl TaskStartNotification {
+    fn dispatch(&self) {
+        for subscriber in &self.subscribers {
+            if let Err(e) = subscriber.on_event(self.event.clone()) {
+                log::debug!("Failed to dispatch task start event: {}", e);
+            }
+        }
     }
 }

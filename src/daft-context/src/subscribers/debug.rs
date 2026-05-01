@@ -7,7 +7,7 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent,
+        QueryStartEvent, ResultOutEvent, StatsEvent, TaskEndEvent, TaskStartEvent, TaskSubmitEvent,
     },
 };
 
@@ -185,6 +185,21 @@ impl DebugSubscriber {
         Ok(())
     }
 
+    fn handle_task_start(&self, event: &TaskStartEvent) -> DaftResult<()> {
+        if let Some(worker_id) = &event.worker_id {
+            eprintln!(
+                "task_start query_id={} task_id={} worker_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, worker_id, event.task.node_ids
+            );
+        } else {
+            eprintln!(
+                "task_start query_id={} task_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, event.task.node_ids
+            );
+        }
+        Ok(())
+    }
+
     fn handle_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
         let rendered_stats = event
             .stats
@@ -245,6 +260,7 @@ impl Subscriber for DebugSubscriber {
             Event::ProcessStats(e) => self.handle_process_stats(&e)?,
             Event::ResultOut(e) => self.handle_result_out(&e)?,
             Event::TaskSubmit(e) => self.handle_task_submit(&e)?,
+            Event::TaskStart(e) => self.handle_task_start(&e)?,
             Event::TaskEnd(e) => self.handle_task_end(&e)?,
         }
         Ok(())
