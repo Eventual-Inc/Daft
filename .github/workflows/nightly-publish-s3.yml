@@ -95,7 +95,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v3.0.1
+    - uses: slackapi/slack-github-action@v3.0.2
       if: ${{ env.SLACK_WEBHOOK_URL }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -170,7 +170,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.1
+      uses: slackapi/slack-github-action@v3.0.2
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -264,7 +264,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.5.0
+      uses: isbang/compose-action@v2.6.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -275,7 +275,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.1
+      uses: slackapi/slack-github-action@v3.0.2
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

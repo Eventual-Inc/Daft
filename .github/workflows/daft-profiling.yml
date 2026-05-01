@@ -95,7 +95,7 @@ jobs:
         path: tpch-*.txt
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.1
+      uses: slackapi/slack-github-action@v3.0.2
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
