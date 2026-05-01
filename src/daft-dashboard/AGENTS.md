@@ -6,44 +6,42 @@ sandboxed or offline build environments.
 
 ## Offline / sandboxed builds
 
-The dashboard frontend (`frontend/`) imports `Geist_Mono` from
-`next/font/google` in `frontend/src/lib/utils.ts`, which causes Next.js to
-fetch the font from `fonts.googleapis.com` during `npm run build`. In an
-offline or network-restricted container that fetch fails and the Next.js build
-aborts.
+The dashboard frontend imports `Geist_Mono` from `next/font/google` (in
+`frontend/src/lib/font.ts`), which causes Next.js to fetch the font from
+`fonts.googleapis.com` during `npm run build`. Sandboxed containers without
+egress to that host fail this fetch and abort the Next.js build.
 
-`build.rs` invokes `npm run build` as part of `cargo build` for this crate, so
-a failed font fetch will cause `make build` for the whole Daft project to fail
-with a "Frontend asset build failed" error.
+`build.rs` handles this automatically: if the first `next build` fails, it
+retries once with `DAFT_DASHBOARD_OFFLINE_FONT=1`, which makes
+`next.config.ts` swap `./lib/font` for `./lib/font.offline` (a system-mono
+stub) via `NormalModuleReplacementPlugin`. The retry runs `next build`
+end-to-end, so the TS/React code still gets typechecked — only the served
+font is degraded to the system monospace fallback.
 
-### Recommended workaround in sandboxed agents
+Net effect: `make build` succeeds in offline containers and still typechecks
+the dashboard frontend. The dashboard UI, when served, will render in the
+system mono font instead of Geist Mono.
 
-Set `DAFT_DASHBOARD_SKIP_BUILD=1` in the build environment. This makes
-`build.rs` skip the frontend build entirely. Daft itself builds fine without
-the dashboard assets; only the in-process dashboard UI is unavailable, which
-agents and CI typically do not need.
+### Forcing the offline-font path explicitly
 
 ```sh
-export DAFT_DASHBOARD_SKIP_BUILD=1
-make build
+DAFT_DASHBOARD_OFFLINE_FONT=1 make build
 ```
 
-For Claude Code on the web, add this to the session start hook or container
-setup so it is set for every `make build` invocation.
+Useful if you want to skip the doomed first attempt in a known-offline
+environment.
 
-### Behavior without the env var
+### Skipping the dashboard build entirely
 
-`build.rs` degrades gracefully in debug builds: if `npm ci` or `npm run build`
-fails, it emits a `cargo:warning` and returns successfully rather than
-panicking. So `make build` should succeed in offline containers even without
-`DAFT_DASHBOARD_SKIP_BUILD`, but you will lose the bundled dashboard assets
-and see a warning. Release builds (`build-release`, `build-whl`) still
-hard-fail on a failed frontend build by design.
+If even `npm ci` can't reach the npm registry, the retry won't help.
+Set `DAFT_DASHBOARD_SKIP_BUILD=1` to skip the frontend build entirely; Daft
+itself builds fine without the bundled dashboard assets, only the in-process
+dashboard UI is unavailable.
 
-### Permanent fix (not yet applied)
+```sh
+DAFT_DASHBOARD_SKIP_BUILD=1 make build
+```
 
-The cleanest long-term fix is to replace `next/font/google` in
-`frontend/src/lib/utils.ts` with `next/font/local` and commit the Geist Mono
-`.woff2` files into the repo. That removes the network dependency entirely.
-This is intentionally not done here to keep the change minimal, but it is the
-right move if offline builds become a recurring pain point.
+Release builds (`build-release`, `build-whl`) still hard-fail on a failed
+frontend build by design — the offline-font retry applies to them too, but
+both attempts must succeed.
