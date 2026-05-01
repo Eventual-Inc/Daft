@@ -60,12 +60,15 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         .args(["ci"])
         .status()?;
 
-    if cfg!(debug_assertions) {
-        if !install_status.success() {
-            println!("cargo:warning=Failed to install frontend dependencies");
+    if !install_status.success() {
+        if cfg!(debug_assertions) {
+            println!(
+                "cargo:warning=Failed to install dashboard frontend dependencies; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence)"
+            );
+            return Ok(());
+        } else {
+            panic!("Failed to install dependencies");
         }
-    } else {
-        assert!(install_status.success(), "Failed to install dependencies");
     }
 
     // Run `npm run build`
@@ -74,12 +77,17 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         .args(["run", "build"])
         .status()?;
 
-    if cfg!(debug_assertions) {
-        if !status.success() {
-            println!("cargo:warning=Failed to build frontend assets");
+    if !status.success() {
+        if cfg!(debug_assertions) {
+            // Common cause in sandboxed/offline build environments: `next/font/google`
+            // cannot reach fonts.googleapis.com. Treat as DAFT_DASHBOARD_SKIP_BUILD.
+            println!(
+                "cargo:warning=Failed to build dashboard frontend assets; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence)"
+            );
+            return Ok(());
+        } else {
+            panic!("Failed to build frontend assets");
         }
-    } else {
-        assert!(status.success(), "Failed to build frontend assets");
     }
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
