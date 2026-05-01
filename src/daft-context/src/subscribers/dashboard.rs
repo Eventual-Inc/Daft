@@ -479,7 +479,13 @@ impl DashboardSubscriber {
                     .iter()
                     .map(|t| daft_dashboard::engine::TaskStatsEntry {
                         task_id: t.task_id,
-                        totals: daft_dashboard::engine::TaskTotals { cpu_us: t.cpu_us },
+                        totals: daft_dashboard::engine::TaskTotals {
+                            cpu_us: t.cpu_us,
+                            rows_in: t.rows_in,
+                            rows_out: t.rows_out,
+                            bytes_in: t.bytes_in,
+                            bytes_out: t.bytes_out,
+                        },
                     })
                     .collect(),
             },
@@ -517,15 +523,45 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
 
-        // See `TaskTotals` for why only `cpu_us` is reported here.
+        // Aggregate per-snapshot scalars across the task's local plan nodes.
+        //   * `cpu_us` sums across all nodes (each node's busy time
+        //     contributes to the task's total CPU).
+        //   * Inputs (`rows.in`/`bytes.in`) are only the task's external
+        //     input — sum those only from leaf snapshots.
+        //   * Outputs (`rows.out`/`bytes.out`) are only the task's external
+        //     output — take those only from the root snapshot.
+        // This avoids double-counting internal rows in fused chains like
+        // `Source(rows_out=100) -> Filter(rows_in=100, rows_out=50)` where a
+        // naive sum reports rows_in=100 and rows_out=150.
         let mut totals = daft_dashboard::engine::TaskTotals::default();
-        for (_, snapshot) in &event.stats {
+        for (node_info, snapshot) in &event.stats {
             let stats = snapshot.to_stats();
             for (name, stat) in stats.iter() {
-                if let (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) =
-                    (name, stat)
-                {
-                    totals.cpu_us += d.as_micros() as u64;
+                match (name, stat) {
+                    (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) => {
+                        totals.cpu_us += d.as_micros() as u64;
+                    }
+                    (common_metrics::ROWS_IN_KEY, common_metrics::Stat::Count(c))
+                        if node_info.is_task_leaf =>
+                    {
+                        totals.rows_in += *c;
+                    }
+                    (common_metrics::BYTES_IN_KEY, common_metrics::Stat::Bytes(b))
+                        if node_info.is_task_leaf =>
+                    {
+                        totals.bytes_in += *b;
+                    }
+                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(c))
+                        if node_info.is_task_root =>
+                    {
+                        totals.rows_out += *c;
+                    }
+                    (common_metrics::BYTES_OUT_KEY, common_metrics::Stat::Bytes(b))
+                        if node_info.is_task_root =>
+                    {
+                        totals.bytes_out += *b;
+                    }
+                    _ => {}
                 }
             }
         }

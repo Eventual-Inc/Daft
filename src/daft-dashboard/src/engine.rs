@@ -806,14 +806,23 @@ pub enum TaskOutcomeArgs {
 /// Scalar totals for a single task. Shared between `TaskEndArgs` (final
 /// numbers) and mid-flight `TaskStatsEntry` (in-progress refresh).
 ///
-/// CPU duration is the only task-level total we currently report; it sums
-/// correctly across all nodes in the fused pipeline. rows/bytes I/O totals
-/// require head/leaf identification (see follow-up ticket) and are
-/// intentionally omitted to avoid double-counting.
+/// `cpu_us` sums correctly across all nodes in the fused pipeline. The
+/// rows/bytes I/O fields are filtered by `is_task_root`/`is_task_leaf`
+/// markers on the per-snapshot `NodeInfo` to avoid double-counting internal
+/// data: only the root snapshot's outputs are external task outputs, only
+/// leaf snapshots' inputs are external task inputs.
 #[derive(Clone, Deserialize, Serialize, Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskTotals {
     pub cpu_us: u64,
+    #[serde(default)]
+    pub rows_in: u64,
+    #[serde(default)]
+    pub rows_out: u64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -973,6 +982,10 @@ pub(crate) fn apply_task_end(
         status,
         args.end_sec,
         args.totals.cpu_us,
+        args.totals.rows_in,
+        args.totals.rows_out,
+        args.totals.bytes_in,
+        args.totals.bytes_out,
     );
 
     state.ping_clients_on_query_update(query_info.value());

@@ -34,6 +34,17 @@ pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
     pub phase: Option<String>,
     pub additional: Option<HashMap<String, String>>,
+    /// True iff this node is the root of its enclosing task's local plan; its
+    /// rows.out/bytes.out is the task's external output. Set by
+    /// `LocalPhysicalPlan::mark_task_topology` on the driver before the plan
+    /// ships to a worker.
+    #[serde(default)]
+    pub is_task_root: bool,
+    /// True iff this node is a leaf of its enclosing task's local plan; its
+    /// rows.in/bytes.in is the task's external input. Set by
+    /// `LocalPhysicalPlan::mark_task_topology`.
+    #[serde(default)]
+    pub is_task_leaf: bool,
 }
 
 impl LocalNodeContext {
@@ -42,6 +53,8 @@ impl LocalNodeContext {
             origin_node_id,
             phase: None,
             additional: None,
+            is_task_root: false,
+            is_task_leaf: false,
         }
     }
 
@@ -52,6 +65,16 @@ impl LocalNodeContext {
 
     pub fn with_additional(mut self, additional: HashMap<String, String>) -> Self {
         self.additional = Some(additional);
+        self
+    }
+
+    pub fn with_task_root(mut self, is_task_root: bool) -> Self {
+        self.is_task_root = is_task_root;
+        self
+    }
+
+    pub fn with_task_leaf(mut self, is_task_leaf: bool) -> Self {
+        self.is_task_leaf = is_task_leaf;
         self
     }
 }
@@ -235,6 +258,168 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
+    }
+
+    pub fn context_mut(&mut self) -> &mut LocalNodeContext {
+        match self {
+            Self::InMemoryScan(InMemoryScan { context, .. })
+            | Self::PhysicalScan(PhysicalScan { context, .. })
+            | Self::GlobScan(GlobScan { context, .. })
+            | Self::PlaceholderScan(PlaceholderScan { context, .. })
+            | Self::Project(Project { context, .. })
+            | Self::UDFProject(UDFProject { context, .. })
+            | Self::Filter(Filter { context, .. })
+            | Self::IntoBatches(IntoBatches { context, .. })
+            | Self::Limit(Limit { context, .. })
+            | Self::Explode(Explode { context, .. })
+            | Self::Unpivot(Unpivot { context, .. })
+            | Self::Sort(Sort { context, .. })
+            | Self::TopN(TopN { context, .. })
+            | Self::Sample(Sample { context, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { context, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
+            | Self::HashAggregate(HashAggregate { context, .. })
+            | Self::Dedup(Dedup { context, .. })
+            | Self::Pivot(Pivot { context, .. })
+            | Self::Concat(Concat { context, .. })
+            | Self::HashJoin(HashJoin { context, .. })
+            | Self::CrossJoin(CrossJoin { context, .. })
+            | Self::SortMergeJoin(SortMergeJoin { context, .. })
+            | Self::AsofJoin(AsofJoin { context, .. })
+            | Self::PhysicalWrite(PhysicalWrite { context, .. })
+            | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::IntoPartitions(IntoPartitions { context, .. })
+            | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
+            | Self::ShuffleRead(ShuffleRead { context, .. })
+            | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                context,
+                ..
+            })
+            | Self::VLLMProject(VLLMProject { context, .. }) => context,
+            Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite { context, .. })
+            | Self::LanceWrite(LanceWrite { context, .. })
+            | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DataSink(DataSink { context, .. }) => context,
+        }
+    }
+
+    /// Rebuild a leaf node with a replaced `LocalNodeContext`. Only leaf
+    /// variants (no children in `children()`) are supported — non-leaves can
+    /// be rebuilt cheaply via `with_new_children` followed by an in-place
+    /// context patch on the freshly returned Arc.
+    fn with_replaced_leaf_context(&self, new_context: LocalNodeContext) -> LocalPhysicalPlanRef {
+        match self {
+            Self::PhysicalScan(PhysicalScan {
+                source_id,
+                source_config,
+                pushdowns,
+                schema,
+                stats_state,
+                ..
+            }) => Self::physical_scan(
+                *source_id,
+                source_config.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                stats_state.clone(),
+                new_context,
+            ),
+            Self::GlobScan(GlobScan {
+                source_id,
+                pushdowns,
+                schema,
+                stats_state,
+                io_config,
+                ..
+            }) => Self::glob_scan(
+                *source_id,
+                pushdowns.clone(),
+                schema.clone(),
+                stats_state.clone(),
+                io_config.clone(),
+                new_context,
+            ),
+            Self::PlaceholderScan(PlaceholderScan {
+                schema,
+                stats_state,
+                ..
+            }) => Self::placeholder_scan(schema.clone(), stats_state.clone(), new_context),
+            Self::InMemoryScan(InMemoryScan {
+                source_id,
+                schema,
+                size_bytes,
+                stats_state,
+                ..
+            }) => Self::in_memory_scan(
+                *source_id,
+                schema.clone(),
+                *size_bytes,
+                stats_state.clone(),
+                new_context,
+            ),
+            Self::ShuffleRead(ShuffleRead {
+                source_id,
+                schema,
+                backend,
+                stats_state,
+                ..
+            }) => Self::shuffle_read(
+                *source_id,
+                schema.clone(),
+                backend.clone(),
+                stats_state.clone(),
+                new_context,
+            ),
+            _ => panic!(
+                "with_replaced_leaf_context: variant {} is not a leaf",
+                self.name()
+            ),
+        }
+    }
+
+    /// Walk the plan tree and tag every node with its position relative to the
+    /// enclosing task: `is_task_root` on the root only, `is_task_leaf` on
+    /// every node that has no children. Returns a fully rebuilt tree with the
+    /// markers set; the original is unchanged.
+    ///
+    /// These markers let consumers of `StatSnapshot`s (e.g. the dashboard's
+    /// per-task aggregator) attribute external row/byte I/O correctly across
+    /// fused chains: only the root snapshot's `rows.out`/`bytes.out` is the
+    /// task's external output, and only leaf snapshots' `rows.in`/`bytes.in`
+    /// is external input. Summing indiscriminately over all snapshots
+    /// double-counts internal data.
+    pub fn mark_task_topology(self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
+        fn rec(plan: LocalPhysicalPlanRef, is_root: bool) -> LocalPhysicalPlanRef {
+            let children = plan.children();
+            let is_leaf = children.is_empty();
+            if is_leaf {
+                let mut new_ctx = plan.context().clone();
+                new_ctx.is_task_root = is_root;
+                new_ctx.is_task_leaf = true;
+                plan.with_replaced_leaf_context(new_ctx)
+            } else {
+                let new_children: Vec<LocalPhysicalPlanRef> = children
+                    .into_iter()
+                    .map(|c| rec(c, false))
+                    .collect();
+                let mut new_plan = plan.with_new_children(&new_children);
+                // `with_new_children` always returns a fresh Arc with refcount 1.
+                let inner = Arc::get_mut(&mut new_plan).expect(
+                    "with_new_children should return a uniquely-owned Arc",
+                );
+                let ctx = inner.context_mut();
+                ctx.is_task_root = is_root;
+                ctx.is_task_leaf = false;
+                new_plan
+            }
+        }
+        rec(self, true)
     }
 
     pub fn physical_scan(
@@ -2332,4 +2517,93 @@ pub struct ShuffleRead {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
     pub refs: Vec<FlightPartitionRef>,
+}
+
+#[cfg(test)]
+mod mark_task_topology_tests {
+    use super::*;
+
+    fn scan() -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::in_memory_scan(
+            0,
+            Arc::new(Schema::empty()),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        )
+    }
+
+    fn limit(input: LocalPhysicalPlanRef, n: u64) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::limit(
+            input,
+            n,
+            None,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        )
+    }
+
+    /// Single-node task: that node is both root and leaf.
+    #[test]
+    fn single_node_is_root_and_leaf() {
+        let tagged = scan().mark_task_topology();
+        let ctx = tagged.context();
+        assert!(ctx.is_task_root, "single node should be task root");
+        assert!(ctx.is_task_leaf, "single node should be task leaf");
+    }
+
+    /// Linear chain: only the outermost node is root, only the deepest is leaf.
+    #[test]
+    fn linear_chain_marks_root_and_single_leaf() {
+        let plan = limit(limit(scan(), 10), 5);
+        let tagged = plan.mark_task_topology();
+        // Outer limit (root)
+        assert!(tagged.context().is_task_root);
+        assert!(!tagged.context().is_task_leaf);
+        // Inner limit (intermediate)
+        let inner = &tagged.children()[0];
+        assert!(!inner.context().is_task_root);
+        assert!(!inner.context().is_task_leaf);
+        // Scan (leaf)
+        let leaf = &inner.children()[0];
+        assert!(!leaf.context().is_task_root);
+        assert!(leaf.context().is_task_leaf);
+    }
+
+    /// Multi-leaf join-shape (cross join of two scans): the join is the root,
+    /// both scans are leaves, neither scan is a root.
+    #[test]
+    fn multi_leaf_marks_each_leaf() {
+        let plan = LocalPhysicalPlan::cross_join(
+            scan(),
+            scan(),
+            Arc::new(Schema::empty()),
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        let tagged = plan.mark_task_topology();
+        // CrossJoin (root)
+        assert!(tagged.context().is_task_root);
+        assert!(!tagged.context().is_task_leaf);
+        // Both children are leaves
+        let children = tagged.children();
+        assert_eq!(children.len(), 2);
+        for child in &children {
+            assert!(!child.context().is_task_root);
+            assert!(child.context().is_task_leaf);
+        }
+    }
+
+    /// `mark_task_topology` does not mutate the original plan.
+    #[test]
+    fn original_plan_unchanged() {
+        let plan = limit(scan(), 10);
+        let _tagged = plan.clone().mark_task_topology();
+        // Untouched root has default flags (false / false).
+        assert!(!plan.context().is_task_root);
+        assert!(!plan.context().is_task_leaf);
+        let leaf = &plan.children()[0];
+        assert!(!leaf.context().is_task_root);
+        assert!(!leaf.context().is_task_leaf);
+    }
 }

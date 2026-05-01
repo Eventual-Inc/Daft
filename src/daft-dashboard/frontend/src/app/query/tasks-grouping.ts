@@ -55,6 +55,12 @@ export type TaskTypeRow = {
   task_count: number;
   status_counts: Record<TaskRowStatus, number>;
   total_cpu_sec: number;
+  /** Sum of external rows read across all tasks in the group. */
+  total_rows_in: number;
+  /** Sum of external rows emitted across all tasks in the group. */
+  total_rows_out: number;
+  total_bytes_in: number;
+  total_bytes_out: number;
   /** Earliest task submit. */
   first_start_sec: number;
   /** Latest task end, or null if any task is still running. */
@@ -165,6 +171,10 @@ export function buildTaskRows(
           Failed: g.failed_count + g.cancelled_count,
         } as Record<TaskRowStatus, number>,
         total_cpu_sec: g.total_cpu_us / 1_000_000,
+        total_rows_in: g.total_rows_in,
+        total_rows_out: g.total_rows_out,
+        total_bytes_in: g.total_bytes_in,
+        total_bytes_out: g.total_bytes_out,
         first_start_sec: g.first_submit_sec,
         last_end_sec: g.pending_count > 0 ? null : (g.last_end_sec ?? null),
         tasks,

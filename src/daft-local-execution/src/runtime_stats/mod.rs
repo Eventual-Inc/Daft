@@ -10,8 +10,8 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    DURATION_KEY, NodeID, QueryEndState, QueryID, Stat, StatSnapshot, ops::NodeInfo,
-    snapshot::StatSnapshotImpl,
+    BYTES_IN_KEY, BYTES_OUT_KEY, DURATION_KEY, NodeID, QueryEndState, QueryID, ROWS_IN_KEY,
+    ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -416,6 +416,7 @@ impl RuntimeStatsManager {
                                     &query_id,
                                     &active_nodes,
                                     &input_stats,
+                                    &node_info_map,
                                     &subscribers,
                                 );
                                 last_task_stats_emit = Some(now);
@@ -531,6 +532,7 @@ fn emit_per_task_stats_updates(
     query_id: &QueryID,
     active_nodes: &HashSet<NodeID>,
     input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
     subscribers: &[Arc<dyn Subscriber>],
 ) {
     let mut by_input: HashMap<InputId, TaskStatsSnapshot> = HashMap::new();
@@ -540,15 +542,36 @@ fn emit_per_task_stats_updates(
         }
         let snapshot = stats.snapshot();
         let stats_vec = snapshot.to_stats();
+        let node_info = node_info_map.get(&node_id);
+        let is_task_root = node_info.is_some_and(|n| n.is_task_root);
+        let is_task_leaf = node_info.is_some_and(|n| n.is_task_leaf);
         let acc = by_input
             .entry(input_id)
             .or_insert_with(|| TaskStatsSnapshot {
                 task_id: input_id,
-                cpu_us: 0,
+                ..TaskStatsSnapshot::default()
             });
+        // See `on_task_end` in the dashboard subscriber for the rationale on
+        // is_task_root / is_task_leaf filtering. cpu_us is task-total so
+        // contributes from every node.
         for (key, stat) in &stats_vec.0 {
-            if let (DURATION_KEY, Stat::Duration(d)) = (key.as_ref(), stat) {
-                acc.cpu_us += d.as_micros() as u64;
+            match (key.as_ref(), stat) {
+                (DURATION_KEY, Stat::Duration(d)) => {
+                    acc.cpu_us += d.as_micros() as u64;
+                }
+                (ROWS_IN_KEY, Stat::Count(c)) if is_task_leaf => {
+                    acc.rows_in += *c;
+                }
+                (BYTES_IN_KEY, Stat::Bytes(b)) if is_task_leaf => {
+                    acc.bytes_in += *b;
+                }
+                (ROWS_OUT_KEY, Stat::Count(c)) if is_task_root => {
+                    acc.rows_out += *c;
+                }
+                (BYTES_OUT_KEY, Stat::Bytes(b)) if is_task_root => {
+                    acc.bytes_out += *b;
+                }
+                _ => {}
             }
         }
     }
