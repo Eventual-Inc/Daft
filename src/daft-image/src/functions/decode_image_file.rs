@@ -3,7 +3,9 @@ use std::io::Read;
 use common_error::{DaftError, DaftResult, ensure};
 use common_image::CowImage;
 use daft_core::{
-    array::ops::image::image_array_from_img_buffers, prelude::*, with_match_file_types,
+    array::ops::image::image_array_from_img_buffers,
+    file::{MediaType, MediaTypeImage},
+    prelude::*,
 };
 use daft_dsl::{
     ExprRef,
@@ -62,8 +64,8 @@ impl ScalarUDF for DecodeImageFile {
             }
         };
 
-        with_match_file_types!(input.data_type(), |$P| {
-            let s = input.file::<$P>()?;
+        {
+            let s = input.file::<MediaTypeImage>()?;
             let len = s.len();
             let mut img_bufs: Vec<Option<CowImage>> = Vec::with_capacity(len);
 
@@ -105,7 +107,7 @@ impl ScalarUDF for DecodeImageFile {
 
             let result = image_array_from_img_buffers(input.name(), img_bufs.into_iter(), mode)?;
             Ok(result.into_series())
-        })
+        }
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
@@ -117,9 +119,9 @@ impl ScalarUDF for DecodeImageFile {
 
         let field = input.to_field(schema)?;
 
-        if !matches!(field.dtype, DataType::File(_)) {
+        if !matches!(field.dtype, DataType::File(MediaType::Image)) {
             return Err(DaftError::TypeError(format!(
-                "decode_image_file requires a File input, got {field}"
+                "decode_image_file requires a File(Image) input, got {field}"
             )));
         }
 
