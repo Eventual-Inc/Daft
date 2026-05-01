@@ -28,7 +28,7 @@ class CheckpointStore:
     :class:`CheckpointConfig` to attach the store to a specific source.
 
     Args:
-        prefix: URI prefix for the store (e.g. ``s3://bucket/checkpoints``).
+        path: URI for the store root (e.g. ``s3://bucket/checkpoints``).
         io_config: Optional IO configuration for the object store backend.
 
     Example:
@@ -37,14 +37,21 @@ class CheckpointStore:
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
     """
 
+    _path: str
     _config: CheckpointStoreConfig
     _store: Any
 
-    def __init__(self, prefix: str, io_config: IOConfig | None = None) -> None:
+    def __init__(self, path: str, io_config: IOConfig | None = None) -> None:
         if io_config is None:
             io_config = _IOConfig()
-        self._config = CheckpointStoreConfig.object_store(prefix, io_config)
+        self._path = path
+        self._config = CheckpointStoreConfig.object_store(path, io_config)
         self._store = None
+
+    @property
+    def path(self) -> str:
+        """URI for the store root (e.g. ``s3://bucket/checkpoints``)."""
+        return self._path
 
     @property
     def config(self) -> CheckpointStoreConfig:
@@ -104,6 +111,34 @@ class CheckpointConfig:
         - **Strong consistency.** The backing object store must provide
           read-after-write consistency. After ``checkpoint()``, the next
           run's anti-join must be able to see the newly checkpointed keys.
+
+    Semantics of the ``on=`` column:
+        - **Checkpoint identity, not a primary key.** A key value records "this
+          input has already been processed" — it is not a uniqueness constraint
+          on the destination. Daft does not enforce uniqueness of the column;
+          duplicates within a single input are passed through to the sink.
+        - **First-write-wins on collisions.** If a re-run produces rows with a
+          key that was committed in a prior run, the source filter drops those
+          rows on the way in — the prior run's data is preserved unchanged.
+          This is checkpoint semantics, not upsert; if your workflow needs to
+          *update* previously-written rows, use a different mechanism.
+        - **NULL keys are deduped like any other value.** Daft's anti-join
+          uses NULL-equals-NULL semantics (not SQL's NULL != NULL), so a row
+          with NULL in the key column is recorded once on the first run and
+          dropped on subsequent runs the same way a non-null key would be.
+        - **One store per destination.** A single ``CheckpointStore`` should
+          be paired with a single destination (one Iceberg table, one Delta
+          table, etc.). Sharing a store across distinct sinks causes the
+          second sink to silently see the first sink's keys as already-
+          processed and drop them. Use distinct paths per destination.
+        - **Source and sink must share the same store.** Within a single
+          execution, the ``checkpoint=`` argument passed to the source
+          (e.g. ``daft.read_parquet(checkpoint=config)``) and the one
+          passed to the sink (e.g. ``df.write_iceberg(checkpoint=store)``)
+          must point at the same path. The source stages keys/files into
+          the store; the sink reads them out at commit time. If the two
+          paths diverge the sink can't see what the pipeline staged and
+          silently commits nothing.
     """
 
     _inner: _CheckpointConfig

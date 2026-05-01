@@ -78,9 +78,12 @@ pub async fn test_lifecycle(store: &dyn CheckpointStore) {
         .unwrap();
     assert!(checkpoints.is_empty());
 
-    store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
     store
-        .stage_files(&id, vec![file(b"file1"), file(b"file2")])
+        .stage_keys(&id, "test-query", keys(&["a", "b"]))
+        .await
+        .unwrap();
+    store
+        .stage_files(&id, "test-query", vec![file(b"file1"), file(b"file2")])
         .await
         .unwrap();
 
@@ -107,15 +110,33 @@ pub async fn test_multiple_checkpoints_and_partial_commit(store: &dyn Checkpoint
     let id2 = CheckpointId::generate(0);
 
     // Checkpoint 1: single stage call
-    store.stage_keys(&id1, keys(&["a"])).await.unwrap();
-    store.stage_files(&id1, vec![file(b"f1")]).await.unwrap();
+    store
+        .stage_keys(&id1, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
+    store
+        .stage_files(&id1, "test-query", vec![file(b"f1")])
+        .await
+        .unwrap();
     store.checkpoint(&id1).await.unwrap();
 
     // Checkpoint 2: incremental staging (multiple calls)
-    store.stage_keys(&id2, keys(&["b"])).await.unwrap();
-    store.stage_keys(&id2, keys(&["c", "d"])).await.unwrap();
-    store.stage_files(&id2, vec![file(b"f2")]).await.unwrap();
-    store.stage_files(&id2, vec![file(b"f3")]).await.unwrap();
+    store
+        .stage_keys(&id2, "test-query", keys(&["b"]))
+        .await
+        .unwrap();
+    store
+        .stage_keys(&id2, "test-query", keys(&["c", "d"]))
+        .await
+        .unwrap();
+    store
+        .stage_files(&id2, "test-query", vec![file(b"f2")])
+        .await
+        .unwrap();
+    store
+        .stage_files(&id2, "test-query", vec![file(b"f3")])
+        .await
+        .unwrap();
     store.checkpoint(&id2).await.unwrap();
 
     assert_eq!(collect_key_strings(store).await, vec!["a", "b", "c", "d"]);
@@ -135,8 +156,14 @@ pub async fn test_multiple_checkpoints_and_partial_commit(store: &dyn Checkpoint
 pub async fn test_idempotency(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
-    store.stage_keys(&id, keys(&["a"])).await.unwrap();
-    store.stage_files(&id, vec![file(b"f1")]).await.unwrap();
+    store
+        .stage_keys(&id, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
+    store
+        .stage_files(&id, "test-query", vec![file(b"f1")])
+        .await
+        .unwrap();
 
     // Double seal
     store.checkpoint(&id).await.unwrap();
@@ -161,12 +188,9 @@ pub async fn test_idempotency(store: &dyn CheckpointStore) {
 }
 
 pub async fn test_error_paths(store: &dyn CheckpointStore) {
-    // Seal unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
+    // Sealing an unknown ID is a tolerated no-op (covers empty-pipeline-run
+    // flows where an id is auto-generated but never staged).
+    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
 
     // mark_committed unknown ID
     let err = store
@@ -177,13 +201,22 @@ pub async fn test_error_paths(store: &dyn CheckpointStore) {
 
     // Stage after seal
     let id = CheckpointId::generate(0);
-    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store
+        .stage_keys(&id, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
     store.checkpoint(&id).await.unwrap();
 
-    let err = store.stage_keys(&id, keys(&["b"])).await.unwrap_err();
+    let err = store
+        .stage_keys(&id, "test-query", keys(&["b"]))
+        .await
+        .unwrap_err();
     assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
 
-    let err = store.stage_files(&id, vec![file(b"f")]).await.unwrap_err();
+    let err = store
+        .stage_files(&id, "test-query", vec![file(b"f")])
+        .await
+        .unwrap_err();
     assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
 
     // Stage after commit (also AlreadySealed)
@@ -191,12 +224,18 @@ pub async fn test_error_paths(store: &dyn CheckpointStore) {
         .mark_committed(std::slice::from_ref(&id))
         .await
         .unwrap();
-    let err = store.stage_keys(&id, keys(&["c"])).await.unwrap_err();
+    let err = store
+        .stage_keys(&id, "test-query", keys(&["c"]))
+        .await
+        .unwrap_err();
     assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
 
     // mark_committed on staged (not sealed)
     let id2 = CheckpointId::generate(0);
-    store.stage_keys(&id2, keys(&["x"])).await.unwrap();
+    store
+        .stage_keys(&id2, "test-query", keys(&["x"]))
+        .await
+        .unwrap();
     let err = store.mark_committed(&[id2]).await.unwrap_err();
     assert!(matches!(err, CheckpointError::NotCheckpointed { .. }));
 }
@@ -205,19 +244,22 @@ pub async fn test_orphaned_staged_entries(store: &dyn CheckpointStore) {
     // Orphan: staged but never sealed (simulates crash)
     let orphan_id = CheckpointId::generate(0);
     store
-        .stage_keys(&orphan_id, keys(&["orphan"]))
+        .stage_keys(&orphan_id, "test-query", keys(&["orphan"]))
         .await
         .unwrap();
     store
-        .stage_files(&orphan_id, vec![file(b"orphan_file")])
+        .stage_files(&orphan_id, "test-query", vec![file(b"orphan_file")])
         .await
         .unwrap();
 
     // Good: completed successfully
     let good_id = CheckpointId::generate(0);
-    store.stage_keys(&good_id, keys(&["good"])).await.unwrap();
     store
-        .stage_files(&good_id, vec![file(b"good_file")])
+        .stage_keys(&good_id, "test-query", keys(&["good"]))
+        .await
+        .unwrap();
+    store
+        .stage_files(&good_id, "test-query", vec![file(b"good_file")])
         .await
         .unwrap();
     store.checkpoint(&good_id).await.unwrap();
@@ -229,7 +271,10 @@ pub async fn test_orphaned_staged_entries(store: &dyn CheckpointStore) {
 pub async fn test_checkpoint_keys_only(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
-    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store
+        .stage_keys(&id, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
     store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(store).await, vec!["a"]);
@@ -248,7 +293,10 @@ pub async fn test_crud(store: &dyn CheckpointStore) {
     assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
 
     // Stage → Sealed → Committed lifecycle via get_checkpoint
-    store.stage_keys(&id1, keys(&["a"])).await.unwrap();
+    store
+        .stage_keys(&id1, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Staged);
     assert!(ckpt.sealed_at.is_none());
@@ -272,7 +320,10 @@ pub async fn test_crud(store: &dyn CheckpointStore) {
     assert!(ckpt.committed_at.unwrap() >= ckpt.sealed_at.unwrap());
 
     // list_checkpoints with mixed states
-    store.stage_keys(&id2, keys(&["b"])).await.unwrap();
+    store
+        .stage_keys(&id2, "test-query", keys(&["b"]))
+        .await
+        .unwrap();
 
     let checkpoints: Vec<_> = store
         .list_checkpoints()
@@ -292,8 +343,11 @@ pub async fn test_empty_inputs(store: &dyn CheckpointStore) {
     let id = CheckpointId::generate(0);
 
     // Empty stage calls
-    store.stage_keys(&id, keys(&[])).await.unwrap();
-    store.stage_files(&id, vec![]).await.unwrap();
+    store
+        .stage_keys(&id, "test-query", keys(&[]))
+        .await
+        .unwrap();
+    store.stage_files(&id, "test-query", vec![]).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(store).await, Vec::<String>::new());
@@ -308,11 +362,17 @@ pub async fn test_retry_after_partial_failure(store: &dyn CheckpointStore) {
     let staged_id = CheckpointId::generate(0);
 
     // good_id: fully sealed
-    store.stage_keys(&good_id, keys(&["a"])).await.unwrap();
+    store
+        .stage_keys(&good_id, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
     store.checkpoint(&good_id).await.unwrap();
 
     // staged_id: only staged (not sealed)
-    store.stage_keys(&staged_id, keys(&["b"])).await.unwrap();
+    store
+        .stage_keys(&staged_id, "test-query", keys(&["b"]))
+        .await
+        .unwrap();
 
     // First attempt: partial failure — good_id commits, staged_id errors
     let err = store
@@ -346,7 +406,10 @@ pub async fn test_object_safety(store: &dyn CheckpointStore) {
     // Exercise basic operations through the trait object.
     let id = CheckpointId::generate(0);
 
-    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store
+        .stage_keys(&id, "test-query", keys(&["a"]))
+        .await
+        .unwrap();
     store.checkpoint(&id).await.unwrap();
 
     let chunks: Vec<Series> = store

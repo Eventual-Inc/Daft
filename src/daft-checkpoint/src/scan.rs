@@ -182,17 +182,29 @@ mod tests {
         let (config, store) = make_store(dir.path());
 
         let id1 = CheckpointId::generate(0);
-        store.stage_keys(&id1, keys(&["a", "b"])).await.unwrap();
-        store.stage_keys(&id1, keys(&["c"])).await.unwrap();
+        store
+            .stage_keys(&id1, "test-query", keys(&["a", "b"]))
+            .await
+            .unwrap();
+        store
+            .stage_keys(&id1, "test-query", keys(&["c"]))
+            .await
+            .unwrap();
         store.checkpoint(&id1).await.unwrap();
 
         let id2 = CheckpointId::generate(1);
-        store.stage_keys(&id2, keys(&["d"])).await.unwrap();
+        store
+            .stage_keys(&id2, "test-query", keys(&["d"]))
+            .await
+            .unwrap();
         store.checkpoint(&id2).await.unwrap();
 
         // Staged-only — should be invisible.
         let id3 = CheckpointId::generate(2);
-        store.stage_keys(&id3, keys(&["ignored"])).await.unwrap();
+        store
+            .stage_keys(&id3, "test-query", keys(&["ignored"]))
+            .await
+            .unwrap();
 
         let mut expected_paths = store.sealed_file_paths().await.unwrap();
         expected_paths.sort();
