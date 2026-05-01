@@ -123,9 +123,7 @@ class PaimonDataSource(DataSource):
 
         pa_schema = PyarrowFieldParser.from_paimon_schema(table.fields)
 
-        self._blob_column_names: set[str] = {
-            field.name for field in pa_schema if pa.types.is_large_binary(field.type)
-        }
+        self._blob_column_names: set[str] = {field.name for field in pa_schema if pa.types.is_large_binary(field.type)}
         self._has_blob_columns = bool(self._blob_column_names)
 
         if self._has_blob_columns:

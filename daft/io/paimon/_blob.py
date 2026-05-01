@@ -6,12 +6,14 @@ import struct
 
 import pyarrow as pa  # noqa: TID253
 
-FILE_PHYSICAL_TYPE = pa.struct([
-    pa.field("url", pa.large_utf8()),
-    pa.field("io_config", pa.large_binary()),
-    pa.field("offset", pa.int64()),
-    pa.field("length", pa.int64()),
-])
+FILE_PHYSICAL_TYPE = pa.struct(
+    [
+        pa.field("url", pa.large_utf8()),
+        pa.field("io_config", pa.large_binary()),
+        pa.field("offset", pa.int64()),
+        pa.field("length", pa.int64()),
+    ]
+)
 
 
 def _deserialize_one(data: bytes) -> tuple[str, int, int]:
