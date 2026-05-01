@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import inspect
 import platform
 import types
 import warnings
@@ -20,7 +21,12 @@ from daft.logical.schema import Schema
 from daft.udf import UDF
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
     from types import TracebackType
+
+    from daft.io.partitioning import PartitionField
+    from daft.io.pushdowns import Pushdowns
+    from daft.io.source import DataSource, DataSourceTask
 
 __all__ = [
     "Session",
@@ -56,6 +62,7 @@ __all__ = [
     "list_catalogs",
     "list_namespaces",
     "list_tables",
+    "read_source",
     "read_table",
     "set_catalog",
     "set_model",
@@ -67,6 +74,87 @@ __all__ = [
 
 
 _current_session: ContextVar[Session | None] = ContextVar("current_session", default=None)
+
+
+def _data_source_registration_name(data_source: type[DataSource], name: str | None) -> str:
+    if name is not None:
+        source_name = name
+    else:
+        source_name_attr = inspect.getattr_static(data_source, "name", None)
+        if isinstance(source_name_attr, property):
+            try:
+                sig: inspect.Signature | None = inspect.signature(data_source)
+            except (TypeError, ValueError):
+                sig = None
+            if sig is not None and any(
+                p.default is inspect.Parameter.empty
+                and p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+                for p in sig.parameters.values()
+            ):
+                raise ValueError(
+                    "DataSource defines name as an instance property and its constructor "
+                    "requires arguments; pass name= explicitly"
+                )
+            try:
+                source_name = data_source().name
+            except Exception as e:
+                raise ValueError(
+                    f"DataSource defines name as an instance property but instantiating it "
+                    f"with no arguments failed: {e}. Pass name= explicitly."
+                ) from e
+        else:
+            source_name_func = getattr(data_source, "name", None)
+            if not callable(source_name_func):
+                raise ValueError("DataSource has no callable name; pass name= explicitly")
+            source_name = source_name_func()
+
+    if not isinstance(source_name, str) or not source_name:
+        raise ValueError("DataSource name must be a non-empty string")
+    return source_name
+
+
+_RegisteredDataSourceCls: type[DataSource] | None = None
+
+
+def _registered_data_source_cls() -> type[DataSource]:
+    global _RegisteredDataSourceCls
+    if _RegisteredDataSourceCls is not None:
+        return _RegisteredDataSourceCls
+
+    from daft.io.source import DataSource
+
+    class _RegisteredDataSource(DataSource):
+        def __init__(self, registered_name: str, wrapped: DataSource) -> None:
+            self._registered_name = registered_name
+            self._wrapped = wrapped
+
+        @property
+        def name(self) -> str:
+            return self._registered_name
+
+        @property
+        def schema(self) -> Schema:
+            return self._wrapped.schema
+
+        def get_partition_fields(self) -> list[PartitionField]:
+            return self._wrapped.get_partition_fields()
+
+        async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+            async for task in self._wrapped.get_tasks(pushdowns):
+                yield task
+
+    _RegisteredDataSourceCls = _RegisteredDataSource
+    return _RegisteredDataSourceCls
+
+
+def _read_registered_data_source(name: str, inner: DataSource) -> DataFrame:
+    registered_data_source_cls: Any = _registered_data_source_cls()
+    return registered_data_source_cls(name, inner).read()
 
 
 def session() -> Session:
@@ -109,6 +197,7 @@ class Session:
     def __init__(self) -> None:
         self._session = PySession.empty()
         self._token: Token[Session | None] | None = None
+        self._data_sources: dict[str, type[DataSource]] = {}
 
     ###
     # context manager methods
@@ -136,6 +225,8 @@ class Session:
         """Creates a session from a rust session wrapper."""
         s = Session.__new__(Session)
         s._session = session
+        s._token = None
+        s._data_sources = {}
         return s
 
     @staticmethod
@@ -648,6 +739,54 @@ class Session:
         """
         return self.get_table(identifier).read(**options)
 
+    def register_data_source(
+        self,
+        data_source: type[DataSource],
+        *,
+        name: str | None = None,
+        replace: bool = False,
+    ) -> None:
+        """Register a Python ``DataSource`` class with this session.
+
+        If ``name`` is omitted and the class declares ``name`` as an instance
+        ``@property``, the class is instantiated with no arguments to read it.
+        Pass ``name=`` explicitly to skip that construction (e.g. when the
+        constructor has side effects or requires arguments).
+        """
+        from daft.io.source import DataSource
+
+        if not isinstance(data_source, type) or not issubclass(data_source, DataSource):
+            raise TypeError(f"Expected a DataSource class, got {data_source!r}")
+
+        source_name = _data_source_registration_name(data_source, name)
+        if not replace and source_name in self._data_sources:
+            raise ValueError(f"DataSource {source_name!r} is already registered")
+        self._data_sources[source_name] = data_source
+
+    def unregister_data_source(self, name: str) -> None:
+        """Remove a registered Python ``DataSource`` from this session."""
+        try:
+            del self._data_sources[name]
+        except KeyError as e:
+            raise ValueError(f"DataSource {name!r} is not registered") from e
+
+    def get_data_source(self, name: str) -> type[DataSource]:
+        """Return a registered Python ``DataSource`` class."""
+        try:
+            return self._data_sources[name]
+        except KeyError as e:
+            raise ValueError(f"DataSource {name!r} is not registered") from e
+
+    def list_data_sources(self) -> list[str]:
+        """List registered Python ``DataSource`` names."""
+        return sorted(self._data_sources)
+
+    def read_source(self, name: str, **options: Any) -> DataFrame:
+        """Read a registered Python ``DataSource`` by name."""
+        data_source = self.get_data_source(name)
+        source = data_source(**options)
+        return _read_registered_data_source(name, source)
+
     ###
     # set_*
     ###
@@ -963,6 +1102,11 @@ def load_extension(extension: str | types.ModuleType | Path) -> None:
 def read_table(identifier: Identifier | str, **options: Any) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
     return _session().read_table(identifier, **options)
+
+
+def read_source(name: str, **options: Any) -> DataFrame:
+    """Read a registered Python ``DataSource`` by name."""
+    return _session().read_source(name, **options)
 
 
 ###
