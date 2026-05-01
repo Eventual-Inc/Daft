@@ -25,9 +25,3 @@ system-mono stub) via Turbopack `resolveAlias`. `next build` then runs
 end-to-end, so TS/React code still gets typechecked — only the served font
 is degraded to the system monospace fallback. Online builds without the env
 var are unchanged and serve real Geist Mono.
-
-### If even npm can't reach the registry
-
-Set `DAFT_DASHBOARD_SKIP_BUILD=1` to skip the frontend build entirely. Daft
-itself builds fine without the bundled dashboard assets; only the in-process
-dashboard UI is unavailable.
