@@ -99,10 +99,20 @@ impl IntoPartitionsNode {
             }
 
             // Build and submit all the tasks for this partition
+            let node_id = self.node_id();
             let submitted_tasks = builder_iter
                 .by_ref()
                 .take(chunk_size)
                 .map(|builder| {
+                    let builder = builder.map_plan(self.as_ref(), |plan| {
+                        LocalPhysicalPlan::into_partitions(
+                            plan,
+                            1,
+                            self.shuffle_backend.local_shuffle_backend(),
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(node_id as usize)),
+                        )
+                    });
                     let submittable_task = builder.build(self.context.query_idx, task_id_counter);
                     submittable_task.submit(scheduler_handle)
                 })
@@ -112,44 +122,49 @@ impl IntoPartitionsNode {
 
         let mut output_futures = OrderedJoinSet::new();
         for tasks in tasks_per_partition {
+            let self_clone = self.clone();
+            let sched = scheduler_handle.clone();
+            let counter = task_id_counter.clone();
             output_futures.spawn(async move {
-                let materialized_output = futures::future::try_join_all(tasks)
+                let materialized_outputs: Vec<_> = futures::future::try_join_all(tasks)
                     .await?
                     .into_iter()
                     .flatten()
+                    .collect();
+                let partition_refs = materialized_outputs
+                    .into_iter()
+                    .flat_map(|output| output.into_inner().0)
                     .collect::<Vec<_>>();
-                DaftResult::Ok(materialized_output)
+                let merge_task = self_clone
+                    .shuffle_backend
+                    .build_refs_task_builder(partition_refs, self_clone.as_ref(), |input| input)
+                    .map_plan(self_clone.as_ref(), |plan| {
+                        LocalPhysicalPlan::into_partitions(
+                            plan,
+                            1,
+                            self_clone.shuffle_backend.local_shuffle_backend(),
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(self_clone.node_id() as usize)),
+                        )
+                    })
+                    .build(self_clone.context.query_idx, &counter);
+                merge_task.submit(&sched)?.await
             });
         }
 
         while let Some(result) = output_futures.join_next().await {
-            // Collect all the outputs from this task and coalesce them into a single task.
-            let materialized_outputs = result??;
-            let partition_refs = materialized_outputs
-                .into_iter()
-                .flat_map(|output| output.into_inner().0)
-                .collect::<Vec<_>>();
-
-            let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_backend.local_shuffle_backend();
-            let builder = self.shuffle_backend.build_refs_task_builder(
-                partition_refs,
-                self.as_ref(),
-                move |input| {
-                    LocalPhysicalPlan::into_partitions(
-                        input,
-                        1,
-                        shuffle_backend,
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(node_id as usize)),
-                    )
-                },
-            );
-            if result_tx.send(builder).await.is_err() {
-                break;
+            let materialized_output = result??;
+            if let Some(output) = materialized_output {
+                let builder = self.shuffle_backend.build_refs_task_builder(
+                    output.into_inner().0,
+                    self.as_ref(),
+                    |input| input,
+                );
+                if result_tx.send(builder).await.is_err() {
+                    break;
+                }
             }
         }
-
         Ok(())
     }
 
@@ -242,22 +257,40 @@ impl IntoPartitionsNode {
                     .execution_config
                     .enable_scan_task_split_and_merge
                 {
-                    let node_id = self.node_id();
+                    let mut output_futures = OrderedJoinSet::new();
                     for builder in input_builders {
-                        let builder = builder.map_plan(self.as_ref(), |plan| {
-                            LocalPhysicalPlan::into_partitions(
-                                plan,
-                                1,
-                                self.shuffle_backend.local_shuffle_backend(),
-                                StatsState::NotMaterialized,
-                                LocalNodeContext::new(Some(node_id as usize)),
-                            )
-                        });
-                        let _ = result_tx.send(builder).await;
+                        let merge_task = builder
+                            .map_plan(self.as_ref(), |plan| {
+                                LocalPhysicalPlan::into_partitions(
+                                    plan,
+                                    1,
+                                    self.shuffle_backend.local_shuffle_backend(),
+                                    StatsState::NotMaterialized,
+                                    LocalNodeContext::new(Some(self.node_id() as usize)),
+                                )
+                            })
+                            .build(self.context.query_idx, &task_id_counter);
+                        let sched = scheduler_handle.clone();
+                        output_futures.spawn(async move { merge_task.submit(&sched)?.await });
+                    }
+                    while let Some(result) = output_futures.join_next().await {
+                        let materialized_output = result??;
+                        if let Some(output) = materialized_output {
+                            let builder = self.shuffle_backend.build_refs_task_builder(
+                                output.into_inner().0,
+                                self.as_ref(),
+                                |input| input,
+                            );
+                            if result_tx.send(builder).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                 } else {
                     for builder in input_builders {
-                        let _ = result_tx.send(builder).await;
+                        if result_tx.send(builder).await.is_err() {
+                            break;
+                        }
                     }
                 }
             }
@@ -300,12 +333,8 @@ impl PipelineNodeImpl for IntoPartitionsNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        };
         vec![
-            format!("IntoPartitions({})", backend_name),
+            format!("IntoPartitions({})", self.shuffle_backend.backend().name()),
             format!("Num partitions = {}", self.num_partitions),
         ]
     }

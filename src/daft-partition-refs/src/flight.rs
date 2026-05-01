@@ -2,12 +2,13 @@ use std::any::Any;
 
 use common_partitioning::Partition;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightPartitionRef {
     pub shuffle_id: u64,
     pub server_address: String,
-    pub partition_ref_id: u64,
+    pub partition_ref_id: Uuid,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -29,8 +30,12 @@ impl Partition for FlightPartitionRef {
 #[cfg(feature = "python")]
 mod python {
     use common_py_serde::impl_bincode_py_state_serialization;
-    use pyo3::{Bound, PyResult, Python, pyclass, pymethods, types::PyModuleMethods};
+    use pyo3::{
+        Bound, PyResult, Python, exceptions::PyValueError, pyclass, pymethods,
+        types::PyModuleMethods,
+    };
     use serde::{Deserialize, Serialize};
+    use uuid::Uuid;
 
     use crate::flight::FlightPartitionRef;
 
@@ -53,11 +58,14 @@ mod python {
         pub fn new(
             shuffle_id: u64,
             server_address: String,
-            partition_ref_id: u64,
+            partition_ref_id: &str,
             num_rows: usize,
             size_bytes: usize,
-        ) -> Self {
-            Self {
+        ) -> PyResult<Self> {
+            let partition_ref_id = Uuid::parse_str(partition_ref_id).map_err(|e| {
+                PyValueError::new_err(format!("Invalid partition_ref_id UUID: {e}"))
+            })?;
+            Ok(Self {
                 inner: FlightPartitionRef {
                     shuffle_id,
                     server_address,
@@ -65,7 +73,7 @@ mod python {
                     num_rows,
                     size_bytes,
                 },
-            }
+            })
         }
 
         #[getter]
@@ -79,8 +87,8 @@ mod python {
         }
 
         #[getter]
-        pub fn partition_ref_id(&self) -> u64 {
-            self.inner.partition_ref_id
+        pub fn partition_ref_id(&self) -> String {
+            self.inner.partition_ref_id.to_string()
         }
 
         #[getter]

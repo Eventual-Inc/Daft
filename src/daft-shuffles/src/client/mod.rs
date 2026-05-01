@@ -7,6 +7,7 @@ use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::client::flight_client::ShuffleFlightClient;
 
@@ -24,7 +25,7 @@ impl FlightClientManager {
         &self,
         shuffle_id: u64,
         server_address: &str,
-        partition_ref_ids: &[u64],
+        partition_ref_ids: &[Uuid],
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let client = {
