@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -12,7 +13,11 @@ from daft.daft import (
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
+from daft.io._checkpoint import attach_checkpoint
 from daft.io.common import get_tabular_files_scan
+
+if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointConfig
 
 
 @PublicAPI
@@ -26,6 +31,7 @@ def read_json(
     skip_empty_files: bool = False,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s).
 
@@ -37,6 +43,9 @@ def read_json(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         skip_empty_files: Whether to skip empty files when reading. Defaults to False.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: parsed DataFrame
@@ -76,4 +85,5 @@ def read_json(
         file_path_column=file_path_column,
         hive_partitioning=hive_partitioning,
     )
+    builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)

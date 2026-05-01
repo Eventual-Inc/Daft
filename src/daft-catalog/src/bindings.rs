@@ -90,6 +90,11 @@ impl<T> Bindings<T> {
             .unwrap_or_default()
     }
 
+    /// Mutable lookup by exact name.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut T> {
+        self.bindings.get_mut(name)
+    }
+
     /// Removes the binding if it exists (exact-case).
     pub fn remove(&mut self, name: &str) {
         self.bindings.remove(name);

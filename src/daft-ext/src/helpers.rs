@@ -60,6 +60,38 @@ macro_rules! impl_helpers {
         pub fn new_field(name: &str, dtype: $arrow_schema_crate::DataType) -> Field {
             Field::new(name, dtype, true)
         }
+
+        /// Internal re-exports for `#[daft_func]` generated code.
+        /// Not part of the public API.
+        #[doc(hidden)]
+        pub mod _codegen {
+            pub use std::sync::Arc;
+
+            pub use $arrow_array_crate::{
+                Array, ArrayRef, BooleanArray, FixedSizeListArray, LargeBinaryArray,
+                LargeListArray, LargeStringArray, PrimitiveArray,
+                builder::{
+                    BooleanBuilder, FixedSizeListBuilder, LargeBinaryBuilder, LargeListBuilder,
+                    LargeStringBuilder, PrimitiveBuilder, StringBuilder,
+                },
+                types::{
+                    ArrowPrimitiveType, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type,
+                    Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
+                },
+            };
+            pub use $arrow_schema_crate::{DataType, Field as ArrowField};
+
+            pub type Int8Array = PrimitiveArray<Int8Type>;
+            pub type Int16Array = PrimitiveArray<Int16Type>;
+            pub type Int32Array = PrimitiveArray<Int32Type>;
+            pub type Int64Array = PrimitiveArray<Int64Type>;
+            pub type UInt8Array = PrimitiveArray<UInt8Type>;
+            pub type UInt16Array = PrimitiveArray<UInt16Type>;
+            pub type UInt32Array = PrimitiveArray<UInt32Type>;
+            pub type UInt64Array = PrimitiveArray<UInt64Type>;
+            pub type Float32Array = PrimitiveArray<Float32Type>;
+            pub type Float64Array = PrimitiveArray<Float64Type>;
+        }
     };
 }
 

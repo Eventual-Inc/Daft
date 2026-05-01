@@ -61,7 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointStore
+from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -155,7 +155,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile
+from daft.file import File, VideoFile, AudioFile, ImageFile
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -180,6 +180,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointConfig",
     "CheckpointStore",
     "DataFrame",
     "DataType",
@@ -187,9 +188,11 @@ __all__ = [
     "File",
     "IOConfig",
     "Identifier",
+    "ImageFile",
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "KeyFilteringSettings",
     "MediaType",
     "ResourceRequest",
     "Schema",
