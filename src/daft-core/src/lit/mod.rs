@@ -558,6 +558,7 @@ impl Literal {
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
     }
 
+    /// If the literal is `Float16`, return it. Otherwise, return None.
     pub fn as_f16(&self) -> Option<half::f16> {
         match self {
             Self::Float16(f) => Some(*f),

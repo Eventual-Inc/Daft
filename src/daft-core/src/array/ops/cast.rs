@@ -1875,7 +1875,11 @@ mod tests {
     use super::*;
     use crate::{
         datatypes::DataArray,
-        prelude::{Decimal128Array, Decimal128Type, Float64Array},
+        hf16,
+        prelude::{
+            BooleanArray, Decimal128Array, Decimal128Type, Float16Array, Float32Array,
+            Float64Array, Int32Array, Utf8Array,
+        },
     };
 
     fn create_test_decimal_array(
@@ -2148,5 +2152,93 @@ mod tests {
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");
         assert!(values[2].is_some(), "Third date should parse successfully");
+    }
+
+    #[test]
+    fn test_float16_to_float32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(2.5), Some(-3.0)]);
+    }
+
+    #[test]
+    fn test_float32_to_float16() {
+        let arr = Float32Array::from_vec("test", vec![1.0, 2.5, -3.0]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_float16_to_int32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Int32).unwrap();
+        let values: Vec<Option<i32>> = result.i32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1), Some(2), Some(-3)]);
+    }
+
+    #[test]
+    fn test_int32_to_float16() {
+        let arr = Int32Array::from_vec("test", vec![1, 2, -3]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.0)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_utf8_to_float16() {
+        let arr = Utf8Array::from_iter(
+            "test",
+            vec![Some("  1.5  "), Some("-2.5"), None].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.5)), Some(hf16!(-2.5)), None]);
+    }
+
+    #[test]
+    fn test_float16_to_float64() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(0.0), hf16!(-0.5)]);
+        let result = arr.cast(&DataType::Float64).unwrap();
+        let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(0.0), Some(-0.5)]);
+    }
+
+    #[test]
+    fn test_float16_with_nulls() {
+        let arr = Float16Array::from_iter(
+            Field::new("test", DataType::Float16),
+            vec![Some(hf16!(1.0)), None, Some(hf16!(3.0))].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), None, Some(3.0)]);
+    }
+
+    #[test]
+    fn test_float16_roundtrip_through_float32() {
+        let original = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let as_f32 = original.cast(&DataType::Float32).unwrap();
+        let back = as_f32.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = back.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_bool_to_float16() {
+        let arr = BooleanArray::from_iter("test", vec![Some(true), Some(false), None].into_iter());
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.0)), Some(hf16!(0.0)), None]);
     }
 }
