@@ -16,8 +16,15 @@ from daft.functions import (
     current_timezone,
     date_add,
     date_diff,
+    date_format,
     date_from_unix_date,
     date_sub,
+    date_trunc,
+    dateadd,
+    datediff,
+    datepart,
+    dayofmonth,
+    dayofyear,
     from_unixtime,
     last_day,
     make_date,
@@ -27,6 +34,8 @@ from daft.functions import (
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
+    trunc,
+    weekofyear,
 )
 
 
@@ -841,6 +850,47 @@ def test_date_add() -> None:
     expected = {"result": [date(2021, 1, 11), date(2021, 6, 20)]}
 
     assert result == expected
+
+
+def test_temporal_alias_functions() -> None:
+    df = daft.from_pydict(
+        {
+            "dt": [datetime(2024, 2, 29, 12, 30, 45)],
+            "d": [date(2024, 2, 29)],
+            "n": [3],
+        }
+    )
+
+    result = df.select(
+        dayofmonth(col("dt")).alias("dom_alias"),
+        col("dt").day_of_month().alias("dom_expected"),
+        dayofyear(col("dt")).alias("doy_alias"),
+        col("dt").day_of_year().alias("doy_expected"),
+        weekofyear(col("dt")).alias("woy_alias"),
+        col("dt").week_of_year().alias("woy_expected"),
+        date_format(col("dt"), "%Y-%m-%d").alias("fmt_alias"),
+        col("dt").strftime("%Y-%m-%d").alias("fmt_expected"),
+        trunc(col("dt"), "day").alias("trunc_alias"),
+        date_trunc("1 day", col("dt")).alias("trunc_expected"),
+        dateadd(col("d"), col("n")).alias("dateadd_alias"),
+        date_add(col("d"), col("n")).alias("dateadd_expected"),
+        datediff(col("d"), col("d")).alias("datediff_alias"),
+        date_diff(col("d"), col("d")).alias("datediff_expected"),
+        datepart("year", col("dt")).alias("datepart_year_alias"),
+        col("dt").year().alias("datepart_year_expected"),
+        datepart("dayofmonth", col("dt")).alias("datepart_dom_alias"),
+        col("dt").day_of_month().alias("datepart_dom_expected"),
+    ).to_pydict()
+
+    assert result["dom_alias"] == result["dom_expected"]
+    assert result["doy_alias"] == result["doy_expected"]
+    assert result["woy_alias"] == result["woy_expected"]
+    assert result["fmt_alias"] == result["fmt_expected"]
+    assert result["trunc_alias"] == result["trunc_expected"]
+    assert result["dateadd_alias"] == result["dateadd_expected"]
+    assert result["datediff_alias"] == result["datediff_expected"]
+    assert result["datepart_year_alias"] == result["datepart_year_expected"]
+    assert result["datepart_dom_alias"] == result["datepart_dom_expected"]
 
 
 def test_date_sub() -> None:

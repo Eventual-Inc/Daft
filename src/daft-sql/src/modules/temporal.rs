@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use daft_dsl::{
     ExprRef,
-    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
+    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs, ScalarUDF},
     lit, null_lit,
 };
 use daft_functions_temporal::{
+    Date, Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Microsecond, Millisecond, Minute, Month,
+    Nanosecond, Quarter, Second, ToString, UnixDate, WeekOfYear, Year,
     current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
     date_arithmetic::{DateAdd, DateDiff, DateSub},
     date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz},
@@ -30,6 +32,14 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date_trunc", SQLDateTrunc);
         parent.add_fn("truncate", SQLDateTrunc);
+        parent.add_fn("trunc", SQLTrunc);
+        parent.add_fn("dayofmonth", Arc::new(DayOfMonth) as Arc<dyn ScalarUDF>);
+        parent.add_fn("dayofyear", Arc::new(DayOfYear) as Arc<dyn ScalarUDF>);
+        parent.add_fn("weekofyear", Arc::new(WeekOfYear) as Arc<dyn ScalarUDF>);
+        parent.add_fn("date_format", Arc::new(ToString) as Arc<dyn ScalarUDF>);
+        parent.add_fn("dateadd", SQLDateAdd);
+        parent.add_fn("datediff", SQLDateDiff);
+        parent.add_fn("datepart", SQLDatePart);
         parent.add_fn("current_date", SQLCurrentDate);
         parent.add_fn("current_timestamp", SQLCurrentTimestamp);
         parent.add_fn("current_timezone", SQLCurrentTimezone);
@@ -47,6 +57,14 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("last_day", SQLLastDay);
         parent.add_fn("next_day", SQLNextDay);
     }
+}
+
+fn unary_temporal_expr<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
+    BuiltinScalarFn {
+        func: BuiltinScalarFnVariant::Sync(Arc::new(udf)),
+        inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+    }
+    .into()
 }
 
 pub struct SQLDateTrunc;
@@ -122,6 +140,119 @@ impl SQLFunction for SQLDateTrunc {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["interval", "input", "relative_to"]
+    }
+}
+
+pub struct SQLTrunc;
+
+impl SQLFunction for SQLTrunc {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("trunc expects 2 arguments: trunc(input, interval)");
+        }
+
+        let input_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let interval_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let interval_str = interval_expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "trunc second argument must be a string literal (e.g. 'month')",
+                )
+            })?;
+
+        let normalized = if interval_str
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+        {
+            interval_str.to_string()
+        } else {
+            format!("1 {interval_str}")
+        };
+
+        let args = vec![
+            FunctionArg::unnamed(input_expr),
+            FunctionArg::unnamed(null_lit()),
+            FunctionArg::named("interval".to_string(), lit(normalized)),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(Truncate)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Spark-style trunc alias with argument order trunc(input, interval).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "interval"]
+    }
+}
+
+pub struct SQLDatePart;
+
+impl SQLFunction for SQLDatePart {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!(
+                "datepart expects 2 arguments: datepart(part, input), got {}",
+                inputs.len()
+            );
+        }
+
+        let part_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let part = part_expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "datepart first argument must be a string literal",
+                )
+            })?
+            .to_lowercase()
+            .replace(' ', "_");
+        let input = planner.plan_function_arg(&inputs[1])?.into_inner();
+
+        match part.as_str() {
+            "year" => Ok(unary_temporal_expr(Year, input)),
+            "quarter" => Ok(unary_temporal_expr(Quarter, input)),
+            "month" => Ok(unary_temporal_expr(Month, input)),
+            "day" => Ok(unary_temporal_expr(Day, input)),
+            "day_of_week" | "dayofweek" | "weekday" => Ok(unary_temporal_expr(DayOfWeek, input)),
+            "day_of_month" | "dayofmonth" => Ok(unary_temporal_expr(DayOfMonth, input)),
+            "day_of_year" | "dayofyear" => Ok(unary_temporal_expr(DayOfYear, input)),
+            "week_of_year" | "weekofyear" => Ok(unary_temporal_expr(WeekOfYear, input)),
+            "date" => Ok(unary_temporal_expr(Date, input)),
+            "hour" => Ok(unary_temporal_expr(Hour, input)),
+            "minute" => Ok(unary_temporal_expr(Minute, input)),
+            "second" => Ok(unary_temporal_expr(Second, input)),
+            "millisecond" => Ok(unary_temporal_expr(Millisecond, input)),
+            "microsecond" => Ok(unary_temporal_expr(Microsecond, input)),
+            "nanosecond" => Ok(unary_temporal_expr(Nanosecond, input)),
+            "unix_date" => Ok(unary_temporal_expr(UnixDate, input)),
+            _ => invalid_operation_err!("Unsupported datepart value: {}", part),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Alias-style extractor equivalent to extract(field from input).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["part", "input"]
     }
 }
 
