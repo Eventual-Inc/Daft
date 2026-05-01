@@ -822,6 +822,17 @@ pub struct TaskSubmitArgs {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskStartArgs {
+    pub start_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskEndArgs {
     pub end_sec: f64,
     pub task_id: u32,
@@ -863,6 +874,41 @@ pub(crate) fn apply_task_submit(
         args.plan_fingerprint,
         args.name,
         args.submit_sec,
+    );
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_start(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskStartArgs>,
+) -> StatusCode {
+    apply_task_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskStartArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_start", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    exec_info.task_store.start_task(
+        args.task_id,
+        args.last_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.worker_id,
+        args.start_sec,
     );
 
     state.ping_clients_on_query_update(query_info.value());
@@ -951,6 +997,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/task/submit", post(task_submit))
+        .route("/query/{query_id}/task/start", post(task_start))
         .route("/query/{query_id}/task/end", post(task_end))
         .route("/query/{query_id}/end", post(query_end))
 }

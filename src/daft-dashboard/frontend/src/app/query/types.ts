@@ -66,6 +66,7 @@ export type PhysicalPlanNode = {
  */
 export type TaskStatus =
   | { status: "Pending" }
+  | { status: "Running" }
   | { status: "Finished" }
   | { status: "Failed"; message: string | null }
   | { status: "Cancelled" };
@@ -78,6 +79,7 @@ export type TaskInfo = {
   name?: string;
   status: TaskStatus;
   submit_sec: number;
+  start_sec?: number;
   end_sec?: number;
   worker_id?: string;
   cpu_us: number;
@@ -90,6 +92,7 @@ export type TaskGroupSummary = {
   name: string;
   task_count: number;
   pending_count: number;
+  running_count: number;
   finished_count: number;
   failed_count: number;
   cancelled_count: number;

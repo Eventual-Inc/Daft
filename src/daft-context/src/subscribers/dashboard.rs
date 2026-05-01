@@ -17,7 +17,10 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
+    events::{
+        OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskStartEvent,
+        TaskSubmitEvent,
+    },
 };
 
 const TOTAL_ROWS: usize = 10;
@@ -482,6 +485,28 @@ impl DashboardSubscriber {
         Ok(())
     }
 
+    fn on_task_start(&self, event: &TaskStartEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        self.enqueue_json(
+            format!("engine/query/{}/task/start", query_id),
+            "task_start",
+            &daft_dashboard::engine::TaskStartArgs {
+                start_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
+            },
+        );
+        Ok(())
+    }
+
     fn on_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -607,11 +632,12 @@ impl Subscriber for DashboardSubscriber {
             Event::TaskSubmit(e) => {
                 self.on_task_submit(&e)?;
             }
+            Event::TaskStart(e) => {
+                self.on_task_start(&e)?;
+            }
             Event::TaskEnd(e) => {
                 self.on_task_end(&e)?;
             }
-            // TODO: hook up with dashboard server
-            Event::TaskStart(_) => {}
         }
         Ok(())
     }

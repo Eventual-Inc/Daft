@@ -33,6 +33,7 @@ pub(crate) enum TaskEvent {
     },
     Scheduled {
         context: TaskContext,
+        worker_id: WorkerId,
     },
     Completed {
         context: TaskContext,

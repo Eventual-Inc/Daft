@@ -15,6 +15,8 @@ import {
   getActiveTasks,
   PlanChainNode,
   taskDisplayStatus,
+  taskDurationSec,
+  taskHasStarted,
   TaskTypeRow,
   TOP_K_RUNNING,
 } from "./tasks-grouping";
@@ -65,7 +67,8 @@ export default function TasksSidebar({
     [allRows, nodeFilter],
   );
 
-  // Active tasks for the "top" section.
+  // In-flight tasks (running + pending) for the "top" section. Running tasks
+  // sort first; pending only fill the remainder of the top-K.
   const allActiveTasks = useMemo(() => getActiveTasks(task_store), [task_store]);
   const filteredActiveTasks = useMemo(
     () =>
@@ -75,11 +78,16 @@ export default function TasksSidebar({
     [allActiveTasks, nodeFilter],
   );
   const activeTasks = filteredActiveTasks.slice(0, TOP_K_RUNNING);
-  const totalRunning = filteredActiveTasks.length;
+  const totalInflight = filteredActiveTasks.length;
+  const totalRunning = filteredActiveTasks.filter(
+    (t) => t.status.status === "Running",
+  ).length;
+  const totalPendingActive = totalInflight - totalRunning;
 
   // Summary counts from group aggregates (always accurate).
   const totalTasks = rows.reduce((a, r) => a + r.task_count, 0);
-  const totalExecuting = rows.reduce((a, r) => a + r.status_counts.Executing, 0);
+  const totalRunningCount = rows.reduce((a, r) => a + r.status_counts.Executing, 0);
+  const totalPending = rows.reduce((a, r) => a + r.status_counts.Pending, 0);
   const totalFinished = rows.reduce((a, r) => a + r.status_counts.Finished, 0);
   const totalFailed = rows.reduce((a, r) => a + r.status_counts.Failed, 0);
 
@@ -96,8 +104,10 @@ export default function TasksSidebar({
             Tasks
           </span>
           <span>
-            {totalExecuting > 0 && <span className="text-emerald-400">{totalExecuting} running</span>}
-            {totalExecuting > 0 && totalFinished > 0 && " · "}
+            {totalRunningCount > 0 && <span className="text-emerald-400">{totalRunningCount} running</span>}
+            {totalRunningCount > 0 && totalPending > 0 && " · "}
+            {totalPending > 0 && <span className="text-zinc-400">{totalPending} pending</span>}
+            {(totalRunningCount > 0 || totalPending > 0) && totalFinished > 0 && " · "}
             {totalFinished > 0 && <span>{totalFinished} finished</span>}
             {totalFailed > 0 && " · "}
             {totalFailed > 0 && <span className="text-red-400">{totalFailed} failed</span>}
@@ -152,6 +162,8 @@ export default function TasksSidebar({
               <RunningTasksSection
                 tasks={activeTasks}
                 totalRunning={totalRunning}
+                totalPending={totalPendingActive}
+                totalInflight={totalInflight}
                 onHoverNodes={onHoverNodes}
               />
             </div>
@@ -168,33 +180,42 @@ export default function TasksSidebar({
 }
 
 // ---------------------------------------------------------------------------
-// Running tasks "top" section.
+// In-flight tasks "top" section. Shows running tasks first (sorted by wall-
+// clock duration descending), then pending tasks. The state column lets
+// users tell pending and running apart.
 // ---------------------------------------------------------------------------
-const RUNNING_GRID_COLS = "grid-cols-[minmax(200px,2fr)_90px]";
+const RUNNING_GRID_COLS = "grid-cols-[minmax(200px,2fr)_90px_90px]";
 
 function RunningTasksSection({
   tasks,
   totalRunning,
+  totalPending,
+  totalInflight,
   onHoverNodes,
 }: {
   tasks: TaskInfo[];
   totalRunning: number;
+  totalPending: number;
+  totalInflight: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   const [now, setNow] = useState(() => Date.now() / 1000);
-  const hasRunning = tasks.length > 0;
+  const hasInflight = tasks.length > 0;
 
   useEffect(() => {
-    if (!hasRunning) return;
+    if (!hasInflight) return;
     const id = setInterval(() => setNow(Date.now() / 1000), 1000);
     return () => clearInterval(id);
-  }, [hasRunning]);
+  }, [hasInflight]);
 
   return (
     <div className="border-b border-zinc-700">
-      <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800">
+      <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800 flex items-center gap-2">
         <span className={`${main.className} text-xs font-bold text-emerald-300 uppercase tracking-wider`}>
-          Running ({totalRunning})
+          In-flight ({totalInflight})
+        </span>
+        <span className={`${main.className} text-[10px] text-zinc-400`}>
+          {totalRunning} running · {totalPending} pending
         </span>
       </div>
       <div className="min-w-[300px]">
@@ -202,6 +223,7 @@ function RunningTasksSection({
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Local Plan</RunningHeader>
+          <RunningHeader align="left">State</RunningHeader>
           <RunningHeader align="right">Duration</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
@@ -217,9 +239,9 @@ function RunningTasksSection({
             <div key={`empty-${i}`} className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px]`} />
           );
         })}
-        {totalRunning > tasks.length && (
+        {totalInflight > tasks.length && (
           <div className={`${main.className} px-4 py-1.5 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
-            Showing {tasks.length} of {totalRunning} running tasks (longest first)
+            Showing {tasks.length} of {totalInflight} in-flight tasks (running first, longest duration first)
           </div>
         )}
       </div>
@@ -253,7 +275,11 @@ function RunningTaskRow({
   now: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
-  const duration = formatDuration(Math.max(0, now - task.submit_sec)) + "\u2026";
+  const isRunning = task.status.status === "Running";
+  const started = taskHasStarted(task);
+  const duration = started
+    ? formatDuration(taskDurationSec(task, now)) + "\u2026"
+    : "\u2014";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
     : [`Node ${task.last_node_id}`];
@@ -268,7 +294,14 @@ function RunningTaskRow({
       <div className="px-3">
         <PipelineChips pipeline={pipeline} />
       </div>
-      <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
+      <div
+        className={`${main.className} px-3 text-xs font-mono ${isRunning ? "text-emerald-300" : "text-zinc-400"}`}
+      >
+        {isRunning ? "running" : "pending"}
+      </div>
+      <div
+        className={`${main.className} px-3 text-xs text-right font-mono ${isRunning ? "text-emerald-300" : "text-zinc-500"}`}
+      >
         {duration}
       </div>
     </div>
@@ -402,6 +435,9 @@ function TaskTypeGroupRow({
           tasks={row.tasks}
           taskCount={row.task_count}
           retainedTaskCount={row.retained_task_count}
+          pendingCount={row.status_counts.Pending}
+          runningCount={row.status_counts.Executing}
+          finishedCount={row.status_counts.Finished}
         />
       )}
     </>
@@ -529,12 +565,18 @@ function ExpandedTaskList({
   tasks,
   taskCount,
   retainedTaskCount,
+  pendingCount,
+  runningCount,
+  finishedCount,
 }: {
   tasks: TaskInfo[];
   /** Total number of tasks in this group (from server summary). */
   taskCount: number;
   /** Number of retained individual tasks for this group. */
   retainedTaskCount: number;
+  pendingCount: number;
+  runningCount: number;
+  finishedCount: number;
 }) {
   return (
     <div className="bg-zinc-950/40 border-l-2 border-fuchsia-900/70 pl-0">
@@ -557,7 +599,9 @@ function ExpandedTaskList({
       {retainedTaskCount < taskCount && (
         <div className={`${main.className} px-6 py-2 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
           Showing {retainedTaskCount} of {taskCount.toLocaleString()} tasks
-          (longest by duration, plus active and failed)
+          {" ("}
+          {pendingCount} pending, {runningCount} running, {finishedCount} finished
+          {") — longest by duration, plus active and failed"}
         </div>
       )}
     </div>
@@ -588,11 +632,14 @@ function SubHeader({
 
 function TaskSubRow({ task }: { task: TaskInfo }) {
   const displayStatus = taskDisplayStatus(task);
-  const duration =
-    task.end_sec != null
-      ? formatDuration(task.end_sec - task.submit_sec)
+  // Wall-clock duration is measured from start (when the task actually began
+  // executing), not submit. Pending tasks have no duration to show.
+  const duration = !taskHasStarted(task)
+    ? "—"
+    : task.end_sec != null
+      ? formatDuration(task.end_sec - (task.start_sec ?? task.submit_sec))
       : displayStatus === "Executing"
-        ? formatDuration(Date.now() / 1000 - task.submit_sec) + "…"
+        ? formatDuration(taskDurationSec(task, Date.now() / 1000)) + "…"
         : "—";
   const cpuSec = task.cpu_us / 1_000_000;
 

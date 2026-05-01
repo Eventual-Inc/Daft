@@ -352,6 +352,7 @@ mod tests {
     fn scheduled_event() -> TaskEvent {
         TaskEvent::Scheduled {
             context: TaskContext::default(),
+            worker_id: "worker-1".into(),
         }
     }
 
