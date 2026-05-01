@@ -248,6 +248,14 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
     ) -> DaftResult<BuiltinScalarFnVariant> {
         Ok(BuiltinScalarFnVariant::Sync(Arc::new(self.clone())))
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Create a [`ScalarFunctionFactory`] from an `FFI_ScalarFunction` vtable.
@@ -318,6 +326,14 @@ impl ScalarFunctionFactory for OverloadedScalarFunctionFactory {
             self.name,
             self.variants.len(),
         )))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
