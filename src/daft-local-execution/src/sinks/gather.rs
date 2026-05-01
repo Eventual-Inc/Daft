@@ -48,7 +48,6 @@ impl FlightGatherState {
     async fn push(&mut self, input: MicroPartition) -> DaftResult<()> {
         let shared = &self.shared;
         let cache = InProgressShuffleCache::try_new(
-            &shared.local_server,
             shared.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,

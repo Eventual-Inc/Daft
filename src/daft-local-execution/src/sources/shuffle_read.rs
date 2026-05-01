@@ -16,6 +16,7 @@ use daft_recordbatch::RecordBatch;
 use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
+use uuid::Uuid;
 
 use super::source::{Source, SourceStream, StatsProvider};
 use crate::{
@@ -85,7 +86,7 @@ impl ShuffleReadSource {
         let remote_stream = if remote_refs.is_empty() {
             None
         } else {
-            let mut refs_by_server: HashMap<(u64, String), Vec<u64>> = HashMap::new();
+            let mut refs_by_server: HashMap<(u64, String), Vec<Uuid>> = HashMap::new();
             for partition_ref in remote_refs {
                 refs_by_server
                     .entry((

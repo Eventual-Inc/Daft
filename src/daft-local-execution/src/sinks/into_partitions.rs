@@ -64,7 +64,6 @@ impl FlightIntoPartitionsState {
         let mut caches = Vec::with_capacity(num_partitions);
         for _ in 0..num_partitions {
             let cache = InProgressShuffleCache::try_new(
-                &shared.local_server,
                 shared.schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,

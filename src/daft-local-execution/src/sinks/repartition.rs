@@ -336,7 +336,6 @@ impl BlockingSink for RepartitionSink {
                 compression,
                 schema,
                 partitions,
-                local_server,
                 ..
             } => {
                 let mut partitions = partitions.lock().unwrap();
@@ -347,7 +346,6 @@ impl BlockingSink for RepartitionSink {
                             (0..self.num_partitions)
                                 .map(|_| {
                                     Ok(Arc::new(InProgressShuffleCache::try_new(
-                                        local_server,
                                         schema.clone(),
                                         shuffle_dirs,
                                         *shuffle_id,

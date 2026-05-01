@@ -3058,6 +3058,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "typetag",
+ "uuid",
 ]
 
 [[package]]
@@ -3216,6 +3217,7 @@ dependencies = [
  "common-py-serde",
  "pyo3",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -3366,6 +3368,7 @@ dependencies = [
  "futures",
  "tokio",
  "tonic",
+ "uuid",
 ]
 
 [[package]]

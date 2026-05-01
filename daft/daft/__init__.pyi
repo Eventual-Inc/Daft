@@ -2312,7 +2312,7 @@ class RayPartitionRef:
 class FlightPartitionRef:
     shuffle_id: int
     server_address: str
-    partition_ref_id: int
+    partition_ref_id: str
     num_rows: int
     size_bytes: int
 
@@ -2320,7 +2320,7 @@ class FlightPartitionRef:
         self,
         shuffle_id: int,
         server_address: str,
-        partition_ref_id: int,
+        partition_ref_id: str,
         num_rows: int,
         size_bytes: int,
     ): ...

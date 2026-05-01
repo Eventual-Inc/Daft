@@ -11,6 +11,7 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
+use uuid::Uuid;
 
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
@@ -57,7 +58,7 @@ impl ShuffleFlightClient {
     pub async fn get_partition(
         &mut self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        partition_ref_ids: &[Uuid],
         schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
         let ticket = Ticket::new(format!(
