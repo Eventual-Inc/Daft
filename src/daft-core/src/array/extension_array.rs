@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_schema::{dtype::DataType, field::Field};
@@ -21,14 +21,7 @@ impl ExtensionArray {
             metadata.map(|s| s.to_string()),
         );
 
-        let mut ext_field = Field::new(storage_series.name(), ext_dtype);
-
-        let mut metadata_dict =
-            BTreeMap::from([("ARROW:extension:name".to_string(), ext_name.to_string())]);
-        if let Some(m) = metadata {
-            metadata_dict.insert("ARROW:extension:metadata".to_string(), m.to_string());
-        }
-        ext_field = ext_field.with_metadata(metadata_dict);
+        let ext_field = Field::new(storage_series.name(), ext_dtype);
 
         let arrow_data = storage_series.to_arrow()?;
         Self::from_arrow(Arc::new(ext_field), arrow_data)

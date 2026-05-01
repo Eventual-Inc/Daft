@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pyarrow as pa
+
 import daft
 from daft import DataType, Series
 
@@ -139,6 +141,7 @@ class TestExtensionTypeArrowRoundTrip:
         ext_s = s.cast(ext_dtype)
 
         arrow_arr = ext_s.to_arrow()
+        assert isinstance(arrow_arr.type, pa.ExtensionType)
         restored = Series.from_arrow(arrow_arr, name="col")
         assert restored.datatype().is_extension()
         assert restored.datatype() == ext_dtype
@@ -154,6 +157,7 @@ class TestExtensionTypeArrowRoundTrip:
         ext_s = s.cast(ext_dtype)
 
         arrow_arr = ext_s.to_arrow()
+        assert isinstance(arrow_arr.type, pa.ExtensionType)
         restored = Series.from_arrow(arrow_arr, name="col")
         assert restored.datatype().is_extension()
         assert restored.datatype() == ext_dtype
@@ -164,6 +168,7 @@ class TestExtensionTypeArrowRoundTrip:
         ext_s = s.cast(ext_dtype)
 
         arrow_arr = ext_s.to_arrow()
+        assert isinstance(arrow_arr.type, pa.ExtensionType)
         restored = Series.from_arrow(arrow_arr, name="col")
         assert restored.datatype().is_extension()
         assert restored.datatype() == ext_dtype

@@ -260,7 +260,6 @@ impl DataTypePayload {
     }
 }
 pub const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
-pub const DAFT_USER_EXTENSION_NAME: &str = "daft.user_extension";
 
 impl DataType {
     pub fn new_null() -> Self {

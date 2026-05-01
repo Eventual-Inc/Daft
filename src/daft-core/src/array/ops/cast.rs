@@ -2455,11 +2455,8 @@ mod tests {
             EmbeddingArray::new(Field::new("col", embedding_dtype.clone()), fsl_arr);
         let embedding_series = embedding_arr.into_series();
 
-        // Embedding -> physical -> Extension(FixedSizeList)
-        let physical = embedding_series
-            .cast(&embedding_dtype.to_physical())
-            .unwrap();
-        let ext_series = physical.cast(&extension_type).unwrap();
+        // Embedding -> Extension(FixedSizeList) via physical fallthrough
+        let ext_series = embedding_series.cast(&extension_type).unwrap();
         assert_eq!(ext_series.data_type(), &extension_type);
 
         // Extension -> FixedSizeList

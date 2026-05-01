@@ -563,6 +563,8 @@ impl ToPyArrow for Series {
             (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
         )?;
 
+        // PyArrow's _import_from_c drops extension metadata for unregistered types,
+        // so we re-wrap as a DaftExtension to preserve the dtype info for Python consumers.
         if self.data_type().is_extension() {
             let is_already_extension = array
                 .getattr(pyo3::intern!(py, "type"))?
