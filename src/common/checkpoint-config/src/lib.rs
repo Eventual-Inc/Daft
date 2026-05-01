@@ -18,6 +18,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -159,4 +160,59 @@ pub enum CheckpointStoreConfig {
 pub struct CheckpointConfig {
     pub store: CheckpointStoreConfig,
     pub key_column: String,
+    pub settings: CheckpointSettings,
+}
+
+/// Strategy-specific settings for skipping already-checkpointed source rows.
+///
+/// Each variant carries the tuning knobs for one filter strategy. Today the
+/// only strategy is anti-join via `KeyFiltering`; future variants (bloom
+/// filter, hash partition, etc.) would slot in alongside.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CheckpointSettings {
+    KeyFiltering(KeyFilteringSettings),
+}
+
+impl Default for CheckpointSettings {
+    fn default() -> Self {
+        Self::KeyFiltering(KeyFilteringSettings::default())
+    }
+}
+
+/// Tuning knobs for the key-filtering anti-join used to skip already-sealed
+/// source rows. `None` for any field means "use the engine default".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct KeyFilteringSettings {
+    pub num_workers: Option<usize>,
+    pub cpus_per_worker: Option<FloatWrapper<f64>>,
+    pub keys_load_batch_size: Option<usize>,
+    pub max_concurrency_per_worker: Option<usize>,
+    pub filter_batch_size: Option<usize>,
+}
+
+impl KeyFilteringSettings {
+    /// Validate that all numeric fields are strictly positive when set.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(message)` if any field is `Some(0)` or `cpus_per_worker`
+    /// is `Some(v)` with `v <= 0.0`.
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.num_workers, Some(0)) {
+            return Err("[checkpoint] num_workers must be > 0".to_string());
+        }
+        if matches!(self.cpus_per_worker, Some(FloatWrapper(v)) if v <= 0.0) {
+            return Err("[checkpoint] cpus_per_worker must be > 0".to_string());
+        }
+        if matches!(self.keys_load_batch_size, Some(0)) {
+            return Err("[checkpoint] keys_load_batch_size must be > 0".to_string());
+        }
+        if matches!(self.max_concurrency_per_worker, Some(0)) {
+            return Err("[checkpoint] max_concurrency_per_worker must be > 0".to_string());
+        }
+        if matches!(self.filter_batch_size, Some(0)) {
+            return Err("[checkpoint] filter_batch_size must be > 0".to_string());
+        }
+        Ok(())
+    }
 }

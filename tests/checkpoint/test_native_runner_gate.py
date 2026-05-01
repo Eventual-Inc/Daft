@@ -31,6 +31,8 @@ def test_read_parquet_with_checkpoint_rejects_native_runner():
         with pytest.raises(ValueError, match="not supported on the native runner"):
             daft.read_parquet(
                 input_path,
-                checkpoint=daft.CheckpointStore("s3://dummy/ckpt"),
-                on="file_id",
+                checkpoint=daft.CheckpointConfig(
+                    store=daft.CheckpointStore("s3://dummy/ckpt"),
+                    on="file_id",
+                ),
             )

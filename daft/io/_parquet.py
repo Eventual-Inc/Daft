@@ -16,7 +16,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.io.common import get_tabular_files_scan
 
 if TYPE_CHECKING:
-    from daft.checkpoint import CheckpointStore
+    from daft.checkpoint import CheckpointConfig
 
 
 @PublicAPI
@@ -31,8 +31,7 @@ def read_parquet(
     coerce_int96_timestamp_unit: str | TimeUnit | None = None,
     _multithreaded_io: bool | None = None,
     _chunk_size: int | None = None,  # A hidden parameter for testing purposes.
-    checkpoint: "CheckpointStore | None" = None,
-    on: str | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
 
@@ -48,6 +47,9 @@ def read_parquet(
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: parsed DataFrame
@@ -101,7 +103,7 @@ def read_parquet(
     )
 
     # Attach checkpoint config to the source node for progress tracking.
-    if checkpoint is not None and on is not None:
+    if checkpoint is not None:
         # Checkpoint filtering requires the Ray runner.
         runner_type = runners.get_or_infer_runner_type()
         if runner_type == "native":
@@ -111,10 +113,6 @@ def read_parquet(
                 "Use the Ray runner: call daft.context.set_runner_ray() "
                 "or set DAFT_RUNNER=ray."
             )
-        builder = builder.with_checkpoint(checkpoint.config, on)
-    elif checkpoint is not None:
-        raise ValueError("checkpoint= requires on= (the key column name)")
-    elif on is not None:
-        raise ValueError("on= requires checkpoint= (a CheckpointStore)")
+        builder = builder.with_checkpoint(checkpoint._inner)
 
     return DataFrame(builder)
