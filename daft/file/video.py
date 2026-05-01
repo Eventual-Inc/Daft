@@ -107,6 +107,7 @@ class VideoFile(File):
         width: int | None = None,
         height: int | None = None,
         is_key_frame: bool | None = None,
+        sample_interval_seconds: float | None = None,
     ) -> Iterator[VideoFrameData]:
         """Lazy iterator of all decoded frames with metadata within time range.
 
@@ -119,6 +120,12 @@ class VideoFile(File):
             height: Optional target height for resizing frames. Must be provided with ``width``.
             is_key_frame: If True, emit only keyframes. If False, emit only non-keyframes.
                 If None, emit all decoded frames.
+            sample_interval_seconds: If provided and > 0, sample frames at approximately
+                this time interval in seconds based on ``frame_time``. The algorithm picks
+                the first frame whose timestamp is >= the next target time
+                (``start_time``, ``start_time + interval``, ``start_time + 2*interval``, ...).
+                Frames without valid timestamps are skipped. Same semantics as the
+                source-side ``daft.read_video_frames``.
 
         Yields:
             VideoFrameData dicts with keys: frame_index, frame_time, frame_time_base,
@@ -130,6 +137,8 @@ class VideoFile(File):
             )
         if (width is None) != (height is None):
             raise ValueError("Both width and height must be specified together for resizing.")
+        if sample_interval_seconds is not None and sample_interval_seconds <= 0:
+            raise ValueError("sample_interval_seconds must be positive if provided")
         with self.open() as f:
             with av.open(f) as container:
                 video = next(
@@ -152,6 +161,13 @@ class VideoFile(File):
                 if fps is None and video.guessed_rate:
                     fps = float(video.guessed_rate)
                 start_pts = video.start_time or 0
+
+                # Sampling targets are start_time, start_time + interval, ... — same algorithm
+                # as `daft.read_video_frames`. Epsilon absorbs float-precision drift between
+                # the target time and the frame's PTS-derived `frame.time`.
+                next_sample_time: float | None = float(start_time) if sample_interval_seconds is not None else None
+                epsilon: float = 1e-9 if sample_interval_seconds is None else max(1e-9, sample_interval_seconds * 1e-6)
+
                 frame_index: int = 0
                 for frame in container.decode(video):
                     # Skip frames before start_time (seek may land earlier)
@@ -167,6 +183,20 @@ class VideoFile(File):
                     if is_key_frame is False and frame.key_frame:
                         frame_index += 1
                         continue
+
+                    # Time-interval sampling: emit only when the frame has reached the next target.
+                    if sample_interval_seconds is not None:
+                        if frame.time is None:
+                            frame_index += 1
+                            continue
+                        assert next_sample_time is not None
+                        if frame.time + epsilon < next_sample_time:
+                            frame_index += 1
+                            continue
+                        # Advance past every target this frame already covers, so a long gap
+                        # between frames (VFR / large interval) doesn't queue up extra emits.
+                        while next_sample_time is not None and frame.time + epsilon >= next_sample_time:
+                            next_sample_time += sample_interval_seconds
 
                     # Resize if requested
                     output_frame = frame

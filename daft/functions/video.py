@@ -101,6 +101,7 @@ def frames_impl(
     width: int | None = None,
     height: int | None = None,
     is_key_frame: bool | None = None,
+    sample_interval_seconds: float | None = None,
 ) -> list[VideoFrameData]:
     return list(
         file.frames(
@@ -109,6 +110,7 @@ def frames_impl(
             width=width,
             height=height,
             is_key_frame=is_key_frame,
+            sample_interval_seconds=sample_interval_seconds,
         )
     )
 
@@ -147,6 +149,7 @@ def video_frames(
     width: int | None = None,
     height: int | None = None,
     is_key_frame: bool | None = None,
+    sample_interval_seconds: float | None = None,
 ) -> Expression:
     """Decode all video frames within a time range, with per-frame metadata.
 
@@ -160,6 +163,12 @@ def video_frames(
         height (int | None, optional): Target height for resizing frames. Must be provided with ``width``.
         is_key_frame (bool | None, optional): If True, decode only keyframes. If False,
             decode only non-keyframes. If None, decode all frames.
+        sample_interval_seconds (float | None, optional): If provided and > 0, sample frames at
+            approximately this time interval in seconds based on ``frame_time``. The algorithm
+            picks the first frame whose timestamp is >= the next target time (``start_time``,
+            ``start_time + interval``, ``start_time + 2*interval``, ...). Frames without valid
+            timestamps are skipped. Same semantics as the source-side
+            :func:`daft.read_video_frames`. Defaults to None (no sampling).
 
     Returns:
         Expression (List[Struct] Expression): List of structs, each containing:
@@ -179,4 +188,5 @@ def video_frames(
         width=width,
         height=height,
         is_key_frame=is_key_frame,
+        sample_interval_seconds=sample_interval_seconds,
     )  # type: ignore
