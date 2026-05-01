@@ -601,7 +601,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int32, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int32, DataType::Float16) => Some(DataType::Float32),
+            (DataType::Int32, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::Int64, DataType::Int64) => Some(DataType::Int64),
             (DataType::Int64, DataType::UInt8) => Some(DataType::Int64),
@@ -610,7 +610,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::Int64, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int64, DataType::Float16) => Some(DataType::Float32),
+            (DataType::Int64, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::UInt8, DataType::UInt8) => Some(DataType::UInt8),
             (DataType::UInt8, DataType::UInt16) => Some(DataType::UInt16),
@@ -631,12 +631,12 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
             (DataType::UInt32, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt32, DataType::Float32) => Some(DataType::Float64),
             (DataType::UInt32, DataType::Float64) => Some(DataType::Float64),
-            (DataType::UInt32, DataType::Float16) => Some(DataType::Float32),
+            (DataType::UInt32, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::UInt64, DataType::UInt64) => Some(DataType::UInt64),
             (DataType::UInt64, DataType::Float32) => Some(DataType::Float64),
             (DataType::UInt64, DataType::Float64) => Some(DataType::Float64),
-            (DataType::UInt64, DataType::Float16) => Some(DataType::Float32),
+            (DataType::UInt64, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::Float32, DataType::Float32) => Some(DataType::Float32),
             (DataType::Float32, DataType::Float64) => Some(DataType::Float64),

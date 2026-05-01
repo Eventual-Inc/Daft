@@ -85,7 +85,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int32, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
             (DataType::Int32, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int32, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int32, DataType::Float16) => Some(DataType::Float32),
+            (DataType::Int32, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::Int64, DataType::Boolean) => Some(DataType::Int64),
             (DataType::Int64, DataType::Int8) => Some(DataType::Int64),
@@ -97,7 +97,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (DataType::Int64, DataType::UInt64) => Some(DataType::Float64),  // Follow numpy
             (DataType::Int64, DataType::Float32) => Some(DataType::Float64), // Follow numpy
             (DataType::Int64, DataType::Float64) => Some(DataType::Float64),
-            (DataType::Int64, DataType::Float16) => Some(DataType::Float32),
+            (DataType::Int64, DataType::Float16) => Some(DataType::Float64), // Follow numpy
 
             (DataType::UInt16, DataType::UInt8) => Some(DataType::UInt16),
             (DataType::UInt16, DataType::UInt32) => Some(DataType::UInt32),
@@ -130,8 +130,8 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
             (DataType::Float16, DataType::UInt8) => Some(DataType::Float16),
             (DataType::Float16, DataType::UInt16) => Some(DataType::Float32),
-            (DataType::Float16, DataType::UInt32) => Some(DataType::Float32),
-            (DataType::Float16, DataType::UInt64) => Some(DataType::Float32),
+            (DataType::Float16, DataType::UInt32) => Some(DataType::Float64), // Follow numpy
+            (DataType::Float16, DataType::UInt64) => Some(DataType::Float64), // Follow numpy
 
             (DataType::Date, DataType::UInt8) => Some(DataType::Int64),
             (DataType::Date, DataType::UInt16) => Some(DataType::Int64),
