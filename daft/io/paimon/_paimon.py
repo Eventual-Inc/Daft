@@ -138,7 +138,10 @@ def read_paimon(
     from daft.io.paimon.paimon_scan import PaimonDataSource
 
     file_io = getattr(table, "file_io", None)
-    catalog_options = (getattr(file_io, "properties", None) or {}) if file_io is not None else {}
+    properties = getattr(file_io, "properties", None) if file_io is not None else None
+    catalog_options = getattr(properties, "data", properties) if properties is not None else {}
+    if not isinstance(catalog_options, dict):
+        catalog_options = {}
 
     # Infer IO config: user-provided > catalog options > default
     io_config = io_config or _convert_paimon_catalog_options_to_io_config(catalog_options)

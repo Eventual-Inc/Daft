@@ -11,6 +11,8 @@ Daft currently supports:
 3. **Column Projection:** Only the requested columns are read from disk.
 4. **Append-only and Primary-Key Tables:** Both table types are supported; append-only tables use Daft's native high-performance Parquet reader, while PK tables that require LSM merge fall back to pypaimon's built-in reader.
 5. **Catalog Abstraction:** Paimon catalogs integrate with Daft's unified `Catalog` / `Table` interfaces, enabling SQL queries and `daft.read_table()` access.
+6. **BLOB Type:** Tables with BLOB columns (pypaimon 1.4+) are read as `DataType.file()` references instead of materializing the full binary content.
+7. **Truncate:** Full table and partition-level truncation via `PaimonTable.truncate()` and `PaimonTable.truncate_partitions()`.
 
 ## Installation
 
@@ -168,6 +170,27 @@ You can also wrap a single pypaimon table directly:
     table.overwrite(df)
     ```
 
+#### Truncating Tables
+
+=== "Python"
+    ```python
+    table = catalog.get_table("my_db.my_table")
+
+    # Remove all data
+    table.truncate()
+
+    # Remove data from specific partitions only
+    table.truncate_partitions([{"dt": "2024-01-01"}])
+    ```
+
+#### Dropping Tables and Namespaces
+
+=== "Python"
+    ```python
+    catalog.drop_table("my_db.my_table")
+    catalog.drop_namespace("my_db")
+    ```
+
 #### Creating Tables
 
 === "Python"
@@ -240,6 +263,7 @@ Paimon types are mapped through PyArrow to Daft types:
 | `TIMESTAMP_LTZ(precision)`      | `daft.DataType.timestamp(timeunit=..., timezone="UTC")` |
 | `CHAR(n)` / `VARCHAR(n)` / `STRING` | `daft.DataType.string()`                           |
 | `BINARY(n)` / `VARBINARY(n)` / `BYTES` | `daft.DataType.binary()`                       |
+| `BLOB`                          | `daft.DataType.file()` (lazy `FileReference` with byte-range) |
 | `ARRAY<element_type>`           | `daft.DataType.list(element_type)`                      |
 | `MAP<key_type, value_type>`     | `daft.DataType.map(key_type, value_type)`               |
 | `ROW<[field_name: field_type]>` | `daft.DataType.struct(fields)`                          |
@@ -256,7 +280,7 @@ Paimon types are mapped through PyArrow to Daft types:
    *Yes. Create a pypaimon catalog pointing at your warehouse and pass it to `Catalog.from_paimon()` or use `catalog.get_table()` and `daft.read_paimon()` directly.*
 
 4. **Does Daft support schema evolution for Paimon tables?**
-   *Reading tables with evolved schemas is handled by pypaimon's reader. Daft does not currently expose DDL operators beyond `create_table`.*
+   *Reading tables with evolved schemas is handled by pypaimon's reader. Daft does not currently expose DDL operators beyond `create_table`, `drop_table`, `drop_namespace`, `truncate`, and `truncate_partitions`.*
 
 5. **How do I configure credentials for OSS or S3?**
    *Pass an `IOConfig` to `daft.read_paimon()`, or include the relevant `fs.*` options in the catalog options dict when creating the pypaimon catalog (Daft will infer an `IOConfig` automatically from these).*

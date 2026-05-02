@@ -213,6 +213,96 @@ class TestSchemaConversion:
 # ---------------------------------------------------------------------------
 
 
+class TestBlobType:
+    """Tests for BLOB type support (pypaimon 1.4+)."""
+
+    def test_write_read_blob_type(self, local_paimon_catalog):
+        """Test that BLOB columns are returned as FileReference objects."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema([("id", pa.int64()), ("blob_data", pa.large_binary())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(
+            pa_schema,
+            options={
+                "bucket": "1",
+                "file.format": "parquet",
+                "row-tracking.enabled": "true",
+                "data-evolution.enabled": "true",
+            },
+        )
+        catalog.create_table("test_db.blob_table", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.blob_table")
+
+        df = daft.from_pydict({"id": [1, 2], "blob_data": [b"hello", b"world"]})
+        df.write_paimon(table, mode="append")
+
+        result_df = daft.read_paimon(table).sort("id")
+        assert str(result_df.schema()["blob_data"].dtype) == "File[Unknown]"
+
+        result = result_df.to_pydict()
+        assert result["id"] == [1, 2]
+
+        blob_refs = result["blob_data"]
+        assert len(blob_refs) == 2
+        for ref in blob_refs:
+            assert isinstance(ref, daft.File)
+            assert isinstance(ref.path, str)
+            assert ".blob" in ref.path
+            assert ref.offset is not None
+            assert ref.length is not None
+
+
+# ---------------------------------------------------------------------------
+# Truncate tests
+# ---------------------------------------------------------------------------
+
+
+class TestTruncate:
+    """Tests for table truncate operations (pypaimon 1.4+)."""
+
+    def test_truncate_table(self, append_only_table):
+        """truncate() should remove all data from the table."""
+        from daft.catalog import Table
+
+        table, _ = append_only_table
+        df = daft.from_pydict(
+            {"id": [1, 2, 3], "name": ["a", "b", "c"], "value": [1.0, 2.0, 3.0], "dt": ["2024-01-01"] * 3}
+        )
+        df.write_paimon(table)
+        assert daft.read_paimon(table).count_rows() == 3
+
+        paimon_table = Table.from_paimon(table)
+        paimon_table.truncate()
+        assert daft.read_paimon(table).count_rows() == 0
+
+    def test_truncate_partitions(self, append_only_table):
+        """truncate_partitions() should remove only the specified partition data."""
+        from daft.catalog import Table
+
+        table, _ = append_only_table
+        df = daft.from_pydict(
+            {
+                "id": [1, 2, 3, 4],
+                "name": ["a", "b", "c", "d"],
+                "value": [1.0, 2.0, 3.0, 4.0],
+                "dt": ["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"],
+            }
+        )
+        df.write_paimon(table)
+        assert daft.read_paimon(table).count_rows() == 4
+
+        paimon_table = Table.from_paimon(table)
+        paimon_table.truncate_partitions([{"dt": "2024-01-01"}])
+        result = daft.read_paimon(table).sort("id").to_pydict()
+        assert result["id"] == [3, 4]
+        assert result["dt"] == ["2024-01-02", "2024-01-02"]
+
+
+# ---------------------------------------------------------------------------
+# Complex type tests
+# ---------------------------------------------------------------------------
+
+
 class TestComplexTypes:
     """Tests for writing complex data types."""
 

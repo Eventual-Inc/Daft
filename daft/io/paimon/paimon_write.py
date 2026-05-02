@@ -38,8 +38,12 @@ def _patch_pypaimon_stats_for_complex_types() -> None:
             }
 
         dtype = column_array.type
-        # Skip min/max computation for complex types that PyArrow doesn't support
-        if pa.types.is_list(dtype) or pa.types.is_map(dtype) or pa.types.is_struct(dtype):
+        if (
+            pa.types.is_list(dtype)
+            or pa.types.is_map(dtype)
+            or pa.types.is_struct(dtype)
+            or pa.types.is_large_binary(dtype)
+        ):
             return {
                 "min_values": None,
                 "max_values": None,

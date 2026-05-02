@@ -42,54 +42,6 @@ def _make_rest_inner(
     return inner
 
 
-def _make_fs_inner():
-    """Return a mock that quacks like a FileSystemCatalog (no list_* or drop_*)."""
-    inner = MagicMock(spec=pypaimon.catalog.catalog.Catalog)
-    # Deliberately exclude list_databases, list_tables, drop_database, drop_table
-    del inner.list_databases
-    del inner.list_tables
-    del inner.drop_database
-    del inner.drop_table
-
-    inner.warehouse = None  # triggers _warehouse_path() → None
-
-    inner.get_database = MagicMock()
-    inner.create_database = MagicMock()
-    inner.get_table = MagicMock()
-    inner.create_table = MagicMock()
-
-    return inner
-
-
-# ---------------------------------------------------------------------------
-# _supports_listing / _supports_drop
-# ---------------------------------------------------------------------------
-
-
-def test_rest_catalog_supports_listing():
-    inner = _make_rest_inner()
-    cat = Catalog.from_paimon(inner)
-    assert cat._supports_listing() is True  # type: ignore[attr-defined]
-
-
-def test_rest_catalog_supports_drop():
-    inner = _make_rest_inner()
-    cat = Catalog.from_paimon(inner)
-    assert cat._supports_drop() is True  # type: ignore[attr-defined]
-
-
-def test_fs_catalog_does_not_support_listing():
-    inner = _make_fs_inner()
-    cat = Catalog.from_paimon(inner)
-    assert cat._supports_listing() is False  # type: ignore[attr-defined]
-
-
-def test_fs_catalog_does_not_support_drop():
-    inner = _make_fs_inner()
-    cat = Catalog.from_paimon(inner)
-    assert cat._supports_drop() is False  # type: ignore[attr-defined]
-
-
 # ---------------------------------------------------------------------------
 # _list_namespaces — REST path
 # ---------------------------------------------------------------------------
@@ -190,7 +142,7 @@ def test_rest_drop_namespace_delegates_to_drop_database():
 
     cat.drop_namespace("my_db")
 
-    inner.drop_database.assert_called_once_with("my_db", ignore_if_exists=False)
+    inner.drop_database.assert_called_once_with("my_db", ignore_if_not_exists=False)
 
 
 def test_rest_drop_namespace_not_found_raises_notfounderror():
@@ -200,14 +152,6 @@ def test_rest_drop_namespace_not_found_raises_notfounderror():
 
     with pytest.raises(NotFoundError):
         cat.drop_namespace("my_db")
-
-
-def test_fs_drop_namespace_raises_not_implemented():
-    inner = _make_fs_inner()
-    cat = Catalog.from_paimon(inner)
-
-    with pytest.raises(NotImplementedError, match="RESTCatalog"):
-        cat.drop_namespace("some_db")
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +165,7 @@ def test_rest_drop_table_delegates_to_drop_table():
 
     cat.drop_table("my_db.my_table")
 
-    inner.drop_table.assert_called_once_with("my_db.my_table", ignore_if_exists=False)
+    inner.drop_table.assert_called_once_with("my_db.my_table", ignore_if_not_exists=False)
 
 
 def test_rest_drop_table_not_found_raises_notfounderror():
@@ -233,14 +177,6 @@ def test_rest_drop_table_not_found_raises_notfounderror():
 
     with pytest.raises(NotFoundError):
         cat.drop_table("my_db.my_table")
-
-
-def test_fs_drop_table_raises_not_implemented():
-    inner = _make_fs_inner()
-    cat = Catalog.from_paimon(inner)
-
-    with pytest.raises(NotImplementedError, match="RESTCatalog"):
-        cat.drop_table("some_db.some_table")
 
 
 # ---------------------------------------------------------------------------
@@ -288,25 +224,3 @@ def test_create_namespace_uses_last_part_of_identifier():
     cat._create_namespace(Identifier("catalog_prefix", "new_db"))  # type: ignore[attr-defined]
 
     inner.create_database.assert_called_once_with("new_db", ignore_if_exists=False)
-
-
-# ---------------------------------------------------------------------------
-# _list_namespaces falls back gracefully for non-REST, non-local
-# ---------------------------------------------------------------------------
-
-
-def test_non_rest_non_local_list_namespaces_raises_not_implemented():
-    inner = _make_fs_inner()
-    # warehouse is None → _warehouse_path() → None → triggers NotImplementedError
-    cat = Catalog.from_paimon(inner)
-
-    with pytest.raises(NotImplementedError):
-        cat.list_namespaces()
-
-
-def test_non_rest_non_local_list_tables_raises_not_implemented():
-    inner = _make_fs_inner()
-    cat = Catalog.from_paimon(inner)
-
-    with pytest.raises(NotImplementedError):
-        cat.list_tables()

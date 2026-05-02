@@ -124,10 +124,12 @@ def test_catalog_create_namespace_if_not_exists(tmp_path):
     assert daft_catalog.has_namespace("myns")
 
 
-def test_catalog_drop_namespace_not_supported(paimon_catalog):
+def test_catalog_drop_namespace(paimon_catalog):
     daft_catalog, _, _ = paimon_catalog
-    with pytest.raises(NotImplementedError):
-        daft_catalog.drop_namespace("test_db")
+    daft_catalog.create_namespace("drop_me_db")
+    assert daft_catalog.has_namespace("drop_me_db")
+    daft_catalog.drop_namespace("drop_me_db")
+    assert not daft_catalog.has_namespace("drop_me_db")
 
 
 # ---------------------------------------------------------------------------
@@ -169,10 +171,11 @@ def test_catalog_get_table_not_found(paimon_catalog):
         daft_catalog.get_table("test_db.nonexistent_table")
 
 
-def test_catalog_drop_table_not_supported(paimon_catalog):
+def test_catalog_drop_table(paimon_catalog):
     daft_catalog, _, _ = paimon_catalog
-    with pytest.raises(NotImplementedError):
-        daft_catalog.drop_table("test_db.test_table")
+    assert daft_catalog.has_table("test_db.test_table")
+    daft_catalog.drop_table("test_db.test_table")
+    assert not daft_catalog.has_table("test_db.test_table")
 
 
 def test_catalog_create_table(tmp_path):
