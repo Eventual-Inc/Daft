@@ -3,7 +3,10 @@
 use common_hashable_float_wrapper::FloatWrapper;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::{CheckpointConfig, CheckpointSettings, CheckpointStoreConfig, KeyFilteringSettings};
+use crate::{
+    CheckpointConfig, CheckpointKeyMode, CheckpointSettings, CheckpointStoreConfig,
+    KeyFilteringSettings,
+};
 
 #[pyclass(
     module = "daft.daft",
@@ -127,32 +130,38 @@ pub struct PyCheckpointConfig {
 #[pymethods]
 impl PyCheckpointConfig {
     #[new]
-    #[pyo3(signature = (store, on, settings = None))]
+    #[pyo3(signature = (store, on = None, settings = None))]
     pub fn new(
         store: PyCheckpointStoreConfig,
-        on: String,
+        on: Option<String>,
         settings: Option<PyKeyFilteringSettings>,
     ) -> Self {
+        let key_mode = match on {
+            Some(col) => CheckpointKeyMode::RowLevel { key_column: col },
+            None => CheckpointKeyMode::FilePath,
+        };
         let settings = settings
             .map(|s| CheckpointSettings::KeyFiltering(s.settings))
             .unwrap_or_default();
         Self {
             config: CheckpointConfig {
                 store: store.config,
-                key_column: on,
+                key_mode,
                 settings,
             },
         }
     }
 
     #[getter]
-    pub fn key_column(&self) -> String {
-        self.config.key_column.clone()
+    pub fn key_column(&self) -> Option<String> {
+        self.config.key_column().map(|s| s.to_string())
     }
 
-    /// Read back the `KeyFilteringSettings` carried on this config. Lets
-    /// callers (and tests) confirm that user-supplied settings survived the
-    /// Python-to-Rust bridge intact.
+    #[getter]
+    pub fn is_file_path_mode(&self) -> bool {
+        self.config.is_file_path_mode()
+    }
+
     #[getter]
     pub fn settings(&self) -> PyKeyFilteringSettings {
         let CheckpointSettings::KeyFiltering(kf) = &self.config.settings;

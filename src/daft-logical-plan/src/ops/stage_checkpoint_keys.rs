@@ -60,10 +60,13 @@ impl StageCheckpointKeys {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![format!(
-            "StageCheckpointKeys: key_column={}",
-            self.checkpoint_config.key_column
-        )];
+        let mode_str = match &self.checkpoint_config.key_mode {
+            common_checkpoint_config::CheckpointKeyMode::RowLevel { key_column } => {
+                format!("key_column={key_column}")
+            }
+            common_checkpoint_config::CheckpointKeyMode::FilePath => "mode=file_path".to_string(),
+        };
+        let mut res = vec![format!("StageCheckpointKeys: {mode_str}")];
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

@@ -139,28 +139,42 @@ pub enum CheckpointStoreConfig {
     },
 }
 
+/// How checkpoint keys are derived from source data.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CheckpointKeyMode {
+    /// Keys are values of a named column in the source schema.
+    /// Requires an anti-join against previously-sealed keys at execution time.
+    RowLevel { key_column: String },
+    /// Keys are derived from scan-task metadata (file path + chunk spec).
+    /// No anti-join needed — filtering uses a HashSet lookup in ScanTaskSource.
+    FilePath,
+}
+
 /// Checkpoint configuration associated with a source node.
 ///
-/// Specifies which store to use and which column identifies source records
+/// Specifies which store to use and how source records are identified
 /// for progress tracking.
-///
-/// TODO(DF-????): `key_column` is a plain column name (`String`) rather than
-/// a full `ExprRef`. Accepting an expression would let callers use computed
-/// or multi-column keys (e.g. `on=col("a") + col("b")`), but the only way to
-/// express that in Rust is via `daft_dsl::ExprRef` — and pulling `daft-dsl`
-/// into this "types-only" crate drags in `daft-core` (full Arrow, all array
-/// ops), which defeats the purpose of the split (parity with
-/// `common/io-config`, which has zero Arrow knowledge). Consulting with
-/// the team on the right long-term shape — options include:
-///   (a) accept the column-name restriction permanently;
-///   (b) encode the expression as a serialized form (bytes / string DSL) here
-///       and deserialize in consumers that already depend on daft-dsl;
-///   (c) accept the daft-dsl dep and live with the transitive weight.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CheckpointConfig {
     pub store: CheckpointStoreConfig,
-    pub key_column: String,
+    pub key_mode: CheckpointKeyMode,
     pub settings: CheckpointSettings,
+}
+
+impl CheckpointConfig {
+    /// Returns the key column name if this is a row-level checkpoint.
+    #[must_use]
+    pub fn key_column(&self) -> Option<&str> {
+        match &self.key_mode {
+            CheckpointKeyMode::RowLevel { key_column } => Some(key_column),
+            CheckpointKeyMode::FilePath => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_file_path_mode(&self) -> bool {
+        matches!(self.key_mode, CheckpointKeyMode::FilePath)
+    }
 }
 
 /// Strategy-specific settings for skipping already-checkpointed source rows.
@@ -188,6 +202,45 @@ pub struct KeyFilteringSettings {
     pub keys_load_batch_size: Option<usize>,
     pub max_concurrency_per_worker: Option<usize>,
     pub filter_batch_size: Option<usize>,
+}
+
+/// Thread-safe registry mapping `InputId` to source atom keys for
+/// file-path checkpoint mode.
+///
+/// During scan-task processing, atom keys (file paths with optional chunk
+/// suffixes) are registered for each InputId. At seal time, the sink takes
+/// the accumulated keys and stages them in the checkpoint store.
+#[derive(Debug, Clone)]
+pub struct FilePathRegistry(Arc<Mutex<HashMap<u32, Vec<String>>>>);
+
+impl FilePathRegistry {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    pub fn register(&self, input_id: u32, atom_keys: Vec<String>) {
+        self.0
+            .lock()
+            .expect("FilePathRegistry lock poisoned")
+            .entry(input_id)
+            .or_default()
+            .extend(atom_keys);
+    }
+
+    pub fn take(&self, input_id: u32) -> Vec<String> {
+        self.0
+            .lock()
+            .expect("FilePathRegistry lock poisoned")
+            .remove(&input_id)
+            .unwrap_or_default()
+    }
+}
+
+impl Default for FilePathRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KeyFilteringSettings {

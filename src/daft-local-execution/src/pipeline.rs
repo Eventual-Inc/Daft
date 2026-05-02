@@ -259,6 +259,42 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
     }
 }
 
+/// Checkpoint pipeline state set during plan translation.
+#[derive(Clone)]
+pub(crate) enum CheckpointPipelineState {
+    RowLevel {
+        store: daft_checkpoint::CheckpointStoreRef,
+        id_map: common_checkpoint_config::CheckpointIdMap,
+        key_expr: daft_dsl::expr::bound_expr::BoundExpr,
+    },
+    FilePath {
+        store: daft_checkpoint::CheckpointStoreRef,
+        id_map: common_checkpoint_config::CheckpointIdMap,
+        registry: common_checkpoint_config::FilePathRegistry,
+    },
+}
+
+impl CheckpointPipelineState {
+    pub(crate) fn store(&self) -> &daft_checkpoint::CheckpointStoreRef {
+        match self {
+            Self::RowLevel { store, .. } | Self::FilePath { store, .. } => store,
+        }
+    }
+
+    pub(crate) fn id_map(&self) -> &common_checkpoint_config::CheckpointIdMap {
+        match self {
+            Self::RowLevel { id_map, .. } | Self::FilePath { id_map, .. } => id_map,
+        }
+    }
+
+    pub(crate) fn file_path_registry(&self) -> Option<common_checkpoint_config::FilePathRegistry> {
+        match self {
+            Self::FilePath { registry, .. } => Some(registry.clone()),
+            Self::RowLevel { .. } => None,
+        }
+    }
+}
+
 /// Single use context for translating a physical plan to a Pipeline.
 /// It generates a plan_id, and node ids for each plan.
 pub struct BuilderContext {
@@ -267,16 +303,7 @@ pub struct BuilderContext {
     pub meter: Meter,
     context: HashMap<String, String>,
     shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
-    /// Checkpoint store + ID map, set by the PhysicalScan node when checkpoint
-    /// config is present. The `CheckpointIdMap` lazily generates a unique
-    /// `CheckpointId` per `InputId`, shared between SCKO and the sink.
-    checkpoint: std::cell::RefCell<
-        Option<(
-            daft_checkpoint::CheckpointStoreRef,
-            common_checkpoint_config::CheckpointIdMap,
-            daft_dsl::expr::bound_expr::BoundExpr,
-        )>,
-    >,
+    checkpoint: std::cell::RefCell<Option<CheckpointPipelineState>>,
 }
 
 impl BuilderContext {
@@ -305,22 +332,11 @@ impl BuilderContext {
         self.shuffle_server.clone()
     }
 
-    pub fn set_checkpoint(
-        &self,
-        store: daft_checkpoint::CheckpointStoreRef,
-        id_map: common_checkpoint_config::CheckpointIdMap,
-        key_expr: daft_dsl::expr::bound_expr::BoundExpr,
-    ) {
-        *self.checkpoint.borrow_mut() = Some((store, id_map, key_expr));
+    pub fn set_checkpoint(&self, state: CheckpointPipelineState) {
+        *self.checkpoint.borrow_mut() = Some(state);
     }
 
-    pub fn checkpoint(
-        &self,
-    ) -> Option<(
-        daft_checkpoint::CheckpointStoreRef,
-        common_checkpoint_config::CheckpointIdMap,
-        daft_dsl::expr::bound_expr::BoundExpr,
-    )> {
+    pub fn checkpoint(&self) -> Option<CheckpointPipelineState> {
         self.checkpoint.borrow().clone()
     }
 
@@ -412,16 +428,19 @@ pub fn translate_physical_plan_to_pipeline(
     #[cfg(feature = "python")]
     let root_is_write_sink =
         root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
-    if !root_is_write_sink && let Some((store, id_map, _key_expr)) = ctx.checkpoint() {
-        pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
-            pipeline_node,
-            store,
-            id_map,
-            physical_plan.get_stats_state().clone(),
-            ctx,
-            physical_plan.context(),
-        )
-        .boxed();
+    if !root_is_write_sink {
+        if let Some(ckpt_state) = ctx.checkpoint() {
+            pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
+                pipeline_node,
+                ckpt_state.store().clone(),
+                ckpt_state.id_map().clone(),
+                physical_plan.get_stats_state().clone(),
+                ctx,
+                physical_plan.context(),
+                ckpt_state.file_path_registry(),
+            )
+            .boxed();
+        }
     }
 
     pipeline_node.propagate_morsel_size_requirement(
@@ -453,12 +472,20 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
+            let file_path_ckpt = match ctx.checkpoint() {
+                Some(CheckpointPipelineState::FilePath {
+                    store, registry, ..
+                }) => Some((store, registry)),
+                _ => None,
+            };
+
             let scan_task_source = ScanTaskSource::new(
                 rx,
                 source_config.clone(),
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
+                file_path_ckpt,
             );
             SourceNode::new(
                 Box::new(scan_task_source),
@@ -785,35 +812,61 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            use daft_dsl::{expr::bound_expr::BoundExpr, unresolved_col};
-
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-
-            // Build runtime state: store + per-input id map + bound key expr.
-            // The id_map is shared with the downstream sink via `ctx.checkpoint()`
-            // so `BlockingSinkNode::with_checkpoint` / `CheckpointTerminusNode`
-            // mark the same ids committed after the write succeeds.
             let store = daft_checkpoint::build_store(&checkpoint_config.store);
             let id_map = common_checkpoint_config::CheckpointIdMap::new();
-            let key_expr_ref = unresolved_col(checkpoint_config.key_column.clone());
-            let key_expr = BoundExpr::try_new(key_expr_ref, schema).with_context(|_| {
-                PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
+
+            match &checkpoint_config.key_mode {
+                common_checkpoint_config::CheckpointKeyMode::RowLevel { key_column } => {
+                    use daft_dsl::{expr::bound_expr::BoundExpr, unresolved_col};
+
+                    let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+
+                    let key_expr_ref = unresolved_col(key_column.clone());
+                    let key_expr = BoundExpr::try_new(key_expr_ref, schema).with_context(|_| {
+                        PipelineCreationSnafu {
+                            plan_name: physical_plan.name(),
+                        }
+                    })?;
+
+                    ctx.set_checkpoint(CheckpointPipelineState::RowLevel {
+                        store: store.clone(),
+                        id_map: id_map.clone(),
+                        key_expr: key_expr.clone(),
+                    });
+
+                    let scko = StageCheckpointKeysOperator::new(
+                        key_expr,
+                        store,
+                        id_map,
+                        ctx.query_id.clone(),
+                    );
+                    IntermediateNode::new(
+                        Arc::new(scko),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
                 }
-            })?;
+                common_checkpoint_config::CheckpointKeyMode::FilePath => {
+                    let registry = common_checkpoint_config::FilePathRegistry::new();
 
-            ctx.set_checkpoint(store.clone(), id_map.clone(), key_expr.clone());
+                    ctx.set_checkpoint(CheckpointPipelineState::FilePath {
+                        store: store.clone(),
+                        id_map: id_map.clone(),
+                        registry: registry.clone(),
+                    });
 
-            let scko =
-                StageCheckpointKeysOperator::new(key_expr, store, id_map, ctx.query_id.clone());
-            IntermediateNode::new(
-                Arc::new(scko),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+                    // Build child AFTER setting checkpoint so ScanTaskSource
+                    // can pick up the file-path filter state.
+                    let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+
+                    // No SCKO needed — keys come from scan-task metadata,
+                    // staged at seal time via the registry.
+                    child_node
+                }
+            }
         }
         LocalPhysicalPlan::IntoBatches(IntoBatches {
             input,
@@ -1408,12 +1461,13 @@ fn physical_plan_to_pipeline(
                 ctx,
                 context,
             );
-            if let Some((store, id_map, _)) = ctx.checkpoint() {
+            if let Some(ckpt_state) = ctx.checkpoint() {
                 node = node.with_checkpoint(
-                    store,
-                    id_map,
+                    ckpt_state.store().clone(),
+                    ckpt_state.id_map().clone(),
                     daft_checkpoint::FileFormat::Parquet,
                     ctx.query_id.clone(),
+                    ckpt_state.file_path_registry(),
                 );
             }
             node.boxed()
@@ -1500,8 +1554,14 @@ fn physical_plan_to_pipeline(
                 ctx,
                 context,
             );
-            if let Some((store, id_map, _)) = ctx.checkpoint() {
-                node = node.with_checkpoint(store, id_map, ckpt_format, ctx.query_id.clone());
+            if let Some(ckpt_state) = ctx.checkpoint() {
+                node = node.with_checkpoint(
+                    ckpt_state.store().clone(),
+                    ckpt_state.id_map().clone(),
+                    ckpt_format,
+                    ctx.query_id.clone(),
+                    ckpt_state.file_path_registry(),
+                );
             }
             node.boxed()
         }

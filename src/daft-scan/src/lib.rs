@@ -256,6 +256,31 @@ impl ScanSource {
         }
     }
 
+    /// Compute checkpoint atom keys for this source.
+    ///
+    /// For unsplit files, the atom is the file path itself.
+    /// For split files, each chunk produces its own atom key encoding the
+    /// chunk identity (e.g. `path#rg=0`, `path#rg=1` for Parquet row groups).
+    #[must_use]
+    pub fn source_atom_keys(&self) -> Vec<String> {
+        let ScanSourceKind::File {
+            path, chunk_spec, ..
+        } = &self.kind
+        else {
+            return vec![self.get_path().to_string()];
+        };
+
+        match chunk_spec {
+            None => vec![path.clone()],
+            Some(ChunkSpec::Parquet(rgs)) => {
+                rgs.iter().map(|rg| format!("{path}#rg={rg}")).collect()
+            }
+            Some(ChunkSpec::Bytes { start, end }) => {
+                vec![format!("{path}#bytes={start}-{end}")]
+            }
+        }
+    }
+
     #[must_use]
     pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
         match &self.kind {

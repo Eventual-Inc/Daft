@@ -141,15 +141,14 @@ impl PushDownProjection {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
                 let required_columns = plan.required_columns().single();
-                // If the Source has a checkpoint, only allow projection pushdown
-                // when the `on=` key column is still required downstream —
-                // otherwise pruning would strip the key before the anti-join
-                // built by `RewriteCheckpointSource` can use it. When the user's
-                // query legitimately doesn't reference the key (e.g. `.select('value')`),
-                // keep the full Source schema and let the Project trim columns
-                // above the anti-join in memory.
+                // Row-level checkpoint: only allow projection pushdown when
+                // the key column is still required downstream — otherwise
+                // pruning would strip it before the anti-join.
+                // File-path mode: keys come from scan-task metadata, so
+                // projection pushdown is always safe.
                 if let Some(cfg) = source.checkpoint.as_ref()
-                    && !required_columns.contains(cfg.key_column.as_str())
+                    && let Some(key_col) = cfg.key_column()
+                    && !required_columns.contains(key_col)
                 {
                     return Ok(Transformed::no(plan));
                 }
