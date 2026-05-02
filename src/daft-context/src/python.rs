@@ -208,6 +208,17 @@ impl PyDaftContext {
         py.detach(|| self.inner.set_planning_config(config.config));
     }
 
+    #[getter(_added_resources)]
+    pub fn get_added_resources(&self, py: Python) -> PyResult<HashMap<String, i64>> {
+        let resources = py.detach(|| self.inner.added_resources());
+        Ok(resources)
+    }
+
+    #[setter(_added_resources)]
+    pub fn set_added_resources(&self, py: Python, resources: HashMap<String, i64>) {
+        py.detach(|| self.inner.set_added_resources(resources));
+    }
+
     pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: Py<PyAny>) {
         py.detach(|| {
             self.inner.attach_subscriber(

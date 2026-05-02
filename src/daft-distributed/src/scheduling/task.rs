@@ -248,6 +248,7 @@ pub(crate) struct SwordfishTask {
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
+    added_resources: HashMap<String, i64>,
 }
 
 impl SwordfishTask {
@@ -269,6 +270,10 @@ impl SwordfishTask {
 
     pub fn context(&self) -> &HashMap<String, String> {
         &self.context
+    }
+
+    pub fn added_resources(&self) -> &HashMap<String, i64> {
+        &self.added_resources
     }
 
     pub fn name(&self) -> String {
@@ -331,6 +336,7 @@ pub(crate) struct SwordfishTaskBuilder {
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
     plan_fingerprint: PlanFingerprint,
+    added_resources: HashMap<String, i64>,
 }
 
 impl SwordfishTaskBuilder {
@@ -342,6 +348,7 @@ impl SwordfishTaskBuilder {
         node: &dyn PipelineNodeImpl,
         plan_fingerprint: PlanFingerprint,
     ) -> Self {
+        let added_resources = daft_context::get_context().added_resources();
         Self {
             plan,
             config: node.config().execution_config.clone(),
@@ -353,6 +360,7 @@ impl SwordfishTaskBuilder {
             pending_node_ids: vec![node.node_id()],
             notify_tokens: vec![],
             plan_fingerprint,
+            added_resources,
         }
     }
 
@@ -415,6 +423,14 @@ impl SwordfishTaskBuilder {
             node.node_id(),
         ]);
 
+        let mut added_resources = left.added_resources.clone();
+        for (key, right_ts) in &right.added_resources {
+            added_resources
+                .entry(key.clone())
+                .and_modify(|left_ts| *left_ts = (*left_ts).max(*right_ts))
+                .or_insert(*right_ts);
+        }
+
         Self {
             plan: combined_plan,
             config: left.config.clone(),
@@ -426,6 +442,7 @@ impl SwordfishTaskBuilder {
             pending_node_ids,
             notify_tokens: vec![],
             plan_fingerprint,
+            added_resources,
         }
     }
 
@@ -563,6 +580,7 @@ impl SwordfishTaskBuilder {
             psets: self.psets,
             strategy,
             context,
+            added_resources: self.added_resources,
         };
 
         let cancel_token = CancellationToken::new();
@@ -1131,5 +1149,35 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
+    }
+
+    #[test]
+    fn test_swordfish_task_added_resources_from_context() {
+        use crate::{
+            pipeline_node::tests::{MockNode, make_builder},
+            plan::TaskIDCounter,
+        };
+
+        let context = daft_context::get_context();
+
+        // Set added_resources in DaftContext
+        let mut resources = HashMap::new();
+        resources.insert("gpu_model".to_string(), 1234567890i64);
+        context.set_added_resources(resources.clone());
+
+        // Build a SwordfishTask via SwordfishTaskBuilder
+        let mock_node = MockNode::new(1);
+        let builder = make_builder(&mock_node, 0);
+        let task_id_counter = TaskIDCounter::new();
+        let submittable_task = builder.build(0, &task_id_counter);
+        let task = submittable_task.task();
+
+        // Verify the task can retrieve the added_resources
+        let task_resources = task.added_resources();
+        assert_eq!(task_resources.len(), 1);
+        assert_eq!(task_resources.get("gpu_model"), Some(&1234567890i64));
+
+        // Cleanup: reset added_resources to empty
+        context.set_added_resources(HashMap::new());
     }
 }
