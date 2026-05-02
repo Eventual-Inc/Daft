@@ -35,7 +35,6 @@ def test_table_abs_bad_input() -> None:
         abs(series)
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_log2() -> None:
     data = pa.array([1.0, 2.0, 4.0, 8.0], type=pa.float16())
     s = Series.from_arrow(data)
@@ -44,7 +43,6 @@ def test_float16_log2() -> None:
     assert result.to_pylist() == [0.0, 1.0, 2.0, 3.0]
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_log10() -> None:
     data = pa.array([1.0, 10.0, 100.0], type=pa.float16())
     s = Series.from_arrow(data)
@@ -53,7 +51,6 @@ def test_float16_log10() -> None:
     assert result.to_pylist() == [0.0, 1.0, 2.0]
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_ln() -> None:
     import math
 
@@ -65,7 +62,6 @@ def test_float16_ln() -> None:
     assert abs(result.to_pylist()[1] - 1.0) < 0.01
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_pow() -> None:
     data = pa.array([1.0, 2.0, 3.0], type=pa.float16())
     s = Series.from_arrow(data)
