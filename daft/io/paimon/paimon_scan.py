@@ -31,12 +31,14 @@ PAIMON_FILE_FORMAT_ORC = "orc"
 PAIMON_FILE_FORMAT_AVRO = "avro"
 
 
-class _PaimonPKSplitTask(DataSourceTask):
-    """DataSourceTask for PK-table splits that require LSM-tree merge.
+class _PaimonFallbackSplitTask(DataSourceTask):
+    """DataSourceTask that delegates reading to pypaimon's native reader.
 
-    Used when split.raw_convertible is False (overlapping levels exist) or
-    when the file format is not Parquet (ORC, Avro). Delegates to pypaimon's
-    native reader which handles LSM merging internally.
+    Used when Daft's native Parquet reader cannot be used directly, e.g.:
+    - split.raw_convertible is False (LSM-tree merge required for PK tables)
+    - The file format is not Parquet (ORC, Avro)
+    - The split has associated deletion vectors that must be applied
+    - The split contains blob files (.blob) which are not Parquet-readable
     """
 
     def __init__(self, table: FileStoreTable, split: Split, schema: Schema) -> None:
@@ -62,9 +64,10 @@ class PaimonDataSource(DataSource):
     partition pruning, statistics-based file skipping), then yields
     DataSourceTask objects executed by Daft's native Parquet reader.
 
-    For primary-key tables whose splits cannot be read directly without an
-    LSM-tree merge, a _PaimonPKSplitTask is yielded which delegates back
-    to pypaimon's native reader.
+    For splits that cannot be read directly without an
+    LSM-tree merge or deletion-vector application, a
+    _PaimonFallbackSplitTask is yielded which delegates back to pypaimon's
+    native reader.
     """
 
     def __init__(
@@ -172,7 +175,17 @@ class PaimonDataSource(DataSource):
                 if pv is not None and len(pv.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0:
                     continue
 
-            if self._use_native_parquet and (not self._table.is_primary_key_table or split.raw_convertible):
+            _deletion_files = getattr(split, "data_deletion_files", None)
+            has_deletion_vectors = _deletion_files is not None and any(df is not None for df in _deletion_files)
+            has_blob_files = any(getattr(data_file, "file_name", "").endswith(".blob") for data_file in split.files)
+            can_use_native_reader = (
+                self._use_native_parquet
+                and (not self._table.is_primary_key_table or split.raw_convertible)
+                and not has_deletion_vectors
+                and not has_blob_files
+            )
+
+            if can_use_native_reader:
                 pv = None
                 if self._table.partition_keys:
                     pv_key = tuple(sorted(split.partition.to_dict().items()))
@@ -192,13 +205,20 @@ class PaimonDataSource(DataSource):
                         storage_config=self._storage_config,
                     )
             else:
-                reason = "non-parquet format" if not self._use_native_parquet else "LSM merge required"
+                if not self._use_native_parquet:
+                    reason = "non-parquet format"
+                elif has_deletion_vectors:
+                    reason = "deletion vectors present"
+                elif has_blob_files:
+                    reason = "blob files present"
+                else:
+                    reason = "LSM merge required"
                 logger.debug(
                     "Split with %d files using pypaimon fallback (%s).",
                     len(split.files),
                     reason,
                 )
-                yield _PaimonPKSplitTask(self._table, split, self._schema)
+                yield _PaimonFallbackSplitTask(self._table, split, self._schema)
 
     def _build_file_uri(self, file_path: str) -> str:
         """Reconstruct a full URI from a (potentially scheme-stripped) file_path."""
