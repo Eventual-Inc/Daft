@@ -1,7 +1,8 @@
 import { clsx, ClassValue } from "clsx";
+import { GeistMono } from "geist/font/mono";
 import { twMerge } from "tailwind-merge";
 
-export { main } from "@/lib/font";
+export const main = GeistMono;
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

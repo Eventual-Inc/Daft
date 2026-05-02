@@ -60,34 +60,26 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         .args(["ci"])
         .status()?;
 
-    if !install_status.success() {
-        if cfg!(debug_assertions) {
-            println!(
-                "cargo:warning=Failed to install dashboard frontend dependencies; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence)"
-            );
-            return Ok(());
-        } else {
-            panic!("Failed to install dependencies");
+    if cfg!(debug_assertions) {
+        if !install_status.success() {
+            println!("cargo:warning=Failed to install frontend dependencies");
         }
+    } else {
+        assert!(install_status.success(), "Failed to install dependencies");
     }
 
-    // Run `next build`. In sandboxed/offline environments where
-    // fonts.googleapis.com is unreachable, set DAFT_DASHBOARD_OFFLINE_FONT=1
-    // — see src/daft-dashboard/AGENTS.md.
+    // Run `npm run build`
     let status = Command::new("npm")
         .current_dir("./frontend")
         .args(["run", "build"])
         .status()?;
 
-    if !status.success() {
-        if cfg!(debug_assertions) {
-            println!(
-                "cargo:warning=Failed to build dashboard frontend assets; skipping (set DAFT_DASHBOARD_SKIP_BUILD=1 to silence, or DAFT_DASHBOARD_OFFLINE_FONT=1 if the cause is offline font fetch)"
-            );
-            return Ok(());
-        } else {
-            panic!("Failed to build frontend assets");
+    if cfg!(debug_assertions) {
+        if !status.success() {
+            println!("cargo:warning=Failed to build frontend assets");
         }
+    } else {
+        assert!(status.success(), "Failed to build frontend assets");
     }
 
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
