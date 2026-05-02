@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -32,6 +33,101 @@ PreviewAlign = Literal[
     "center",
     "right",
 ]
+
+_SHOW_DEFAULT_VERBOSE = False
+_SHOW_DEFAULT_MAX_WIDTH = 30
+_SHOW_DEFAULT_ALIGN: PreviewAlign = "left"
+
+_SHOW_FORMATS = {"fancy", "plain", "simple", "grid", "markdown", "html"}
+_SHOW_ALIGNS = {"auto", "left", "center", "right"}
+_SHOW_TRUTHY = {"1", "true", "yes", "on"}
+_SHOW_FALSY = {"0", "false", "no", "off"}
+_SHOW_NONE = {"none", "null"}
+
+
+def _parse_bool_env(name: str) -> bool | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in _SHOW_TRUTHY:
+        return True
+    if normalized in _SHOW_FALSY:
+        return False
+    return None
+
+
+def _parse_max_width_env(name: str) -> tuple[bool, int | None]:
+    value = os.environ.get(name)
+    if value is None:
+        return False, None
+    normalized = value.strip().lower()
+    if normalized in _SHOW_NONE:
+        return True, None
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        return False, None
+    if parsed < 1:
+        return False, None
+    return True, parsed
+
+
+def _parse_show_format_env() -> PreviewFormat | None:
+    value = os.environ.get("DAFT_SHOW_FORMAT")
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in _SHOW_FORMATS:
+        return cast("PreviewFormat", normalized)
+    return None
+
+
+def _parse_show_align_env() -> PreviewAlign | None:
+    value = os.environ.get("DAFT_SHOW_ALIGN")
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in _SHOW_ALIGNS:
+        return cast("PreviewAlign", normalized)
+    return None
+
+
+def resolve_show_defaults(
+    format: PreviewFormat | None,
+    verbose: bool | None,
+    max_width: int | None,
+    align: PreviewAlign | None,
+) -> tuple[PreviewFormat | None, bool, int | None, PreviewAlign]:
+    """Resolve .show() defaults from env vars when arguments are left at defaults.
+
+    Supported env vars:
+    - DAFT_SHOW_FORMAT: fancy|plain|simple|grid|markdown|html
+    - DAFT_SHOW_VERBOSE: 1/0, true/false, yes/no, on/off
+    - DAFT_SHOW_MAX_WIDTH: positive integer, or none/null/off
+    - DAFT_SHOW_ALIGN: auto|left|center|right
+    """
+    if format is None:
+        env_format = _parse_show_format_env()
+        if env_format is not None:
+            format = env_format
+
+    if verbose is None:
+        env_verbose = _parse_bool_env("DAFT_SHOW_VERBOSE")
+        verbose = env_verbose if env_verbose is not None else _SHOW_DEFAULT_VERBOSE
+
+    if max_width is None:
+        max_width_set, env_max_width = _parse_max_width_env("DAFT_SHOW_MAX_WIDTH")
+        if max_width_set:
+            max_width = env_max_width
+        else:
+            max_width = _SHOW_DEFAULT_MAX_WIDTH
+
+    if align is None:
+        env_align = _parse_show_align_env()
+        align = env_align if env_align is not None else _SHOW_DEFAULT_ALIGN
+
+    return format, verbose, max_width, align
 
 
 class PreviewColumn(TypedDict, total=False):

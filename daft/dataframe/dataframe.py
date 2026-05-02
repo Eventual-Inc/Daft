@@ -32,7 +32,14 @@ from daft.daft import (
     WriteMode,
 )
 from daft.dataframe.display import MermaidOptions
-from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
+from daft.dataframe.preview import (
+    Preview,
+    PreviewAlign,
+    PreviewColumn,
+    PreviewFormat,
+    PreviewFormatter,
+    resolve_show_defaults,
+)
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
@@ -5238,9 +5245,9 @@ class DataFrame:
         self,
         n: int = 8,
         format: PreviewFormat | None = None,
-        verbose: bool = False,
-        max_width: int = 30,
-        align: PreviewAlign = "left",
+        verbose: bool | None = None,
+        max_width: int | None = None,
+        align: PreviewAlign | None = None,
         columns: list[PreviewColumn] | None = None,
     ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
@@ -5253,12 +5260,17 @@ class DataFrame:
             - Headers contain the column's data type.
             - Columns are truncated to 30 characters.
             - The table's overall width is limited to 10 columns.
+        Default values can be overridden with environment variables:
+            - ``DAFT_SHOW_FORMAT``
+            - ``DAFT_SHOW_VERBOSE``
+            - ``DAFT_SHOW_MAX_WIDTH``
+            - ``DAFT_SHOW_ALIGN``
 
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
             verbose (bool): if True, headers include the column's data type.
-            max_width (int): global max column width
+            max_width (int | None): global max column width
             align (PreviewAlign): global column align
             columns (list[PreviewColumn]): column overrides
 
@@ -5271,7 +5283,7 @@ class DataFrame:
             >>> df.show()  # doctest: +SKIP
             >>> df.show(format="markdown")  # doctest: +SKIP
             >>> df.show(max_width=50)  # doctest: +SKIP
-            >>> df.show(align="left")  # doctest: +SKIP
+            >>> df.show(align="auto")  # doctest: +SKIP
 
         Tip: Usage
             - If columns are given, their length MUST match the schema.
@@ -5280,6 +5292,7 @@ class DataFrame:
         """
         schema = self.schema()
         preview = self._construct_show_preview(n)
+        format, verbose, max_width, align = resolve_show_defaults(format, verbose, max_width, align)
         preview_formatter = PreviewFormatter(
             preview,
             schema,
