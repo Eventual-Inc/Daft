@@ -243,6 +243,33 @@ impl Default for FilePathRegistry {
     }
 }
 
+impl KeyFilteringSettings {
+    /// Validate that all numeric fields are strictly positive when set.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(message)` if any field is `Some(0)` or `cpus_per_worker`
+    /// is `Some(v)` with `v <= 0.0`.
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.num_workers, Some(0)) {
+            return Err("[checkpoint] num_workers must be > 0".to_string());
+        }
+        if matches!(self.cpus_per_worker, Some(FloatWrapper(v)) if v <= 0.0) {
+            return Err("[checkpoint] cpus_per_worker must be > 0".to_string());
+        }
+        if matches!(self.keys_load_batch_size, Some(0)) {
+            return Err("[checkpoint] keys_load_batch_size must be > 0".to_string());
+        }
+        if matches!(self.max_concurrency_per_worker, Some(0)) {
+            return Err("[checkpoint] max_concurrency_per_worker must be > 0".to_string());
+        }
+        if matches!(self.filter_batch_size, Some(0)) {
+            return Err("[checkpoint] filter_batch_size must be > 0".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,32 +354,5 @@ mod tests {
 
         let keys = registry.take(0);
         assert_eq!(keys.len(), 200);
-    }
-}
-
-impl KeyFilteringSettings {
-    /// Validate that all numeric fields are strictly positive when set.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err(message)` if any field is `Some(0)` or `cpus_per_worker`
-    /// is `Some(v)` with `v <= 0.0`.
-    pub fn validate(&self) -> Result<(), String> {
-        if matches!(self.num_workers, Some(0)) {
-            return Err("[checkpoint] num_workers must be > 0".to_string());
-        }
-        if matches!(self.cpus_per_worker, Some(FloatWrapper(v)) if v <= 0.0) {
-            return Err("[checkpoint] cpus_per_worker must be > 0".to_string());
-        }
-        if matches!(self.keys_load_batch_size, Some(0)) {
-            return Err("[checkpoint] keys_load_batch_size must be > 0".to_string());
-        }
-        if matches!(self.max_concurrency_per_worker, Some(0)) {
-            return Err("[checkpoint] max_concurrency_per_worker must be > 0".to_string());
-        }
-        if matches!(self.filter_batch_size, Some(0)) {
-            return Err("[checkpoint] filter_batch_size must be > 0".to_string());
-        }
-        Ok(())
     }
 }

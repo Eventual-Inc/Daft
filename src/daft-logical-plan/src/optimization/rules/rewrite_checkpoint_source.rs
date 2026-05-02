@@ -465,7 +465,7 @@ mod tests {
             key_mode: CheckpointKeyMode::FilePath,
             settings: common_checkpoint_config::CheckpointSettings::default(),
         };
-        let plan = scan_with_checkpoint(Some(cfg.clone()));
+        let plan = scan_with_checkpoint(Some(cfg));
 
         let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
         assert!(result.transformed);
