@@ -75,6 +75,27 @@ def test_attach_checkpoint_helper_rejects_native_runner():
         attach_checkpoint(sentinel_builder, _make_checkpoint_config())
 
 
+def test_attach_checkpoint_file_path_mode_allowed_on_native_runner():
+    """File-path mode (no `on=`) must NOT be rejected on the native runner.
+
+    Only row-level mode requires Ray actor infrastructure. File-path mode
+    uses a simple HashSet filter in ScanTaskSource, which works on any runner.
+    """
+    from daft.io._checkpoint import attach_checkpoint
+
+    file_path_config = daft.CheckpointConfig(
+        store=daft.CheckpointStore("s3://dummy/ckpt"),
+    )
+    # Builder doesn't matter — if the guard incorrectly rejects file-path
+    # mode, it raises before touching the builder.
+    sentinel_builder = object()
+    # Should NOT raise — file-path mode is allowed on native runner.
+    # attach_checkpoint will try to call .with_checkpoint on the sentinel
+    # and fail with AttributeError, which proves the guard was passed.
+    with pytest.raises(AttributeError):
+        attach_checkpoint(sentinel_builder, file_path_config)
+
+
 def test_attach_checkpoint_helper_passthrough_when_none():
     """Helper is a no-op when `checkpoint` is None.
 

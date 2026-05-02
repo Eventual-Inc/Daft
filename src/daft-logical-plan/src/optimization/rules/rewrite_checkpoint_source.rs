@@ -455,6 +455,44 @@ mod tests {
         assert_eq!(kfc.filter_batch_size, Some(512));
     }
 
+    #[test]
+    fn file_path_mode_wraps_source_without_anti_join() {
+        let cfg = CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://does-not-matter-for-rewrite".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_mode: CheckpointKeyMode::FilePath,
+            settings: common_checkpoint_config::CheckpointSettings::default(),
+        };
+        let plan = scan_with_checkpoint(Some(cfg.clone()));
+
+        let result = RewriteCheckpointSource::new().try_optimize(plan).unwrap();
+        assert!(result.transformed);
+
+        // Root must be StageCheckpointKeys.
+        let LogicalPlan::StageCheckpointKeys(stage) = result.data.as_ref() else {
+            panic!(
+                "expected StageCheckpointKeys at root, got {:?}",
+                result.data
+            );
+        };
+        assert!(stage.checkpoint_config.is_file_path_mode());
+        assert_eq!(stage.checkpoint_config.key_column(), None);
+
+        // Child must be Source directly — no anti-join in file-path mode.
+        let LogicalPlan::Source(source) = stage.input.as_ref() else {
+            panic!(
+                "expected Source under StageCheckpointKeys (no anti-join), got {:?}",
+                stage.input
+            );
+        };
+        assert!(
+            source.checkpoint.is_none(),
+            "checkpoint must be stripped from the inner Source"
+        );
+    }
+
     /// Partial overrides: a user who sets only `num_workers` must still get
     /// the hardcoded fallbacks for `cpus_per_worker` / `max_concurrency_per_worker`,
     /// not `None`. Pins per-field independence in the rule's fallback chain

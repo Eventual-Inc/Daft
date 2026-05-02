@@ -906,8 +906,8 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-        ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
+        ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource,
+        ScanSourceKind, ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
         storage_config::StorageConfig,
     };
 
@@ -1421,5 +1421,71 @@ mod test {
             assert!(estimate_val <= REASONABLE_SIZE_BYTES);
             assert!(estimate_val > 0);
         }
+    }
+
+    fn make_file_source(path: &str, chunk_spec: Option<ChunkSpec>) -> ScanSource {
+        ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: path.to_string(),
+                chunk_spec,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        }
+    }
+
+    #[test]
+    fn source_atom_keys_no_chunk_spec() {
+        let source = make_file_source("s3://bucket/data.parquet", None);
+        assert_eq!(source.source_atom_keys(), vec!["s3://bucket/data.parquet"]);
+    }
+
+    #[test]
+    fn source_atom_keys_parquet_row_groups() {
+        let source = make_file_source(
+            "s3://bucket/data.parquet",
+            Some(ChunkSpec::Parquet(vec![0, 3, 7])),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec![
+                "s3://bucket/data.parquet#rg=0",
+                "s3://bucket/data.parquet#rg=3",
+                "s3://bucket/data.parquet#rg=7",
+            ]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_byte_range() {
+        let source = make_file_source(
+            "s3://bucket/data.jsonl",
+            Some(ChunkSpec::Bytes {
+                start: 0,
+                end: 1024,
+            }),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec!["s3://bucket/data.jsonl#bytes=0-1024"]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_database_source() {
+        let source = ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::Database {
+                path: "postgres://table".to_string(),
+            },
+        };
+        assert_eq!(source.source_atom_keys(), vec!["postgres://table"]);
     }
 }

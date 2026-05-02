@@ -243,6 +243,93 @@ impl Default for FilePathRegistry {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_store() -> CheckpointStoreConfig {
+        CheckpointStoreConfig::ObjectStore {
+            prefix: "s3://test/ckpt".to_string(),
+            io_config: Box::new(IOConfig::default()),
+        }
+    }
+
+    fn make_config(key_mode: CheckpointKeyMode) -> CheckpointConfig {
+        CheckpointConfig {
+            store: dummy_store(),
+            key_mode,
+            settings: CheckpointSettings::default(),
+        }
+    }
+
+    #[test]
+    fn row_level_key_column_returns_name() {
+        let cfg = make_config(CheckpointKeyMode::RowLevel {
+            key_column: "file_id".to_string(),
+        });
+        assert_eq!(cfg.key_column(), Some("file_id"));
+        assert!(!cfg.is_file_path_mode());
+    }
+
+    #[test]
+    fn file_path_key_column_returns_none() {
+        let cfg = make_config(CheckpointKeyMode::FilePath);
+        assert_eq!(cfg.key_column(), None);
+        assert!(cfg.is_file_path_mode());
+    }
+
+    #[test]
+    fn file_path_registry_register_and_take() {
+        let registry = FilePathRegistry::new();
+        registry.register(0, vec!["a.parquet".into(), "b.parquet".into()]);
+        registry.register(0, vec!["c.parquet".into()]);
+        registry.register(1, vec!["d.parquet".into()]);
+
+        let keys_0 = registry.take(0);
+        assert_eq!(keys_0, vec!["a.parquet", "b.parquet", "c.parquet"]);
+
+        let keys_1 = registry.take(1);
+        assert_eq!(keys_1, vec!["d.parquet"]);
+    }
+
+    #[test]
+    fn file_path_registry_take_returns_empty_for_unknown_input() {
+        let registry = FilePathRegistry::new();
+        assert!(registry.take(42).is_empty());
+    }
+
+    #[test]
+    fn file_path_registry_take_drains() {
+        let registry = FilePathRegistry::new();
+        registry.register(0, vec!["x.parquet".into()]);
+        let _ = registry.take(0);
+        assert!(registry.take(0).is_empty());
+    }
+
+    #[test]
+    fn file_path_registry_concurrent_access() {
+        let registry = FilePathRegistry::new();
+        let r1 = registry.clone();
+        let r2 = registry.clone();
+
+        let t1 = std::thread::spawn(move || {
+            for i in 0..100 {
+                r1.register(0, vec![format!("t1-{i}")]);
+            }
+        });
+        let t2 = std::thread::spawn(move || {
+            for i in 0..100 {
+                r2.register(0, vec![format!("t2-{i}")]);
+            }
+        });
+        t1.join().unwrap();
+        t2.join().unwrap();
+
+        let keys = registry.take(0);
+        assert_eq!(keys.len(), 200);
+    }
+}
+
 impl KeyFilteringSettings {
     /// Validate that all numeric fields are strictly positive when set.
     ///
