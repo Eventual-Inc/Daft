@@ -1,14 +1,12 @@
 import { clsx, ClassValue } from "clsx";
-import { Geist_Mono } from "next/font/google";
+import { GeistMono } from "geist/font/mono";
 import { twMerge } from "tailwind-merge";
+
+export const main = GeistMono;
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
-
-export const main = Geist_Mono({
-  subsets: ["latin"],
-});
 
 export function toDate(epoch_time_secs: number): Date {
   return new Date(epoch_time_secs * 1000);
