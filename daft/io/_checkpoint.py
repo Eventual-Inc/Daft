@@ -29,11 +29,10 @@ def attach_checkpoint(
     """
     if checkpoint is None:
         return builder
-    if runners.get_or_infer_runner_type() == "native":
+    if runners.get_or_infer_runner_type() == "native" and not checkpoint._inner.is_file_path_mode:
         raise ValueError(
-            "checkpoint= is not supported on the native runner "
-            "(single-process, no distributed actor infrastructure). "
-            "Use the Ray runner: call daft.context.set_runner_ray() "
-            "or set DAFT_RUNNER=ray."
+            "Row-level checkpoint (on=...) is not supported on the native "
+            "runner (requires distributed actor infrastructure). Use "
+            "file-path mode (omit on=) or the Ray runner."
         )
     return builder.with_checkpoint(checkpoint._inner)

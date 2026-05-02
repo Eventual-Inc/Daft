@@ -256,6 +256,31 @@ impl ScanSource {
         }
     }
 
+    /// Compute checkpoint atom keys for this source.
+    ///
+    /// For unsplit files, the atom is the file path itself.
+    /// For split files, each chunk produces its own atom key encoding the
+    /// chunk identity (e.g. `path#rg=0`, `path#rg=1` for Parquet row groups).
+    #[must_use]
+    pub fn source_atom_keys(&self) -> Vec<String> {
+        let ScanSourceKind::File {
+            path, chunk_spec, ..
+        } = &self.kind
+        else {
+            return vec![self.get_path().to_string()];
+        };
+
+        match chunk_spec {
+            None => vec![path.clone()],
+            Some(ChunkSpec::Parquet(rgs)) => {
+                rgs.iter().map(|rg| format!("{path}#rg={rg}")).collect()
+            }
+            Some(ChunkSpec::Bytes { start, end }) => {
+                vec![format!("{path}#bytes={start}-{end}")]
+            }
+        }
+    }
+
     #[must_use]
     pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
         match &self.kind {
@@ -881,8 +906,8 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-        ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
+        ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource,
+        ScanSourceKind, ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
         storage_config::StorageConfig,
     };
 
@@ -1396,5 +1421,71 @@ mod test {
             assert!(estimate_val <= REASONABLE_SIZE_BYTES);
             assert!(estimate_val > 0);
         }
+    }
+
+    fn make_file_source(path: &str, chunk_spec: Option<ChunkSpec>) -> ScanSource {
+        ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: path.to_string(),
+                chunk_spec,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        }
+    }
+
+    #[test]
+    fn source_atom_keys_no_chunk_spec() {
+        let source = make_file_source("s3://bucket/data.parquet", None);
+        assert_eq!(source.source_atom_keys(), vec!["s3://bucket/data.parquet"]);
+    }
+
+    #[test]
+    fn source_atom_keys_parquet_row_groups() {
+        let source = make_file_source(
+            "s3://bucket/data.parquet",
+            Some(ChunkSpec::Parquet(vec![0, 3, 7])),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec![
+                "s3://bucket/data.parquet#rg=0",
+                "s3://bucket/data.parquet#rg=3",
+                "s3://bucket/data.parquet#rg=7",
+            ]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_byte_range() {
+        let source = make_file_source(
+            "s3://bucket/data.jsonl",
+            Some(ChunkSpec::Bytes {
+                start: 0,
+                end: 1024,
+            }),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec!["s3://bucket/data.jsonl#bytes=0-1024"]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_database_source() {
+        let source = ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::Database {
+                path: "postgres://table".to_string(),
+            },
+        };
+        assert_eq!(source.source_atom_keys(), vec!["postgres://table"]);
     }
 }

@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use common_checkpoint_config::CheckpointIdMap;
+use common_checkpoint_config::{CheckpointIdMap, FilePathRegistry};
 use common_display::tree::TreeDisplay;
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_checkpoint::CheckpointStoreRef;
+use daft_core::prelude::IntoSeries;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 
@@ -30,6 +31,7 @@ pub struct CheckpointTerminusNode {
     child: Box<dyn PipelineNode>,
     store: CheckpointStoreRef,
     id_map: CheckpointIdMap,
+    file_path_registry: Option<FilePathRegistry>,
     meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
@@ -44,6 +46,7 @@ impl CheckpointTerminusNode {
         plan_stats: StatsState,
         ctx: &BuilderContext,
         context: &LocalNodeContext,
+        file_path_registry: Option<FilePathRegistry>,
     ) -> Self {
         let name: Arc<str> = "CheckpointTerminus".into();
         let node_info = ctx.next_node_info(
@@ -56,6 +59,7 @@ impl CheckpointTerminusNode {
             child,
             store,
             id_map,
+            file_path_registry,
             meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement: MorselSizeRequirement::default(),
@@ -155,6 +159,7 @@ impl PipelineNode for CheckpointTerminusNode {
         let node_info = self.node_info.clone();
         let store = self.store.clone();
         let id_map = self.id_map.clone();
+        let file_path_registry = self.file_path_registry.clone();
 
         runtime_handle.spawn(
             async move {
@@ -189,6 +194,19 @@ impl PipelineNode for CheckpointTerminusNode {
                         }
                         PipelineMessage::Flush(input_id) => {
                             let checkpoint_id = id_map.get_or_generate(input_id);
+                            if let Some(ref registry) = file_path_registry {
+                                let atom_keys = registry.take(input_id);
+                                if !atom_keys.is_empty() {
+                                    let str_refs: Vec<&str> =
+                                        atom_keys.iter().map(|s| s.as_str()).collect();
+                                    let key_series = daft_core::prelude::Utf8Array::from_slice(
+                                        common_checkpoint_config::SEALED_KEYS_COLUMN,
+                                        str_refs.as_slice(),
+                                    )
+                                    .into_series();
+                                    store.stage_keys(&checkpoint_id, "", key_series).await?;
+                                }
+                            }
                             store.checkpoint(&checkpoint_id).await?;
                             if output_sender
                                 .send(PipelineMessage::Flush(input_id))

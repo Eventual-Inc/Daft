@@ -84,15 +84,33 @@ class CheckpointConfig:
 
     On re-run, rows whose key already exists in the store are skipped.
 
+    Two modes are supported:
+
+    - **File-path mode** (default when ``on`` is omitted): keys are derived
+      from scan-task metadata (file paths and chunk specs). No user-specified
+      key column needed. Any file-based source is checkpointable out of the
+      box. Filter and projection pushdown are fully enabled.
+
+    - **Row-level mode** (when ``on`` is specified): keys are values of the
+      named column. Requires an anti-join against previously-sealed keys at
+      execution time.
+
     Args:
         store: The :class:`CheckpointStore` holding sealed keys.
-        on: Name of the source column that uniquely identifies inputs (e.g.
-            a file hash or document ID). Must exist in the source schema.
-        settings: Optional tuning for the key-filtering anti-join. Defaults
-            to engine-chosen values when omitted.
+        on: Optional name of the source column that uniquely identifies
+            inputs (e.g. a file hash or document ID). When omitted,
+            file-path mode is used. When specified, must exist in the
+            source schema.
+        settings: Optional tuning for the key-filtering anti-join (only
+            applies to row-level mode). Defaults to engine-chosen values
+            when omitted.
 
     Example:
         >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> # File-path mode (no on=):
+        >>> config = daft.CheckpointConfig(store=store)
+        >>> df = daft.read_parquet("s3://input/", checkpoint=config)
+        >>> # Row-level mode:
         >>> config = daft.CheckpointConfig(
         ...     store=store,
         ...     on="file_id",
@@ -105,14 +123,15 @@ class CheckpointConfig:
           between source and sink is map-only (project, filter, explode, UDF,
           etc.). Shuffle/materialization operators (aggregate, sort, distinct,
           join, pivot, window, repartition) are rejected at plan build time.
-        - **Source has a checkpoint key.** The ``on=`` column must exist in
-          the source schema and uniquely identify source inputs. The key is
-          written to the store on every run, so it should be lightweight.
+        - **Source has a checkpoint key.** In row-level mode the ``on=``
+          column must exist in the source schema and uniquely identify
+          source inputs. In file-path mode keys are derived automatically
+          from scan-task metadata.
         - **Strong consistency.** The backing object store must provide
           read-after-write consistency. After ``checkpoint()``, the next
           run's anti-join must be able to see the newly checkpointed keys.
 
-    Semantics of the ``on=`` column:
+    Semantics of the ``on=`` column (row-level mode):
         - **Checkpoint identity, not a primary key.** A key value records "this
           input has already been processed" — it is not a uniqueness constraint
           on the destination. Daft does not enforce uniqueness of the column;
@@ -146,7 +165,7 @@ class CheckpointConfig:
     def __init__(
         self,
         store: CheckpointStore,
-        on: str,
+        on: str | None = None,
         settings: KeyFilteringSettings | None = None,
     ) -> None:
         self._inner = _CheckpointConfig(store.config, on, settings)
