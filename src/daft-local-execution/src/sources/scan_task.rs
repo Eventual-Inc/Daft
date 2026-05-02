@@ -66,6 +66,7 @@ impl ScanTaskSource {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_scan_task_processor(
         num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
@@ -184,10 +185,10 @@ impl ScanTaskSource {
                                                 .unwrap_or_default();
                                             let all_done = !atom_keys.is_empty()
                                                 && atom_keys.iter().all(|k| ckpt_set.contains(k));
-                                            if !all_done {
-                                                if let Some((_, ref registry)) = file_path_checkpoint {
-                                                    registry.register(input_id, atom_keys);
-                                                }
+                                            if !all_done
+                                                && let Some((_, ref registry)) = file_path_checkpoint
+                                            {
+                                                registry.register(input_id, atom_keys);
                                             }
                                             !all_done
                                         })

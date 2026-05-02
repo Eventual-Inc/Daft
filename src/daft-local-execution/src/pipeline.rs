@@ -265,7 +265,6 @@ pub(crate) enum CheckpointPipelineState {
     RowLevel {
         store: daft_checkpoint::CheckpointStoreRef,
         id_map: common_checkpoint_config::CheckpointIdMap,
-        key_expr: daft_dsl::expr::bound_expr::BoundExpr,
     },
     FilePath {
         store: daft_checkpoint::CheckpointStoreRef,
@@ -428,19 +427,17 @@ pub fn translate_physical_plan_to_pipeline(
     #[cfg(feature = "python")]
     let root_is_write_sink =
         root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
-    if !root_is_write_sink {
-        if let Some(ckpt_state) = ctx.checkpoint() {
-            pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
-                pipeline_node,
-                ckpt_state.store().clone(),
-                ckpt_state.id_map().clone(),
-                physical_plan.get_stats_state().clone(),
-                ctx,
-                physical_plan.context(),
-                ckpt_state.file_path_registry(),
-            )
-            .boxed();
-        }
+    if !root_is_write_sink && let Some(ckpt_state) = ctx.checkpoint() {
+        pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
+            pipeline_node,
+            ckpt_state.store().clone(),
+            ckpt_state.id_map().clone(),
+            physical_plan.get_stats_state().clone(),
+            ctx,
+            physical_plan.context(),
+            ckpt_state.file_path_registry(),
+        )
+        .boxed();
     }
 
     pipeline_node.propagate_morsel_size_requirement(
@@ -831,7 +828,6 @@ fn physical_plan_to_pipeline(
                     ctx.set_checkpoint(CheckpointPipelineState::RowLevel {
                         store: store.clone(),
                         id_map: id_map.clone(),
-                        key_expr: key_expr.clone(),
                     });
 
                     let scko = StageCheckpointKeysOperator::new(
@@ -853,18 +849,12 @@ fn physical_plan_to_pipeline(
                     let registry = common_checkpoint_config::FilePathRegistry::new();
 
                     ctx.set_checkpoint(CheckpointPipelineState::FilePath {
-                        store: store.clone(),
-                        id_map: id_map.clone(),
-                        registry: registry.clone(),
+                        store,
+                        id_map,
+                        registry,
                     });
 
-                    // Build child AFTER setting checkpoint so ScanTaskSource
-                    // can pick up the file-path filter state.
-                    let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-
-                    // No SCKO needed — keys come from scan-task metadata,
-                    // staged at seal time via the registry.
-                    child_node
+                    physical_plan_to_pipeline(input, cfg, ctx, input_senders)?
                 }
             }
         }

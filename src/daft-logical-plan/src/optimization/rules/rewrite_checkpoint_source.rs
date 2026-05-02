@@ -158,12 +158,25 @@ impl RewriteCheckpointSource {
         cfg: &common_checkpoint_config::CheckpointConfig,
         key_column: &str,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // Left: original source. We strip `checkpoint` from the copy that
+        // feeds the anti-join so this node won't re-match as a checkpoint
+        // source on subsequent optimizer passes; the staging responsibility
+        // now lives on the `StageCheckpointKeys` node we wrap above.
         let left_plan: Arc<LogicalPlan> = {
             let mut source_copy = source.clone();
             source_copy.checkpoint = None;
             Arc::new(LogicalPlan::Source(source_copy))
         };
 
+        // Right: scan over checkpointed key files. The on-disk schema uses
+        // a canonical column name (`SEALED_KEYS_COLUMN`) regardless of
+        // what the source calls its key column — see `stage_keys` in the
+        // store impl. This means a user can rename the source's key column
+        // between runs (updating `cfg.key_column` to match) and existing
+        // sealed key files stay valid — only the *physical* on-disk format
+        // is decoupled from the source schema, not the config. If
+        // `cfg.key_column` ever disagrees with the source's actual schema,
+        // `get_field` below errors loudly at rule time.
         let source_key_field = source.output_schema.get_field(key_column)?;
         let canonical_key_field = Field::new(SEALED_KEYS_COLUMN, source_key_field.dtype.clone());
         let key_schema = Arc::new(Schema::new(vec![canonical_key_field]));
@@ -173,12 +186,19 @@ impl RewriteCheckpointSource {
         )));
         let right_plan = LogicalPlanBuilder::table_scan(scan_op, None)?.build();
 
+        // Left side resolves to the source's key column; right side resolves
+        // to the canonical sealed-keys column. The two are joined for
+        // equality, so the source can be renamed without breaking the
+        // anti-join against existing sealed key files.
         let left_schema = left_plan.schema();
         let right_schema = right_plan.schema();
         let l = unresolved_col(key_column).to_left_cols(left_schema)?;
         let r = unresolved_col(SEALED_KEYS_COLUMN).to_right_cols(right_schema)?;
         let on_expr = l.eq(r);
 
+        // Pull strategy-specific knobs from `cfg.settings`. Today there's
+        // only one variant (`KeyFiltering`); future variants would dispatch
+        // to different filter strategies entirely, not just different knobs.
         let CheckpointSettings::KeyFiltering(kf) = &cfg.settings;
         let kfc = KeyFilteringConfig::new(
             kf.num_workers.or(Some(2)),
