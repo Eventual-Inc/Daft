@@ -24,7 +24,8 @@ struct PartitionedWriter {
     saved_partition_values: Vec<RecordBatch>,
     writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     partition_by: Vec<BoundExpr>,
-    keep_indices: Option<Arc<[usize]>>,
+    /// Indices of columns to keep in the file body, or `None` to write all columns.
+    non_partition_column_indices: Option<Arc<[usize]>>,
     is_closed: bool,
 }
 
@@ -32,7 +33,7 @@ impl PartitionedWriter {
     pub fn new(
         writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_by: Vec<BoundExpr>,
-        keep_indices: Option<Arc<[usize]>>,
+        non_partition_column_indices: Option<Arc<[usize]>>,
     ) -> Self {
         Self {
             per_partition_writers: HashMap::with_capacity_and_hasher(
@@ -42,25 +43,17 @@ impl PartitionedWriter {
             saved_partition_values: vec![],
             writer_factory,
             partition_by,
-            keep_indices,
+            non_partition_column_indices,
             is_closed: false,
         }
     }
 
-    fn partition(
-        partition_cols: &[BoundExpr],
-        keep_indices: Option<&[usize]>,
-        data: MicroPartition,
-    ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
+    fn partition(&self, data: MicroPartition) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let table = data.concat_or_get()?.unwrap();
-        let (mut split_tables, partition_values) = table.partition_by_value(partition_cols)?;
-        if let Some(indices) = keep_indices {
-            for t in &mut split_tables {
-                *t = t.get_columns(indices);
-            }
+        match self.non_partition_column_indices.as_deref() {
+            Some(indices) => table.partition_by_value_projected(&self.partition_by, indices),
+            None => table.partition_by_value(&self.partition_by),
         }
-
-        Ok((split_tables, partition_values))
     }
 }
 
@@ -81,11 +74,7 @@ impl AsyncFileWriter for PartitionedWriter {
             });
         }
 
-        let (split_tables, partition_values) = Self::partition(
-            self.partition_by.as_slice(),
-            self.keep_indices.as_deref(),
-            input,
-        )?;
+        let (split_tables, partition_values) = self.partition(input)?;
         let partition_values_hash = partition_values.hash_rows()?;
 
         // Spawn tasks on compute runtime for writing each table
@@ -207,19 +196,19 @@ impl AsyncFileWriter for PartitionedWriter {
 pub(crate) struct PartitionedWriterFactory {
     writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     partition_cols: Vec<BoundExpr>,
-    keep_indices: Option<Arc<[usize]>>,
+    non_partition_column_indices: Option<Arc<[usize]>>,
 }
 
 impl PartitionedWriterFactory {
     pub(crate) fn new(
         writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_cols: Vec<BoundExpr>,
-        keep_indices: Option<Arc<[usize]>>,
+        non_partition_column_indices: Option<Arc<[usize]>>,
     ) -> Self {
         Self {
             writer_factory,
             partition_cols,
-            keep_indices,
+            non_partition_column_indices,
         }
     }
 }
@@ -235,7 +224,7 @@ impl WriterFactory for PartitionedWriterFactory {
         Ok(Box::new(PartitionedWriter::new(
             self.writer_factory.clone(),
             self.partition_cols.clone(),
-            self.keep_indices.clone(),
+            self.non_partition_column_indices.clone(),
         ))
             as Box<
                 dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, datetime
 
@@ -264,6 +265,24 @@ def test_partition_cols_not_duplicated_in_csv_file_bodies(tmpdir):
         assert "country" not in header, (
             f"partition column 'country' must not appear in {file_path} header (found {header})"
         )
+
+
+def test_partition_cols_not_duplicated_in_json_file_bodies(tmpdir):
+    daft.from_pydict(_owners_sample_pydict()).write_json(str(tmpdir), partition_cols=["country"])
+
+    written_files = _walk_files(tmpdir, ".json")
+    assert written_files, "expected at least one written json file"
+
+    for file_path in written_files:
+        with open(file_path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                assert "country" not in record, (
+                    f"partition column 'country' must not appear in {file_path} record (found {sorted(record)})"
+                )
 
 
 def test_partition_by_all_columns_falls_back(tmpdir):

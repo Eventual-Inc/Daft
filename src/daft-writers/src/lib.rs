@@ -94,8 +94,9 @@ pub trait WriterFactory: Send + Sync {
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
-/// Strip plain-column partition refs from file_schema (Hive: values in paths).
-/// `keep_indices` is `None` when nothing to strip or stripping would empty the schema.
+/// Strip plain-column partition refs from `file_schema` (Hive: values live in paths).
+/// Returns the stripped schema and indices of kept columns, or `(file_schema, None)` when
+/// nothing was stripped or stripping would empty the schema.
 fn split_schema_for_partitioned_write(
     partition_cols: Option<&[BoundExpr]>,
     file_schema: &SchemaRef,
@@ -107,24 +108,26 @@ fn split_schema_for_partitioned_write(
         .map(|e| e.inner().name())
         .collect();
 
-    let mut keep_indices = Vec::with_capacity(file_schema.len());
+    if strip.is_empty() {
+        return (file_schema.clone(), None);
+    }
+
+    let mut non_partition_column_indices = Vec::with_capacity(file_schema.len());
     let mut kept_fields = Vec::with_capacity(file_schema.len());
     for (i, field) in file_schema.fields().iter().enumerate() {
         if !strip.contains(field.name.as_ref()) {
-            keep_indices.push(i);
+            non_partition_column_indices.push(i);
             kept_fields.push(field.clone());
         }
     }
 
-    let nothing_stripped = kept_fields.len() == file_schema.len();
-    let everything_stripped = kept_fields.is_empty();
-    if nothing_stripped || everything_stripped {
+    if kept_fields.is_empty() {
         return (file_schema.clone(), None);
     }
 
     (
         Arc::new(Schema::new(kept_fields)),
-        Some(Arc::from(keep_indices)),
+        Some(Arc::from(non_partition_column_indices)),
     )
 }
 
@@ -133,7 +136,7 @@ pub fn make_physical_writer_factory(
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>> {
-    let (data_schema, keep_indices) =
+    let (data_schema, non_partition_column_indices) =
         split_schema_for_partitioned_write(file_info.partition_cols.as_deref(), file_schema);
 
     let base_writer_factory =
@@ -164,7 +167,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
-                    keep_indices,
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -186,7 +189,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
-                    keep_indices,
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -208,7 +211,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
-                    keep_indices,
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
