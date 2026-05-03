@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pyarrow as pa
-import pytest
 
 from daft import Series
 
@@ -108,7 +107,6 @@ def test_float_fill_nan_all_null() -> None:
     assert result.to_pylist() == [None, None, None]
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_is_nan() -> None:
     arr = pa.array([1.0, float("nan"), 3.0, float("nan")], type=pa.float16())
     s = Series.from_arrow(arr)
@@ -116,7 +114,6 @@ def test_float16_is_nan() -> None:
     assert result.to_pylist() == [False, True, False, True]
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_is_inf() -> None:
     arr = pa.array([-float("inf"), 0.0, float("inf")], type=pa.float16())
     s = Series.from_arrow(arr)
@@ -124,7 +121,6 @@ def test_float16_is_inf() -> None:
     assert result.to_pylist() == [True, False, True]
 
 
-@pytest.mark.skipif(pa.__version__ < "16", reason="PyArrow < 16 has limited float16 support")
 def test_float16_not_nan() -> None:
     arr = pa.array([1.0, float("nan"), None, 3.0], type=pa.float16())
     s = Series.from_arrow(arr)
