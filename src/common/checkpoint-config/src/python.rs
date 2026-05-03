@@ -162,6 +162,9 @@ impl PyCheckpointConfig {
         self.config.is_file_path_mode()
     }
 
+    /// Read back the `KeyFilteringSettings` carried on this config. Lets
+    /// callers (and tests) confirm that user-supplied settings survived the
+    /// Python-to-Rust bridge intact.
     #[getter]
     pub fn settings(&self) -> PyKeyFilteringSettings {
         let CheckpointSettings::KeyFiltering(kf) = &self.config.settings;

@@ -2591,6 +2591,7 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
+ "daft-checkpoint",
  "daft-context",
  "daft-core",
  "daft-dsl",

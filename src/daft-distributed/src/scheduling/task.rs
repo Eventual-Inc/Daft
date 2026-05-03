@@ -441,6 +441,18 @@ impl SwordfishTaskBuilder {
         self
     }
 
+    /// Returns all scan tasks across all source inputs.
+    pub fn all_scan_tasks(&self) -> Vec<&ScanTaskRef> {
+        self.inputs
+            .values()
+            .filter_map(|input| match input {
+                Input::ScanTasks(tasks) => Some(tasks.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
     /// Add scan_tasks with source_id to the builder.
     pub fn with_scan_tasks(mut self, source_id: SourceId, scan_tasks: Vec<ScanTaskRef>) -> Self {
         self.inputs.insert(source_id, Input::ScanTasks(scan_tasks));
@@ -1131,5 +1143,57 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
+    }
+
+    #[test]
+    fn test_all_scan_tasks_empty() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1);
+        assert!(builder.all_scan_tasks().is_empty());
+    }
+
+    #[test]
+    fn test_all_scan_tasks_single_source() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let st1 = make_scan_task_with_metadata(Some(10));
+        let st2 = make_scan_task_with_metadata(Some(20));
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![st1.clone(), st2.clone()]);
+        let tasks = builder.all_scan_tasks();
+        assert_eq!(tasks.len(), 2);
+        assert!(Arc::ptr_eq(tasks[0], &st1) || Arc::ptr_eq(tasks[0], &st2));
+    }
+
+    #[test]
+    fn test_all_scan_tasks_multiple_sources() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let st_a = make_scan_task_with_metadata(Some(10));
+        let st_b = make_scan_task_with_metadata(Some(20));
+        let st_c = make_scan_task_with_metadata(Some(30));
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![st_a])
+            .with_scan_tasks(2, vec![st_b, st_c]);
+        let tasks = builder.all_scan_tasks();
+        assert_eq!(tasks.len(), 3);
+    }
+
+    #[test]
+    fn test_all_scan_tasks_ignores_non_scan_inputs() {
+        use crate::pipeline_node::tests::MockNode;
+
+        let node = MockNode::new(1);
+        let st = make_scan_task_with_metadata(Some(10));
+        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
+            .with_scan_tasks(1, vec![st])
+            .with_glob_paths(2, vec!["s3://bucket/*.parquet".to_string()])
+            .with_psets(3, vec![create_mock_partition_ref(100, 100)]);
+        let tasks = builder.all_scan_tasks();
+        assert_eq!(tasks.len(), 1);
     }
 }

@@ -302,6 +302,9 @@ pub struct BuilderContext {
     pub meter: Meter,
     context: HashMap<String, String>,
     shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
+    /// Checkpoint store + ID map, set by the PhysicalScan node when checkpoint
+    /// config is present. The `CheckpointIdMap` lazily generates a unique
+    /// `CheckpointId` per `InputId`, shared between SCKO and the sink.
     checkpoint: std::cell::RefCell<Option<CheckpointPipelineState>>,
 }
 
@@ -809,6 +812,10 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
+            // Build runtime state: store + per-input id map.
+            // The id_map is shared with the downstream sink via `ctx.checkpoint()`
+            // so `BlockingSinkNode::with_checkpoint` / `CheckpointTerminusNode`
+            // mark the same ids committed after the write succeeds.
             let store = daft_checkpoint::build_store(&checkpoint_config.store);
             let id_map = common_checkpoint_config::CheckpointIdMap::new();
 

@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use common_checkpoint_config::CheckpointConfig;
+use common_checkpoint_config::{CheckpointConfig, CheckpointKeyMode};
 use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
@@ -8,6 +8,7 @@ use common_metrics::{
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
+use futures::StreamExt;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -117,17 +118,74 @@ impl PipelineNodeImpl for StageCheckpointKeysNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        let input_node = self.child.clone().produce_tasks(plan_context);
-
+        let input_stream = self.child.clone().produce_tasks(plan_context);
         let checkpoint_config = self.checkpoint_config.clone();
         let node_id = self.node_id();
-        input_node.pipeline_instruction(self, move |input| {
-            LocalPhysicalPlan::stage_checkpoint_keys(
-                input,
-                checkpoint_config.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        })
+
+        match &self.checkpoint_config.key_mode {
+            CheckpointKeyMode::RowLevel { .. } => {
+                input_stream.pipeline_instruction(self, move |input| {
+                    LocalPhysicalPlan::stage_checkpoint_keys(
+                        input,
+                        checkpoint_config.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                })
+            }
+            CheckpointKeyMode::FilePath => {
+                let store_config = checkpoint_config.store.clone();
+                let slf = self.clone();
+
+                let outer = futures::stream::once(async move {
+                    let store = daft_checkpoint::build_store(&store_config);
+                    let ckpt_set = {
+                        use futures::TryStreamExt;
+                        let mut set = HashSet::new();
+                        if let Ok(mut stream) = store.get_checkpointed_keys().await {
+                            while let Ok(Some(series)) = stream.try_next().await {
+                                if let Ok(utf8) = series.utf8() {
+                                    for val in utf8.into_iter().flatten() {
+                                        set.insert(val.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        set
+                    };
+
+                    input_stream.filter_map(move |builder| {
+                        let all_done = {
+                            let scan_tasks = builder.all_scan_tasks();
+                            !scan_tasks.is_empty()
+                                && scan_tasks.iter().all(|st| {
+                                    st.sources.iter().all(|s| {
+                                        let keys = s.source_atom_keys();
+                                        !keys.is_empty()
+                                            && keys.iter().all(|k| ckpt_set.contains(k))
+                                    })
+                                })
+                        };
+                        if all_done {
+                            futures::future::ready(None)
+                        } else {
+                            let cfg = checkpoint_config.clone();
+                            let wrapped = builder.map_plan(slf.as_ref(), move |input| {
+                                LocalPhysicalPlan::stage_checkpoint_keys(
+                                    input,
+                                    cfg,
+                                    StatsState::NotMaterialized,
+                                    LocalNodeContext::new(Some(node_id as usize)),
+                                )
+                            });
+                            futures::future::ready(Some(wrapped))
+                        }
+                    })
+                })
+                .flatten();
+
+                TaskBuilderStream::new(outer.boxed())
+            }
+        }
     }
 }

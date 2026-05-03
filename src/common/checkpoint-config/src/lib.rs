@@ -152,8 +152,21 @@ pub enum CheckpointKeyMode {
 
 /// Checkpoint configuration associated with a source node.
 ///
-/// Specifies which store to use and how source records are identified
+/// Specifies which store to use and which column identifies source records
 /// for progress tracking.
+///
+/// TODO(DF-????): `key_column` is a plain column name (`String`) rather than
+/// a full `ExprRef`. Accepting an expression would let callers use computed
+/// or multi-column keys (e.g. `on=col("a") + col("b")`), but the only way to
+/// express that in Rust is via `daft_dsl::ExprRef` — and pulling `daft-dsl`
+/// into this "types-only" crate drags in `daft-core` (full Arrow, all array
+/// ops), which defeats the purpose of the split (parity with
+/// `common/io-config`, which has zero Arrow knowledge). Consulting with
+/// the team on the right long-term shape — options include:
+///   (a) accept the column-name restriction permanently;
+///   (b) encode the expression as a serialized form (bytes / string DSL) here
+///       and deserialize in consumers that already depend on daft-dsl;
+///   (c) accept the daft-dsl dep and live with the transitive weight.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CheckpointConfig {
     pub store: CheckpointStoreConfig,
