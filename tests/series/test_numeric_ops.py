@@ -11,7 +11,7 @@ from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
 def test_series_numeric_abs(dtype) -> None:
     if pa.types.is_unsigned_integer(dtype):
-        pydata = list(range(0, 10))
+        pydata = list(range(10))
     else:
         pydata = list(range(-10, 10))
 
