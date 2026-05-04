@@ -22,7 +22,6 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
-    CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
@@ -1624,9 +1623,7 @@ class DataFrame:
         if checkpoint is not None and custom_metadata:
             for key in custom_metadata:
                 if key.startswith("daft.checkpoint-"):
-                    raise ValueError(
-                        f"custom_metadata keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}"
-                    )
+                    raise ValueError(f"custom_metadata keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -1819,7 +1816,7 @@ class DataFrame:
         table: "deltalake.DeltaTable | None",
         table_uri: str,
         storage_options: dict[str, str],
-        delta_schema: "pa.Schema",
+        delta_schema: "pyarrow.Schema",
         partition_cols: list[str] | None,
         mode: str,
         version: int,
@@ -1878,11 +1875,8 @@ class DataFrame:
             else:
                 resolved_table.update_incremental()
 
-            for entry in resolved_table.history(limit=50):
-                if (
-                    entry.get("daft.checkpoint-store") == store_path
-                    and entry.get("daft.checkpoint-query") == query_id
-                ):
+            for entry in resolved_table.history():
+                if entry.get("daft.checkpoint-store") == store_path and entry.get("daft.checkpoint-query") == query_id:
                     return True
             return False
 

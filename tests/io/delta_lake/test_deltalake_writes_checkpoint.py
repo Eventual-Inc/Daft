@@ -55,10 +55,7 @@ def _read_delta_rows(table_path: str) -> dict:
 def _find_checkpoint_marker(table: deltalake.DeltaTable, store_path: str, query_id: str) -> bool:
     """Check if any commit in the table's history carries our checkpoint markers."""
     for entry in table.history(limit=50):
-        if (
-            entry.get("daft.checkpoint-store") == store_path
-            and entry.get("daft.checkpoint-query") == query_id
-        ):
+        if entry.get("daft.checkpoint-store") == store_path and entry.get("daft.checkpoint-query") == query_id:
             return True
     return False
 
@@ -124,6 +121,7 @@ def test_recovery_after_crash_between_stage_and_commit(delta_table, parquet_inpu
     is `Checkpointed`. Delta log has no commit from us. A fresh call must
     skip `write_df.collect()`, pull files from the store, and commit.
     """
+
     def crash_after_stage(write_df, checkpoint, **kwargs):
         from daft.daft import CheckpointStatus as CS
 

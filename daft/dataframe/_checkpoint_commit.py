@@ -11,8 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.daft import CheckpointStatus
 
 if TYPE_CHECKING:
@@ -32,6 +30,8 @@ class CommitResult:
 
 
 def _empty_write_result(write_df: DataFrame) -> DataFrame:
+    import pyarrow as pa
+
     from daft import from_pydict
 
     empty = from_pydict(
@@ -47,6 +47,8 @@ def _empty_write_result(write_df: DataFrame) -> DataFrame:
 
 
 def _build_result_df(result: CommitResult, write_df: DataFrame) -> DataFrame:
+    import pyarrow as pa
+
     from daft import from_pydict
 
     df = from_pydict(
