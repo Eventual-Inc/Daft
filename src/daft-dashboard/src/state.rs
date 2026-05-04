@@ -199,6 +199,7 @@ impl TaskStore {
 
     /// Record a task submission. The individual task is always retained while
     /// active (callers inspect active tasks for debugging stuck queries).
+    #[allow(clippy::too_many_arguments)]
     pub fn submit_task(
         &mut self,
         task_id: u32,
@@ -798,15 +799,7 @@ mod task_store_tests {
             500,
         );
         // Submit arrives later with the same single-node chain.
-        store.submit_task(
-            42,
-            7,
-            vec![7],
-            0,
-            Some("Filter".to_string()),
-            0.5,
-            vec![],
-        );
+        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5, vec![]);
 
         assert_eq!(store.groups.len(), 1);
         let g = &store.groups[0];
