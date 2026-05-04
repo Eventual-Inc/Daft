@@ -33,11 +33,29 @@ pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 /// `OperatorEnd` event emission. Lives inside `RuntimeNodeManager` so the
 /// per-event hot path can update it via a single short-lived per-node
 /// lock instead of a query-wide one.
+///
+/// Phase tracks Start/End emission; `pending_tasks` and `produce_complete`
+/// are the inputs to the End-firing condition. `produce_complete` is
+/// sticky rather than a phase transition because `OnEndStream::Drop` can
+/// fire before the scheduler emits the first `TaskEvent::Submitted`.
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+enum LifecyclePhase {
+    /// `OperatorStart` not yet fired.
+    #[default]
+    Pending,
+    /// `OperatorStart` fired, `OperatorEnd` not yet.
+    Started,
+    /// `OperatorEnd` fired (terminal).
+    Ended,
+}
+
 #[derive(Default)]
 struct OperatorLifecycle {
-    started: bool,
-    ended: bool,
+    phase: LifecyclePhase,
     pending_tasks: u64,
+    /// Sticky: set once the node's task stream is exhausted or dropped.
+    /// Together with `phase == Started` and `pending_tasks == 0`, this
+    /// triggers the `Ended` transition.
     produce_complete: bool,
 }
 
@@ -96,8 +114,8 @@ impl RuntimeNodeManager {
     pub fn on_task_submitted(&self) -> bool {
         let mut s = self.lifecycle.lock().unwrap();
         s.pending_tasks += 1;
-        if !s.started {
-            s.started = true;
+        if s.phase == LifecyclePhase::Pending {
+            s.phase = LifecyclePhase::Started;
             true
         } else {
             false
@@ -111,7 +129,7 @@ impl RuntimeNodeManager {
     pub fn on_task_finished(&self) -> bool {
         let mut s = self.lifecycle.lock().unwrap();
         s.pending_tasks = s.pending_tasks.saturating_sub(1);
-        Self::check_end(&mut s)
+        Self::maybe_end(&mut s)
     }
 
     /// Record that this node's pipeline-task stream has been fully drained
@@ -120,12 +138,15 @@ impl RuntimeNodeManager {
     pub fn on_produce_complete(&self) -> bool {
         let mut s = self.lifecycle.lock().unwrap();
         s.produce_complete = true;
-        Self::check_end(&mut s)
+        Self::maybe_end(&mut s)
     }
 
-    fn check_end(s: &mut OperatorLifecycle) -> bool {
-        if s.started && s.produce_complete && s.pending_tasks == 0 && !s.ended {
-            s.ended = true;
+    /// Transition `Started → Ended` once both `produce_complete` is set
+    /// and `pending_tasks` has drained to 0. No-op in `Pending` (no Start
+    /// fired) or `Ended` (terminal).
+    fn maybe_end(s: &mut OperatorLifecycle) -> bool {
+        if s.phase == LifecyclePhase::Started && s.produce_complete && s.pending_tasks == 0 {
+            s.phase = LifecyclePhase::Ended;
             true
         } else {
             false
@@ -140,8 +161,8 @@ impl RuntimeNodeManager {
     /// Idempotent: returns `false` if already ended or never started.
     pub fn force_end(&self) -> bool {
         let mut s = self.lifecycle.lock().unwrap();
-        if s.started && !s.ended {
-            s.ended = true;
+        if s.phase == LifecyclePhase::Started {
+            s.phase = LifecyclePhase::Ended;
             true
         } else {
             false
