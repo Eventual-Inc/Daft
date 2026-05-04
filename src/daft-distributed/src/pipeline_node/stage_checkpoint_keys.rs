@@ -142,13 +142,21 @@ impl PipelineNodeImpl for StageCheckpointKeysNode {
                     let ckpt_set = {
                         use futures::TryStreamExt;
                         let mut set = HashSet::new();
-                        if let Ok(mut stream) = store.get_checkpointed_keys().await {
-                            while let Ok(Some(series)) = stream.try_next().await {
-                                if let Ok(utf8) = series.utf8() {
-                                    for val in utf8.into_iter().flatten() {
-                                        set.insert(val.to_string());
+                        match store.get_checkpointed_keys().await {
+                            Ok(mut stream) => {
+                                while let Some(series) = stream.try_next().await.unwrap_or_else(|e| {
+                                    tracing::warn!("Failed to read checkpointed keys stream: {e}; treating remaining keys as empty");
+                                    None
+                                }) {
+                                    if let Ok(utf8) = series.utf8() {
+                                        for val in utf8.into_iter().flatten() {
+                                            set.insert(val.to_string());
+                                        }
                                     }
                                 }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to load checkpointed keys: {e}; all tasks will be dispatched");
                             }
                         }
                         set

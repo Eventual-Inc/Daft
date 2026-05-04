@@ -112,7 +112,9 @@ impl ScanTaskSource {
             };
 
             let mut task_set = JoinSet::new();
+            // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
+            // Track how many scan tasks are pending per input_id (only when !maintain_order)
             let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
             let max_parallel = num_parallel_tasks;
             let mut receiver_exhausted = false;
@@ -180,9 +182,10 @@ impl ScanTaskSource {
                                     split_tasks
                                         .into_iter()
                                         .filter(|task| {
-                                            let atom_keys = task.sources.first()
-                                                .map(|s| s.source_atom_keys())
-                                                .unwrap_or_default();
+                                            let atom_keys: Vec<String> = task.sources
+                                                .iter()
+                                                .flat_map(|s| s.source_atom_keys())
+                                                .collect();
                                             let all_done = !atom_keys.is_empty()
                                                 && atom_keys.iter().all(|k| ckpt_set.contains(k));
                                             if !all_done

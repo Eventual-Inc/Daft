@@ -259,6 +259,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
+                    // Stage write results as file metadata before sending.
                     if let Some(ref ckpt) = checkpoint {
                         let file_metadata =
                             Self::encode_file_metadata(&partitions, ckpt.file_format)?;

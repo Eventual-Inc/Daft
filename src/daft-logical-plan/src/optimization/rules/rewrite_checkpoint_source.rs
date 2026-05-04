@@ -229,6 +229,10 @@ impl RewriteCheckpointSource {
         let join = join.with_key_filtering_config(Some(kfc));
         let join_plan: Arc<LogicalPlan> = Arc::new(LogicalPlan::Join(join));
 
+        // Stage surviving (not-yet-checkpointed) source keys immediately above the
+        // anti-join. Downstream map-only operators (filter/project/UDF) see
+        // already-staged rows, so re-runs skip them regardless of whether
+        // those rows end up in the sink.
         let stage = StageCheckpointKeys::new(join_plan, cfg.clone());
 
         Ok(Transformed::new(

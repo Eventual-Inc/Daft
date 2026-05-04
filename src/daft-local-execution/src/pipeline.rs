@@ -812,7 +812,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            // Build runtime state: store + per-input id map.
+            // Build runtime state: store + per-input id map + bound key expr.
             // The id_map is shared with the downstream sink via `ctx.checkpoint()`
             // so `BlockingSinkNode::with_checkpoint` / `CheckpointTerminusNode`
             // mark the same ids committed after the write succeeds.

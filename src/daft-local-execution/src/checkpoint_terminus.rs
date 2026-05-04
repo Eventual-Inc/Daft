@@ -31,6 +31,7 @@ pub struct CheckpointTerminusNode {
     child: Box<dyn PipelineNode>,
     store: CheckpointStoreRef,
     id_map: CheckpointIdMap,
+    query_id: common_metrics::QueryID,
     file_path_registry: Option<FilePathRegistry>,
     meter: Meter,
     plan_stats: StatsState,
@@ -59,6 +60,7 @@ impl CheckpointTerminusNode {
             child,
             store,
             id_map,
+            query_id: ctx.query_id.clone(),
             file_path_registry,
             meter: ctx.meter.clone(),
             plan_stats,
@@ -159,6 +161,7 @@ impl PipelineNode for CheckpointTerminusNode {
         let node_info = self.node_info.clone();
         let store = self.store.clone();
         let id_map = self.id_map.clone();
+        let query_id = self.query_id.clone();
         let file_path_registry = self.file_path_registry.clone();
 
         runtime_handle.spawn(
@@ -204,7 +207,9 @@ impl PipelineNode for CheckpointTerminusNode {
                                         str_refs.as_slice(),
                                     )
                                     .into_series();
-                                    store.stage_keys(&checkpoint_id, "", key_series).await?;
+                                    store
+                                        .stage_keys(&checkpoint_id, &query_id, key_series)
+                                        .await?;
                                 }
                             }
                             store.checkpoint(&checkpoint_id).await?;
