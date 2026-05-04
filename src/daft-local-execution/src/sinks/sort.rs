@@ -13,24 +13,39 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats as _,
 };
 
 pub(crate) enum SortState {
-    Building(Vec<MicroPartition>),
+    Building {
+        parts: Vec<MicroPartition>,
+        /// Running total of `MicroPartition::size_bytes()` for everything in
+        /// `parts`. Maintained alongside the vector so we can report the
+        /// current state size to runtime_stats without re-walking partitions.
+        held_bytes: u64,
+    },
     Done,
 }
 
 impl SortState {
     fn push(&mut self, part: MicroPartition) {
-        if let Self::Building(parts) = self {
+        if let Self::Building { parts, held_bytes } = self {
+            *held_bytes = held_bytes.saturating_add(part.size_bytes() as u64);
             parts.push(part);
         } else {
             panic!("SortSink should be in Building state");
         }
     }
 
+    fn held_bytes(&self) -> u64 {
+        match self {
+            Self::Building { held_bytes, .. } => *held_bytes,
+            Self::Done => 0,
+        }
+    }
+
     fn finalize(&mut self) -> Vec<MicroPartition> {
-        let res = if let Self::Building(parts) = self {
+        let res = if let Self::Building { parts, .. } = self {
             std::mem::take(parts)
         } else {
             panic!("SortSink should be in Building state");
@@ -69,10 +84,11 @@ impl BlockingSink for SortSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
+        runtime_stats.record_state_bytes(state.held_bytes());
         Ok(state).into()
     }
 
@@ -131,7 +147,10 @@ impl BlockingSink for SortSink {
     }
 
     fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        Ok(SortState::Building(Vec::new()))
+        Ok(SortState::Building {
+            parts: Vec::new(),
+            held_bytes: 0,
+        })
     }
 
     fn max_concurrency(&self) -> usize {

@@ -6,6 +6,7 @@ export const ROWS_OUT_STAT_KEY = "rows.out";
 export const BYTES_IN_STAT_KEY = "bytes.in";
 export const BYTES_OUT_STAT_KEY = "bytes.out";
 export const DURATION_US_STAT_KEY = "duration";
+export const PEAK_STATE_BYTES_STAT_KEY = "memory.peak_state";
 
 export const statNumericValue = (stat: Stat | undefined): number => {
   if (!stat) return 0;

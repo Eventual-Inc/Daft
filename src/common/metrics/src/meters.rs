@@ -101,6 +101,55 @@ impl Gauge {
     }
 }
 
+/// A gauge that tracks the maximum value ever recorded.
+///
+/// Updates use atomic `fetch_max` so concurrent writers cannot regress the
+/// stored value. Intended for peak-memory style metrics where the snapshot
+/// should reflect the high-water mark over the operator's lifetime, not the
+/// most recent sample.
+pub struct MaxGauge {
+    value: AtomicU64,
+    otel: opentelemetry::metrics::Gauge<u64>,
+}
+
+impl MaxGauge {
+    fn new(
+        meter: &opentelemetry::metrics::Meter,
+        name: impl Into<Cow<'static, str>>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> Self {
+        let normalized_name = normalize_name(name);
+        let builder = meter.u64_gauge(normalized_name);
+        let builder = if let Some(description) = description {
+            builder.with_description(description)
+        } else {
+            builder
+        };
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
+        } else {
+            builder
+        };
+        Self {
+            value: AtomicU64::new(0),
+            otel: builder.build(),
+        }
+    }
+
+    /// Record a new sample. The internal value moves to `value.max(prev)`.
+    pub fn record(&self, value: u64, key_values: &[KeyValue]) -> u64 {
+        let prev = self.value.fetch_max(value, Ordering::Relaxed);
+        let new_max = prev.max(value);
+        self.otel.record(new_max, key_values);
+        new_max
+    }
+
+    pub fn load(&self, ordering: Ordering) -> u64 {
+        self.value.load(ordering)
+    }
+}
+
 pub struct UpDownCounter {
     value: AtomicI64,
     otel: opentelemetry::metrics::UpDownCounter<i64>,
@@ -232,5 +281,66 @@ impl Meter {
             None,
             Some(Cow::Borrowed(UNIT_TASKS)),
         )
+    }
+
+    pub fn u64_max_gauge(&self, name: impl Into<Cow<'static, str>>) -> MaxGauge {
+        MaxGauge::new(&self.otel, name, None, None)
+    }
+
+    pub fn u64_max_gauge_with_desc_and_unit(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> MaxGauge {
+        MaxGauge::new(&self.otel, name, description, unit)
+    }
+
+    pub fn peak_state_bytes_metric(&self) -> MaxGauge {
+        MaxGauge::new(
+            &self.otel,
+            crate::PEAK_STATE_BYTES_KEY,
+            Some(Cow::Borrowed(
+                "Peak resident state size held by this operator",
+            )),
+            Some(Cow::Borrowed(UNIT_BYTES)),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_gauge_tracks_high_water_mark() {
+        let meter = Meter::test_scope("test_max_gauge");
+        let gauge = meter.u64_max_gauge("test.peak");
+        assert_eq!(gauge.load(Ordering::Relaxed), 0);
+
+        gauge.record(5, &[]);
+        assert_eq!(gauge.load(Ordering::Relaxed), 5);
+
+        // Smaller value must not regress the gauge.
+        gauge.record(3, &[]);
+        assert_eq!(gauge.load(Ordering::Relaxed), 5);
+
+        // Larger value advances the high-water mark.
+        gauge.record(10, &[]);
+        assert_eq!(gauge.load(Ordering::Relaxed), 10);
+
+        // Same value is a no-op.
+        gauge.record(10, &[]);
+        assert_eq!(gauge.load(Ordering::Relaxed), 10);
+    }
+
+    #[test]
+    fn max_gauge_record_returns_current_max() {
+        let meter = Meter::test_scope("test_max_gauge_returns");
+        let gauge = meter.u64_max_gauge("test.peak.returns");
+
+        assert_eq!(gauge.record(5, &[]), 5);
+        assert_eq!(gauge.record(3, &[]), 5);
+        assert_eq!(gauge.record(10, &[]), 10);
     }
 }

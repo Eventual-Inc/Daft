@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
@@ -160,6 +163,13 @@ pub struct BaseCounters {
     bytes_in: Counter,
     bytes_out: Counter,
     num_tasks: Counter,
+    /// Sum-across-workers accumulator for `peak_state_bytes` reported by
+    /// local-execution snapshots. We sum (not max) at this level because a
+    /// distributed task spans many workers whose peaks coexist; the total
+    /// memory pressure for the operator is the additive aggregate. Per-worker
+    /// max selection is the dashboard's responsibility on the receiving end.
+    peak_state_bytes: AtomicU64,
+    peak_state_reported: AtomicBool,
     node_kv: Vec<KeyValue>,
 }
 
@@ -173,6 +183,8 @@ impl BaseCounters {
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
             num_tasks: meter.num_tasks_metric(),
+            peak_state_bytes: AtomicU64::new(0),
+            peak_state_reported: AtomicBool::new(false),
             node_kv,
         }
     }
@@ -201,7 +213,34 @@ impl BaseCounters {
         self.num_tasks.add(1, self.node_kv.as_slice());
     }
 
+    /// Accumulate a peak-state-bytes reading from a worker's snapshot.
+    /// Saturating add so a malformed snapshot can't wrap.
+    pub fn add_peak_state_bytes(&self, v: u64) {
+        // No-op for explicit zero reports — a worker that observed an empty
+        // working set still flips `peak_state_reported`, but we don't grow
+        // the sum.
+        let mut current = self.peak_state_bytes.load(Ordering::Relaxed);
+        loop {
+            let next = current.saturating_add(v);
+            match self.peak_state_bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
+        self.peak_state_reported.store(true, Ordering::Relaxed);
+    }
+
     pub fn export_default_snapshot(&self) -> StatSnapshot {
+        let peak_state_bytes = if self.peak_state_reported.load(Ordering::Relaxed) {
+            Some(self.peak_state_bytes.load(Ordering::Relaxed))
+        } else {
+            None
+        };
         StatSnapshot::Default(DefaultSnapshot {
             cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
@@ -209,6 +248,7 @@ impl BaseCounters {
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
             num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            peak_state_bytes,
         })
     }
 }
@@ -238,6 +278,9 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.base.add_rows_out(snapshot.rows_out);
         self.base.add_bytes_in(snapshot.bytes_in);
         self.base.add_bytes_out(snapshot.bytes_out);
+        if let Some(peak) = snapshot.peak_state_bytes {
+            self.base.add_peak_state_bytes(peak);
+        }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -319,6 +362,7 @@ mod tests {
                         bytes_in: 0,
                         bytes_out: 0,
                         num_tasks: 0,
+                        peak_state_bytes: None,
                     }),
                 )
             })
@@ -472,6 +516,7 @@ mod tests {
                 bytes_in: 1000,
                 bytes_out: 500,
                 num_tasks: 0,
+                peak_state_bytes: None,
             });
 
             let event = TaskEvent::Completed {

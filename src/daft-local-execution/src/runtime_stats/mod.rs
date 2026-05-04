@@ -754,6 +754,31 @@ mod tests {
         assert_eq!(stats.rows_out, 75);
     }
 
+    #[tokio::test]
+    async fn test_runtime_stats_peak_state_bytes_tracks_max() {
+        let node_stat = Arc::new(DefaultRuntimeStats::new(
+            &Meter::test_scope("test_stats_peak"),
+            &node_info_from_id(0),
+        ));
+
+        // Without any record_state_bytes call, the snapshot should report
+        // None for peak — this distinguishes stateless from stateful
+        // operators in the dashboard.
+        let StatSnapshot::Default(stats) = node_stat.snapshot() else {
+            panic!("Expected DefaultSnapshot");
+        };
+        assert_eq!(stats.peak_state_bytes, None);
+
+        node_stat.record_state_bytes(1024);
+        node_stat.record_state_bytes(512); // Smaller — must not regress.
+        node_stat.record_state_bytes(2048);
+
+        let StatSnapshot::Default(stats) = node_stat.snapshot() else {
+            panic!("Expected DefaultSnapshot");
+        };
+        assert_eq!(stats.peak_state_bytes, Some(2048));
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_events_without_init() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
