@@ -37,13 +37,8 @@ def get_pending_or_execute(
     return pending
 
 
-def validate_query_id(pending: list[Any]) -> tuple[str, list[str], str]:
-    """Validate single-query-id invariant and extract ids/store metadata.
-
-    Returns:
-        (query_id, checkpoint_ids, store_path) — but store_path must be
-        obtained from the checkpoint object by the caller. This function
-        only returns (query_id, checkpoint_ids).
+def validate_query_id(pending: list[Any]) -> tuple[str, list[str]]:
+    """Validate single-query-id invariant and return (query_id, checkpoint_ids).
 
     Raises:
         RuntimeError: if pending entries have mismatched or empty query_ids.

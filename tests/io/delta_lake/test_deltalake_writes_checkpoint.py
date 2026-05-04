@@ -121,6 +121,7 @@ def test_recovery_after_crash_between_stage_and_commit(delta_table, parquet_inpu
     is `Checkpointed`. Delta log has no commit from us. A fresh call must
     skip `write_df.collect()`, pull files from the store, and commit.
     """
+
     def crash_after_stage(checkpoint, column_name):
         # The pipeline already ran (files are in the store). Simulate a crash
         # right before the catalog commit by raising here.
