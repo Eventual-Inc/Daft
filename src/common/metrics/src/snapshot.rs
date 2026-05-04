@@ -681,21 +681,19 @@ mod tests {
     fn default_snapshot_peak_state_bytes_is_summed_across_input_ids() {
         // Two concurrent input_ids reporting their peaks: merged peak is the
         // sum (an upper bound on simultaneous memory held).
-        let merged = default_snapshot_with_peak(Some(100))
-            .merge(&default_snapshot_with_peak(Some(250)));
+        let merged =
+            default_snapshot_with_peak(Some(100)).merge(&default_snapshot_with_peak(Some(250)));
         assert_eq!(merged.peak_state_bytes, Some(350));
     }
 
     #[test]
     fn default_snapshot_peak_state_bytes_handles_none() {
         // None merged with Some passes the Some through.
-        let merged =
-            default_snapshot_with_peak(None).merge(&default_snapshot_with_peak(Some(42)));
+        let merged = default_snapshot_with_peak(None).merge(&default_snapshot_with_peak(Some(42)));
         assert_eq!(merged.peak_state_bytes, Some(42));
 
         // Some merged with None likewise.
-        let merged =
-            default_snapshot_with_peak(Some(42)).merge(&default_snapshot_with_peak(None));
+        let merged = default_snapshot_with_peak(Some(42)).merge(&default_snapshot_with_peak(None));
         assert_eq!(merged.peak_state_bytes, Some(42));
 
         // None merged with None stays None.
@@ -707,9 +705,7 @@ mod tests {
     fn default_snapshot_peak_state_bytes_appears_in_to_stats_when_present() {
         let snap = default_snapshot_with_peak(Some(1024));
         let stats = snap.to_stats();
-        let entry = stats
-            .iter()
-            .find(|(name, _)| *name == PEAK_STATE_BYTES_KEY);
+        let entry = stats.iter().find(|(name, _)| *name == PEAK_STATE_BYTES_KEY);
         match entry {
             Some((_, Stat::Bytes(b))) => assert_eq!(*b, 1024),
             other => panic!("expected Stat::Bytes for peak, got {:?}", other),
@@ -721,9 +717,7 @@ mod tests {
         let snap = default_snapshot_with_peak(None);
         let stats = snap.to_stats();
         assert!(
-            stats
-                .iter()
-                .all(|(name, _)| name != PEAK_STATE_BYTES_KEY),
+            stats.iter().all(|(name, _)| name != PEAK_STATE_BYTES_KEY),
             "peak state bytes should not be reported when None"
         );
     }
