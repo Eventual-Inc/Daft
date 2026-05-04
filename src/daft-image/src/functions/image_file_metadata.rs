@@ -10,7 +10,7 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF, UnaryArg},
 };
-use daft_file::DaftFile;
+use daft_file::{BUFFER_SIZE_METADATA, DaftFile};
 use image::{ColorType, ImageDecoder as _, ImageReader};
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +85,8 @@ impl ScalarUDF for ImageFileMetadata {
                     modes.append_null();
                 }
                 Some(file_ref) => {
-                    let file = DaftFile::load_blocking(file_ref, false)?;
+                    let file =
+                        DaftFile::load_blocking(file_ref, false, Some(BUFFER_SIZE_METADATA))?;
                     let reader = ImageReader::new(BufReader::new(file))
                         .with_guessed_format()
                         .map_err(|e| {
