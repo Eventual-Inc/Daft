@@ -451,12 +451,12 @@ impl NativeExecutor {
             );
         }
 
-        let task_start = if self.is_flotilla_worker
+        let task_start_dispatch = if self.is_flotilla_worker
             && task_events_enabled()
             && let Some(task_id) = task_id
         {
-            Some(TaskStartNotification {
-                event: Event::TaskStart(TaskStartEvent {
+            Some((
+                Event::TaskStart(TaskStartEvent {
                     header: event_header(query_id.clone()),
                     task: Arc::new(TaskInfo {
                         id: task_id,
@@ -467,8 +467,8 @@ impl NativeExecutor {
                     }),
                     worker_id: None, // TODO: propagate worker id
                 }),
-                subscribers: subscribers.clone(),
-            })
+                subscribers.clone(),
+            ))
         } else {
             None
         };
@@ -540,9 +540,9 @@ impl NativeExecutor {
                     ));
                 }
 
-                // Send the event since the task has been dispatched to the executor
-                if let Some(task_start) = task_start {
-                    task_start.dispatch();
+                // Send the event after the task has been enqueued for execution
+                if let Some((event, subscribers)) = task_start_dispatch {
+                    dispatch_task_start_event(&subscribers, &event);
                 }
 
                 Ok(ExecutionEngineResult {
@@ -742,17 +742,10 @@ impl PyResultReceiver {
     }
 }
 
-struct TaskStartNotification {
-    event: Event,
-    subscribers: Vec<Arc<dyn Subscriber>>,
-}
-
-impl TaskStartNotification {
-    fn dispatch(&self) {
-        for subscriber in &self.subscribers {
-            if let Err(e) = subscriber.on_event(self.event.clone()) {
-                log::debug!("Failed to dispatch task start event: {}", e);
-            }
+fn dispatch_task_start_event(subscribers: &[Arc<dyn Subscriber>], event: &Event) {
+    for subscriber in subscribers {
+        if let Err(e) = subscriber.on_event(event.clone()) {
+            log::debug!("Failed to dispatch task start event: {}", e);
         }
     }
 }
