@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_metrics::QueryEndState;
 use daft_core::python::PySchema;
-use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
 use crate::{
@@ -245,16 +244,6 @@ impl PyDaftContext {
             self.inner
                 .notify_query_end(query_id.into(), query_result.into());
         });
-    }
-
-    pub fn notify_result_out(
-        &self,
-        py: Python,
-        query_id: String,
-        result: PyMicroPartition,
-    ) -> PyResult<()> {
-        py.detach(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
-        Ok(())
     }
 
     pub fn notify_optimization_start(&self, py: Python, query_id: String) -> PyResult<()> {
