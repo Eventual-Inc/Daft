@@ -59,11 +59,7 @@ fn ends(events: &[CapturedEvent]) -> Vec<&CapturedEvent> {
         .collect()
 }
 
-fn position_of(
-    events: &[CapturedEvent],
-    kind: CapturedEventKind,
-    node_id: u32,
-) -> Option<usize> {
+fn position_of(events: &[CapturedEvent], kind: CapturedEventKind, node_id: u32) -> Option<usize> {
     events
         .iter()
         .position(|e| e.kind == kind && e.node_id == node_id)
