@@ -79,12 +79,11 @@ impl PushDownFilter {
                     .data
             }
             LogicalPlan::Source(source) => {
-                // Row-level mode: keep the Filter above the Source.
-                // Letting the filter sink into the scan's pushdowns would
-                // cause Parquet to drop rows at decode time before SCKO can
-                // stage their keys — breaking the "checkpoint all source keys"
-                // guarantee and forcing every re-run to re-read and
-                // re-evaluate those rows.
+                // Row-level mode, keep the Filter as a separate op
+                // above the Source. Letting the filter sink into the scan's pushdowns
+                // would cause Parquet to drop rows at decode time before SCKO can
+                // stage their keys — breaking the "checkpoint all source keys" guarantee
+                // and forcing every re-run to re-read and re-evaluate those rows.
                 //
                 // File-path mode: keys come from scan-task metadata, not row
                 // data, so filter pushdown is safe.
