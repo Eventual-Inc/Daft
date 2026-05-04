@@ -1,35 +1,86 @@
-"""Shared checkpoint-commit orchestration for catalog writers (Iceberg, Delta Lake, etc.).
+"""Lightweight utilities for checkpoint-based idempotent catalog commits.
 
-The high-level flow — pending-entry detection, query_id validation, retry with
-recovery check, post-commit bookkeeping — is connector-agnostic. Connector-
-specific steps (file decode, recovery check, catalog commit, result building)
-are injected via callbacks.
+Each connector (Iceberg, Delta Lake, etc.) keeps its commit logic inline;
+these helpers factor out the repeated boilerplate so connectors don't
+duplicate the same bookkeeping patterns.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import CheckpointStatus
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
-
     from daft.checkpoint import CheckpointStore
-    from daft.daft import PyFileMetadata
     from daft.dataframe.dataframe import DataFrame
 
 
-@dataclass
-class CommitResult:
-    operations: list[str]
-    paths: list[str]
-    row_counts: list[int]
-    sizes: list[int]
+def get_pending_or_execute(
+    write_df: DataFrame,
+    checkpoint: CheckpointStore,
+) -> list[Any] | None:
+    """Return pending checkpoint entries, executing the pipeline if needed.
+
+    If there are no Checkpointed entries, calls ``write_df.collect()`` to run
+    the pipeline (which populates the store via SCKO + BlockingSinkNode). If
+    still empty after execution, returns ``None`` (meaning everything was
+    already committed — the source filter dropped all rows).
+    """
+    pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    if not pending:
+        write_df.collect()
+        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+
+    if not pending:
+        return None
+    return pending
 
 
-def _empty_write_result(write_df: DataFrame) -> DataFrame:
+def validate_query_id(pending: list[Any]) -> tuple[str, list[str], str]:
+    """Validate single-query-id invariant and extract ids/store metadata.
+
+    Returns:
+        (query_id, checkpoint_ids, store_path) — but store_path must be
+        obtained from the checkpoint object by the caller. This function
+        only returns (query_id, checkpoint_ids).
+
+    Raises:
+        RuntimeError: if pending entries have mismatched or empty query_ids.
+    """
+    our_query_id = pending[0].query_id
+    if not our_query_id or any(c.query_id != our_query_id for c in pending):
+        offending = sorted({c.query_id for c in pending})
+        raise RuntimeError(
+            "Checkpoint store contains pending entries with mismatched or empty query_ids; "
+            f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
+            "concurrent writers against the same path; the store was reused across "
+            "different destinations (one store per destination — see CheckpointStore docs); "
+            "or pre-feature legacy entries left behind in the store (empty query_id). "
+            "Resolve by using a fresh checkpoint path or clearing the store."
+        )
+    our_ids = [c.id for c in pending]
+    return our_query_id, our_ids
+
+
+def decode_file_metadata(checkpoint: CheckpointStore, column_name: str) -> list[Any]:
+    """Decode file objects from staged FileMetadata blobs.
+
+    Each blob is an Arrow IPC stream of a MicroPartition; this extracts
+    the given column (e.g. ``"data_file"`` for Iceberg, ``"add_action"``
+    for Delta Lake) from each blob and concatenates them.
+    """
+    from daft.recordbatch.micropartition import MicroPartition
+
+    files: list[Any] = []
+    for fm in checkpoint.get_checkpointed_files():
+        mp = MicroPartition.from_ipc_stream(fm.data)
+        files.extend(mp.to_pydict()[column_name])
+    return files
+
+
+def empty_write_result(write_df: DataFrame) -> DataFrame:
+    """Build an empty result DataFrame preserving write_df's metadata."""
     import pyarrow as pa
 
     from daft import from_pydict
@@ -44,96 +95,3 @@ def _empty_write_result(write_df: DataFrame) -> DataFrame:
     )
     empty._metadata = write_df._metadata
     return empty
-
-
-def _build_result_df(result: CommitResult, write_df: DataFrame) -> DataFrame:
-    import pyarrow as pa
-
-    from daft import from_pydict
-
-    df = from_pydict(
-        {
-            "operation": pa.array(result.operations, type=pa.string()),
-            "rows": pa.array(result.row_counts, type=pa.int64()),
-            "file_size": pa.array(result.sizes, type=pa.int64()),
-            "file_name": pa.array(result.paths, type=pa.string()),
-        }
-    )
-    df._metadata = write_df._metadata
-    return df
-
-
-def commit_with_checkpoint(
-    write_df: DataFrame,
-    checkpoint: CheckpointStore,
-    *,
-    decode_files: Callable[[Iterable[PyFileMetadata]], list[Any]],
-    refresh_and_check_committed: Callable[[str, str], bool],
-    commit_files: Callable[[list[Any], str, str], None],
-    files_to_result: Callable[[list[Any]], CommitResult],
-    retryable_errors: tuple[type[Exception], ...] = (),
-    max_retries: int = 2,
-) -> DataFrame:
-    """Idempotent catalog commit driven by the checkpoint store.
-
-    Args:
-        write_df: The write-plan DataFrame (``collect()`` is called only on a fresh run).
-        checkpoint: The checkpoint store instance.
-        decode_files: Decode ``FileMetadata`` blobs from the store into connector-
-            specific file objects (e.g. ``pyiceberg.DataFile``, ``deltalake.AddAction``).
-        refresh_and_check_committed: ``(store_path, query_id) -> bool``. Refresh the
-            catalog state and return ``True`` if a prior commit with these markers
-            already exists.
-        commit_files: ``(files, store_path, query_id)``. Commit the files to the
-            catalog, embedding ``daft.checkpoint-store`` and ``daft.checkpoint-query``
-            markers in the catalog metadata.
-        files_to_result: Convert committed file objects into a ``CommitResult``.
-        retryable_errors: Exception types to catch and retry on (e.g.
-            ``CommitFailedException`` for Iceberg). Empty tuple means no retry.
-        max_retries: Maximum number of commit attempts.
-    """
-    pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
-    if not pending:
-        write_df.collect()
-        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
-
-    if not pending:
-        return _empty_write_result(write_df)
-
-    our_query_id = pending[0].query_id
-    if not our_query_id or any(c.query_id != our_query_id for c in pending):
-        offending = sorted({c.query_id for c in pending})
-        raise RuntimeError(
-            "Checkpoint store contains pending entries with mismatched or empty query_ids; "
-            f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
-            "concurrent writers against the same path; the store was reused across "
-            "different destinations (one store per destination — see CheckpointStore docs); "
-            "or pre-feature legacy entries left behind in the store (empty query_id). "
-            "Resolve by using a fresh checkpoint path or clearing the store."
-        )
-    our_ids = [c.id for c in pending]
-    store_path = checkpoint.path
-
-    files = decode_files(checkpoint.get_checkpointed_files())
-
-    if not files:
-        checkpoint.mark_committed(our_ids)
-        return _empty_write_result(write_df)
-
-    last_err: Exception | None = None
-    for _ in range(max_retries):
-        if refresh_and_check_committed(store_path, our_query_id):
-            checkpoint.mark_committed(our_ids)
-            return _build_result_df(files_to_result(files), write_df)
-
-        try:
-            commit_files(files, store_path, our_query_id)
-            checkpoint.mark_committed(our_ids)
-            return _build_result_df(files_to_result(files), write_df)
-        except retryable_errors as e:
-            last_err = e
-            continue
-
-    if last_err is not None:
-        raise last_err
-    raise RuntimeError(f"commit_with_checkpoint exhausted {max_retries} retries")

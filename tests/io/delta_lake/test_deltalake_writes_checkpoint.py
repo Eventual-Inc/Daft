@@ -121,17 +121,13 @@ def test_recovery_after_crash_between_stage_and_commit(delta_table, parquet_inpu
     is `Checkpointed`. Delta log has no commit from us. A fresh call must
     skip `write_df.collect()`, pull files from the store, and commit.
     """
-
-    def crash_after_stage(write_df, checkpoint, **kwargs):
-        from daft.daft import CheckpointStatus as CS
-
-        pending = [c for c in checkpoint.list_checkpoints() if c.status == CS.Checkpointed]
-        if not pending:
-            write_df.collect()
+    def crash_after_stage(checkpoint, column_name):
+        # The pipeline already ran (files are in the store). Simulate a crash
+        # right before the catalog commit by raising here.
         raise RuntimeError("simulated crash")
 
     df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
-    with patch("daft.dataframe._checkpoint_commit.commit_with_checkpoint", crash_after_stage):
+    with patch("daft.dataframe._checkpoint_commit.decode_file_metadata", crash_after_stage):
         with pytest.raises(RuntimeError, match="simulated crash"):
             df.write_deltalake(delta_table, checkpoint=checkpoint_store)
 

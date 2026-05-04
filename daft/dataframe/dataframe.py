@@ -1410,13 +1410,101 @@ class DataFrame:
         snapshot_properties: dict[str, str] | None,
         checkpoint: "CheckpointStore",
     ) -> "DataFrame":
-        """Idempotent Iceberg commit driven by the checkpoint store."""
+        """Idempotent Iceberg commit driven by the checkpoint store.
+
+        Files come from `checkpoint.get_checkpointed_files()` (the store is the source
+        of truth — no re-execution after a crash). The snapshot summary carries
+        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart can
+        recognize previously-committed work and skip it.
+
+        Concurrency assumption: at most one Python process per checkpoint path at a
+        time. The retry loop is defensive against transient `CommitFailedException`,
+        not multi-writer safety.
+        """
+        import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
         from pyiceberg.exceptions import CommitFailedException
-        from pyiceberg.table import TableProperties
 
-        from daft.dataframe._checkpoint_commit import CommitResult, commit_with_checkpoint
+        from daft import from_pydict
+        from daft.dataframe._checkpoint_commit import (
+            decode_file_metadata,
+            empty_write_result,
+            get_pending_or_execute,
+            validate_query_id,
+        )
+
+        builder = self._builder.write_iceberg(table, io_config)
+        write_df = DataFrame(builder)
+
+        pending = get_pending_or_execute(write_df, checkpoint)
+        if not pending:
+            # Source filter dropped everything (everything already committed in a
+            # prior run). Nothing to commit; return an empty result.
+            return empty_write_result(write_df)
+
+        # Single-query-id invariant: all pending entries share the run that staged them.
+        our_query_id, our_ids = validate_query_id(pending)
+        store_path = checkpoint.path
+
+        # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
+        # is an Arrow IPC stream of a MicroPartition produced by the iceberg
+        # writer (see `IcebergWriteVisitors.to_metadata` and the encode side in
+        # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
+        # python-typed `data_file` column whose cells are pickled
+        # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
+        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
+        # surfaces deep inside MicroPartition with a confusing error — wrap so
+        # the caller sees a clear message naming the contract.
+        try:
+            data_files = decode_file_metadata(checkpoint, "data_file")
+        except Exception as e:
+            raise RuntimeError(
+                "failed to decode iceberg DataFile metadata from the checkpoint store; "
+                "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
+                "python `data_file` column carrying pickled pyiceberg.DataFile objects. "
+                "Did pyiceberg change the DataFile shape, or is the store from a different "
+                f"writer version? Underlying error: {e}"
+            ) from e
+
+        # Pending entries exist but carry no data files. Happens when the source
+        # filter drops every input row (e.g. re-run after a fully-committed call)
+        # — the sink still seals an empty Checkpointed entry. There is nothing
+        # to commit; mark the empty entries Committed so they don't persist as
+        # pending forever, and return an empty result.
+        if not data_files:
+            checkpoint.mark_committed(our_ids)
+            return empty_write_result(write_df)
+
+        full_props = dict(snapshot_properties or {})
+        full_props["daft.checkpoint-store"] = store_path
+        full_props["daft.checkpoint-query"] = our_query_id
+
+        def _build_result() -> "DataFrame":
+            ops: list[str] = []
+            paths: list[str] = []
+            row_counts: list[int] = []
+            sizes: list[int] = []
+            for df_ in data_files:
+                ops.append("ADD")
+                paths.append(df_.file_path)
+                row_counts.append(df_.record_count)
+                sizes.append(df_.file_size_in_bytes)
+            result = from_pydict(
+                {
+                    "operation": pa.array(ops, type=pa.string()),
+                    "rows": pa.array(row_counts, type=pa.int64()),
+                    "file_size": pa.array(sizes, type=pa.int64()),
+                    "file_name": pa.array(paths, type=pa.string()),
+                }
+            )
+            result._metadata = write_df._metadata
+            return result
+
+        # Honor the table's `commit.manifest-merge.enabled` property the same
+        # way the non-checkpoint branch does — users who set it expect manifest
+        # merging regardless of whether they pass `checkpoint=`.
+        from pyiceberg.table import TableProperties
 
         if parse(pyiceberg.__version__) >= parse("0.8.0"):
             from pyiceberg.utils.properties import property_as_bool
@@ -1425,73 +1513,47 @@ class DataFrame:
 
             property_as_bool = PropertyUtil.property_as_bool
 
-        builder = self._builder.write_iceberg(table, io_config)
-        write_df = DataFrame(builder)
-
-        def decode_files(file_metadata: "Iterable[Any]") -> list[Any]:
-            data_files: list[Any] = []
-            for fm in file_metadata:
-                try:
-                    mp = MicroPartition.from_ipc_stream(fm.data)
-                    data_files.extend(mp.to_pydict()["data_file"])
-                except Exception as e:
-                    raise RuntimeError(
-                        "failed to decode iceberg DataFile metadata from the checkpoint store; "
-                        "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
-                        "python `data_file` column carrying pickled pyiceberg.DataFile objects. "
-                        "Did pyiceberg change the DataFile shape, or is the store from a different "
-                        f"writer version? Underlying error: {e}"
-                    ) from e
-            return data_files
-
-        def refresh_and_check_committed(store_path: str, query_id: str) -> bool:
+        max_retries = 2  # defensive only; transient catalog errors
+        last_err: Exception | None = None
+        for _ in range(max_retries):
             table.refresh()
+            # Recovery check: did a prior attempt (or restart) already land our work?
             for snap in reversed(table.metadata.snapshots):
                 summary = snap.summary
                 if summary is None:
                     continue
                 if (
                     summary.get("daft.checkpoint-store") == store_path
-                    and summary.get("daft.checkpoint-query") == query_id
+                    and summary.get("daft.checkpoint-query") == our_query_id
                 ):
-                    return True
-            return False
+                    checkpoint.mark_committed(our_ids)
+                    return _build_result()
 
-        def commit_files(files: list[Any], store_path: str, query_id: str) -> None:
-            full_props = dict(snapshot_properties or {})
-            full_props["daft.checkpoint-store"] = store_path
-            full_props["daft.checkpoint-query"] = query_id
+            try:
+                tx = table.transaction()
+                update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
+                manifest_merge_enabled = property_as_bool(
+                    tx.table_metadata.properties,
+                    TableProperties.MANIFEST_MERGE_ENABLED,
+                    TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+                )
+                append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+                with append_method() as append_files:
+                    for df_ in data_files:
+                        append_files.append_data_file(df_)
+                tx.commit_transaction()
+                checkpoint.mark_committed(our_ids)
+                return _build_result()
+            except CommitFailedException as e:
+                # Narrow on purpose: only optimistic-concurrency conflicts (the
+                # catalog raised because the branch head moved) retry. Other
+                # transient catalog errors — REST/network 5xx, auth blips,
+                # pyiceberg internals — propagate to the caller, who can wrap
+                # this whole `write_iceberg` in their own retry policy.
+                last_err = e
+                continue
 
-            tx = table.transaction()
-            update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
-            manifest_merge_enabled = property_as_bool(
-                tx.table_metadata.properties,
-                TableProperties.MANIFEST_MERGE_ENABLED,
-                TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-            )
-            append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-            with append_method() as append_files:
-                for df_ in files:
-                    append_files.append_data_file(df_)
-            tx.commit_transaction()
-
-        def files_to_result(files: list[Any]) -> CommitResult:
-            return CommitResult(
-                operations=["ADD"] * len(files),
-                paths=[df_.file_path for df_ in files],
-                row_counts=[df_.record_count for df_ in files],
-                sizes=[df_.file_size_in_bytes for df_ in files],
-            )
-
-        return commit_with_checkpoint(
-            write_df,
-            checkpoint,
-            decode_files=decode_files,
-            refresh_and_check_committed=refresh_and_check_committed,
-            commit_files=commit_files,
-            files_to_result=files_to_result,
-            retryable_errors=(CommitFailedException,),
-        )
+        raise last_err or CommitFailedException(f"write_iceberg with checkpoint exhausted {max_retries} retries")
 
     @DataframePublicAPI
     def write_paimon(
@@ -1828,14 +1890,28 @@ class DataFrame:
         custom_metadata: dict[str, str] | None,
         checkpoint: "CheckpointStore",
     ) -> "DataFrame":
-        """Idempotent Delta Lake commit driven by the checkpoint store."""
+        """Idempotent Delta Lake commit driven by the checkpoint store.
+
+        Mirrors the Iceberg checkpoint flow: pending-entry detection, query_id
+        validation, recovery check via commit-info markers, catalog commit, and
+        post-commit bookkeeping. The custom_metadata dict carries
+        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart
+        can recognize previously-committed work.
+        """
         import json
 
         import deltalake
+        import pyarrow as pa
         from deltalake.exceptions import TableNotFoundError
         from packaging.version import parse
 
-        from daft.dataframe._checkpoint_commit import CommitResult, commit_with_checkpoint
+        from daft import from_pydict
+        from daft.dataframe._checkpoint_commit import (
+            decode_file_metadata,
+            empty_write_result,
+            get_pending_or_execute,
+            validate_query_id,
+        )
         from daft.io.delta_lake.delta_lake_write import create_table_with_add_actions
 
         builder = self._builder.write_deltalake(
@@ -1848,107 +1924,109 @@ class DataFrame:
         )
         write_df = DataFrame(builder)
 
-        resolved_table = table
+        pending = get_pending_or_execute(write_df, checkpoint)
+        if not pending:
+            return empty_write_result(write_df)
 
-        def decode_files(file_metadata: "Iterable[Any]") -> list[Any]:
-            add_actions: list[Any] = []
-            for fm in file_metadata:
-                try:
-                    mp = MicroPartition.from_ipc_stream(fm.data)
-                    add_actions.extend(mp.to_pydict()["add_action"])
-                except Exception as e:
-                    raise RuntimeError(
-                        "failed to decode Delta Lake AddAction metadata from the checkpoint store; "
-                        "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
-                        "python `add_action` column carrying pickled deltalake.AddAction objects. "
-                        f"Underlying error: {e}"
-                    ) from e
-            return add_actions
+        our_query_id, our_ids = validate_query_id(pending)
+        store_path = checkpoint.path
 
-        def refresh_and_check_committed(store_path: str, query_id: str) -> bool:
-            nonlocal resolved_table
-            if resolved_table is None:
-                try:
-                    resolved_table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
-                except TableNotFoundError:
-                    return False
-            else:
-                resolved_table.update_incremental()
+        try:
+            add_actions = decode_file_metadata(checkpoint, "add_action")
+        except Exception as e:
+            raise RuntimeError(
+                "failed to decode Delta Lake AddAction metadata from the checkpoint store; "
+                "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
+                "python `add_action` column carrying pickled deltalake.AddAction objects. "
+                f"Underlying error: {e}"
+            ) from e
 
-            for entry in resolved_table.history():
-                if entry.get("daft.checkpoint-store") == store_path and entry.get("daft.checkpoint-query") == query_id:
-                    return True
-            return False
+        if not add_actions:
+            checkpoint.mark_committed(our_ids)
+            return empty_write_result(write_df)
 
-        def commit_files(files: list[Any], store_path: str, query_id: str) -> None:
-            nonlocal resolved_table
-            meta = dict(custom_metadata or {})
-            meta["daft.checkpoint-store"] = store_path
-            meta["daft.checkpoint-query"] = query_id
-
-            if resolved_table is None:
-                create_table_with_add_actions(
-                    table_uri,
-                    delta_schema,
-                    files,
-                    mode,
-                    partition_cols or [],
-                    name,
-                    description,
-                    configuration,
-                    storage_options,
-                    meta,
-                )
-                resolved_table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
-            else:
-                if parse(deltalake.__version__) < parse("0.20.0"):
-                    metadata_param = meta
-                else:
-                    from deltalake import CommitProperties
-
-                    metadata_param = CommitProperties(custom_metadata=meta)
-
-                if parse(deltalake.__version__) < parse("1.0.0"):
-                    resolved_table._table.create_write_transaction(
-                        files, mode, partition_cols or [], delta_schema, None, metadata_param
-                    )
-                else:
-                    resolved_table._table.create_write_transaction(
-                        files,
-                        mode,
-                        partition_cols or [],
-                        deltalake.Schema.from_arrow(delta_schema),
-                        None,
-                        metadata_param,
-                    )
-                resolved_table.update_incremental()
-
-        def files_to_result(files: list[Any]) -> CommitResult:
+        def _build_result() -> "DataFrame":
             operations: list[str] = []
             paths: list[str] = []
             row_counts: list[int] = []
             sizes: list[int] = []
-            for aa in files:
+            for aa in add_actions:
                 stats = json.loads(aa.stats)
                 operations.append("ADD")
                 paths.append(os.path.basename(aa.path))
                 row_counts.append(stats["numRecords"])
                 sizes.append(aa.size)
-            return CommitResult(
-                operations=operations,
-                paths=paths,
-                row_counts=row_counts,
-                sizes=sizes,
+            result = from_pydict(
+                {
+                    "operation": pa.array(operations, type=pa.string()),
+                    "rows": pa.array(row_counts, type=pa.int64()),
+                    "file_size": pa.array(sizes, type=pa.int64()),
+                    "file_name": pa.array(paths, type=pa.string()),
+                }
             )
+            result._metadata = write_df._metadata
+            return result
 
-        return commit_with_checkpoint(
-            write_df,
-            checkpoint,
-            decode_files=decode_files,
-            refresh_and_check_committed=refresh_and_check_committed,
-            commit_files=commit_files,
-            files_to_result=files_to_result,
-        )
+        # Recovery check: did a prior attempt already land our commit?
+        resolved_table = table
+        if resolved_table is None:
+            try:
+                resolved_table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
+            except TableNotFoundError:
+                pass
+
+        if resolved_table is not None:
+            resolved_table.update_incremental()
+            for entry in resolved_table.history():
+                if (
+                    entry.get("daft.checkpoint-store") == store_path
+                    and entry.get("daft.checkpoint-query") == our_query_id
+                ):
+                    checkpoint.mark_committed(our_ids)
+                    return _build_result()
+
+        # Commit
+        meta = dict(custom_metadata or {})
+        meta["daft.checkpoint-store"] = store_path
+        meta["daft.checkpoint-query"] = our_query_id
+
+        if resolved_table is None:
+            create_table_with_add_actions(
+                table_uri,
+                delta_schema,
+                add_actions,
+                mode,
+                partition_cols or [],
+                name,
+                description,
+                configuration,
+                storage_options,
+                meta,
+            )
+        else:
+            if parse(deltalake.__version__) < parse("0.20.0"):
+                metadata_param = meta
+            else:
+                from deltalake import CommitProperties
+
+                metadata_param = CommitProperties(custom_metadata=meta)
+
+            if parse(deltalake.__version__) < parse("1.0.0"):
+                resolved_table._table.create_write_transaction(
+                    add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
+                )
+            else:
+                resolved_table._table.create_write_transaction(
+                    add_actions,
+                    mode,
+                    partition_cols or [],
+                    deltalake.Schema.from_arrow(delta_schema),
+                    None,
+                    metadata_param,
+                )
+
+        checkpoint.mark_committed(our_ids)
+        return _build_result()
 
     @DataframePublicAPI
     def write_sink(self, sink: "DataSink[WriteResultType]") -> "DataFrame":
