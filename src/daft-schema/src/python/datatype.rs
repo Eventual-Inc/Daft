@@ -149,6 +149,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn float16() -> PyResult<Self> {
+        Ok(DataType::Float16.into())
+    }
+
+    #[staticmethod]
     pub fn float32() -> PyResult<Self> {
         Ok(DataType::Float32.into())
     }
@@ -427,6 +432,10 @@ impl PyDataType {
 
     pub fn is_uint64(&self) -> bool {
         self.dtype.is_uint64()
+    }
+
+    pub fn is_float16(&self) -> bool {
+        self.dtype.is_float16()
     }
 
     pub fn is_float32(&self) -> bool {

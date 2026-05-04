@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .file import File
 from .audio import AudioFile
+from .image import ImageFile
 from .video import VideoFile
 
-__all__ = ["AudioFile", "File", "VideoFile"]
+__all__ = ["AudioFile", "File", "ImageFile", "VideoFile"]

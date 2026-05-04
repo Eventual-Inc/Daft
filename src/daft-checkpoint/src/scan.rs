@@ -182,17 +182,29 @@ mod tests {
         let (config, store) = make_store(dir.path());
 
         let id1 = CheckpointId::generate(0);
-        store.stage_keys(&id1, keys(&["a", "b"])).await.unwrap();
-        store.stage_keys(&id1, keys(&["c"])).await.unwrap();
+        store
+            .stage_keys(&id1, "test-query", keys(&["a", "b"]))
+            .await
+            .unwrap();
+        store
+            .stage_keys(&id1, "test-query", keys(&["c"]))
+            .await
+            .unwrap();
         store.checkpoint(&id1).await.unwrap();
 
         let id2 = CheckpointId::generate(1);
-        store.stage_keys(&id2, keys(&["d"])).await.unwrap();
+        store
+            .stage_keys(&id2, "test-query", keys(&["d"]))
+            .await
+            .unwrap();
         store.checkpoint(&id2).await.unwrap();
 
         // Staged-only — should be invisible.
         let id3 = CheckpointId::generate(2);
-        store.stage_keys(&id3, keys(&["ignored"])).await.unwrap();
+        store
+            .stage_keys(&id3, "test-query", keys(&["ignored"]))
+            .await
+            .unwrap();
 
         let mut expected_paths = store.sealed_file_paths().await.unwrap();
         expected_paths.sort();
@@ -210,5 +222,36 @@ mod tests {
         task_paths.sort();
 
         assert_eq!(task_paths, expected_paths);
+    }
+
+    #[tokio::test]
+    async fn advertised_schema_is_passed_through_verbatim() {
+        // The scan operator advertises whatever schema is handed to it, so
+        // callers (the optimizer rule) are responsible for passing the
+        // canonical sealed-keys column name. Pin that the operator does
+        // expose the schema given at construction — a regression that
+        // rewrote the schema internally would silently break the anti-join's
+        // right-side resolution.
+        use common_checkpoint_config::SEALED_KEYS_COLUMN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _store) = make_store(dir.path());
+
+        let canonical_schema = Arc::new(Schema::new(vec![Field::new(
+            SEALED_KEYS_COLUMN,
+            DataType::Utf8,
+        )]));
+        let op = BlobStoreCheckpointedKeysScanOperator::new(config, canonical_schema);
+
+        let advertised = op.schema();
+        assert_eq!(
+            advertised.len(),
+            1,
+            "expected single-column schema, got: {advertised:?}"
+        );
+        assert!(
+            advertised.get_field(SEALED_KEYS_COLUMN).is_ok(),
+            "advertised schema must carry the canonical column name; got: {advertised:?}"
+        );
     }
 }

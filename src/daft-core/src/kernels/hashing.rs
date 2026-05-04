@@ -7,8 +7,9 @@ use arrow::{
     },
     buffer::{MutableBuffer, ScalarBuffer},
     datatypes::{
-        ArrowPrimitiveType, DataType as ArrowDataType, Decimal128Type, Float32Type, Float64Type,
-        Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
+        ArrowPrimitiveType, DataType as ArrowDataType, Decimal128Type, Float16Type, Float32Type,
+        Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type,
+        UInt64Type,
     },
 };
 use common_error::{DaftError, DaftResult};
@@ -44,6 +45,14 @@ impl_to_le_bytes!(u32, 4);
 impl_to_le_bytes!(u64, 8);
 impl_to_le_bytes!(f32, 4);
 impl_to_le_bytes!(f64, 8);
+
+impl ToLeBytes for half::f16 {
+    type Bytes = [u8; 2];
+    #[inline]
+    fn to_le_bytes_arr(&self) -> [u8; 2] {
+        self.to_le_bytes()
+    }
+}
 
 /// Convert a MutableBuffer of u64 values into a PrimitiveArray<UInt64Type> with no null bitmap.
 /// This is the fastest path: no null tracking, cache-line aligned, zero-copy into the final array.
@@ -267,6 +276,7 @@ macro_rules! with_match_hashing_primitive_type {(
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
+        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         _ => return Err(DaftError::ValueError(format!(
@@ -384,6 +394,7 @@ pub fn hash(
         | ArrowDataType::UInt16
         | ArrowDataType::UInt32
         | ArrowDataType::UInt64
+        | ArrowDataType::Float16
         | ArrowDataType::Float32
         | ArrowDataType::Float64) => {
             with_match_hashing_primitive_type!(dt, |$T| {

@@ -131,6 +131,8 @@ pub struct PyCheckpoint {
     pub id: String,
     #[pyo3(get)]
     pub status: PyCheckpointStatus,
+    #[pyo3(get)]
+    pub query_id: String,
 }
 
 impl From<crate::Checkpoint> for PyCheckpoint {
@@ -138,6 +140,7 @@ impl From<crate::Checkpoint> for PyCheckpoint {
         Self {
             id: c.id.to_string(),
             status: c.status.into(),
+            query_id: c.query_id.to_string(),
         }
     }
 }
