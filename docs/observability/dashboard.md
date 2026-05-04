@@ -2,7 +2,7 @@
 
 The Daft Dashboard is a web UI for inspecting Daft query execution. Daft scripts push query metadata, plans, and execution stats to the dashboard server, which you can browse to investigate query behavior in real time.
 
-The dashboard ships pre-built with the `daft` Python package — `pip install daft` is all you need. There is no separate install step and you do not need Node.js or npm unless you are working on the dashboard's frontend code.
+The dashboard ships pre-built with the `daft` Python package — `pip install daft` is all you need, no separate install step or extra dependencies.
 
 !!! note
     The dashboard is under active development. Some operational ergonomics (persistence, multi-tenant deployments, authentication) are still evolving — feedback is welcome on the [Daft Slack](http://www.daft.ai/slack) or [GitHub](https://github.com/Eventual-Inc/Daft/issues).
@@ -88,7 +88,7 @@ python my_pipeline.py
 
 To make the UI accessible to humans (not just Daft processes), expose the dashboard port through whatever mechanism your platform uses — a Kubernetes `Service` plus `Ingress`, an SSH tunnel, `ray attach --port-forward`, or a cloud load balancer.
 
-### Security Notes
+### Production Readiness
 
 - The dashboard has no built-in authentication. Do not expose it directly to the public internet. Place it behind an authenticating ingress or a VPN.
 - Binding to `0.0.0.0` is convenient but means the dashboard accepts connections from any interface. Restrict access at the network layer (security groups, NetworkPolicies, firewall rules).
