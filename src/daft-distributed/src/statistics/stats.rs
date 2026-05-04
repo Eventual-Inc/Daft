@@ -235,6 +235,20 @@ impl BaseCounters {
         self.peak_state_reported.store(true, Ordering::Relaxed);
     }
 
+    /// Forward the peak-state-bytes from a worker's `DefaultSnapshot` if it
+    /// reported one. Helper for distributed pipeline-node `RuntimeStats`
+    /// implementations that destructure `StatSnapshot::Default` for their
+    /// own bookkeeping (rows / bytes / phase logic) but should still
+    /// propagate peak memory through the same accumulator path the
+    /// catch-all `DefaultRuntimeStats` uses. Without this, peaks recorded by
+    /// stateful local sinks (Sort, Aggregate, TopN, Dedup) get dropped at
+    /// the distributed pipeline boundary and never reach the dashboard.
+    pub fn forward_default_snapshot_peak(&self, snapshot: &DefaultSnapshot) {
+        if let Some(peak) = snapshot.peak_state_bytes {
+            self.add_peak_state_bytes(peak);
+        }
+    }
+
     pub fn export_default_snapshot(&self) -> StatSnapshot {
         let peak_state_bytes = if self.peak_state_reported.load(Ordering::Relaxed) {
             Some(self.peak_state_bytes.load(Ordering::Relaxed))

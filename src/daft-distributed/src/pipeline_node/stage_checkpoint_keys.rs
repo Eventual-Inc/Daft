@@ -78,6 +78,9 @@ impl RuntimeStats for StageCheckpointKeysStats {
     ) {
         use common_metrics::snapshot::StatSnapshotImpl as _;
         self.base.add_duration_us(snapshot.duration_us());
+        if let common_metrics::StatSnapshot::Default(snapshot) = snapshot {
+            self.base.forward_default_snapshot_peak(snapshot);
+        }
     }
 
     fn export_snapshot(&self) -> common_metrics::StatSnapshot {

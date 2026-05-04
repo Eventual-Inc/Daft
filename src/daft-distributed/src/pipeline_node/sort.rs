@@ -69,6 +69,10 @@ impl RuntimeStats for SortStats {
         {
             self.base.add_rows_in(snapshot.rows_in);
             self.base.add_rows_out(snapshot.rows_out);
+            // Peak working-set memory is held by the local Sort sink during
+            // the final-sort phase only; sample / repartition phases don't
+            // accumulate state worth attributing here.
+            self.base.forward_default_snapshot_peak(snapshot);
         }
     }
 
@@ -668,6 +672,10 @@ mod tests {
     /// Single-partition sort: exercises the FINAL_SORT_PHASE-only path.
     /// SortStats should count rows only from the Default snapshot with
     /// phase "final-sort", ignoring the Source snapshot from in_memory_scan.
+    /// Also verifies peak_state_bytes from the local Sort sink propagates
+    /// through the distributed boundary — without this, a Flotilla user
+    /// would see "-" in the dashboard's Peak Memory column even though
+    /// Sort buffers all input partitions.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_single_partition_stats() -> DaftResult<()> {
         let meter = Meter::test_scope("test_sort_stats");
@@ -684,6 +692,11 @@ mod tests {
                 assert_eq!(s.rows_in, 5);
                 assert_eq!(s.rows_out, 5);
                 assert!(s.cpu_us > 0);
+                assert!(
+                    matches!(s.peak_state_bytes, Some(p) if p > 0),
+                    "expected Sort to report a positive peak_state_bytes, got {:?}",
+                    s.peak_state_bytes,
+                );
             }
             other => panic!("expected Default snapshot for sort, got: {other:?}"),
         }

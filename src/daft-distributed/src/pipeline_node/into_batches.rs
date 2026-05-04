@@ -58,6 +58,7 @@ impl RuntimeStats for IntoBatchesStats {
                 self.base.add_rows_out(snapshot.rows_out);
                 self.base.add_bytes_out(snapshot.bytes_out);
             }
+            self.base.forward_default_snapshot_peak(snapshot);
         }
     }
 
