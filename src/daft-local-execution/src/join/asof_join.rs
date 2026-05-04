@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
     sync::Arc,
 };
 
@@ -339,6 +339,73 @@ fn is_candidate_better(
     ))
 }
 
+fn backfill(
+    global_best: &mut [Option<(u32, u32)>],
+    group_buckets: &[Vec<u64>],
+    left_on_arr: &dyn Array,
+) {
+    for bucket in group_buckets {
+        for i in 1..bucket.len() {
+            let prev_left_idx = bucket[i - 1] as usize;
+            let curr_left_idx = bucket[i] as usize;
+            if !left_on_arr.is_valid(curr_left_idx) {
+                continue;
+            }
+            if global_best[curr_left_idx].is_none() && global_best[prev_left_idx].is_some() {
+                global_best[curr_left_idx] = global_best[prev_left_idx];
+            }
+        }
+    }
+}
+
+fn build_right_output(
+    global_best: &[Option<(u32, u32)>],
+    all_right_tables: Vec<RecordBatch>,
+    right_schema: SchemaRef,
+) -> DaftResult<RecordBatch> {
+    let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
+    for (i, rb) in all_right_tables.iter().enumerate() {
+        right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
+    }
+    let right_idx_arr = UInt64Array::from_iter(
+        Field::new("right_idx", DaftDataType::UInt64),
+        global_best.iter().map(|best| {
+            best.map(|(global_rb_idx, local_right_idx)| {
+                (right_row_offsets[global_rb_idx as usize] + local_right_idx as usize) as u64
+            })
+        }),
+    );
+    let right_rb_concat = if all_right_tables.is_empty() {
+        RecordBatch::empty(Some(right_schema))
+    } else {
+        RecordBatch::concat(all_right_tables.iter().collect::<Vec<_>>().as_slice())?
+    };
+    right_rb_concat.take(&right_idx_arr)
+}
+
+fn build_join_output(
+    left_rb: &RecordBatch,
+    right_out: RecordBatch,
+    join_schema: SchemaRef,
+    right_cols_to_drop: &HashSet<String>,
+) -> DaftResult<MicroPartition> {
+    let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
+    for s in left_rb.as_materialized_series() {
+        join_series.push(s.clone());
+    }
+    for s in right_out.as_materialized_series() {
+        if !right_cols_to_drop.contains(s.name()) {
+            join_series.push(s.clone());
+        }
+    }
+    let output_rb = RecordBatch::new_with_size(join_schema.clone(), join_series, left_rb.len())?;
+    Ok(MicroPartition::new_loaded(
+        join_schema,
+        Arc::new(vec![output_rb]),
+        None,
+    ))
+}
+
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
     right_by: Vec<BoundExpr>,
@@ -346,7 +413,7 @@ pub struct AsofJoinOperator {
     right_on: BoundExpr,
     left_schema: SchemaRef,
     right_schema: SchemaRef,
-    right_cols_to_drop: std::collections::HashSet<String>,
+    right_cols_to_drop: HashSet<String>,
     join_schema: SchemaRef,
 }
 
@@ -518,14 +585,12 @@ impl JoinOperator for AsofJoinOperator {
                         .step_by(rows_per_chunk)
                         .map(|start| {
                             let end = (start + rows_per_chunk).min(table.total_left_rows);
-                            let chunk_idx = start / rows_per_chunk;
                             let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
                             let state_best_matches = state_best_matches.clone();
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
                             spawner.spawn(
                                     async move {
-                                        let left_chunk_base = chunk_idx * rows_per_chunk;
                                         let mut cmp_cache: HashMap<
                                             (usize, usize),
                                             DynPartialComparator,
@@ -534,7 +599,7 @@ impl JoinOperator for AsofJoinOperator {
                                         for (chunk_row_idx, curr_best_match) in
                                             chunk.iter_mut().enumerate()
                                         {
-                                            let global_left_idx = left_chunk_base + chunk_row_idx;
+                                            let global_left_idx = start + chunk_row_idx;
                                             for (state_idx, best_match) in
                                                 state_best_matches.iter().enumerate()
                                             {
@@ -577,7 +642,7 @@ impl JoinOperator for AsofJoinOperator {
                                                 }
                                             }
                                         }
-                                        DaftResult::Ok((chunk_idx, chunk))
+                                        DaftResult::Ok(chunk)
                                     },
                                     Span::current(),
                                 )
@@ -586,76 +651,23 @@ impl JoinOperator for AsofJoinOperator {
 
                     let mut global_best: Vec<Option<(u32, u32)>> =
                         vec![None; table.total_left_rows];
-                    for task in chunk_tasks {
-                        let (chunk_idx, chunk) = task.await.map_err(|_| {
+                    for (i, task) in chunk_tasks.into_iter().enumerate() {
+                        let chunk = task.await.map_err(|_| {
                             DaftError::InternalError("compute merge task dropped".into())
                         })??;
-                        let start = chunk_idx * rows_per_chunk;
-                        let end = (start + chunk.len()).min(table.total_left_rows);
-                        global_best[start..end].copy_from_slice(&chunk[..end - start]);
+                        let start = i * rows_per_chunk;
+                        global_best[start..start + chunk.len()].copy_from_slice(&chunk);
                     }
 
-                    // backfill
-                    for bucket in &table.group_buckets {
-                        for i in 1..bucket.len() {
-                            let prev_left_idx = bucket[i - 1] as usize;
-                            let curr_left_idx = bucket[i] as usize;
-                            if !table.left_on_arr.is_valid(curr_left_idx) {
-                                continue;
-                            }
-                            if global_best[curr_left_idx].is_none()
-                                && global_best[prev_left_idx].is_some()
-                            {
-                                global_best[curr_left_idx] = global_best[prev_left_idx];
-                            }
-                        }
-                    }
-
-                    // global_right_idx = right_row_offsets[global_rb_idx] + local_right_idx.
-                    let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
-                    for (i, rb) in all_right_tables.iter().enumerate() {
-                        right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
-                    }
-
-                    let right_idx_arr = UInt64Array::from_iter(
-                        Field::new("right_idx", DaftDataType::UInt64),
-                        (0..table.total_left_rows).map(|global_left_idx| {
-                            global_best[global_left_idx].map(|(global_rb_idx, local_right_idx)| {
-                                let global_right_idx = right_row_offsets[global_rb_idx as usize]
-                                    + local_right_idx as usize;
-                                global_right_idx as u64
-                            })
-                        }),
-                    );
-
-                    let right_rb_concat = if all_right_tables.is_empty() {
-                        RecordBatch::empty(Some(right_schema))
-                    } else {
-                        RecordBatch::concat(all_right_tables.iter().collect::<Vec<_>>().as_slice())?
-                    };
-                    let right_out = right_rb_concat.take(&right_idx_arr)?;
-
-                    let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
-                    for s in table.left_rb.as_materialized_series() {
-                        join_series.push(s.clone());
-                    }
-                    for s in right_out.as_materialized_series() {
-                        if !right_cols_to_drop.contains(s.name()) {
-                            join_series.push(s.clone());
-                        }
-                    }
-
-                    let output_rb = RecordBatch::new_with_size(
-                        join_schema.clone(),
-                        join_series,
-                        table.total_left_rows,
-                    )?;
-
-                    Ok(Some(MicroPartition::new_loaded(
+                    backfill(&mut global_best, &table.group_buckets, &table.left_on_arr);
+                    let right_out =
+                        build_right_output(&global_best, all_right_tables, right_schema)?;
+                    Ok(Some(build_join_output(
+                        &table.left_rb,
+                        right_out,
                         join_schema,
-                        Arc::new(vec![output_rb]),
-                        None,
-                    )))
+                        &right_cols_to_drop,
+                    )?))
                 },
                 Span::current(),
             )
