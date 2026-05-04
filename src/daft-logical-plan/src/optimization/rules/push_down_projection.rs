@@ -144,11 +144,10 @@ impl PushDownProjection {
                 // Row-level mode: only allow projection pushdown
                 // when the `on=` key column is still required downstream —
                 // otherwise pruning would strip the key before the anti-join
-                // built by `RewriteCheckpointSource` can use it. When the
-                // user's query legitimately doesn't reference the key
-                // (e.g. `.select('value')`), keep the full Source schema
-                // and let the Project trim columns above the anti-join
-                // in memory.
+                // built by `RewriteCheckpointSource` can use it. When the user's
+                // query legitimately doesn't reference the key (e.g. `.select('value')`),
+                // keep the full Source schema and let the Project trim columns
+                // above the anti-join in memory.
                 //
                 // File-path mode: keys come from scan-task metadata, so
                 // projection pushdown is always safe.
