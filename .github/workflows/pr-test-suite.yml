@@ -796,6 +796,15 @@ jobs:
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
         submodules: true
         path: unitycatalog
+    - name: Cache UC Server build
+      uses: actions/cache@v4
+      with:
+        path: |
+          unitycatalog/server/target
+          ~/.sbt
+          ~/.ivy2/cache
+          ~/.cache/coursier
+        key: uc-server-20dd3820be332ac04deec4e063099fb863eb3392
     - name: Start UC Server
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
@@ -837,7 +846,7 @@ jobs:
     - name: Spin up services
       run: |
         pushd ./tests/integration/iceberg/docker-compose/
-        docker compose -f ./docker-compose.yml up -d
+        docker compose -f ./docker-compose.yml up -d --wait
         popd
       # Gravitino test setup
     - name: Spin up Gravitino service
