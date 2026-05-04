@@ -26,12 +26,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/provision-done"]
-      interval: 5s
-      timeout: 2s
-      retries: 60
-      start_period: 30s
     volumes:
     - ./warehouse:/home/iceberg/warehouse
     - ./provision.py:/opt/spark/provision.py

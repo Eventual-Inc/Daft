@@ -86,7 +86,7 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
 
 
 @tenacity.retry(
-    stop=tenacity.stop_after_delay(60),
+    stop=tenacity.stop_after_delay(300),
     retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
     wait=tenacity.wait_fixed(5),
     reraise=True,
