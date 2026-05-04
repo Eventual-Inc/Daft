@@ -5,7 +5,7 @@ The Daft Dashboard is a web UI for inspecting Daft query execution. Daft scripts
 The dashboard ships pre-built with the `daft` Python package — `pip install daft` is all you need, no separate install step or extra dependencies.
 
 !!! note
-    The dashboard is under active development. Some operational ergonomics (persistence, multi-tenant deployments, authentication) are still evolving — feedback is welcome on the [Daft Slack](http://www.daft.ai/slack) or [GitHub](https://github.com/Eventual-Inc/Daft/issues).
+    The dashboard is under active development. Some operational ergonomics (persistence, compatibility, authentication) are still evolving — feedback is welcome on the [Daft Slack](http://www.daft.ai/slack) or [GitHub](https://github.com/Eventual-Inc/Daft/issues).
 
 ## How It Works
 
@@ -93,3 +93,4 @@ To make the UI accessible to humans (not just Daft processes), expose the dashbo
 - The dashboard has no built-in authentication. Do not expose it directly to the public internet. Place it behind an authenticating ingress or a VPN.
 - Binding to `0.0.0.0` is convenient but means the dashboard accepts connections from any interface. Restrict access at the network layer (security groups, NetworkPolicies, firewall rules).
 - Dashboard state currently lives in memory and is lost when the process restarts.
+- The wire protocol between Daft and the dashboard is not yet stable across versions. A long-lived dashboard process may not correctly handle events from Daft scripts running on a different (older or newer) version than the dashboard itself was built from. For now, run the dashboard from the same Daft version as the scripts reporting to it, and restart it when you upgrade.
