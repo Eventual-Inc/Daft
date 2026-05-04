@@ -178,11 +178,11 @@ impl AsofJoinFinalizedBuildState {
 
 pub(crate) struct AsofJoinProbeState {
     build_contents: Arc<AsofJoinFinalizedBuildState>,
-    // Per left row: (morsel_idx, row_idx) of the current best right match.
+    // Per left row: (rb_idx, row_idx) of the current best right match.
     best_match: Vec<Option<(u32, u32)>>,
     // All right RecordBatches seen so far, stored for final output construction.
     right_tables: Vec<RecordBatch>,
-    // Per right morsel: its on_key as an Arrow array, used to build cross-morsel comparators
+    // Per right RecordBatch: its on_key as an Arrow array, used to build cross-batch comparators
     // for the "is this a better match?" check during probe.
     right_on_key_arrs: Vec<Arc<dyn Array>>,
 }
@@ -193,7 +193,7 @@ impl AsofJoinProbeState {
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
-        current_morsel_idx: usize,
+        rb_idx: usize,
     ) -> DaftResult<()> {
         let table = self.build_contents.clone();
 
@@ -211,7 +211,7 @@ impl AsofJoinProbeState {
         // we use this later for update_best_match()
         let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
         cmp_cache.insert(
-            (current_morsel_idx, current_morsel_idx),
+            (rb_idx, rb_idx),
             build_partial_compare_with_nulls(right_on_arr.as_ref(), right_on_arr.as_ref(), false)?,
         );
 
@@ -255,15 +255,14 @@ impl AsofJoinProbeState {
             };
 
             let bucket = &table.group_buckets[group_idx];
-            let Some(candidate_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx)
-            else {
+            let Some(matched_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx) else {
                 continue;
             };
 
             self.update_best_match(
-                candidate_left_idx,
+                matched_left_idx,
                 right_idx,
-                current_morsel_idx,
+                rb_idx,
                 &right_on_arr,
                 &mut cmp_cache,
             )?;
@@ -273,49 +272,49 @@ impl AsofJoinProbeState {
     }
     fn update_best_match(
         &mut self,
-        candidate_left_idx: usize,
-        right_idx: usize,
-        current_morsel_idx: usize,
-        right_on_arr: &Arc<dyn Array>,
+        matched_left_idx: usize,
+        candidate_right_idx: usize,
+        candidate_rb_idx: usize,
+        candidate_on_arr: &Arc<dyn Array>,
         cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
     ) -> DaftResult<()> {
-        let is_better = match self.best_match[candidate_left_idx] {
+        let is_better = match self.best_match[matched_left_idx] {
             None => true,
-            Some((old_morsel_idx, old_row)) => {
-                let existing_arr = self.right_on_key_arrs[old_morsel_idx as usize].clone();
+            Some((existing_rb_idx, existing_right_idx)) => {
+                let existing_on_arr = self.right_on_key_arrs[existing_rb_idx as usize].clone();
                 is_candidate_better(
-                    current_morsel_idx,
-                    right_idx,
-                    right_on_arr.as_ref(),
-                    old_morsel_idx as usize,
-                    old_row as usize,
-                    existing_arr.as_ref(),
+                    candidate_rb_idx,
+                    candidate_right_idx,
+                    candidate_on_arr.as_ref(),
+                    existing_rb_idx as usize,
+                    existing_right_idx as usize,
+                    existing_on_arr.as_ref(),
                     cmp_cache,
                 )?
             }
         };
         if is_better {
-            self.best_match[candidate_left_idx] =
-                Some((current_morsel_idx as u32, right_idx as u32));
+            self.best_match[matched_left_idx] =
+                Some((candidate_rb_idx as u32, candidate_right_idx as u32));
         }
         Ok(())
     }
 }
 
 fn is_candidate_better(
-    candidate_morsel_idx: usize,
+    candidate_rb_idx: usize,
     candidate_right_idx: usize,
-    candidate_arr: &dyn Array,
-    existing_morsel_idx: usize,
+    candidate_on_arr: &dyn Array,
+    existing_rb_idx: usize,
     existing_right_idx: usize,
-    existing_arr: &dyn Array,
+    existing_on_arr: &dyn Array,
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
 ) -> DaftResult<bool> {
-    let cmp = match cmp_cache.entry((candidate_morsel_idx, existing_morsel_idx)) {
+    let cmp = match cmp_cache.entry((candidate_rb_idx, existing_rb_idx)) {
         Entry::Occupied(e) => e.into_mut(),
         Entry::Vacant(e) => e.insert(build_partial_compare_with_nulls(
-            candidate_arr,
-            existing_arr,
+            candidate_on_arr,
+            existing_on_arr,
             false,
         )?),
     };
@@ -431,8 +430,8 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        let current_morsel_idx = state.right_tables.len();
-                        state.probe_batch(right_rb, &right_on, &right_by, current_morsel_idx)?;
+                        let rb_idx = state.right_tables.len();
+                        state.probe_batch(right_rb, &right_on, &right_by, rb_idx)?;
                         state.right_tables.push(right_rb.clone());
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
@@ -469,10 +468,10 @@ impl JoinOperator for AsofJoinOperator {
                         )));
                     }
 
-                    // Each state's best_match stores a local_morsel_idx scoped to that state.
-                    // global_morsel_offsets[k] converts state k's local_morsel_idx to a
-                    // global_morsel_idx into the flat global_right_on_key_arrs / all_right_tables.
-                    let global_morsel_offsets: Vec<usize> = states
+                    // Each state's best_match stores a local_rb_idx scoped to that state's
+                    // right_tables list. global_rb_offsets[k] converts state k's local_rb_idx
+                    // to a global_rb_idx into the flat global_right_on_key_arrs / all_right_tables.
+                    let global_rb_offsets: Vec<usize> = states
                         .iter()
                         .scan(0usize, |acc, state| {
                             let offset = *acc;
@@ -498,74 +497,78 @@ impl JoinOperator for AsofJoinOperator {
 
                     let state_best_matches = Arc::new(state_best_matches);
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
-                    let global_morsel_offsets = Arc::new(global_morsel_offsets);
+                    let global_rb_offsets = Arc::new(global_rb_offsets);
 
+                    let chunk_tasks: Vec<_> =
+                        (0..table.total_left_rows)
+                            .step_by(rows_per_chunk)
+                            .map(|start| {
+                                let end = (start + rows_per_chunk).min(table.total_left_rows);
+                                let chunk_idx = start / rows_per_chunk;
+                                let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
+                                let state_best_matches = state_best_matches.clone();
+                                let global_right_on_key_arrs = global_right_on_key_arrs.clone();
+                                let global_rb_offsets = global_rb_offsets.clone();
+                                spawner.spawn(
+                                    async move {
+                                        let left_chunk_base = chunk_idx * rows_per_chunk;
+                                        let mut cmp_cache: HashMap<
+                                            (usize, usize),
+                                            DynPartialComparator,
+                                        > = HashMap::new();
 
-                    let chunk_tasks: Vec<_> = (0..table.total_left_rows)
-                        .step_by(rows_per_chunk)
-                        .map(|start| {
-                            let end = (start + rows_per_chunk).min(table.total_left_rows);
-                            let chunk_idx = start / rows_per_chunk;
-                            let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
-                            let state_best_matches = state_best_matches.clone();
-                            let global_right_on_key_arrs = global_right_on_key_arrs.clone();
-                            let global_morsel_offsets = global_morsel_offsets.clone();
-                            spawner.spawn(
-                                async move {
-                                    let left_chunk_base = chunk_idx * rows_per_chunk;
-                                    let mut cmp_cache: HashMap<
-                                        (usize, usize),
-                                        DynPartialComparator,
-                                    > = HashMap::new();
-
-                                    for (chunk_row_idx, curr_best_match) in
-                                        chunk.iter_mut().enumerate()
-                                    {
-                                        let global_left_idx = left_chunk_base + chunk_row_idx;
-                                        for (state_idx, best_match) in
-                                            state_best_matches.iter().enumerate()
+                                        for (chunk_row_idx, curr_best_match) in
+                                            chunk.iter_mut().enumerate()
                                         {
-                                            let Some((local_morsel_idx, local_right_idx)) =
-                                                best_match[global_left_idx]
-                                            else {
-                                                continue;
-                                            };
-                                            let global_morsel_idx = (global_morsel_offsets
-                                                [state_idx]
-                                                + local_morsel_idx as usize)
-                                                as u32;
+                                            let global_left_idx = left_chunk_base + chunk_row_idx;
+                                            for (state_idx, best_match) in
+                                                state_best_matches.iter().enumerate()
+                                            {
+                                                let Some((
+                                                    candidate_local_rb_idx,
+                                                    candidate_right_idx,
+                                                )) = best_match[global_left_idx]
+                                                else {
+                                                    continue;
+                                                };
+                                                let candidate_global_rb_idx = (global_rb_offsets
+                                                    [state_idx]
+                                                    + candidate_local_rb_idx as usize)
+                                                    as u32;
 
-                                            let is_better = match *curr_best_match {
-                                                None => true,
-                                                Some((winner_morsel_idx, winner_right_idx)) => {
-                                                    is_candidate_better(
-                                                        global_morsel_idx as usize,
-                                                        local_right_idx as usize,
-                                                        global_right_on_key_arrs
-                                                            [global_morsel_idx as usize]
-                                                            .as_ref(),
-                                                        winner_morsel_idx as usize,
-                                                        winner_right_idx as usize,
-                                                        global_right_on_key_arrs
-                                                            [winner_morsel_idx as usize]
-                                                            .as_ref(),
-                                                        &mut cmp_cache,
-                                                    )?
+                                                let is_better = match *curr_best_match {
+                                                    None => true,
+                                                    Some((existing_rb_idx, existing_right_idx)) => {
+                                                        is_candidate_better(
+                                                            candidate_global_rb_idx as usize,
+                                                            candidate_right_idx as usize,
+                                                            global_right_on_key_arrs
+                                                                [candidate_global_rb_idx as usize]
+                                                                .as_ref(),
+                                                            existing_rb_idx as usize,
+                                                            existing_right_idx as usize,
+                                                            global_right_on_key_arrs
+                                                                [existing_rb_idx as usize]
+                                                                .as_ref(),
+                                                            &mut cmp_cache,
+                                                        )?
+                                                    }
+                                                };
+
+                                                if is_better {
+                                                    *curr_best_match = Some((
+                                                        candidate_global_rb_idx,
+                                                        candidate_right_idx,
+                                                    ));
                                                 }
-                                            };
-
-                                            if is_better {
-                                                *curr_best_match =
-                                                    Some((global_morsel_idx, local_right_idx));
                                             }
                                         }
-                                    }
-                                    DaftResult::Ok((chunk_idx, chunk))
-                                },
-                                Span::current(),
-                            )
-                        })
-                        .collect();
+                                        DaftResult::Ok((chunk_idx, chunk))
+                                    },
+                                    Span::current(),
+                                )
+                            })
+                            .collect();
 
                     let mut global_best: Vec<Option<(u32, u32)>> =
                         vec![None; table.total_left_rows];
@@ -594,7 +597,7 @@ impl JoinOperator for AsofJoinOperator {
                         }
                     }
 
-                    // global_right_idx = right_row_offsets[global_morsel_idx] + local_right_idx.
+                    // global_right_idx = right_row_offsets[global_rb_idx] + local_right_idx.
                     let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
                     for (i, rb) in all_right_tables.iter().enumerate() {
                         right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
@@ -603,14 +606,11 @@ impl JoinOperator for AsofJoinOperator {
                     let right_idx_arr = UInt64Array::from_iter(
                         Field::new("right_idx", DaftDataType::UInt64),
                         (0..table.total_left_rows).map(|global_left_idx| {
-                            global_best[global_left_idx].map(
-                                |(global_morsel_idx, local_right_idx)| {
-                                    let global_right_idx = right_row_offsets
-                                        [global_morsel_idx as usize]
-                                        + local_right_idx as usize;
-                                    global_right_idx as u64
-                                },
-                            )
+                            global_best[global_left_idx].map(|(global_rb_idx, local_right_idx)| {
+                                let global_right_idx = right_row_offsets[global_rb_idx as usize]
+                                    + local_right_idx as usize;
+                                global_right_idx as u64
+                            })
                         }),
                     );
 
