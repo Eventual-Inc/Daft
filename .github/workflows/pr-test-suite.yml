@@ -839,6 +839,10 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
+    - name: Wait for Iceberg test tables
+      run: |
+        source .venv/bin/activate
+        python tests/integration/iceberg/docker-compose/wait-for-tables.py
       # Gravitino test setup
     - name: Spin up Gravitino service
       run: |
