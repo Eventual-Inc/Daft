@@ -825,15 +825,13 @@ pub struct TaskSubmitArgs {
 /// Source data attached to a task on submit. Mirrors
 /// `daft_context::subscribers::events::TaskSource`. Externally tagged on the
 /// wire (`{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`).
-#[derive(Clone, Deserialize, Serialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum TaskSourceArgs {
     PhysicalScan(PhysicalScanSourceArgs),
     InMemoryScan(InMemoryScanSourceArgs),
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PhysicalScanSourceArgs {
     pub source_id: u32,
     pub scan_tasks: u32,
@@ -844,8 +842,7 @@ pub struct PhysicalScanSourceArgs {
     pub estimated_memory_bytes: Option<u64>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct InMemoryScanSourceArgs {
     pub source_id: u32,
     pub partitions: u64,
