@@ -73,6 +73,7 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Join Strategies](optimization/join-strategies.md)
     * Observability
+        * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
         * [Telemetry](observability/telemetry.md)
