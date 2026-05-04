@@ -1,0 +1,30 @@
+[package]
+name = "daft-hudi"
+version = {workspace = true}
+edition = {workspace = true}
+
+[dependencies]
+hudi-core = {git = "https://github.com/xushiyan/hudi-rs.git", rev = "2a5291a567f1ea151ce7c1afa9916925f1036a85", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+daft-stats = {path = "../daft-stats", default-features = false}
+arrow = {workspace = true}
+snafu = {workspace = true}
+url = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-scan/python",
+  "daft-schema/python"
+]
+
+[lints]
+workspace = true
