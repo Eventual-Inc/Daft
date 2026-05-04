@@ -54,6 +54,8 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
     //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
     group_buckets: Vec<Vec<u64>>,
+    // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
+    group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
     group_reps: RecordBatch,
     group_hash_map: HashMap<u64, Vec<usize>>,
     // Total number of left rows.
@@ -78,6 +80,7 @@ impl AsofJoinFinalizedBuildState {
                     left_rb: empty_left,
                     left_on_arr,
                     group_buckets: vec![],
+                    group_bucket_sorted_keys: vec![],
                     group_reps: RecordBatch::empty(None),
                     group_hash_map: HashMap::new(),
                     total_left_rows: 0,
@@ -86,7 +89,8 @@ impl AsofJoinFinalizedBuildState {
         };
 
         let total_left_rows = left_rb.len();
-        let left_on_arr: Arc<dyn Array> = left_rb.eval_expression(left_on)?.to_arrow()?;
+        let left_on_series: Series = left_rb.eval_expression(left_on)?;
+        let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
 
         let on_key_sort_cmp =
             build_partial_compare_with_nulls(left_on_arr.as_ref(), left_on_arr.as_ref(), false)?;
@@ -125,10 +129,19 @@ impl AsofJoinFinalizedBuildState {
             (group_buckets, group_reps, group_hash_map)
         };
 
+        let group_bucket_sorted_keys: Vec<Arc<dyn Array>> = group_buckets
+            .iter()
+            .map(|bucket| {
+                let indexes = UInt64Array::from_vec("k", bucket.clone());
+                left_on_series.take(&indexes)?.to_arrow()
+            })
+            .collect::<DaftResult<_>>()?;
+
         Ok(Self {
             left_rb,
             left_on_arr,
             group_buckets,
+            group_bucket_sorted_keys,
             group_reps,
             group_hash_map,
             total_left_rows,
@@ -147,7 +160,7 @@ impl AsofJoinFinalizedBuildState {
         let mut hi = bucket.len();
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            match on_key_cmp(bucket[mid] as usize, right_idx) {
+            match on_key_cmp(mid, right_idx) {
                 Some(Ordering::Less) => lo = mid + 1,
                 _ => hi = mid,
             }
@@ -201,12 +214,12 @@ impl AsofJoinProbeState {
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
         self.right_on_key_arrs.push(right_on_arr.clone());
 
-        // we use this later when we call search_bucket()
-        let on_key_cmp = build_partial_compare_with_nulls(
-            table.left_on_arr.as_ref(),
-            right_on_arr.as_ref(),
-            false,
-        )?;
+        // One comparator per group
+        let group_sorted_key_cmps: Vec<DynPartialComparator> = table
+            .group_bucket_sorted_keys
+            .iter()
+            .map(|sk| build_partial_compare_with_nulls(sk.as_ref(), right_on_arr.as_ref(), false))
+            .collect::<DaftResult<_>>()?;
 
         // we use this later for update_best_match()
         let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
@@ -255,7 +268,9 @@ impl AsofJoinProbeState {
             };
 
             let bucket = &table.group_buckets[group_idx];
-            let Some(matched_left_idx) = table.search_bucket(bucket, &on_key_cmp, right_idx) else {
+            let Some(matched_left_idx) =
+                table.search_bucket(bucket, &group_sorted_key_cmps[group_idx], right_idx)
+            else {
                 continue;
             };
 
@@ -499,17 +514,16 @@ impl JoinOperator for AsofJoinOperator {
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
                     let global_rb_offsets = Arc::new(global_rb_offsets);
 
-                    let chunk_tasks: Vec<_> =
-                        (0..table.total_left_rows)
-                            .step_by(rows_per_chunk)
-                            .map(|start| {
-                                let end = (start + rows_per_chunk).min(table.total_left_rows);
-                                let chunk_idx = start / rows_per_chunk;
-                                let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
-                                let state_best_matches = state_best_matches.clone();
-                                let global_right_on_key_arrs = global_right_on_key_arrs.clone();
-                                let global_rb_offsets = global_rb_offsets.clone();
-                                spawner.spawn(
+                    let chunk_tasks: Vec<_> = (0..table.total_left_rows)
+                        .step_by(rows_per_chunk)
+                        .map(|start| {
+                            let end = (start + rows_per_chunk).min(table.total_left_rows);
+                            let chunk_idx = start / rows_per_chunk;
+                            let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
+                            let state_best_matches = state_best_matches.clone();
+                            let global_right_on_key_arrs = global_right_on_key_arrs.clone();
+                            let global_rb_offsets = global_rb_offsets.clone();
+                            spawner.spawn(
                                     async move {
                                         let left_chunk_base = chunk_idx * rows_per_chunk;
                                         let mut cmp_cache: HashMap<
@@ -567,8 +581,8 @@ impl JoinOperator for AsofJoinOperator {
                                     },
                                     Span::current(),
                                 )
-                            })
-                            .collect();
+                        })
+                        .collect();
 
                     let mut global_best: Vec<Option<(u32, u32)>> =
                         vec![None; table.total_left_rows];
