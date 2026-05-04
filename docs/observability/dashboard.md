@@ -49,7 +49,7 @@ Then open `http://localhost:3238` in a browser to view query activity.
 
 ## Running in a Cluster Environment
 
-When running Daft on a [Ray cluster](ray.md) (whether self-managed or on a platform like [Kubernetes](kubernetes.md)), three things need to be true for the dashboard to work:
+When running Daft on a [Ray cluster](../distributed/ray.md) (whether self-managed or on a platform like [Kubernetes](../distributed/kubernetes.md)), three things need to be true for the dashboard to work:
 
 1. The dashboard server is running somewhere reachable.
 2. Both the **Python driver script** and the **Daft scheduler actor** (running on the Ray head) can make HTTP requests to the dashboard's `DAFT_DASHBOARD_URL`.
