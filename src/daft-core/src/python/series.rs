@@ -450,6 +450,10 @@ impl PySeries {
         Ok(self.series.map_get(&key.series)?.into())
     }
 
+    pub fn map_keys(&self) -> PyResult<Self> {
+        Ok(self.series.map_keys()?.into())
+    }
+
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series

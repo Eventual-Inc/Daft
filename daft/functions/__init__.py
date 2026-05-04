@@ -149,6 +149,7 @@ from .misc import (
     coalesce,
     get,
     map_get,
+    map_keys,
     slice,
     when,
 )
@@ -427,6 +428,7 @@ __all__ = [
     "make_timestamp",
     "make_timestamp_ltz",
     "map_get",
+    "map_keys",
     "max",
     "mean",
     "median",
