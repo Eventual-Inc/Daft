@@ -49,7 +49,7 @@ Then open `http://localhost:3238` in a browser to view query activity.
 
 ## Running in a Cluster Environment
 
-When running Daft on a distributed cluster (typically [Daft on Ray](ray.md) or [Kubernetes](kubernetes.md)), three things need to be true for the dashboard to work:
+When running Daft on a [Ray cluster](ray.md) (whether self-managed or on a platform like [Kubernetes](kubernetes.md)), three things need to be true for the dashboard to work:
 
 1. The dashboard server is running somewhere reachable.
 2. Both the **Python driver script** and the **Daft scheduler actor** (running on the Ray head) can make HTTP requests to the dashboard's `DAFT_DASHBOARD_URL`.
@@ -78,12 +78,12 @@ Example for a Kubernetes deployment where the dashboard runs as a sidecar in the
 
 ```bash
 # In the runner pod, alongside the Python script:
-daft dashboard start -a 0.0.0.0 -p 3238 --daemon
+daft dashboard start -p 3238 --daemon
 
 # Run the script with DAFT_DASHBOARD_URL pointing at a hostname
 # the Ray head and workers can resolve.
 export DAFT_DASHBOARD_URL=http://runner-01.my-namespace.svc:3238
-python my_pipeline.py
+python script.py
 ```
 
 To make the UI accessible to humans (not just Daft processes), expose the dashboard port through whatever mechanism your platform uses — a Kubernetes `Service` plus `Ingress`, an SSH tunnel, `ray attach --port-forward`, or a cloud load balancer.
