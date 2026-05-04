@@ -120,25 +120,6 @@ pub trait StatisticsSubscriber: Send + Sync + 'static {
 
 pub type StatisticsManagerRef = Arc<StatisticsManager>;
 
-/// One side of an operator-lifecycle transition observed by the
-/// `StatisticsManager`. Kept in a buffer so the driver process can drain
-/// and re-dispatch them on its own `DaftContext` — Flotilla execution
-/// runs inside a Ray actor, so events fired through the actor's local
-/// context never reach driver-side subscribers without IPC.
-#[derive(Debug, Clone)]
-pub struct PendingOperatorEvent {
-    pub kind: PendingOperatorKind,
-    pub query_id: QueryID,
-    pub node_id: NodeID,
-    pub name: Arc<str>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PendingOperatorKind {
-    Start,
-    End,
-}
-
 #[derive(Default)]
 pub struct StatisticsManager {
     runtime_node_managers: Arc<HashMap<NodeID, RuntimeNodeManager>>,
@@ -147,9 +128,6 @@ pub struct StatisticsManager {
     /// events. Empty for the `Default` impl used in tests that don't
     /// exercise the global event bus.
     query_id: QueryID,
-    /// Buffered operator-lifecycle events for cross-process delivery to
-    /// the driver. Drained by `take_pending_operator_events`.
-    pending_operator_events: Mutex<Vec<PendingOperatorEvent>>,
 }
 
 impl StatisticsManager {
@@ -187,16 +165,7 @@ impl StatisticsManager {
             runtime_node_managers,
             subscribers: Mutex::new(subscribers),
             query_id,
-            pending_operator_events: Mutex::new(Vec::new()),
         }))
-    }
-
-    /// Drain and return all operator-lifecycle events buffered since the
-    /// last call. Used by the driver-side Python wrapper to relay events
-    /// across the Ray actor boundary into the driver's `DaftContext`.
-    pub fn take_pending_operator_events(&self) -> Vec<PendingOperatorEvent> {
-        let mut buf = self.pending_operator_events.lock().unwrap();
-        std::mem::take(&mut *buf)
     }
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
@@ -279,43 +248,28 @@ impl StatisticsManager {
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         // Fire on the local (actor-process) context so dashboard /
         // event-log subscribers running in the actor see the event.
+        // For Flotilla, `RemoteFlotillaRunner.__init__` propagates
+        // `DAFT_DASHBOARD_URL` and attaches a `DashboardSubscriber` to
+        // the actor's context, so events reach the dashboard server
+        // directly without round-tripping through the driver.
         let event = Event::OperatorStart(OperatorStartEvent {
             header: event_header(self.query_id.clone()),
-            operator: meta.clone(),
+            operator: meta,
         });
         if let Err(e) = get_context().notify(&event) {
             tracing::error!("Failed to notify operator start: {}", e);
         }
-        // Also buffer for the driver to drain and re-dispatch.
-        self.pending_operator_events
-            .lock()
-            .unwrap()
-            .push(PendingOperatorEvent {
-                kind: PendingOperatorKind::Start,
-                query_id: self.query_id.clone(),
-                node_id: meta.node_id as NodeID,
-                name: meta.name.clone(),
-            });
     }
 
     fn dispatch_operator_end(&self, node_info: &Arc<NodeInfo>) {
         let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
         let event = Event::OperatorEnd(OperatorEndEvent {
             header: event_header(self.query_id.clone()),
-            operator: meta.clone(),
+            operator: meta,
         });
         if let Err(e) = get_context().notify(&event) {
             tracing::error!("Failed to notify operator end: {}", e);
         }
-        self.pending_operator_events
-            .lock()
-            .unwrap()
-            .push(PendingOperatorEvent {
-                kind: PendingOperatorKind::End,
-                query_id: self.query_id.clone(),
-                node_id: meta.node_id as NodeID,
-                name: meta.name.clone(),
-            });
     }
 
     /// Collects accumulated stats from each node manager and returns them as an

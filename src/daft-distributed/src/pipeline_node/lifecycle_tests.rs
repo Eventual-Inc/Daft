@@ -4,9 +4,10 @@
 //! These tests drive a real `DistributedPipelineNode` through the same
 //! scheduler → worker → `NativeExecutor` path the Ray Flotilla runner
 //! uses (via `LocalSwordfishWorkerManager::single_worker`), so no Ray
-//! cluster is needed. Events are observed via the buffer that
-//! `StatisticsManager` populates and that the driver-side Flotilla
-//! wrapper drains in production.
+//! cluster is needed. Events are observed via a `Subscriber` attached to
+//! the global `DaftContext` — the same channel the in-actor
+//! `DashboardSubscriber` uses in production to forward events to the
+//! dashboard server.
 
 use std::sync::Arc;
 
@@ -20,14 +21,15 @@ use super::{
     DistributedPipelineNode,
     filter::FilterNode,
     test_helpers::{
-        CapturedRun, build_in_memory_source, make_partition, predicate_x_gt_2,
-        run_pipeline_and_capture_events, test_schema,
+        CapturedEvent, CapturedEventKind, CapturedRun, attach_event_collector,
+        build_in_memory_source, make_partition, predicate_x_gt_2, run_pipeline_and_capture_events,
+        test_schema,
     },
 };
 use crate::{
     plan::{PlanExecutionContext, RunningPlan},
     scheduling::{local_worker::LocalSwordfishWorkerManager, scheduler::spawn_scheduler_actor},
-    statistics::{PendingOperatorEvent, PendingOperatorKind, StatisticsManager},
+    statistics::StatisticsManager,
 };
 
 fn build_filter_pipeline(
@@ -43,30 +45,29 @@ fn build_filter_pipeline(
     )
 }
 
-fn starts(events: &[PendingOperatorEvent]) -> Vec<&PendingOperatorEvent> {
+fn starts(events: &[CapturedEvent]) -> Vec<&CapturedEvent> {
     events
         .iter()
-        .filter(|e| e.kind == PendingOperatorKind::Start)
+        .filter(|e| e.kind == CapturedEventKind::Start)
         .collect()
 }
 
-fn ends(events: &[PendingOperatorEvent]) -> Vec<&PendingOperatorEvent> {
+fn ends(events: &[CapturedEvent]) -> Vec<&CapturedEvent> {
     events
         .iter()
-        .filter(|e| e.kind == PendingOperatorKind::End)
+        .filter(|e| e.kind == CapturedEventKind::End)
         .collect()
 }
 
 fn position_of(
-    events: &[PendingOperatorEvent],
-    kind: PendingOperatorKind,
+    events: &[CapturedEvent],
+    kind: CapturedEventKind,
     node_id: u32,
 ) -> Option<usize> {
     events
         .iter()
         .position(|e| e.kind == kind && e.node_id == node_id)
-    // Note: positions reflect buffer insertion order, which matches
-    // the order events were dispatched.
+    // Note: positions reflect dispatch order on the global `DaftContext`.
 }
 
 /// A source with at least one task fires exactly one Start and one End,
@@ -76,7 +77,8 @@ async fn source_only_pipeline_emits_one_start_then_one_end() -> DaftResult<()> {
     let meter = Meter::test_scope("lifecycle_source_only");
     let (pipeline, _cfg) = build_in_memory_source(0, vec![make_partition(&[1, 2, 3])], &meter);
 
-    let captured = run_pipeline_and_capture_events(&pipeline, &meter).await?;
+    let captured =
+        run_pipeline_and_capture_events(&pipeline, &meter, "lifecycle_source_only").await?;
 
     let s = starts(&captured.events);
     let e = ends(&captured.events);
@@ -86,8 +88,8 @@ async fn source_only_pipeline_emits_one_start_then_one_end() -> DaftResult<()> {
     assert_eq!(e[0].node_id, 0);
     assert_eq!(s[0].name.as_ref(), "InMemorySource");
 
-    let start_pos = position_of(&captured.events, PendingOperatorKind::Start, 0).unwrap();
-    let end_pos = position_of(&captured.events, PendingOperatorKind::End, 0).unwrap();
+    let start_pos = position_of(&captured.events, CapturedEventKind::Start, 0).unwrap();
+    let end_pos = position_of(&captured.events, CapturedEventKind::End, 0).unwrap();
     assert!(start_pos < end_pos, "Start should precede End for node 0");
 
     Ok(())
@@ -101,7 +103,8 @@ async fn empty_source_emits_no_lifecycle_events() -> DaftResult<()> {
     let meter = Meter::test_scope("lifecycle_empty_source");
     let (pipeline, _cfg) = build_in_memory_source(0, vec![], &meter);
 
-    let captured = run_pipeline_and_capture_events(&pipeline, &meter).await?;
+    let captured =
+        run_pipeline_and_capture_events(&pipeline, &meter, "lifecycle_empty_source").await?;
 
     assert!(
         captured.events.is_empty(),
@@ -119,7 +122,8 @@ async fn source_filter_pipeline_emits_paired_events() -> DaftResult<()> {
     let meter = Meter::test_scope("lifecycle_source_filter");
     let (pipeline, _schema) = build_filter_pipeline(vec![make_partition(&[1, 2, 3, 4, 5])], &meter);
 
-    let captured = run_pipeline_and_capture_events(&pipeline, &meter).await?;
+    let captured =
+        run_pipeline_and_capture_events(&pipeline, &meter, "lifecycle_source_filter").await?;
 
     let s = starts(&captured.events);
     let e = ends(&captured.events);
@@ -140,8 +144,8 @@ async fn source_filter_pipeline_emits_paired_events() -> DaftResult<()> {
     assert_eq!(names.get(&1).copied(), Some("Filter"));
 
     for node_id in [0u32, 1] {
-        let sp = position_of(&captured.events, PendingOperatorKind::Start, node_id).unwrap();
-        let ep = position_of(&captured.events, PendingOperatorKind::End, node_id).unwrap();
+        let sp = position_of(&captured.events, CapturedEventKind::Start, node_id).unwrap();
+        let ep = position_of(&captured.events, CapturedEventKind::End, node_id).unwrap();
         assert!(sp < ep, "Start must precede End for node {node_id}");
     }
     Ok(())
@@ -161,7 +165,8 @@ async fn multi_partition_source_filter_dedupes_events_per_node() -> DaftResult<(
         &meter,
     );
 
-    let captured = run_pipeline_and_capture_events(&pipeline, &meter).await?;
+    let captured =
+        run_pipeline_and_capture_events(&pipeline, &meter, "lifecycle_multi_partition").await?;
 
     let s = starts(&captured.events);
     let e = ends(&captured.events);
@@ -189,7 +194,7 @@ async fn dropping_result_stream_still_finalizes_operators() -> DaftResult<()> {
         DistributedPipelineNode::new(Arc::new(filter_node), &meter)
     };
 
-    let captured = run_pipeline_and_capture_first_n(&pipeline, &meter, 1).await?;
+    let captured = run_pipeline_and_capture_first_n(&pipeline, &meter, "lifecycle_drop", 1).await?;
 
     let started: std::collections::HashSet<_> =
         starts(&captured.events).iter().map(|e| e.node_id).collect();
@@ -214,6 +219,9 @@ async fn dropping_result_stream_still_finalizes_operators() -> DaftResult<()> {
 /// don't see orphaned Starts.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
+    let query_id = "lifecycle_flush_after_abort";
+    let collector = attach_event_collector(query_id);
+
     let meter = Meter::test_scope("lifecycle_flush_after_abort");
     let pipeline = {
         let parts: Vec<Arc<MicroPartition>> = (0..32)
@@ -227,7 +235,7 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
 
     let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
     let stats_manager =
-        StatisticsManager::from_pipeline_node(&pipeline, vec![], &meter, "test-query".into())?;
+        StatisticsManager::from_pipeline_node(&pipeline, vec![], &meter, query_id.into())?;
 
     let mut scheduler_joinset = common_runtime::JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(
@@ -249,15 +257,15 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
     scheduler_joinset.abort_all();
     while scheduler_joinset.join_next().await.is_some() {}
 
-    let pre_flush = stats_manager.take_pending_operator_events();
+    let pre_flush = collector.drain();
     let started_pre: std::collections::HashSet<_> = pre_flush
         .iter()
-        .filter(|e| e.kind == PendingOperatorKind::Start)
+        .filter(|e| e.kind == CapturedEventKind::Start)
         .map(|e| e.node_id)
         .collect();
     let ended_pre: std::collections::HashSet<_> = pre_flush
         .iter()
-        .filter(|e| e.kind == PendingOperatorKind::End)
+        .filter(|e| e.kind == CapturedEventKind::End)
         .map(|e| e.node_id)
         .collect();
     assert!(
@@ -272,11 +280,11 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
 
     // Now flush — the hook PythonPartitionRefStream::finish uses.
     stats_manager.flush_started_operators();
-    let post_flush = stats_manager.take_pending_operator_events();
+    let post_flush = collector.drain();
 
     let synthetic_ends: std::collections::HashSet<_> = post_flush
         .iter()
-        .filter(|e| e.kind == PendingOperatorKind::End)
+        .filter(|e| e.kind == CapturedEventKind::End)
         .map(|e| e.node_id)
         .collect();
     let total_ended: std::collections::HashSet<_> =
@@ -289,7 +297,7 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
 
     // Idempotent: a second flush must be a no-op.
     stats_manager.flush_started_operators();
-    let second_flush = stats_manager.take_pending_operator_events();
+    let second_flush = collector.drain();
     assert!(
         second_flush.is_empty(),
         "flush_started_operators should be idempotent; got {second_flush:?}",
@@ -306,11 +314,13 @@ async fn flush_recovers_started_operators_after_hard_abort() -> DaftResult<()> {
 async fn run_pipeline_and_capture_first_n(
     pipeline: &DistributedPipelineNode,
     meter: &Meter,
+    query_id: &str,
     n: usize,
 ) -> DaftResult<CapturedRun> {
+    let collector = attach_event_collector(query_id);
     let worker_manager = Arc::new(LocalSwordfishWorkerManager::single_worker());
     let stats_manager =
-        StatisticsManager::from_pipeline_node(pipeline, vec![], meter, "test-query".into())?;
+        StatisticsManager::from_pipeline_node(pipeline, vec![], meter, query_id.into())?;
 
     let mut scheduler_joinset = common_runtime::JoinSet::new();
     let scheduler_handle = spawn_scheduler_actor(
@@ -345,6 +355,6 @@ async fn run_pipeline_and_capture_first_n(
     }
 
     let stats = stats_manager.export_metrics();
-    let events = stats_manager.take_pending_operator_events();
+    let events = collector.drain();
     Ok(CapturedRun { events, stats })
 }
