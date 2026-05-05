@@ -366,4 +366,5 @@ For further reference, feel free to check out some of our notable data connector
 - [Writes to Hugging Face 🤗](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/huggingface/sink.py)
 - [Writes to ClickHouse](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/clickhouse/clickhouse_data_sink.py)
 - [Writes to Turbopuffer](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/turbopuffer/turbopuffer_data_sink.py)
+- [Writes to Qdrant](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/qdrant/qdrant_data_sink.py)
 - [Writes to LanceDB](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/lance/lance_data_sink.py)

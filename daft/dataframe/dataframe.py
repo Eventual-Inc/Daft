@@ -2222,6 +2222,52 @@ class DataFrame:
         return self.write_sink(sink)
 
     @DataframePublicAPI
+    def write_qdrant(
+        self,
+        collection_name: str | Expression,
+        url: str | None = None,
+        api_key: str | None = None,
+        id_column: str | None = None,
+        vector_column: str | None = None,
+        client_kwargs: dict[str, Any] | None = None,
+        upsert_kwargs: dict[str, Any] | None = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame to a Qdrant collection.
+
+        This method transforms each row of the dataframe into a Qdrant point.
+        An `id` column is required. Optionally, the `id_column` parameter can be used to specify the column name to use for the id column.
+        Note that the column with the name specified by `id_column` will be renamed to "id" when written to Qdrant.
+        Qdrant point ids must be either unsigned integers or UUID strings.
+
+        A `vector` column is required. Optionally, the `vector_column` parameter can be used to specify the column name to use for the vector.
+        Note that the column with the name specified by `vector_column` will be renamed to "vector" when written to Qdrant.
+        The vector column may contain a list of floats (single vector) or a dict (named vectors).
+
+        All other columns become the point's payload.
+
+        The `collection_name` parameter can be either a string (for a single collection) or an expression (for multiple collections).
+        When using an expression, the data will be partitioned by the computed collection values and written to each collection separately.
+
+        The target collection(s) must already exist in Qdrant.
+
+        For more details on creating collections, please refer to: https://qdrant.tech/documentation/manage-data/collections/#create-a-collection
+
+        Args:
+            collection_name: The collection to write to. Can be a string for a single collection or an expression for multiple collections.
+            url: Qdrant server URL (e.g. ``"http://localhost:6333"``).
+            api_key: Qdrant API key.
+            id_column: Optional column name for the id column. The data sink will automatically rename the column to "id".
+            vector_column: Optional column name for the vector column. The data sink will automatically rename the column to "vector".
+            client_kwargs: Optional dictionary of arguments to pass to the ``QdrantClient`` constructor.
+                Explicit arguments (``url``, ``api_key``) will be merged into ``client_kwargs``.
+            upsert_kwargs: Optional dictionary of arguments to pass to the ``QdrantClient.upsert()`` method.
+        """
+        from daft.io.qdrant.qdrant_data_sink import QdrantDataSink
+
+        sink = QdrantDataSink(collection_name, url, api_key, id_column, vector_column, client_kwargs, upsert_kwargs)
+        return self.write_sink(sink)
+
+    @DataframePublicAPI
     def write_clickhouse(
         self,
         table: str,

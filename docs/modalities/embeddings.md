@@ -7,7 +7,7 @@ With the native [`daft.DataType.embedding`](../api/datatypes/all_datatypes.md#da
 - **Generate embeddings** from any text column using providers like OpenAI, Cohere, or local models
 - **Compute similarity** with built-in distance functions like `cosine_distance`
 - **Build search pipelines** that scale from local development to distributed clusters
-- **Write to vector databases** like Turbopuffer, Pinecone, or LanceDB
+- **Write to vector databases** like Turbopuffer, Qdrant, Pinecone, or LanceDB
 
 ## Semantic Search Example
 
@@ -154,5 +154,17 @@ df.write_turbopuffer(
         "abstract": "string",
         "abstract_embedding": "vector",
     }
+)
+```
+
+The same pipeline can target [Qdrant](../connectors/qdrant.md) instead by swapping the final write step:
+
+```python
+# Write to Qdrant — the collection must already exist with the appropriate vector config.
+df.write_qdrant(
+    collection_name="ai_papers",
+    url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
+    api_key=os.environ.get("QDRANT_API_KEY"),
+    vector_column="abstract_embedding",
 )
 ```

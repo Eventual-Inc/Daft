@@ -128,7 +128,7 @@ model = "text-embedding-nomic-embed-text-v1.5"
 
 It's common to use embeddings for various tasks like similarity search or retrieval with a vector database.
 
-Check out our guide on [writing to turbopuffer](../connectors/turbopuffer.md) to work with a popular fast vector database.
+Check out our guides on [writing to Turbopuffer](../connectors/turbopuffer.md) or [writing to Qdrant](../connectors/qdrant.md) to work with popular vector databases.
 
 
 ## Chunk text into smaller pieces
@@ -174,4 +174,4 @@ For a fuller discussion on text chunking strategies, check out the [text chunkin
 
 ## More examples
 
-Check out our [end-to-end tutorial](../examples/text-embeddings.md) for a complete workflow: chunking text, generating embeddings, and uploading to vector databases like [turbopuffer](../connectors/turbopuffer.md).
+Check out our [end-to-end tutorial](../examples/text-embeddings.md) for a complete workflow: chunking text, generating embeddings, and uploading to vector databases like [Turbopuffer](../connectors/turbopuffer.md) or [Qdrant](../connectors/qdrant.md).

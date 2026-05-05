@@ -56,6 +56,7 @@
         * [SQL Databases](connectors/sql.md)
         * [Text Files](connectors/text.md)
         * [Turbopuffer](connectors/turbopuffer.md)
+        * [Qdrant](connectors/qdrant.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
         * [Overview](extensions/overview.md)

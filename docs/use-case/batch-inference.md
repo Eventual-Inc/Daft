@@ -98,4 +98,5 @@ Ready to explore Daft further? Check out these topics:
   - [S3](../connectors/aws.md)
   - [Hugging Face 🤗](../connectors/huggingface.md)
   - [Turbopuffer](../connectors/turbopuffer.md)
+  - [Qdrant](../connectors/qdrant.md)
 - [Scaling out and deployment](../distributed/index.md)

@@ -199,4 +199,4 @@ results.show()
     - Pre-computing and storing embeddings to avoid re-generation
     - Using approximate nearest neighbor (ANN) algorithms for huge datasets
     - Filtering documents before computing similarity to reduce comparisons
-    - Writing results to a vector database like [Turbopuffer](../connectors/turbopuffer.md) for efficient retrieval
+    - Writing results to a vector database like [Turbopuffer](../connectors/turbopuffer.md) or [Qdrant](../connectors/qdrant.md) for efficient retrieval

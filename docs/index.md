@@ -247,6 +247,7 @@ const MODALITIES = {
         details: ["# use CLIP model on GPU", "# use OpenAI text-embedding-3"],
         destinations: {
           "Turbopuffer": "# for vector search",
+          "Qdrant": "# for vector search",
           "LanceDB": "# for vector search"
         }
       }
@@ -273,6 +274,7 @@ const MODALITIES = {
         details: ["# use OpenAI's API for text-embedding-3", "# use sentence-transformers on GPU"],
         destinations: {
           "Turbopuffer": "# for vector search",
+          "Qdrant": "# for vector search",
           "LanceDB": "# for vector search"
         }
       },
@@ -319,6 +321,7 @@ const MODALITIES = {
         details: ["# use CLIP model on CPU", "# use CLIP model on GPU"],
         destinations: {
           "Turbopuffer": "# for vector search",
+          "Qdrant": "# for vector search",
           "LanceDB": "# for vector search"
         }
       }
@@ -354,6 +357,7 @@ const MODALITIES = {
         details: ["# use custom Python code with wav2vec2", "# use OpenAI's endpoint for text-embedding-3"],
         destinations: {
           "Turbopuffer": "# for vector search",
+          "Qdrant": "# for vector search",
           "LanceDB": "# for vector search"
         }
       }
@@ -373,6 +377,7 @@ const MODALITIES = {
         details: ["# use OpenAI's endpoint for text-embedding-3", "# use sentence-transformers on GPUs", "# use BERT model on GPUs"],
         destinations: {
           "Turbopuffer": "# for vector search",
+          "Qdrant": "# for vector search",
           "LanceDB": "# for vector search"
         }
       }

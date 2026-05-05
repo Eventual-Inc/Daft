@@ -24,7 +24,7 @@
 
 - [Build a 100% GPU Utilization Text Embedding Pipeline featuring spaCy and Turbopuffer](text-embeddings.md)
 
-    Generate and store millions of text embeddings in vector databases using distributed GPU processing and state-of-the-art models.
+    Generate and store millions of text embeddings in vector databases (Turbopuffer, Qdrant) using distributed GPU processing and state-of-the-art models.
 
 - [Generate Images with Stable Diffusion](image-generation.md)
 

@@ -58,6 +58,14 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
+        <input type="checkbox" id="qdrant" data-extra="qdrant">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Qdrant</strong> <code>qdrant</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
         <input type="checkbox" id="aws" data-extra="aws">
         <span class="checkmark"></span>
         <div class="checkbox-content">

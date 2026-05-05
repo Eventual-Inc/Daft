@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, qdrant, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.43.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<0.12.0"]
@@ -46,6 +46,7 @@ numpy = ["numpy<2.4.0"]
 openai = ["openai<2.21.0", "numpy<2.4.0", "pillow==12.1.1"]
 pandas = ["pandas<2.4.0"]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.11.0", "connectorx>=0.4.4,<0.5.0"]
+qdrant = ["qdrant-client<2.0.0"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   'ray[data, client]>=2.0.0,<2.56.0; platform_system != "Windows"',
