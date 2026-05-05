@@ -790,15 +790,12 @@ jobs:
       with:
         distribution: "temurin"
         java-version: "17"
-    # - uses: actions/checkout@v6
-    #   with:
-    #     repository: unitycatalog/unitycatalog
-    #     ref: 20dd3820be332ac04deec4e063099fb863eb3392
-    #     submodules: true
-    #     path: unitycatalog
-    # - name: Start UC Server
-    #   working-directory: ./unitycatalog
-    #   run: bin/start-uc-server -p 3000 &
+    - uses: actions/checkout@v6
+      with:
+        repository: unitycatalog/unitycatalog
+        ref: 20dd3820be332ac04deec4e063099fb863eb3392
+        submodules: true
+        path: unitycatalog
     - name: Start UC Server
       run: |
         docker run -d --name uc-server \
@@ -976,6 +973,7 @@ jobs:
     - name: Cleanup Docker services
       if: always()
       run: |
+        docker rm -f uc-server || true
         pushd ./tests/integration/gravitino/docker-compose/
         docker compose -f ./docker-compose.yml down --volumes || true
         popd
