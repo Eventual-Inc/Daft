@@ -675,6 +675,10 @@ jobs:
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        daft-runner: [native, ray]
     steps:
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@v1.3.1
@@ -736,22 +740,15 @@ jobs:
         docker compose -f ./docker-compose.yml up -d
         popd
 
-    - name: Run sql integration tests (native)
+    # Same tests as sequential native+ray, but parallel matrix jobs — matches integration-test-io.
+    - name: Run sql integration tests (${{ matrix.daft-runner }})
       run: |
         set -o pipefail
         source .venv/bin/activate
         pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
-        DAFT_RUNNER: native
-    - name: Run sql integration tests (ray)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
-        python tools/aggregate_test_durations.py sql_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v3.0.1
