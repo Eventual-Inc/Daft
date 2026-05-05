@@ -82,6 +82,7 @@ where
                 let physical = binary_series.binary().unwrap().clone();
                 let field = Field::new(self.name(), DataType::Geometry);
                 Ok(GeometryArray::new(field, physical).into_series())
+            }
             DataType::Extension(name, storage_type, metadata) => {
                 let casted_to_storage = self.cast(storage_type.as_ref())?;
                 Ok(
