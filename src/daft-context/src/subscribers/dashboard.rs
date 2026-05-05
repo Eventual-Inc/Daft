@@ -18,28 +18,43 @@ use uuid::Uuid;
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
     events::{
-        OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSource, TaskSubmitEvent,
+        InMemoryScanSource, OperatorEndEvent, OperatorStartEvent, PhysicalScanSource, StatsEvent,
+        TaskEndEvent, TaskSource, TaskSubmitEvent,
     },
 };
 
-fn task_source_to_args(source: &TaskSource) -> daft_dashboard::engine::TaskSourceArgs {
-    match source {
-        TaskSource::PhysicalScan(p) => daft_dashboard::engine::TaskSourceArgs::PhysicalScan(
-            daft_dashboard::engine::PhysicalScanSourceArgs {
-                source_id: p.source_id,
-                scan_tasks: p.scan_tasks,
-                paths: p.paths.clone(),
-                storage_bytes: p.storage_bytes.map(|b| b as u64),
-                estimated_memory_bytes: p.estimated_memory_bytes.map(|b| b as u64),
-            },
-        ),
-        TaskSource::InMemoryScan(m) => daft_dashboard::engine::TaskSourceArgs::InMemoryScan(
-            daft_dashboard::engine::InMemoryScanSourceArgs {
-                source_id: m.source_id,
-                partitions: m.partitions as u64,
-                total_bytes: m.total_bytes.map(|b| b as u64),
-            },
-        ),
+// `daft-dashboard` does not (and shouldn't) depend on `daft-context`, so these
+// `From` impls live here. The orphan rule permits them because the trait's
+// input type (`TaskSource` etc.) is local to this crate.
+
+impl From<&PhysicalScanSource> for daft_dashboard::engine::PhysicalScanSourceArgs {
+    fn from(p: &PhysicalScanSource) -> Self {
+        Self {
+            source_id: p.source_id,
+            scan_tasks: p.scan_tasks,
+            paths: p.paths.clone(),
+            storage_bytes: p.storage_bytes.map(|b| b as u64),
+            estimated_memory_bytes: p.estimated_memory_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&InMemoryScanSource> for daft_dashboard::engine::InMemoryScanSourceArgs {
+    fn from(m: &InMemoryScanSource) -> Self {
+        Self {
+            source_id: m.source_id,
+            partitions: m.partitions as u64,
+            total_bytes: m.total_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&TaskSource> for daft_dashboard::engine::TaskSourceArgs {
+    fn from(source: &TaskSource) -> Self {
+        match source {
+            TaskSource::PhysicalScan(p) => Self::PhysicalScan(p.into()),
+            TaskSource::InMemoryScan(m) => Self::InMemoryScan(m.into()),
+        }
     }
 }
 
@@ -490,11 +505,7 @@ impl DashboardSubscriber {
 
         let query_id = event.header.query_id.clone();
         let task = &event.task;
-        let sources = event
-            .sources
-            .iter()
-            .map(task_source_to_args)
-            .collect::<Vec<_>>();
+        let sources = event.sources.iter().map(Into::into).collect::<Vec<_>>();
         self.enqueue_json(
             format!("engine/query/{}/task/submit", query_id),
             "task_submit",
