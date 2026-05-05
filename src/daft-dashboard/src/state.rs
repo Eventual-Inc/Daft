@@ -199,17 +199,16 @@ impl TaskStore {
 
     /// Record a task submission. The individual task is always retained while
     /// active (callers inspect active tasks for debugging stuck queries).
-    #[allow(clippy::too_many_arguments)]
-    pub fn submit_task(
-        &mut self,
-        task_id: u32,
-        last_node_id: NodeID,
-        node_ids: Vec<NodeID>,
-        plan_fingerprint: u32,
-        name: Option<String>,
-        submit_sec: f64,
-        sources: Vec<crate::engine::TaskSourceArgs>,
-    ) {
+    pub fn submit_task(&mut self, args: crate::engine::TaskSubmitArgs) {
+        let crate::engine::TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint,
+            name,
+            sources,
+        } = args;
         // Display label only; the group key is `node_ids`.
         let display_name = name
             .clone()
@@ -238,7 +237,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
-            sources: sources.clone(),
+            sources: Vec::new(),
         });
 
         // If a prior submit is replayed, keep the earliest submit_sec and sync
@@ -713,9 +712,28 @@ pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
 #[cfg(test)]
 mod task_store_tests {
     use super::*;
+    use crate::engine::TaskSubmitArgs;
 
     fn finished() -> TaskStatus {
         TaskStatus::Finished
+    }
+
+    fn submit(
+        task_id: u32,
+        last_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        name: &str,
+        submit_sec: f64,
+    ) -> TaskSubmitArgs {
+        TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint: 0,
+            name: Some(name.to_string()),
+            sources: vec![],
+        }
     }
 
     /// Two tasks with identical `node_ids` but different `name` strings should
@@ -724,24 +742,8 @@ mod task_store_tests {
     #[test]
     fn same_node_ids_different_names_collapse_to_one_group() {
         let mut store = TaskStore::default();
-        store.submit_task(
-            1,
-            7,
-            vec![3, 5, 7],
-            0,
-            Some("Limit(10)".to_string()),
-            0.0,
-            vec![],
-        );
-        store.submit_task(
-            2,
-            7,
-            vec![3, 5, 7],
-            0,
-            Some("Limit(100)".to_string()),
-            0.0,
-            vec![],
-        );
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Limit(10)", 0.0));
+        store.submit_task(submit(2, 7, vec![3, 5, 7], "Limit(100)", 0.0));
 
         assert_eq!(
             store.groups.len(),
@@ -758,24 +760,8 @@ mod task_store_tests {
     #[test]
     fn different_node_ids_same_name_split_into_two_groups() {
         let mut store = TaskStore::default();
-        store.submit_task(
-            1,
-            5,
-            vec![3, 5],
-            0,
-            Some("Project".to_string()),
-            0.0,
-            vec![],
-        );
-        store.submit_task(
-            2,
-            9,
-            vec![7, 9],
-            0,
-            Some("Project".to_string()),
-            0.0,
-            vec![],
-        );
+        store.submit_task(submit(1, 5, vec![3, 5], "Project", 0.0));
+        store.submit_task(submit(2, 9, vec![7, 9], "Project", 0.0));
 
         assert_eq!(store.groups.len(), 2);
     }
@@ -799,7 +785,7 @@ mod task_store_tests {
             500,
         );
         // Submit arrives later with the same single-node chain.
-        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5, vec![]);
+        store.submit_task(submit(42, 7, vec![7], "Filter", 0.5));
 
         assert_eq!(store.groups.len(), 1);
         let g = &store.groups[0];
@@ -823,15 +809,9 @@ mod task_store_tests {
             storage_bytes: Some(1024),
             estimated_memory_bytes: Some(4096),
         });
-        store.submit_task(
-            1,
-            7,
-            vec![3, 5, 7],
-            0,
-            Some("ScanTaskSource->Project".to_string()),
-            0.0,
-            vec![source],
-        );
+        let mut args = submit(1, 7, vec![3, 5, 7], "ScanTaskSource->Project", 0.0);
+        args.sources = vec![source];
+        store.submit_task(args);
 
         let task = store.tasks.get(&1).expect("task should be retained");
         assert_eq!(task.sources.len(), 1);

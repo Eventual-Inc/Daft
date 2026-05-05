@@ -886,15 +886,7 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    exec_info.task_store.submit_task(
-        args.task_id,
-        args.last_node_id,
-        args.node_ids,
-        args.plan_fingerprint,
-        args.name,
-        args.submit_sec,
-        args.sources,
-    );
+    exec_info.task_store.submit_task(args);
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK

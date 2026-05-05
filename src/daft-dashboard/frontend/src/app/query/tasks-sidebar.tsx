@@ -199,12 +199,19 @@ function summarizeSource(source: TaskSource): { label: string; tooltip: string }
       tooltip: `${head}${more}`,
     };
   }
-  const { partitions, total_bytes } = source.InMemoryScan;
-  const bytes = total_bytes != null ? ` (${total_bytes.toLocaleString()} B)` : "";
-  return {
-    label: `in-memory (${partitions}p)`,
-    tooltip: `InMemoryScan: ${partitions} partition(s)${bytes}`,
-  };
+  if ("InMemoryScan" in source) {
+    const { partitions, total_bytes } = source.InMemoryScan;
+    const bytes = total_bytes != null ? ` (${total_bytes.toLocaleString()} B)` : "";
+    return {
+      label: `in-memory (${partitions}p)`,
+      tooltip: `InMemoryScan: ${partitions} partition(s)${bytes}`,
+    };
+  }
+  // Exhaustiveness check: if a new TaskSource variant is added, TS errors here.
+  // At runtime, render a non-empty placeholder rather than throwing.
+  const _exhaustive: never = source;
+  void _exhaustive;
+  return { label: "(unknown source)", tooltip: "" };
 }
 
 function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
