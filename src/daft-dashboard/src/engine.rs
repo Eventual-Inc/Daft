@@ -10,7 +10,9 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
+use common_metrics::{
+    MEMORY_PEAK_KEY_PREFIX, QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat,
+};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -391,14 +393,41 @@ pub struct ExecEmitStatsArgsRecv {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
+/// True for stat keys whose cross-source aggregation should use max instead of
+/// sum. Per-operator memory peaks are reported per worker; the operator-wide
+/// dashboard value should reflect the hottest single worker rather than the
+/// fictitious sum of independent peak observations.
+fn merge_with_max(name: &str) -> bool {
+    name.starts_with(MEMORY_PEAK_KEY_PREFIX)
+}
+
 fn merge_stats_map(dst: &mut HashMap<String, Stat>, src: HashMap<String, Stat>) {
     for (name, stat) in src {
+        let use_max = merge_with_max(&name);
         dst.entry(name)
             .and_modify(|old| match (old, stat.clone()) {
-                (Stat::Count(a), Stat::Count(b)) => *a += b,
-                (Stat::Bytes(a), Stat::Bytes(b)) => *a += b,
+                (Stat::Count(a), Stat::Count(b)) => {
+                    if use_max {
+                        *a = (*a).max(b);
+                    } else {
+                        *a += b;
+                    }
+                }
+                (Stat::Bytes(a), Stat::Bytes(b)) => {
+                    if use_max {
+                        *a = (*a).max(b);
+                    } else {
+                        *a += b;
+                    }
+                }
                 (Stat::Duration(a), Stat::Duration(b)) => *a += b,
-                (Stat::Float(a), Stat::Float(b)) => *a += b,
+                (Stat::Float(a), Stat::Float(b)) => {
+                    if use_max {
+                        *a = (*a).max(b);
+                    } else {
+                        *a += b;
+                    }
+                }
                 (Stat::Percent(a), Stat::Percent(b)) => *a = (*a).max(b),
                 (a, b) => *a = b,
             })
@@ -420,13 +449,32 @@ fn apply_exec_emit_stats(
             let mut aggregated_stats: HashMap<String, Stat> = HashMap::new();
             for source_stat in op.source_stats.values() {
                 for (name, stat) in source_stat {
+                    let use_max = merge_with_max(name);
                     aggregated_stats
                         .entry(name.clone())
                         .and_modify(|old| match (old, stat.clone()) {
-                            (Stat::Count(a), Stat::Count(b)) => *a += b,
-                            (Stat::Bytes(a), Stat::Bytes(b)) => *a += b,
+                            (Stat::Count(a), Stat::Count(b)) => {
+                                if use_max {
+                                    *a = (*a).max(b);
+                                } else {
+                                    *a += b;
+                                }
+                            }
+                            (Stat::Bytes(a), Stat::Bytes(b)) => {
+                                if use_max {
+                                    *a = (*a).max(b);
+                                } else {
+                                    *a += b;
+                                }
+                            }
                             (Stat::Duration(a), Stat::Duration(b)) => *a += b,
-                            (Stat::Float(a), Stat::Float(b)) => *a += b,
+                            (Stat::Float(a), Stat::Float(b)) => {
+                                if use_max {
+                                    *a = (*a).max(b);
+                                } else {
+                                    *a += b;
+                                }
+                            }
                             (Stat::Percent(a), Stat::Percent(b)) => *a = (*a).max(b),
                             (a, b) => *a = b,
                         })

@@ -14,24 +14,36 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats as _,
 };
 
 pub(crate) enum AggregateState {
-    Accumulating(Vec<MicroPartition>),
+    Accumulating {
+        parts: Vec<MicroPartition>,
+        held_bytes: u64,
+    },
     Done,
 }
 
 impl AggregateState {
     fn push(&mut self, part: MicroPartition) {
-        if let Self::Accumulating(parts) = self {
+        if let Self::Accumulating { parts, held_bytes } = self {
+            *held_bytes = held_bytes.saturating_add(part.size_bytes() as u64);
             parts.push(part);
         } else {
             panic!("AggregateSink should be in Accumulating state");
         }
     }
 
+    fn held_bytes(&self) -> u64 {
+        match self {
+            Self::Accumulating { held_bytes, .. } => *held_bytes,
+            Self::Done => 0,
+        }
+    }
+
     fn finalize(&mut self) -> Vec<MicroPartition> {
-        let res = if let Self::Accumulating(parts) = self {
+        let res = if let Self::Accumulating { parts, .. } = self {
             std::mem::take(parts)
         } else {
             panic!("AggregateSink should be in Accumulating state");
@@ -86,7 +98,7 @@ impl BlockingSink for AggregateSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.agg_sink_params.clone();
@@ -95,6 +107,7 @@ impl BlockingSink for AggregateSink {
                 async move {
                     let agged = input.agg(&params.sink_agg_exprs, &[])?;
                     state.push(agged);
+                    runtime_stats.record_state_bytes(state.held_bytes());
                     Ok(state)
                 },
                 Span::current(),
@@ -146,6 +159,9 @@ impl BlockingSink for AggregateSink {
     }
 
     fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        Ok(AggregateState::Accumulating(vec![]))
+        Ok(AggregateState::Accumulating {
+            parts: vec![],
+            held_bytes: 0,
+        })
     }
 }

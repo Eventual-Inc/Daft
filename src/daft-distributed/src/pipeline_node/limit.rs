@@ -56,6 +56,7 @@ impl RuntimeStats for LimitStats {
                         self.base.add_bytes_out(snapshot.bytes_out);
                     }
                 }
+                self.base.forward_default_snapshot_peak(snapshot);
             }
             StatSnapshot::Source(snapshot) => {
                 if let Some(phase) = &node_info.node_phase

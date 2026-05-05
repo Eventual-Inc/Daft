@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
     JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
-    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    NUM_TASKS_KEY, PEAK_STATE_BYTES_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -39,6 +39,12 @@ pub struct DefaultSnapshot {
     pub bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    /// Peak resident state size held by this operator over its lifetime.
+    /// `None` means the operator does not report state-size (e.g. stateless
+    /// operators like Project / Filter); `Some(0)` means it reported but never
+    /// held state.
+    #[serde(default)]
+    pub peak_state_bytes: Option<u64>,
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
@@ -47,14 +53,20 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            ROWS_IN_KEY; Stat::Count(self.rows_in),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
-            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
-            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
-        ]
+        let mut entries = SmallVec::with_capacity(7);
+        entries.push((
+            DURATION_KEY.into(),
+            Stat::Duration(Duration::from_micros(self.cpu_us)),
+        ));
+        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in)));
+        entries.push((ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)));
+        entries.push((BYTES_IN_KEY.into(), Stat::Bytes(self.bytes_in)));
+        entries.push((BYTES_OUT_KEY.into(), Stat::Bytes(self.bytes_out)));
+        entries.push((NUM_TASKS_KEY.into(), Stat::Count(self.num_tasks)));
+        if let Some(peak) = self.peak_state_bytes {
+            entries.push((PEAK_STATE_BYTES_KEY.into(), Stat::Bytes(peak)));
+        }
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
@@ -75,6 +87,16 @@ impl DefaultSnapshot {
             bytes_in: self.bytes_in + other.bytes_in,
             bytes_out: self.bytes_out + other.bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            // Peak across concurrent input_ids: we sum, treating the peaks as
+            // possibly-coexisting working sets (an upper bound on simultaneous
+            // memory held by the operator). When only one input_id reports,
+            // this collapses to that input's peak.
+            peak_state_bytes: match (self.peak_state_bytes, other.peak_state_bytes) {
+                (Some(a), Some(b)) => Some(a.saturating_add(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
         }
     }
 }
@@ -496,6 +518,7 @@ mod tests {
                     rows_out: 0,
                     bytes_in: 0,
                     bytes_out: 0,
+                    peak_state_bytes: None,
                 }),
                 StatSnapshot::Default(DefaultSnapshot {
                     num_tasks: 5,
@@ -504,6 +527,7 @@ mod tests {
                     rows_out: 0,
                     bytes_in: 0,
                     bytes_out: 0,
+                    peak_state_bytes: None,
                 }),
                 7,
             ),
@@ -639,5 +663,62 @@ mod tests {
                 "merged snapshot: {merged:?}"
             );
         }
+    }
+
+    fn default_snapshot_with_peak(peak: Option<u64>) -> DefaultSnapshot {
+        DefaultSnapshot {
+            cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            num_tasks: 0,
+            peak_state_bytes: peak,
+        }
+    }
+
+    #[test]
+    fn default_snapshot_peak_state_bytes_is_summed_across_input_ids() {
+        // Two concurrent input_ids reporting their peaks: merged peak is the
+        // sum (an upper bound on simultaneous memory held).
+        let merged =
+            default_snapshot_with_peak(Some(100)).merge(&default_snapshot_with_peak(Some(250)));
+        assert_eq!(merged.peak_state_bytes, Some(350));
+    }
+
+    #[test]
+    fn default_snapshot_peak_state_bytes_handles_none() {
+        // None merged with Some passes the Some through.
+        let merged = default_snapshot_with_peak(None).merge(&default_snapshot_with_peak(Some(42)));
+        assert_eq!(merged.peak_state_bytes, Some(42));
+
+        // Some merged with None likewise.
+        let merged = default_snapshot_with_peak(Some(42)).merge(&default_snapshot_with_peak(None));
+        assert_eq!(merged.peak_state_bytes, Some(42));
+
+        // None merged with None stays None.
+        let merged = default_snapshot_with_peak(None).merge(&default_snapshot_with_peak(None));
+        assert_eq!(merged.peak_state_bytes, None);
+    }
+
+    #[test]
+    fn default_snapshot_peak_state_bytes_appears_in_to_stats_when_present() {
+        let snap = default_snapshot_with_peak(Some(1024));
+        let stats = snap.to_stats();
+        let entry = stats.iter().find(|(name, _)| *name == PEAK_STATE_BYTES_KEY);
+        match entry {
+            Some((_, Stat::Bytes(b))) => assert_eq!(*b, 1024),
+            other => panic!("expected Stat::Bytes for peak, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn default_snapshot_peak_state_bytes_omitted_from_to_stats_when_none() {
+        let snap = default_snapshot_with_peak(None);
+        let stats = snap.to_stats();
+        assert!(
+            stats.iter().all(|(name, _)| name != PEAK_STATE_BYTES_KEY),
+            "peak state bytes should not be reported when None"
+        );
     }
 }

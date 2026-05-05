@@ -11,6 +11,7 @@ use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSin
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats as _,
     sinks::blocking_sink::BlockingSinkOutput,
 };
 
@@ -28,7 +29,10 @@ struct TopNParams {
 /// Current status of the TopN operation
 pub(crate) enum TopNState {
     /// Operator is still collecting input
-    Building(Vec<MicroPartition>),
+    Building {
+        top_values: Vec<MicroPartition>,
+        held_bytes: u64,
+    },
     /// Operator has finished collecting all input and ready to produce output
     /// by doing a final sort + limit
     Done,
@@ -37,16 +41,28 @@ pub(crate) enum TopNState {
 impl TopNState {
     /// Process a new micro-partition and update the top N values
     fn append(&mut self, part: MicroPartition) {
-        let Self::Building(top_values) = self else {
+        let Self::Building {
+            top_values,
+            held_bytes,
+        } = self
+        else {
             panic!("TopNSink should be in Building state");
         };
 
+        *held_bytes = held_bytes.saturating_add(part.size_bytes() as u64);
         top_values.push(part);
+    }
+
+    fn held_bytes(&self) -> u64 {
+        match self {
+            Self::Building { held_bytes, .. } => *held_bytes,
+            Self::Done => 0,
+        }
     }
 
     /// Finalize the TopN operation and return the top N values
     fn finalize(&mut self) -> Vec<MicroPartition> {
-        let Self::Building(top_values) = self else {
+        let Self::Building { top_values, .. } = self else {
             panic!("TopNSink should be in Building state");
         };
 
@@ -88,7 +104,7 @@ impl BlockingSink for TopNSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
@@ -108,6 +124,7 @@ impl BlockingSink for TopNSink {
 
                     // Append to the collection of existing top N values
                     state.append(top_input_rows);
+                    runtime_stats.record_state_bytes(state.held_bytes());
                     Ok(state)
                 },
                 Span::current(),
@@ -186,6 +203,9 @@ impl BlockingSink for TopNSink {
     }
 
     fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        Ok(TopNState::Building(vec![]))
+        Ok(TopNState::Building {
+            top_values: vec![],
+            held_bytes: 0,
+        })
     }
 }

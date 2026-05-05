@@ -29,6 +29,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats as _,
 };
 
 #[derive(Default)]
@@ -39,6 +40,7 @@ pub(crate) struct SinglePartitionDedupState {
 pub(crate) enum DedupState {
     Accumulating {
         inner_states: Vec<SinglePartitionDedupState>,
+        held_bytes: u64,
     },
     Done,
 }
@@ -48,11 +50,18 @@ impl DedupState {
         let inner_states = (0..num_partitions)
             .map(|_| SinglePartitionDedupState::default())
             .collect::<Vec<_>>();
-        Self::Accumulating { inner_states }
+        Self::Accumulating {
+            inner_states,
+            held_bytes: 0,
+        }
     }
 
     fn push(&mut self, input: MicroPartition, columns: &[BoundExpr]) -> DaftResult<()> {
-        let Self::Accumulating { inner_states } = self else {
+        let Self::Accumulating {
+            inner_states,
+            held_bytes,
+        } = self
+        else {
             panic!("DropDuplicatesSink should be in Accumulating state");
         };
 
@@ -60,13 +69,21 @@ impl DedupState {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             // TODO: Deduplicate in parallel?
             let deduped = p.dedup(columns)?;
+            *held_bytes = held_bytes.saturating_add(deduped.size_bytes() as u64);
             state.partially_deduped.push(deduped);
         }
         Ok(())
     }
 
+    fn held_bytes(&self) -> u64 {
+        match self {
+            Self::Accumulating { held_bytes, .. } => *held_bytes,
+            Self::Done => 0,
+        }
+    }
+
     fn finalize(&mut self) -> Vec<SinglePartitionDedupState> {
-        let res = if let Self::Accumulating { inner_states } = self {
+        let res = if let Self::Accumulating { inner_states, .. } = self {
             std::mem::take(inner_states)
         } else {
             panic!("DropDuplicatesSink should be in Accumulating state");
@@ -100,7 +117,7 @@ impl BlockingSink for DedupSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let columns = self.columns.clone();
@@ -108,6 +125,7 @@ impl BlockingSink for DedupSink {
             .spawn(
                 async move {
                     state.push(input, &columns)?;
+                    runtime_stats.record_state_bytes(state.held_bytes());
                     Ok(state)
                 },
                 Span::current(),

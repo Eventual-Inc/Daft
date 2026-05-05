@@ -8,7 +8,7 @@ pub mod snapshot;
 use std::{ops::Index, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use meters::{Counter, Gauge, Meter, UpDownCounter, normalize_name};
+pub use meters::{Counter, Gauge, MaxGauge, Meter, UpDownCounter, normalize_name};
 pub use operator_metrics::{
     MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
 };
@@ -150,6 +150,18 @@ pub const ATTR_NODE_ORIGIN_ID: &str = "node.origin_id";
 pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
 pub const ATTR_NODE_PHASE: &str = "node.phase";
+
+// Per-operator memory metrics
+/// Peak resident state size held by an operator over its lifetime.
+///
+/// Reported as `Stat::Bytes` and merged with `max` (not `sum`) when the same
+/// operator emits the metric across multiple stat sources or across workers in
+/// the distributed engine.
+pub const PEAK_STATE_BYTES_KEY: &str = "memory.peak_state";
+
+/// Prefix used to identify per-operator memory metrics that should be merged
+/// with `max` semantics rather than additive summation.
+pub const MEMORY_PEAK_KEY_PREFIX: &str = "memory.peak";
 
 // Process-level metrics
 pub const PROCESS_JEMALLOC_ALLOCATED_KEY: &str = "process.memory.jemalloc.allocated";
