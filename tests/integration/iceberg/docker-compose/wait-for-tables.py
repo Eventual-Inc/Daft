@@ -8,23 +8,34 @@ from pyiceberg.exceptions import NoSuchTableError
 from requests.exceptions import ConnectionError, Timeout
 
 TABLES = [
-    "test_all_types",
-    "test_limit",
+    "test_uuid_and_fixed_unpartitioned",
     "test_null_nan",
     "test_null_nan_rewritten",
-    "test_partitioned_by_bucket",
-    "test_partitioned_by_days",
-    "test_partitioned_by_hours",
-    "test_partitioned_by_identity",
-    "test_partitioned_by_months",
-    "test_partitioned_by_truncate",
-    "test_partitioned_by_years",
+    "test_limit",
     "test_positional_mor_deletes",
     "test_positional_mor_double_deletes",
-    "test_table_sanitized_character",
+    "test_all_types",
+    "test_partitioned_by_identity",
+    "test_partitioned_by_years",
+    "test_partitioned_by_months",
+    "test_partitioned_by_days",
+    "test_partitioned_by_hours",
+    "test_partitioned_by_truncate",
+    "test_partitioned_by_bucket",
     "test_table_version",
-    "test_uuid_and_fixed_unpartitioned",
+    "test_table_sanitized_character",
 ]
+
+COMPOSE_FILE = "tests/integration/iceberg/docker-compose/docker-compose.yml"
+
+
+def dump_iceberg_diagnostics() -> None:
+    print("Iceberg service status:")
+    subprocess.run(["docker", "compose", "-f", COMPOSE_FILE, "ps"], check=False)
+
+    print("Iceberg service logs:")
+    subprocess.run(["docker", "compose", "-f", COMPOSE_FILE, "logs", "--tail=300"], check=False)
+
 
 deadline = time.time() + 300
 last_error: Exception | None = None
@@ -50,15 +61,5 @@ while time.time() < deadline:
         print(f"Waiting for Iceberg tables: {type(exc).__name__}: {exc}")
         time.sleep(5)
 else:
-    subprocess.run(["docker", "logs", "pyiceberg-spark"], check=False)
-    subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            "tests/integration/iceberg/docker-compose/docker-compose.yml",
-            "ps",
-        ],
-        check=False,
-    )
+    dump_iceberg_diagnostics()
     raise RuntimeError("Timed out waiting for Iceberg test tables") from last_error

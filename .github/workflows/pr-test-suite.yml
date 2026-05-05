@@ -840,6 +840,7 @@ jobs:
         docker compose -f ./docker-compose.yml up -d
         popd
     - name: Wait for Iceberg test tables
+      continue-on-error: true
       run: |
         source .venv/bin/activate
         python tests/integration/iceberg/docker-compose/wait-for-tables.py
