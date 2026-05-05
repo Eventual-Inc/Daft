@@ -42,16 +42,16 @@ ENV ICEBERG_VERSION=1.4.3
 ENV AWS_SDK_VERSION=2.20.18
 ENV PYICEBERG_VERSION=0.11.0
 
-RUN curl --fail --show-error --retry 3 -sSL -C - https://daft-public-data.s3.us-west-2.amazonaws.com/distribution/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
+RUN curl --retry 3 -s -C - https://daft-public-data.s3.us-west-2.amazonaws.com/distribution/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
 # Download iceberg spark runtime
-RUN curl --fail --show-error --retry 3 -sSL https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar -o iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
+RUN curl -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar -Lo iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar \
  && mv iceberg-spark-runtime-${ICEBERG_SPARK_RUNTIME_VERSION}-${ICEBERG_VERSION}.jar /opt/spark/jars
 
 # Download AWS bundle
-RUN curl --fail --show-error --retry 3 -sSL https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar -o iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
+RUN curl -s https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar -Lo iceberg-aws-bundle-${ICEBERG_VERSION}.jar \
  && mv iceberg-aws-bundle-${ICEBERG_VERSION}.jar /opt/spark/jars
 
 COPY spark-defaults.conf /opt/spark/conf
@@ -62,7 +62,8 @@ RUN chmod u+x /opt/spark/sbin/* && \
 
 RUN pip3 install -q ipython
 
-RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
+RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}" \
+    "aiobotocore==3.5.0" "botocore==1.42.91" "s3fs==2026.4.0"
 RUN pip3 install "pydantic==2.11.0"
 
 COPY entrypoint.sh .
