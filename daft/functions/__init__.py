@@ -258,6 +258,7 @@ from .str import (
     find,
     hamming_distance_str,
 )
+from .map import to_map
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
@@ -513,6 +514,7 @@ __all__ = [
     "to_datetime",
     "to_kebab_case",
     "to_list",
+    "to_map",
     "to_snake_case",
     "to_struct",
     "to_title_case",
