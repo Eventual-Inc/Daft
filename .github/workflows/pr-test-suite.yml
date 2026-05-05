@@ -790,15 +790,20 @@ jobs:
       with:
         distribution: "temurin"
         java-version: "17"
-    - uses: actions/checkout@v6
-      with:
-        repository: unitycatalog/unitycatalog
-        ref: 20dd3820be332ac04deec4e063099fb863eb3392
-        submodules: true
-        path: unitycatalog
+    # - uses: actions/checkout@v6
+    #   with:
+    #     repository: unitycatalog/unitycatalog
+    #     ref: 20dd3820be332ac04deec4e063099fb863eb3392
+    #     submodules: true
+    #     path: unitycatalog
+    # - name: Start UC Server
+    #   working-directory: ./unitycatalog
+    #   run: bin/start-uc-server -p 3000 &
     - name: Start UC Server
-      working-directory: ./unitycatalog
-      run: bin/start-uc-server -p 3000 &
+      run: |
+        docker run -d --name uc-server \
+          -p 3000:8080 \
+          unitycatalog/unitycatalog:main-20dd382
     - name: Download built wheels
       uses: actions/download-artifact@v8
       with:
