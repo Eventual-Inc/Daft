@@ -1284,14 +1284,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn with_checkpoint(
         &self,
-        store_config: common_checkpoint_config::python::PyCheckpointStoreConfig,
-        key_column: String,
+        config: common_checkpoint_config::python::PyCheckpointConfig,
     ) -> PyResult<Self> {
-        let config = common_checkpoint_config::CheckpointConfig {
-            store: store_config.config,
-            key_column,
-        };
-        Ok(self.builder.with_checkpoint(config)?.into())
+        Ok(self.builder.with_checkpoint(config.config)?.into())
     }
 
     pub fn with_planning_config(

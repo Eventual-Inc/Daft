@@ -10,6 +10,7 @@ pub fn try_sum_supertype(dtype: &DataType) -> DaftResult<DataType> {
             Ok(DataType::UInt64)
         }
         DataType::Float32 => Ok(DataType::Float32),
+        DataType::Float16 => Ok(DataType::Float16),
         DataType::Float64 => Ok(DataType::Float64),
         DataType::Decimal128(_, s) => Ok(DataType::Decimal128(38, *s)),
         other => Err(DaftError::TypeError(format!(
@@ -27,6 +28,7 @@ pub fn try_product_supertype(dtype: &DataType) -> DaftResult<DataType> {
             Ok(DataType::UInt64)
         }
         DataType::Float32 => Ok(DataType::Float32),
+        DataType::Float16 => Ok(DataType::Float16),
         DataType::Float64 => Ok(DataType::Float64),
         DataType::Decimal128(_, s) => Ok(DataType::Decimal128(38, *s)),
         other => Err(DaftError::TypeError(format!(
