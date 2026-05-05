@@ -80,6 +80,8 @@ class FileWriterBase(ABC):
         if is_local_fs:
             self.fs.create_dir(self.dir_path, recursive=True)
 
+        # Normalize to a string so downstream code (e.g. _resolve_column_compression)
+        # can rely on self.compression always being a valid PyArrow codec name, never None.
         self.compression = compression if compression is not None else "none"
         self.position = 0
 
@@ -187,7 +189,15 @@ class ParquetFileWriter(FileWriterBase):
         self,
         schema: pa.Schema,
     ) -> dict[str, str]:
-        """PyArrow requires every leaf column be listed when a dict is passed."""
+        """Build a leaf-path -> codec dict for ``pq.ParquetWriter``.
+
+        PyArrow requires every leaf column be listed when a dict is passed.
+        Recursion handles top-level struct nesting only; overrides for leaves
+        nested inside list/large_list/map types are not supported on the
+        PyArrow fallback path (the native writer is unaffected). Any override
+        key that does not match a discovered leaf raises ``ValueError`` rather
+        than being silently dropped.
+        """
         assert self.column_compression is not None
         overrides = self.column_compression
         leaves: list[str] = []
@@ -202,6 +212,16 @@ class ParquetFileWriter(FileWriterBase):
 
         for field in schema:
             collect(field, "")
+
+        leaf_set = set(leaves)
+        unmatched = sorted(k for k in overrides if k not in leaf_set)
+        if unmatched:
+            raise ValueError(
+                "column_compression keys do not match any leaf column: "
+                f"{unmatched}. The PyArrow writer fallback does not support "
+                "overrides for leaves nested inside list/large_list/map types; "
+                "apply the override at the top-level column instead."
+            )
         return {leaf: overrides.get(leaf, self.compression) for leaf in leaves}
 
 
