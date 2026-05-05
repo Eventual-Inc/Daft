@@ -115,7 +115,6 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 });
                 self.dispatch_event(&end_event)
             }
-            _ => Ok(()),
         }
     }
 }
