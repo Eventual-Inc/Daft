@@ -273,13 +273,7 @@ impl AsofJoinProbeState {
                 continue;
             };
 
-            self.update_best_match(
-                matched_left_idx,
-                right_idx,
-                rb_idx,
-                &right_on_arr,
-                &mut cmp_cache,
-            )?;
+            self.update_best_match(matched_left_idx, right_idx, rb_idx, &mut cmp_cache)?;
         }
 
         Ok(())
@@ -289,12 +283,12 @@ impl AsofJoinProbeState {
         matched_left_idx: usize,
         candidate_right_idx: usize,
         candidate_rb_idx: usize,
-        candidate_on_arr: &Arc<dyn Array>,
         cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
     ) -> DaftResult<()> {
         let is_better = match self.best_match[matched_left_idx] {
             None => true,
             Some((existing_rb_idx, existing_right_idx)) => {
+                let candidate_on_arr = self.right_on_key_arrs[candidate_rb_idx].clone();
                 let existing_on_arr = self.right_on_key_arrs[existing_rb_idx as usize].clone();
                 is_candidate_better(
                     candidate_rb_idx,
