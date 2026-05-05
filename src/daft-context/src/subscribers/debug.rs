@@ -6,7 +6,7 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent, TaskEndEvent, TaskStartEvent, TaskSubmitEvent,
+        QueryStartEvent, StatsEvent, TaskEndEvent, TaskStartEvent, TaskSubmitEvent,
     },
 };
 
