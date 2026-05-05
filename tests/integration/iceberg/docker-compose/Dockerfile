@@ -61,8 +61,7 @@ RUN chmod u+x /opt/spark/sbin/* && \
 
 RUN pip3 install -q ipython
 
-RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}" \
-    "aiobotocore==3.5.0" "botocore==1.42.91" "s3fs==2026.4.0"
+RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
 RUN pip3 install "pydantic==2.11.0"
 
 COPY entrypoint.sh .
