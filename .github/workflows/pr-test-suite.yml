@@ -203,8 +203,16 @@ jobs:
         # Limit xdist workers on macOS: with only 3 CPUs, "-n auto" (3 workers) causes
         # excessive resource contention when each worker spins up its own Ray cluster,
         # leading to UDF actor scheduling timeouts.
+        # Limit on Blacksmith Linux: coverage + llvm-cov + Ray per worker can OOM "-n auto"
+        # (often observed as pytest exiting 143 = SIGTERM).
         # See runner specs: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
-        if [ "$RUNNER_OS" == "macOS" ]; then PYTEST_WORKERS=2; else PYTEST_WORKERS=auto; fi
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest -n $PYTEST_WORKERS --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
@@ -225,6 +233,7 @@ jobs:
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Build library and Test with pytest (no coverage)
       if: matrix.coverage == false
@@ -232,14 +241,22 @@ jobs:
         set -o pipefail
         source .venv/bin/activate
         maturin develop --uv
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest -n auto --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        pytest -n $PYTEST_WORKERS --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
       env:
         RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Upload coverage report
       if: matrix.coverage != false
