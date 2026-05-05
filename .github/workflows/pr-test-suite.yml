@@ -81,7 +81,7 @@ jobs:
         python-version: ["3.10", "3.13"]
         daft-runner: [ray, native]
         pyarrow-version: ["22.0.0"]
-        os: [ubuntu-latest, macos-latest]
+        os: [blacksmith-8vcpu-ubuntu-2204, macos-latest]
         coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
@@ -176,7 +176,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
 
     - name: Install imagehash compatibility test dependency
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
+      if: ${{ matrix.os == 'blacksmith-8vcpu-ubuntu-2204' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
       run: |
         source .venv/bin/activate
         uv pip install imagehash==4.3.2
@@ -203,8 +203,16 @@ jobs:
         # Limit xdist workers on macOS: with only 3 CPUs, "-n auto" (3 workers) causes
         # excessive resource contention when each worker spins up its own Ray cluster,
         # leading to UDF actor scheduling timeouts.
+        # Limit on Blacksmith Linux: coverage + llvm-cov + Ray per worker can OOM "-n auto"
+        # (often observed as pytest exiting 143 = SIGTERM).
         # See runner specs: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
-        if [ "$RUNNER_OS" == "macOS" ]; then PYTEST_WORKERS=2; else PYTEST_WORKERS=auto; fi
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest -n $PYTEST_WORKERS --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
@@ -225,6 +233,7 @@ jobs:
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Build library and Test with pytest (no coverage)
       if: matrix.coverage == false
@@ -232,14 +241,22 @@ jobs:
         set -o pipefail
         source .venv/bin/activate
         maturin develop --uv
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest -n auto --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        pytest -n $PYTEST_WORKERS --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
       env:
         RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Upload coverage report
       if: matrix.coverage != false
@@ -658,6 +675,10 @@ jobs:
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        daft-runner: [native, ray]
     steps:
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@v1.3.1
@@ -719,22 +740,15 @@ jobs:
         docker compose -f ./docker-compose.yml up -d
         popd
 
-    - name: Run sql integration tests (native)
+    # Same tests as sequential native+ray, but parallel matrix jobs — matches integration-test-io.
+    - name: Run sql integration tests (${{ matrix.daft-runner }})
       run: |
         set -o pipefail
         source .venv/bin/activate
         pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
-        DAFT_RUNNER: native
-    - name: Run sql integration tests (ray)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
-        python tools/aggregate_test_durations.py sql_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v3.0.1
