@@ -64,8 +64,9 @@ where
         iter: I,
     ) -> DaftResult<Self> {
         let mut io_conf_arr = LargeBinaryBuilder::new();
-
         let mut urls_arr = LargeStringBuilder::new();
+        let mut offset_arr: Vec<Option<i64>> = Vec::new();
+        let mut length_arr: Vec<Option<i64>> = Vec::new();
 
         for value in iter {
             let value = value?;
@@ -77,10 +78,14 @@ where
                             .expect("Failed to serialize IOConfig")
                     });
                     io_conf_arr.append_option(io_config);
+                    offset_arr.push(value.offset.map(|v| v as i64));
+                    length_arr.push(value.length.map(|v| v as i64));
                 }
                 None => {
                     urls_arr.append_null();
                     io_conf_arr.append_null();
+                    offset_arr.push(None);
+                    length_arr.push(None);
                 }
             }
         }
@@ -93,8 +98,20 @@ where
             Arc::new(Field::new("io_config", DataType::Binary)),
             Arc::new(io_conf_arr.finish()),
         )?;
+        let offset_series = Series::from_arrow(
+            Arc::new(Field::new("offset", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(offset_arr)),
+        )?;
+        let length_series = Series::from_arrow(
+            Arc::new(Field::new("length", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(length_arr)),
+        )?;
         let nulls = urls.nulls().cloned();
-        let sa = StructArray::new(sa_field, vec![urls, io_config], nulls);
+        let sa = StructArray::new(
+            sa_field,
+            vec![urls, io_config, offset_series, length_series],
+            nulls,
+        );
 
         Ok(FileArray::new(
             Field::new(name, DataType::File(T::get_type())),
@@ -117,11 +134,25 @@ where
             .with_nulls(urls.nulls().cloned())
             .expect("Failed to set validity");
 
+        let null_i64: Vec<Option<i64>> = vec![None; urls.len()];
+        let offset_series = Series::from_arrow(
+            Arc::new(Field::new("offset", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(null_i64.clone())),
+        )
+        .expect("Failed to create offset series");
+        let length_series = Series::from_arrow(
+            Arc::new(Field::new("length", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(null_i64)),
+        )
+        .expect("Failed to create length series");
+
         let sa = StructArray::new(
             sa_field,
             vec![
                 urls.clone().into_series().rename("url"),
                 io_conf.into_series(),
+                offset_series,
+                length_series,
             ],
             urls.nulls().cloned(),
         );
@@ -209,9 +240,55 @@ mod tests {
             media_type: _,
             url,
             io_config,
+            offset,
+            length,
         } = new_arr.get(0).expect("Failed to get data");
 
         assert_eq!(url, "file://example.com");
         assert_eq!(io_config, io_conf.map(Arc::new));
+        assert_eq!(offset, None);
+        assert_eq!(length, None);
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_with_offset_and_length() {
+        let io_conf = Some(IOConfig::default());
+        let refs = vec![
+            Ok(Some(FileReference::new_with_range(
+                daft_schema::media_type::MediaType::Unknown,
+                "file://example.com/blob".to_string(),
+                io_conf,
+                Some(100),
+                Some(50),
+            ))),
+            Ok(Some(FileReference::new_with_range(
+                daft_schema::media_type::MediaType::Unknown,
+                "file://example.com/blob2".to_string(),
+                None,
+                None,
+                None,
+            ))),
+            Ok(None),
+        ];
+
+        let arr =
+            FileArray::<MediaTypeUnknown>::new_from_file_references("files", refs.into_iter())
+                .expect("Failed to create FileArray");
+        let arrow_data = arr.to_arrow().unwrap();
+
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
+            .expect("Failed to create FileArray from arrow data");
+
+        let ref0 = new_arr.get(0).expect("Failed to get data");
+        assert_eq!(ref0.url, "file://example.com/blob");
+        assert_eq!(ref0.offset, Some(100));
+        assert_eq!(ref0.length, Some(50));
+
+        let ref1 = new_arr.get(1).expect("Failed to get data");
+        assert_eq!(ref1.url, "file://example.com/blob2");
+        assert_eq!(ref1.offset, None);
+        assert_eq!(ref1.length, None);
+
+        assert!(new_arr.get(2).is_none());
     }
 }

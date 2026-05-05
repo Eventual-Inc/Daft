@@ -3,7 +3,7 @@ use common_error::DaftResult;
 use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
 macro_rules! impl_daft_numeric_agg {
-    ($T:ident, $AggType: ident) => {
+    ($T:ident, $AggType: ty) => {
         impl DaftSumAggable for &DataArray<$T> {
             type Output = DaftResult<DataArray<$T>>;
 
@@ -35,10 +35,11 @@ macro_rules! impl_daft_numeric_agg {
                     DataArray::<$T>::from_field_and_values(
                         self.field.clone(),
                         groups.iter().map(|g| {
-                            g.iter().fold(0 as $AggType, |acc, index| {
-                                let idx = *index as usize;
-                                acc + self.get(idx).unwrap()
-                            })
+                            g.iter()
+                                .fold(<$AggType as num_traits::Zero>::zero(), |acc, index| {
+                                    let idx = *index as usize;
+                                    acc + self.get(idx).unwrap()
+                                })
                         }),
                     )
                 };
@@ -51,6 +52,7 @@ macro_rules! impl_daft_numeric_agg {
 
 impl_daft_numeric_agg!(Int64Type, i64);
 impl_daft_numeric_agg!(UInt64Type, u64);
+impl_daft_numeric_agg!(Float16Type, half::f16);
 impl_daft_numeric_agg!(Float32Type, f32);
 impl_daft_numeric_agg!(Float64Type, f64);
 impl_daft_numeric_agg!(Decimal128Type, i128);

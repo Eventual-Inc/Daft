@@ -14,7 +14,7 @@ use crate::{
         events::{
             ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
             OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-            QueryHeartbeatEvent, QueryStartEvent, ResultOutEvent, StatsEvent,
+            QueryHeartbeatEvent, QueryStartEvent, StatsEvent,
         },
     },
 };
@@ -162,12 +162,6 @@ fn build_process_stats(py: Python<'_>, event: &ProcessStatsEvent) -> PyResult<Py
         .map(Into::into)
 }
 
-fn build_result_produced(py: Python<'_>, event: &ResultOutEvent) -> PyResult<Py<PyAny>> {
-    event_class(py, "ResultProduced")?
-        .call1((event.header.query_id.to_string(), event.num_rows))
-        .map(Into::into)
-}
-
 fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
     match event {
         Event::QueryStart(event) => build_query_started(py, &event).map(Some),
@@ -181,7 +175,6 @@ fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
         Event::OperatorEnd(event) => build_operator_finished(py, &event).map(Some),
         Event::Stats(event) => build_stats(py, &event).map(Some),
         Event::ProcessStats(event) => build_process_stats(py, &event).map(Some),
-        Event::ResultOut(event) => build_result_produced(py, &event).map(Some),
         Event::TaskSubmit(_event) => Ok(None),
         Event::TaskStart(_event) => Ok(None),
         Event::TaskEnd(_event) => Ok(None),

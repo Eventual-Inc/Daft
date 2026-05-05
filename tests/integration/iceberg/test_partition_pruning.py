@@ -200,13 +200,18 @@ def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit
     df = daft.read_table(f"{catalog_name}.default.{table}")
     df = df.where(predicate(df["number"]))
     if limit:
-        df = df.limit(limit)
+        # Sort before limit so the truncated set is deterministic across
+        # PyIceberg's manifest iteration order and Daft's distributed
+        # scan-task execution order. Without a sort, LIMIT N picks
+        # whichever rows happen to be read first, which differs between
+        # implementations and is fragile to scheduling changes.
+        df = df.sort("number").limit(limit)
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["number"])]
     if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
+        iceberg_pandas = iceberg_pandas.sort_values("number").reset_index(drop=True)[:limit]
 
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
 

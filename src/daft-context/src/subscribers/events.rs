@@ -4,7 +4,6 @@ use common_metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use daft_micropartition::MicroPartitionRef;
 
 use super::{QueryMetadata, QueryResult};
 
@@ -24,7 +23,6 @@ pub enum Event {
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
     ProcessStats(ProcessStatsEvent),
-    ResultOut(ResultOutEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -137,14 +135,6 @@ pub struct ExecStartEvent {
 pub struct ExecEndEvent {
     pub header: EventHeader,
     pub duration_ms: Option<f64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResultOutEvent {
-    pub header: EventHeader,
-    pub num_rows: u64,
-    // needed by the dashboard subscriber
-    pub data: Option<MicroPartitionRef>,
 }
 
 #[derive(Debug, Clone)]

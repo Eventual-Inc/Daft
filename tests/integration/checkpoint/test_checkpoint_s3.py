@@ -34,7 +34,9 @@ def test_checkpoint_s3_first_run(minio_io_config):
         output_path = f"s3://{bucket}/output"
 
         checkpoint = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=checkpoint, on="file_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=checkpoint, on="file_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
 
         row_count = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
@@ -54,14 +56,18 @@ def test_checkpoint_s3_second_run_skips(minio_io_config):
 
         # First run
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df1 = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config)
+        df1 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        )
         df1.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 3
 
         # Second run — same checkpoint store, all keys already checkpointed
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, f"Expected 0 rows on re-run, got {count2}"
@@ -84,7 +90,9 @@ def test_checkpoint_s3_incremental_append(minio_io_config):
             input_path, io_config=minio_io_config
         )
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         assert daft.read_parquet(output_path, io_config=minio_io_config).count_rows() == 3
 
@@ -101,7 +109,9 @@ def test_checkpoint_s3_incremental_append(minio_io_config):
         assert source_keys == ["a", "b", "c", "d", "e"], f"Expected all 5 keys in source, got {source_keys}"
 
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         output2 = daft.read_parquet(output_path, io_config=minio_io_config).sort("file_id")
         count2 = output2.count_rows()
@@ -111,7 +121,9 @@ def test_checkpoint_s3_incremental_append(minio_io_config):
 
         # Run 3: no new data
         ckpt3 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df3 = daft.read_parquet(input_path, checkpoint=ckpt3, on="file_id", io_config=minio_io_config)
+        df3 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt3, on="file_id"), io_config=minio_io_config
+        )
         df3.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count3 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count3 == 0, f"Run 3: expected 0 rows, got {count3}"
@@ -131,14 +143,18 @@ def test_checkpoint_s3_duplicate_keys_filtered(minio_io_config):
 
         # Run 1: all 3 rows processed (both "a" rows are new)
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 3, f"Run 1: expected 3 rows, got {count1}"
 
         # Run 2: both "a" rows and "b" should be filtered
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, f"Run 2: expected 0 rows (all dupes filtered), got {count2}"
@@ -154,7 +170,9 @@ def test_checkpoint_s3_lifecycle(minio_io_config):
         daft.from_pydict({"file_id": ["a", "b"], "value": [1, 2]}).write_parquet(input_path, io_config=minio_io_config)
 
         checkpoint = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=checkpoint, on="file_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=checkpoint, on="file_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
 
         # After pipeline: checkpoints should be in Checkpointed state
@@ -181,16 +199,14 @@ def test_checkpoint_s3_lifecycle(minio_io_config):
 
         # But checkpointed keys should still be visible to anti-join (re-run skips)
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count == 0, f"Expected 0 rows after commit + re-run, got {count}"
 
 
-@pytest.mark.xfail(
-    reason="checkpoint() on empty task errors — store needs to track in-flight writes",
-    strict=True,
-)
 def test_checkpoint_s3_empty_source(minio_io_config):
     """Empty source with checkpoint should produce 0 rows without error."""
     with minio_create_bucket(minio_io_config) as bucket:
@@ -202,7 +218,9 @@ def test_checkpoint_s3_empty_source(minio_io_config):
         daft.from_pydict({"file_id": [], "value": []}).write_parquet(input_path, io_config=minio_io_config)
 
         checkpoint = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=checkpoint, on="file_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=checkpoint, on="file_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count == 0, f"Expected 0 rows from empty source, got {count}"
@@ -221,14 +239,18 @@ def test_checkpoint_s3_int_key_column(minio_io_config):
 
         # Run 1: all rows
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="record_id", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="record_id"), io_config=minio_io_config
+        )
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 3, f"Run 1: expected 3 rows, got {count1}"
 
         # Run 2: all skipped
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="record_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="record_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, f"Run 2: expected 0 rows, got {count2}"
@@ -251,13 +273,17 @@ def test_checkpoint_s3_sinkless_collect(minio_io_config):
 
         # Run 1: collect all rows, keys staged and checkpoint finalized on task completion.
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        result1 = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).to_pydict()
+        result1 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).to_pydict()
         assert len(result1["file_id"]) == 3, f"Run 1: expected 3 rows, got {len(result1['file_id'])}"
         assert sorted(result1["file_id"]) == ["a", "b", "c"]
 
         # Run 2: same checkpoint, anti-join skips all rows.
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        result2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config).to_pydict()
+        result2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        ).to_pydict()
         assert len(result2["file_id"]) == 0, (
             f"Run 2: expected 0 rows (all already checkpointed from sink-less run), got {len(result2['file_id'])}"
         )
@@ -283,7 +309,9 @@ def test_checkpoint_s3_sinkless_stages_once_per_morsel(minio_io_config):
         )
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        _ = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).to_pydict()
+        _ = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).to_pydict()
 
         fs = s3fs.S3FileSystem(
             key=minio_io_config.s3.key_id,
@@ -313,7 +341,9 @@ def test_checkpoint_s3_unknown_key_column(minio_io_config):
         daft.from_pydict({"file_id": ["a", "b"], "value": [1, 2]}).write_parquet(input_path, io_config=minio_io_config)
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="nonexistent", io_config=minio_io_config)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="nonexistent"), io_config=minio_io_config
+        )
         with pytest.raises(Exception, match="not found"):
             df.to_pydict()
 
@@ -335,7 +365,9 @@ def test_checkpoint_s3_rejects_shuffle_downstream(minio_io_config):
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
         df = (
-            daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config)
+            daft.read_parquet(
+                input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+            )
             .groupby("file_id")
             .agg(daft.col("value").sum())
         )
@@ -358,7 +390,9 @@ def test_checkpoint_s3_rejects_limit_downstream(minio_io_config):
             input_path, io_config=minio_io_config
         )
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).limit(2)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).limit(2)
         with pytest.raises(Exception, match="Limit"):
             df.to_pydict()
 
@@ -373,7 +407,9 @@ def test_checkpoint_s3_rejects_sample_downstream(minio_io_config):
             input_path, io_config=minio_io_config
         )
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).sample(0.5)
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).sample(0.5)
         with pytest.raises(Exception, match="Sample"):
             df.to_pydict()
 
@@ -389,7 +425,9 @@ def test_checkpoint_s3_rejects_sort_downstream(minio_io_config):
         )
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).sort("value")
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).sort("value")
         with pytest.raises(Exception, match="map-only"):
             df.to_pydict()
 
@@ -416,18 +454,18 @@ def test_checkpoint_s3_filter_between_source_and_sink(minio_io_config):
 
         # Run 1: only 'b' (value=200) survives the filter
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).filter(
-            daft.col("value") > 100
-        )
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).filter(daft.col("value") > 100)
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 1, f"Run 1: expected 1 row, got {count1}"
 
         # Run 2: same pipeline, all 3 source keys should already be checkpointed
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config).filter(
-            daft.col("value") > 100
-        )
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        ).filter(daft.col("value") > 100)
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, (
@@ -461,16 +499,18 @@ def test_checkpoint_s3_filtered_out_keys_are_checkpointed(minio_io_config):
 
         # Run 1: only 'b' passes `value > 100`, but all 3 keys should be checkpointed.
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).filter(
-            daft.col("value") > 100
-        )
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).filter(daft.col("value") > 100)
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 1, f"Run 1: expected 1 row, got {count1}"
 
         # Run 2: remove the filter. If all 3 keys are checkpointed, anti-join returns empty.
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, (
@@ -502,13 +542,17 @@ def test_checkpoint_s3_select_without_key_column(minio_io_config):
         )
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).select("value")
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).select("value")
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count1 == 3, f"Run 1: expected 3 rows written, got {count1}"
 
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, f"Run 2 (no project): expected 0 rows (all 3 keys checkpointed in Run 1), got {count2}"
@@ -534,9 +578,9 @@ def test_checkpoint_s3_select_with_key_column(minio_io_config):
 
         # Run 1: select ['file_id', 'value'] — prunes 'extra'. Pushdown should fire.
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df = daft.read_parquet(input_path, checkpoint=ckpt, on="file_id", io_config=minio_io_config).select(
-            "file_id", "value"
-        )
+        df = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        ).select("file_id", "value")
         df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         written = daft.read_parquet(output_path, io_config=minio_io_config)
         assert written.count_rows() == 3
@@ -546,7 +590,9 @@ def test_checkpoint_s3_select_with_key_column(minio_io_config):
 
         # Run 2: no project — all 3 keys checkpointed, anti-join empty, write 0 rows.
         ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
-        df2 = daft.read_parquet(input_path, checkpoint=ckpt2, on="file_id", io_config=minio_io_config)
+        df2 = daft.read_parquet(
+            input_path, checkpoint=daft.CheckpointConfig(store=ckpt2, on="file_id"), io_config=minio_io_config
+        )
         df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count2 == 0, f"Run 2: expected 0 rows, got {count2}"
@@ -569,7 +615,9 @@ def test_checkpoint_s3_rejects_concat_with_checkpoint(minio_io_config):
         daft.from_pydict({"file_id": ["c", "d"], "value": [3, 4]}).write_parquet(input2, io_config=minio_io_config)
 
         ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-        df1 = daft.read_parquet(input1, checkpoint=ckpt, on="file_id", io_config=minio_io_config)
+        df1 = daft.read_parquet(
+            input1, checkpoint=daft.CheckpointConfig(store=ckpt, on="file_id"), io_config=minio_io_config
+        )
         df2 = daft.read_parquet(input2, io_config=minio_io_config)
         with pytest.raises(Exception, match="map-only"):
             df1.concat(df2).to_pydict()

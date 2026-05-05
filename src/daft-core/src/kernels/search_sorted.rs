@@ -324,6 +324,7 @@ pub(crate) fn make_daft_comparator(
         }};
     }
     match left.data_type() {
+        DataType::Float16 => downcast_float!(Float16Type),
         DataType::Float32 => downcast_float!(Float32Type),
         DataType::Float64 => downcast_float!(Float64Type),
         _ => Ok(make_comparator(left, right, sort_options)?),
@@ -461,6 +462,7 @@ pub fn search_sorted(
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::Decimal128(_, _)
@@ -474,6 +476,7 @@ pub fn search_sorted(
                 DataType::UInt16 => UInt16Type,
                 DataType::UInt32 => UInt32Type,
                 DataType::UInt64 => UInt64Type,
+                DataType::Float16 => Float16Type,
                 DataType::Float32 => Float32Type,
                 DataType::Float64 => Float64Type,
                 DataType::Decimal128(_, _) => Decimal128Type,

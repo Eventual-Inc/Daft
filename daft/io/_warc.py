@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -12,7 +13,11 @@ from daft.daft import (
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
+from daft.io._checkpoint import attach_checkpoint
 from daft.io.common import get_tabular_files_scan
+
+if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointConfig
 
 
 @PublicAPI
@@ -21,6 +26,7 @@ def read_warc(
     io_config: IOConfig | None = None,
     file_path_column: str | None = None,
     _multithreaded_io: bool | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
 
@@ -31,6 +37,9 @@ def read_warc(
         _multithreaded_io (Optional[bool]): Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: parsed DataFrame with mandatory metadata columns ("WARC-Record-ID", "WARC-Type", "WARC-Date", "Content-Length"), one optional
@@ -84,4 +93,5 @@ def read_warc(
         file_path_column=file_path_column,
         hive_partitioning=False,
     )
+    builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
