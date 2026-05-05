@@ -523,8 +523,6 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: f64,
         end_sec: f64,
-        #[serde(skip_serializing)]
-        results: Option<RecordBatch>,
     },
     Canceled {
         plan_info: Option<PlanInfo>,
