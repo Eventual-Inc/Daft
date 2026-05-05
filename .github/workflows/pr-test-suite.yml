@@ -852,6 +852,18 @@ jobs:
         popd
 
       # Unity tests
+    - name: Wait for UC Server
+      run: |
+        for i in $(seq 1 60); do
+          if curl -fsS http://127.0.0.1:3000/api/2.1/unity-catalog/catalogs > /dev/null 2>&1; then
+            echo "UC server is up"
+            exit 0
+          fi
+          echo "Waiting for UC server on port 3000... ($i/60)"
+          sleep 5
+        done
+        echo "UC server failed to come up within 5 minutes" >&2
+        exit 1
     - name: Run Unity integration tests (native)
       if: always()
       run: |
