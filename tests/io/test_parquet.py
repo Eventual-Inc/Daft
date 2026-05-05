@@ -519,3 +519,40 @@ def test_write_parquet_success_file(tmp_path_factory):
 
     assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
     assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
+
+
+def _column_codecs(parquet_path: str) -> dict[str, str]:
+    meta = papq.ParquetFile(parquet_path).metadata
+    rg = meta.row_group(0)
+    return {rg.column(i).path_in_schema: rg.column(i).compression for i in range(rg.num_columns)}
+
+
+def test_write_parquet_global_compression_honored_on_native_writer(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(str(tmp_path), compression="zstd")
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "ZSTD"
+    assert codecs["b"] == "ZSTD"
+
+
+def test_write_parquet_per_column_compression(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [1.0, 2.0, 3.0]})
+    df.write_parquet(
+        str(tmp_path),
+        compression="zstd",
+        column_compression={"a": "snappy", "b": "none"},
+    )
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "SNAPPY"
+    assert codecs["b"] == "UNCOMPRESSED"
+    assert codecs["c"] == "ZSTD"
+
+
+def test_write_parquet_invalid_codec_raises(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(Exception, match="unsupported parquet compression"):
+        df.write_parquet(str(tmp_path), compression="bogus")

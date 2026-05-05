@@ -120,6 +120,7 @@ class ParquetFileWriter(FileWriterBase):
         version: int | None = None,
         default_partition_fallback: str | None = None,
         metadata_collector: list[pq.FileMetaData] | None = None,
+        column_compression: dict[str, str] | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -134,15 +135,21 @@ class ParquetFileWriter(FileWriterBase):
         self.is_closed = False
         self.current_writer: pq.ParquetWriter | None = None
         self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
+        self.column_compression = column_compression
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         opts = {}
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
+        compression: str | dict[str, str]
+        if self.column_compression:
+            compression = self._resolve_column_compression(schema)
+        else:
+            compression = self.compression
         return pq.ParquetWriter(
             self.full_path,
             schema,
-            compression=self.compression,
+            compression=compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
             # When using Arrow 8, it defaults to parquet version 1.
@@ -156,7 +163,8 @@ class ParquetFileWriter(FileWriterBase):
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
         if self.current_writer is None:
-            self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
+            schema = table.schema().to_pyarrow_schema()
+            self.current_writer = self._create_writer(schema)
         self.current_writer.write_table(table.to_arrow(), row_group_size=len(table))
 
         current_position = self.current_writer.file_handle.tell()
@@ -174,6 +182,27 @@ class ParquetFileWriter(FileWriterBase):
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
         return RecordBatch.from_pydict(metadata)
+
+    def _resolve_column_compression(
+        self,
+        schema: pa.Schema,
+    ) -> dict[str, str]:
+        """PyArrow requires every leaf column be listed when a dict is passed."""
+        assert self.column_compression is not None
+        overrides = self.column_compression
+        leaves: list[str] = []
+
+        def collect(field: pa.Field, prefix: str) -> None:
+            path = f"{prefix}.{field.name}" if prefix else field.name
+            if pa.types.is_struct(field.type):
+                for i in range(field.type.num_fields):
+                    collect(field.type.field(i), path)
+            else:
+                leaves.append(path)
+
+        for field in schema:
+            collect(field, "")
+        return {leaf: overrides.get(leaf, self.compression) for leaf in leaves}
 
 
 class CSVFileWriter(FileWriterBase):
@@ -365,7 +394,7 @@ class DeltalakeWriter(ParquetFileWriter):
         converted_arrow_table = sanitize_table_for_deltalake(
             table,
             self.large_dtypes,
-            self.partition_values.schema().column_names() if self.partition_values is not None else None,
+            (self.partition_values.schema().column_names() if self.partition_values is not None else None),
         )
         if self.current_writer is None:
             self.current_writer = self._create_writer(converted_arrow_table.schema)
