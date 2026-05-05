@@ -790,12 +790,32 @@ jobs:
       with:
         distribution: "temurin"
         java-version: "17"
+    # We check out the UC source only for its etc/ directory — the seed
+    # catalog references volume files relative to the server's cwd, e.g.
+    # "etc/data/managed/unity/default/volumes/txt_files". The server is
+    # run via the prebuilt Docker image below, so we no longer need the
+    # source for sbt, just for the seed data files Daft reads from disk.
     - uses: actions/checkout@v6
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
         submodules: true
         path: unitycatalog
+    # The UC Docker image's WORKDIR is /home/unitycatalog, so when the
+    # server canonicalizes the seed volume's relative storage_location
+    # against its cwd it reports paths like
+    # "/home/unitycatalog/etc/data/managed/.../a.txt" back to clients.
+    # Daft (running on the host) reads those paths directly from the host
+    # filesystem, so we symlink that absolute path to the etc/ directory
+    # we just checked out. Without this, every volume read fails with
+    # FileNotFoundError on /home/unitycatalog/etc/data/...
+    - name: Stage UC seed data on host
+      run: |
+        sudo mkdir -p /home/unitycatalog
+        sudo ln -s "$GITHUB_WORKSPACE/unitycatalog/etc" /home/unitycatalog/etc
+    # Use the prebuilt image pinned to the same commit as the checkout
+    # above. This avoids the sbt cold-cache compile (~minutes) and the
+    # background-process lifecycle issues of `bin/start-uc-server &`.
     - name: Start UC Server
       run: |
         docker run -d --name uc-server \
