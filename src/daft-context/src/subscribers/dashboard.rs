@@ -556,6 +556,8 @@ impl Subscriber for DashboardSubscriber {
             Event::TaskEnd(e) => {
                 self.on_task_end(&e)?;
             }
+            // TODO: hook up with dashboard server
+            Event::TaskStart(_) => {}
         }
         Ok(())
     }

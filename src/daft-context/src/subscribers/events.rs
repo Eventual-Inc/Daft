@@ -17,6 +17,7 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
@@ -157,6 +158,13 @@ pub struct TaskSubmitEvent {
     pub header: EventHeader,
     pub task: Arc<TaskInfo>,
     pub sources: Arc<Vec<TaskSource>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskStartEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]
