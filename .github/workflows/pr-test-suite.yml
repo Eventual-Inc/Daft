@@ -72,8 +72,7 @@ jobs:
 
   unit-test:
     needs: skipcheck
-    #if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    if: false
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -273,8 +272,7 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     needs: unit-test
-    #if: always()
-    if: false
+    if: always() 
     steps:
     - name: All tests ok
       if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
@@ -286,7 +284,7 @@ jobs:
   integration-test-build:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2204
     timeout-minutes: 90
     env:
       package-name: daft
