@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
@@ -19,7 +19,6 @@ use crate::{
 pub struct DashboardStatisticsSubscriber {
     query_id: QueryID,
     runtime_node_managers: Option<Arc<HashMap<NodeID, RuntimeNodeManager>>>,
-    started_operators: Mutex<HashSet<usize>>,
     initialized_subscriber: Mutex<bool>,
 }
 
@@ -28,7 +27,6 @@ impl DashboardStatisticsSubscriber {
         Self {
             query_id,
             runtime_node_managers: None,
-            started_operators: Mutex::new(HashSet::new()),
             initialized_subscriber: Mutex::new(false),
         }
     }
@@ -130,25 +128,14 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
         // manager by StatisticsManager before this subscriber runs, so we
         // emit stats for every event that changes a counter — otherwise
         // `task.active` wouldn't be visible until the first task ends.
+        // OperatorStart / OperatorEnd are emitted centrally by
+        // `StatisticsManager` (independent of dashboard configuration),
+        // so this subscriber only needs to push stats snapshots.
         match event {
             TaskEvent::Submitted {
                 context: task_ctx, ..
-            } => {
-                // Notify about newly started operators, avoiding duplicate notifications
-                let mut started = self.started_operators.lock().unwrap();
-
-                for node_id in &task_ctx.node_ids {
-                    let node_id = *node_id as usize;
-                    if started.insert(node_id)
-                        // if insert returned false, short-circuit will skip notify
-                        && let Err(e) =
-                            context.notify_exec_operator_start(self.query_id.clone(), node_id)
-                    {
-                        tracing::error!("Failed to notify exec operator start: {}", e);
-                    }
-                }
             }
-            TaskEvent::Scheduled { context: task_ctx }
+            | TaskEvent::Scheduled { context: task_ctx }
             | TaskEvent::Completed {
                 context: task_ctx, ..
             }
