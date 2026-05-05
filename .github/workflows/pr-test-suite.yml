@@ -176,7 +176,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
 
     - name: Install imagehash compatibility test dependency
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
+      if: ${{ matrix.os == 'blacksmith-8vcpu-ubuntu-2204' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
       run: |
         source .venv/bin/activate
         uv pip install imagehash==4.3.2
