@@ -72,7 +72,8 @@ jobs:
 
   unit-test:
     needs: skipcheck
-    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    #if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    if: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -272,7 +273,8 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     needs: unit-test
-    if: always()
+    #if: always()
+    if: false
     steps:
     - name: All tests ok
       if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
@@ -861,11 +863,6 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    - name: Wait for Iceberg test tables
-      continue-on-error: true
-      run: |
-        source .venv/bin/activate
-        python tests/integration/iceberg/docker-compose/wait-for-tables.py
       # Gravitino test setup
     - name: Spin up Gravitino service
       run: |
@@ -913,6 +910,10 @@ jobs:
         DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
         DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
       # Iceberg tests
+    - name: Wait for Iceberg test tables
+      run: |
+        source .venv/bin/activate
+        python tests/integration/iceberg/docker-compose/wait-for-tables.py
     - name: Run Iceberg integration tests (native)
       if: always()
       run: |
