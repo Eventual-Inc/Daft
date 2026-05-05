@@ -41,8 +41,6 @@ pub(crate) struct AsofJoinBuildState {
     tables: Vec<MicroPartition>,
 }
 
-// Produced once by finalize_build() and shared with all probe workers.
-// Contains the sorted group structure needed for binary-search matching.
 pub(crate) struct AsofJoinFinalizedBuildState {
     // Original left RecordBatch (all rows concatenated)
     left_rb: RecordBatch,
@@ -206,13 +204,14 @@ impl AsofJoinProbeState {
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
-        rb_idx: usize,
     ) -> DaftResult<()> {
+        let rb_idx = self.right_tables.len();
         let table = self.build_contents.clone();
 
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
         self.right_on_key_arrs.push(right_on_arr.clone());
+        self.right_tables.push(right_rb.clone());
 
         // One comparator per group
         let group_sorted_key_cmps: Vec<DynPartialComparator> = table
@@ -512,9 +511,7 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        let rb_idx = state.right_tables.len();
-                        state.probe_batch(right_rb, &right_on, &right_by, rb_idx)?;
-                        state.right_tables.push(right_rb.clone());
+                        state.probe_batch(right_rb, &right_on, &right_by)?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
@@ -574,21 +571,22 @@ impl JoinOperator for AsofJoinOperator {
                     let all_right_tables: Vec<RecordBatch> =
                         right_tables_per_state.into_iter().flatten().collect();
 
-                    let rows_per_chunk =
-                        (table.total_left_rows / get_compute_pool_num_threads()).max(1024);
-
-                    let state_best_matches = Arc::new(state_best_matches);
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
                     let global_rb_offsets = Arc::new(global_rb_offsets);
+                    let state_best_matches = Arc::new(state_best_matches);
+
+                    let rows_per_chunk =
+                        (table.total_left_rows / get_compute_pool_num_threads()).max(1024);
 
                     let chunk_tasks: Vec<_> = (0..table.total_left_rows)
                         .step_by(rows_per_chunk)
                         .map(|start| {
                             let end = (start + rows_per_chunk).min(table.total_left_rows);
                             let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
-                            let state_best_matches = state_best_matches.clone();
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
+                            let state_best_matches = state_best_matches.clone();
+
                             spawner.spawn(
                                     async move {
                                         let mut cmp_cache: HashMap<
