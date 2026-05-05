@@ -265,6 +265,7 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
 /// It generates a plan_id, and node ids for each plan.
 pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
+    pub query_id: QueryID,
     pub meter: Meter,
     context: HashMap<String, String>,
     shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
@@ -291,10 +292,11 @@ impl BuilderContext {
         context: HashMap<String, String>,
         shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
     ) -> Self {
-        let meter = Meter::query_scope(query_id, "daft.execution.local");
+        let meter = Meter::query_scope(query_id.clone(), "daft.execution.local");
 
         Self {
             index_counter: std::cell::RefCell::new(0),
+            query_id,
             meter,
             context,
             shuffle_server,
@@ -807,7 +809,8 @@ fn physical_plan_to_pipeline(
 
             ctx.set_checkpoint(store.clone(), id_map.clone(), key_expr.clone());
 
-            let scko = StageCheckpointKeysOperator::new(key_expr, store, id_map);
+            let scko =
+                StageCheckpointKeysOperator::new(key_expr, store, id_map, ctx.query_id.clone());
             IntermediateNode::new(
                 Arc::new(scko),
                 child_node,
@@ -1447,7 +1450,12 @@ fn physical_plan_to_pipeline(
                 context,
             );
             if let Some((store, id_map, _)) = ctx.checkpoint() {
-                node = node.with_checkpoint(store, id_map, daft_checkpoint::FileFormat::Parquet);
+                node = node.with_checkpoint(
+                    store,
+                    id_map,
+                    daft_checkpoint::FileFormat::Parquet,
+                    ctx.query_id.clone(),
+                );
             }
             node.boxed()
         }
@@ -1534,7 +1542,7 @@ fn physical_plan_to_pipeline(
                 context,
             );
             if let Some((store, id_map, _)) = ctx.checkpoint() {
-                node = node.with_checkpoint(store, id_map, ckpt_format);
+                node = node.with_checkpoint(store, id_map, ckpt_format, ctx.query_id.clone());
             }
             node.boxed()
         }

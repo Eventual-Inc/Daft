@@ -8,10 +8,9 @@ macro_rules! with_match_daft_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
-        use $crate::file::{MediaType, UnknownFileType, VideoFileType, AudioFileType};
+        use $crate::file::{MediaType, UnknownFileType, VideoFileType, AudioFileType, ImageFileType};
 
         match $key_type {
-            // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
             DataType::Binary => __with_ty__! { BinaryType },
             DataType::Boolean => __with_ty__! { BooleanType },
             DataType::Date => __with_ty__! { DateType },
@@ -24,6 +23,7 @@ macro_rules! with_match_daft_types {
             DataType::FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
             DataType::FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
             DataType::FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Image(..) => __with_ty__! { ImageType },
@@ -53,6 +53,7 @@ macro_rules! with_match_daft_types {
             DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
             DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
             DataType::File(MediaType::Audio) => __with_ty__! { AudioFileType },
+            DataType::File(MediaType::Image) => __with_ty__! { ImageFileType },
             DataType::Union(..) => __with_ty__! { UnionType },
 
 
@@ -86,6 +87,7 @@ macro_rules! with_match_physical_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Binary => __with_ty__! { BinaryType },
@@ -129,6 +131,7 @@ macro_rules! with_match_arrow_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Decimal128(..) => __with_ty__! { Decimal128Type },
@@ -164,6 +167,7 @@ macro_rules! with_match_comparable_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Utf8 => __with_ty__! { Utf8Type },
@@ -199,6 +203,7 @@ macro_rules! with_match_iterable_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
 
@@ -230,6 +235,7 @@ macro_rules! with_match_hashable_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Utf8 => __with_ty__! { Utf8Type },
@@ -264,6 +270,7 @@ macro_rules! with_match_numeric_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
 
@@ -292,6 +299,7 @@ macro_rules! with_match_primitive_daft_types {
             DataType::UInt16 => __with_ty__! { UInt16Type },
             DataType::UInt32 => __with_ty__! { UInt32Type },
             DataType::UInt64 => __with_ty__! { UInt64Type },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Decimal128(..) => __with_ty__! { Decimal128Type },
@@ -340,6 +348,7 @@ macro_rules! with_match_float_and_null_daft_types {
 
         match $key_type {
             DataType::Null => __with_ty__! { NullType },
+            DataType::Float16 => __with_ty__! { Float16Type },
             DataType::Float32 => __with_ty__! { Float32Type },
             DataType::Float64 => __with_ty__! { Float64Type },
 
@@ -380,12 +389,13 @@ macro_rules! with_match_file_types {
         macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
         use $crate::datatypes::*;
         use $crate::datatypes::DataType;
-        use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo, MediaTypeAudio};
+        use $crate::file::{MediaType, MediaTypeUnknown, MediaTypeVideo, MediaTypeAudio, MediaTypeImage};
 
         match $key_type {
             DataType::File(MediaType::Unknown) => __with_ty__! { MediaTypeUnknown },
             DataType::File(MediaType::Video) => __with_ty__! { MediaTypeVideo },
             DataType::File(MediaType::Audio) => __with_ty__! { MediaTypeAudio },
+            DataType::File(MediaType::Image) => __with_ty__! { MediaTypeImage },
             _ => panic!("Only File Types are supported, {:?} not implemented", $key_type)
         }
     }};

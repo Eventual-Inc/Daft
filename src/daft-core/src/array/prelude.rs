@@ -13,7 +13,7 @@ pub use crate::{
     },
     datatypes::{
         BinaryArray, BooleanArray, Decimal128Array, ExtensionArray, FixedSizeBinaryArray,
-        Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, IntervalArray,
-        NullArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array, Utf8Array,
+        Float16Array, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+        IntervalArray, NullArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array, Utf8Array,
     },
 };

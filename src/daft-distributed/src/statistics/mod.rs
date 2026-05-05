@@ -15,7 +15,7 @@ pub use stats::RuntimeStats;
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
     scheduling::{
-        task::{TaskContext, TaskName, TaskStatus},
+        task::{TaskContext, TaskMetadata, TaskName, TaskStatus},
         worker::WorkerId,
     },
     statistics::stats::RuntimeNodeManager,
@@ -29,6 +29,7 @@ pub(crate) enum TaskEvent {
     Submitted {
         context: TaskContext,
         name: TaskName,
+        metadata: TaskMetadata,
     },
     Scheduled {
         context: TaskContext,

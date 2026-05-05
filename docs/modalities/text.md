@@ -109,15 +109,17 @@ LM Studio runs on `localhost` port `1234` by default, but you can customize the 
 
 ```python
 import daft
-from daft.ai.provider import load_provider
-from daft.functions.ai import embed_text
+from daft.functions import embed_text
 
-provider = load_provider("lm_studio", base_url="http://127.0.0.1:1234/v1")  # This base_url parameter is optional if you're using the defaults for LM Studio. You can modify this as needed.
-model = "text-embedding-nomic-embed-text-v1.5"  # Select a text embedding model that you've loaded into LM Studio.
+# Set up the LM Studio provider (base_url is optional if using LM Studio defaults)
+daft.set_provider("lm_studio", base_url="http://127.0.0.1:1234/v1")
+
+# Select a text embedding model that you've loaded into LM Studio
+model = "text-embedding-nomic-embed-text-v1.5"
 
 (
     daft.read_huggingface("Open-Orca/OpenOrca")
-    .with_column("embedding", embed_text(daft.col("response"), provider=provider, model=model))
+    .with_column("embedding", embed_text(daft.col("response"), provider="lm_studio", model=model))
     .show()
 )
 ```

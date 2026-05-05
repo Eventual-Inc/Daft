@@ -11,8 +11,8 @@ pub use daft_schema::{
 
 pub use super::{
     BinaryType, BooleanType, DaftArrayType, ExtensionType, FixedSizeBinaryType, FixedSizeListType,
-    Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, NullType, UInt8Type,
-    UInt16Type, UInt32Type, UInt64Type, Utf8Type,
+    Float16Type, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, NullType,
+    UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Type,
 };
 // Import trait definitions
 pub use super::{

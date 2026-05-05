@@ -179,6 +179,7 @@ impl_series_like_for_data_array!(UInt8Array);
 impl_series_like_for_data_array!(UInt16Array);
 impl_series_like_for_data_array!(UInt32Array);
 impl_series_like_for_data_array!(UInt64Array);
+impl_series_like_for_data_array!(Float16Array);
 impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);

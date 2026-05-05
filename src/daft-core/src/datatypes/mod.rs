@@ -230,7 +230,7 @@ Please see the [Arrow Spec](https://github.com/apache/arrow/blob/081b4022fe6f659
 "
 );
 
-// impl_daft_arrow_datatype!(Float16Type, Float16);
+impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
@@ -365,6 +365,10 @@ impl NumericNative for u64 {
     type ARROWTYPE = arrow::datatypes::UInt64Type;
 }
 
+impl NumericNative for half::f16 {
+    type DAFTTYPE = Float16Type;
+    type ARROWTYPE = arrow::datatypes::Float16Type;
+}
 impl NumericNative for f32 {
     type DAFTTYPE = Float32Type;
     type ARROWTYPE = arrow::datatypes::Float32Type;
@@ -403,6 +407,9 @@ impl DaftNumericType for Int128Type {
     type Native = i128;
 }
 
+impl DaftNumericType for Float16Type {
+    type Native = half::f16;
+}
 impl DaftNumericType for Float32Type {
     type Native = f32;
 }
@@ -443,6 +450,7 @@ where
 {
 }
 
+impl DaftFloatType for Float16Type {}
 impl DaftFloatType for Float32Type {}
 impl DaftFloatType for Float64Type {}
 
@@ -461,6 +469,7 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
+pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;

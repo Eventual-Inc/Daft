@@ -1224,13 +1224,22 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.checkpoint-`` are reserved when ``checkpoint`` is provided.
+            checkpoint (CheckpointStore, optional): Checkpoint store to make the write idempotent across process restarts. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
             DataFrame: The operations that occurred with this write.
 
         Note:
-            This call is **blocking** and will execute the DataFrame when called
+            This call is **blocking** and will execute the DataFrame when called.
+
+            When ``checkpoint`` is provided and ``write_iceberg`` raises *after* the
+            catalog commit landed (e.g. a transient failure during the
+            post-commit ``mark_committed`` bookkeeping), the user data is
+            already durable in Iceberg. The next call to ``write_iceberg`` with
+            the same ``checkpoint`` will detect the snapshot via its markers,
+            finish the bookkeeping, and exit cleanly without producing a
+            duplicate snapshot.
 
         Examples:
             >>> import pyiceberg
@@ -1260,10 +1269,29 @@ class DataFrame:
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
+        if checkpoint is not None and mode == "overwrite":
+            raise NotImplementedError(
+                "write_iceberg with checkpoint=... currently supports mode='append' only; "
+                "overwrite + checkpoint is tracked separately."
+            )
+
+        if checkpoint is not None and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("write_iceberg with checkpoint=... requires pyiceberg>=0.7.0")
+
+        if checkpoint is not None and snapshot_properties:
+            for key in snapshot_properties:
+                if key.startswith("daft.checkpoint-"):
+                    raise ValueError(
+                        f"snapshot_properties keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}"
+                    )
+
         io_config = (
             _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
         )
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        if checkpoint is not None:
+            return self._write_iceberg_with_checkpoint(table, io_config, snapshot_properties, checkpoint)
 
         operations = []
         path = []
@@ -1356,13 +1384,6 @@ class DataFrame:
 
             merge.commit()
 
-        # Mark all checkpointed entries as committed after successful catalog commit.
-        if checkpoint is not None:
-            ckpts = checkpoint.list_checkpoints()
-            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
-            if ids:
-                checkpoint.mark_committed(ids)
-
         with_operations = {
             "operation": pa.array(operations, type=pa.string()),
             "rows": pa.array(rows, type=pa.int64()),
@@ -1382,6 +1403,189 @@ class DataFrame:
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
         return df
+
+    def _write_iceberg_with_checkpoint(
+        self,
+        table: "pyiceberg.table.Table",
+        io_config: IOConfig,
+        snapshot_properties: dict[str, str] | None,
+        checkpoint: "CheckpointStore",
+    ) -> "DataFrame":
+        """Idempotent Iceberg commit driven by the checkpoint store.
+
+        Files come from `checkpoint.get_checkpointed_files()` (the store is the source
+        of truth — no re-execution after a crash). The snapshot summary carries
+        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart can
+        recognize previously-committed work and skip it.
+
+        Concurrency assumption: at most one Python process per checkpoint path at a
+        time. The retry loop is defensive against transient `CommitFailedException`,
+        not multi-writer safety.
+        """
+        import pyarrow as pa
+        import pyiceberg
+        from packaging.version import parse
+        from pyiceberg.exceptions import CommitFailedException
+
+        from daft import from_pydict
+
+        builder = self._builder.write_iceberg(table, io_config)
+        write_df = DataFrame(builder)
+
+        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+        if not pending:
+            # Fresh run: execute the pipeline. SCKO + sink populate the store.
+            write_df.collect()
+            pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+
+        if not pending:
+            # Source filter dropped everything (everything already committed in a
+            # prior run). Nothing to commit; return an empty result.
+            empty = from_pydict(
+                {
+                    "operation": pa.array([], type=pa.string()),
+                    "rows": pa.array([], type=pa.int64()),
+                    "file_size": pa.array([], type=pa.int64()),
+                    "file_name": pa.array([], type=pa.string()),
+                }
+            )
+            empty._metadata = write_df._metadata
+            return empty
+
+        # Single-query-id invariant: all pending entries share the run that staged them.
+        our_query_id = pending[0].query_id
+        if not our_query_id or any(c.query_id != our_query_id for c in pending):
+            offending = sorted({c.query_id for c in pending})
+            raise RuntimeError(
+                "Checkpoint store contains pending entries with mismatched or empty query_ids; "
+                f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
+                "concurrent writers against the same path; the store was reused across "
+                "different destinations (one store per destination — see CheckpointStore docs); "
+                "or pre-feature legacy entries left behind in the store (empty query_id). "
+                "Resolve by using a fresh checkpoint path or clearing the store."
+            )
+        our_ids = [c.id for c in pending]
+        store_path = checkpoint.path
+
+        # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
+        # is an Arrow IPC stream of a MicroPartition produced by the iceberg
+        # writer (see `IcebergWriteVisitors.to_metadata` and the encode side in
+        # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
+        # python-typed `data_file` column whose cells are pickled
+        # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
+        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
+        # surfaces deep inside MicroPartition with a confusing error — wrap so
+        # the caller sees a clear message naming the contract.
+        data_files: list[Any] = []
+        for fm in checkpoint.get_checkpointed_files():
+            try:
+                mp = MicroPartition.from_ipc_stream(fm.data)
+                data_files.extend(mp.to_pydict()["data_file"])
+            except Exception as e:
+                raise RuntimeError(
+                    "failed to decode iceberg DataFile metadata from the checkpoint store; "
+                    "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
+                    "python `data_file` column carrying pickled pyiceberg.DataFile objects. "
+                    "Did pyiceberg change the DataFile shape, or is the store from a different "
+                    f"writer version? Underlying error: {e}"
+                ) from e
+
+        # Pending entries exist but carry no data files. Happens when the source
+        # filter drops every input row (e.g. re-run after a fully-committed call)
+        # — the sink still seals an empty Checkpointed entry. There is nothing
+        # to commit; mark the empty entries Committed so they don't persist as
+        # pending forever, and return an empty result.
+        if not data_files:
+            checkpoint.mark_committed(our_ids)
+            empty = from_pydict(
+                {
+                    "operation": pa.array([], type=pa.string()),
+                    "rows": pa.array([], type=pa.int64()),
+                    "file_size": pa.array([], type=pa.int64()),
+                    "file_name": pa.array([], type=pa.string()),
+                }
+            )
+            empty._metadata = write_df._metadata
+            return empty
+
+        full_props = dict(snapshot_properties or {})
+        full_props["daft.checkpoint-store"] = store_path
+        full_props["daft.checkpoint-query"] = our_query_id
+
+        def _build_result() -> "DataFrame":
+            ops: list[str] = []
+            paths: list[str] = []
+            row_counts: list[int] = []
+            sizes: list[int] = []
+            for df_ in data_files:
+                ops.append("ADD")
+                paths.append(df_.file_path)
+                row_counts.append(df_.record_count)
+                sizes.append(df_.file_size_in_bytes)
+            result = from_pydict(
+                {
+                    "operation": pa.array(ops, type=pa.string()),
+                    "rows": pa.array(row_counts, type=pa.int64()),
+                    "file_size": pa.array(sizes, type=pa.int64()),
+                    "file_name": pa.array(paths, type=pa.string()),
+                }
+            )
+            result._metadata = write_df._metadata
+            return result
+
+        # Honor the table's `commit.manifest-merge.enabled` property the same
+        # way the non-checkpoint branch does — users who set it expect manifest
+        # merging regardless of whether they pass `checkpoint=`.
+        from pyiceberg.table import TableProperties
+
+        if parse(pyiceberg.__version__) >= parse("0.8.0"):
+            from pyiceberg.utils.properties import property_as_bool
+        else:
+            from pyiceberg.table import PropertyUtil
+
+            property_as_bool = PropertyUtil.property_as_bool
+
+        max_retries = 2  # defensive only; transient catalog errors
+        last_err: Exception | None = None
+        for _ in range(max_retries):
+            table.refresh()
+            # Recovery check: did a prior attempt (or restart) already land our work?
+            for snap in reversed(table.metadata.snapshots):
+                summary = snap.summary
+                if summary is None:
+                    continue
+                if (
+                    summary.get("daft.checkpoint-store") == store_path
+                    and summary.get("daft.checkpoint-query") == our_query_id
+                ):
+                    checkpoint.mark_committed(our_ids)
+                    return _build_result()
+
+            try:
+                tx = table.transaction()
+                update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
+                manifest_merge_enabled = property_as_bool(
+                    tx.table_metadata.properties,
+                    TableProperties.MANIFEST_MERGE_ENABLED,
+                    TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+                )
+                append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+                with append_method() as append_files:
+                    for df_ in data_files:
+                        append_files.append_data_file(df_)
+                tx.commit_transaction()
+                checkpoint.mark_committed(our_ids)
+                return _build_result()
+            except CommitFailedException as e:
+                # Narrow on purpose: only optimistic-concurrency conflicts (the
+                # catalog raised because the branch head moved) retry. Other
+                # transient catalog errors — REST/network 5xx, auth blips,
+                # pyiceberg internals — propagate to the caller, who can wrap
+                # this whole `write_iceberg` in their own retry policy.
+                last_err = e
+                continue
+
+        raise last_err or CommitFailedException(f"write_iceberg with checkpoint exhausted {max_retries} retries")
 
     @DataframePublicAPI
     def write_paimon(
@@ -1417,7 +1621,7 @@ class DataFrame:
         except ImportError:
             raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
 
-        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+        from daft.io.paimon import PaimonDataSink
 
         return self.write_sink(PaimonDataSink(table, mode))
 

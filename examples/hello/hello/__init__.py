@@ -13,6 +13,11 @@ def greet(name: Expression) -> Expression:
     return daft.get_function("greet", name)
 
 
+def byte_length(input: Expression) -> Expression:
+    """Return the byte length of a string or binary column."""
+    return daft.get_function("byte_length", input)
+
+
 def string_count(name: Expression) -> Expression:
     """Count non-null strings."""
     return daft.get_aggregate_function("string_count", name)
