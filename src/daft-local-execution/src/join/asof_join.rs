@@ -136,16 +136,15 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     left_rb: RecordBatch,
     // Concatenated on_key as an Arrow array – used for sort, binary search comparators, and null-validity checks.
     left_on_arr: Arc<dyn Array>,
-    // group_hash_map maps a by_key hash to a list of candidate group indices (Vec<usize>).
-    // Multiple candidates exist only on hash collision; typically there is just one.
-    // For each candidate group index g:
-    //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
-    //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
+    // group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
     group_buckets: GroupIndices,
-    // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
+    // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses.
     group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
+    // group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
     group_reps: RecordBatch,
+    // Materialized series view of group_reps, parallel to group_buckets.
     group_reps_series: Vec<Series>,
+    // Maps a by_key hash to a list of candidate group indices; multiple candidates exist only on hash collision.
     group_hash_map: HashMap<u64, Vec<usize>>,
     // Total number of left rows.
     total_left_rows: usize,
