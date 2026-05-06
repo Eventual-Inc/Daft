@@ -245,6 +245,14 @@ impl Series {
 }
 
 #[macro_export]
+/// Convenient macro to create a `half::f16` from a float literal, e.g. `hf16!(1.0)`.
+macro_rules! hf16 {
+    ($val:expr) => {
+        half::f16::from_f32($val)
+    };
+}
+
+#[macro_export]
 /// Convenient macro to create a Series from elements for testing purposes. Works for any types that implement `Into<Literal>`.
 macro_rules! series {
     ($($element:expr),+) => {

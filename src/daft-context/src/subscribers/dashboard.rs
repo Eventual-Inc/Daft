@@ -7,9 +7,8 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan};
+use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -17,10 +16,9 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
 };
 
-const TOTAL_ROWS: usize = 10;
 const DASHBOARD_EVENT_LIMIT: usize = 512;
 const DASHBOARD_SHUTDOWN_TIMEOUT_MS: u64 = 500;
 
@@ -43,7 +41,6 @@ pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
-    preview_rows: DashMap<QueryID, Vec<MicroPartition>>,
     execution_ids: DashMap<QueryID, String>,
     worker_id: Option<String>,
 
@@ -58,7 +55,6 @@ impl std::fmt::Debug for DashboardSubscriber {
             .field("url", &self.url)
             .field("client", &self.client)
             .field("runtime", &self.runtime.runtime)
-            .field("preview_rows", &self.preview_rows)
             .field("execution_ids", &self.execution_ids)
             .field("worker_id", &self.worker_id)
             .field("dashboard_tx", &self.dashboard_tx.is_some())
@@ -138,7 +134,6 @@ impl DashboardSubscriber {
             url,
             client,
             runtime,
-            preview_rows: DashMap::new(),
             execution_ids: DashMap::new(),
             worker_id,
             dashboard_tx: Some(dashboard_tx),
@@ -221,11 +216,6 @@ impl DashboardSubscriber {
             return Ok(());
         }
 
-        self.preview_rows.insert(
-            query_id.clone(),
-            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
-        );
-
         self.enqueue_json(
             format!("engine/query/{}/start", query_id),
             "query_start",
@@ -258,48 +248,10 @@ impl DashboardSubscriber {
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
-        // Limit to TOTAL_ROWS rows
-        // TODO: Limit by X MB and # of rows
-        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
-            return Err(DaftError::ValueError(format!(
-                "Query `{}` not started or already ended in DashboardSubscriber",
-                query_id
-            )));
-        };
-
-        let all_results = entry.value_mut();
-        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
-        if num_rows < TOTAL_ROWS && !result.is_empty() {
-            let result = result.head(TOTAL_ROWS - num_rows)?;
-            all_results.push(result);
-        }
-        Ok(())
-    }
-
     fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
-        let results = self.preview_rows.remove(&query_id);
-        let results_ipc = if let Some((_, results)) = results {
-            let result = MicroPartition::concat(results)?;
-            debug_assert!(result.len() <= TOTAL_ROWS);
-            if result.is_empty() {
-                // Flotilla queries never call on_result_out, so preview is empty (#6559)
-                None
-            } else {
-                let results_ipc = result.write_to_ipc_stream()?;
-                if results_ipc.len() > 1024 * 1024 * 2 {
-                    // 2MB, our dashboard cap
-                    None
-                } else {
-                    Some(results_ipc)
-                }
-            }
-        } else {
-            None
-        };
 
         self.enqueue_json(
             format!("engine/query/{}/end", query_id),
@@ -308,7 +260,6 @@ impl DashboardSubscriber {
                 end_sec: secs_from_epoch(),
                 end_state: end_result.end_state,
                 error_message: end_result.error_message,
-                results: results_ipc,
             },
         );
         Ok(())
@@ -459,6 +410,83 @@ impl DashboardSubscriber {
         );
         Ok(())
     }
+
+    fn on_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        self.enqueue_json(
+            format!("engine/query/{}/task/submit", query_id),
+            "task_submit",
+            &daft_dashboard::engine::TaskSubmitArgs {
+                submit_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                name: task.name.as_deref().map(str::to_string),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+
+        // CPU duration is the only task-level total we currently report; it
+        // sums correctly across all nodes in the fused pipeline. rows/bytes
+        // I/O totals require head/leaf identification (see follow-up ticket)
+        // and are intentionally omitted to avoid double-counting.
+        let mut totals = daft_dashboard::engine::TaskTotals::default();
+        for (_, snapshot) in &event.stats {
+            let stats = snapshot.to_stats();
+            for (name, stat) in stats.iter() {
+                if let (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) =
+                    (name, stat)
+                {
+                    totals.cpu_us += d.as_micros() as u64;
+                }
+            }
+        }
+
+        let outcome = match &event.outcome {
+            crate::subscribers::events::TaskOutcome::Success => {
+                daft_dashboard::engine::TaskOutcomeArgs::Success
+            }
+            crate::subscribers::events::TaskOutcome::Failed { message } => {
+                daft_dashboard::engine::TaskOutcomeArgs::Failed {
+                    message: message.clone(),
+                }
+            }
+            crate::subscribers::events::TaskOutcome::Cancelled => {
+                daft_dashboard::engine::TaskOutcomeArgs::Cancelled
+            }
+        };
+
+        self.enqueue_json(
+            format!("engine/query/{}/task/end", query_id),
+            "task_end",
+            &daft_dashboard::engine::TaskEndArgs {
+                end_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
+                outcome,
+                totals,
+            },
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -522,14 +550,14 @@ impl Subscriber for DashboardSubscriber {
                 self.on_stats(&e)?;
             }
             Event::ProcessStats(_e) => {}
-            Event::ResultOut(e) => {
-                if let Some(result) = &e.data {
-                    self.on_result_out(e.header.query_id.clone(), result.clone())?;
-                }
+            Event::TaskSubmit(e) => {
+                self.on_task_submit(&e)?;
+            }
+            Event::TaskEnd(e) => {
+                self.on_task_end(&e)?;
             }
             // TODO: hook up with dashboard server
-            Event::TaskEnd(_) => {}
-            Event::TaskSubmit(_) => {}
+            Event::TaskStart(_) => {}
         }
         Ok(())
     }

@@ -300,6 +300,125 @@ pub(crate) fn create_range_repartition_tasks(
         .collect::<DaftResult<Vec<_>>>()
 }
 
+/// Samples both sides, computes range partition boundaries from the combined samples,
+/// repartitions both sides in parallel, and returns the flattened outputs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn range_repartition_two_sides(
+    left_materialized: Vec<MaterializedOutput>,
+    right_materialized: Vec<MaterializedOutput>,
+    left_on: Vec<BoundExpr>,
+    right_on: Vec<BoundExpr>,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
+    num_partitions: usize,
+    pipeline_node: &dyn PipelineNodeImpl,
+    task_id_counter: &TaskIDCounter,
+    scheduler_handle: &SchedulerHandle<SwordfishTask>,
+) -> DaftResult<(Vec<MaterializedOutput>, Vec<MaterializedOutput>)> {
+    let descending = vec![false; left_on.len()];
+    let nulls_first = vec![false; left_on.len()];
+
+    let left_boundary_key_names = left_on
+        .iter()
+        .map(|expr| expr.inner().to_field(&left_schema).map(|f| f.name))
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let right_sample_by_aliased = right_on
+        .iter()
+        .zip(left_boundary_key_names.into_iter())
+        .map(|(expr, key_name)| BoundExpr::new_unchecked(expr.inner().alias(key_name)))
+        .collect::<Vec<_>>();
+
+    let left_sample_tasks = create_sample_tasks(
+        left_materialized.clone(),
+        left_schema.clone(),
+        left_on.clone(),
+        pipeline_node,
+        task_id_counter,
+        scheduler_handle,
+        Some(0),
+    )?;
+
+    let right_sample_tasks = create_sample_tasks(
+        right_materialized.clone(),
+        right_schema.clone(),
+        right_sample_by_aliased,
+        pipeline_node,
+        task_id_counter,
+        scheduler_handle,
+        Some(1),
+    )?;
+
+    let combined_sampled_outputs = try_join_all(
+        left_sample_tasks
+            .into_iter()
+            .chain(right_sample_tasks.into_iter()),
+    )
+    .await?
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    let left_boundaries = get_partition_boundaries_from_samples(
+        combined_sampled_outputs,
+        &left_on,
+        descending.clone(),
+        nulls_first,
+        num_partitions,
+    )
+    .await?;
+
+    let left_partition_tasks = create_range_repartition_tasks(
+        left_materialized,
+        left_schema,
+        left_on,
+        descending.clone(),
+        left_boundaries.clone(),
+        num_partitions,
+        pipeline_node,
+        task_id_counter,
+        scheduler_handle,
+        Some(0),
+    )?;
+
+    let right_boundary_names = right_on
+        .iter()
+        .map(|expr| expr.inner().to_field(&right_schema).map(|f| f.name))
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let right_boundaries = RecordBatch::from_nonempty_columns(
+        left_boundaries
+            .columns()
+            .iter()
+            .zip(right_boundary_names)
+            .map(|(col, name)| col.as_materialized_series().rename(&name))
+            .collect::<Vec<_>>(),
+    )?;
+
+    let right_partition_tasks = create_range_repartition_tasks(
+        right_materialized,
+        right_schema,
+        right_on,
+        descending,
+        right_boundaries,
+        num_partitions,
+        pipeline_node,
+        task_id_counter,
+        scheduler_handle,
+        Some(1),
+    )?;
+
+    let (left_partitioned, right_partitioned) = futures::try_join!(
+        try_join_all(left_partition_tasks),
+        try_join_all(right_partition_tasks)
+    )?;
+
+    Ok((
+        left_partitioned.into_iter().flatten().collect(),
+        right_partitioned.into_iter().flatten().collect(),
+    ))
+}
+
 pub(crate) struct SortNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,

@@ -90,6 +90,14 @@ impl PyFileReference {
         // If all else fails, return the full URL
         Ok(url.clone())
     }
+
+    fn offset(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.offset)
+    }
+
+    fn length(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.length)
+    }
 }
 
 #[pyclass]

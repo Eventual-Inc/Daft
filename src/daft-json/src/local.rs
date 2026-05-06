@@ -63,7 +63,7 @@ pub fn read_json_local_into_tables_with_range(
     max_chunks_in_flight: Option<usize>,
     range: Option<daft_io::GetRange>,
 ) -> DaftResult<Vec<RecordBatch>> {
-    let uri = uri.trim_start_matches("file://");
+    let uri = daft_io::strip_file_uri_to_path(uri).unwrap_or(uri);
     let file = std::fs::File::open(uri)?;
     // SAFETY: mmapping is inherently unsafe.
     // We are trusting that the file is not modified or accessed by other systems while we are reading it.

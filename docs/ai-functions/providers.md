@@ -110,10 +110,9 @@ For complex workflows, you might need to use different providers for different t
 import os
 from dotenv import load_dotenv
 import daft
+from daft import Session
 from daft.ai.openai.provider import OpenAIProvider
-from daft.functions.ai import prompt
-from daft.functions import format, unnest
-from daft.session import Session
+from daft.functions import prompt, format, unnest
 from pydantic import BaseModel, Field
 
 # Load environment variables

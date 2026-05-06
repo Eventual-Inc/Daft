@@ -1,4 +1,5 @@
 [dependencies]
+half = {workspace = true}
 serde = {workspace = true}
 
 [lints]
