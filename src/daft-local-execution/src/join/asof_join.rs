@@ -50,10 +50,8 @@ impl AsofJoinBuildState {
     ) -> DaftResult<AsofJoinFinalizedBuildState> {
         let left_rb = RecordBatch::concat_or_empty(&self.record_batches, Some(left_schema))?;
         if left_rb.is_empty() {
-            let left_on_arr: Arc<dyn Array> = left_rb.eval_expression(left_on)?.to_arrow()?;
             return Ok(AsofJoinFinalizedBuildState {
                 left_rb,
-                left_on_arr,
                 group_buckets: vec![],
                 group_bucket_sorted_keys: vec![],
                 group_reps: RecordBatch::empty(None),
@@ -70,9 +68,8 @@ impl AsofJoinBuildState {
 
         let (group_buckets, group_reps, group_hash_map) = if left_by.is_empty() {
             let mut bucket: VecIndices = (0..left_rb.len() as u64).collect();
-            bucket.sort_unstable_by(|&a, &b| {
-                on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
-            });
+            bucket.retain(|idx| left_on_arr.is_valid(*idx as usize));
+            bucket.sort_unstable_by(|&a, &b| on_key_sort_cmp(a as usize, b as usize).unwrap());
             (vec![bucket], RecordBatch::empty(None), HashMap::new())
         } else {
             let left_by_rb = left_rb.eval_expression_list(left_by)?;
@@ -81,6 +78,7 @@ impl AsofJoinBuildState {
             let group_buckets: GroupIndices = raw_groups
                 .into_iter()
                 .map(|mut bucket| {
+                    bucket.retain(|idx| left_on_arr.is_valid(*idx as usize));
                     bucket.sort_unstable_by(|&a, &b| {
                         on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
                     });
@@ -118,7 +116,6 @@ impl AsofJoinBuildState {
             .collect();
         Ok(AsofJoinFinalizedBuildState {
             left_rb,
-            left_on_arr,
             group_buckets,
             group_bucket_sorted_keys,
             group_reps,
@@ -131,8 +128,6 @@ impl AsofJoinBuildState {
 pub(crate) struct AsofJoinFinalizedBuildState {
     // Original left RecordBatch (all rows concatenated)
     left_rb: RecordBatch,
-    // Concatenated on_key as an Arrow array – used for sort, binary search comparators, and null-validity checks.
-    left_on_arr: Arc<dyn Array>,
     // group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
     group_buckets: GroupIndices,
     // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses.
@@ -163,10 +158,7 @@ impl AsofJoinFinalizedBuildState {
                 _ => hi = mid,
             }
         }
-        let candidate_left_idx = *bucket.get(lo)? as usize;
-        self.left_on_arr
-            .is_valid(candidate_left_idx)
-            .then_some(candidate_left_idx)
+        bucket.get(lo).map(|&idx| idx as usize)
     }
 
     /// Find the group index for right row `right_idx`.
@@ -332,18 +324,11 @@ fn is_candidate_better(
     ))
 }
 
-fn backfill(
-    global_best: &mut [Option<(u32, u32)>],
-    group_buckets: &GroupIndices,
-    left_on_arr: &dyn Array,
-) {
+fn backfill(global_best: &mut [Option<(u32, u32)>], group_buckets: &GroupIndices) {
     for bucket in group_buckets {
         for i in 1..bucket.len() {
             let prev_left_idx = bucket[i - 1] as usize;
             let curr_left_idx = bucket[i] as usize;
-            if !left_on_arr.is_valid(curr_left_idx) {
-                continue;
-            }
             if global_best[curr_left_idx].is_none() && global_best[prev_left_idx].is_some() {
                 global_best[curr_left_idx] = global_best[prev_left_idx];
             }
@@ -635,11 +620,7 @@ impl JoinOperator for AsofJoinOperator {
                         global_best[start..start + chunk.len()].copy_from_slice(&chunk);
                     }
 
-                    backfill(
-                        &mut global_best,
-                        &build_state.group_buckets,
-                        &build_state.left_on_arr,
-                    );
+                    backfill(&mut global_best, &build_state.group_buckets);
                     let right_out =
                         build_right_output(&global_best, all_right_tables, pruned_right_schema)?;
                     Ok(Some(build_join_output(
