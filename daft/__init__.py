@@ -61,7 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointStore
+from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -93,11 +93,13 @@ from daft.session import (
     attach_provider,
     attach_function,
     attach_table,
+    attach_view,
     create_namespace,
     create_namespace_if_not_exists,
     create_table,
     create_table_if_not_exists,
     create_temp_table,
+    create_temp_view,
     current_catalog,
     current_model,
     current_namespace,
@@ -111,6 +113,7 @@ from daft.session import (
     drop_table,
     get_catalog,
     get_function,
+    get_aggregate_function,
     get_provider,
     get_table,
     has_catalog,
@@ -154,7 +157,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile
+from daft.file import File, VideoFile, AudioFile, ImageFile
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -179,6 +182,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointConfig",
     "CheckpointStore",
     "DataFrame",
     "DataType",
@@ -186,9 +190,11 @@ __all__ = [
     "File",
     "IOConfig",
     "Identifier",
+    "ImageFile",
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "KeyFilteringSettings",
     "MediaType",
     "ResourceRequest",
     "Schema",
@@ -205,6 +211,7 @@ __all__ = [
     "attach_provider",
     "attach_subscriber",
     "attach_table",
+    "attach_view",
     "cls",
     "col",
     "context",
@@ -213,6 +220,7 @@ __all__ = [
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
+    "create_temp_view",
     "current_catalog",
     "current_model",
     "current_namespace",
@@ -238,6 +246,7 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "functions",
+    "get_aggregate_function",
     "get_catalog",
     "get_context",
     "get_function",

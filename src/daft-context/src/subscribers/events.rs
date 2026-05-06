@@ -4,7 +4,6 @@ use common_metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use daft_micropartition::MicroPartitionRef;
 
 use super::{QueryMetadata, QueryResult};
 
@@ -18,12 +17,12 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
     ProcessStats(ProcessStatsEvent),
-    ResultOut(ResultOutEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -139,29 +138,39 @@ pub struct ExecEndEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResultOutEvent {
-    pub header: EventHeader,
-    pub num_rows: u64,
-    // needed by the dashboard subscriber
-    pub data: Option<MicroPartitionRef>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TaskMeta {
+pub struct TaskInfo {
     pub id: u32,
+    /// The last distributed plan node in the task's pipeline — the one that
+    /// dispatched the task. Matches `TaskContext::last_node_id`. Different
+    /// from `LocalNodeContext::origin_node_id`, which attributes a single
+    /// local plan node back to the distributed node that generated it.
+    pub last_node_id: u32,
     pub node_ids: Vec<u32>,
+    /// Fingerprint identifying tasks with functionally identical plans.
+    /// Tasks with the same last_node_id + plan_fingerprint share a compiled pipeline.
+    pub plan_fingerprint: u32,
+    /// Optional human-readable task name (pipeline shape), set on submit.
+    pub name: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TaskSubmitEvent {
     pub header: EventHeader,
-    pub task: Arc<TaskMeta>,
+    pub task: Arc<TaskInfo>,
+    pub sources: Arc<Vec<TaskSource>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskStartEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TaskEndEvent {
     pub header: EventHeader,
-    pub task: Arc<TaskMeta>,
+    pub task: Arc<TaskInfo>,
     pub worker_id: Option<Arc<str>>,
     pub outcome: TaskOutcome,
     pub stats: Vec<(Arc<NodeInfo>, StatSnapshot)>,
@@ -172,4 +181,26 @@ pub enum TaskOutcome {
     Success,
     Failed { message: String },
     Cancelled,
+}
+
+#[derive(Debug, Clone)]
+pub enum TaskSource {
+    PhysicalScan(PhysicalScanSource),
+    InMemoryScan(InMemoryScanSource),
+}
+
+#[derive(Debug, Clone)]
+pub struct PhysicalScanSource {
+    pub source_id: u32,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    pub storage_bytes: Option<usize>,
+    pub estimated_memory_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InMemoryScanSource {
+    pub source_id: u32,
+    pub partitions: usize,
+    pub total_bytes: Option<usize>,
 }

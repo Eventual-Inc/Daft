@@ -401,6 +401,29 @@ def minhash(
     )
 
 
+def simhash(
+    text: Expression,
+    *,
+    ngram_size: int = 3,
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+) -> Expression:
+    """Compute a SimHash fingerprint of the input text.
+
+    SimHash produces a 64-bit locality-sensitive hash from character n-grams.
+    Similar texts produce fingerprints with small bitwise Hamming distance,
+    making it useful for near-duplicate detection.
+
+    Args:
+        text (String Expression): The expression to hash.
+        ngram_size (int, default=3): Character n-gram size. Defaults to 3.
+        hash_function (str, default="xxhash3_64"): Hash function for n-grams. One of "murmurhash3", "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", or "sha1". Defaults to "xxhash3_64".
+
+    Returns:
+        Expression (UInt64 Expression): SimHash fingerprint.
+    """
+    return Expression._call_builtin_scalar_fn("simhash", text, ngram_size=ngram_size, hash_function=hash_function)
+
+
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 

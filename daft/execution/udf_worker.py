@@ -62,8 +62,12 @@ def udf_event_loop(
             output_bytes = evaluated.to_ipc_stream()
             out_name, out_size = transport.write_and_close(output_bytes)
 
-            # Mark end of UDF's stdout and flush
-            print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
+            # Mark end of UDF's stdout and flush.
+            # Leading newline ensures the divider lands on its own line even if
+            # the UDF's last write lacked a trailing newline — otherwise
+            # readline() on the parent would fuse them and never match the
+            # divider. See issue #6762.
+            print("\n" + _OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
             sys.stdout.flush()
             sys.stderr.flush()
 

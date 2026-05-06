@@ -310,6 +310,160 @@ impl ArrowArray {
 // Only Send — concurrent &-access isn't safe per the Arrow C Data Interface spec.
 unsafe impl Send for ArrowArray {}
 
+// ── Struct helpers (zero arrow-rs dependency) ──────────────────────
+
+struct StructPrivate {
+    child_schemas: Vec<ArrowSchema>,
+    child_schema_ptrs: Vec<*mut ArrowSchema>,
+    format: std::ffi::CString,
+    name: std::ffi::CString,
+}
+
+struct StructArrayPrivate {
+    child_arrays: Vec<ArrowArray>,
+    child_array_ptrs: Vec<*mut ArrowArray>,
+    null_buf: [*const c_void; 1],
+}
+
+impl ArrowSchema {
+    /// Build a Struct schema whose children are the given field schemas.
+    ///
+    /// Ownership of each child schema transfers into the returned Struct schema;
+    /// releasing the Struct schema releases all children.
+    pub fn new_struct(name: &str, children: Vec<Self>) -> Self {
+        let n = children.len();
+        let format = std::ffi::CString::new("+s").unwrap();
+        let cname = std::ffi::CString::new(name).unwrap();
+
+        let mut priv_data = Box::new(StructPrivate {
+            child_schemas: children,
+            child_schema_ptrs: Vec::with_capacity(n),
+            format,
+            name: cname,
+        });
+
+        priv_data.child_schema_ptrs = priv_data
+            .child_schemas
+            .iter_mut()
+            .map(std::ptr::from_mut::<Self>)
+            .collect();
+
+        let format_ptr = priv_data.format.as_ptr();
+        let name_ptr = priv_data.name.as_ptr();
+        let children_ptr = priv_data.child_schema_ptrs.as_mut_ptr();
+
+        Self {
+            format: format_ptr,
+            name: name_ptr,
+            metadata: std::ptr::null(),
+            flags: 0,
+            n_children: n as i64,
+            children: children_ptr,
+            dictionary: std::ptr::null_mut(),
+            release: Some(release_struct_schema),
+            private_data: Box::into_raw(priv_data).cast(),
+        }
+    }
+
+    /// Extract children from a Struct schema, consuming each child via `ptr::read`.
+    ///
+    /// After this call the children slots in the parent are zeroed; the caller
+    /// owns the returned schemas and must release them individually.
+    ///
+    /// # Safety
+    ///
+    /// The schema must be a Struct (format `"+s"`), must not be released,
+    /// and each child pointer must be valid.
+    pub unsafe fn take_struct_children(&mut self) -> Vec<Self> {
+        let n = self.n_children as usize;
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let child_ptr = unsafe { *self.children.add(i) };
+            out.push(unsafe { std::ptr::read(child_ptr) });
+            unsafe { std::ptr::write(child_ptr, Self::empty()) };
+        }
+        out
+    }
+}
+
+unsafe extern "C" fn release_struct_schema(schema: *mut ArrowSchema) {
+    let s = unsafe { &mut *schema };
+    if s.private_data.is_null() {
+        return;
+    }
+    drop(unsafe { Box::from_raw(s.private_data.cast::<StructPrivate>()) });
+    s.release = None;
+    s.private_data = std::ptr::null_mut();
+}
+
+impl ArrowArray {
+    /// Build a Struct array from child arrays. All children must have the same `length`.
+    ///
+    /// Ownership of each child transfers into the returned Struct array.
+    pub fn new_struct(children: Vec<Self>, length: i64) -> Self {
+        let n = children.len();
+
+        let mut priv_data = Box::new(StructArrayPrivate {
+            child_arrays: children,
+            child_array_ptrs: Vec::with_capacity(n),
+            null_buf: [std::ptr::null()],
+        });
+
+        priv_data.child_array_ptrs = priv_data
+            .child_arrays
+            .iter_mut()
+            .map(std::ptr::from_mut::<Self>)
+            .collect();
+
+        let children_ptr = priv_data.child_array_ptrs.as_mut_ptr();
+        let buffers_ptr = priv_data
+            .null_buf
+            .as_ptr()
+            .cast_mut()
+            .cast::<*const c_void>();
+
+        Self {
+            length,
+            null_count: 0,
+            offset: 0,
+            n_buffers: 1,
+            n_children: n as i64,
+            buffers: buffers_ptr,
+            children: children_ptr,
+            dictionary: std::ptr::null_mut(),
+            release: Some(release_struct_array),
+            private_data: Box::into_raw(priv_data).cast(),
+        }
+    }
+
+    /// Extract children from a Struct array, consuming each child via `ptr::read`.
+    ///
+    /// # Safety
+    ///
+    /// The array must be a Struct, must not be released, and each child pointer
+    /// must be valid.
+    pub unsafe fn take_struct_children(&mut self) -> Vec<Self> {
+        let n = self.n_children as usize;
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let child_ptr = unsafe { *self.children.add(i) };
+            out.push(unsafe { std::ptr::read(child_ptr) });
+            unsafe { std::ptr::write(child_ptr, Self::empty()) };
+        }
+        out
+    }
+}
+
+unsafe extern "C" fn release_struct_array(array: *mut ArrowArray) {
+    let a = unsafe { &mut *array };
+    if a.private_data.is_null() {
+        return;
+    }
+    drop(unsafe { Box::from_raw(a.private_data.cast::<StructArrayPrivate>()) });
+    a.release = None;
+    a.private_data = std::ptr::null_mut();
+}
+
 /// ArrowArray C Stream Interface is a streaming producer of Arrow record batches.
 ///
 /// <https://arrow.apache.org/docs/format/CStreamInterface.html#the-arrowarraystream-structure>

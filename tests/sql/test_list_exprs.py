@@ -159,6 +159,22 @@ def test_list_join():
     assert actual.to_pydict() == expected.to_pydict()
 
 
+def test_list_flatten():
+    df = daft.from_pydict(
+        {
+            "col": [
+                [[1, 2], [3]],
+                [[], [4], None],
+                None,
+            ]
+        }
+    )
+    bindings = {"test": df}
+    expected = df.select(daft.col("col").list_flatten()).collect()
+    actual = daft.sql("SELECT list_flatten(col) FROM test", **bindings).collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+
 def test_various_list_ops():
     df = daft.from_pydict({"col": [[1, 2, 3], [1, 2], [1, None, 4], []]})
     bindings = {"test": df}

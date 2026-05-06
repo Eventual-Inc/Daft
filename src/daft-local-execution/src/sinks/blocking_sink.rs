@@ -8,7 +8,7 @@ use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    Meter,
+    Meter, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
@@ -155,6 +155,7 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
         CheckpointStoreRef,
         CheckpointIdMap,
         daft_checkpoint::FileFormat,
+        QueryID,
     )>,
 }
 
@@ -186,8 +187,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         store: CheckpointStoreRef,
         id_map: CheckpointIdMap,
         file_format: daft_checkpoint::FileFormat,
+        query_id: QueryID,
     ) -> Self {
-        self.checkpoint = Some((store, id_map, file_format));
+        self.checkpoint = Some((store, id_map, file_format, query_id));
         self
     }
 
@@ -238,23 +240,28 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             CheckpointStoreRef,
             CheckpointIdMap,
             daft_checkpoint::FileFormat,
+            QueryID,
         )>,
     ) {
         tasks.spawn(async move {
             let checkpoint_id = checkpoint
                 .as_ref()
-                .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
+                .map(|(_, id_map, _, _)| id_map.get_or_generate(input_id));
 
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
                     // Stage write results as file metadata before sending.
-                    if let Some((ref store, _, file_format)) = checkpoint {
+                    if let Some((ref store, _, file_format, ref query_id)) = checkpoint {
                         let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
                         if !file_metadata.is_empty() {
                             store
-                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
+                                .stage_files(
+                                    checkpoint_id.as_ref().unwrap(),
+                                    query_id,
+                                    file_metadata,
+                                )
                                 .await?;
                         }
                     }
@@ -283,7 +290,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
                 }
             }
-            if let Some((store, _, _)) = &checkpoint {
+            if let Some((store, _, _, _)) = &checkpoint {
                 store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
@@ -304,6 +311,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             CheckpointStoreRef,
             CheckpointIdMap,
             daft_checkpoint::FileFormat,
+            QueryID,
         )>,
     ) -> DaftResult<()> {
         let node_id = node_info.id;
@@ -395,10 +403,27 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     )
                 }
                 PipelineEvent::Flush(input_id) => {
-                    if let Some(p) = inputs.get_mut(&input_id) {
-                        p.flushed = true;
+                    // A Flush can arrive for an input that received zero morsels (e.g.
+                    // an empty source after the checkpoint anti-join). Without a
+                    // PerInputState the flush was silently dropped and finalize never
+                    // ran, leaving the checkpoint unsealed. Create one on demand,
+                    // mirroring the Vacant arm in the partition handler above.
+                    if let Entry::Vacant(e) = inputs.entry(input_id) {
+                        let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                        stats_manager.register_runtime_stats(
+                            node_id,
+                            input_id,
+                            runtime_stats.clone(),
+                        );
+                        e.insert(PerInputState::new(
+                            &op,
+                            max_concurrency,
+                            runtime_stats,
+                            input_id,
+                        )?);
                     }
-                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
+                    inputs.get_mut(&input_id).unwrap().flushed = true;
+                    if inputs[&input_id].ready_to_finalize() {
                         Self::spawn_finalize(
                             op.clone(),
                             inputs.remove(&input_id).unwrap(),

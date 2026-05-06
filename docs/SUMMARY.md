@@ -44,6 +44,7 @@
         * [Azure Blob Store](connectors/azure.md)
         * [Bigtable](connectors/bigtable.md)
         * [ClickHouse](connectors/clickhouse.md)
+        * [COS (Tencent Cloud)](connectors/cos.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Files](connectors/files.md)
         * [Google Cloud Storage](connectors/gcs.md)
@@ -57,7 +58,9 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
+        * [Overview](extensions/overview.md)
         * [Community Extensions](extensions/community.md)
+        * [Built on Daft](extensions/projects.md)
         * [Authoring Guide](extensions/authoring.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)

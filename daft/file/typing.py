@@ -32,3 +32,10 @@ class AudioMetadata(TypedDict):
     frames: int
     format: str
     subtype: str | None
+
+
+class ImageMetadata(TypedDict):
+    width: int | None
+    height: int | None
+    format: str | None
+    mode: str | None

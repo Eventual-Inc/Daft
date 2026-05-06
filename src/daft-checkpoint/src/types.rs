@@ -1,4 +1,4 @@
-use std::{fmt, time::SystemTime};
+use std::{fmt, sync::Arc, time::SystemTime};
 
 // `CheckpointId` lives in `common-checkpoint-config` so that consumers
 // outside the store impls (e.g. `daft-distributed` task metadata) can
@@ -34,6 +34,11 @@ impl fmt::Display for CheckpointStatus {
 pub struct Checkpoint {
     pub id: CheckpointId,
     pub status: CheckpointStatus,
+    /// Identifier of the execution that staged this checkpoint. Set on first
+    /// `stage_keys`/`stage_files` call for the ID, persisted with the manifest,
+    /// returned alongside the checkpoint metadata. Empty for entries created by
+    /// older versions that did not record a query_id.
+    pub query_id: Arc<str>,
     /// When the checkpoint entry was first created (first `stage_keys`/`stage_files` call).
     pub created_at: SystemTime,
     /// When the checkpoint was sealed via `checkpoint()`.
@@ -48,6 +53,7 @@ impl Checkpoint {
     pub fn new(
         id: CheckpointId,
         status: CheckpointStatus,
+        query_id: Arc<str>,
         created_at: SystemTime,
         sealed_at: Option<SystemTime>,
         committed_at: Option<SystemTime>,
@@ -55,6 +61,7 @@ impl Checkpoint {
         Self {
             id,
             status,
+            query_id,
             created_at,
             sealed_at,
             committed_at,

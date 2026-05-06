@@ -1153,6 +1153,12 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
+                }
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
@@ -1463,6 +1469,12 @@ impl RecordBatch {
                         &BoundExpr::new_unchecked(expr.clone()),
                         metrics,
                     )?);
+                }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
                 }
                 #[cfg(feature = "python")]
                 {
