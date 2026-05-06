@@ -8,7 +8,7 @@ use daft_context::{
         event_header,
         events::{
             Event, InMemoryScanSource, PhysicalScanSource, TaskEndEvent, TaskInfo, TaskOutcome,
-            TaskSource as EventTaskSource, TaskStartEvent, TaskSubmitEvent,
+            TaskScheduledEvent, TaskSource as EventTaskSource, TaskSubmitEvent,
         },
     },
 };
@@ -63,12 +63,12 @@ impl StatisticsSubscriber for TaskLifecycleEventSubscriber {
                 self.dispatch_event(&submit_event)
             }
             TaskEvent::Scheduled { context, worker_id } => {
-                let start_event = Event::TaskStart(TaskStartEvent {
+                let scheduled_event = Event::TaskScheduled(TaskScheduledEvent {
                     header: event_header(self.query_id.clone()),
                     task: task_info_from_context(context, None),
                     worker_id: Some(worker_id.clone()),
                 });
-                self.dispatch_event(&start_event)
+                self.dispatch_event(&scheduled_event)
             }
             TaskEvent::Completed {
                 context,

@@ -18,7 +18,7 @@ use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
     events::{
         InMemoryScanSource, OperatorEndEvent, OperatorStartEvent, PhysicalScanSource, StatsEvent,
-        TaskEndEvent, TaskSource, TaskStartEvent, TaskSubmitEvent,
+        TaskEndEvent, TaskScheduledEvent, TaskSource, TaskSubmitEvent,
     },
 };
 
@@ -473,7 +473,7 @@ impl DashboardSubscriber {
         Ok(())
     }
 
-    fn on_task_start(&self, event: &TaskStartEvent) -> DaftResult<()> {
+    fn on_task_scheduled(&self, event: &TaskScheduledEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -481,10 +481,10 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
         self.enqueue_json(
-            format!("engine/query/{}/task/start", query_id),
-            "task_start",
-            &daft_dashboard::engine::TaskStartArgs {
-                start_sec: event.header.timestamp_epoch_secs,
+            format!("engine/query/{}/task/schedule", query_id),
+            "task_schedule",
+            &daft_dashboard::engine::TaskScheduledArgs {
+                scheduled_sec: event.header.timestamp_epoch_secs,
                 task_id: task.id,
                 last_node_id: task.last_node_id as usize,
                 node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
@@ -615,9 +615,13 @@ impl Subscriber for DashboardSubscriber {
             Event::TaskSubmit(e) => {
                 self.on_task_submit(&e)?;
             }
-            Event::TaskStart(e) => {
-                self.on_task_start(&e)?;
+            Event::TaskScheduled(e) => {
+                self.on_task_scheduled(&e)?;
             }
+            // Worker-side TaskStart not yet wired to the dashboard; the
+            // driver's TaskScheduled stands in as the "running" signal until
+            // worker-side wiring lands.
+            Event::TaskStart(_) => {}
             Event::TaskEnd(e) => {
                 self.on_task_end(&e)?;
             }
