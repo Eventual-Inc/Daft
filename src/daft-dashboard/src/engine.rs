@@ -797,6 +797,36 @@ pub struct TaskSubmitArgs {
     pub node_ids: Vec<usize>,
     pub plan_fingerprint: u32,
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<TaskSourceArgs>,
+}
+
+/// Source data attached to a task on submit. Mirrors
+/// `daft_context::subscribers::events::TaskSource`. Externally tagged on the
+/// wire (`{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TaskSourceArgs {
+    PhysicalScan(PhysicalScanSourceArgs),
+    InMemoryScan(InMemoryScanSourceArgs),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PhysicalScanSourceArgs {
+    pub source_id: u32,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct InMemoryScanSourceArgs {
+    pub source_id: u32,
+    pub partitions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -846,14 +876,7 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    exec_info.task_store.submit_task(
-        args.task_id,
-        args.last_node_id,
-        args.node_ids,
-        args.plan_fingerprint,
-        args.name,
-        args.submit_sec,
-    );
+    exec_info.task_store.submit_task(args);
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK

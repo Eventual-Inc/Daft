@@ -32,7 +32,7 @@ def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):
 
     pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"])
 
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet", hive_partitioning=True).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 5
@@ -82,10 +82,10 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_s
 
     for path, bor in zip(output_dict["path"], output_dict["Borough"]):
         assert f"Borough={urllib.parse.quote(bor)}" in path
-        read_back = daft.read_parquet(path).to_pydict()
+        read_back = daft.read_parquet(path, hive_partitioning=True).to_pydict()
         assert all(b == bor for b in read_back["Borough"])
 
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet", hive_partitioning=True).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 5
@@ -203,7 +203,7 @@ def test_parquet_partitioned_write_with_some_empty_partitions(tmp_path, with_mor
 
     assert len(output_files) == 3
 
-    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").sort("x").to_pydict()
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet", hive_partitioning=True).sort("x").to_pydict()
     assert read_back == data
 
 
@@ -230,7 +230,7 @@ def test_csv_write_with_partitioning(tmp_path, with_morsel_size):
         types[n] = schema[n].dtype
 
     pd_df = df.write_csv(tmp_path, partition_cols=["Borough"]).to_pandas()
-    read_back_pd_df = daft.read_csv(tmp_path.as_posix() + "/**/*.csv", schema=types).to_pandas()
+    read_back_pd_df = daft.read_csv(tmp_path.as_posix() + "/**/*.csv", schema=types, hive_partitioning=True).to_pandas()
     assert_df_equals(df.to_pandas().fillna(""), read_back_pd_df.fillna(""))
 
     assert len(pd_df) == 5
@@ -286,7 +286,7 @@ def test_csv_partitioned_write_with_some_empty_partitions(tmp_path, with_morsel_
 
     assert len(output_files) == 3
 
-    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
+    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv", hive_partitioning=True).sort("x").to_pydict()
     assert read_back == data
 
 
