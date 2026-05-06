@@ -7,7 +7,7 @@ use std::{
 use arrow_array::Array;
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
+use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::{
     array::ops::{GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal},
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
@@ -521,11 +521,9 @@ impl JoinOperator for AsofJoinOperator {
         let join_schema = self.join_schema.clone();
         let right_cols_to_drop = self.right_cols_to_drop.clone();
         let right_schema = self.right_schema.clone();
-        let inner_spawner = spawner.clone();
         spawner
             .spawn(
                 async move {
-                    let spawner = inner_spawner;
                     let table = states
                         .first()
                         .expect("AsofJoin probe finalize: expected at least one state")
@@ -580,63 +578,54 @@ impl JoinOperator for AsofJoinOperator {
                             let global_rb_offsets = global_rb_offsets.clone();
                             let state_best_matches = state_best_matches.clone();
 
-                            spawner.spawn(
-                                    async move {
-                                        let mut cmp_cache: HashMap<
-                                            (usize, usize),
-                                            DynPartialComparator,
-                                        > = HashMap::new();
+                            get_compute_runtime().spawn(async move {
+                                let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> =
+                                    HashMap::new();
 
-                                        for (chunk_row_idx, curr_best_match) in
-                                            chunk.iter_mut().enumerate()
-                                        {
-                                            let global_left_idx = start + chunk_row_idx;
-                                            for (state_idx, best_match) in
-                                                state_best_matches.iter().enumerate()
-                                            {
-                                                let Some((
-                                                    candidate_local_rb_idx,
-                                                    candidate_right_idx,
-                                                )) = best_match[global_left_idx]
-                                                else {
-                                                    continue;
-                                                };
-                                                let candidate_global_rb_idx = (global_rb_offsets
-                                                    [state_idx]
-                                                    + candidate_local_rb_idx as usize)
-                                                    as u32;
+                                for (chunk_row_idx, curr_best_match) in chunk.iter_mut().enumerate()
+                                {
+                                    let global_left_idx = start + chunk_row_idx;
+                                    for (state_idx, best_match) in
+                                        state_best_matches.iter().enumerate()
+                                    {
+                                        let Some((candidate_local_rb_idx, candidate_right_idx)) =
+                                            best_match[global_left_idx]
+                                        else {
+                                            continue;
+                                        };
+                                        let candidate_global_rb_idx = (global_rb_offsets[state_idx]
+                                            + candidate_local_rb_idx as usize)
+                                            as u32;
 
-                                                let is_better = match *curr_best_match {
-                                                    None => true,
-                                                    Some((existing_rb_idx, existing_right_idx)) => {
-                                                        is_candidate_better(
-                                                            candidate_global_rb_idx as usize,
-                                                            candidate_right_idx as usize,
-                                                            global_right_on_key_arrs
-                                                                [candidate_global_rb_idx as usize]
-                                                                .as_ref(),
-                                                            existing_rb_idx as usize,
-                                                            existing_right_idx as usize,
-                                                            global_right_on_key_arrs
-                                                                [existing_rb_idx as usize]
-                                                                .as_ref(),
-                                                            &mut cmp_cache,
-                                                        )?
-                                                    }
-                                                };
-
-                                                if is_better {
-                                                    *curr_best_match = Some((
-                                                        candidate_global_rb_idx,
-                                                        candidate_right_idx,
-                                                    ));
-                                                }
+                                        let is_better = match *curr_best_match {
+                                            None => true,
+                                            Some((existing_rb_idx, existing_right_idx)) => {
+                                                is_candidate_better(
+                                                    candidate_global_rb_idx as usize,
+                                                    candidate_right_idx as usize,
+                                                    global_right_on_key_arrs
+                                                        [candidate_global_rb_idx as usize]
+                                                        .as_ref(),
+                                                    existing_rb_idx as usize,
+                                                    existing_right_idx as usize,
+                                                    global_right_on_key_arrs
+                                                        [existing_rb_idx as usize]
+                                                        .as_ref(),
+                                                    &mut cmp_cache,
+                                                )?
                                             }
+                                        };
+
+                                        if is_better {
+                                            *curr_best_match = Some((
+                                                candidate_global_rb_idx,
+                                                candidate_right_idx,
+                                            ));
                                         }
-                                        DaftResult::Ok(chunk)
-                                    },
-                                    Span::current(),
-                                )
+                                    }
+                                }
+                                DaftResult::Ok(chunk)
+                            })
                         })
                         .collect();
 
