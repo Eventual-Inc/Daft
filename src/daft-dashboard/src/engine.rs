@@ -901,16 +901,9 @@ pub struct TaskStatsEntry {
 /// doesn't match the scheduler-assigned `WorkerId` carried on `TaskScheduled`
 /// / `TaskStart` / `TaskEnd` events. The scheduler is the source of truth for
 /// `worker_id`; stats updates only carry per-task scalars.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct TasksStatsUpdateArgsSend {
-    pub timestamp_sec: f64,
-    pub tasks: Vec<TaskStatsEntry>,
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct TasksStatsUpdateArgsRecv {
+pub struct TasksStatsUpdateArgs {
     pub timestamp_sec: f64,
     pub tasks: Vec<TaskStatsEntry>,
 }
@@ -918,7 +911,7 @@ pub struct TasksStatsUpdateArgsRecv {
 async fn tasks_stats_update(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<TasksStatsUpdateArgsRecv>,
+    Json(args): Json<TasksStatsUpdateArgs>,
 ) -> StatusCode {
     apply_tasks_stats_update(&state, query_id, args)
 }
@@ -926,7 +919,7 @@ async fn tasks_stats_update(
 pub(crate) fn apply_tasks_stats_update(
     state: &DashboardState,
     query_id: QueryID,
-    args: TasksStatsUpdateArgsRecv,
+    args: TasksStatsUpdateArgs,
 ) -> StatusCode {
     let Some(mut query_info) = state.queries.get_mut(&query_id) else {
         // Stats updates may arrive before the dashboard knows about the query

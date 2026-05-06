@@ -457,7 +457,7 @@ impl DashboardSubscriber {
         self.enqueue_json(
             format!("engine/query/{}/tasks/stats", query_id),
             "tasks_stats_update",
-            &daft_dashboard::engine::TasksStatsUpdateArgsSend {
+            &daft_dashboard::engine::TasksStatsUpdateArgs {
                 timestamp_sec: event.header.timestamp_epoch_secs,
                 tasks: event
                     .tasks
