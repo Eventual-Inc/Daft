@@ -285,7 +285,11 @@ impl LogicalPlanToPipelineNodeTranslator {
     ) -> DaftResult<DistributedPipelineNode> {
         let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
         if !remaining_on.is_empty() {
-            todo!("FLOTILLA_MS?: Implement non-equality joins")
+            return Err(DaftError::ValueError(
+                "join_where with non-equality predicates is not yet supported on the Ray runner. \
+                 Use the native runner instead."
+                    .to_string(),
+            ));
         }
 
         // Normalize join keys

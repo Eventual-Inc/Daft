@@ -22,13 +22,13 @@ pub(crate) struct NestedLoopJoinBuildState {
 }
 
 pub(crate) struct NestedLoopJoinProbeState {
-    collect_tables: RecordBatch,
+    collect_tables: Vec<RecordBatch>,
     stream_idx: usize,
+    collect_idx: usize,
 }
 
 pub struct NestedLoopJoinOperator {
     predicate: Vec<BoundExpr>,
-    build_schema: SchemaRef,
     output_schema: SchemaRef,
     /// Which side is the streaming (probe) side. Used to correctly order left/right
     /// when calling `nested_loop_join` so the output schema column order is preserved.
@@ -36,15 +36,9 @@ pub struct NestedLoopJoinOperator {
 }
 
 impl NestedLoopJoinOperator {
-    pub fn new(
-        predicate: Vec<BoundExpr>,
-        build_schema: SchemaRef,
-        output_schema: SchemaRef,
-        stream_side: JoinSide,
-    ) -> Self {
+    pub fn new(predicate: Vec<BoundExpr>, output_schema: SchemaRef, stream_side: JoinSide) -> Self {
         Self {
             predicate,
-            build_schema,
             output_schema,
             stream_side,
         }
@@ -53,7 +47,7 @@ impl NestedLoopJoinOperator {
 
 impl JoinOperator for NestedLoopJoinOperator {
     type BuildState = NestedLoopJoinBuildState;
-    type FinalizedBuildState = RecordBatch;
+    type FinalizedBuildState = Vec<RecordBatch>;
     type ProbeState = NestedLoopJoinProbeState;
 
     fn build(
@@ -69,7 +63,7 @@ impl JoinOperator for NestedLoopJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        RecordBatch::concat_or_empty(&state.tables, Some(self.build_schema.clone()))
+        Ok(state.tables).into()
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
@@ -83,6 +77,7 @@ impl JoinOperator for NestedLoopJoinOperator {
         NestedLoopJoinProbeState {
             collect_tables: finalized_build_state,
             stream_idx: 0,
+            collect_idx: 0,
         }
     }
 
@@ -96,10 +91,9 @@ impl JoinOperator for NestedLoopJoinOperator {
             let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
-
         if state.stream_idx >= input.record_batches().len() {
-            // Finished processing all stream tables, move to next input
             state.stream_idx = 0;
+            state.collect_idx = 0;
             let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
@@ -113,7 +107,7 @@ impl JoinOperator for NestedLoopJoinOperator {
                 async move {
                     let stream_tables = input.record_batches();
                     let stream_tbl = &stream_tables[state.stream_idx];
-                    let collect_tbl = &state.collect_tables;
+                    let collect_tbl = &state.collect_tables[state.collect_idx];
 
                     let (left_tbl, right_tbl) = match stream_side {
                         JoinSide::Left => (stream_tbl, collect_tbl),
@@ -125,9 +119,15 @@ impl JoinOperator for NestedLoopJoinOperator {
                     let output_morsel =
                         MicroPartition::new_loaded(output_schema, Arc::new(vec![output_tbl]), None);
 
-                    state.stream_idx += 1;
+                    // Increment inner loop index
+                    state.collect_idx = (state.collect_idx + 1) % state.collect_tables.len();
 
-                    let result = if state.stream_idx >= stream_tables.len() {
+                    if state.collect_idx == 0 {
+                        // Finished the inner loop, increment outer loop index
+                        state.stream_idx = (state.stream_idx + 1) % stream_tables.len();
+                    }
+
+                    let result = if state.stream_idx == 0 && state.collect_idx == 0 {
                         ProbeOutput::NeedMoreInput(Some(output_morsel))
                     } else {
                         ProbeOutput::HasMoreOutput {

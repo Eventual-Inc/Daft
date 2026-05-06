@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft import col
 from daft.functions import str as str_fn
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="join_where is not yet supported on the Ray runner",
+)
 
 
 def test_join_where_single_lt_predicate(make_df):
