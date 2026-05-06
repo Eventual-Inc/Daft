@@ -321,54 +321,60 @@ impl RuntimeStatsManager {
             // branch and the post-finish drain below so late `RegisterRuntimeStats`
             // messages aren't lost when `finish_rx` wins the race against a still-
             // queued node_rx message.
-            let handle_message = |msg: StatsManagerMessage,
-                                      input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
-                                      active_nodes: &mut HashSet<NodeID>| {
-                match msg {
-                    StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
-                        if is_initialize && active_nodes.insert(node_id) {
-                            if let Some(progress_bar) = &progress_bar {
-                                progress_bar.initialize_node(node_id);
+            let handle_message =
+                |msg: StatsManagerMessage,
+                 input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+                 active_nodes: &mut HashSet<NodeID>| {
+                    match msg {
+                        StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
+                            if is_initialize && active_nodes.insert(node_id) {
+                                if let Some(progress_bar) = &progress_bar {
+                                    progress_bar.initialize_node(node_id);
+                                }
+
+                                let Some(operator_meta) = operators.get(&node_id) else {
+                                    log::warn!(
+                                        "Unknown node_id {node_id} in operators during on_start, skipping subscriber notification"
+                                    );
+                                    return;
+                                };
+
+                                let event = Event::OperatorStart(OperatorStartEvent {
+                                    header: event_header(query_id.clone()),
+                                    operator: operator_meta.clone(),
+                                });
+                                dispatch_event(&subscribers, &event, "notify operator start");
+                            } else if !is_initialize && active_nodes.remove(&node_id) {
+                                Self::flush_and_finalize_node(
+                                    &query_id,
+                                    node_id,
+                                    input_stats,
+                                    progress_bar.as_deref(),
+                                    &subscribers,
+                                    "finalize node",
+                                    &operators,
+                                );
                             }
-
-                            let Some(operator_meta) = operators.get(&node_id) else {
-                                log::warn!("Unknown node_id {node_id} in operators during on_start, skipping subscriber notification");
-                                return;
-                            };
-
-                            let event = Event::OperatorStart(OperatorStartEvent {
-                                header: event_header(query_id.clone()),
-                                operator: operator_meta.clone(),
-                            });
-                            dispatch_event(&subscribers, &event, "notify operator start");
-                        } else if !is_initialize && active_nodes.remove(&node_id) {
-                            Self::flush_and_finalize_node(
-                                &query_id,
-                                node_id,
-                                input_stats,
-                                progress_bar.as_deref(),
-                                &subscribers,
-                                "finalize node",
-                                &operators,
+                        }
+                        StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
+                            input_stats.insert((node_id, input_id), stats);
+                        }
+                        StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
+                            let mut result = Vec::new();
+                            for (&(node_id, iid), stats) in input_stats.iter() {
+                                if iid == input_id
+                                    && let Some(node_info) = node_info_map.get(&node_id)
+                                {
+                                    result.push((node_info.clone(), stats.flush()));
+                                }
+                            }
+                            let _ = respond_tx.send(
+                                ExecutionStats::new(query_id.clone(), result)
+                                    .with_query_plan(query_plan.clone()),
                             );
                         }
                     }
-                    StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
-                        input_stats.insert((node_id, input_id), stats);
-                    }
-                    StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
-                        let mut result = Vec::new();
-                        for (&(node_id, iid), stats) in input_stats.iter() {
-                            if iid == input_id
-                                && let Some(node_info) = node_info_map.get(&node_id)
-                            {
-                                result.push((node_info.clone(), stats.flush()));
-                            }
-                        }
-                        let _ = respond_tx.send(ExecutionStats::new(query_id.clone(), result).with_query_plan(query_plan.clone()));
-                    }
-                }
-            };
+                };
 
             loop {
                 tokio::select! {
