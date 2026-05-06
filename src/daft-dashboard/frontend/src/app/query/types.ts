@@ -181,9 +181,3 @@ export type QueryInfo = {
   ray_version?: string;
   state: QueryState;
 };
-
-export type ResultPreview = {
-  html: string | null;
-  num_rows: number;
-  total_rows: number | null;
-};
