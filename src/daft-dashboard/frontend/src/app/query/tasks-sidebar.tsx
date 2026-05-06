@@ -516,6 +516,7 @@ function TaskTypeGroupRow({
           pendingCount={row.status_counts.Pending}
           runningCount={row.status_counts.Executing}
           finishedCount={row.status_counts.Finished}
+          failedCount={row.status_counts.Failed}
         />
       )}
     </>
@@ -646,6 +647,7 @@ function ExpandedTaskList({
   pendingCount,
   runningCount,
   finishedCount,
+  failedCount,
 }: {
   tasks: TaskInfo[];
   /** Total number of tasks in this group (from server summary). */
@@ -655,6 +657,8 @@ function ExpandedTaskList({
   pendingCount: number;
   runningCount: number;
   finishedCount: number;
+  /** Failed + cancelled, mirroring the row-level Failed bucket. */
+  failedCount: number;
 }) {
   return (
     <div className="bg-zinc-950/40 border-l-2 border-fuchsia-900/70 pl-0">
@@ -680,6 +684,7 @@ function ExpandedTaskList({
           Showing {retainedTaskCount} of {taskCount.toLocaleString()} tasks
           {" ("}
           {pendingCount} pending, {runningCount} running, {finishedCount} finished
+          {failedCount > 0 ? `, ${failedCount} failed` : ""}
           {") — longest by duration, plus active and failed"}
         </div>
       )}
