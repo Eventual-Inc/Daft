@@ -89,6 +89,16 @@ fn get_global_runtime() -> &'static Handle {
     })
 }
 
+/// Event + subscribers to dispatch when a task actually begins executing.
+///
+/// Carried on the `EnqueueInputMessage` so the event fires inside
+/// `run_execution_loop` at the moment the task's inputs are dispatched into
+/// the running pipeline — not when the message was placed in the channel.
+pub(crate) struct TaskStartDispatch {
+    event: Event,
+    subscribers: Vec<Arc<dyn Subscriber>>,
+}
+
 /// Message sent to the execution task to enqueue inputs
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
@@ -97,6 +107,10 @@ pub(crate) struct EnqueueInputMessage {
     inputs: HashMap<SourceId, Input>,
     /// Sender for results of this input_id
     result_sender: UnboundedSender<ExecutionEngineResultItem>,
+    /// If set, dispatched when the execution loop picks up this message —
+    /// i.e., when the task truly begins executing rather than when it was
+    /// merely accepted onto the per-plan enqueue channel.
+    on_dequeue: Option<TaskStartDispatch>,
 }
 
 /// Routes pipeline messages to per-input_id channels.
@@ -353,7 +367,13 @@ async fn run_execution_loop(
                 }
             }
             enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
-                if let Some(EnqueueInputMessage { input_id, inputs, result_sender }) = enqueue_msg {
+                if let Some(EnqueueInputMessage { input_id, inputs, result_sender, on_dequeue }) = enqueue_msg {
+                    // Fire the TaskStart event now — the task is no longer
+                    // merely queued on the per-plan enqueue channel; we are
+                    // about to push its inputs into the running pipeline.
+                    if let Some(TaskStartDispatch { event, subscribers }) = on_dequeue {
+                        dispatch_task_start_event(&subscribers, &event);
+                    }
                     message_router.insert_output_sender(input_id, result_sender);
                     let senders = input_senders.as_ref().unwrap();
                     for (key, plan_input) in inputs {
@@ -455,8 +475,8 @@ impl NativeExecutor {
             && task_events_enabled()
             && let Some(task_id) = task_id
         {
-            Some((
-                Event::TaskStart(TaskStartEvent {
+            Some(TaskStartDispatch {
+                event: Event::TaskStart(TaskStartEvent {
                     header: event_header(query_id.clone()),
                     task: Arc::new(TaskInfo {
                         id: task_id,
@@ -467,8 +487,8 @@ impl NativeExecutor {
                     }),
                     worker_id: None, // TODO: propagate worker id
                 }),
-                subscribers.clone(),
-            ))
+                subscribers: subscribers.clone(),
+            })
         } else {
             None
         };
@@ -533,16 +553,12 @@ impl NativeExecutor {
                     input_id,
                     inputs,
                     result_sender: result_tx,
+                    on_dequeue: task_start_dispatch,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
                     return Err(common_error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
-                }
-
-                // Send the event after the task has been enqueued for execution
-                if let Some((event, subscribers)) = task_start_dispatch {
-                    dispatch_task_start_event(&subscribers, &event);
                 }
 
                 Ok(ExecutionEngineResult {
