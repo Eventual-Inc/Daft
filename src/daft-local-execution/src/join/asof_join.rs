@@ -38,7 +38,7 @@ type ByKeyHashesAndComparator<'a> = (
 );
 
 pub(crate) struct AsofJoinBuildState {
-    tables: Vec<MicroPartition>,
+    record_batches: Vec<RecordBatch>,
 }
 
 impl AsofJoinBuildState {
@@ -48,24 +48,19 @@ impl AsofJoinBuildState {
         left_by: &[BoundExpr],
         left_on: &BoundExpr,
     ) -> DaftResult<AsofJoinFinalizedBuildState> {
-        let left_mp = MicroPartition::concat_or_empty(self.tables, left_schema.clone())?;
-        let left_rb = match left_mp.concat_or_get()? {
-            Some(rb) => rb,
-            None => {
-                let empty_left = RecordBatch::empty(Some(left_schema));
-                let left_on_arr: Arc<dyn Array> =
-                    empty_left.eval_expression(left_on)?.to_arrow()?;
-                return Ok(AsofJoinFinalizedBuildState {
-                    left_rb: empty_left,
-                    left_on_arr,
-                    group_buckets: vec![],
-                    group_bucket_sorted_keys: vec![],
-                    group_reps: RecordBatch::empty(None),
-                    group_hash_map: HashMap::new(),
-                    total_left_rows: 0,
-                });
-            }
-        };
+        let left_rb = RecordBatch::concat_or_empty(&self.record_batches, Some(left_schema))?;
+        if left_rb.is_empty() {
+            let left_on_arr: Arc<dyn Array> = left_rb.eval_expression(left_on)?.to_arrow()?;
+            return Ok(AsofJoinFinalizedBuildState {
+                left_rb,
+                left_on_arr,
+                group_buckets: vec![],
+                group_bucket_sorted_keys: vec![],
+                group_reps: RecordBatch::empty(None),
+                group_hash_map: HashMap::new(),
+                total_left_rows: 0,
+            });
+        }
 
         let total_left_rows = left_rb.len();
         let left_on_series: Series = left_rb.eval_expression(left_on)?;
@@ -453,9 +448,13 @@ impl JoinOperator for AsofJoinOperator {
         mut state: Self::BuildState,
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
-        if !input.is_empty() {
-            state.tables.push(input);
-        }
+        state.record_batches.extend(
+            input
+                .record_batches()
+                .iter()
+                .filter(|rb| !rb.is_empty())
+                .cloned(),
+        );
         Ok(state).into()
     }
 
@@ -465,7 +464,9 @@ impl JoinOperator for AsofJoinOperator {
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
-        Ok(AsofJoinBuildState { tables: Vec::new() })
+        Ok(AsofJoinBuildState {
+            record_batches: Vec::new(),
+        })
     }
 
     fn make_probe_state(
