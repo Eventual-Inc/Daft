@@ -213,7 +213,7 @@ impl AsofJoinProbeState {
         right_cols_to_drop: &HashSet<String>,
     ) -> DaftResult<()> {
         let rb_idx = self.right_tables.len();
-        let table = self.build_contents.clone();
+        let build_state = self.build_contents.clone();
 
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
@@ -222,7 +222,7 @@ impl AsofJoinProbeState {
             .push(prune_right_batch(right_rb, right_cols_to_drop));
 
         // One comparator per group
-        let group_sorted_key_cmps: Vec<DynPartialComparator> = table
+        let group_sorted_key_cmps: Vec<DynPartialComparator> = build_state
             .group_bucket_sorted_keys
             .iter()
             .map(|sk| build_partial_compare_with_nulls(sk.as_ref(), right_on_arr.as_ref(), false))
@@ -236,12 +236,13 @@ impl AsofJoinProbeState {
         );
 
         // Passed to find_left_group() to hash and equality-match the right row's by_key against left groups.
-        let by_key_hashes_and_comparator: Option<(_, _)> = if !table.group_hash_map.is_empty() {
+        let by_key_hashes_and_comparator: Option<(_, _)> = if !build_state.group_hash_map.is_empty()
+        {
             let right_by_rb = right_rb.eval_expression_list(right_by)?;
             let hashes = right_by_rb.hash_rows()?;
-            let num_by_cols = table.group_reps.num_columns();
+            let num_by_cols = build_state.group_reps.num_columns();
             let eq_cmp = build_multi_array_is_equal(
-                &table.group_reps_series,
+                &build_state.group_reps_series,
                 &right_by_rb
                     .as_materialized_series()
                     .into_iter()
@@ -264,14 +265,14 @@ impl AsofJoinProbeState {
             }
 
             let Some(group_idx) =
-                table.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
+                build_state.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
             else {
                 continue;
             };
 
-            let bucket = &table.group_buckets[group_idx];
+            let bucket = &build_state.group_buckets[group_idx];
             let Some(matched_left_idx) =
-                table.search_bucket(bucket, &group_sorted_key_cmps[group_idx], right_idx)
+                build_state.search_bucket(bucket, &group_sorted_key_cmps[group_idx], right_idx)
             else {
                 continue;
             };
@@ -510,8 +511,8 @@ impl JoinOperator for AsofJoinOperator {
         spawner
             .spawn(
                 async move {
-                    let table = state.build_contents.clone();
-                    if table.total_left_rows == 0 {
+                    let build_state = state.build_contents.clone();
+                    if build_state.total_left_rows == 0 {
                         return Ok((state, ProbeOutput::NeedMoreInput(None)));
                     }
                     for right_rb in input.record_batches() {
@@ -544,13 +545,13 @@ impl JoinOperator for AsofJoinOperator {
         spawner
             .spawn(
                 async move {
-                    let table = states
+                    let build_state = states
                         .first()
                         .expect("AsofJoin probe finalize: expected at least one state")
                         .build_contents
                         .clone();
 
-                    if table.total_left_rows == 0 {
+                    if build_state.total_left_rows == 0 {
                         return Ok(Some(MicroPartition::new_loaded(
                             join_schema.clone(),
                             Arc::new(vec![RecordBatch::empty(Some(join_schema))]),
@@ -587,12 +588,12 @@ impl JoinOperator for AsofJoinOperator {
                     let state_best_matches = Arc::new(state_best_matches);
 
                     let rows_per_chunk =
-                        (table.total_left_rows / get_compute_pool_num_threads()).max(1024);
+                        (build_state.total_left_rows / get_compute_pool_num_threads()).max(1024);
 
-                    let chunk_tasks: Vec<_> = (0..table.total_left_rows)
+                    let chunk_tasks: Vec<_> = (0..build_state.total_left_rows)
                         .step_by(rows_per_chunk)
                         .map(|start| {
-                            let end = (start + rows_per_chunk).min(table.total_left_rows);
+                            let end = (start + rows_per_chunk).min(build_state.total_left_rows);
                             let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
@@ -631,7 +632,7 @@ impl JoinOperator for AsofJoinOperator {
                         .collect();
 
                     let mut global_best: Vec<Option<(u32, u32)>> =
-                        vec![None; table.total_left_rows];
+                        vec![None; build_state.total_left_rows];
                     for (i, task) in chunk_tasks.into_iter().enumerate() {
                         let chunk = task.await.map_err(|_| {
                             DaftError::InternalError("compute merge task dropped".into())
@@ -640,11 +641,15 @@ impl JoinOperator for AsofJoinOperator {
                         global_best[start..start + chunk.len()].copy_from_slice(&chunk);
                     }
 
-                    backfill(&mut global_best, &table.group_buckets, &table.left_on_arr);
+                    backfill(
+                        &mut global_best,
+                        &build_state.group_buckets,
+                        &build_state.left_on_arr,
+                    );
                     let right_out =
                         build_right_output(&global_best, all_right_tables, pruned_right_schema)?;
                     Ok(Some(build_join_output(
-                        &table.left_rb,
+                        &build_state.left_rb,
                         right_out,
                         join_schema,
                     )?))
