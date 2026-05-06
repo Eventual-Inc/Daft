@@ -6,11 +6,19 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
+from daft.daft import (
+    IOConfig,
+    PyDaftContext,
+    PyDaftEventLogConfig,
+    PyDaftExecutionConfig,
+    PyDaftPlanningConfig,
+    PyQueryResult,
+)
 from daft.daft import get_context as _get_context
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
     from daft.daft import PyQueryMetadata
     from daft.subscribers import Subscriber
@@ -43,6 +51,10 @@ class DaftContext:
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
+
+    @property
+    def daft_event_log_config(self) -> PyDaftEventLogConfig:
+        return self._ctx._daft_event_log_config
 
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
         """Attaches a subscriber to this context.
@@ -327,3 +339,58 @@ def set_execution_config(
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
         return ctx
+
+
+def set_event_log_config(
+    config: PyDaftEventLogConfig | None = None,
+    enabled: bool | None = None,
+    path: str | Path | None = None,
+) -> DaftContext:
+    """Globally sets configuration parameters which control Daft event logging.
+
+    These configuration values are used to control whether Daft emits event logs during query execution and
+    where those event logs are written.
+
+    This is an experimental feature.
+
+    Args:
+        config: A PyDaftEventLogConfig object to set the config to, before applying other kwargs. Defaults to None
+            which indicates that the old (current) config should be used.
+        enabled: Whether event logging should be enabled. Defaults to None, which leaves the current setting unchanged.
+        path: Directory where event logs should be written. Defaults to None, which leaves the current path unchanged.
+    """
+    ctx = get_context()
+    old_config = ctx.daft_event_log_config if config is None else config
+    kwargs: dict[str, Any] = {"enabled": enabled}
+    if path is not None:
+        kwargs["path"] = str(path)
+
+    new_config = old_config.with_config_values(**kwargs)
+    ctx._ctx._daft_event_log_config = new_config
+    return ctx
+
+
+@contextlib.contextmanager
+def event_log_ctx(
+    path: str | Path | None = None,
+    *,
+    enabled: bool = True,
+) -> Generator[None, None, None]:
+    """Context manager that temporarily sets event logging configuration.
+
+    This is an experimental feature.
+
+    Args:
+        path: Directory where event logs should be written while inside the context. Defaults to None, which leaves
+            the current path unchanged.
+        enabled: Whether event logging should be enabled while inside the context. Defaults to True.
+    """
+    original_config = get_context().daft_event_log_config
+    try:
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = path
+        set_event_log_config(**kwargs)
+        yield
+    finally:
+        set_event_log_config(config=original_config)
