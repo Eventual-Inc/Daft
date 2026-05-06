@@ -192,14 +192,8 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
                 end_sec: e.timestamp,
                 end_state: e.state.clone(),
                 error_message: e.error_message.clone(),
-                results: None,
             },
         ),
-        // TODO handle results from the event log.
-        // We don't write data out in the event log
-        // so at this point it does not make sense to send
-        // this event to dashboard.
-        Event::ResultProduced(_e) => return Ok(()),
         // TODO add support in  dashboard for process stats
         Event::ProcessStats(_e) => return Ok(()),
         Event::EventLogStarted(_e) => return Ok(()),

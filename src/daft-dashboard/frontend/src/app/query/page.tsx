@@ -18,7 +18,6 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
-import ResultPreview from "./result-preview";
 import TasksSidebar from "./tasks-sidebar";
 
 /**
@@ -313,7 +312,7 @@ function QueryPageInner() {
           onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList className={`grid w-full flex-shrink-0 ${engine === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
+          <TabsList className="grid w-full flex-shrink-0 grid-cols-3">
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -331,15 +330,6 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            {/* Results preview only supported for Swordfish for now (#6559) */}
-            {engine === "Swordfish" && (
-              <TabsTrigger
-                value="results"
-                disabled={query.state.status !== "Finished"}
-              >
-                Results
-              </TabsTrigger>
-            )}
           </TabsList>
 
           <TabsContent
@@ -408,15 +398,6 @@ function QueryPageInner() {
             className="mt-4 flex-1 overflow-auto"
           >
             <PlanVisualizer planJson={query.unoptimized_plan} />
-          </TabsContent>
-
-          <TabsContent
-            value="results"
-            className="mt-4 flex-1 overflow-auto"
-          >
-            <div className="bg-zinc-900 h-full">
-              {queryId && <ResultPreview queryId={queryId} />}
-            </div>
           </TabsContent>
         </Tabs>
       </div>
