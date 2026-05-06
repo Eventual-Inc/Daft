@@ -360,14 +360,15 @@ def set_event_log_config(
         path: Directory where event logs should be written. Defaults to None, which leaves the current path unchanged.
     """
     ctx = get_context()
-    old_config = ctx.daft_event_log_config if config is None else config
-    kwargs: dict[str, Any] = {"enabled": enabled}
-    if path is not None:
-        kwargs["path"] = str(path)
+    with ctx._lock:
+        old_config = ctx.daft_event_log_config if config is None else config
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = str(path)
 
-    new_config = old_config.with_config_values(**kwargs)
-    ctx._ctx._daft_event_log_config = new_config
-    return ctx
+        new_config = old_config.with_config_values(**kwargs)
+        ctx._ctx._daft_event_log_config = new_config
+        return ctx
 
 
 @contextlib.contextmanager
