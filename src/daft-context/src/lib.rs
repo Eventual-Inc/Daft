@@ -11,7 +11,6 @@ use std::{
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
-use daft_micropartition::{MicroPartitionRef, partitioning::Partition};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
@@ -21,7 +20,7 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent,
+        QueryStartEvent, StatsEvent,
     },
 };
 
@@ -163,19 +162,6 @@ impl DaftContext {
         if let Err(e) = self.dispatch_event(&event, "notify query end") {
             log::error!("Failed to dispatch query end event: {}", e);
         }
-    }
-
-    pub fn notify_result_out(
-        &self,
-        query_id: QueryID,
-        result: MicroPartitionRef,
-    ) -> DaftResult<()> {
-        let event = Event::ResultOut(ResultOutEvent {
-            header: event_header(query_id),
-            num_rows: (result.num_rows() as u64),
-            data: Some(result),
-        });
-        self.dispatch_event(&event, "notify result out")
     }
 
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
