@@ -9,7 +9,7 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
-    array::ops::arrow::comparison::build_multi_array_is_equal,
+    array::ops::{GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal},
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
     prelude::{DataType as DaftDataType, Field, SchemaRef, Series, UInt64Array},
 };
@@ -70,7 +70,7 @@ impl AsofJoinBuildState {
             build_partial_compare_with_nulls(left_on_arr.as_ref(), left_on_arr.as_ref(), false)?;
 
         let (group_buckets, group_reps, group_hash_map) = if left_by.is_empty() {
-            let mut bucket: Vec<u64> = (0..total_left_rows as u64).collect();
+            let mut bucket: VecIndices = (0..total_left_rows as u64).collect();
             bucket.sort_unstable_by(|&a, &b| {
                 on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
             });
@@ -79,10 +79,9 @@ impl AsofJoinBuildState {
             let left_by_rb = left_rb.eval_expression_list(left_by)?;
             let (key_idxs, raw_groups) = left_by_rb.make_groups()?;
 
-            let group_buckets: Vec<Vec<u64>> = raw_groups
+            let group_buckets: GroupIndices = raw_groups
                 .into_iter()
-                .map(|group| {
-                    let mut bucket: Vec<u64> = group.into_vec();
+                .map(|mut bucket| {
                     bucket.sort_unstable_by(|&a, &b| {
                         on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
                     });
@@ -105,7 +104,10 @@ impl AsofJoinBuildState {
         let group_bucket_sorted_keys: Vec<Arc<dyn Array>> = group_buckets
             .iter()
             .map(|bucket| {
-                let indexes = UInt64Array::from_vec("k", bucket.clone());
+                let indexes = UInt64Array::from_iter(
+                    Field::new("k", DaftDataType::UInt64),
+                    bucket.iter().copied().map(Some),
+                );
                 left_on_series.take(&indexes)?.to_arrow()
             })
             .collect::<DaftResult<_>>()?;
@@ -132,7 +134,7 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     // For each candidate group index g:
     //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
     //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
-    group_buckets: Vec<Vec<u64>>,
+    group_buckets: GroupIndices,
     // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
     group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
     group_reps: RecordBatch,
@@ -330,7 +332,7 @@ fn is_candidate_better(
 
 fn backfill(
     global_best: &mut [Option<(u32, u32)>],
-    group_buckets: &[Vec<u64>],
+    group_buckets: &GroupIndices,
     left_on_arr: &dyn Array,
 ) {
     for bucket in group_buckets {
