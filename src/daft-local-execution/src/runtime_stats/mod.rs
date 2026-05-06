@@ -321,7 +321,7 @@ impl RuntimeStatsManager {
             // branch and the post-finish drain below so late `RegisterRuntimeStats`
             // messages aren't lost when `finish_rx` wins the race against a still-
             // queued node_rx message.
-            let mut handle_message = |msg: StatsManagerMessage,
+            let handle_message = |msg: StatsManagerMessage,
                                       input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
                                       active_nodes: &mut HashSet<NodeID>| {
                 match msg {
