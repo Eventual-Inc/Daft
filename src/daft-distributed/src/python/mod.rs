@@ -69,6 +69,12 @@ impl PythonPartitionRefStream {
     }
 
     fn finish(&self) -> PyResult<PyExecutionStats> {
+        // Best-effort: synthesize OperatorEnd for any node that fired
+        // OperatorStart but didn't naturally drain its in-flight tasks
+        // (e.g. forced shutdown / aborted scheduler). Idempotent — if
+        // every node already finalized through the normal path, this is
+        // a no-op.
+        self.statistics_manager.flush_started_operators();
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }
@@ -254,7 +260,7 @@ impl PyDistributedPhysicalPlanRunner {
         let query_id = plan.plan.query_id();
         let logical_plan = plan.plan.logical_plan().clone();
 
-        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
+        let meter = Meter::query_scope(query_id.clone(), "daft.execution.distributed");
 
         let pipeline_node = logical_plan_to_pipeline_node(
             (&plan.plan).into(),
@@ -264,7 +270,7 @@ impl PyDistributedPhysicalPlanRunner {
         )?;
 
         let statistics_manager =
-            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
+            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter, query_id)?;
 
         let plan_result =
             self.runner
