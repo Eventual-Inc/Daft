@@ -459,7 +459,6 @@ impl DashboardSubscriber {
             "tasks_stats_update",
             &daft_dashboard::engine::TasksStatsUpdateArgsSend {
                 timestamp_sec: event.header.timestamp_epoch_secs,
-                worker_id: self.worker_id.clone(),
                 tasks: event
                     .tasks
                     .iter()

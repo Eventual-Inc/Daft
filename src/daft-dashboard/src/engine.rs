@@ -895,11 +895,16 @@ pub struct TaskStatsEntry {
     pub totals: TaskTotals,
 }
 
+/// Worker_id is intentionally absent from this payload.
+///
+/// The worker-side `DashboardSubscriber` mints its own UUID per process which
+/// doesn't match the scheduler-assigned `WorkerId` carried on `TaskScheduled`
+/// / `TaskStart` / `TaskEnd` events. The scheduler is the source of truth for
+/// `worker_id`; stats updates only carry per-task scalars.
 #[derive(Clone, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TasksStatsUpdateArgsSend {
     pub timestamp_sec: f64,
-    pub worker_id: Option<String>,
     pub tasks: Vec<TaskStatsEntry>,
 }
 
@@ -907,7 +912,6 @@ pub struct TasksStatsUpdateArgsSend {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TasksStatsUpdateArgsRecv {
     pub timestamp_sec: f64,
-    pub worker_id: Option<String>,
     pub tasks: Vec<TaskStatsEntry>,
 }
 
@@ -937,7 +941,7 @@ pub(crate) fn apply_tasks_stats_update(
     for entry in args.tasks {
         exec_info
             .task_store
-            .update_task_stats(entry, args.worker_id.clone(), args.timestamp_sec);
+            .update_task_stats(entry, args.timestamp_sec);
     }
 
     state.ping_clients_on_query_update(query_info.value());

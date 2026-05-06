@@ -278,12 +278,7 @@ impl TaskStore {
     /// submit (`end_sec - submit_sec`) that the frontend sometimes labels
     /// "duration". Two tasks with the same wall-clock duration can have very
     /// different busy times.
-    pub fn update_task_stats(
-        &mut self,
-        entry: TaskStatsEntry,
-        worker_id: Option<String>,
-        timestamp_sec: f64,
-    ) {
+    pub fn update_task_stats(&mut self, entry: TaskStatsEntry, timestamp_sec: f64) {
         let Some(task) = self.tasks.get_mut(&entry.task_id) else {
             return;
         };
@@ -301,9 +296,6 @@ impl TaskStore {
         let delta = entry.totals.cpu_us.saturating_sub(task.cpu_us);
         task.cpu_us = entry.totals.cpu_us;
         task.latest_stats_sec = Some(timestamp_sec);
-        if task.worker_id.is_none() {
-            task.worker_id = worker_id;
-        }
         let key = Self::group_key_for_task(task);
         if let Some(&gi) = self.group_index.get(&key) {
             self.groups[gi].total_cpu_us += delta;
@@ -828,12 +820,13 @@ mod task_store_tests {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![3, 5, 7], "Filter", 0.0));
 
-        store.update_task_stats(stats_entry(1, 300), Some("worker-1".to_string()), 1.0);
+        store.update_task_stats(stats_entry(1, 300), 1.0);
 
         let task = store.tasks.get(&1).expect("task retained");
         assert_eq!(task.cpu_us, 300);
         assert_eq!(task.latest_stats_sec, Some(1.0));
-        assert_eq!(task.worker_id.as_deref(), Some("worker-1"));
+        // worker_id is set by scheduler-side TaskStart/TaskEnd, not by us.
+        assert!(task.worker_id.is_none());
         assert_eq!(store.groups.len(), 1);
         assert_eq!(store.groups[0].total_cpu_us, 300);
     }
@@ -845,8 +838,8 @@ mod task_store_tests {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
-        store.update_task_stats(stats_entry(1, 200), None, 1.0);
-        store.update_task_stats(stats_entry(1, 500), None, 2.0);
+        store.update_task_stats(stats_entry(1, 200), 1.0);
+        store.update_task_stats(stats_entry(1, 500), 2.0);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
         assert_eq!(store.groups[0].total_cpu_us, 500);
@@ -859,8 +852,8 @@ mod task_store_tests {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
-        store.update_task_stats(stats_entry(1, 400), None, 5.0);
-        store.update_task_stats(stats_entry(1, 999), None, 2.0); // stale
+        store.update_task_stats(stats_entry(1, 400), 5.0);
+        store.update_task_stats(stats_entry(1, 999), 2.0); // stale
 
         let task = store.tasks.get(&1).unwrap();
         assert_eq!(task.cpu_us, 400);
@@ -876,7 +869,7 @@ mod task_store_tests {
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
         store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600);
 
-        store.update_task_stats(stats_entry(1, 9_999), None, 2.0);
+        store.update_task_stats(stats_entry(1, 9_999), 2.0);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 600);
         assert_eq!(store.groups[0].total_cpu_us, 600);
@@ -889,7 +882,7 @@ mod task_store_tests {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
-        store.update_task_stats(stats_entry(1, 300), None, 1.0);
+        store.update_task_stats(stats_entry(1, 300), 1.0);
         store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
@@ -903,7 +896,7 @@ mod task_store_tests {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
-        store.update_task_stats(stats_entry(999, 1_000), None, 1.0);
+        store.update_task_stats(stats_entry(999, 1_000), 1.0);
 
         assert!(!store.tasks.contains_key(&999));
         assert_eq!(store.groups[0].total_cpu_us, 0);
