@@ -70,6 +70,29 @@ export type TaskStatus =
   | { status: "Failed"; message: string | null }
   | { status: "Cancelled" };
 
+/**
+ * Source data attached to a task on submit. Mirrors Rust's externally-tagged
+ * `TaskSourceArgs` enum: `{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`.
+ * A task usually has a single source; multi-source tasks are possible but rare.
+ */
+export type PhysicalScanSource = {
+  source_id: number;
+  scan_tasks: number;
+  paths: string[];
+  storage_bytes?: number;
+  estimated_memory_bytes?: number;
+};
+
+export type InMemoryScanSource = {
+  source_id: number;
+  partitions: number;
+  total_bytes?: number;
+};
+
+export type TaskSource =
+  | { PhysicalScan: PhysicalScanSource }
+  | { InMemoryScan: InMemoryScanSource };
+
 export type TaskInfo = {
   task_id: number;
   last_node_id: number;
@@ -81,6 +104,8 @@ export type TaskInfo = {
   end_sec?: number;
   worker_id?: string;
   cpu_us: number;
+  /** Absent when the task has no recorded sources. */
+  sources?: TaskSource[];
 };
 
 /** Server-side aggregate summary for a group of tasks sharing an (last_node_id, pipeline_name). */
