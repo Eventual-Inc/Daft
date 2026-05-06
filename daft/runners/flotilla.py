@@ -121,8 +121,12 @@ class RaySwordfishActor:
                 refresh_dashboard_subscriber()
             except ImportError:
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                # Surface unexpected refresh failures so an operator debugging
+                # absent live task stats has something to grep for. Don't
+                # raise — worker startup must succeed even without the
+                # dashboard subscriber.
+                logger.warning("Failed to refresh worker dashboard subscriber: %s", e)
 
         if event_log_dir:
             _attach_remote_event_log_subscriber(
@@ -437,8 +441,12 @@ class RemoteFlotillaRunner:
                 refresh_dashboard_subscriber()
             except ImportError:
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                # Surface unexpected refresh failures so an operator debugging
+                # absent dashboard signal has something to grep for. Don't
+                # raise — runner startup must succeed even without the
+                # dashboard subscriber.
+                logger.warning("Failed to refresh runner dashboard subscriber: %s", e)
 
         if event_log_dir:
             _attach_remote_event_log_subscriber(

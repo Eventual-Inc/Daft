@@ -513,7 +513,6 @@ impl RuntimeStatsManager {
                             if task_events_enabled_now && due {
                                 emit_per_task_stats_updates(
                                     &query_id,
-                                    &active_nodes,
                                     &input_stats,
                                     &node_info_map,
                                     &subscribers,
@@ -599,16 +598,18 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
 /// and saturating the dashboard's POST queue on multi-CPU workers.
 fn emit_per_task_stats_updates(
     query_id: &QueryID,
-    active_nodes: &HashSet<NodeID>,
     input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
     subscribers: &[Arc<dyn Subscriber>],
 ) {
+    // Iterate over every (node, input) pair, including nodes whose
+    // `active_nodes` membership has dropped. Once a blocking operator
+    // (e.g. Scan, Aggregate) deactivates, its `RuntimeStats` is still in
+    // `input_stats` and still holds the cumulative cpu_us it accumulated.
+    // Skipping those would make a task's reported cpu_us non-monotonic
+    // (going down as upstream operators finish).
     let mut by_input: HashMap<InputId, TaskStatsSnapshot> = HashMap::new();
     for (&(node_id, input_id), stats) in input_stats {
-        if !active_nodes.contains(&node_id) {
-            continue;
-        }
         let snapshot = stats.snapshot();
         let stats_vec = snapshot.to_stats();
         let node_info = node_info_map.get(&node_id);

@@ -87,8 +87,9 @@ pub(crate) struct TaskInfo {
     /// External bytes emitted from the task (root only).
     pub bytes_out: u64,
     /// Wall-clock timestamp (sec since epoch) of the most recent mid-flight
-    /// stats refresh. Used to drop stale out-of-order updates.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// stats refresh. Used to drop stale out-of-order updates. Internal-only;
+    /// not serialised to dashboard clients.
+    #[serde(skip)]
     pub latest_stats_sec: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<crate::engine::TaskSourceArgs>,
@@ -298,6 +299,15 @@ impl TaskStore {
     /// No-op if the task has reached a terminal status (snapshot is stale) or
     /// if this snapshot is older than one already applied.
     ///
+    /// Updates the individual task's totals only. Group summaries are
+    /// updated once at `end_task`. Mirroring mid-flight updates into group
+    /// totals would seem appealing for a smoother dashboard but turned out
+    /// to be brittle: the worker-emitted totals aren't strictly monotonic
+    /// (e.g. cpu_us can drop between ticks if a blocking operator
+    /// deactivates and stops contributing to the snapshot), and propagating
+    /// those non-monotonic deltas into the group summary corrupts the
+    /// running sum.
+    ///
     /// Naming caveat: `cpu_us` here is **busy time** — cumulative wall-clock
     /// time spent inside `op.execute().await` across the task's local
     /// pipeline operators (the runtime stats layer stores it under
@@ -319,29 +329,12 @@ impl TaskStore {
         {
             return;
         }
-        // Apply the deltas to the parent group so totals track live tasks
-        // rather than only updating when each task ends. `end_task` also
-        // delta-updates so the running sum equals the per-task end value.
-        let cpu_delta = entry.totals.cpu_us.saturating_sub(task.cpu_us);
-        let rows_in_delta = entry.totals.rows_in.saturating_sub(task.rows_in);
-        let rows_out_delta = entry.totals.rows_out.saturating_sub(task.rows_out);
-        let bytes_in_delta = entry.totals.bytes_in.saturating_sub(task.bytes_in);
-        let bytes_out_delta = entry.totals.bytes_out.saturating_sub(task.bytes_out);
         task.cpu_us = entry.totals.cpu_us;
         task.rows_in = entry.totals.rows_in;
         task.rows_out = entry.totals.rows_out;
         task.bytes_in = entry.totals.bytes_in;
         task.bytes_out = entry.totals.bytes_out;
         task.latest_stats_sec = Some(timestamp_sec);
-        let key = Self::group_key_for_task(task);
-        if let Some(&gi) = self.group_index.get(&key) {
-            let g = &mut self.groups[gi];
-            g.total_cpu_us += cpu_delta;
-            g.total_rows_in += rows_in_delta;
-            g.total_rows_out += rows_out_delta;
-            g.total_bytes_in += bytes_in_delta;
-            g.total_bytes_out += bytes_out_delta;
-        }
     }
 
     /// Record a task being scheduled to a worker (transitioning from Pending
@@ -467,19 +460,6 @@ impl TaskStore {
         let prev_status = self.tasks.get(&task_id).map(|t| t.status.clone());
         let was_pending = matches!(prev_status, Some(TaskStatus::Pending));
         let was_running = matches!(prev_status, Some(TaskStatus::Running));
-        // Mid-flight `update_task_stats` already increments group totals by
-        // the per-tick delta, so end_task adds only the remaining delta
-        // (final - last seen) to avoid double-counting.
-        let (prev_cpu, prev_rows_in, prev_rows_out, prev_bytes_in, prev_bytes_out) = self
-            .tasks
-            .get(&task_id)
-            .map(|t| (t.cpu_us, t.rows_in, t.rows_out, t.bytes_in, t.bytes_out))
-            .unwrap_or((0, 0, 0, 0, 0));
-        let cpu_us_delta = cpu_us.saturating_sub(prev_cpu);
-        let rows_in_delta = rows_in.saturating_sub(prev_rows_in);
-        let rows_out_delta = rows_out.saturating_sub(prev_rows_out);
-        let bytes_in_delta = bytes_in.saturating_sub(prev_bytes_in);
-        let bytes_out_delta = bytes_out.saturating_sub(prev_bytes_out);
 
         // Display label for the (possibly new) group. The actual group key
         // is `node_ids`; this is just what the UI shows.
@@ -524,11 +504,13 @@ impl TaskStore {
             TaskStatus::Pending | TaskStatus::Running => {}
         }
 
-        group.total_cpu_us += cpu_us_delta;
-        group.total_rows_in += rows_in_delta;
-        group.total_rows_out += rows_out_delta;
-        group.total_bytes_in += bytes_in_delta;
-        group.total_bytes_out += bytes_out_delta;
+        // Mid-flight `update_task_stats` writes only into the individual
+        // TaskInfo, so end_task adds the full task total to the group sum.
+        group.total_cpu_us += cpu_us;
+        group.total_rows_in += rows_in;
+        group.total_rows_out += rows_out;
+        group.total_bytes_in += bytes_in;
+        group.total_bytes_out += bytes_out;
         match group.last_end_sec {
             Some(prev) if prev >= end_sec => {}
             _ => group.last_end_sec = Some(end_sec),
@@ -983,10 +965,13 @@ mod task_store_tests {
         assert_eq!(store.groups.len(), 2);
     }
 
-    /// Mid-flight stats update on a pending task writes cpu_us through to the
-    /// task and the parent group's total, and stamps latest_stats_sec.
+    /// Mid-flight stats update writes cpu_us through to the task and stamps
+    /// latest_stats_sec, but intentionally does NOT touch group totals — group
+    /// summaries are only updated at task end. See `update_task_stats` for the
+    /// rationale (worker-emitted task totals aren't strictly monotonic, so
+    /// streaming deltas into the group sum is brittle).
     #[test]
-    fn update_task_stats_applies_cpu_us_to_task_and_group() {
+    fn update_task_stats_writes_task_only_not_group() {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![3, 5, 7], "Filter", 0.0));
 
@@ -998,13 +983,15 @@ mod task_store_tests {
         // worker_id is set by scheduler-side TaskStart/TaskEnd, not by us.
         assert!(task.worker_id.is_none());
         assert_eq!(store.groups.len(), 1);
-        assert_eq!(store.groups[0].total_cpu_us, 300);
+        // Group total stays 0 until end_task.
+        assert_eq!(store.groups[0].total_cpu_us, 0);
     }
 
-    /// Successive updates apply only the delta to the group total, so the
-    /// group running sum equals the latest per-task value (not their sum).
+    /// Successive updates overwrite the task's cpu_us (latest wins). Worker
+    /// snapshots can be non-monotonic when blocking operators deactivate, so
+    /// we don't try to enforce monotonicity here.
     #[test]
-    fn update_task_stats_accumulates_as_deltas() {
+    fn update_task_stats_overwrites_with_latest() {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
@@ -1012,7 +999,7 @@ mod task_store_tests {
         store.update_task_stats(stats_entry(1, 500), 2.0);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
-        assert_eq!(store.groups[0].total_cpu_us, 500);
+        assert_eq!(store.tasks.get(&1).unwrap().latest_stats_sec, Some(2.0));
     }
 
     /// An out-of-order update older than the last seen timestamp is dropped
@@ -1028,7 +1015,6 @@ mod task_store_tests {
         let task = store.tasks.get(&1).unwrap();
         assert_eq!(task.cpu_us, 400);
         assert_eq!(task.latest_stats_sec, Some(5.0));
-        assert_eq!(store.groups[0].total_cpu_us, 400);
     }
 
     /// After end_task the task is no longer Pending; a late stats update must
@@ -1045,14 +1031,18 @@ mod task_store_tests {
         assert_eq!(store.groups[0].total_cpu_us, 600);
     }
 
-    /// end_task following a mid-flight update must add only the remaining
-    /// delta (final - last seen) so the group total isn't double-counted.
+    /// end_task adds the full task total to the parent group's running sum.
+    /// Mid-flight `update_task_stats` calls don't contribute to the group, so
+    /// there is no risk of double-counting.
     #[test]
-    fn end_task_after_update_does_not_double_count() {
+    fn end_task_adds_full_total_to_group() {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
+        // Mid-flight stats land on the task but not the group.
         store.update_task_stats(stats_entry(1, 300), 1.0);
+        assert_eq!(store.groups[0].total_cpu_us, 0);
+
         store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500, 0, 0, 0, 0);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
@@ -1069,7 +1059,6 @@ mod task_store_tests {
         store.update_task_stats(stats_entry(999, 1_000), 1.0);
 
         assert!(!store.tasks.contains_key(&999));
-        assert_eq!(store.groups[0].total_cpu_us, 0);
     }
 
     /// End-before-submit with empty node_ids should resolve to the same group
