@@ -57,6 +57,7 @@ impl AsofJoinBuildState {
                 group_buckets: vec![],
                 group_bucket_sorted_keys: vec![],
                 group_reps: RecordBatch::empty(None),
+                group_reps_series: vec![],
                 group_hash_map: HashMap::new(),
                 total_left_rows: 0,
             });
@@ -112,12 +113,18 @@ impl AsofJoinBuildState {
             })
             .collect::<DaftResult<_>>()?;
 
+        let group_reps_series = group_reps
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         Ok(AsofJoinFinalizedBuildState {
             left_rb,
             left_on_arr,
             group_buckets,
             group_bucket_sorted_keys,
             group_reps,
+            group_reps_series,
             group_hash_map,
             total_left_rows,
         })
@@ -138,6 +145,7 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
     group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
     group_reps: RecordBatch,
+    group_reps_series: Vec<Series>,
     group_hash_map: HashMap<u64, Vec<usize>>,
     // Total number of left rows.
     total_left_rows: usize,
@@ -220,25 +228,20 @@ impl AsofJoinProbeState {
             .map(|sk| build_partial_compare_with_nulls(sk.as_ref(), right_on_arr.as_ref(), false))
             .collect::<DaftResult<_>>()?;
 
-        // we use this later for update_best_match()
+        // this way update_best_match can compare same-rb candidates without rebuilding it.
         let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
         cmp_cache.insert(
             (rb_idx, rb_idx),
             build_partial_compare_with_nulls(right_on_arr.as_ref(), right_on_arr.as_ref(), false)?,
         );
 
-        // we use this later when we call find_left_group()
+        // Passed to find_left_group() to hash and equality-match the right row's by_key against left groups.
         let by_key_hashes_and_comparator: Option<(_, _)> = if !table.group_hash_map.is_empty() {
             let right_by_rb = right_rb.eval_expression_list(right_by)?;
             let hashes = right_by_rb.hash_rows()?;
             let num_by_cols = table.group_reps.num_columns();
             let eq_cmp = build_multi_array_is_equal(
-                &table
-                    .group_reps
-                    .as_materialized_series()
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
+                &table.group_reps_series,
                 &right_by_rb
                     .as_materialized_series()
                     .into_iter()
