@@ -18,13 +18,16 @@ export type TaskRowStatus = OperatorStatus;
 
 /**
  * Convert a TaskInfo status into the shared OperatorStatus vocabulary so the
- * sidebar can reuse the existing status chips/colors. Tasks are "Executing"
- * while they have a submit but no end time. Cancelled tasks are rendered as
- * Failed because the status chip vocabulary doesn't distinguish them.
+ * sidebar can reuse the existing status chips/colors. Cancelled tasks are
+ * rendered as Failed because the status chip vocabulary doesn't distinguish
+ * them. Running tasks map to Executing; Pending stays Pending so the UI can
+ * distinguish "submitted but not yet executing" from "actually executing".
  */
 export function taskDisplayStatus(task: TaskInfo): TaskRowStatus {
   switch (task.status.status) {
     case "Pending":
+      return task.end_sec != null ? "Finished" : "Pending";
+    case "Running":
       return task.end_sec != null ? "Finished" : "Executing";
     case "Finished":
       return "Finished";
@@ -33,6 +36,22 @@ export function taskDisplayStatus(task: TaskInfo): TaskRowStatus {
     case "Cancelled":
       return "Failed";
   }
+}
+
+/**
+ * Wall-clock duration of an in-flight task in seconds. Pending tasks (those
+ * that have been submitted but haven't started executing yet) have no
+ * meaningful duration; we return 0 for sort stability but callers should
+ * suppress the duration display via {@link taskHasStarted}.
+ */
+export function taskDurationSec(task: TaskInfo, nowSec: number): number {
+  if (task.start_sec == null) return 0;
+  const end = task.end_sec ?? nowSec;
+  return Math.max(0, end - task.start_sec);
+}
+
+export function taskHasStarted(task: TaskInfo): boolean {
+  return task.start_sec != null;
 }
 
 /** A node in a distributed-plan chain, displayable + clickable. */
@@ -91,19 +110,37 @@ function localPlanChain(name: string | null | undefined): string[] {
   return name.includes("->") ? name.split("->") : [name];
 }
 
-/** Maximum number of running tasks shown in the "top" section. */
+/** Maximum number of in-flight (running + pending) tasks in the "top" section. */
 export const TOP_K_RUNNING = 10;
 
 /**
- * Extract active (running) tasks from the store, sorted by wall-clock duration
- * descending. TODO: sort by cpu_us instead once within-task metric updates land
+ * Extract in-flight (running + pending) tasks from the store. Running tasks
+ * sort first, ordered by wall-clock duration descending; pending tasks sort
+ * after, ordered by submit time ascending. With this ordering, pending tasks
+ * only appear in the top-K once running tasks no longer fill it.
+ *
+ * TODO: sort running by cpu_us instead once within-task metric updates land
  * (currently cpu_us is only populated on task end).
  */
 export function getActiveTasks(taskStore: TaskStore | undefined): TaskInfo[] {
   if (!taskStore) return [];
   return Object.values(taskStore.tasks)
-    .filter((t) => t.status.status === "Pending" && t.end_sec == null)
-    .sort((a, b) => a.submit_sec - b.submit_sec); // oldest first = longest running
+    .filter(
+      (t) =>
+        (t.status.status === "Pending" || t.status.status === "Running") &&
+        t.end_sec == null,
+    )
+    .sort((a, b) => {
+      const aRunning = a.status.status === "Running" ? 0 : 1;
+      const bRunning = b.status.status === "Running" ? 0 : 1;
+      if (aRunning !== bRunning) return aRunning - bRunning;
+      if (aRunning === 0) {
+        // Both running: oldest start first (= longest running first).
+        return (a.start_sec ?? 0) - (b.start_sec ?? 0);
+      }
+      // Both pending: oldest submit first.
+      return a.submit_sec - b.submit_sec;
+    });
 }
 
 /**
@@ -143,6 +180,7 @@ export function buildTaskRows(
       const sampleName = tasks[0]?.name ?? g.name;
       const pipeline = localPlanChain(sampleName);
 
+      const inflight = g.pending_count + g.running_count;
       return {
         key,
         last_node_id: g.last_node_id,
@@ -154,14 +192,14 @@ export function buildTaskRows(
         node_ids: ids,
         task_count: g.task_count,
         status_counts: {
-          Pending: 0,
-          Executing: g.pending_count,
+          Pending: g.pending_count,
+          Executing: g.running_count,
           Finished: g.finished_count,
           Failed: g.failed_count + g.cancelled_count,
         } as Record<TaskRowStatus, number>,
         total_cpu_sec: g.total_cpu_us / 1_000_000,
         first_start_sec: g.first_submit_sec,
-        last_end_sec: g.pending_count > 0 ? null : (g.last_end_sec ?? null),
+        last_end_sec: inflight > 0 ? null : (g.last_end_sec ?? null),
         tasks,
         retained_task_count: g.retained_task_count,
       };

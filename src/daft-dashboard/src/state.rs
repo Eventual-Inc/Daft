@@ -48,6 +48,7 @@ pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
 #[serde(tag = "status")]
 pub(crate) enum TaskStatus {
     Pending,
+    Running,
     Finished,
     Failed { message: Option<String> },
     Cancelled,
@@ -63,6 +64,8 @@ pub(crate) struct TaskInfo {
     pub name: Option<String>,
     pub status: TaskStatus,
     pub submit_sec: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -88,6 +91,7 @@ pub(crate) struct TaskGroupSummary {
     pub name: String,
     pub task_count: u32,
     pub pending_count: u32,
+    pub running_count: u32,
     pub finished_count: u32,
     pub failed_count: u32,
     pub cancelled_count: u32,
@@ -174,6 +178,7 @@ impl TaskStore {
                 name: name.to_string(),
                 task_count: 0,
                 pending_count: 0,
+                running_count: 0,
                 finished_count: 0,
                 failed_count: 0,
                 cancelled_count: 0,
@@ -234,6 +239,7 @@ impl TaskStore {
             name: name.clone(),
             status: TaskStatus::Pending,
             submit_sec,
+            start_sec: None,
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
@@ -256,6 +262,100 @@ impl TaskStore {
         }
     }
 
+    /// Record a task being scheduled to a worker (transitioning from Pending
+    /// to Running). The dashboard treats "scheduled" as the running boundary
+    /// even though true execution starts slightly later on the worker. If
+    /// the submit event wasn't seen yet, the task is created here; group
+    /// counters stay consistent because we only adjust pending/running on
+    /// transitions.
+    pub fn task_scheduled(
+        &mut self,
+        task_id: u32,
+        last_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        plan_fingerprint: u32,
+        worker_id: Option<String>,
+        scheduled_sec: f64,
+    ) {
+        let display_name = self
+            .tasks
+            .get(&task_id)
+            .and_then(|t| t.name.clone())
+            .unwrap_or_else(|| format!("Node {last_node_id}"));
+
+        let key_node_ids: Vec<NodeID> = if node_ids.is_empty() {
+            self.tasks
+                .get(&task_id)
+                .map(|t| t.node_ids.clone())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| vec![last_node_id])
+        } else {
+            node_ids.clone()
+        };
+
+        let was_submitted = self.tasks.contains_key(&task_id);
+        let was_pending = was_submitted
+            && matches!(
+                self.tasks.get(&task_id).map(|t| &t.status),
+                Some(TaskStatus::Pending)
+            );
+
+        let gi = self.ensure_group(last_node_id, &key_node_ids, &display_name, scheduled_sec);
+        let group = &mut self.groups[gi];
+
+        if !was_submitted {
+            // Schedule arrived before submit; treat as a new task that
+            // bypassed the pending state. Increment task_count and
+            // running_count.
+            group.task_count += 1;
+            group.running_count += 1;
+            group.retained_task_count += 1;
+        } else if was_pending {
+            // Normal pending -> running transition.
+            group.pending_count = group.pending_count.saturating_sub(1);
+            group.running_count += 1;
+        }
+        // If already running/finished/etc, leave counters alone (idempotent).
+
+        let task = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
+            task_id,
+            last_node_id,
+            node_ids: node_ids.clone(),
+            plan_fingerprint,
+            name: None,
+            status: TaskStatus::Pending,
+            submit_sec: scheduled_sec, // no submit seen; use schedule time
+            start_sec: None,
+            end_sec: None,
+            worker_id: None,
+            cpu_us: 0,
+            sources: Vec::new(),
+        });
+
+        task.last_node_id = last_node_id;
+        if !node_ids.is_empty() {
+            task.node_ids = node_ids;
+        }
+        task.plan_fingerprint = plan_fingerprint;
+
+        // Only transition to Running if the task is currently Pending; don't
+        // overwrite a terminal status if a schedule arrives after end.
+        if matches!(task.status, TaskStatus::Pending) {
+            task.status = TaskStatus::Running;
+        }
+
+        // `start_sec` is "best-known start time": the schedule time stands in
+        // for the actual start until worker-side TaskStart wiring lands. Keep
+        // the earliest signal we've seen.
+        match task.start_sec {
+            Some(prev) if prev <= scheduled_sec => {}
+            _ => task.start_sec = Some(scheduled_sec),
+        }
+        if worker_id.is_some() {
+            task.worker_id = worker_id;
+        }
+    }
+
     /// Record a task completion. Updates group summary and applies retention:
     /// failed/cancelled tasks are always kept (up to a global cap); successful
     /// tasks are kept if they are among the top-K longest by duration per group.
@@ -273,11 +373,9 @@ impl TaskStore {
     ) {
         // Determine whether this task was previously submitted (exists in tasks).
         let was_submitted = self.tasks.contains_key(&task_id);
-        let was_pending = was_submitted
-            && matches!(
-                self.tasks.get(&task_id).map(|t| &t.status),
-                Some(TaskStatus::Pending)
-            );
+        let prev_status = self.tasks.get(&task_id).map(|t| t.status.clone());
+        let was_pending = matches!(prev_status, Some(TaskStatus::Pending));
+        let was_running = matches!(prev_status, Some(TaskStatus::Running));
 
         // Display label for the (possibly new) group. The actual group key
         // is `node_ids`; this is just what the UI shows.
@@ -312,11 +410,14 @@ impl TaskStore {
         if was_pending {
             group.pending_count = group.pending_count.saturating_sub(1);
         }
+        if was_running {
+            group.running_count = group.running_count.saturating_sub(1);
+        }
         match &status {
             TaskStatus::Finished => group.finished_count += 1,
             TaskStatus::Failed { .. } => group.failed_count += 1,
             TaskStatus::Cancelled => group.cancelled_count += 1,
-            TaskStatus::Pending => {}
+            TaskStatus::Pending | TaskStatus::Running => {}
         }
 
         group.total_cpu_us += cpu_us;
@@ -338,6 +439,7 @@ impl TaskStore {
             name: None,
             status: TaskStatus::Pending,
             submit_sec: end_sec, // no submit seen; use end time
+            start_sec: None,
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
@@ -362,7 +464,7 @@ impl TaskStore {
             TaskStatus::Failed { .. } | TaskStatus::Cancelled => {
                 self.retain_failed_task(task_id);
             }
-            TaskStatus::Pending => {}
+            TaskStatus::Pending | TaskStatus::Running => {}
         }
     }
 
@@ -389,7 +491,10 @@ impl TaskStore {
                 let dur = |id: &u32| -> f64 {
                     self.tasks
                         .get(id)
-                        .map(|t| t.end_sec.unwrap_or(0.0) - t.submit_sec)
+                        .map(|t| {
+                            let start = t.start_sec.unwrap_or(t.submit_sec);
+                            t.end_sec.unwrap_or(start) - start
+                        })
                         .unwrap_or(0.0)
                 };
                 dur(a_id)
@@ -791,6 +896,69 @@ mod task_store_tests {
         // submit found existing task and didn't increment further.
         assert_eq!(g.task_count, 1);
         assert_eq!(g.finished_count, 1);
+    }
+
+    /// submit -> scheduled -> end transitions pending/running/finished counts
+    /// correctly, and durations are computed from start_sec rather than submit_sec.
+    #[test]
+    fn submit_then_scheduled_then_end_transitions_counts() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 1);
+            assert_eq!(g.running_count, 0);
+        }
+
+        store.task_scheduled(1, 7, vec![7], 0, Some("worker-1".to_string()), 0.5);
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 0);
+            assert_eq!(g.running_count, 1);
+            let t = &store.tasks[&1];
+            assert!(matches!(t.status, TaskStatus::Running));
+            assert_eq!(t.start_sec, Some(0.5));
+        }
+
+        store.end_task(
+            1,
+            7,
+            vec![7],
+            0,
+            Some("worker-1".to_string()),
+            TaskStatus::Finished,
+            2.0,
+            123,
+        );
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 0);
+            assert_eq!(g.running_count, 0);
+            assert_eq!(g.finished_count, 1);
+        }
+    }
+
+    /// A schedule event arriving before submit should still credit task_count
+    /// and running_count; subsequent submit must not double-count.
+    #[test]
+    fn scheduled_before_submit_does_not_double_count() {
+        let mut store = TaskStore::default();
+        store.task_scheduled(7, 3, vec![3], 0, Some("worker-2".to_string()), 1.0);
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.task_count, 1);
+            assert_eq!(g.running_count, 1);
+            assert_eq!(g.pending_count, 0);
+        }
+
+        store.submit_task(submit(7, 3, vec![3], "Project", 0.5));
+        {
+            let g = &store.groups[0];
+            // Submit found an existing task; counters unchanged.
+            assert_eq!(g.task_count, 1);
+            assert_eq!(g.running_count, 1);
+            assert_eq!(g.pending_count, 0);
+        }
     }
 
     /// Sources passed to `submit_task` should be retained on the per-task
