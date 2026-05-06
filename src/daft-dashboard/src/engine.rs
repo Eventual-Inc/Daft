@@ -11,7 +11,6 @@ use axum::{
     routing::post,
 };
 use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
-use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
@@ -605,8 +604,6 @@ pub struct FinalizeArgs {
     pub end_sec: f64,
     pub end_state: QueryEndState,
     pub error_message: Option<String>,
-    // IPC-serialized RecordBatch
-    pub results: Option<Vec<u8>>,
 }
 
 async fn query_end(
@@ -661,22 +658,6 @@ pub(crate) fn apply_query_end(
         }
     }
 
-    let results = if let Some(results) = &args.results {
-        match RecordBatch::from_ipc_stream(results) {
-            Ok(results) => Some(results),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to deserialize results for query `{}`: {}",
-                    query_id,
-                    e
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        }
-    } else {
-        None
-    };
-
     query_info.state = match args.end_state {
         QueryEndState::Finished => match (plan_info, exec_info, exec_end_sec) {
             (Some(plan_info), Some(exec_info), Some(exec_end_sec)) => QueryState::Finished {
@@ -684,7 +665,6 @@ pub(crate) fn apply_query_end(
                 exec_info,
                 exec_end_sec,
                 end_sec: args.end_sec,
-                results,
             },
             (plan_info, exec_info, exec_end_sec) => {
                 // If we are missing info but the query is finished, we still transition to Finished
@@ -708,7 +688,6 @@ pub(crate) fn apply_query_end(
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
-                    results,
                 }
             }
         },
@@ -834,6 +813,52 @@ pub struct TaskSubmitArgs {
     pub node_ids: Vec<usize>,
     pub plan_fingerprint: u32,
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<TaskSourceArgs>,
+}
+
+/// Source data attached to a task on submit. Mirrors
+/// `daft_context::subscribers::events::TaskSource`. Externally tagged on the
+/// wire (`{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TaskSourceArgs {
+    PhysicalScan(PhysicalScanSourceArgs),
+    InMemoryScan(InMemoryScanSourceArgs),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PhysicalScanSourceArgs {
+    pub source_id: u32,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct InMemoryScanSourceArgs {
+    pub source_id: u32,
+    pub partitions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+}
+
+/// Driver-side "task has been scheduled to a worker".
+///
+/// What the dashboard currently treats as the running transition. Distinct
+/// from a hypothetical `TaskStartArgs` reporting the actual start of
+/// execution on a worker (see #6840 / follow-up issue).
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskScheduledArgs {
+    pub scheduled_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -872,13 +897,41 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    exec_info.task_store.submit_task(
+    exec_info.task_store.submit_task(args);
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_scheduled(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskScheduledArgs>,
+) -> StatusCode {
+    apply_task_scheduled(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_scheduled(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskScheduledArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_scheduled", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    exec_info.task_store.task_scheduled(
         args.task_id,
         args.last_node_id,
         args.node_ids,
         args.plan_fingerprint,
-        args.name,
-        args.submit_sec,
+        args.worker_id,
+        args.scheduled_sec,
     );
 
     state.ping_clients_on_query_update(query_info.value());
@@ -902,26 +955,23 @@ pub struct TaskStatsEntry {
     pub totals: TaskTotals,
 }
 
-#[derive(Clone, Serialize)]
+/// Worker_id is intentionally absent from this payload.
+///
+/// The worker-side `DashboardSubscriber` mints its own UUID per process which
+/// doesn't match the scheduler-assigned `WorkerId` carried on `TaskScheduled`
+/// / `TaskStart` / `TaskEnd` events. The scheduler is the source of truth for
+/// `worker_id`; stats updates only carry per-task scalars.
+#[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct TasksStatsUpdateArgsSend {
+pub struct TasksStatsUpdateArgs {
     pub timestamp_sec: f64,
-    pub worker_id: Option<String>,
-    pub tasks: Vec<TaskStatsEntry>,
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct TasksStatsUpdateArgsRecv {
-    pub timestamp_sec: f64,
-    pub worker_id: Option<String>,
     pub tasks: Vec<TaskStatsEntry>,
 }
 
 async fn tasks_stats_update(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<TasksStatsUpdateArgsRecv>,
+    Json(args): Json<TasksStatsUpdateArgs>,
 ) -> StatusCode {
     apply_tasks_stats_update(&state, query_id, args)
 }
@@ -929,7 +979,7 @@ async fn tasks_stats_update(
 pub(crate) fn apply_tasks_stats_update(
     state: &DashboardState,
     query_id: QueryID,
-    args: TasksStatsUpdateArgsRecv,
+    args: TasksStatsUpdateArgs,
 ) -> StatusCode {
     let Some(mut query_info) = state.queries.get_mut(&query_id) else {
         // Stats updates may arrive before the dashboard knows about the query
@@ -944,7 +994,7 @@ pub(crate) fn apply_tasks_stats_update(
     for entry in args.tasks {
         exec_info
             .task_store
-            .update_task_stats(entry, args.worker_id.clone(), args.timestamp_sec);
+            .update_task_stats(entry, args.timestamp_sec);
     }
 
     state.ping_clients_on_query_update(query_info.value());
@@ -1029,6 +1079,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/task/submit", post(task_submit))
+        .route("/query/{query_id}/task/schedule", post(task_scheduled))
         .route("/query/{query_id}/task/end", post(task_end))
         .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))

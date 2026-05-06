@@ -66,9 +66,33 @@ export type PhysicalPlanNode = {
  */
 export type TaskStatus =
   | { status: "Pending" }
+  | { status: "Running" }
   | { status: "Finished" }
   | { status: "Failed"; message: string | null }
   | { status: "Cancelled" };
+
+/**
+ * Source data attached to a task on submit. Mirrors Rust's externally-tagged
+ * `TaskSourceArgs` enum: `{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`.
+ * A task usually has a single source; multi-source tasks are possible but rare.
+ */
+export type PhysicalScanSource = {
+  source_id: number;
+  scan_tasks: number;
+  paths: string[];
+  storage_bytes?: number;
+  estimated_memory_bytes?: number;
+};
+
+export type InMemoryScanSource = {
+  source_id: number;
+  partitions: number;
+  total_bytes?: number;
+};
+
+export type TaskSource =
+  | { PhysicalScan: PhysicalScanSource }
+  | { InMemoryScan: InMemoryScanSource };
 
 export type TaskInfo = {
   task_id: number;
@@ -78,6 +102,7 @@ export type TaskInfo = {
   name?: string;
   status: TaskStatus;
   submit_sec: number;
+  start_sec?: number;
   end_sec?: number;
   worker_id?: string;
   cpu_us: number;
@@ -87,6 +112,8 @@ export type TaskInfo = {
   rows_out: number;
   bytes_in: number;
   bytes_out: number;
+  /** Absent when the task has no recorded sources. */
+  sources?: TaskSource[];
 };
 
 /** Server-side aggregate summary for a group of tasks sharing an (last_node_id, pipeline_name). */
@@ -96,6 +123,7 @@ export type TaskGroupSummary = {
   name: string;
   task_count: number;
   pending_count: number;
+  running_count: number;
   finished_count: number;
   failed_count: number;
   cancelled_count: number;
@@ -190,10 +218,4 @@ export type QueryInfo = {
   daft_version?: string;
   ray_version?: string;
   state: QueryState;
-};
-
-export type ResultPreview = {
-  html: string | null;
-  num_rows: number;
-  total_rows: number | null;
 };

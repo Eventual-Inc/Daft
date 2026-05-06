@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorStatus, TaskInfo } from "./types";
+import { ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
 import {
   formatBytes,
   formatCount,
@@ -17,6 +17,8 @@ import {
   getActiveTasks,
   PlanChainNode,
   taskDisplayStatus,
+  taskDurationSec,
+  taskHasStarted,
   TaskTypeRow,
   TOP_K_RUNNING,
 } from "./tasks-grouping";
@@ -67,7 +69,8 @@ export default function TasksSidebar({
     [allRows, nodeFilter],
   );
 
-  // Active tasks for the "top" section.
+  // In-flight tasks (running + pending) for the "top" section. Running tasks
+  // sort first; pending only fill the remainder of the top-K.
   const allActiveTasks = useMemo(() => getActiveTasks(task_store), [task_store]);
   const filteredActiveTasks = useMemo(
     () =>
@@ -77,11 +80,16 @@ export default function TasksSidebar({
     [allActiveTasks, nodeFilter],
   );
   const activeTasks = filteredActiveTasks.slice(0, TOP_K_RUNNING);
-  const totalRunning = filteredActiveTasks.length;
+  const totalInflight = filteredActiveTasks.length;
+  const totalRunning = filteredActiveTasks.filter(
+    (t) => t.status.status === "Running",
+  ).length;
+  const totalPendingActive = totalInflight - totalRunning;
 
   // Summary counts from group aggregates (always accurate).
   const totalTasks = rows.reduce((a, r) => a + r.task_count, 0);
-  const totalExecuting = rows.reduce((a, r) => a + r.status_counts.Executing, 0);
+  const totalRunningCount = rows.reduce((a, r) => a + r.status_counts.Executing, 0);
+  const totalPending = rows.reduce((a, r) => a + r.status_counts.Pending, 0);
   const totalFinished = rows.reduce((a, r) => a + r.status_counts.Finished, 0);
   const totalFailed = rows.reduce((a, r) => a + r.status_counts.Failed, 0);
 
@@ -98,8 +106,10 @@ export default function TasksSidebar({
             Tasks
           </span>
           <span>
-            {totalExecuting > 0 && <span className="text-emerald-400">{totalExecuting} running</span>}
-            {totalExecuting > 0 && totalFinished > 0 && " · "}
+            {totalRunningCount > 0 && <span className="text-emerald-400">{totalRunningCount} running</span>}
+            {totalRunningCount > 0 && totalPending > 0 && " · "}
+            {totalPending > 0 && <span className="text-zinc-400">{totalPending} pending</span>}
+            {(totalRunningCount > 0 || totalPending > 0) && totalFinished > 0 && " · "}
             {totalFinished > 0 && <span>{totalFinished} finished</span>}
             {totalFailed > 0 && " · "}
             {totalFailed > 0 && <span className="text-red-400">{totalFailed} failed</span>}
@@ -154,6 +164,8 @@ export default function TasksSidebar({
               <RunningTasksSection
                 tasks={activeTasks}
                 totalRunning={totalRunning}
+                totalPending={totalPendingActive}
+                totalInflight={totalInflight}
                 onHoverNodes={onHoverNodes}
               />
             </div>
@@ -169,27 +181,107 @@ export default function TasksSidebar({
   );
 }
 
+// Source cell — shared between the Running mini-table and the expanded
+// per-task sub-table. Optimized for the common case of a single
+// PhysicalScan source with one path: shows the basename and reveals the full
+// path on hover.
 // ---------------------------------------------------------------------------
-// Running tasks "top" section.
+function basename(path: string): string {
+  // Strip query string / fragment first, then split on both / and \.
+  const clean = path.split(/[?#]/)[0];
+  const segments = clean.split(/[/\\]/);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].length > 0) return segments[i];
+  }
+  return path;
+}
+
+function summarizeSource(source: TaskSource): { label: string; tooltip: string } {
+  if ("PhysicalScan" in source) {
+    const { paths } = source.PhysicalScan;
+    if (paths.length === 0) {
+      return { label: "scan", tooltip: "PhysicalScan (no paths reported)" };
+    }
+    if (paths.length === 1) {
+      return { label: basename(paths[0]), tooltip: paths[0] };
+    }
+    const head = paths.slice(0, 10).join("\n");
+    const more = paths.length > 10 ? `\n…and ${paths.length - 10} more` : "";
+    return {
+      label: `${basename(paths[0])} +${paths.length - 1} more`,
+      tooltip: `${head}${more}`,
+    };
+  }
+  if ("InMemoryScan" in source) {
+    const { partitions, total_bytes } = source.InMemoryScan;
+    const bytes = total_bytes != null ? ` (${total_bytes.toLocaleString()} B)` : "";
+    return {
+      label: `in-memory (${partitions}p)`,
+      tooltip: `InMemoryScan: ${partitions} partition(s)${bytes}`,
+    };
+  }
+  // Exhaustiveness check: if a new TaskSource variant is added, TS errors here.
+  // At runtime, render a non-empty placeholder rather than throwing.
+  const _exhaustive: never = source;
+  void _exhaustive;
+  return { label: "(unknown source)", tooltip: "" };
+}
+
+function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
+  if (sources.length === 0) {
+    return (
+      <span className={`${main.className} text-xs text-zinc-600 font-mono`}>—</span>
+    );
+  }
+  const { label, tooltip } =
+    sources.length === 1
+      ? summarizeSource(sources[0])
+      : {
+          label: `${sources.length} sources`,
+          tooltip: sources.map((s) => summarizeSource(s).label).join("\n"),
+        };
+  // `block` is required for `truncate` to take effect on a span.
+  return (
+    <span
+      className={`${main.className} block text-xs text-zinc-300 font-mono truncate`}
+      title={tooltip}
+    >
+      {label}
+    </span>
+  );
+}
+
+// In-flight tasks "top" section. Shows running tasks first (sorted by wall-
+// clock duration descending), then pending tasks. The State column lets
+// users tell pending and running apart; Source surfaces scan paths.
 // ---------------------------------------------------------------------------
-// Columns: Local Plan | Rows in | Rows out | Bytes in | Bytes out | CPU
+// Columns: Local Plan | Source | State | Rows in | Rows out | Bytes in | Bytes out | CPU
+// Local Plan and Source share remaining width 1:2 so the (typically long)
+// source path gets enough room before the fixed-width State, I/O, and CPU columns.
 const RUNNING_GRID_COLS =
-  "grid-cols-[minmax(200px,2fr)_70px_70px_80px_80px_90px]";
+  "grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_90px_70px_70px_80px_80px_90px]";
 
 function RunningTasksSection({
   tasks,
   totalRunning,
+  totalPending,
+  totalInflight,
   onHoverNodes,
 }: {
   tasks: TaskInfo[];
   totalRunning: number;
+  totalPending: number;
+  totalInflight: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
     <div className="border-b border-zinc-700">
-      <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800">
+      <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800 flex items-center gap-2">
         <span className={`${main.className} text-xs font-bold text-emerald-300 uppercase tracking-wider`}>
-          Running ({totalRunning})
+          In-flight ({totalInflight})
+        </span>
+        <span className={`${main.className} text-[10px] text-zinc-400`}>
+          {totalRunning} running · {totalPending} pending
         </span>
       </div>
       <div className="min-w-[600px]">
@@ -197,6 +289,8 @@ function RunningTasksSection({
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Local Plan</RunningHeader>
+          <RunningHeader align="left">Source</RunningHeader>
+          <RunningHeader align="left">State</RunningHeader>
           <RunningHeader align="right">Rows in</RunningHeader>
           <RunningHeader align="right">Rows out</RunningHeader>
           <RunningHeader align="right">Bytes in</RunningHeader>
@@ -215,9 +309,9 @@ function RunningTasksSection({
             <div key={`empty-${i}`} className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[36px]`} />
           );
         })}
-        {totalRunning > tasks.length && (
+        {totalInflight > tasks.length && (
           <div className={`${main.className} px-4 py-1.5 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
-            Showing {tasks.length} of {totalRunning} running tasks (highest busy time first)
+            Showing {tasks.length} of {totalInflight} in-flight tasks (running first, highest busy time first)
           </div>
         )}
       </div>
@@ -249,13 +343,17 @@ function RunningTaskRow({
   task: TaskInfo;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
+  const isRunning = task.status.status === "Running";
   // CPU time (busy time, sum of operator DURATION_KEY across this task's
   // pipeline) rather than wall-clock since submit. Refreshed mid-flight from
   // TaskStatsUpdate events; re-renders driven by taskStore prop changes
   // upstream, so no per-second timer needed. Trailing ellipsis hints this is
-  // a running snapshot, not final. The rows/bytes I/O counters use is_task_root /
+  // a running snapshot, not final. Pending tasks show \u2014 since they have no
+  // operator work yet. The rows/bytes I/O counters use is_task_root /
   // is_task_leaf filtering so they reflect only the task's external traffic.
-  const cpu = formatDuration(task.cpu_us / 1_000_000) + "\u2026";
+  const cpu = isRunning
+    ? formatDuration(task.cpu_us / 1_000_000) + "\u2026"
+    : "\u2014";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
     : [`Node ${task.last_node_id}`];
@@ -270,6 +368,14 @@ function RunningTaskRow({
       <div className="px-3">
         <PipelineChips pipeline={pipeline} />
       </div>
+      <div className="px-3 min-w-0">
+        <TaskSourceCell sources={task.sources ?? []} />
+      </div>
+      <div
+        className={`${main.className} px-3 text-xs font-mono ${isRunning ? "text-emerald-300" : "text-zinc-400"}`}
+      >
+        {isRunning ? "running" : "pending"}
+      </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {formatCount(task.rows_in)}
       </div>
@@ -282,7 +388,9 @@ function RunningTaskRow({
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {formatBytes(task.bytes_out)}
       </div>
-      <div className={`${main.className} px-3 text-xs text-right text-emerald-300 font-mono`}>
+      <div
+        className={`${main.className} px-3 text-xs text-right font-mono ${isRunning ? "text-emerald-300" : "text-zinc-500"}`}
+      >
         {cpu}
       </div>
     </div>
@@ -432,6 +540,10 @@ function TaskTypeGroupRow({
           tasks={row.tasks}
           taskCount={row.task_count}
           retainedTaskCount={row.retained_task_count}
+          pendingCount={row.status_counts.Pending}
+          runningCount={row.status_counts.Executing}
+          finishedCount={row.status_counts.Finished}
+          failedCount={row.status_counts.Failed}
         />
       )}
     </>
@@ -554,20 +666,29 @@ function StatusSummary({
 // flow between fused operators is filtered out by `is_task_root` /
 // `is_task_leaf` on each StatSnapshot's NodeInfo before the dashboard
 // aggregator sums it up.
-// Columns: status | Task ID | Worker | Status | Rows in | Rows out | Bytes in | Bytes out | Duration | CPU
+// Columns: status | Task ID | Source | Worker | Status | Rows in | Rows out | Bytes in | Bytes out | Duration | CPU
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_minmax(140px,1.5fr)_110px_70px_70px_80px_80px_100px_100px]";
+  "grid-cols-[32px_80px_minmax(180px,2fr)_minmax(120px,1fr)_110px_70px_70px_80px_80px_100px_100px]";
 
 function ExpandedTaskList({
   tasks,
   taskCount,
   retainedTaskCount,
+  pendingCount,
+  runningCount,
+  finishedCount,
+  failedCount,
 }: {
   tasks: TaskInfo[];
   /** Total number of tasks in this group (from server summary). */
   taskCount: number;
   /** Number of retained individual tasks for this group. */
   retainedTaskCount: number;
+  pendingCount: number;
+  runningCount: number;
+  finishedCount: number;
+  /** Failed + cancelled, mirroring the row-level Failed bucket. */
+  failedCount: number;
 }) {
   return (
     <div className="bg-zinc-950/40 border-l-2 border-fuchsia-900/70 pl-0">
@@ -577,6 +698,7 @@ function ExpandedTaskList({
       >
         <SubHeader />
         <SubHeader align="left">Task ID</SubHeader>
+        <SubHeader align="left">Source</SubHeader>
         <SubHeader align="left">Worker</SubHeader>
         <SubHeader align="left">Status</SubHeader>
         <SubHeader align="right">Rows in</SubHeader>
@@ -594,7 +716,10 @@ function ExpandedTaskList({
       {retainedTaskCount < taskCount && (
         <div className={`${main.className} px-6 py-2 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
           Showing {retainedTaskCount} of {taskCount.toLocaleString()} tasks
-          (highest busy time, plus active and failed)
+          {" ("}
+          {pendingCount} pending, {runningCount} running, {finishedCount} finished
+          {failedCount > 0 ? `, ${failedCount} failed` : ""}
+          {") — highest busy time, plus active and failed"}
         </div>
       )}
     </div>
@@ -625,11 +750,14 @@ function SubHeader({
 
 function TaskSubRow({ task }: { task: TaskInfo }) {
   const displayStatus = taskDisplayStatus(task);
-  const duration =
-    task.end_sec != null
-      ? formatDuration(task.end_sec - task.submit_sec)
+  // Wall-clock duration is measured from start (when the task actually began
+  // executing), not submit. Pending tasks have no duration to show.
+  const duration = !taskHasStarted(task)
+    ? "—"
+    : task.end_sec != null
+      ? formatDuration(task.end_sec - (task.start_sec ?? task.submit_sec))
       : displayStatus === "Executing"
-        ? formatDuration(Date.now() / 1000 - task.submit_sec) + "…"
+        ? formatDuration(taskDurationSec(task, Date.now() / 1000)) + "…"
         : "—";
   const cpuSec = task.cpu_us / 1_000_000;
 
@@ -642,6 +770,9 @@ function TaskSubRow({ task }: { task: TaskInfo }) {
       </div>
       <div className={`${main.className} px-3 text-xs text-zinc-400 font-mono`}>
         {task.task_id}
+      </div>
+      <div className="px-3 min-w-0">
+        <TaskSourceCell sources={task.sources ?? []} />
       </div>
       <div
         className={`${main.className} px-3 text-xs text-zinc-300 font-mono truncate`}

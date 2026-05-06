@@ -4,7 +4,6 @@ use common_metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use daft_micropartition::MicroPartitionRef;
 
 use super::{QueryMetadata, QueryResult};
 
@@ -18,13 +17,18 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    /// Driver-side: scheduler has decided which worker to dispatch the task
+    /// to. Fires just before the handoff to the worker. The dashboard
+    /// renders this as "running", but it precedes true execution start;
+    /// see `TaskStart` (emitted by the worker) for the more precise signal.
+    TaskScheduled(TaskScheduledEvent),
+    TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
     TaskStatsUpdate(TaskStatsUpdateEvent),
     ProcessStats(ProcessStatsEvent),
-    ResultOut(ResultOutEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -174,14 +178,6 @@ pub struct ExecEndEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResultOutEvent {
-    pub header: EventHeader,
-    pub num_rows: u64,
-    // needed by the dashboard subscriber
-    pub data: Option<MicroPartitionRef>,
-}
-
-#[derive(Debug, Clone)]
 pub struct TaskInfo {
     pub id: u32,
     /// The last distributed plan node in the task's pipeline — the one that
@@ -202,6 +198,21 @@ pub struct TaskSubmitEvent {
     pub header: EventHeader,
     pub task: Arc<TaskInfo>,
     pub sources: Arc<Vec<TaskSource>>,
+}
+
+/// Driver-side "task is on its way to a worker". See `Event::TaskScheduled`.
+#[derive(Debug, Clone)]
+pub struct TaskScheduledEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskStartEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]

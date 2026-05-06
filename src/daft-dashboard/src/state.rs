@@ -50,6 +50,7 @@ pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
 #[serde(tag = "status")]
 pub(crate) enum TaskStatus {
     Pending,
+    Running,
     Finished,
     Failed { message: Option<String> },
     Cancelled,
@@ -65,6 +66,8 @@ pub(crate) struct TaskInfo {
     pub name: Option<String>,
     pub status: TaskStatus,
     pub submit_sec: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,6 +90,8 @@ pub(crate) struct TaskInfo {
     /// stats refresh. Used to drop stale out-of-order updates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_stats_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<crate::engine::TaskSourceArgs>,
 }
 
 /// Canonical group identity: the full chain of distributed pipeline nodes that
@@ -105,6 +110,7 @@ pub(crate) struct TaskGroupSummary {
     pub name: String,
     pub task_count: u32,
     pub pending_count: u32,
+    pub running_count: u32,
     pub finished_count: u32,
     pub failed_count: u32,
     pub cancelled_count: u32,
@@ -195,6 +201,7 @@ impl TaskStore {
                 name: name.to_string(),
                 task_count: 0,
                 pending_count: 0,
+                running_count: 0,
                 finished_count: 0,
                 failed_count: 0,
                 cancelled_count: 0,
@@ -224,15 +231,16 @@ impl TaskStore {
 
     /// Record a task submission. The individual task is always retained while
     /// active (callers inspect active tasks for debugging stuck queries).
-    pub fn submit_task(
-        &mut self,
-        task_id: u32,
-        last_node_id: NodeID,
-        node_ids: Vec<NodeID>,
-        plan_fingerprint: u32,
-        name: Option<String>,
-        submit_sec: f64,
-    ) {
+    pub fn submit_task(&mut self, args: crate::engine::TaskSubmitArgs) {
+        let crate::engine::TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint,
+            name,
+            sources,
+        } = args;
         // Display label only; the group key is `node_ids`.
         let display_name = name
             .clone()
@@ -258,6 +266,7 @@ impl TaskStore {
             name: name.clone(),
             status: TaskStatus::Pending,
             submit_sec,
+            start_sec: None,
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
@@ -266,6 +275,7 @@ impl TaskStore {
             bytes_in: 0,
             bytes_out: 0,
             latest_stats_sec: None,
+            sources: Vec::new(),
         });
 
         // If a prior submit is replayed, keep the earliest submit_sec and sync
@@ -279,10 +289,13 @@ impl TaskStore {
         if submit_sec < entry.submit_sec {
             entry.submit_sec = submit_sec;
         }
+        if !sources.is_empty() {
+            entry.sources = sources;
+        }
     }
 
     /// Record a mid-execution scalar progress snapshot for an in-flight task.
-    /// No-op if the task has already ended (snapshot is treated as stale) or
+    /// No-op if the task has reached a terminal status (snapshot is stale) or
     /// if this snapshot is older than one already applied.
     ///
     /// Naming caveat: `cpu_us` here is **busy time** — cumulative wall-clock
@@ -292,16 +305,13 @@ impl TaskStore {
     /// submit (`end_sec - submit_sec`) that the frontend sometimes labels
     /// "duration". Two tasks with the same wall-clock duration can have very
     /// different busy times.
-    pub fn update_task_stats(
-        &mut self,
-        entry: TaskStatsEntry,
-        worker_id: Option<String>,
-        timestamp_sec: f64,
-    ) {
+    pub fn update_task_stats(&mut self, entry: TaskStatsEntry, timestamp_sec: f64) {
         let Some(task) = self.tasks.get_mut(&entry.task_id) else {
             return;
         };
-        if !matches!(task.status, TaskStatus::Pending) {
+        // Stats arrive between submit and end — accept Pending and Running.
+        // Drop in any terminal state.
+        if !matches!(task.status, TaskStatus::Pending | TaskStatus::Running) {
             return;
         }
         if let Some(prev) = task.latest_stats_sec
@@ -323,9 +333,6 @@ impl TaskStore {
         task.bytes_in = entry.totals.bytes_in;
         task.bytes_out = entry.totals.bytes_out;
         task.latest_stats_sec = Some(timestamp_sec);
-        if task.worker_id.is_none() {
-            task.worker_id = worker_id;
-        }
         let key = Self::group_key_for_task(task);
         if let Some(&gi) = self.group_index.get(&key) {
             let g = &mut self.groups[gi];
@@ -334,6 +341,105 @@ impl TaskStore {
             g.total_rows_out += rows_out_delta;
             g.total_bytes_in += bytes_in_delta;
             g.total_bytes_out += bytes_out_delta;
+        }
+    }
+
+    /// Record a task being scheduled to a worker (transitioning from Pending
+    /// to Running). The dashboard treats "scheduled" as the running boundary
+    /// even though true execution starts slightly later on the worker. If
+    /// the submit event wasn't seen yet, the task is created here; group
+    /// counters stay consistent because we only adjust pending/running on
+    /// transitions.
+    pub fn task_scheduled(
+        &mut self,
+        task_id: u32,
+        last_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        plan_fingerprint: u32,
+        worker_id: Option<String>,
+        scheduled_sec: f64,
+    ) {
+        let display_name = self
+            .tasks
+            .get(&task_id)
+            .and_then(|t| t.name.clone())
+            .unwrap_or_else(|| format!("Node {last_node_id}"));
+
+        let key_node_ids: Vec<NodeID> = if node_ids.is_empty() {
+            self.tasks
+                .get(&task_id)
+                .map(|t| t.node_ids.clone())
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| vec![last_node_id])
+        } else {
+            node_ids.clone()
+        };
+
+        let was_submitted = self.tasks.contains_key(&task_id);
+        let was_pending = was_submitted
+            && matches!(
+                self.tasks.get(&task_id).map(|t| &t.status),
+                Some(TaskStatus::Pending)
+            );
+
+        let gi = self.ensure_group(last_node_id, &key_node_ids, &display_name, scheduled_sec);
+        let group = &mut self.groups[gi];
+
+        if !was_submitted {
+            // Schedule arrived before submit; treat as a new task that
+            // bypassed the pending state. Increment task_count and
+            // running_count.
+            group.task_count += 1;
+            group.running_count += 1;
+            group.retained_task_count += 1;
+        } else if was_pending {
+            // Normal pending -> running transition.
+            group.pending_count = group.pending_count.saturating_sub(1);
+            group.running_count += 1;
+        }
+        // If already running/finished/etc, leave counters alone (idempotent).
+
+        let task = self.tasks.entry(task_id).or_insert_with(|| TaskInfo {
+            task_id,
+            last_node_id,
+            node_ids: node_ids.clone(),
+            plan_fingerprint,
+            name: None,
+            status: TaskStatus::Pending,
+            submit_sec: scheduled_sec, // no submit seen; use schedule time
+            start_sec: None,
+            end_sec: None,
+            worker_id: None,
+            cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            latest_stats_sec: None,
+            sources: Vec::new(),
+        });
+
+        task.last_node_id = last_node_id;
+        if !node_ids.is_empty() {
+            task.node_ids = node_ids;
+        }
+        task.plan_fingerprint = plan_fingerprint;
+
+        // Only transition to Running if the task is currently Pending; don't
+        // overwrite a terminal status if a schedule arrives after end.
+        if matches!(task.status, TaskStatus::Pending) {
+            task.status = TaskStatus::Running;
+        }
+
+        // `start_sec` is "best-known start time": the schedule time stands in
+        // for the actual start until worker-side TaskStart wiring lands. Keep
+        // the earliest signal we've seen.
+        match task.start_sec {
+            Some(prev) if prev <= scheduled_sec => {}
+            _ => task.start_sec = Some(scheduled_sec),
+        }
+        if worker_id.is_some() {
+            task.worker_id = worker_id;
         }
     }
 
@@ -358,11 +464,9 @@ impl TaskStore {
     ) {
         // Determine whether this task was previously submitted (exists in tasks).
         let was_submitted = self.tasks.contains_key(&task_id);
-        let was_pending = was_submitted
-            && matches!(
-                self.tasks.get(&task_id).map(|t| &t.status),
-                Some(TaskStatus::Pending)
-            );
+        let prev_status = self.tasks.get(&task_id).map(|t| t.status.clone());
+        let was_pending = matches!(prev_status, Some(TaskStatus::Pending));
+        let was_running = matches!(prev_status, Some(TaskStatus::Running));
         // Mid-flight `update_task_stats` already increments group totals by
         // the per-tick delta, so end_task adds only the remaining delta
         // (final - last seen) to avoid double-counting.
@@ -410,11 +514,14 @@ impl TaskStore {
         if was_pending {
             group.pending_count = group.pending_count.saturating_sub(1);
         }
+        if was_running {
+            group.running_count = group.running_count.saturating_sub(1);
+        }
         match &status {
             TaskStatus::Finished => group.finished_count += 1,
             TaskStatus::Failed { .. } => group.failed_count += 1,
             TaskStatus::Cancelled => group.cancelled_count += 1,
-            TaskStatus::Pending => {}
+            TaskStatus::Pending | TaskStatus::Running => {}
         }
 
         group.total_cpu_us += cpu_us_delta;
@@ -440,6 +547,7 @@ impl TaskStore {
             name: None,
             status: TaskStatus::Pending,
             submit_sec: end_sec, // no submit seen; use end time
+            start_sec: None,
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
@@ -448,6 +556,7 @@ impl TaskStore {
             bytes_in: 0,
             bytes_out: 0,
             latest_stats_sec: None,
+            sources: Vec::new(),
         });
 
         task.last_node_id = last_node_id;
@@ -472,7 +581,7 @@ impl TaskStore {
             TaskStatus::Failed { .. } | TaskStatus::Cancelled => {
                 self.retain_failed_task(task_id);
             }
-            TaskStatus::Pending => {}
+            TaskStatus::Pending | TaskStatus::Running => {}
         }
     }
 
@@ -623,8 +732,6 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: f64,
         end_sec: f64,
-        #[serde(skip_serializing)]
-        results: Option<RecordBatch>,
     },
     Canceled {
         plan_info: Option<PlanInfo>,
@@ -812,9 +919,38 @@ pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
 #[cfg(test)]
 mod task_store_tests {
     use super::*;
+    use crate::engine::{TaskStatsEntry, TaskSubmitArgs, TaskTotals};
 
     fn finished() -> TaskStatus {
         TaskStatus::Finished
+    }
+
+    fn stats_entry(task_id: u32, cpu_us: u64) -> TaskStatsEntry {
+        TaskStatsEntry {
+            task_id,
+            totals: TaskTotals {
+                cpu_us,
+                ..TaskTotals::default()
+            },
+        }
+    }
+
+    fn submit(
+        task_id: u32,
+        last_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        name: &str,
+        submit_sec: f64,
+    ) -> TaskSubmitArgs {
+        TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint: 0,
+            name: Some(name.to_string()),
+            sources: vec![],
+        }
     }
 
     /// Two tasks with identical `node_ids` but different `name` strings should
@@ -823,8 +959,8 @@ mod task_store_tests {
     #[test]
     fn same_node_ids_different_names_collapse_to_one_group() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Limit(10)".to_string()), 0.0);
-        store.submit_task(2, 7, vec![3, 5, 7], 0, Some("Limit(100)".to_string()), 0.0);
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Limit(10)", 0.0));
+        store.submit_task(submit(2, 7, vec![3, 5, 7], "Limit(100)", 0.0));
 
         assert_eq!(
             store.groups.len(),
@@ -841,10 +977,99 @@ mod task_store_tests {
     #[test]
     fn different_node_ids_same_name_split_into_two_groups() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 5, vec![3, 5], 0, Some("Project".to_string()), 0.0);
-        store.submit_task(2, 9, vec![7, 9], 0, Some("Project".to_string()), 0.0);
+        store.submit_task(submit(1, 5, vec![3, 5], "Project", 0.0));
+        store.submit_task(submit(2, 9, vec![7, 9], "Project", 0.0));
 
         assert_eq!(store.groups.len(), 2);
+    }
+
+    /// Mid-flight stats update on a pending task writes cpu_us through to the
+    /// task and the parent group's total, and stamps latest_stats_sec.
+    #[test]
+    fn update_task_stats_applies_cpu_us_to_task_and_group() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 300), 1.0);
+
+        let task = store.tasks.get(&1).expect("task retained");
+        assert_eq!(task.cpu_us, 300);
+        assert_eq!(task.latest_stats_sec, Some(1.0));
+        // worker_id is set by scheduler-side TaskStart/TaskEnd, not by us.
+        assert!(task.worker_id.is_none());
+        assert_eq!(store.groups.len(), 1);
+        assert_eq!(store.groups[0].total_cpu_us, 300);
+    }
+
+    /// Successive updates apply only the delta to the group total, so the
+    /// group running sum equals the latest per-task value (not their sum).
+    #[test]
+    fn update_task_stats_accumulates_as_deltas() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 200), 1.0);
+        store.update_task_stats(stats_entry(1, 500), 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.groups[0].total_cpu_us, 500);
+    }
+
+    /// An out-of-order update older than the last seen timestamp is dropped
+    /// (cpu_us and latest_stats_sec stay at the newer value).
+    #[test]
+    fn update_task_stats_drops_stale_timestamp() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 400), 5.0);
+        store.update_task_stats(stats_entry(1, 999), 2.0); // stale
+
+        let task = store.tasks.get(&1).unwrap();
+        assert_eq!(task.cpu_us, 400);
+        assert_eq!(task.latest_stats_sec, Some(5.0));
+        assert_eq!(store.groups[0].total_cpu_us, 400);
+    }
+
+    /// After end_task the task is no longer Pending; a late stats update must
+    /// be ignored so it can't overwrite the final cpu_us.
+    #[test]
+    fn update_task_stats_after_end_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+        store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600, 0, 0, 0, 0);
+
+        store.update_task_stats(stats_entry(1, 9_999), 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 600);
+        assert_eq!(store.groups[0].total_cpu_us, 600);
+    }
+
+    /// end_task following a mid-flight update must add only the remaining
+    /// delta (final - last seen) so the group total isn't double-counted.
+    #[test]
+    fn end_task_after_update_does_not_double_count() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 300), 1.0);
+        store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500, 0, 0, 0, 0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.groups[0].total_cpu_us, 500);
+    }
+
+    /// Stats updates for an unknown task_id (never submitted) are dropped
+    /// silently — they may arrive during the submit/exec_start race.
+    #[test]
+    fn update_task_stats_unknown_task_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(999, 1_000), 1.0);
+
+        assert!(!store.tasks.contains_key(&999));
+        assert_eq!(store.groups[0].total_cpu_us, 0);
     }
 
     /// End-before-submit with empty node_ids should resolve to the same group
@@ -870,7 +1095,7 @@ mod task_store_tests {
             0,
         );
         // Submit arrives later with the same single-node chain.
-        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5);
+        store.submit_task(submit(42, 7, vec![7], "Filter", 0.5));
 
         assert_eq!(store.groups.len(), 1);
         let g = &store.groups[0];
@@ -878,5 +1103,100 @@ mod task_store_tests {
         // submit found existing task and didn't increment further.
         assert_eq!(g.task_count, 1);
         assert_eq!(g.finished_count, 1);
+    }
+
+    /// submit -> scheduled -> end transitions pending/running/finished counts
+    /// correctly, and durations are computed from start_sec rather than submit_sec.
+    #[test]
+    fn submit_then_scheduled_then_end_transitions_counts() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 1);
+            assert_eq!(g.running_count, 0);
+        }
+
+        store.task_scheduled(1, 7, vec![7], 0, Some("worker-1".to_string()), 0.5);
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 0);
+            assert_eq!(g.running_count, 1);
+            let t = &store.tasks[&1];
+            assert!(matches!(t.status, TaskStatus::Running));
+            assert_eq!(t.start_sec, Some(0.5));
+        }
+
+        store.end_task(
+            1,
+            7,
+            vec![7],
+            0,
+            Some("worker-1".to_string()),
+            TaskStatus::Finished,
+            2.0,
+            123,
+            0,
+            0,
+            0,
+            0,
+        );
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.pending_count, 0);
+            assert_eq!(g.running_count, 0);
+            assert_eq!(g.finished_count, 1);
+        }
+    }
+
+    /// A schedule event arriving before submit should still credit task_count
+    /// and running_count; subsequent submit must not double-count.
+    #[test]
+    fn scheduled_before_submit_does_not_double_count() {
+        let mut store = TaskStore::default();
+        store.task_scheduled(7, 3, vec![3], 0, Some("worker-2".to_string()), 1.0);
+        {
+            let g = &store.groups[0];
+            assert_eq!(g.task_count, 1);
+            assert_eq!(g.running_count, 1);
+            assert_eq!(g.pending_count, 0);
+        }
+
+        store.submit_task(submit(7, 3, vec![3], "Project", 0.5));
+        {
+            let g = &store.groups[0];
+            // Submit found an existing task; counters unchanged.
+            assert_eq!(g.task_count, 1);
+            assert_eq!(g.running_count, 1);
+            assert_eq!(g.pending_count, 0);
+        }
+    }
+
+    /// Sources passed to `submit_task` should be retained on the per-task
+    /// record so the dashboard UI can render them.
+    #[test]
+    fn submit_task_retains_sources() {
+        use crate::engine::{PhysicalScanSourceArgs, TaskSourceArgs};
+
+        let mut store = TaskStore::default();
+        let source = TaskSourceArgs::PhysicalScan(PhysicalScanSourceArgs {
+            source_id: 0,
+            scan_tasks: 1,
+            paths: vec!["s3://bucket/file.parquet".to_string()],
+            storage_bytes: Some(1024),
+            estimated_memory_bytes: Some(4096),
+        });
+        let mut args = submit(1, 7, vec![3, 5, 7], "ScanTaskSource->Project", 0.0);
+        args.sources = vec![source];
+        store.submit_task(args);
+
+        let task = store.tasks.get(&1).expect("task should be retained");
+        assert_eq!(task.sources.len(), 1);
+        match &task.sources[0] {
+            TaskSourceArgs::PhysicalScan(p) => {
+                assert_eq!(p.paths, vec!["s3://bucket/file.parquet".to_string()]);
+            }
+            _ => panic!("expected PhysicalScan source"),
+        }
     }
 }
