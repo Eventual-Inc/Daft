@@ -41,40 +41,21 @@ pub(crate) struct AsofJoinBuildState {
     tables: Vec<MicroPartition>,
 }
 
-pub(crate) struct AsofJoinFinalizedBuildState {
-    // Original left RecordBatch (all rows concatenated)
-    left_rb: RecordBatch,
-    // Concatenated on_key as an Arrow array – used for sort, binary search comparators, and null-validity checks.
-    left_on_arr: Arc<dyn Array>,
-    // group_hash_map maps a by_key hash to a list of candidate group indices (Vec<usize>).
-    // Multiple candidates exist only on hash collision; typically there is just one.
-    // For each candidate group index g:
-    //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
-    //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
-    group_buckets: Vec<Vec<u64>>,
-    // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
-    group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
-    group_reps: RecordBatch,
-    group_hash_map: HashMap<u64, Vec<usize>>,
-    // Total number of left rows.
-    total_left_rows: usize,
-}
-
-impl AsofJoinFinalizedBuildState {
-    fn new(
-        left_mps: Vec<MicroPartition>,
+impl AsofJoinBuildState {
+    fn finalize(
+        self,
         left_schema: SchemaRef,
         left_by: &[BoundExpr],
         left_on: &BoundExpr,
-    ) -> DaftResult<Self> {
-        let left_mp = MicroPartition::concat_or_empty(left_mps, left_schema.clone())?;
+    ) -> DaftResult<AsofJoinFinalizedBuildState> {
+        let left_mp = MicroPartition::concat_or_empty(self.tables, left_schema.clone())?;
         let left_rb = match left_mp.concat_or_get()? {
             Some(rb) => rb,
             None => {
                 let empty_left = RecordBatch::empty(Some(left_schema));
                 let left_on_arr: Arc<dyn Array> =
                     empty_left.eval_expression(left_on)?.to_arrow()?;
-                return Ok(Self {
+                return Ok(AsofJoinFinalizedBuildState {
                     left_rb: empty_left,
                     left_on_arr,
                     group_buckets: vec![],
@@ -103,7 +84,6 @@ impl AsofJoinFinalizedBuildState {
             let left_by_rb = left_rb.eval_expression_list(left_by)?;
             let (key_idxs, raw_groups) = left_by_rb.make_groups()?;
 
-            // Sort each bucket by on_key value
             let group_buckets: Vec<Vec<u64>> = raw_groups
                 .into_iter()
                 .map(|group| {
@@ -135,7 +115,7 @@ impl AsofJoinFinalizedBuildState {
             })
             .collect::<DaftResult<_>>()?;
 
-        Ok(Self {
+        Ok(AsofJoinFinalizedBuildState {
             left_rb,
             left_on_arr,
             group_buckets,
@@ -145,7 +125,28 @@ impl AsofJoinFinalizedBuildState {
             total_left_rows,
         })
     }
+}
 
+pub(crate) struct AsofJoinFinalizedBuildState {
+    // Original left RecordBatch (all rows concatenated)
+    left_rb: RecordBatch,
+    // Concatenated on_key as an Arrow array – used for sort, binary search comparators, and null-validity checks.
+    left_on_arr: Arc<dyn Array>,
+    // group_hash_map maps a by_key hash to a list of candidate group indices (Vec<usize>).
+    // Multiple candidates exist only on hash collision; typically there is just one.
+    // For each candidate group index g:
+    //   - group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
+    //   - group_buckets[g] holds the left row indices for group g, sorted by on_key for binary search.
+    group_buckets: Vec<Vec<u64>>,
+    // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses
+    group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
+    group_reps: RecordBatch,
+    group_hash_map: HashMap<u64, Vec<usize>>,
+    // Total number of left rows.
+    total_left_rows: usize,
+}
+
+impl AsofJoinFinalizedBuildState {
     /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[right_idx].
     /// Returns the best potential left row index, or `None` if no valid match exists.
     fn search_bucket(
@@ -459,12 +460,7 @@ impl JoinOperator for AsofJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        let join_table = AsofJoinFinalizedBuildState::new(
-            state.tables,
-            self.left_schema.clone(),
-            &self.left_by,
-            &self.left_on,
-        )?;
+        let join_table = state.finalize(self.left_schema.clone(), &self.left_by, &self.left_on)?;
         Ok(Arc::new(join_table))
     }
 
