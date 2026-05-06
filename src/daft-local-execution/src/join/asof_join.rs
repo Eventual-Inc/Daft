@@ -59,11 +59,9 @@ impl AsofJoinBuildState {
                 group_reps: RecordBatch::empty(None),
                 group_reps_series: vec![],
                 group_hash_map: HashMap::new(),
-                total_left_rows: 0,
             });
         }
 
-        let total_left_rows = left_rb.len();
         let left_on_series: Series = left_rb.eval_expression(left_on)?;
         let left_on_arr: Arc<dyn Array> = left_on_series.to_arrow()?;
 
@@ -71,7 +69,7 @@ impl AsofJoinBuildState {
             build_partial_compare_with_nulls(left_on_arr.as_ref(), left_on_arr.as_ref(), false)?;
 
         let (group_buckets, group_reps, group_hash_map) = if left_by.is_empty() {
-            let mut bucket: VecIndices = (0..total_left_rows as u64).collect();
+            let mut bucket: VecIndices = (0..left_rb.len() as u64).collect();
             bucket.sort_unstable_by(|&a, &b| {
                 on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
             });
@@ -126,7 +124,6 @@ impl AsofJoinBuildState {
             group_reps,
             group_reps_series,
             group_hash_map,
-            total_left_rows,
         })
     }
 }
@@ -146,8 +143,6 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     group_reps_series: Vec<Series>,
     // Maps a by_key hash to a list of candidate group indices; multiple candidates exist only on hash collision.
     group_hash_map: HashMap<u64, Vec<usize>>,
-    // Total number of left rows.
-    total_left_rows: usize,
 }
 
 impl AsofJoinFinalizedBuildState {
@@ -488,7 +483,7 @@ impl JoinOperator for AsofJoinOperator {
         &self,
         finalized_build_state: Self::FinalizedBuildState,
     ) -> Self::ProbeState {
-        let n = finalized_build_state.total_left_rows;
+        let n = finalized_build_state.left_rb.num_rows();
         AsofJoinProbeState {
             build_contents: finalized_build_state,
             best_match: vec![None::<(u32, u32)>; n],
@@ -511,7 +506,7 @@ impl JoinOperator for AsofJoinOperator {
             .spawn(
                 async move {
                     let build_state = state.build_contents.clone();
-                    if build_state.total_left_rows == 0 {
+                    if build_state.left_rb.is_empty() {
                         return Ok((state, ProbeOutput::NeedMoreInput(None)));
                     }
                     for right_rb in input.record_batches() {
@@ -550,7 +545,7 @@ impl JoinOperator for AsofJoinOperator {
                         .build_contents
                         .clone();
 
-                    if build_state.total_left_rows == 0 {
+                    if build_state.left_rb.is_empty() {
                         return Ok(Some(MicroPartition::new_loaded(
                             join_schema.clone(),
                             Arc::new(vec![RecordBatch::empty(Some(join_schema))]),
@@ -586,13 +581,14 @@ impl JoinOperator for AsofJoinOperator {
                     let global_rb_offsets = Arc::new(global_rb_offsets);
                     let state_best_matches = Arc::new(state_best_matches);
 
+                    let total_left_rows = build_state.left_rb.num_rows();
                     let rows_per_chunk =
-                        (build_state.total_left_rows / get_compute_pool_num_threads()).max(1024);
+                        (total_left_rows / get_compute_pool_num_threads()).max(1024);
 
-                    let chunk_tasks: Vec<_> = (0..build_state.total_left_rows)
+                    let chunk_tasks: Vec<_> = (0..total_left_rows)
                         .step_by(rows_per_chunk)
                         .map(|start| {
-                            let end = (start + rows_per_chunk).min(build_state.total_left_rows);
+                            let end = (start + rows_per_chunk).min(total_left_rows);
                             let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
@@ -630,8 +626,7 @@ impl JoinOperator for AsofJoinOperator {
                         })
                         .collect();
 
-                    let mut global_best: Vec<Option<(u32, u32)>> =
-                        vec![None; build_state.total_left_rows];
+                    let mut global_best: Vec<Option<(u32, u32)>> = vec![None; total_left_rows];
                     for (i, task) in chunk_tasks.into_iter().enumerate() {
                         let chunk = task.await.map_err(|_| {
                             DaftError::InternalError("compute merge task dropped".into())
