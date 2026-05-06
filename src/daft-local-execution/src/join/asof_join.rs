@@ -273,40 +273,42 @@ impl AsofJoinProbeState {
                 continue;
             };
 
-            self.update_best_match(matched_left_idx, right_idx, rb_idx, &mut cmp_cache)?;
+            update_best_match(
+                &mut self.best_match[matched_left_idx],
+                &self.right_on_key_arrs,
+                rb_idx,
+                right_idx,
+                &mut cmp_cache,
+            )?;
         }
 
         Ok(())
     }
-    fn update_best_match(
-        &mut self,
-        matched_left_idx: usize,
-        candidate_right_idx: usize,
-        candidate_rb_idx: usize,
-        cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
-    ) -> DaftResult<()> {
-        let is_better = match self.best_match[matched_left_idx] {
-            None => true,
-            Some((existing_rb_idx, existing_right_idx)) => {
-                let candidate_on_arr = self.right_on_key_arrs[candidate_rb_idx].clone();
-                let existing_on_arr = self.right_on_key_arrs[existing_rb_idx as usize].clone();
-                is_candidate_better(
-                    candidate_rb_idx,
-                    candidate_right_idx,
-                    candidate_on_arr.as_ref(),
-                    existing_rb_idx as usize,
-                    existing_right_idx as usize,
-                    existing_on_arr.as_ref(),
-                    cmp_cache,
-                )?
-            }
-        };
-        if is_better {
-            self.best_match[matched_left_idx] =
-                Some((candidate_rb_idx as u32, candidate_right_idx as u32));
-        }
-        Ok(())
+}
+
+fn update_best_match(
+    slot: &mut Option<(u32, u32)>,
+    on_key_arrs: &[Arc<dyn Array>],
+    candidate_rb_idx: usize,
+    candidate_right_idx: usize,
+    cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+) -> DaftResult<()> {
+    let is_better = match *slot {
+        None => true,
+        Some((existing_rb_idx, existing_right_idx)) => is_candidate_better(
+            candidate_rb_idx,
+            candidate_right_idx,
+            on_key_arrs[candidate_rb_idx].as_ref(),
+            existing_rb_idx as usize,
+            existing_right_idx as usize,
+            on_key_arrs[existing_rb_idx as usize].as_ref(),
+            cmp_cache,
+        )?,
+    };
+    if is_better {
+        *slot = Some((candidate_rb_idx as u32, candidate_right_idx as u32));
     }
+    Ok(())
 }
 
 fn is_candidate_better(
@@ -608,35 +610,16 @@ impl JoinOperator for AsofJoinOperator {
                                         else {
                                             continue;
                                         };
-                                        let candidate_global_rb_idx = (global_rb_offsets[state_idx]
-                                            + candidate_local_rb_idx as usize)
-                                            as u32;
+                                        let candidate_global_rb_idx = global_rb_offsets[state_idx]
+                                            + candidate_local_rb_idx as usize;
 
-                                        let is_better = match *curr_best_match {
-                                            None => true,
-                                            Some((existing_rb_idx, existing_right_idx)) => {
-                                                is_candidate_better(
-                                                    candidate_global_rb_idx as usize,
-                                                    candidate_right_idx as usize,
-                                                    global_right_on_key_arrs
-                                                        [candidate_global_rb_idx as usize]
-                                                        .as_ref(),
-                                                    existing_rb_idx as usize,
-                                                    existing_right_idx as usize,
-                                                    global_right_on_key_arrs
-                                                        [existing_rb_idx as usize]
-                                                        .as_ref(),
-                                                    &mut cmp_cache,
-                                                )?
-                                            }
-                                        };
-
-                                        if is_better {
-                                            *curr_best_match = Some((
-                                                candidate_global_rb_idx,
-                                                candidate_right_idx,
-                                            ));
-                                        }
+                                        update_best_match(
+                                            curr_best_match,
+                                            &global_right_on_key_arrs,
+                                            candidate_global_rb_idx,
+                                            candidate_right_idx as usize,
+                                            &mut cmp_cache,
+                                        )?;
                                     }
                                 }
                                 DaftResult::Ok(chunk)
