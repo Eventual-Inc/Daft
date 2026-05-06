@@ -17,6 +17,11 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    /// Driver-side: scheduler has decided which worker to dispatch the task
+    /// to. Fires just before the handoff to the worker. The dashboard
+    /// renders this as "running", but it precedes true execution start;
+    /// see `TaskStart` (emitted by the worker) for the more precise signal.
+    TaskScheduled(TaskScheduledEvent),
     TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
@@ -187,6 +192,14 @@ pub struct TaskSubmitEvent {
     pub header: EventHeader,
     pub task: Arc<TaskInfo>,
     pub sources: Arc<Vec<TaskSource>>,
+}
+
+/// Driver-side "task is on its way to a worker". See `Event::TaskScheduled`.
+#[derive(Debug, Clone)]
+pub struct TaskScheduledEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]

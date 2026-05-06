@@ -836,6 +836,22 @@ pub struct InMemoryScanSourceArgs {
     pub total_bytes: Option<u64>,
 }
 
+/// Driver-side "task has been scheduled to a worker".
+///
+/// What the dashboard currently treats as the running transition. Distinct
+/// from a hypothetical `TaskStartArgs` reporting the actual start of
+/// execution on a worker (see #6840 / follow-up issue).
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskScheduledArgs {
+    pub scheduled_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskEndArgs {
@@ -873,6 +889,41 @@ pub(crate) fn apply_task_submit(
     };
 
     exec_info.task_store.submit_task(args);
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_scheduled(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskScheduledArgs>,
+) -> StatusCode {
+    apply_task_scheduled(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_scheduled(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskScheduledArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_scheduled", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    exec_info.task_store.task_scheduled(
+        args.task_id,
+        args.last_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.worker_id,
+        args.scheduled_sec,
+    );
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
@@ -1015,6 +1066,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/task/submit", post(task_submit))
+        .route("/query/{query_id}/task/schedule", post(task_scheduled))
         .route("/query/{query_id}/task/end", post(task_end))
         .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))

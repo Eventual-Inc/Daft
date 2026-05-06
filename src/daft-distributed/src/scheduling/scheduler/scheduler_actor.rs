@@ -131,6 +131,7 @@ where
                 for task in &scheduled_tasks {
                     self.statistics_manager.handle_event(TaskEvent::Scheduled {
                         context: task.task().task_context(),
+                        worker_id: task.worker_id(),
                     })?;
                 }
 
