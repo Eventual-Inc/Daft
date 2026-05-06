@@ -184,6 +184,73 @@ impl std::fmt::Debug for RuntimeStatsManager {
 }
 
 impl RuntimeStatsManager {
+    /// Apply a single channel message to the manager's mutable state. Used both
+    /// from the main `select!` branch and from the post-finish drain so late
+    /// `RegisterRuntimeStats` / `TakeInputSnapshot` messages aren't lost when
+    /// `finish_rx` wins the race against a still-queued `node_rx` message.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_message(
+        msg: StatsManagerMessage,
+        input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        active_nodes: &mut HashSet<NodeID>,
+        query_id: &QueryID,
+        query_plan: &serde_json::Value,
+        progress_bar: Option<&dyn ProgressBar>,
+        subscribers: &[Arc<dyn Subscriber>],
+        operators: &HashMap<NodeID, Arc<OperatorMeta>>,
+        node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+    ) {
+        match msg {
+            StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
+                if is_initialize && active_nodes.insert(node_id) {
+                    if let Some(progress_bar) = progress_bar {
+                        progress_bar.initialize_node(node_id);
+                    }
+
+                    let Some(operator_meta) = operators.get(&node_id) else {
+                        log::warn!(
+                            "Unknown node_id {node_id} in operators during on_start, skipping subscriber notification"
+                        );
+                        return;
+                    };
+
+                    let event = Event::OperatorStart(OperatorStartEvent {
+                        header: event_header(query_id.clone()),
+                        operator: operator_meta.clone(),
+                    });
+                    dispatch_event(subscribers, &event, "notify operator start");
+                } else if !is_initialize && active_nodes.remove(&node_id) {
+                    Self::flush_and_finalize_node(
+                        query_id,
+                        node_id,
+                        input_stats,
+                        progress_bar,
+                        subscribers,
+                        "finalize node",
+                        operators,
+                    );
+                }
+            }
+            StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
+                input_stats.insert((node_id, input_id), stats);
+            }
+            StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
+                let mut result = Vec::new();
+                for (&(node_id, iid), stats) in input_stats.iter() {
+                    if iid == input_id
+                        && let Some(node_info) = node_info_map.get(&node_id)
+                    {
+                        result.push((node_info.clone(), stats.flush()));
+                    }
+                }
+                let _ = respond_tx.send(
+                    ExecutionStats::new(query_id.clone(), result)
+                        .with_query_plan(query_plan.clone()),
+                );
+            }
+        }
+    }
+
     fn flush_and_finalize_node(
         query_id: &QueryID,
         node_id: NodeID,
@@ -317,70 +384,21 @@ impl RuntimeStatsManager {
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
 
-            // Handle a single channel message. Shared between the main `select!`
-            // branch and the post-finish drain below so late `RegisterRuntimeStats`
-            // messages aren't lost when `finish_rx` wins the race against a still-
-            // queued node_rx message.
-            let handle_message =
-                |msg: StatsManagerMessage,
-                 input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
-                 active_nodes: &mut HashSet<NodeID>| {
-                    match msg {
-                        StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
-                            if is_initialize && active_nodes.insert(node_id) {
-                                if let Some(progress_bar) = &progress_bar {
-                                    progress_bar.initialize_node(node_id);
-                                }
-
-                                let Some(operator_meta) = operators.get(&node_id) else {
-                                    log::warn!(
-                                        "Unknown node_id {node_id} in operators during on_start, skipping subscriber notification"
-                                    );
-                                    return;
-                                };
-
-                                let event = Event::OperatorStart(OperatorStartEvent {
-                                    header: event_header(query_id.clone()),
-                                    operator: operator_meta.clone(),
-                                });
-                                dispatch_event(&subscribers, &event, "notify operator start");
-                            } else if !is_initialize && active_nodes.remove(&node_id) {
-                                Self::flush_and_finalize_node(
-                                    &query_id,
-                                    node_id,
-                                    input_stats,
-                                    progress_bar.as_deref(),
-                                    &subscribers,
-                                    "finalize node",
-                                    &operators,
-                                );
-                            }
-                        }
-                        StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
-                            input_stats.insert((node_id, input_id), stats);
-                        }
-                        StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
-                            let mut result = Vec::new();
-                            for (&(node_id, iid), stats) in input_stats.iter() {
-                                if iid == input_id
-                                    && let Some(node_info) = node_info_map.get(&node_id)
-                                {
-                                    result.push((node_info.clone(), stats.flush()));
-                                }
-                            }
-                            let _ = respond_tx.send(
-                                ExecutionStats::new(query_id.clone(), result)
-                                    .with_query_plan(query_plan.clone()),
-                            );
-                        }
-                    }
-                };
-
             loop {
                 tokio::select! {
                     biased;
                     Some(msg) = node_rx.recv() => {
-                        handle_message(msg, &mut input_stats, &mut active_nodes);
+                        Self::handle_message(
+                            msg,
+                            &mut input_stats,
+                            &mut active_nodes,
+                            &query_id,
+                            &query_plan,
+                            progress_bar.as_deref(),
+                            &subscribers,
+                            &operators,
+                            &node_info_map,
+                        );
                     }
 
                     _ = &mut finish_rx => {
@@ -390,7 +408,17 @@ impl RuntimeStatsManager {
                         // finish branch, leaving `input_stats` missing entries and
                         // `take_input_snapshot` returning empty stats.
                         while let Ok(msg) = node_rx.try_recv() {
-                            handle_message(msg, &mut input_stats, &mut active_nodes);
+                            Self::handle_message(
+                                msg,
+                                &mut input_stats,
+                                &mut active_nodes,
+                                &query_id,
+                                &query_plan,
+                                progress_bar.as_deref(),
+                                &subscribers,
+                                &operators,
+                                &node_info_map,
+                            );
                         }
                         // Queries that terminate early (e.g. LIMIT) may still have active upstream nodes.
                         // Flush and finalize those nodes so subscribers and progress bars end in a consistent state.
