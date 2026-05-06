@@ -11,7 +11,7 @@ use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::{
     array::ops::{GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal},
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
-    prelude::{DataType as DaftDataType, Field, SchemaRef, Series, UInt64Array},
+    prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
 use daft_dsl::{
     Expr,
@@ -202,6 +202,7 @@ impl AsofJoinProbeState {
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
+        right_cols_to_drop: &HashSet<String>,
     ) -> DaftResult<()> {
         let rb_idx = self.right_tables.len();
         let table = self.build_contents.clone();
@@ -209,7 +210,8 @@ impl AsofJoinProbeState {
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
         self.right_on_key_arrs.push(right_on_arr.clone());
-        self.right_tables.push(right_rb.clone());
+        self.right_tables
+            .push(prune_right_batch(right_rb, right_cols_to_drop));
 
         // One comparator per group
         let group_sorted_key_cmps: Vec<DynPartialComparator> = table
@@ -349,10 +351,21 @@ fn backfill(
     }
 }
 
+fn prune_right_batch(rb: &RecordBatch, right_cols_to_drop: &HashSet<String>) -> RecordBatch {
+    let kept_indices: Vec<usize> = rb
+        .schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| (!right_cols_to_drop.contains(f.name.as_ref())).then_some(i))
+        .collect();
+    rb.get_columns(&kept_indices)
+}
+
 fn build_right_output(
     global_best: &[Option<(u32, u32)>],
     all_right_tables: Vec<RecordBatch>,
-    right_schema: SchemaRef,
+    pruned_right_schema: SchemaRef,
 ) -> DaftResult<RecordBatch> {
     let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
     for (i, rb) in all_right_tables.iter().enumerate() {
@@ -367,7 +380,7 @@ fn build_right_output(
         }),
     );
     let right_rb_concat = if all_right_tables.is_empty() {
-        RecordBatch::empty(Some(right_schema))
+        RecordBatch::empty(Some(pruned_right_schema))
     } else {
         RecordBatch::concat(all_right_tables.iter().collect::<Vec<_>>().as_slice())?
     };
@@ -378,16 +391,13 @@ fn build_join_output(
     left_rb: &RecordBatch,
     right_out: RecordBatch,
     join_schema: SchemaRef,
-    right_cols_to_drop: &HashSet<String>,
 ) -> DaftResult<MicroPartition> {
     let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
     for s in left_rb.as_materialized_series() {
         join_series.push(s.clone());
     }
     for s in right_out.as_materialized_series() {
-        if !right_cols_to_drop.contains(s.name()) {
-            join_series.push(s.clone());
-        }
+        join_series.push(s.clone());
     }
     let output_rb = RecordBatch::new_with_size(join_schema.clone(), join_series, left_rb.len())?;
     Ok(MicroPartition::new_loaded(
@@ -403,7 +413,6 @@ pub struct AsofJoinOperator {
     left_on: BoundExpr,
     right_on: BoundExpr,
     left_schema: SchemaRef,
-    right_schema: SchemaRef,
     right_cols_to_drop: HashSet<String>,
     join_schema: SchemaRef,
 }
@@ -432,7 +441,6 @@ impl AsofJoinOperator {
             left_on,
             right_on,
             left_schema,
-            right_schema,
             right_cols_to_drop,
             join_schema,
         })
@@ -492,6 +500,7 @@ impl JoinOperator for AsofJoinOperator {
     ) -> ProbeResult<Self> {
         let right_on = self.right_on.clone();
         let right_by = self.right_by.clone();
+        let right_cols_to_drop = self.right_cols_to_drop.clone();
 
         spawner
             .spawn(
@@ -504,7 +513,7 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        state.probe_batch(right_rb, &right_on, &right_by)?;
+                        state.probe_batch(right_rb, &right_on, &right_by, &right_cols_to_drop)?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
@@ -519,8 +528,14 @@ impl JoinOperator for AsofJoinOperator {
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeFinalizeResult {
         let join_schema = self.join_schema.clone();
-        let right_cols_to_drop = self.right_cols_to_drop.clone();
-        let right_schema = self.right_schema.clone();
+        let left_field_names: HashSet<&str> = self.left_schema.field_names().collect();
+        let pruned_right_schema: SchemaRef = Arc::new(Schema::new(
+            self.join_schema
+                .fields()
+                .iter()
+                .filter(|f| !left_field_names.contains(f.name.as_ref()))
+                .cloned(),
+        ));
         spawner
             .spawn(
                 async move {
@@ -641,12 +656,11 @@ impl JoinOperator for AsofJoinOperator {
 
                     backfill(&mut global_best, &table.group_buckets, &table.left_on_arr);
                     let right_out =
-                        build_right_output(&global_best, all_right_tables, right_schema)?;
+                        build_right_output(&global_best, all_right_tables, pruned_right_schema)?;
                     Ok(Some(build_join_output(
                         &table.left_rb,
                         right_out,
                         join_schema,
-                        &right_cols_to_drop,
                     )?))
                 },
                 Span::current(),
