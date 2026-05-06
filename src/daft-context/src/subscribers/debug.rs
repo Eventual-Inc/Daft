@@ -1,26 +1,21 @@
 use common_error::DaftResult;
-use common_metrics::{QueryID, Stat};
-use dashmap::DashMap;
+use common_metrics::Stat;
 
 use crate::subscribers::{
     Event, Subscriber,
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent,
+        QueryStartEvent, StatsEvent, TaskEndEvent, TaskStartEvent, TaskSubmitEvent,
     },
 };
 
 #[derive(Debug)]
-pub struct DebugSubscriber {
-    rows_out: DashMap<QueryID, usize>,
-}
+pub struct DebugSubscriber;
 
 impl DebugSubscriber {
     pub fn new() -> Self {
-        Self {
-            rows_out: DashMap::new(),
-        }
+        Self
     }
 
     fn handle_query_start(&self, event: &QueryStartEvent) -> DaftResult<()> {
@@ -30,25 +25,18 @@ impl DebugSubscriber {
             event.metadata.runner,
             event.metadata.unoptimized_plan.as_ref()
         );
-        self.rows_out.insert(event.header.query_id.clone(), 0);
         Ok(())
     }
 
     fn handle_query_end(&self, event: &QueryEndEvent) -> DaftResult<()> {
-        let rows_out = self
-            .rows_out
-            .get(&event.header.query_id)
-            .map(|rows| *rows.value())
-            .unwrap_or(0);
-
         match event.duration_ms {
             Some(duration_ms) => eprintln!(
-                "query_end query_id={} end_state={:?} rows_out={} duration_ms={duration_ms}",
-                event.header.query_id, event.result.end_state, rows_out,
+                "query_end query_id={} end_state={:?} duration_ms={duration_ms}",
+                event.header.query_id, event.result.end_state,
             ),
             None => eprintln!(
-                "query_end query_id={} end_state={:?} rows_out={}",
-                event.header.query_id, event.result.end_state, rows_out,
+                "query_end query_id={} end_state={:?}",
+                event.header.query_id, event.result.end_state,
             ),
         }
 
@@ -166,22 +154,26 @@ impl DebugSubscriber {
         Ok(())
     }
 
-    fn handle_result_out(&self, event: &ResultOutEvent) -> DaftResult<()> {
-        if let Some(mut rows_out) = self.rows_out.get_mut(&event.header.query_id) {
-            *rows_out.value_mut() += event.num_rows as usize;
-        }
+    fn handle_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
         eprintln!(
-            "result_out query_id={} num_rows={}",
-            event.header.query_id, event.num_rows
+            "task_submit query_id={} task_id={} node_ids={:?} sources={:?}",
+            event.header.query_id, event.task.id, event.task.node_ids, event.sources
         );
         Ok(())
     }
 
-    fn handle_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
-        eprintln!(
-            "task_submit query_id={} task_id={} node_ids={:?}",
-            event.header.query_id, event.task.id, event.task.node_ids
-        );
+    fn handle_task_start(&self, event: &TaskStartEvent) -> DaftResult<()> {
+        if let Some(worker_id) = &event.worker_id {
+            eprintln!(
+                "task_start query_id={} task_id={} worker_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, worker_id, event.task.node_ids
+            );
+        } else {
+            eprintln!(
+                "task_start query_id={} task_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, event.task.node_ids
+            );
+        }
         Ok(())
     }
 
@@ -244,8 +236,8 @@ impl Subscriber for DebugSubscriber {
             Event::Stats(e) => self.handle_stats(&e)?,
             Event::TaskStatsUpdate(_e) => (),
             Event::ProcessStats(e) => self.handle_process_stats(&e)?,
-            Event::ResultOut(e) => self.handle_result_out(&e)?,
             Event::TaskSubmit(e) => self.handle_task_submit(&e)?,
+            Event::TaskStart(e) => self.handle_task_start(&e)?,
             Event::TaskEnd(e) => self.handle_task_end(&e)?,
         }
         Ok(())

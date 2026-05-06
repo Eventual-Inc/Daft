@@ -2391,6 +2391,19 @@ class Expression:
 
         return list_join(self, delimiter)
 
+    def list_flatten(self) -> Expression:
+        """Flattens one level of nesting in each list.
+
+        Outer null rows are preserved as null. Null inner lists are skipped while flattening,
+        and null leaf values are preserved in the output.
+
+        Tip: See Also
+            [`daft.functions.list_flatten`](https://docs.daft.ai/en/stable/api/functions/list_flatten/)
+        """
+        from daft.functions import list_flatten
+
+        return list_flatten(self)
+
     def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
 
@@ -2934,6 +2947,21 @@ class Expression:
             height=height,
             is_key_frame=is_key_frame,
         )
+
+    def image_file_metadata(self) -> Expression:
+        """Gets metadata for an image file (width, height, format, mode).
+
+        Reads only the file header without decoding pixel data.
+        """
+        from daft.functions import image_file_metadata
+
+        return image_file_metadata(self)
+
+    def decode_image_file(self) -> Expression:
+        """Decodes an image file into an Image column."""
+        from daft.functions import decode_image_file
+
+        return decode_image_file(self)
 
 
 class WhenExpr(Expression):

@@ -78,6 +78,8 @@ pub(crate) struct TaskInfo {
     /// stats refresh. Used to drop stale out-of-order updates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_stats_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<crate::engine::TaskSourceArgs>,
 }
 
 /// Canonical group identity: the full chain of distributed pipeline nodes that
@@ -207,15 +209,16 @@ impl TaskStore {
 
     /// Record a task submission. The individual task is always retained while
     /// active (callers inspect active tasks for debugging stuck queries).
-    pub fn submit_task(
-        &mut self,
-        task_id: u32,
-        last_node_id: NodeID,
-        node_ids: Vec<NodeID>,
-        plan_fingerprint: u32,
-        name: Option<String>,
-        submit_sec: f64,
-    ) {
+    pub fn submit_task(&mut self, args: crate::engine::TaskSubmitArgs) {
+        let crate::engine::TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint,
+            name,
+            sources,
+        } = args;
         // Display label only; the group key is `node_ids`.
         let display_name = name
             .clone()
@@ -245,6 +248,7 @@ impl TaskStore {
             worker_id: None,
             cpu_us: 0,
             latest_stats_sec: None,
+            sources: Vec::new(),
         });
 
         // If a prior submit is replayed, keep the earliest submit_sec and sync
@@ -257,6 +261,9 @@ impl TaskStore {
         }
         if submit_sec < entry.submit_sec {
             entry.submit_sec = submit_sec;
+        }
+        if !sources.is_empty() {
+            entry.sources = sources;
         }
     }
 
@@ -394,6 +401,7 @@ impl TaskStore {
             worker_id: None,
             cpu_us: 0,
             latest_stats_sec: None,
+            sources: Vec::new(),
         });
 
         task.last_node_id = last_node_id;
@@ -565,8 +573,6 @@ pub(crate) enum QueryState {
         exec_info: ExecInfo,
         exec_end_sec: f64,
         end_sec: f64,
-        #[serde(skip_serializing)]
-        results: Option<RecordBatch>,
     },
     Canceled {
         plan_info: Option<PlanInfo>,
@@ -754,7 +760,7 @@ pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
 #[cfg(test)]
 mod task_store_tests {
     use super::*;
-    use crate::engine::{TaskStatsEntry, TaskTotals};
+    use crate::engine::{TaskStatsEntry, TaskSubmitArgs, TaskTotals};
 
     fn finished() -> TaskStatus {
         TaskStatus::Finished
@@ -767,14 +773,32 @@ mod task_store_tests {
         }
     }
 
+    fn submit(
+        task_id: u32,
+        last_node_id: NodeID,
+        node_ids: Vec<NodeID>,
+        name: &str,
+        submit_sec: f64,
+    ) -> TaskSubmitArgs {
+        TaskSubmitArgs {
+            submit_sec,
+            task_id,
+            last_node_id,
+            node_ids,
+            plan_fingerprint: 0,
+            name: Some(name.to_string()),
+            sources: vec![],
+        }
+    }
+
     /// Two tasks with identical `node_ids` but different `name` strings should
     /// land in the same group. (Previously, group key included the name and
     /// these would split.)
     #[test]
     fn same_node_ids_different_names_collapse_to_one_group() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Limit(10)".to_string()), 0.0);
-        store.submit_task(2, 7, vec![3, 5, 7], 0, Some("Limit(100)".to_string()), 0.0);
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Limit(10)", 0.0));
+        store.submit_task(submit(2, 7, vec![3, 5, 7], "Limit(100)", 0.0));
 
         assert_eq!(
             store.groups.len(),
@@ -791,8 +815,8 @@ mod task_store_tests {
     #[test]
     fn different_node_ids_same_name_split_into_two_groups() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 5, vec![3, 5], 0, Some("Project".to_string()), 0.0);
-        store.submit_task(2, 9, vec![7, 9], 0, Some("Project".to_string()), 0.0);
+        store.submit_task(submit(1, 5, vec![3, 5], "Project", 0.0));
+        store.submit_task(submit(2, 9, vec![7, 9], "Project", 0.0));
 
         assert_eq!(store.groups.len(), 2);
     }
@@ -802,7 +826,7 @@ mod task_store_tests {
     #[test]
     fn update_task_stats_applies_cpu_us_to_task_and_group() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![3, 5, 7], 0, Some("Filter".to_string()), 0.0);
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Filter", 0.0));
 
         store.update_task_stats(stats_entry(1, 300), Some("worker-1".to_string()), 1.0);
 
@@ -819,7 +843,7 @@ mod task_store_tests {
     #[test]
     fn update_task_stats_accumulates_as_deltas() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
         store.update_task_stats(stats_entry(1, 200), None, 1.0);
         store.update_task_stats(stats_entry(1, 500), None, 2.0);
@@ -833,7 +857,7 @@ mod task_store_tests {
     #[test]
     fn update_task_stats_drops_stale_timestamp() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
         store.update_task_stats(stats_entry(1, 400), None, 5.0);
         store.update_task_stats(stats_entry(1, 999), None, 2.0); // stale
@@ -849,7 +873,7 @@ mod task_store_tests {
     #[test]
     fn update_task_stats_after_end_is_noop() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
         store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600);
 
         store.update_task_stats(stats_entry(1, 9_999), None, 2.0);
@@ -863,7 +887,7 @@ mod task_store_tests {
     #[test]
     fn end_task_after_update_does_not_double_count() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
         store.update_task_stats(stats_entry(1, 300), None, 1.0);
         store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500);
@@ -877,7 +901,7 @@ mod task_store_tests {
     #[test]
     fn update_task_stats_unknown_task_is_noop() {
         let mut store = TaskStore::default();
-        store.submit_task(1, 7, vec![7], 0, None, 0.0);
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
 
         store.update_task_stats(stats_entry(999, 1_000), None, 1.0);
 
@@ -904,7 +928,7 @@ mod task_store_tests {
             500,
         );
         // Submit arrives later with the same single-node chain.
-        store.submit_task(42, 7, vec![7], 0, Some("Filter".to_string()), 0.5);
+        store.submit_task(submit(42, 7, vec![7], "Filter", 0.5));
 
         assert_eq!(store.groups.len(), 1);
         let g = &store.groups[0];
@@ -912,5 +936,33 @@ mod task_store_tests {
         // submit found existing task and didn't increment further.
         assert_eq!(g.task_count, 1);
         assert_eq!(g.finished_count, 1);
+    }
+
+    /// Sources passed to `submit_task` should be retained on the per-task
+    /// record so the dashboard UI can render them.
+    #[test]
+    fn submit_task_retains_sources() {
+        use crate::engine::{PhysicalScanSourceArgs, TaskSourceArgs};
+
+        let mut store = TaskStore::default();
+        let source = TaskSourceArgs::PhysicalScan(PhysicalScanSourceArgs {
+            source_id: 0,
+            scan_tasks: 1,
+            paths: vec!["s3://bucket/file.parquet".to_string()],
+            storage_bytes: Some(1024),
+            estimated_memory_bytes: Some(4096),
+        });
+        let mut args = submit(1, 7, vec![3, 5, 7], "ScanTaskSource->Project", 0.0);
+        args.sources = vec![source];
+        store.submit_task(args);
+
+        let task = store.tasks.get(&1).expect("task should be retained");
+        assert_eq!(task.sources.len(), 1);
+        match &task.sources[0] {
+            TaskSourceArgs::PhysicalScan(p) => {
+                assert_eq!(p.paths, vec!["s3://bucket/file.parquet".to_string()]);
+            }
+            _ => panic!("expected PhysicalScan source"),
+        }
     }
 }

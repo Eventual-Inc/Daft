@@ -176,7 +176,7 @@ impl From<BuiltinScalarFn> for ExprRef {
 ///   the ability for *type* resolution during planning via get_function. We can
 ///   build rule-based type resolution at a later time.
 ///
-pub trait ScalarFunctionFactory: Send + Sync {
+pub trait ScalarFunctionFactory: Send + Sync + 'static {
     /// The name of this function.
     fn name(&self) -> &'static str;
 
@@ -198,6 +198,12 @@ pub trait ScalarFunctionFactory: Send + Sync {
         args: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<BuiltinScalarFnVariant>;
+
+    /// Enables downcasting to concrete types for overload resolution.
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Mutable downcasting for overload accumulation.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// This is a concrete implementation of a ScalarFunction.
@@ -358,5 +364,13 @@ impl ScalarFunctionFactory for DynamicScalarFunction {
         _: &Schema,
     ) -> DaftResult<BuiltinScalarFnVariant> {
         Ok(self.0.clone())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

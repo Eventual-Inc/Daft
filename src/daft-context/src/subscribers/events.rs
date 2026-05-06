@@ -4,7 +4,6 @@ use common_metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use daft_micropartition::MicroPartitionRef;
 
 use super::{QueryMetadata, QueryResult};
 
@@ -18,13 +17,13 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
     TaskStatsUpdate(TaskStatsUpdateEvent),
     ProcessStats(ProcessStatsEvent),
-    ResultOut(ResultOutEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -168,14 +167,6 @@ pub struct ExecEndEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResultOutEvent {
-    pub header: EventHeader,
-    pub num_rows: u64,
-    // needed by the dashboard subscriber
-    pub data: Option<MicroPartitionRef>,
-}
-
-#[derive(Debug, Clone)]
 pub struct TaskInfo {
     pub id: u32,
     /// The last distributed plan node in the task's pipeline — the one that
@@ -196,6 +187,13 @@ pub struct TaskSubmitEvent {
     pub header: EventHeader,
     pub task: Arc<TaskInfo>,
     pub sources: Arc<Vec<TaskSource>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskStartEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]

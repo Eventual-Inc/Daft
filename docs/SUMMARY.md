@@ -58,7 +58,9 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
+        * [Overview](extensions/overview.md)
         * [Community Extensions](extensions/community.md)
+        * [Built on Daft](extensions/projects.md)
         * [Authoring Guide](extensions/authoring.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
@@ -71,6 +73,7 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Join Strategies](optimization/join-strategies.md)
     * Observability
+        * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
         * [Telemetry](observability/telemetry.md)

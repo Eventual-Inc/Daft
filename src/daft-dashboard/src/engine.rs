@@ -11,7 +11,6 @@ use axum::{
     routing::post,
 };
 use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
-use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
@@ -605,8 +604,6 @@ pub struct FinalizeArgs {
     pub end_sec: f64,
     pub end_state: QueryEndState,
     pub error_message: Option<String>,
-    // IPC-serialized RecordBatch
-    pub results: Option<Vec<u8>>,
 }
 
 async fn query_end(
@@ -661,22 +658,6 @@ pub(crate) fn apply_query_end(
         }
     }
 
-    let results = if let Some(results) = &args.results {
-        match RecordBatch::from_ipc_stream(results) {
-            Ok(results) => Some(results),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to deserialize results for query `{}`: {}",
-                    query_id,
-                    e
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        }
-    } else {
-        None
-    };
-
     query_info.state = match args.end_state {
         QueryEndState::Finished => match (plan_info, exec_info, exec_end_sec) {
             (Some(plan_info), Some(exec_info), Some(exec_end_sec)) => QueryState::Finished {
@@ -684,7 +665,6 @@ pub(crate) fn apply_query_end(
                 exec_info,
                 exec_end_sec,
                 end_sec: args.end_sec,
-                results,
             },
             (plan_info, exec_info, exec_end_sec) => {
                 // If we are missing info but the query is finished, we still transition to Finished
@@ -708,7 +688,6 @@ pub(crate) fn apply_query_end(
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
-                    results,
                 }
             }
         },
@@ -825,6 +804,36 @@ pub struct TaskSubmitArgs {
     pub node_ids: Vec<usize>,
     pub plan_fingerprint: u32,
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<TaskSourceArgs>,
+}
+
+/// Source data attached to a task on submit. Mirrors
+/// `daft_context::subscribers::events::TaskSource`. Externally tagged on the
+/// wire (`{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TaskSourceArgs {
+    PhysicalScan(PhysicalScanSourceArgs),
+    InMemoryScan(InMemoryScanSourceArgs),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PhysicalScanSourceArgs {
+    pub source_id: u32,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct InMemoryScanSourceArgs {
+    pub source_id: u32,
+    pub partitions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -863,14 +872,7 @@ pub(crate) fn apply_task_submit(
         return StatusCode::OK;
     };
 
-    exec_info.task_store.submit_task(
-        args.task_id,
-        args.last_node_id,
-        args.node_ids,
-        args.plan_fingerprint,
-        args.name,
-        args.submit_sec,
-    );
+    exec_info.task_store.submit_task(args);
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
