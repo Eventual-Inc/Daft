@@ -324,7 +324,7 @@ fn is_candidate_better(
     ))
 }
 
-fn backfill(global_best: &mut [Option<(u32, u32)>], group_buckets: &GroupIndices) {
+fn forward_fill(global_best: &mut [Option<(u32, u32)>], group_buckets: &GroupIndices) {
     for bucket in group_buckets {
         for i in 1..bucket.len() {
             let prev_left_idx = bucket[i - 1] as usize;
@@ -620,7 +620,7 @@ impl JoinOperator for AsofJoinOperator {
                         global_best[start..start + chunk.len()].copy_from_slice(&chunk);
                     }
 
-                    backfill(&mut global_best, &build_state.group_buckets);
+                    forward_fill(&mut global_best, &build_state.group_buckets);
                     let right_out =
                         build_right_output(&global_best, all_right_tables, pruned_right_schema)?;
                     Ok(Some(build_join_output(
