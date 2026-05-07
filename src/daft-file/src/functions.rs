@@ -10,7 +10,7 @@ use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
-use crate::file::DaftFile;
+use crate::file::{BUFFER_SIZE_SNIFF, DaftFile};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct File;
@@ -96,7 +96,8 @@ impl ScalarUDF for VideoFile {
 
         // TODO(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -189,7 +190,8 @@ impl ScalarUDF for AudioFile {
 
         // TODO(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -281,7 +283,8 @@ impl ScalarUDF for ImageFile {
         } = args.try_into()?;
 
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -406,7 +409,7 @@ impl ScalarUDF for Size {
                 let opt: Option<u64> = s
                     .get(i)
                     .map(|f| {
-                        let f = DaftFile::load_blocking(f, false)?;
+                        let f = DaftFile::load_blocking(f, false, Some(BUFFER_SIZE_SNIFF))?;
                         let size = f.size()?;
                         DaftResult::Ok(size as _)
                     })
