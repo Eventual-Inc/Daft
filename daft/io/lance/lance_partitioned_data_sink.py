@@ -143,16 +143,17 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
 
     def _check_no_existing_manifest(self, lance_module: ModuleType) -> None:
         manifest_uri = self._table_uri.rstrip("/") + "/__manifest"
+        manifest_exists = False
         try:
             lance_module.dataset(manifest_uri, storage_options=self._storage_options)
+            manifest_exists = True
+        except (ValueError, FileNotFoundError, OSError):
+            pass
+        if manifest_exists:
             raise ValueError(
                 f"Cannot create partitioned Lance dataset: manifest already exists at {manifest_uri}. "
                 "Use mode='append' or mode='overwrite' instead."
             )
-        except (ValueError, FileNotFoundError, OSError) as e:
-            if "already exists" in str(e):
-                raise
-            pass
 
     def _load_existing_manifest(self, lance_module: ModuleType) -> None:
         manifest_uri = self._table_uri.rstrip("/") + "/__manifest"
@@ -255,16 +256,30 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
 
         for dir_name, (partition_values, fragments) in partition_map.items():
             dataset_path = self._table_uri.rstrip("/") + f"/{self._spec_version}${dir_name}$dataset"
-            if self._mode in ("create", "overwrite"):
-                operation = lance.LanceOperation.Overwrite(self._data_schema, fragments)
-            else:
-                operation = lance.LanceOperation.Append(fragments)
 
-            lance.LanceDataset.commit(
-                dataset_path,
-                operation,
-                storage_options=self._storage_options,
-            )
+            existing_version: int | None = None
+            if self._mode == "append":
+                try:
+                    existing_ds = lance.dataset(dataset_path, storage_options=self._storage_options)
+                    existing_version = existing_ds.latest_version
+                except (ValueError, FileNotFoundError, OSError):
+                    pass
+
+            if existing_version is not None:
+                operation = lance.LanceOperation.Append(fragments)
+                lance.LanceDataset.commit(
+                    dataset_path,
+                    operation,
+                    read_version=existing_version,
+                    storage_options=self._storage_options,
+                )
+            else:
+                operation = lance.LanceOperation.Overwrite(self._data_schema, fragments)
+                lance.LanceDataset.commit(
+                    dataset_path,
+                    operation,
+                    storage_options=self._storage_options,
+                )
 
         self._write_manifest(lance, partition_map)
 
@@ -284,11 +299,34 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
     ) -> None:
         manifest_uri = self._table_uri.rstrip("/") + "/__manifest"
 
+        all_partitions: dict[str, dict[str, Any]] = {}
+
+        if self._mode == "append":
+            try:
+                existing_ds = lance_module.dataset(manifest_uri, storage_options=self._storage_options)
+                existing_table = existing_ds.to_table()
+                for i in range(existing_table.num_rows):
+                    path = existing_table.column("_dataset_path")[i].as_py()
+                    parts = path.split("$")
+                    if len(parts) >= 2:
+                        dir_name = parts[1]
+                        pv: dict[str, Any] = {}
+                        for spec in self._partition_field_specs:
+                            col = f"partition_field_{spec.field_id}"
+                            if col in existing_table.column_names:
+                                pv[spec.source_field] = existing_table.column(col)[i].as_py()
+                        all_partitions[dir_name] = pv
+            except (ValueError, FileNotFoundError, OSError):
+                pass
+
+        for dir_name, (partition_values, _) in partition_map.items():
+            all_partitions[dir_name] = partition_values
+
         columns: dict[str, list[Any]] = {"_dataset_path": []}
         for spec in self._partition_field_specs:
             columns[f"partition_field_{spec.field_id}"] = []
 
-        for dir_name, (partition_values, _) in partition_map.items():
+        for dir_name, partition_values in all_partitions.items():
             columns["_dataset_path"].append(f"{self._spec_version}${dir_name}$dataset")
             for spec in self._partition_field_specs:
                 columns[f"partition_field_{spec.field_id}"].append(partition_values.get(spec.source_field))
@@ -312,10 +350,9 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
             schema=manifest_schema,
         )
 
-        write_mode = "overwrite" if self._mode in ("create", "overwrite") else "append"
         lance_module.write_dataset(
             manifest_table,
             manifest_uri,
-            mode=write_mode,
+            mode="overwrite",
             storage_options=self._storage_options,
         )

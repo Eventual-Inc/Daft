@@ -19,6 +19,29 @@ from .utils import combine_filters_to_arrow
 
 logger = logging.getLogger(__name__)
 
+_ARROW_TYPE_MAP: dict[str, pa.DataType] = {
+    "int8": pa.int8(),
+    "int16": pa.int16(),
+    "int32": pa.int32(),
+    "int64": pa.int64(),
+    "uint8": pa.uint8(),
+    "uint16": pa.uint16(),
+    "uint32": pa.uint32(),
+    "uint64": pa.uint64(),
+    "float16": pa.float16(),
+    "float32": pa.float32(),
+    "float64": pa.float64(),
+    "double": pa.float64(),
+    "float": pa.float32(),
+    "string": pa.utf8(),
+    "utf8": pa.utf8(),
+    "large_string": pa.large_string(),
+    "large_utf8": pa.large_utf8(),
+    "bool": pa.bool_(),
+    "boolean": pa.bool_(),
+    "date32": pa.date32(),
+}
+
 
 def _convert_lance_transform(transform_name: str, source_type: DataType) -> tuple[Any, DataType]:
     from daft.io.partitioning import PartitionTransform
@@ -170,29 +193,6 @@ def _inject_partition_columns(
     if not partition_values:
         return rb
 
-    type_map: dict[str, pa.DataType] = {
-        "int8": pa.int8(),
-        "int16": pa.int16(),
-        "int32": pa.int32(),
-        "int64": pa.int64(),
-        "uint8": pa.uint8(),
-        "uint16": pa.uint16(),
-        "uint32": pa.uint32(),
-        "uint64": pa.uint64(),
-        "float16": pa.float16(),
-        "float32": pa.float32(),
-        "float64": pa.float64(),
-        "double": pa.float64(),
-        "float": pa.float32(),
-        "string": pa.utf8(),
-        "utf8": pa.utf8(),
-        "large_string": pa.large_string(),
-        "large_utf8": pa.large_utf8(),
-        "bool": pa.bool_(),
-        "boolean": pa.bool_(),
-        "date32": pa.date32(),
-    }
-
     columns = list(rb.columns)
     names = list(rb.schema.names)
     for col_name, value in partition_values.items():
@@ -202,7 +202,7 @@ def _inject_partition_columns(
             continue
         arrow_type: pa.DataType = pa.utf8()
         if partition_col_types and col_name in partition_col_types:
-            arrow_type = type_map.get(partition_col_types[col_name], pa.utf8())
+            arrow_type = _ARROW_TYPE_MAP.get(partition_col_types[col_name], pa.utf8())
         columns.append(pa.array([value] * len(rb), type=arrow_type))
         names.append(col_name)
 
@@ -267,31 +267,9 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         raise ValueError(f"Could not determine namespace schema from manifest at {self._namespace_uri}")
 
     def _schema_from_json(self, ns_schema_json: dict[str, Any]) -> pa.Schema:
-        type_map = {
-            "int8": pa.int8(),
-            "int16": pa.int16(),
-            "int32": pa.int32(),
-            "int64": pa.int64(),
-            "uint8": pa.uint8(),
-            "uint16": pa.uint16(),
-            "uint32": pa.uint32(),
-            "uint64": pa.uint64(),
-            "float16": pa.float16(),
-            "float32": pa.float32(),
-            "float64": pa.float64(),
-            "double": pa.float64(),
-            "float": pa.float32(),
-            "string": pa.utf8(),
-            "utf8": pa.utf8(),
-            "large_string": pa.large_string(),
-            "large_utf8": pa.large_utf8(),
-            "bool": pa.bool_(),
-            "boolean": pa.bool_(),
-            "date32": pa.date32(),
-        }
         fields: list[pa.Field] = []
         for f in ns_schema_json["fields"]:
-            arrow_type = type_map.get(f["type"], pa.utf8())
+            arrow_type = _ARROW_TYPE_MAP.get(f["type"], pa.utf8())
             fields.append(pa.field(f["name"], arrow_type))
         return pa.schema(fields)
 
@@ -421,24 +399,21 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
             return
 
         open_kwargs = getattr(ds, "_lance_open_kwargs", None)
-        fragments = ds.get_fragments()
+        fragments = list(ds.get_fragments())
 
-        for fragment in fragments:
-            num_rows = fragment.count_rows(pushed_arrow_filter)
-            if num_rows == 0:
-                continue
+        def _estimate_size(frag: Any) -> int:
+            if frag.metadata and frag.metadata.files:
+                return sum(f.file_size_bytes for f in frag.metadata.files if f.file_size_bytes is not None)
+            return 0
 
-            size_bytes = 0
-            if fragment.metadata and fragment.metadata.files:
-                size_bytes = sum(f.file_size_bytes for f in fragment.metadata.files if f.file_size_bytes is not None)
-
-            yield ScanTask.python_factory_func_scan_task(
+        def _make_scan_task(frag_ids: list[int], num_rows: int, size_bytes: int) -> ScanTask:
+            return ScanTask.python_factory_func_scan_task(
                 module=_lancedb_namespace_factory_function.__module__,
                 func_name=_lancedb_namespace_factory_function.__name__,
                 func_args=(
                     ds_uri,
                     open_kwargs,
-                    [fragment.fragment_id],
+                    frag_ids,
                     required_columns,
                     pushed_arrow_filter,
                     pushdowns.limit,
@@ -452,3 +427,29 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
                 stats=None,
                 source_name=self.display_name(),
             )
+
+        group_size = self._fragment_group_size
+        if group_size is not None and group_size > 1:
+            current_ids: list[int] = []
+            group_rows = 0
+            group_bytes = 0
+            for fragment in fragments:
+                rows = fragment.count_rows(pushed_arrow_filter)
+                if rows == 0:
+                    continue
+                current_ids.append(fragment.fragment_id)
+                group_rows += rows
+                group_bytes += _estimate_size(fragment)
+                if len(current_ids) >= group_size:
+                    yield _make_scan_task(current_ids, group_rows, group_bytes)
+                    current_ids = []
+                    group_rows = 0
+                    group_bytes = 0
+            if current_ids:
+                yield _make_scan_task(current_ids, group_rows, group_bytes)
+        else:
+            for fragment in fragments:
+                num_rows = fragment.count_rows(pushed_arrow_filter)
+                if num_rows == 0:
+                    continue
+                yield _make_scan_task([fragment.fragment_id], num_rows, _estimate_size(fragment))

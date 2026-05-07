@@ -103,6 +103,24 @@ class TestPartitionedWrite:
         read_back = daft.read_lance(namespace_dir, namespace_partitioning=True).collect()
         assert read_back.to_pydict()["year"] == [2026]
 
+    def test_append_to_existing_partition_no_duplicates(self, namespace_dir):
+        df1 = daft.from_pydict({"key": ["a", "b"], "val": [1, 2]})
+        df1.write_lance(namespace_dir, partition_cols=["key"], mode="create")
+
+        df2 = daft.from_pydict({"key": ["a", "c"], "val": [3, 4]})
+        df2.write_lance(namespace_dir, partition_cols=["key"], mode="append")
+
+        import lance
+
+        manifest = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        paths = manifest.column("_dataset_path").to_pylist()
+        assert len(paths) == len(set(paths)), f"Duplicate manifest rows: {paths}"
+        assert manifest.num_rows == 3
+
+        read_back = daft.read_lance(namespace_dir, namespace_partitioning=True).collect()
+        result = read_back.to_pydict()
+        assert sorted(result["val"]) == [1, 2, 3, 4]
+
     def test_partition_cols_with_merge_mode_raises(self, namespace_dir, sample_df):
         with pytest.raises(ValueError, match="partition_cols is not supported with merge mode"):
             sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="merge")
