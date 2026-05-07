@@ -295,7 +295,7 @@ function RunningTasksSection({
           {totalRunning} running · {totalPending} pending
         </span>
       </div>
-      <div className="min-w-[600px]">
+      <div className="min-w-[900px]">
         <div
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
