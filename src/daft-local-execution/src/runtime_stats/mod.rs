@@ -10,8 +10,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, DURATION_KEY, NodeID, QueryEndState, QueryID,
-    ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -608,58 +607,35 @@ fn emit_per_task_stats_updates(
     // `input_stats` and still holds the cumulative cpu_us it accumulated.
     // Skipping those would make a task's reported cpu_us non-monotonic
     // (going down as upstream operators finish).
-    let mut by_input: HashMap<InputId, TaskStatsSnapshot> = HashMap::new();
+    // Per-task running totals. `TaskExternalIo::accumulate` does the
+    // is_task_root / is_task_leaf filtering plus source-leaf fallback so the
+    // logic stays in lockstep with `on_task_end` in the dashboard subscriber.
+    let mut by_input: HashMap<InputId, common_metrics::task_io::TaskExternalIo> = HashMap::new();
+    let default_node_info = NodeInfo::default();
     for (&(node_id, input_id), stats) in input_stats {
         let snapshot = stats.snapshot();
-        let stats_vec = snapshot.to_stats();
-        let node_info = node_info_map.get(&node_id);
-        let is_task_root = node_info.is_some_and(|n| n.is_task_root);
-        let is_task_leaf = node_info.is_some_and(|n| n.is_task_leaf);
-        let acc = by_input
-            .entry(input_id)
-            .or_insert_with(|| TaskStatsSnapshot {
-                task_id: input_id,
-                ..TaskStatsSnapshot::default()
-            });
-        // See `on_task_end` in the dashboard subscriber for the rationale on
-        // is_task_root / is_task_leaf filtering and the source-leaf fallback.
-        let mut leaf_rows_in: Option<u64> = None;
-        let mut leaf_rows_out_for_fallback: Option<u64> = None;
-        let mut leaf_bytes_in: Option<u64> = None;
-        let mut leaf_bytes_read: Option<u64> = None;
-        for (key, stat) in &stats_vec.0 {
-            match (key.as_ref(), stat) {
-                (DURATION_KEY, Stat::Duration(d)) => {
-                    acc.cpu_us += d.as_micros() as u64;
-                }
-                (ROWS_IN_KEY, Stat::Count(c)) if is_task_leaf => {
-                    leaf_rows_in = Some(*c);
-                }
-                (BYTES_IN_KEY, Stat::Bytes(b)) if is_task_leaf => {
-                    leaf_bytes_in = Some(*b);
-                }
-                (BYTES_READ_KEY, Stat::Bytes(b)) if is_task_leaf => {
-                    leaf_bytes_read = Some(*b);
-                }
-                (ROWS_OUT_KEY, Stat::Count(c)) => {
-                    if is_task_leaf {
-                        leaf_rows_out_for_fallback = Some(*c);
-                    }
-                    if is_task_root {
-                        acc.rows_out += *c;
-                    }
-                }
-                (BYTES_OUT_KEY, Stat::Bytes(b)) if is_task_root => {
-                    acc.bytes_out += *b;
-                }
-                _ => {}
-            }
-        }
-        if is_task_leaf {
-            acc.rows_in += leaf_rows_in.or(leaf_rows_out_for_fallback).unwrap_or(0);
-            acc.bytes_in += leaf_bytes_in.or(leaf_bytes_read).unwrap_or(0);
-        }
+        let node_info = node_info_map
+            .get(&node_id)
+            .map(Arc::as_ref)
+            .unwrap_or(&default_node_info);
+        by_input.entry(input_id).or_default().accumulate(node_info, &snapshot);
     }
+    let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
+        .into_iter()
+        .map(|(input_id, io)| {
+            (
+                input_id,
+                TaskStatsSnapshot {
+                    task_id: input_id,
+                    cpu_us: io.cpu_us,
+                    rows_in: io.rows_in,
+                    rows_out: io.rows_out,
+                    bytes_in: io.bytes_in,
+                    bytes_out: io.bytes_out,
+                },
+            )
+        })
+        .collect();
 
     if by_input.is_empty() {
         return;

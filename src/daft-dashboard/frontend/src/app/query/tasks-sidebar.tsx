@@ -414,9 +414,11 @@ function RunningTaskRow({
 // single section header that carries the distributed-plan chips. The section
 // header is fixed, not collapsible — it's purely a visual hierarchy hint.
 // ---------------------------------------------------------------------------
-// Columns: chevron | Local Plan | Distributed Plan | Tasks | Status | Rows in | Rows out | Bytes in | Bytes out | CPU
+// Columns: chevron | Local Plan | Tasks | Status | Rows in | Rows out | Bytes in | Bytes out | CPU
+// (Distributed Plan lives in the section header above each row group, not in
+// this per-row grid.)
 const GRID_COLS =
-  "grid-cols-[32px_minmax(220px,2fr)_minmax(220px,2fr)_90px_130px_80px_80px_90px_90px_100px]";
+  "grid-cols-[32px_minmax(220px,2fr)_90px_130px_80px_80px_90px_90px_100px]";
 
 function TaskTypeTable({
   sections,

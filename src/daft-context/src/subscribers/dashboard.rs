@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
@@ -533,69 +533,21 @@ impl DashboardSubscriber {
         let task = &event.task;
 
         // Aggregate per-snapshot scalars across the task's local plan nodes.
-        //   * `cpu_us` sums across all nodes (each node's busy time
-        //     contributes to the task's total CPU).
-        //   * Inputs (`rows.in`/`bytes.in`) are only the task's external
-        //     input — sum those only from leaf snapshots. A leaf that's a
-        //     source (`SourceSnapshot`) reports `rows.out` and `bytes.read`
-        //     instead of `rows.in`/`bytes.in` because a source has no
-        //     upstream operator; both equal the task's external input, so we
-        //     fall back to them when the leaf doesn't expose an `*.in` key.
-        //   * Outputs (`rows.out`/`bytes.out`) are only the task's external
-        //     output — take those only from the root snapshot.
-        // This avoids double-counting internal rows in fused chains like
-        // `Source(rows_out=100) -> Filter(rows_in=100, rows_out=50)` where a
-        // naive sum reports rows_in=100 and rows_out=150.
-        let mut totals = daft_dashboard::engine::TaskTotals::default();
+        // `is_task_root` / `is_task_leaf` filtering (and the source-leaf
+        // `rows.out` / `bytes.read` fallback) lives in
+        // `common_metrics::task_io::TaskExternalIo` so this site and the
+        // mid-flight aggregator in `daft-local-execution` stay in lockstep.
+        let mut io = common_metrics::task_io::TaskExternalIo::default();
         for (node_info, snapshot) in &event.stats {
-            let stats = snapshot.to_stats();
-            // Per-snapshot leaf input candidates: prefer `*.in`, fall back to
-            // source-side keys when the snapshot is `SourceSnapshot`.
-            let mut leaf_rows_in: Option<u64> = None;
-            let mut leaf_rows_out_for_fallback: Option<u64> = None;
-            let mut leaf_bytes_in: Option<u64> = None;
-            let mut leaf_bytes_read: Option<u64> = None;
-            for (name, stat) in stats.iter() {
-                match (name, stat) {
-                    (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) => {
-                        totals.cpu_us += d.as_micros() as u64;
-                    }
-                    (common_metrics::ROWS_IN_KEY, common_metrics::Stat::Count(c))
-                        if node_info.is_task_leaf =>
-                    {
-                        leaf_rows_in = Some(*c);
-                    }
-                    (common_metrics::BYTES_IN_KEY, common_metrics::Stat::Bytes(b))
-                        if node_info.is_task_leaf =>
-                    {
-                        leaf_bytes_in = Some(*b);
-                    }
-                    (common_metrics::BYTES_READ_KEY, common_metrics::Stat::Bytes(b))
-                        if node_info.is_task_leaf =>
-                    {
-                        leaf_bytes_read = Some(*b);
-                    }
-                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(c)) => {
-                        if node_info.is_task_leaf {
-                            leaf_rows_out_for_fallback = Some(*c);
-                        }
-                        if node_info.is_task_root {
-                            totals.rows_out += *c;
-                        }
-                    }
-                    (common_metrics::BYTES_OUT_KEY, common_metrics::Stat::Bytes(b))
-                        if node_info.is_task_root =>
-                    {
-                        totals.bytes_out += *b;
-                    }
-                    _ => {}
-                }
-            }
-            if node_info.is_task_leaf {
-                totals.rows_in += leaf_rows_in.or(leaf_rows_out_for_fallback).unwrap_or(0);
-                totals.bytes_in += leaf_bytes_in.or(leaf_bytes_read).unwrap_or(0);
-            }
+            io.accumulate(node_info, snapshot);
         }
+        let totals = daft_dashboard::engine::TaskTotals {
+            cpu_us: io.cpu_us,
+            rows_in: io.rows_in,
+            rows_out: io.rows_out,
+            bytes_in: io.bytes_in,
+            bytes_out: io.bytes_out,
+        };
 
         let outcome = match &event.outcome {
             crate::subscribers::events::TaskOutcome::Success => {
