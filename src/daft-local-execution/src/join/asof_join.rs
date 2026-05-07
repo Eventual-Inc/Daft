@@ -206,7 +206,13 @@ impl AsofJoinProbeState {
         let group_sorted_key_cmps: Vec<DynPartialComparator> = build_state
             .group_bucket_sorted_keys
             .iter()
-            .map(|sk| build_partial_compare_with_nulls(sk.as_ref(), right_on_arr.as_ref(), false))
+            .map(|sorted_key_arr| {
+                build_partial_compare_with_nulls(
+                    sorted_key_arr.as_ref(),
+                    right_on_arr.as_ref(),
+                    false,
+                )
+            })
             .collect::<DaftResult<_>>()?;
 
         // this way update_best_match can compare same-rb candidates without rebuilding it.
@@ -455,8 +461,9 @@ impl JoinOperator for AsofJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        let join_table = state.finalize(self.left_schema.clone(), &self.left_by, &self.left_on)?;
-        Ok(Arc::new(join_table))
+        let finalized_build_state =
+            state.finalize(self.left_schema.clone(), &self.left_by, &self.left_on)?;
+        Ok(Arc::new(finalized_build_state))
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
