@@ -286,7 +286,7 @@ function RunningTasksSection({
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="border-b border-zinc-700">
+    <div className="border-b border-zinc-700 min-w-[900px] w-fit">
       <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800 flex items-center gap-2">
         <span className={`${main.className} text-xs font-bold text-emerald-300 uppercase tracking-wider`}>
           In-flight ({totalInflight})
@@ -295,7 +295,7 @@ function RunningTasksSection({
           {totalRunning} running · {totalPending} pending
         </span>
       </div>
-      <div className="min-w-[900px] w-fit">
+      <div>
         <div
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
