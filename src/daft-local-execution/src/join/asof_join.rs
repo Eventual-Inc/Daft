@@ -423,15 +423,15 @@ fn build_right_output(
     global_right_rbs: Vec<RecordBatch>,
     pruned_right_schema: SchemaRef,
 ) -> DaftResult<RecordBatch> {
-    let mut right_row_offsets = vec![0usize; global_right_rbs.len() + 1];
+    let mut rb_start_offsets = vec![0usize; global_right_rbs.len() + 1];
     for (i, rb) in global_right_rbs.iter().enumerate() {
-        right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
+        rb_start_offsets[i + 1] = rb_start_offsets[i] + rb.len();
     }
-    let right_idx_arr = UInt64Array::from_iter(
+    let matched_global_indices = UInt64Array::from_iter(
         Field::new("right_idx", DaftDataType::UInt64),
         global_best.iter().map(|best| {
             best.map(|(global_rb_idx, local_right_idx)| {
-                (right_row_offsets[global_rb_idx as usize] + local_right_idx as usize) as u64
+                (rb_start_offsets[global_rb_idx as usize] + local_right_idx as usize) as u64
             })
         }),
     );
@@ -440,7 +440,7 @@ fn build_right_output(
     } else {
         RecordBatch::concat(global_right_rbs.iter().collect::<Vec<_>>().as_slice())?
     };
-    global_right_rb_concat.take(&right_idx_arr)
+    global_right_rb_concat.take(&matched_global_indices)
 }
 
 fn build_join_output(
