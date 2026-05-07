@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { main, toHumanReadableDuration, toHumanReadableDate } from "@/lib/utils";
 import { AlertTriangle, Ban, CircleX, LoaderCircle, Skull, X } from "lucide-react";
 import { QueryStatusName } from "@/hooks/use-queries";
@@ -83,7 +83,7 @@ const ErrorModal = ({ message }: { message: string }) => (
   </Dialog.Root>
 );
 
-const STATUS_CONFIG: Record<QueryStatusName, { icon: React.ReactNode; label: string; textColor: string }> = {
+const STATUS_CONFIG: Record<QueryStatusName, { icon: ReactNode; label: string; textColor: string }> = {
   Pending:    { icon: <LoaderCircle size={15} strokeWidth={3} className="text-chart-1 animate-spin" />,   label: "Waiting to Start",   textColor: "text-chart-1" },
   Optimizing: { icon: <LoaderCircle size={15} strokeWidth={3} className="text-orange-500 animate-spin" />, label: "Optimizing",         textColor: "text-orange-500" },
   Setup:      { icon: <LoaderCircle size={15} strokeWidth={3} className="text-magenta-500 animate-spin" />,label: "Setting Up Runner",  textColor: "text-magenta-500" },

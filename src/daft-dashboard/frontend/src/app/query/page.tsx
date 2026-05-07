@@ -27,11 +27,13 @@ const MetaField = ({
   value,
   href,
   mono,
+  title,
 }: {
   label: string;
   value: string;
   href?: string;
   mono?: boolean;
+  title?: string;
 }) => (
   <div className="min-w-0">
     <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
@@ -47,7 +49,10 @@ const MetaField = ({
         {value}
       </a>
     ) : (
-      <p className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100`}>
+      <p
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100`}
+        title={title}
+      >
         {value}
       </p>
     )}
@@ -242,7 +247,7 @@ function QueryPageInner() {
             <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono />
 
             {/* Row 2 */}
-            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono />
+            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono title={query.entrypoint} />
             <MetaField label="Daft Version" value={query.daft_version || "—"} mono />
             {query.ray_dashboard_url ? (
               <MetaField
