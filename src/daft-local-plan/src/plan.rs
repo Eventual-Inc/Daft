@@ -404,15 +404,12 @@ impl LocalPhysicalPlan {
                 new_ctx.is_task_leaf = true;
                 plan.with_replaced_leaf_context(new_ctx)
             } else {
-                let new_children: Vec<LocalPhysicalPlanRef> = children
-                    .into_iter()
-                    .map(|c| rec(c, false))
-                    .collect();
+                let new_children: Vec<LocalPhysicalPlanRef> =
+                    children.into_iter().map(|c| rec(c, false)).collect();
                 let mut new_plan = plan.with_new_children(&new_children);
                 // `with_new_children` always returns a fresh Arc with refcount 1.
-                let inner = Arc::get_mut(&mut new_plan).expect(
-                    "with_new_children should return a uniquely-owned Arc",
-                );
+                let inner = Arc::get_mut(&mut new_plan)
+                    .expect("with_new_children should return a uniquely-owned Arc");
                 let ctx = inner.context_mut();
                 ctx.is_task_root = is_root;
                 ctx.is_task_leaf = false;
