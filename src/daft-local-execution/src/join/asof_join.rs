@@ -612,34 +612,22 @@ impl JoinOperator for AsofJoinOperator {
                     // Each state's best_match stores a local_rb_idx scoped to that state's
                     // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
                     // to a global_rb_idx into the flat global_right_on_key_arrs / global_right_rbs.
-                    let global_rb_offsets: Vec<usize> = states
-                        .iter()
-                        .scan(0usize, |acc, state| {
-                            let offset = *acc;
-                            *acc += state.right_rbs_and_on_keys.len();
-                            Some(offset)
-                        })
-                        .collect();
+                    let mut global_rb_offsets: Vec<usize> = Vec::with_capacity(states.len());
+                    let mut global_right_on_key_arrs: Vec<Arc<dyn Array>> = Vec::new();
+                    let mut state_best_matches: Vec<Vec<Option<(u32, u32)>>> =
+                        Vec::with_capacity(states.len());
+                    let mut global_right_rbs: Vec<RecordBatch> = Vec::new();
+                    let mut rb_count = 0;
 
-                    let global_right_on_key_arrs: Vec<Arc<dyn Array>> = states
-                        .iter()
-                        .flat_map(|s| {
-                            s.right_rbs_and_on_keys
-                                .iter()
-                                .map(|(_, on_key_arr)| on_key_arr.clone())
-                        })
-                        .collect();
-
-                    let (state_best_matches, right_rbs_per_state): (Vec<_>, Vec<_>) = states
-                        .into_iter()
-                        .map(|s| {
-                            let (rbs, _): (Vec<_>, Vec<_>) =
-                                s.right_rbs_and_on_keys.into_iter().unzip();
-                            (s.best_match, rbs)
-                        })
-                        .unzip();
-                    let global_right_rbs: Vec<RecordBatch> =
-                        right_rbs_per_state.into_iter().flatten().collect();
+                    for state in states {
+                        global_rb_offsets.push(rb_count);
+                        rb_count += state.right_rbs_and_on_keys.len();
+                        for (rb, on_key_arr) in state.right_rbs_and_on_keys {
+                            global_right_on_key_arrs.push(on_key_arr);
+                            global_right_rbs.push(rb);
+                        }
+                        state_best_matches.push(state.best_match);
+                    }
 
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
                     let global_rb_offsets = Arc::new(global_rb_offsets);
