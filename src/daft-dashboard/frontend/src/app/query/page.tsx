@@ -20,10 +20,40 @@ import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
 import TasksSidebar from "./tasks-sidebar";
 
-/**
- * Query detail page component
- * Displays details for a specific query by ID using query parameters
- */
+const TAB_TRIGGER_CLS = "rounded-none bg-transparent px-4 py-2.5 text-sm font-medium text-zinc-400 shadow-none transition-colors hover:text-zinc-100 data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-white data-[state=active]:-mb-px disabled:opacity-30";
+
+const MetaField = ({
+  label,
+  value,
+  href,
+  mono,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  mono?: boolean;
+}) => (
+  <div className="min-w-0">
+    <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
+      {label}
+    </p>
+    {href ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-blue-400 hover:underline`}
+      >
+        {value}
+      </a>
+    ) : (
+      <p className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100`}>
+        {value}
+      </p>
+    )}
+  </div>
+);
+
 function QueryPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -166,29 +196,32 @@ function QueryPageInner() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Fixed Header Section */}
-      <div className="flex-shrink-0 space-y-4">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                asChild
-                className="text-lg font-mono text-zinc-400 hover:text-white"
-              >
-                <Link href="/queries">All Queries</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild className="text-lg font-mono font-bold">
-                <p>Query {queryId}</p>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+      {/* Compact Header */}
+      <div className="flex-shrink-0">
+        <div className="px-6 pt-0 pb-1">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink
+                  asChild
+                  className="text-xs font-mono text-zinc-500 hover:text-white"
+                >
+                  <Link href="/queries">All Queries</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild className="text-xs font-mono text-zinc-300">
+                  <p>Query {queryId}</p>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
 
-        <div className="w-full flex border-b border-zinc-800">
-          <div className="w-1/4 border-r border-zinc-800 px-6 py-4">
+        <div className="w-full flex items-stretch">
+          {/* Status — fixed width so the divider never shifts during execution */}
+          <div className="w-52 flex-shrink-0 px-6 py-5 flex items-center justify-start">
             <Status
               status={query.state.status}
               start_sec={query.start_sec}
@@ -197,113 +230,40 @@ function QueryPageInner() {
               errorMessage={query.state.status === "Failed" ? query.state.message : undefined}
             />
           </div>
-          <div className="flex-1 px-6 py-4">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Query ID
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {query.id}
-                  </p>
-                </div>
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Start Time
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {toHumanReadableDate(query.start_sec)}
-                  </p>
-                </div>
-                <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                    Entrypoint
-                  </h3>
-                  <p className={`${main.className} text-sm font-mono break-all text-zinc-100`} title={query.entrypoint || ""}>
-                    {query.entrypoint || "-"}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Engine
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {getEngineName(query.runner)}
-                  </p>
-                </div>
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    End Time
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {end_sec ? toHumanReadableDate(end_sec) : "..."}
-                  </p>
-                </div>
-                {query.ray_dashboard_url && (
-                  <div>
-                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                      Ray Dashboard
-                    </h3>
-                    <a
-                      href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${main.className} text-sm font-mono text-blue-500 hover:underline`}
-                    >
-                      Open in Ray
-                    </a>
-                  </div>
-                )}
-              </div>
-              {(query.daft_version || query.python_version || query.ray_version) && (
-              <div className="space-y-3">
-                {query.daft_version && (
-                  <div>
-                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                      Daft Version
-                    </h3>
-                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                      {query.daft_version}
-                    </p>
-                  </div>
-                )}
-                {query.python_version && (
-                  <div>
-                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                      Python Version
-                    </h3>
-                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                      {query.python_version}
-                    </p>
-                  </div>
-                )}
-                {query.ray_version && (
-                  <div>
-                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                      Ray Version
-                    </h3>
-                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                      {query.ray_version}
-                    </p>
-                  </div>
-                )}
-              </div>
-              )}
-            </div>
+
+          <div className="w-px bg-zinc-800 my-4 flex-shrink-0" />
+
+          {/* Metadata — 4 columns, 2 rows */}
+          <div className="flex-1 px-6 py-5 grid grid-cols-4 gap-x-8 gap-y-3 content-center overflow-hidden">
+            {/* Row 1 */}
+            <MetaField label="Query ID" value={query.id} mono />
+            <MetaField label="Engine" value={getEngineName(query.runner)} mono />
+            <MetaField label="Start Time" value={toHumanReadableDate(query.start_sec)} mono />
+            <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono />
+
+            {/* Row 2 */}
+            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono />
+            <MetaField label="Daft Version" value={query.daft_version || "—"} mono />
+            {query.ray_dashboard_url ? (
+              <MetaField
+                label="Ray Dashboard"
+                href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
+                value="Open in Ray"
+              />
+            ) : (
+              <div />
+            )}
+            {(query.python_version || query.ray_version) ? (
+              <MetaField
+                label="Versions"
+                value={[query.python_version && `Python ${query.python_version}`, query.ray_version && `Ray ${query.ray_version}`].filter(Boolean).join(" | ")}
+                mono
+              />
+            ) : (
+              <div />
+            )}
           </div>
         </div>
-        <div className="w-full h-[20px] flex"></div>
       </div>
 
       {/* Scrollable Content Section */}
@@ -313,7 +273,7 @@ function QueryPageInner() {
           onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="grid w-full flex-shrink-0 grid-cols-3">
+          <TabsList className="flex w-full flex-shrink-0 justify-start gap-x-0 rounded-none bg-transparent p-0 border-b border-zinc-800">
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -321,16 +281,23 @@ function QueryPageInner() {
                 query.state.status === "Optimizing" ||
                 query.state.status === "Setup"
               }
+              className={TAB_TRIGGER_CLS}
             >
               Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
               disabled={!("plan_info" in query.state && query.state.plan_info)}
+              className={TAB_TRIGGER_CLS}
             >
               Optimized Plan
             </TabsTrigger>
-            <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="unoptimized-plan"
+              className={TAB_TRIGGER_CLS}
+            >
+              Unoptimized Plan
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
