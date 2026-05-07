@@ -691,9 +691,16 @@ pub(crate) enum QueryState {
 
 impl QueryState {
     pub(crate) fn is_active(&self) -> bool {
+        // `Finalizing` is included so a query awaiting `query_end` is not
+        // mistaken for terminal: eviction would otherwise drop it before its
+        // final outcome is recorded, and the dead-query reaper would skip it.
         matches!(
             self,
-            Self::Pending | Self::Optimizing { .. } | Self::Setup { .. } | Self::Executing { .. }
+            Self::Pending
+                | Self::Optimizing { .. }
+                | Self::Setup { .. }
+                | Self::Executing { .. }
+                | Self::Finalizing { .. }
         )
     }
 }

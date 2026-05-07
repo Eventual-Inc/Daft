@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_daft_config::{PyDaftEventLogConfig, PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_metrics::QueryEndState;
 use daft_core::python::PySchema;
 use pyo3::prelude::*;
@@ -205,6 +205,22 @@ impl PyDaftContext {
     #[setter(_daft_planning_config)]
     pub fn set_daft_planning_config(&self, py: Python, config: PyDaftPlanningConfig) {
         py.detach(|| self.inner.set_planning_config(config.config));
+    }
+
+    #[getter(_daft_event_log_config)]
+    pub fn get_daft_event_log_config(&self, py: Python) -> PyResult<PyDaftEventLogConfig> {
+        let config = py.detach(|| self.inner.event_log_config());
+        Ok(PyDaftEventLogConfig { config })
+    }
+
+    #[setter(_daft_event_log_config)]
+    pub fn set_daft_event_log_config(
+        &self,
+        py: Python,
+        config: PyDaftEventLogConfig,
+    ) -> PyResult<()> {
+        py.detach(|| self.inner.set_event_log_config(config.config));
+        Ok(())
     }
 
     pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: Py<PyAny>) {
