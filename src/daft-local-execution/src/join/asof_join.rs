@@ -181,7 +181,7 @@ pub(crate) struct AsofJoinProbeState {
     // Per left row: (rb_idx, row_idx) of the current best right match.
     best_match: Vec<Option<(u32, u32)>>,
     // Each entry pairs the pruned RecordBatch with its on_key Arrow array for cross-batch comparisons.
-    right_tables: Vec<(RecordBatch, Arc<dyn Array>)>,
+    right_rbs_and_on_keys: Vec<(RecordBatch, Arc<dyn Array>)>,
 }
 
 impl AsofJoinProbeState {
@@ -192,12 +192,12 @@ impl AsofJoinProbeState {
         right_by: &[BoundExpr],
         right_cols_to_drop: &HashSet<String>,
     ) -> DaftResult<()> {
-        let rb_idx = self.right_tables.len();
+        let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
 
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
-        self.right_tables.push((
+        self.right_rbs_and_on_keys.push((
             prune_right_batch(right_rb, right_cols_to_drop),
             right_on_arr.clone(),
         ));
@@ -241,9 +241,9 @@ impl AsofJoinProbeState {
             .map(|(h, eq)| (h, eq.as_ref()));
 
         let right_on_key_arrs: Vec<Arc<dyn Array>> = self
-            .right_tables
+            .right_rbs_and_on_keys
             .iter()
-            .map(|(_, arr)| arr.clone())
+            .map(|(_, on_key_arr)| on_key_arr.clone())
             .collect();
 
         for right_idx in 0..right_rb.len() {
@@ -350,11 +350,11 @@ fn prune_right_batch(rb: &RecordBatch, right_cols_to_drop: &HashSet<String>) -> 
 
 fn build_right_output(
     global_best: &[Option<(u32, u32)>],
-    all_right_tables: Vec<RecordBatch>,
+    global_right_rbs: Vec<RecordBatch>,
     pruned_right_schema: SchemaRef,
 ) -> DaftResult<RecordBatch> {
-    let mut right_row_offsets = vec![0usize; all_right_tables.len() + 1];
-    for (i, rb) in all_right_tables.iter().enumerate() {
+    let mut right_row_offsets = vec![0usize; global_right_rbs.len() + 1];
+    for (i, rb) in global_right_rbs.iter().enumerate() {
         right_row_offsets[i + 1] = right_row_offsets[i] + rb.len();
     }
     let right_idx_arr = UInt64Array::from_iter(
@@ -365,24 +365,24 @@ fn build_right_output(
             })
         }),
     );
-    let right_rb_concat = if all_right_tables.is_empty() {
+    let global_right_rb_concat = if global_right_rbs.is_empty() {
         RecordBatch::empty(Some(pruned_right_schema))
     } else {
-        RecordBatch::concat(all_right_tables.iter().collect::<Vec<_>>().as_slice())?
+        RecordBatch::concat(global_right_rbs.iter().collect::<Vec<_>>().as_slice())?
     };
-    right_rb_concat.take(&right_idx_arr)
+    global_right_rb_concat.take(&right_idx_arr)
 }
 
 fn build_join_output(
     left_rb: &RecordBatch,
-    right_out: RecordBatch,
+    right_rb: RecordBatch,
     join_schema: SchemaRef,
 ) -> DaftResult<MicroPartition> {
     let mut join_series: Vec<Series> = Vec::with_capacity(join_schema.len());
     for s in left_rb.as_materialized_series() {
         join_series.push(s.clone());
     }
-    for s in right_out.as_materialized_series() {
+    for s in right_rb.as_materialized_series() {
         join_series.push(s.clone());
     }
     let output_rb = RecordBatch::new_with_size(join_schema.clone(), join_series, left_rb.len())?;
@@ -473,7 +473,7 @@ impl JoinOperator for AsofJoinOperator {
         AsofJoinProbeState {
             build_contents: finalized_build_state,
             best_match: vec![None::<(u32, u32)>; n],
-            right_tables: Vec::new(),
+            right_rbs_and_on_keys: Vec::new(),
         }
     }
 
@@ -539,31 +539,36 @@ impl JoinOperator for AsofJoinOperator {
                     }
 
                     // Each state's best_match stores a local_rb_idx scoped to that state's
-                    // right_tables list. global_rb_offsets[k] converts state k's local_rb_idx
-                    // to a global_rb_idx into the flat global_right_on_key_arrs / all_right_tables.
+                    // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
+                    // to a global_rb_idx into the flat global_right_on_key_arrs / global_right_rbs.
                     let global_rb_offsets: Vec<usize> = states
                         .iter()
                         .scan(0usize, |acc, state| {
                             let offset = *acc;
-                            *acc += state.right_tables.len();
+                            *acc += state.right_rbs_and_on_keys.len();
                             Some(offset)
                         })
                         .collect();
 
                     let global_right_on_key_arrs: Vec<Arc<dyn Array>> = states
                         .iter()
-                        .flat_map(|s| s.right_tables.iter().map(|(_, arr)| arr.clone()))
+                        .flat_map(|s| {
+                            s.right_rbs_and_on_keys
+                                .iter()
+                                .map(|(_, on_key_arr)| on_key_arr.clone())
+                        })
                         .collect();
 
-                    let (state_best_matches, right_tables_per_state): (Vec<_>, Vec<_>) = states
+                    let (state_best_matches, right_rbs_per_state): (Vec<_>, Vec<_>) = states
                         .into_iter()
                         .map(|s| {
-                            let (tables, _): (Vec<_>, Vec<_>) = s.right_tables.into_iter().unzip();
-                            (s.best_match, tables)
+                            let (rbs, _): (Vec<_>, Vec<_>) =
+                                s.right_rbs_and_on_keys.into_iter().unzip();
+                            (s.best_match, rbs)
                         })
                         .unzip();
-                    let all_right_tables: Vec<RecordBatch> =
-                        right_tables_per_state.into_iter().flatten().collect();
+                    let global_right_rbs: Vec<RecordBatch> =
+                        right_rbs_per_state.into_iter().flatten().collect();
 
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
                     let global_rb_offsets = Arc::new(global_rb_offsets);
@@ -624,11 +629,11 @@ impl JoinOperator for AsofJoinOperator {
                     }
 
                     forward_fill(&mut global_best, &build_state.group_buckets);
-                    let right_out =
-                        build_right_output(&global_best, all_right_tables, pruned_right_schema)?;
+                    let right_rb =
+                        build_right_output(&global_best, global_right_rbs, pruned_right_schema)?;
                     Ok(Some(build_join_output(
                         &build_state.left_rb,
-                        right_out,
+                        right_rb,
                         join_schema,
                     )?))
                 },
