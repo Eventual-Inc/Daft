@@ -194,6 +194,7 @@ function QueryPageInner() {
               start_sec={query.start_sec}
               end_sec={end_sec}
               last_heartbeat_sec={last_heartbeat_sec}
+              errorMessage={query.state.status === "Failed" ? query.state.message : undefined}
             />
           </div>
           <div className="flex-1 px-6 py-4">

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from daft.datatype import MediaType
 from daft.dependencies import pil_image
 from daft.file import File
+from daft.file.file import BUFFER_METADATA
 from daft.file.typing import ImageMetadata
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ class ImageFile(File):
         Returns:
             ImageMetadata: Image metadata containing width, height, format, mode.
         """
-        with self.open() as f:
+        with self.open(buffer_size=BUFFER_METADATA) as f:
             img = pil_image.open(f)
             return ImageMetadata(
                 width=img.width,
