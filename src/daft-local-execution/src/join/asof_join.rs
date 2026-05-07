@@ -9,7 +9,9 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::{
-    array::ops::{GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal},
+    array::ops::{
+        GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
+    },
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
@@ -32,10 +34,53 @@ use crate::{
     pipeline::NodeName,
 };
 
-type ByKeyHashesAndComparator<'a> = (
-    &'a UInt64Array,
-    &'a (dyn Fn(usize, usize) -> bool + Send + Sync),
-);
+// ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
+// (the most-recent right event at or before the left event).
+//
+// BUILD: all left RecordBatches are accumulated before any processing begins (the sort and
+//        group structure require the full left table). Once all left input has arrived,
+//        finalize_build groups rows by by_key, sorts each group by on_key ascending,
+//        materialises per-group on_key arrays for cache-friendly binary search, and builds
+//        a hash map (by_key hash -> group index) for O(1) group lookup during probe.
+//
+// PROBE: right batches are processed concurrently — each worker holds its own ProbeState
+//        (best_match array + the right RBs it has seen). For each right row r, hash
+//        r.by_key to find its group, binary-search that group's sorted on_key array for
+//        the first left row with on_key >= r.on_key, then record r as that left row's best
+//        match if r.on_key > the current best (i.e. r is a closer, more-recent event).
+//
+//   Left table:                        Right table (2 RBs, one per worker):
+//     idx | by_key | on_key              RB0: idx | by_key | on_key
+//     ----+--------+-------                  -----+--------+-------
+//      0  |   A    |   1                       0  |   A    |   2
+//      1  |   A    |   3              RB1: idx | by_key | on_key
+//      2  |   A    |   5                  -----+--------+-------
+//      3  |   B    |   2                   0  |   B    |   4
+//      4  |   B    |   7
+//
+//   After build: group A sorted indices=[0,1,2] (on_keys=[1,3,5]),
+//                group B sorted indices=[3,4]   (on_keys=[2,7])
+//
+//   Probe (each worker processes its RB independently, binary-searching within each group):
+//     RB0 r0(by=A, on=2) -> group A, first left >= 2 is idx=1 (on=3) -> worker0.best_match[1] = (RB0, r0)
+//     RB1 r0(by=B, on=4) -> group B, first left >= 4 is idx=4 (on=7) -> worker1.best_match[4] = (RB1, r0)
+//
+//   Per-worker best_match after probe (each keyed by left idx):
+//     worker0:  idx 1 -> (RB0, r0, on=2)        worker1:  idx 4 -> (RB1, r0, on=4)
+//
+// FINALIZE: merge the per-worker best_match arrays (each worker may have seen different
+//           right batches, so their candidates are compared and the overall best kept),
+//           then forward_fill so left rows with no direct match inherit the match of their
+//           preceding row in the same group.
+//
+//   After forward_fill (walking each group's sorted indices in order):
+//     idx | by_key | on_key | matched right on_key
+//     ----+--------+--------+---------------------
+//      0  |   A    |   1    | null  <- no right event at or before on_key=1 in group A
+//      1  |   A    |   3    | 2
+//      2  |   A    |   5    | 2     <- forward-filled from idx=1
+//      3  |   B    |   2    | null  <- no right event at or before on_key=2 in group B
+//      4  |   B    |   7    | 4
 
 pub(crate) struct AsofJoinBuildState {
     record_batches: Vec<RecordBatch>,
@@ -54,7 +99,7 @@ impl AsofJoinBuildState {
                 left_rb,
                 grouped_sorted_indices: vec![],
                 grouped_sorted_materialized_on_keys: vec![],
-                grouped_by_key_reps: vec![],
+                grouped_materialized_by_keys: vec![],
                 grouped_by_key_hash_map: HashMap::new(),
             });
         }
@@ -73,26 +118,29 @@ impl AsofJoinBuildState {
             (vec![bucket], RecordBatch::empty(None), HashMap::new())
         } else {
             let left_by_rb = left_rb.eval_expression_list(left_by)?;
-            let (key_idxs, raw_groups) = left_by_rb.make_groups()?;
+            let (grouped_reps_indices, grouped_indices) = left_by_rb.make_groups()?;
 
-            let grouped_sorted_indices: GroupIndices = raw_groups
+            let grouped_sorted_indices: GroupIndices = grouped_indices
                 .into_iter()
                 .map(|mut bucket| {
                     bucket.retain(|idx| left_on_arr.is_valid(*idx as usize));
                     bucket.sort_unstable_by(|&a, &b| {
-                        on_key_sort_cmp(a as usize, b as usize).unwrap_or(Ordering::Equal)
+                        on_key_sort_cmp(a as usize, b as usize).unwrap()
                     });
                     bucket
                 })
                 .collect();
 
-            let key_idx_arr = UInt64Array::from_vec("key_idx", key_idxs);
-            let grouped_reps = left_by_rb.take(&key_idx_arr)?;
+            let grouped_reps_indices_arr = UInt64Array::from_vec("key_idx", grouped_reps_indices);
+            let grouped_reps = left_by_rb.take(&grouped_reps_indices_arr)?;
             let grouped_hashes = grouped_reps.hash_rows()?;
             let mut grouped_by_key_hash_map: HashMap<u64, Vec<usize>> =
                 HashMap::with_capacity(grouped_hashes.len());
-            for (g, &h) in grouped_hashes.values().iter().enumerate() {
-                grouped_by_key_hash_map.entry(h).or_default().push(g);
+            for (group_idx, &hash) in grouped_hashes.values().iter().enumerate() {
+                grouped_by_key_hash_map
+                    .entry(hash)
+                    .or_default()
+                    .push(group_idx);
             }
 
             (
@@ -105,24 +153,24 @@ impl AsofJoinBuildState {
         let grouped_sorted_materialized_on_keys: Vec<Arc<dyn Array>> = grouped_sorted_indices
             .iter()
             .map(|bucket| {
-                let indexes = UInt64Array::from_iter(
+                let per_group_indices = UInt64Array::from_iter(
                     Field::new("k", DaftDataType::UInt64),
                     bucket.iter().copied().map(Some),
                 );
-                left_on_series.take(&indexes)?.to_arrow()
+                left_on_series.take(&per_group_indices)?.to_arrow()
             })
             .collect::<DaftResult<_>>()?;
 
-        let grouped_by_key_reps = grouped_reps
+        let grouped_materialized_by_keys = grouped_reps
             .as_materialized_series()
-            .into_iter()
-            .cloned()
-            .collect();
+            .iter()
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<_>>()?;
         Ok(AsofJoinFinalizedBuildState {
             left_rb,
             grouped_sorted_indices,
             grouped_sorted_materialized_on_keys,
-            grouped_by_key_reps,
+            grouped_materialized_by_keys,
             grouped_by_key_hash_map,
         })
     }
@@ -137,14 +185,36 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     // binary search walks a compact sequential array rather than chasing scattered indices into left_rb,
     // keeping the CPU cache hot.
     grouped_sorted_materialized_on_keys: Vec<Arc<dyn Array>>,
-    // Materialized by_key series for each group, parallel to grouped_sorted_indices. Used to build the
-    // equality comparator that confirms a hash match is a true match (not a collision).
-    grouped_by_key_reps: Vec<Series>,
+    // Vec indexed by by_key column; each Arrow array holds one representative by_key value per group.
+    // Used to build the equality comparator that confirms a hash match is a true match (not a collision).
+    grouped_materialized_by_keys: Vec<Arc<dyn Array>>,
     // Maps a by_key hash to a list of candidate group indices; multiple candidates exist only on hash collision.
     grouped_by_key_hash_map: HashMap<u64, Vec<usize>>,
 }
 
+type ByKeyHashesAndComparator<'a> = (
+    &'a UInt64Array,
+    &'a (dyn Fn(usize, usize) -> bool + Send + Sync),
+);
+
 impl AsofJoinFinalizedBuildState {
+    /// Find the group index for right row `right_idx`.
+    /// Returns `None` if the row belongs to no group (hash miss or equality miss).
+    fn find_left_group(
+        &self,
+        right_idx: usize,
+        by_key_hashes_and_comparator: Option<ByKeyHashesAndComparator<'_>>,
+    ) -> Option<usize> {
+        match by_key_hashes_and_comparator {
+            None => Some(0),
+            Some((hashes, eq_cmp)) => {
+                let h = hashes.values()[right_idx];
+                let candidates = self.grouped_by_key_hash_map.get(&h)?;
+                candidates.iter().copied().find(|&g| eq_cmp(g, right_idx))
+            }
+        }
+    }
+
     /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[right_idx].
     /// Returns the best potential left row index, or `None` if no valid match exists.
     fn search_bucket(
@@ -164,30 +234,13 @@ impl AsofJoinFinalizedBuildState {
         }
         bucket.get(lo).map(|&idx| idx as usize)
     }
-
-    /// Find the group index for right row `right_idx`.
-    /// Returns `None` if the row belongs to no group (hash miss or equality miss).
-    fn find_left_group(
-        &self,
-        right_idx: usize,
-        by_key_hashes_and_comparator: Option<ByKeyHashesAndComparator<'_>>,
-    ) -> Option<usize> {
-        match by_key_hashes_and_comparator {
-            None => Some(0),
-            Some((hashes, eq_cmp)) => {
-                let h = hashes.values()[right_idx];
-                let candidates = self.grouped_by_key_hash_map.get(&h)?;
-                candidates.iter().copied().find(|&g| eq_cmp(g, right_idx))
-            }
-        }
-    }
 }
 
 pub(crate) struct AsofJoinProbeState {
     build_contents: Arc<AsofJoinFinalizedBuildState>,
     // Per left row: (rb_idx, row_idx) of the current best right match.
     best_match: Vec<Option<(u32, u32)>>,
-    // Each entry pairs the pruned RecordBatch with its on_key Arrow array for cross-batch comparisons.
+    // Each entry pairs a pruned RecordBatch with its on_key Arrow array for cross-batch comparisons.
     right_rbs_and_on_keys: Vec<(RecordBatch, Arc<dyn Array>)>,
 }
 
@@ -202,14 +255,14 @@ impl AsofJoinProbeState {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
 
-        let right_on_series = right_rb.eval_expression(right_on)?;
-        let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
+        let right_on_arr: Arc<dyn Array> = right_rb.eval_expression(right_on)?.to_arrow()?;
         self.right_rbs_and_on_keys.push((
             prune_right_batch(right_rb, right_cols_to_drop),
             right_on_arr.clone(),
         ));
 
-        // One comparator per group
+        // Build one comparator per by_key group: compares that group's sorted left on_key array
+        // against the current right batch's on_key array, used for binary search in search_bucket.
         let grouped_on_key_cmps: Vec<DynPartialComparator> = build_state
             .grouped_sorted_materialized_on_keys
             .iter()
@@ -234,14 +287,15 @@ impl AsofJoinProbeState {
             if !build_state.grouped_by_key_hash_map.is_empty() {
                 let right_by_rb = right_rb.eval_expression_list(right_by)?;
                 let hashes = right_by_rb.hash_rows()?;
-                let num_by_cols = build_state.grouped_by_key_reps.len();
-                let eq_cmp = build_multi_array_is_equal(
-                    &build_state.grouped_by_key_reps,
-                    &right_by_rb
-                        .as_materialized_series()
-                        .into_iter()
-                        .cloned()
-                        .collect::<Vec<_>>(),
+                let num_by_cols = build_state.grouped_materialized_by_keys.len();
+                let right_by_arrs = right_by_rb
+                    .as_materialized_series()
+                    .iter()
+                    .map(|s| s.to_arrow())
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let eq_cmp = build_multi_array_is_equal_from_arrays(
+                    &build_state.grouped_materialized_by_keys,
+                    &right_by_arrs,
                     &vec![false; num_by_cols],
                     &vec![false; num_by_cols],
                 )?;
@@ -260,7 +314,7 @@ impl AsofJoinProbeState {
             .collect();
 
         for right_idx in 0..right_rb.len() {
-            if !right_on_series.is_valid(right_idx) {
+            if !right_on_arr.is_valid(right_idx) {
                 continue;
             }
 
