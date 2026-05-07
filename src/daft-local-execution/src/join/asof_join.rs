@@ -54,7 +54,6 @@ impl AsofJoinBuildState {
                 left_rb,
                 group_buckets: vec![],
                 group_bucket_sorted_keys: vec![],
-                group_reps: RecordBatch::empty(None),
                 group_reps_series: vec![],
                 group_hash_map: HashMap::new(),
             });
@@ -118,7 +117,6 @@ impl AsofJoinBuildState {
             left_rb,
             group_buckets,
             group_bucket_sorted_keys,
-            group_reps,
             group_reps_series,
             group_hash_map,
         })
@@ -132,9 +130,8 @@ pub(crate) struct AsofJoinFinalizedBuildState {
     group_buckets: GroupIndices,
     // Compact sorted-key arrays parallel to group_buckets. Used for binary search to avoid cache misses.
     group_bucket_sorted_keys: Vec<Arc<dyn Array>>,
-    // group_reps[g] holds the by_key values to confirm an actual match (not just a hash match).
-    group_reps: RecordBatch,
-    // Materialized series view of group_reps, parallel to group_buckets.
+    // Materialized by_key series for each group, parallel to group_buckets. Used to build the
+    // equality comparator that confirms a hash match is a true match (not a collision).
     group_reps_series: Vec<Series>,
     // Maps a by_key hash to a list of candidate group indices; multiple candidates exist only on hash collision.
     group_hash_map: HashMap<u64, Vec<usize>>,
@@ -183,11 +180,8 @@ pub(crate) struct AsofJoinProbeState {
     build_contents: Arc<AsofJoinFinalizedBuildState>,
     // Per left row: (rb_idx, row_idx) of the current best right match.
     best_match: Vec<Option<(u32, u32)>>,
-    // All right RecordBatches seen so far, stored for final output construction.
-    right_tables: Vec<RecordBatch>,
-    // Per right RecordBatch: its on_key as an Arrow array, used to build cross-batch comparators
-    // for the "is this a better match?" check during probe.
-    right_on_key_arrs: Vec<Arc<dyn Array>>,
+    // Each entry pairs the pruned RecordBatch with its on_key Arrow array for cross-batch comparisons.
+    right_tables: Vec<(RecordBatch, Arc<dyn Array>)>,
 }
 
 impl AsofJoinProbeState {
@@ -203,9 +197,10 @@ impl AsofJoinProbeState {
 
         let right_on_series = right_rb.eval_expression(right_on)?;
         let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
-        self.right_on_key_arrs.push(right_on_arr.clone());
-        self.right_tables
-            .push(prune_right_batch(right_rb, right_cols_to_drop));
+        self.right_tables.push((
+            prune_right_batch(right_rb, right_cols_to_drop),
+            right_on_arr.clone(),
+        ));
 
         // One comparator per group
         let group_sorted_key_cmps: Vec<DynPartialComparator> = build_state
@@ -226,7 +221,7 @@ impl AsofJoinProbeState {
         {
             let right_by_rb = right_rb.eval_expression_list(right_by)?;
             let hashes = right_by_rb.hash_rows()?;
-            let num_by_cols = build_state.group_reps.num_columns();
+            let num_by_cols = build_state.group_reps_series.len();
             let eq_cmp = build_multi_array_is_equal(
                 &build_state.group_reps_series,
                 &right_by_rb
@@ -244,6 +239,12 @@ impl AsofJoinProbeState {
         let by_key_hashes_and_comparator_ref = by_key_hashes_and_comparator
             .as_ref()
             .map(|(h, eq)| (h, eq.as_ref()));
+
+        let right_on_key_arrs: Vec<Arc<dyn Array>> = self
+            .right_tables
+            .iter()
+            .map(|(_, arr)| arr.clone())
+            .collect();
 
         for right_idx in 0..right_rb.len() {
             if !right_on_series.is_valid(right_idx) {
@@ -265,7 +266,7 @@ impl AsofJoinProbeState {
 
             update_best_match(
                 &mut self.best_match[matched_left_idx],
-                &self.right_on_key_arrs,
+                &right_on_key_arrs,
                 rb_idx,
                 right_idx,
                 &mut cmp_cache,
@@ -473,7 +474,6 @@ impl JoinOperator for AsofJoinOperator {
             build_contents: finalized_build_state,
             best_match: vec![None::<(u32, u32)>; n],
             right_tables: Vec::new(),
-            right_on_key_arrs: Vec::new(),
         }
     }
 
@@ -552,12 +552,15 @@ impl JoinOperator for AsofJoinOperator {
 
                     let global_right_on_key_arrs: Vec<Arc<dyn Array>> = states
                         .iter()
-                        .flat_map(|s| s.right_on_key_arrs.iter().cloned())
+                        .flat_map(|s| s.right_tables.iter().map(|(_, arr)| arr.clone()))
                         .collect();
 
                     let (state_best_matches, right_tables_per_state): (Vec<_>, Vec<_>) = states
                         .into_iter()
-                        .map(|s| (s.best_match, s.right_tables))
+                        .map(|s| {
+                            let (tables, _): (Vec<_>, Vec<_>) = s.right_tables.into_iter().unzip();
+                            (s.best_match, tables)
+                        })
                         .unzip();
                     let all_right_tables: Vec<RecordBatch> =
                         right_tables_per_state.into_iter().flatten().collect();
