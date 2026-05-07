@@ -430,7 +430,7 @@ function TaskTypeTable({
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="min-w-[1200px]">
+    <div className="min-w-[920px]">
       {/* Header */}
       <div
         className={`bg-zinc-800 grid ${GRID_COLS} gap-0 items-center min-h-[48px] border-b border-zinc-700 sticky top-0 z-10`}
