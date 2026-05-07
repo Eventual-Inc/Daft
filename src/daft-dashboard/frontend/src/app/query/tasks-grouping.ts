@@ -71,7 +71,7 @@ export type PlanChainNode = { id: number; name: string };
  * `TaskTypeSection`.
  */
 export type TaskTypeRow = {
-  /** Stable React key: `nodeIdsKey + "|" + name`. */
+  /** Stable React key: `nodeIdsKey + " " + name` (space-separated). */
   key: string;
   /** The dispatching distributed plan node (= node_ids.last()). */
   last_node_id: number;
