@@ -81,6 +81,16 @@ The following is an example of appending data to an Iceberg table:
     written_df.show()
     ```
 
+To upsert — updating existing rows and inserting new ones — use `mode="upsert"` with `join_cols` specifying the match key(s). Requires pyiceberg>=0.9.0.
+
+=== "Python"
+
+    ```python
+    result = df.write_iceberg(table, mode="upsert", join_cols=["user_id"])
+    result.show()
+    # Output: rows_updated | rows_inserted
+    ```
+
 This call will then return a DataFrame containing the operations that were performed on the Iceberg table, like so:
 
 ``` {title="Output"}
@@ -418,4 +428,4 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 14. **Which writes operations does Daft support?**
 
-    *Daft supports basic overwrite and append, it does not support upserts like copy-on-write updates.*
+    *Daft supports append, overwrite, and upsert (requires pyiceberg>=0.9.0). Upsert matches rows by `join_cols` — matched rows are updated, unmatched rows are inserted.*

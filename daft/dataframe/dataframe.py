@@ -1323,25 +1323,27 @@ class DataFrame:
         self,
         table: "pyiceberg.table.Table",
         mode: str = "append",
+        join_cols: list[str] | None = None,
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
         checkpoint: "IdempotentCommit | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
-        Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
+        Can be run in `append`, `overwrite`, or `upsert` mode. `append` adds new rows, `overwrite` replaces all existing rows, and `upsert` updates matched rows and inserts unmatched rows (requires pyiceberg>=0.9.0).
 
         ``write_iceberg`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
 
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
-            mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
+            mode (str, optional): Operation mode of the write. `append`, `overwrite`, or `upsert`. Defaults to `append`.
+            join_cols (list[str], optional): Column name(s) used to match existing rows for ``mode='upsert'``. Required when mode is ``upsert``.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
             snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.idempotence-`` are reserved.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the snapshot summary is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate snapshot. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
-            DataFrame: The operations that occurred with this write.
+            DataFrame: The operations that occurred with this write. For ``append`` and ``overwrite``, returns file-level ADD/DELETE operations. For ``upsert``, returns a summary with ``rows_updated`` and ``rows_inserted``.
 
         Note:
             This call is **blocking** and will execute the DataFrame when called.
@@ -1382,6 +1384,7 @@ class DataFrame:
             >>> table = pyiceberg.Table(...)  # doctest: +SKIP
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+            >>> df = df.write_iceberg(table, mode="upsert", join_cols=["user_id"])  # doctest: +SKIP
             >>>
             >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
             >>> df = daft.read_parquet(
@@ -1410,8 +1413,16 @@ class DataFrame:
         if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
 
-        if mode not in ["append", "overwrite"]:
-            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
+        if mode not in ["append", "overwrite", "upsert"]:
+            raise ValueError(f"Only support `append`, `overwrite`, or `upsert` mode. {mode} is unsupported")
+
+        if mode == "upsert":
+            if parse(pyiceberg.__version__) < parse("0.9.0"):
+                raise ValueError(f"Upsert is only supported on pyiceberg>=0.9.0, found {pyiceberg.__version__}")
+            if not join_cols:
+                raise ValueError("join_cols must be provided and non-empty for mode='upsert'")
+            if checkpoint is not None:
+                raise NotImplementedError("write_iceberg with checkpoint=... does not support mode='upsert'")
 
         if checkpoint is not None and mode == "overwrite":
             raise NotImplementedError(
@@ -1438,6 +1449,31 @@ class DataFrame:
 
         if checkpoint is not None:
             return self._write_iceberg_with_checkpoint(table, io_config, snapshot_properties, checkpoint)
+
+        if mode == "upsert":
+            from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+            from daft import from_pydict
+            from daft.io.iceberg.iceberg_write import coerce_pyarrow_table_to_schema
+
+            arrow_schema = schema_to_pyarrow(table.schema())
+            # PyIceberg's upsert() scans the table for matching rows and diffs them in
+            # a single process -- no distributed write path exists, so the whole
+            # DataFrame is materialized here.
+            arrow_table = coerce_pyarrow_table_to_schema(self.to_arrow(), arrow_schema)
+
+            upsert_result = table.upsert(
+                arrow_table,
+                join_cols=join_cols,
+                snapshot_properties=snapshot_properties or {},
+            )
+
+            return from_pydict(
+                {
+                    "rows_updated": pa.array([upsert_result.rows_updated], type=pa.int64()),
+                    "rows_inserted": pa.array([upsert_result.rows_inserted], type=pa.int64()),
+                }
+            )
 
         operations = []
         path = []
