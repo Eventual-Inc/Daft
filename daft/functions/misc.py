@@ -753,6 +753,42 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
 
 
+def map_keys(expr: Expression) -> Expression:
+    """Returns a list of all keys in the map.
+
+    Args:
+        expr: the map expression to get from
+
+    Returns:
+        Expression: the keys list expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1), ("b", 2)], [("c", 3)], [], None], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("keys", df["map_col"].map_keys())
+        >>> df.show()
+        ╭────────────────────┬──────────────╮
+        │ map_col            ┆ keys         │
+        │ ---                ┆ ---          │
+        │ Map[String: Int64] ┆ List[String] │
+        ╞════════════════════╪══════════════╡
+        │ {"a": 1, "b": 2}   ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c": 3}           ┆ [c]          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}                 ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None               ┆ None         │
+        ╰────────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._from_pyexpr(expr._expr.map_keys())
+
+
 def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:
     r"""Get a subset of each list or binary value.
 
