@@ -14,14 +14,12 @@ import {
 } from "./stats-utils";
 import {
   buildTaskRows,
-  buildTaskSections,
   getActiveTasks,
   PlanChainNode,
   taskDisplayStatus,
   taskDurationSec,
   taskHasStarted,
   TaskTypeRow,
-  TaskTypeSection,
   TOP_K_RUNNING,
 } from "./tasks-grouping";
 
@@ -69,15 +67,6 @@ export default function TasksSidebar({
         ? allRows
         : allRows.filter((r) => r.node_ids.includes(nodeFilter)),
     [allRows, nodeFilter],
-  );
-
-  // Group filtered rows into sections by `node_ids`. Sibling rows under the
-  // same distributed node share a section header so the distributed-plan
-  // chips don't repeat once per local-plan shape (sample / repartition /
-  // final phases of a Sort, etc.).
-  const sections = useMemo(
-    () => buildTaskSections(rows, operators),
-    [rows, operators],
   );
 
   // In-flight tasks (running + pending) for the "top" section. Running tasks
@@ -181,7 +170,7 @@ export default function TasksSidebar({
               />
             </div>
             <TaskTypeTable
-              sections={sections}
+              rows={rows}
               onSelectNode={onSelectNode}
               onHoverNodes={onHoverNodes}
             />
@@ -409,32 +398,30 @@ function RunningTaskRow({
 }
 
 // ---------------------------------------------------------------------------
-// Sectioned task-type table. Tasks are grouped by `(node_ids, name)`; rows
-// sharing the same `node_ids` (= same distributed-plan chain) display under a
-// single section header that carries the distributed-plan chips. The section
-// header is fixed, not collapsible — it's purely a visual hierarchy hint.
+// Table of task-type rows.
 // ---------------------------------------------------------------------------
-// Columns: chevron | Local Plan | Tasks | Status | Rows in | Rows out | Bytes in | Bytes out | CPU
+// Columns: chevron | Local Plan | Distributed Plan | Tasks | Status | Rows in | Rows out | Bytes in | Bytes out | CPU
 const GRID_COLS =
-  "grid-cols-[32px_minmax(220px,3fr)_90px_130px_80px_80px_90px_90px_100px]";
+  "grid-cols-[32px_minmax(220px,2fr)_minmax(220px,2fr)_90px_130px_80px_80px_90px_90px_100px]";
 
 function TaskTypeTable({
-  sections,
+  rows,
   onSelectNode,
   onHoverNodes,
 }: {
-  sections: TaskTypeSection[];
+  rows: TaskTypeRow[];
   onSelectNode: (nodeId: number) => void;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="min-w-[1100px]">
+    <div className="min-w-[1200px]">
       {/* Header */}
       <div
         className={`bg-zinc-800 grid ${GRID_COLS} gap-0 items-center min-h-[48px] border-b border-zinc-700 sticky top-0 z-10`}
       >
         <HeaderCell />
         <HeaderCell align="left">Local Plan</HeaderCell>
+        <HeaderCell align="left">Distributed Plan</HeaderCell>
         <HeaderCell align="right">Tasks</HeaderCell>
         <HeaderCell align="left">Status</HeaderCell>
         <HeaderCell align="right">Rows in</HeaderCell>
@@ -447,55 +434,12 @@ function TaskTypeTable({
       </div>
 
       {/* Body */}
-      <div>
-        {sections.map((section) => (
-          <TaskTypeSectionBlock
-            key={section.key}
-            section={section}
-            onSelectNode={onSelectNode}
-            onHoverNodes={onHoverNodes}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * One section: a header strip showing the distributed-plan chain followed by
- * one or more {@link TaskTypeGroupRow}s for each distinct local-plan shape
- * under that distributed node.
- */
-function TaskTypeSectionBlock({
-  section,
-  onSelectNode,
-  onHoverNodes,
-}: {
-  section: TaskTypeSection;
-  onSelectNode: (nodeId: number) => void;
-  onHoverNodes: (ids: ReadonlySet<number> | null) => void;
-}) {
-  const hoverSet = useMemo(() => new Set(section.node_ids), [section.node_ids]);
-  return (
-    <div className="border-b border-zinc-700">
-      <div
-        className="px-3 py-2 bg-zinc-900/70 border-b border-zinc-800 flex items-center gap-2"
-        onMouseEnter={() => onHoverNodes(hoverSet)}
-        onMouseLeave={() => onHoverNodes(null)}
-      >
-        <span className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 font-mono shrink-0`}>
-          Distributed plan
-        </span>
-        <ClickablePipelineChips
-          chain={section.distributed_plan}
-          onClickNode={onSelectNode}
-        />
-      </div>
       <div className="divide-y divide-zinc-800">
-        {section.rows.map((row) => (
+        {rows.map((row) => (
           <TaskTypeGroupRow
             key={row.key}
             row={row}
+            onSelectNode={onSelectNode}
             onHoverNodes={onHoverNodes}
           />
         ))}
@@ -532,9 +476,11 @@ function HeaderCell({
 
 function TaskTypeGroupRow({
   row,
+  onSelectNode,
   onHoverNodes,
 }: {
   row: TaskTypeRow;
+  onSelectNode: (nodeId: number) => void;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -557,6 +503,12 @@ function TaskTypeGroupRow({
         </Cell>
         <Cell align="left">
           <PipelineChips pipeline={row.pipeline} />
+        </Cell>
+        <Cell align="left">
+          <ClickablePipelineChips
+            chain={row.distributed_plan}
+            onClickNode={onSelectNode}
+          />
         </Cell>
         <Cell align="right">
           <span className={`${main.className} text-sm text-zinc-200 font-mono`}>
