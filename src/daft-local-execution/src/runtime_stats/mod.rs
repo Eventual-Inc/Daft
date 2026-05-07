@@ -618,7 +618,10 @@ fn emit_per_task_stats_updates(
             .get(&node_id)
             .map(Arc::as_ref)
             .unwrap_or(&default_node_info);
-        by_input.entry(input_id).or_default().accumulate(node_info, &snapshot);
+        by_input
+            .entry(input_id)
+            .or_default()
+            .accumulate(node_info, &snapshot);
     }
     let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
         .into_iter()
