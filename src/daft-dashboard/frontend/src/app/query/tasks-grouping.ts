@@ -115,12 +115,11 @@ export const TOP_K_RUNNING = 10;
 
 /**
  * Extract in-flight (running + pending) tasks from the store. Running tasks
- * sort first, ordered by wall-clock duration descending; pending tasks sort
- * after, ordered by submit time ascending. With this ordering, pending tasks
- * only appear in the top-K once running tasks no longer fill it.
- *
- * TODO: sort running by cpu_us instead once within-task metric updates land
- * (currently cpu_us is only populated on task end).
+ * sort first, ordered by busy time (cpu_us) descending — cpu_us is refreshed
+ * mid-flight from TaskStatsUpdate events, so this reflects cumulative operator
+ * work rather than wall-clock elapsed. Pending tasks sort after, ordered by
+ * submit time ascending. With this ordering, pending tasks only appear in the
+ * top-K once running tasks no longer fill it.
  */
 export function getActiveTasks(taskStore: TaskStore | undefined): TaskInfo[] {
   if (!taskStore) return [];
@@ -135,7 +134,8 @@ export function getActiveTasks(taskStore: TaskStore | undefined): TaskInfo[] {
       const bRunning = b.status.status === "Running" ? 0 : 1;
       if (aRunning !== bRunning) return aRunning - bRunning;
       if (aRunning === 0) {
-        // Both running: oldest start first (= longest running first).
+        // Both running: highest busy time first; tiebreak on oldest start.
+        if (b.cpu_us !== a.cpu_us) return b.cpu_us - a.cpu_us;
         return (a.start_sec ?? 0) - (b.start_sec ?? 0);
       }
       // Both pending: oldest submit first.

@@ -782,6 +782,13 @@ pub enum TaskOutcomeArgs {
     Cancelled,
 }
 
+/// Scalar totals for a single task. Shared between `TaskEndArgs` (final
+/// numbers) and mid-flight `TaskStatsEntry` (in-progress refresh).
+///
+/// CPU duration is the only task-level total we currently report; it sums
+/// correctly across all nodes in the fused pipeline. rows/bytes I/O totals
+/// require head/leaf identification (see follow-up ticket) and are
+/// intentionally omitted to avoid double-counting.
 #[derive(Clone, Deserialize, Serialize, Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TaskTotals {
@@ -930,6 +937,61 @@ async fn task_end(
     apply_task_end(&state, query_id, args)
 }
 
+/// One task's scalar totals inside a `TasksStatsUpdateArgs*` batch. Reuses
+/// `TaskTotals` so end-of-task and mid-task progress share a payload shape.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskStatsEntry {
+    pub task_id: u32,
+    pub totals: TaskTotals,
+}
+
+/// Worker_id is intentionally absent from this payload.
+///
+/// The worker-side `DashboardSubscriber` mints its own UUID per process which
+/// doesn't match the scheduler-assigned `WorkerId` carried on `TaskScheduled`
+/// / `TaskStart` / `TaskEnd` events. The scheduler is the source of truth for
+/// `worker_id`; stats updates only carry per-task scalars.
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TasksStatsUpdateArgs {
+    pub timestamp_sec: f64,
+    pub tasks: Vec<TaskStatsEntry>,
+}
+
+async fn tasks_stats_update(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TasksStatsUpdateArgs>,
+) -> StatusCode {
+    apply_tasks_stats_update(&state, query_id, args)
+}
+
+pub(crate) fn apply_tasks_stats_update(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TasksStatsUpdateArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        // Stats updates may arrive before the dashboard knows about the query
+        // (race during exec_start) or after the query ends. Drop silently.
+        return StatusCode::OK;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    for entry in args.tasks {
+        exec_info
+            .task_store
+            .update_task_stats(entry, args.timestamp_sec);
+    }
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
 pub(crate) fn apply_task_end(
     state: &DashboardState,
     query_id: QueryID,
@@ -1006,5 +1068,6 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/task/submit", post(task_submit))
         .route("/query/{query_id}/task/schedule", post(task_scheduled))
         .route("/query/{query_id}/task/end", post(task_end))
+        .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))
 }

@@ -13,6 +13,8 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
+use crate::engine::TaskStatsEntry;
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) enum OperatorStatus {
     Pending,
@@ -70,7 +72,16 @@ pub(crate) struct TaskInfo {
     pub end_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_id: Option<String>,
+    /// Cumulative per-operator busy time for this task (sum of DURATION_KEY
+    /// across operators, in microseconds). Set on task end, and refreshed
+    /// mid-flight from `TaskStatsUpdate` events. Distinct from wall-clock
+    /// elapsed time `end_sec - submit_sec`.
     pub cpu_us: u64,
+    /// Wall-clock timestamp (sec since epoch) of the most recent mid-flight
+    /// stats refresh. Used to drop stale out-of-order updates. Internal-only;
+    /// not serialised to dashboard clients.
+    #[serde(skip)]
+    pub latest_stats_sec: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<crate::engine::TaskSourceArgs>,
 }
@@ -104,7 +115,7 @@ pub(crate) struct TaskGroupSummary {
 
 /// Bounded task store that maintains per-group aggregate summaries and retains
 /// only "interesting" individual tasks: active (in-flight), failed/cancelled,
-/// and the top-K longest-duration completed tasks per group.
+/// and the top-K busy-time completed tasks per group.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TaskStore {
     /// Aggregate summaries per `node_ids` group.
@@ -243,6 +254,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            latest_stats_sec: None,
             sources: Vec::new(),
         });
 
@@ -260,6 +272,44 @@ impl TaskStore {
         if !sources.is_empty() {
             entry.sources = sources;
         }
+    }
+
+    /// Record a mid-execution scalar progress snapshot for an in-flight task.
+    /// No-op if the task has reached a terminal status (snapshot is stale) or
+    /// if this snapshot is older than one already applied.
+    ///
+    /// Updates the individual task's totals only. Group summaries are
+    /// updated once at `end_task`. Mirroring mid-flight updates into group
+    /// totals would seem appealing for a smoother dashboard but turned out
+    /// to be brittle: the worker-emitted totals aren't strictly monotonic
+    /// (e.g. cpu_us can drop between ticks if a blocking operator
+    /// deactivates and stops contributing to the snapshot), and propagating
+    /// those non-monotonic deltas into the group summary corrupts the
+    /// running sum.
+    ///
+    /// Naming caveat: `cpu_us` here is **busy time** — cumulative wall-clock
+    /// time spent inside `op.execute().await` across the task's local
+    /// pipeline operators (the runtime stats layer stores it under
+    /// `DURATION_KEY`). It is **not** elapsed wall-clock time since task
+    /// submit (`end_sec - submit_sec`) that the frontend sometimes labels
+    /// "duration". Two tasks with the same wall-clock duration can have very
+    /// different busy times.
+    pub fn update_task_stats(&mut self, entry: TaskStatsEntry, timestamp_sec: f64) {
+        let Some(task) = self.tasks.get_mut(&entry.task_id) else {
+            return;
+        };
+        // Stats arrive between submit and end — accept Pending and Running.
+        // Drop in any terminal state.
+        if !matches!(task.status, TaskStatus::Pending | TaskStatus::Running) {
+            return;
+        }
+        if let Some(prev) = task.latest_stats_sec
+            && prev > timestamp_sec
+        {
+            return;
+        }
+        task.cpu_us = entry.totals.cpu_us;
+        task.latest_stats_sec = Some(timestamp_sec);
     }
 
     /// Record a task being scheduled to a worker (transitioning from Pending
@@ -329,6 +379,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            latest_stats_sec: None,
             sources: Vec::new(),
         });
 
@@ -358,7 +409,7 @@ impl TaskStore {
 
     /// Record a task completion. Updates group summary and applies retention:
     /// failed/cancelled tasks are always kept (up to a global cap); successful
-    /// tasks are kept if they are among the top-K longest by duration per group.
+    /// tasks are kept if they are among the top-K by busy time per group.
     #[allow(clippy::too_many_arguments)]
     pub fn end_task(
         &mut self,
@@ -420,6 +471,8 @@ impl TaskStore {
             TaskStatus::Pending | TaskStatus::Running => {}
         }
 
+        // Mid-flight `update_task_stats` writes only into the individual
+        // TaskInfo, so end_task adds the full task total to the group sum.
         group.total_cpu_us += cpu_us;
         match group.last_end_sec {
             Some(prev) if prev >= end_sec => {}
@@ -443,6 +496,7 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            latest_stats_sec: None,
             sources: Vec::new(),
         });
 
@@ -468,7 +522,7 @@ impl TaskStore {
         }
     }
 
-    /// Keep top-K longest-duration finished tasks per group.
+    /// Keep top-K finished tasks per group, ranked by busy time.
     fn retain_finished_task(&mut self, task_id: u32, key: &TaskGroupKey) {
         self.finished_ids_by_group
             .entry(key.clone())
@@ -483,24 +537,11 @@ impl TaskStore {
             _ => return,
         };
 
-        // Find the shortest-duration task to evict.
+        // Find the task with the least busy time to evict.
         let evict = ids_snapshot
             .iter()
             .enumerate()
-            .min_by(|(_, a_id), (_, b_id)| {
-                let dur = |id: &u32| -> f64 {
-                    self.tasks
-                        .get(id)
-                        .map(|t| {
-                            let start = t.start_sec.unwrap_or(t.submit_sec);
-                            t.end_sec.unwrap_or(start) - start
-                        })
-                        .unwrap_or(0.0)
-                };
-                dur(a_id)
-                    .partial_cmp(&dur(b_id))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .min_by_key(|(_, id)| self.tasks.get(id).map(|t| t.cpu_us).unwrap_or(0))
             .map(|(idx, _)| idx);
 
         if let Some(evict_idx) = evict {
@@ -547,7 +588,7 @@ pub(crate) struct ExecInfo {
     pub operators: OperatorInfos,
     /// Bounded task store for Flotilla queries. Maintains per-group aggregate
     /// summaries and retains only interesting individual tasks (active, failed,
-    /// top-K by duration). Empty for Swordfish (local) queries.
+    /// top-K by busy time). Empty for Swordfish (local) queries.
     #[serde(default)]
     pub task_store: TaskStore,
     // TODO: Logs
@@ -815,10 +856,17 @@ pub static GLOBAL_DASHBOARD_STATE: LazyLock<Arc<DashboardState>> =
 #[cfg(test)]
 mod task_store_tests {
     use super::*;
-    use crate::engine::TaskSubmitArgs;
+    use crate::engine::{TaskStatsEntry, TaskSubmitArgs, TaskTotals};
 
     fn finished() -> TaskStatus {
         TaskStatus::Finished
+    }
+
+    fn stats_entry(task_id: u32, cpu_us: u64) -> TaskStatsEntry {
+        TaskStatsEntry {
+            task_id,
+            totals: TaskTotals { cpu_us },
+        }
     }
 
     fn submit(
@@ -867,6 +915,102 @@ mod task_store_tests {
         store.submit_task(submit(2, 9, vec![7, 9], "Project", 0.0));
 
         assert_eq!(store.groups.len(), 2);
+    }
+
+    /// Mid-flight stats update writes cpu_us through to the task and stamps
+    /// latest_stats_sec, but intentionally does NOT touch group totals — group
+    /// summaries are only updated at task end. See `update_task_stats` for the
+    /// rationale (worker-emitted task totals aren't strictly monotonic, so
+    /// streaming deltas into the group sum is brittle).
+    #[test]
+    fn update_task_stats_writes_task_only_not_group() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 300), 1.0);
+
+        let task = store.tasks.get(&1).expect("task retained");
+        assert_eq!(task.cpu_us, 300);
+        assert_eq!(task.latest_stats_sec, Some(1.0));
+        // worker_id is set by scheduler-side TaskStart/TaskEnd, not by us.
+        assert!(task.worker_id.is_none());
+        assert_eq!(store.groups.len(), 1);
+        // Group total stays 0 until end_task.
+        assert_eq!(store.groups[0].total_cpu_us, 0);
+    }
+
+    /// Successive updates overwrite the task's cpu_us (latest wins). Worker
+    /// snapshots can be non-monotonic when blocking operators deactivate, so
+    /// we don't try to enforce monotonicity here.
+    #[test]
+    fn update_task_stats_overwrites_with_latest() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 200), 1.0);
+        store.update_task_stats(stats_entry(1, 500), 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.tasks.get(&1).unwrap().latest_stats_sec, Some(2.0));
+    }
+
+    /// An out-of-order update older than the last seen timestamp is dropped
+    /// (cpu_us and latest_stats_sec stay at the newer value).
+    #[test]
+    fn update_task_stats_drops_stale_timestamp() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(1, 400), 5.0);
+        store.update_task_stats(stats_entry(1, 999), 2.0); // stale
+
+        let task = store.tasks.get(&1).unwrap();
+        assert_eq!(task.cpu_us, 400);
+        assert_eq!(task.latest_stats_sec, Some(5.0));
+    }
+
+    /// After end_task the task is no longer Pending; a late stats update must
+    /// be ignored so it can't overwrite the final cpu_us.
+    #[test]
+    fn update_task_stats_after_end_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+        store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600);
+
+        store.update_task_stats(stats_entry(1, 9_999), 2.0);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 600);
+        assert_eq!(store.groups[0].total_cpu_us, 600);
+    }
+
+    /// end_task adds the full task total to the parent group's running sum.
+    /// Mid-flight `update_task_stats` calls don't contribute to the group, so
+    /// there is no risk of double-counting.
+    #[test]
+    fn end_task_adds_full_total_to_group() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        // Mid-flight stats land on the task but not the group.
+        store.update_task_stats(stats_entry(1, 300), 1.0);
+        assert_eq!(store.groups[0].total_cpu_us, 0);
+
+        store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500);
+
+        assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
+        assert_eq!(store.groups[0].total_cpu_us, 500);
+    }
+
+    /// Stats updates for an unknown task_id (never submitted) are dropped
+    /// silently — they may arrive during the submit/exec_start race.
+    #[test]
+    fn update_task_stats_unknown_task_is_noop() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
+
+        store.update_task_stats(stats_entry(999, 1_000), 1.0);
+
+        assert!(!store.tasks.contains_key(&999));
     }
 
     /// End-before-submit with empty node_ids should resolve to the same group

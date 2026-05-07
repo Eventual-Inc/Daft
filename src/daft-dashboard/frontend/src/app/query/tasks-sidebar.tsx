@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
@@ -255,8 +255,7 @@ function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
 // users tell pending and running apart; Source surfaces scan paths.
 // ---------------------------------------------------------------------------
 // Local Plan and Source share remaining width 1:2 so the (typically long)
-// source path gets enough room before the fixed-width State and Duration
-// columns.
+// source path gets enough room before the fixed-width State and CPU columns.
 const RUNNING_GRID_COLS =
   "grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_90px_90px]";
 
@@ -273,15 +272,6 @@ function RunningTasksSection({
   totalInflight: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  const hasInflight = tasks.length > 0;
-
-  useEffect(() => {
-    if (!hasInflight) return;
-    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => clearInterval(id);
-  }, [hasInflight]);
-
   return (
     <div className="border-b border-zinc-700">
       <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800 flex items-center gap-2">
@@ -299,7 +289,7 @@ function RunningTasksSection({
           <RunningHeader align="left">Local Plan</RunningHeader>
           <RunningHeader align="left">Source</RunningHeader>
           <RunningHeader align="left">State</RunningHeader>
-          <RunningHeader align="right">Duration</RunningHeader>
+          <RunningHeader align="right">CPU</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
           const task = tasks[i];
@@ -307,7 +297,6 @@ function RunningTasksSection({
             <RunningTaskRow
               key={task.task_id}
               task={task}
-              now={now}
               onHoverNodes={onHoverNodes}
             />
           ) : (
@@ -316,7 +305,7 @@ function RunningTasksSection({
         })}
         {totalInflight > tasks.length && (
           <div className={`${main.className} px-4 py-1.5 text-xs text-zinc-500 italic border-t border-zinc-800/50`}>
-            Showing {tasks.length} of {totalInflight} in-flight tasks (running first, longest duration first)
+            Showing {tasks.length} of {totalInflight} in-flight tasks (running first, highest busy time first)
           </div>
         )}
       </div>
@@ -343,17 +332,20 @@ function RunningHeader({
 
 function RunningTaskRow({
   task,
-  now,
   onHoverNodes,
 }: {
   task: TaskInfo;
-  now: number;
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   const isRunning = task.status.status === "Running";
-  const started = taskHasStarted(task);
-  const duration = started
-    ? formatDuration(taskDurationSec(task, now)) + "\u2026"
+  // CPU time (busy time, sum of operator DURATION_KEY across this task's
+  // pipeline) rather than wall-clock since submit. Refreshed mid-flight from
+  // TaskStatsUpdate events; re-renders driven by taskStore prop changes
+  // upstream, so no per-second timer needed. Trailing ellipsis hints this is
+  // a running snapshot, not final. Pending tasks show \u2014 since they have no
+  // operator work yet.
+  const cpu = isRunning
+    ? formatDuration(task.cpu_us / 1_000_000) + "\u2026"
     : "\u2014";
   const pipeline = task.name
     ? task.name.includes("->") ? task.name.split("->") : [task.name]
@@ -380,7 +372,7 @@ function RunningTaskRow({
       <div
         className={`${main.className} px-3 text-xs text-right font-mono ${isRunning ? "text-emerald-300" : "text-zinc-500"}`}
       >
-        {duration}
+        {cpu}
       </div>
     </div>
   );
@@ -685,7 +677,7 @@ function ExpandedTaskList({
           {" ("}
           {pendingCount} pending, {runningCount} running, {finishedCount} finished
           {failedCount > 0 ? `, ${failedCount} failed` : ""}
-          {") — longest by duration, plus active and failed"}
+          {") — highest busy time, plus active and failed"}
         </div>
       )}
     </div>
