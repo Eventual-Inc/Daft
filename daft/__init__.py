@@ -71,6 +71,8 @@ from daft.context import (
     with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
+    set_event_log_config,
+    event_log_ctx,
 )
 from daft.convert import (
     from_arrow,

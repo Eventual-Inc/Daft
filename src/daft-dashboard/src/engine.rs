@@ -15,6 +15,12 @@ use serde::{Deserialize, Serialize};
 
 const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
 
+/// Maximum number of queries the dashboard will retain in memory. Once
+/// exceeded, the oldest terminal queries (by `start_sec`) are evicted by
+/// [`evict_old_queries`]. Active queries are never evicted, so the cap may
+/// be exceeded transiently while many queries are running concurrently.
+pub(crate) const MAX_QUERIES_RETAINED: usize = 1000;
+
 pub(crate) fn secs_from_epoch() -> f64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -737,6 +743,45 @@ pub(crate) fn apply_query_end(
     StatusCode::OK
 }
 
+/// Periodic eviction of old terminal queries to bound dashboard memory usage.
+/// Not an HTTP handler.
+///
+/// Only terminal queries are eligible for eviction; active queries are kept so
+/// the dashboard can continue reporting on them (and so heartbeats land in a
+/// known map entry). If active queries alone exceed the retention limit, the
+/// cap is exceeded until they reach a terminal state.
+pub(crate) async fn evict_old_queries(state: Arc<DashboardState>) {
+    let total = state.queries.len();
+    if total <= MAX_QUERIES_RETAINED {
+        return;
+    }
+    let target_evictions = total - MAX_QUERIES_RETAINED;
+
+    let mut terminal: Vec<(QueryID, f64)> = state
+        .queries
+        .iter()
+        .filter(|q| !q.is_active())
+        .map(|q| (q.id.clone(), q.start_sec))
+        .collect();
+
+    terminal.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let evicted = terminal.len().min(target_evictions);
+    for (id, _) in terminal.into_iter().take(evicted) {
+        state.queries.remove(&id);
+        state.query_clients.remove(&id);
+    }
+
+    if evicted < target_evictions {
+        tracing::warn!(
+            "Dashboard query cap ({}) exceeded by {} active queries; \
+             eviction will resume once they reach a terminal state",
+            MAX_QUERIES_RETAINED,
+            target_evictions - evicted,
+        );
+    }
+}
+
 /// periodic check for dead queries. Not an HTTP handler.
 pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
     let dead_threshold = SystemTime::now()
@@ -759,6 +804,11 @@ pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
                 QueryState::Executing {
                     plan_info,
                     exec_info,
+                }
+                | QueryState::Finalizing {
+                    plan_info,
+                    exec_info,
+                    ..
                 } => (Some(plan_info.clone()), Some(exec_info.clone())),
                 _ => (None, None),
             };
@@ -1083,4 +1133,159 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/task/end", post(task_end))
         .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    use std::sync::Arc;
+
+    use super::{DashboardState, MAX_QUERIES_RETAINED, QueryInfo, QueryState, evict_old_queries};
+
+    fn insert_query(state: &DashboardState, id: &str, start_sec: f64, active: bool) {
+        let qid: common_metrics::QueryID = Arc::from(id);
+        // Eviction inspects only `is_active()` and `start_sec`, so terminal
+        // queries use the minimal `Dead` variant (no PlanInfo/ExecInfo needed).
+        let query_state = if active {
+            QueryState::Pending
+        } else {
+            QueryState::Dead {
+                plan_info: None,
+                exec_info: None,
+                marked_dead_sec: start_sec,
+            }
+        };
+        state.queries.insert(
+            qid.clone(),
+            QueryInfo {
+                id: qid,
+                start_sec,
+                last_heartbeat_sec: start_sec,
+                unoptimized_plan: Arc::from(""),
+                runner: "test".to_string(),
+                ray_dashboard_url: None,
+                entrypoint: None,
+                python_version: None,
+                daft_version: None,
+                ray_version: None,
+                state: query_state,
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn no_eviction_when_under_limit() {
+        let state = Arc::new(DashboardState::new());
+        for i in 0..10 {
+            insert_query(&state, &format!("q{}", i), i as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn evicts_oldest_terminal_queries_first() {
+        let state = Arc::new(DashboardState::new());
+        // Insert MAX_QUERIES_RETAINED + 5 terminal queries with strictly
+        // increasing start_sec; the 5 oldest should be evicted.
+        for i in 0..(MAX_QUERIES_RETAINED + 5) {
+            insert_query(&state, &format!("q{}", i), i as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        for i in 0..5 {
+            assert!(
+                !state.queries.contains_key(format!("q{}", i).as_str()),
+                "expected q{} to be evicted",
+                i
+            );
+        }
+        for i in 5..(MAX_QUERIES_RETAINED + 5) {
+            assert!(
+                state.queries.contains_key(format!("q{}", i).as_str()),
+                "expected q{} to be retained",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn active_queries_are_never_evicted() {
+        let state = Arc::new(DashboardState::new());
+        // All active: nothing should be evicted, even past the cap.
+        for i in 0..(MAX_QUERIES_RETAINED + 3) {
+            insert_query(&state, &format!("q{}", i), i as f64, true);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED + 3);
+    }
+
+    /// Regression: `Finalizing` queries are awaiting `query_end` and must not
+    /// be evicted, otherwise their final outcome is silently dropped.
+    #[tokio::test]
+    async fn finalizing_queries_are_not_evicted() {
+        use crate::state::{ExecInfo, PlanInfo};
+        let state = Arc::new(DashboardState::new());
+        // One finalizing query at the oldest start_sec, then enough terminal
+        // queries to push the total over the cap.
+        let qid: common_metrics::QueryID = Arc::from("finalizing");
+        state.queries.insert(
+            qid.clone(),
+            QueryInfo {
+                id: qid,
+                start_sec: 0.0,
+                last_heartbeat_sec: 0.0,
+                unoptimized_plan: Arc::from(""),
+                runner: "test".to_string(),
+                ray_dashboard_url: None,
+                entrypoint: None,
+                python_version: None,
+                daft_version: None,
+                ray_version: None,
+                state: QueryState::Finalizing {
+                    plan_info: PlanInfo {
+                        plan_start_sec: 0.0,
+                        plan_end_sec: 0.0,
+                        optimized_plan: Arc::from(""),
+                    },
+                    exec_info: ExecInfo {
+                        exec_start_sec: 0.0,
+                        physical_plan: Arc::from(""),
+                        operators: Default::default(),
+                        task_store: Default::default(),
+                    },
+                    exec_end_sec: 0.0,
+                },
+            },
+        );
+        for i in 0..MAX_QUERIES_RETAINED {
+            insert_query(&state, &format!("term{}", i), (10 + i) as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        assert!(
+            state.queries.contains_key("finalizing"),
+            "finalizing query must be retained"
+        );
+        assert!(!state.queries.contains_key("term0"));
+    }
+
+    #[tokio::test]
+    async fn mixed_active_and_terminal_evicts_only_terminal() {
+        let state = Arc::new(DashboardState::new());
+        // 3 active queries (oldest start_sec) + MAX_QUERIES_RETAINED terminal.
+        // Cap exceeded by 3; the 3 oldest *terminal* queries should be evicted,
+        // leaving the active ones in place.
+        for i in 0..3 {
+            insert_query(&state, &format!("active{}", i), i as f64, true);
+        }
+        for i in 0..MAX_QUERIES_RETAINED {
+            insert_query(&state, &format!("term{}", i), (10 + i) as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        for i in 0..3 {
+            assert!(state.queries.contains_key(format!("active{}", i).as_str()));
+            assert!(!state.queries.contains_key(format!("term{}", i).as_str()));
+        }
+    }
 }

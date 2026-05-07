@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image
 from daft.file import File
+from daft.file.file import BUFFER_METADATA
 from daft.file.typing import VideoFrameData, VideoMetadata
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ class VideoFile(File):
             VideoMetadata: Video metadata object containing width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
 
         """
-        with self.open() as f:
+        with self.open(buffer_size=BUFFER_METADATA) as f:
             with av.open(f, mode="r", metadata_encoding="utf-8") as container:
                 video = next(
                     (stream for stream in container.streams if stream.type == "video"),
