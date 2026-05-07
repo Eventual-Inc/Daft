@@ -351,7 +351,7 @@ function QueryPageInner() {
                     />
                   </div>
                   {isFlotilla && tasksOpen && queryId && (
-                    <div className="w-1/2 min-w-[480px] max-w-[900px] flex-shrink-0 border-l border-zinc-800 h-full">
+                    <div className="w-1/2 min-w-[940px] max-w-[1200px] flex-shrink-0 border-l border-zinc-800 h-full">
                       <TasksSidebar
                         exec_state={query.state as ExecutingState}
                         nodeFilter={nodeFilter}
