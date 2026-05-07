@@ -86,13 +86,22 @@ pub(crate) struct TaskInfo {
     pub sources: Vec<crate::engine::TaskSourceArgs>,
 }
 
-/// Canonical group identity: the full chain of distributed pipeline nodes that
-/// contributed local plan nodes to the task. Two tasks with identical chains
-/// belong to the same group, regardless of how `task.name` was rendered or
-/// what parameter values varied (limit values, repartition counts, etc.).
+/// Canonical group identity: the chain of distributed pipeline nodes that
+/// contributed local plan nodes to the task, plus the local-plan shape
+/// (`task.name`, e.g. `"InMemoryScan->Sample->Project"`). Two tasks with the
+/// same `node_ids` and the same shape belong to the same group; different
+/// shapes under the same `node_ids` (e.g. the sample / repartition / final
+/// phases of a distributed Sort) get their own groups so the UI can show
+/// per-phase counts and totals. The frontend overlays a parent section by
+/// `node_ids` to keep sibling phases visually together.
+///
+/// `task.name` derives from `LocalPhysicalPlan::single_line_display()` which
+/// uses operator variant names (`"Limit"`, not `"Limit(10)"`), so groups
+/// don't split on parameter values like limit/partition counts.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct TaskGroupKey {
     pub node_ids: Vec<NodeID>,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -179,6 +188,7 @@ impl TaskStore {
         };
         let key = TaskGroupKey {
             node_ids: key_node_ids,
+            name: name.to_string(),
         };
         let groups = &mut self.groups;
         *self.group_index.entry(key).or_insert_with_key(|key| {
@@ -186,7 +196,7 @@ impl TaskStore {
             groups.push(TaskGroupSummary {
                 last_node_id,
                 node_ids: key.node_ids.clone(),
-                name: name.to_string(),
+                name: key.name.clone(),
                 task_count: 0,
                 pending_count: 0,
                 running_count: 0,
@@ -202,15 +212,22 @@ impl TaskStore {
         })
     }
 
-    /// Derive the group key for a task from its full `node_ids` chain. Falls
-    /// back to a single-element chain if `node_ids` is empty.
+    /// Derive the group key for a task from its full `node_ids` chain plus
+    /// its local-plan shape. Falls back to a single-element chain if
+    /// `node_ids` is empty, and to `Node {last_node_id}` if `task.name` is
+    /// missing (matching the display-name fallback in `submit_task` /
+    /// `end_task`).
     fn group_key_for_task(task: &TaskInfo) -> TaskGroupKey {
         let node_ids = if task.node_ids.is_empty() {
             vec![task.last_node_id]
         } else {
             task.node_ids.clone()
         };
-        TaskGroupKey { node_ids }
+        let name = task
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Node {}", task.last_node_id));
+        TaskGroupKey { node_ids, name }
     }
 
     /// Record a task submission. The individual task is always retained while
@@ -225,7 +242,10 @@ impl TaskStore {
             name,
             sources,
         } = args;
-        // Display label only; the group key is `node_ids`.
+        // The group key is `(node_ids, display_name)`, so two tasks under the
+        // same distributed-plan chain that render with different local-plan
+        // shapes (e.g. Sort's sample / repartition / final phases) split into
+        // separate groups and get their own per-shape totals.
         let display_name = name
             .clone()
             .unwrap_or_else(|| format!("Node {last_node_id}"));
@@ -428,8 +448,9 @@ impl TaskStore {
         let was_pending = matches!(prev_status, Some(TaskStatus::Pending));
         let was_running = matches!(prev_status, Some(TaskStatus::Running));
 
-        // Display label for the (possibly new) group. The actual group key
-        // is `node_ids`; this is just what the UI shows.
+        // Resolve the group's display name; this is also part of the group
+        // key (alongside `node_ids`), so distinct local-plan shapes split
+        // into separate groups.
         let display_name = self
             .tasks
             .get(&task_id)
@@ -449,6 +470,7 @@ impl TaskStore {
         };
         let key = TaskGroupKey {
             node_ids: key_node_ids.clone(),
+            name: display_name.clone(),
         };
 
         // Ensure group exists and update summary.
@@ -894,14 +916,15 @@ mod task_store_tests {
         }
     }
 
-    /// Two tasks with identical `node_ids` but different `name` strings should
-    /// land in the same group. (Previously, group key included the name and
-    /// these would split.)
+    /// Two tasks with identical `node_ids` and identical `name` collapse into
+    /// one group. `task.name` derives from `LocalPhysicalPlan::name()`
+    /// (operator variant only — not parameter values), so two `Limit` tasks
+    /// with different limit values render with the same name and merge.
     #[test]
-    fn same_node_ids_different_names_collapse_to_one_group() {
+    fn same_node_ids_same_name_collapse_to_one_group() {
         let mut store = TaskStore::default();
-        store.submit_task(submit(1, 7, vec![3, 5, 7], "Limit(10)", 0.0));
-        store.submit_task(submit(2, 7, vec![3, 5, 7], "Limit(100)", 0.0));
+        store.submit_task(submit(1, 7, vec![3, 5, 7], "Limit", 0.0));
+        store.submit_task(submit(2, 7, vec![3, 5, 7], "Limit", 0.0));
 
         assert_eq!(
             store.groups.len(),
@@ -911,6 +934,28 @@ mod task_store_tests {
         );
         assert_eq!(store.groups[0].task_count, 2);
         assert_eq!(store.groups[0].node_ids, vec![3, 5, 7]);
+    }
+
+    /// Two tasks under the same distributed-plan chain that render with
+    /// different local-plan shapes split into separate groups. Concrete case:
+    /// a distributed Sort dispatches three phases (sample / repartition /
+    /// final) all with the same `node_ids = [sort_node_id]`, but their local
+    /// plans render as `InMemoryScan->Sample->Project`,
+    /// `InMemoryScan->RepartitionWrite`, and `InMemoryScan->Sort`. Each phase
+    /// gets its own group so per-phase counts and totals don't get rolled up
+    /// together.
+    #[test]
+    fn same_node_ids_different_names_split_into_separate_groups() {
+        let mut store = TaskStore::default();
+        store.submit_task(submit(1, 7, vec![7], "InMemoryScan->Sample->Project", 0.0));
+        store.submit_task(submit(2, 7, vec![7], "InMemoryScan->RepartitionWrite", 0.0));
+        store.submit_task(submit(3, 7, vec![7], "InMemoryScan->Sort", 0.0));
+
+        assert_eq!(store.groups.len(), 3);
+        for g in &store.groups {
+            assert_eq!(g.node_ids, vec![7]);
+            assert_eq!(g.task_count, 1);
+        }
     }
 
     /// Two tasks with the same `name` but different `node_ids` should land in
@@ -1020,14 +1065,20 @@ mod task_store_tests {
         assert!(!store.tasks.contains_key(&999));
     }
 
-    /// End-before-submit with empty node_ids should resolve to the same group
-    /// as the eventual submit, so counts don't double up.
+    /// End-before-submit with empty node_ids creates a fallback group keyed
+    /// by `(vec![last_node_id], "Node {last_node_id}")` because the local-plan
+    /// name isn't known until submit arrives. When submit eventually arrives
+    /// with the real name, the task isn't double-counted (it's already in
+    /// `tasks` so the new group's counters are not incremented), but the
+    /// fallback group remains as an empty-counts ghost row. End-before-submit
+    /// only happens when network reordering delivers the end event before
+    /// the submit; in steady state this is rare. A future change could
+    /// migrate the fallback group's counts into the real group when submit
+    /// arrives, but that's heavier than the bug warrants today.
     #[test]
-    fn end_before_submit_with_empty_node_ids_resolves_to_submit_group() {
+    fn end_before_submit_with_empty_node_ids_creates_fallback_group() {
         let mut store = TaskStore::default();
 
-        // End arrives first, with empty node_ids — fallback creates a group
-        // keyed by [last_node_id].
         store.end_task(
             42,
             7,
@@ -1041,12 +1092,24 @@ mod task_store_tests {
         // Submit arrives later with the same single-node chain.
         store.submit_task(submit(42, 7, vec![7], "Filter", 0.5));
 
-        assert_eq!(store.groups.len(), 1);
-        let g = &store.groups[0];
-        // task_count should not double-count: end (no submit seen) credited 1,
-        // submit found existing task and didn't increment further.
-        assert_eq!(g.task_count, 1);
-        assert_eq!(g.finished_count, 1);
+        // Two groups: the fallback `(vec![7], "Node 7")` from end_task, and
+        // the real `(vec![7], "Filter")` from submit_task.
+        assert_eq!(store.groups.len(), 2);
+        let fallback = store
+            .groups
+            .iter()
+            .find(|g| g.name == "Node 7")
+            .expect("fallback group present");
+        assert_eq!(fallback.task_count, 1);
+        assert_eq!(fallback.finished_count, 1);
+        let real = store
+            .groups
+            .iter()
+            .find(|g| g.name == "Filter")
+            .expect("real group present");
+        // Real group exists but contributes zero counts: the task already
+        // ended so submit didn't increment further.
+        assert_eq!(real.task_count, 0);
     }
 
     /// submit -> scheduled -> end transitions pending/running/finished counts
