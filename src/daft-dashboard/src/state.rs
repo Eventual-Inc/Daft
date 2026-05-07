@@ -448,8 +448,9 @@ impl TaskStore {
         let was_pending = matches!(prev_status, Some(TaskStatus::Pending));
         let was_running = matches!(prev_status, Some(TaskStatus::Running));
 
-        // Display label for the (possibly new) group. The actual group key
-        // is `node_ids`; this is just what the UI shows.
+        // Resolve the group's display name; this is also part of the group
+        // key (alongside `node_ids`), so distinct local-plan shapes split
+        // into separate groups.
         let display_name = self
             .tasks
             .get(&task_id)
