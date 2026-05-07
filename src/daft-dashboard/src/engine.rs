@@ -804,6 +804,11 @@ pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
                 QueryState::Executing {
                     plan_info,
                     exec_info,
+                }
+                | QueryState::Finalizing {
+                    plan_info,
+                    exec_info,
+                    ..
                 } => (Some(plan_info.clone()), Some(exec_info.clone())),
                 _ => (None, None),
             };
@@ -1199,6 +1204,56 @@ mod eviction_tests {
         }
         evict_old_queries(state.clone()).await;
         assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED + 3);
+    }
+
+    /// Regression: `Finalizing` queries are awaiting `query_end` and must not
+    /// be evicted, otherwise their final outcome is silently dropped.
+    #[tokio::test]
+    async fn finalizing_queries_are_not_evicted() {
+        use crate::state::{ExecInfo, PlanInfo};
+        let state = Arc::new(DashboardState::new());
+        // One finalizing query at the oldest start_sec, then enough terminal
+        // queries to push the total over the cap.
+        let qid: common_metrics::QueryID = Arc::from("finalizing");
+        state.queries.insert(
+            qid.clone(),
+            QueryInfo {
+                id: qid,
+                start_sec: 0.0,
+                last_heartbeat_sec: 0.0,
+                unoptimized_plan: Arc::from(""),
+                runner: "test".to_string(),
+                ray_dashboard_url: None,
+                entrypoint: None,
+                python_version: None,
+                daft_version: None,
+                ray_version: None,
+                state: QueryState::Finalizing {
+                    plan_info: PlanInfo {
+                        plan_start_sec: 0.0,
+                        plan_end_sec: 0.0,
+                        optimized_plan: Arc::from(""),
+                    },
+                    exec_info: ExecInfo {
+                        exec_start_sec: 0.0,
+                        physical_plan: Arc::from(""),
+                        operators: Default::default(),
+                        task_store: Default::default(),
+                    },
+                    exec_end_sec: 0.0,
+                },
+            },
+        );
+        for i in 0..MAX_QUERIES_RETAINED {
+            insert_query(&state, &format!("term{}", i), (10 + i) as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        assert!(
+            state.queries.contains_key("finalizing"),
+            "finalizing query must be retained"
+        );
+        assert!(!state.queries.contains_key("term0"));
     }
 
     #[tokio::test]
