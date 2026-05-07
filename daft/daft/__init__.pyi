@@ -2527,6 +2527,19 @@ class PyDaftPlanningConfig:
     @property
     def enable_strict_filter_pushdown(self) -> bool: ...
 
+class PyDaftEventLogConfig:
+    @staticmethod
+    def from_env() -> PyDaftEventLogConfig: ...
+    def with_config_values(
+        self,
+        enabled: bool | None = None,
+        path: str | None = None,
+    ) -> PyDaftEventLogConfig: ...
+    @property
+    def enabled(self) -> bool: ...
+    @property
+    def path(self) -> str: ...
+
 class StatType(Enum):
     COUNT = 0
     BYTES = 1
@@ -2572,11 +2585,14 @@ class PyDaftContext:
 
     _daft_execution_config: PyDaftExecutionConfig
     _daft_planning_config: PyDaftPlanningConfig
+    _daft_event_log_config: PyDaftEventLogConfig
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig: ...
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig: ...
+    @property
+    def daft_event_log_config(self) -> PyDaftEventLogConfig: ...
 
     # Subscriber methods
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None: ...
