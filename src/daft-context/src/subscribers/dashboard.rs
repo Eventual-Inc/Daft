@@ -536,7 +536,11 @@ impl DashboardSubscriber {
         //   * `cpu_us` sums across all nodes (each node's busy time
         //     contributes to the task's total CPU).
         //   * Inputs (`rows.in`/`bytes.in`) are only the task's external
-        //     input — sum those only from leaf snapshots.
+        //     input — sum those only from leaf snapshots. A leaf that's a
+        //     source (`SourceSnapshot`) reports `rows.out` and `bytes.read`
+        //     instead of `rows.in`/`bytes.in` because a source has no
+        //     upstream operator; both equal the task's external input, so we
+        //     fall back to them when the leaf doesn't expose an `*.in` key.
         //   * Outputs (`rows.out`/`bytes.out`) are only the task's external
         //     output — take those only from the root snapshot.
         // This avoids double-counting internal rows in fused chains like
@@ -545,6 +549,12 @@ impl DashboardSubscriber {
         let mut totals = daft_dashboard::engine::TaskTotals::default();
         for (node_info, snapshot) in &event.stats {
             let stats = snapshot.to_stats();
+            // Per-snapshot leaf input candidates: prefer `*.in`, fall back to
+            // source-side keys when the snapshot is `SourceSnapshot`.
+            let mut leaf_rows_in: Option<u64> = None;
+            let mut leaf_rows_out_for_fallback: Option<u64> = None;
+            let mut leaf_bytes_in: Option<u64> = None;
+            let mut leaf_bytes_read: Option<u64> = None;
             for (name, stat) in stats.iter() {
                 match (name, stat) {
                     (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) => {
@@ -553,17 +563,25 @@ impl DashboardSubscriber {
                     (common_metrics::ROWS_IN_KEY, common_metrics::Stat::Count(c))
                         if node_info.is_task_leaf =>
                     {
-                        totals.rows_in += *c;
+                        leaf_rows_in = Some(*c);
                     }
                     (common_metrics::BYTES_IN_KEY, common_metrics::Stat::Bytes(b))
                         if node_info.is_task_leaf =>
                     {
-                        totals.bytes_in += *b;
+                        leaf_bytes_in = Some(*b);
                     }
-                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(c))
-                        if node_info.is_task_root =>
+                    (common_metrics::BYTES_READ_KEY, common_metrics::Stat::Bytes(b))
+                        if node_info.is_task_leaf =>
                     {
-                        totals.rows_out += *c;
+                        leaf_bytes_read = Some(*b);
+                    }
+                    (common_metrics::ROWS_OUT_KEY, common_metrics::Stat::Count(c)) => {
+                        if node_info.is_task_leaf {
+                            leaf_rows_out_for_fallback = Some(*c);
+                        }
+                        if node_info.is_task_root {
+                            totals.rows_out += *c;
+                        }
                     }
                     (common_metrics::BYTES_OUT_KEY, common_metrics::Stat::Bytes(b))
                         if node_info.is_task_root =>
@@ -572,6 +590,10 @@ impl DashboardSubscriber {
                     }
                     _ => {}
                 }
+            }
+            if node_info.is_task_leaf {
+                totals.rows_in += leaf_rows_in.or(leaf_rows_out_for_fallback).unwrap_or(0);
+                totals.bytes_in += leaf_bytes_in.or(leaf_bytes_read).unwrap_or(0);
             }
         }
 

@@ -10,8 +10,8 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_IN_KEY, BYTES_OUT_KEY, DURATION_KEY, NodeID, QueryEndState, QueryID, ROWS_IN_KEY,
-    ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, DURATION_KEY, NodeID, QueryEndState, QueryID,
+    ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -622,27 +622,42 @@ fn emit_per_task_stats_updates(
                 ..TaskStatsSnapshot::default()
             });
         // See `on_task_end` in the dashboard subscriber for the rationale on
-        // is_task_root / is_task_leaf filtering. cpu_us is task-total so
-        // contributes from every node.
+        // is_task_root / is_task_leaf filtering and the source-leaf fallback.
+        let mut leaf_rows_in: Option<u64> = None;
+        let mut leaf_rows_out_for_fallback: Option<u64> = None;
+        let mut leaf_bytes_in: Option<u64> = None;
+        let mut leaf_bytes_read: Option<u64> = None;
         for (key, stat) in &stats_vec.0 {
             match (key.as_ref(), stat) {
                 (DURATION_KEY, Stat::Duration(d)) => {
                     acc.cpu_us += d.as_micros() as u64;
                 }
                 (ROWS_IN_KEY, Stat::Count(c)) if is_task_leaf => {
-                    acc.rows_in += *c;
+                    leaf_rows_in = Some(*c);
                 }
                 (BYTES_IN_KEY, Stat::Bytes(b)) if is_task_leaf => {
-                    acc.bytes_in += *b;
+                    leaf_bytes_in = Some(*b);
                 }
-                (ROWS_OUT_KEY, Stat::Count(c)) if is_task_root => {
-                    acc.rows_out += *c;
+                (BYTES_READ_KEY, Stat::Bytes(b)) if is_task_leaf => {
+                    leaf_bytes_read = Some(*b);
+                }
+                (ROWS_OUT_KEY, Stat::Count(c)) => {
+                    if is_task_leaf {
+                        leaf_rows_out_for_fallback = Some(*c);
+                    }
+                    if is_task_root {
+                        acc.rows_out += *c;
+                    }
                 }
                 (BYTES_OUT_KEY, Stat::Bytes(b)) if is_task_root => {
                     acc.bytes_out += *b;
                 }
                 _ => {}
             }
+        }
+        if is_task_leaf {
+            acc.rows_in += leaf_rows_in.or(leaf_rows_out_for_fallback).unwrap_or(0);
+            acc.bytes_in += leaf_bytes_in.or(leaf_bytes_read).unwrap_or(0);
         }
     }
 
