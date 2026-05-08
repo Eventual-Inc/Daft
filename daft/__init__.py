@@ -61,7 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
+from daft.checkpoint import CheckpointConfig, CheckpointStore, IdempotentCommit, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -191,6 +191,7 @@ __all__ = [
     "Expression",
     "File",
     "IOConfig",
+    "IdempotentCommit",
     "Identifier",
     "ImageFile",
     "ImageFormat",

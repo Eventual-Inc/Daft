@@ -67,7 +67,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
-    from daft.checkpoint import CheckpointStore
+    from daft.checkpoint import CheckpointStore, IdempotentCommit
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -1214,7 +1214,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
-        checkpoint: "CheckpointStore | None" = None,
+        checkpoint: "IdempotentCommit | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1224,8 +1224,8 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.checkpoint-`` are reserved when ``checkpoint`` is provided.
-            checkpoint (CheckpointStore, optional): Checkpoint store to make the write idempotent across process restarts. Only ``mode='append'`` is supported. Requires the Ray runner.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.idempotence-`` are reserved.
+            checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the snapshot summary is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate snapshot. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -1233,13 +1233,25 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called.
 
-            When ``checkpoint`` is provided and ``write_iceberg`` raises *after* the
-            catalog commit landed (e.g. a transient failure during the
-            post-commit ``mark_committed`` bookkeeping), the user data is
-            already durable in Iceberg. The next call to ``write_iceberg`` with
-            the same ``checkpoint`` will detect the snapshot via its markers,
-            finish the bookkeeping, and exit cleanly without producing a
-            duplicate snapshot.
+            When ``checkpoint`` is provided and ``write_iceberg`` raises
+            *after* the catalog commit landed (e.g. a transient failure during
+            the post-commit ``mark_committed`` bookkeeping), the user data is
+            already durable in Iceberg. The next call with the same
+            ``IdempotentCommit`` (same idempotence key) will detect the
+            snapshot via its marker, finish the bookkeeping, and exit cleanly
+            without producing a duplicate snapshot.
+
+            Idempotence-key contract — read carefully:
+
+            - **Same key + different inputs → silent no-op (data loss).** The
+              destination already has a snapshot tagged with the key, so
+              nothing new is written.
+            - **Different key + same retry → duplicate snapshot.** The
+              destination won't recognize the prior attempt and will commit
+              again. Idempotence is broken.
+
+            The orchestrator pattern (run-id supplied from upstream DAG context)
+            avoids both naturally.
 
         Examples:
             >>> import pyiceberg
@@ -1278,11 +1290,11 @@ class DataFrame:
         if checkpoint is not None and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("write_iceberg with checkpoint=... requires pyiceberg>=0.7.0")
 
-        if checkpoint is not None and snapshot_properties:
+        if snapshot_properties:
             for key in snapshot_properties:
-                if key.startswith("daft.checkpoint-"):
+                if key.startswith("daft.idempotence-"):
                     raise ValueError(
-                        f"snapshot_properties keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}"
+                        f"snapshot_properties keys with prefix 'daft.idempotence-' are reserved; got: {key!r}"
                     )
 
         io_config = (
@@ -1409,18 +1421,34 @@ class DataFrame:
         table: "pyiceberg.table.Table",
         io_config: IOConfig,
         snapshot_properties: dict[str, str] | None,
-        checkpoint: "CheckpointStore",
+        checkpoint: "IdempotentCommit",
     ) -> "DataFrame":
-        """Idempotent Iceberg commit driven by the checkpoint store.
+        """Idempotent Iceberg commit identified by ``checkpoint.idempotence_key``.
 
-        Files come from `checkpoint.get_checkpointed_files()` (the store is the source
-        of truth — no re-execution after a crash). The snapshot summary carries
-        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart can
-        recognize previously-committed work and skip it.
+        Each call produces exactly one Iceberg snapshot per logical commit,
+        tagged in the snapshot summary as ``daft.idempotence-key=<key>``.
+        Retries with the same key are recognized by walking the snapshot
+        history.
 
-        Concurrency assumption: at most one Python process per checkpoint path at a
-        time. The retry loop is defensive against transient `CommitFailedException`,
-        not multi-writer safety.
+        Flow:
+
+        1. Walk Iceberg snapshot history for ``daft.idempotence-key == our key``.
+           Found → previous attempt's commit already landed; mark all
+           ``Checkpointed`` entries → ``Committed`` and bail. **No pipeline run.**
+        2. Not found → run the pipeline. Source filter anti-joins
+           ``Committed ∪ Checkpointed`` keys, so previously-staged work is
+           not reprocessed; SCKO + sink populate the store as new
+           ``Checkpointed`` entries.
+        3. Pull files from ``get_checkpointed_files()`` and commit them in
+           one transaction tagged with ``daft.idempotence-key``. After
+           commit, ``mark_committed`` the entries.
+
+        Files always come from the checkpoint store, never from
+        ``write_df.collect()`` output — the store is the source of truth.
+
+        Concurrency assumption: at most one Python process per logical commit.
+        The retry loop is defensive against transient ``CommitFailedException``,
+        not against concurrent writers.
         """
         import pyarrow as pa
         import pyiceberg
@@ -1429,18 +1457,16 @@ class DataFrame:
 
         from daft import from_pydict
 
+        store = checkpoint.store
+        idempotence_key = checkpoint.idempotence_key
+
         builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
 
-        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
-        if not pending:
-            # Fresh run: execute the pipeline. SCKO + sink populate the store.
-            write_df.collect()
-            pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+        full_props = dict(snapshot_properties or {})
+        full_props["daft.idempotence-key"] = idempotence_key
 
-        if not pending:
-            # Source filter dropped everything (everything already committed in a
-            # prior run). Nothing to commit; return an empty result.
+        def _empty_result() -> "DataFrame":
             empty = from_pydict(
                 {
                     "operation": pa.array([], type=pa.string()),
@@ -1452,20 +1478,32 @@ class DataFrame:
             empty._metadata = write_df._metadata
             return empty
 
-        # Single-query-id invariant: all pending entries share the run that staged them.
-        our_query_id = pending[0].query_id
-        if not our_query_id or any(c.query_id != our_query_id for c in pending):
-            offending = sorted({c.query_id for c in pending})
-            raise RuntimeError(
-                "Checkpoint store contains pending entries with mismatched or empty query_ids; "
-                f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
-                "concurrent writers against the same path; the store was reused across "
-                "different destinations (one store per destination — see CheckpointStore docs); "
-                "or pre-feature legacy entries left behind in the store (empty query_id). "
-                "Resolve by using a fresh checkpoint path or clearing the store."
-            )
-        our_ids = [c.id for c in pending]
-        store_path = checkpoint.path
+        def _snapshot_with_our_key_exists() -> bool:
+            for snap in reversed(table.metadata.snapshots):
+                summary = snap.summary
+                if summary is not None and summary.get("daft.idempotence-key") == idempotence_key:
+                    return True
+            return False
+
+        def _pending_ids() -> list[str]:
+            return [c.id for c in store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+
+        # ── 1. Check-first: did a previous attempt already land?
+        table.refresh()
+        if _snapshot_with_our_key_exists():
+            pending_ids = _pending_ids()
+            if pending_ids:
+                store.mark_committed(pending_ids)
+            return _empty_result()
+
+        # ── 2. Run the pipeline. Source filter anti-joins already-Checkpointed
+        #       keys, so this only stages work that hasn't been staged before.
+        write_df.collect()
+
+        # ── 3. Commit-from-store.
+        pending_ids = _pending_ids()
+        if not pending_ids:
+            return _empty_result()
 
         # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
         # is an Arrow IPC stream of a MicroPartition produced by the iceberg
@@ -1473,11 +1511,8 @@ class DataFrame:
         # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
         # python-typed `data_file` column whose cells are pickled
         # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
-        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
-        # surfaces deep inside MicroPartition with a confusing error — wrap so
-        # the caller sees a clear message naming the contract.
         data_files: list[Any] = []
-        for fm in checkpoint.get_checkpointed_files():
+        for fm in store.get_checkpointed_files():
             try:
                 mp = MicroPartition.from_ipc_stream(fm.data)
                 data_files.extend(mp.to_pydict()["data_file"])
@@ -1489,28 +1524,6 @@ class DataFrame:
                     "Did pyiceberg change the DataFile shape, or is the store from a different "
                     f"writer version? Underlying error: {e}"
                 ) from e
-
-        # Pending entries exist but carry no data files. Happens when the source
-        # filter drops every input row (e.g. re-run after a fully-committed call)
-        # — the sink still seals an empty Checkpointed entry. There is nothing
-        # to commit; mark the empty entries Committed so they don't persist as
-        # pending forever, and return an empty result.
-        if not data_files:
-            checkpoint.mark_committed(our_ids)
-            empty = from_pydict(
-                {
-                    "operation": pa.array([], type=pa.string()),
-                    "rows": pa.array([], type=pa.int64()),
-                    "file_size": pa.array([], type=pa.int64()),
-                    "file_name": pa.array([], type=pa.string()),
-                }
-            )
-            empty._metadata = write_df._metadata
-            return empty
-
-        full_props = dict(snapshot_properties or {})
-        full_props["daft.checkpoint-store"] = store_path
-        full_props["daft.checkpoint-query"] = our_query_id
 
         def _build_result() -> "DataFrame":
             ops: list[str] = []
@@ -1549,17 +1562,12 @@ class DataFrame:
         last_err: Exception | None = None
         for _ in range(max_retries):
             table.refresh()
-            # Recovery check: did a prior attempt (or restart) already land our work?
-            for snap in reversed(table.metadata.snapshots):
-                summary = snap.summary
-                if summary is None:
-                    continue
-                if (
-                    summary.get("daft.checkpoint-store") == store_path
-                    and summary.get("daft.checkpoint-query") == our_query_id
-                ):
-                    checkpoint.mark_committed(our_ids)
-                    return _build_result()
+            # Recheck inside the retry loop — a prior iteration's commit may
+            # have landed despite returning CommitFailedException (rare, but
+            # the post-commit hook can fail in odd ways). Cheap.
+            if _snapshot_with_our_key_exists():
+                store.mark_committed(pending_ids)
+                return _build_result()
 
             try:
                 tx = table.transaction()
@@ -1574,7 +1582,7 @@ class DataFrame:
                     for df_ in data_files:
                         append_files.append_data_file(df_)
                 tx.commit_transaction()
-                checkpoint.mark_committed(our_ids)
+                store.mark_committed(pending_ids)
                 return _build_result()
             except CommitFailedException as e:
                 # Narrow on purpose: only optimistic-concurrency conflicts (the
