@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 def _redact_url(url: str) -> str:
     try:
         parsed = urlparse(url)
+        if parsed.password is None:
+            return url
+        userinfo = f"{parsed.username}:***" if parsed.username else "***"
+        host = parsed.hostname or ""
+        if parsed.port is not None:
+            host = f"{host}:{parsed.port}"
+        return parsed._replace(netloc=f"{userinfo}@{host}").geturl()
     except Exception:
         return "<redacted>"
-    if parsed.password is None:
-        return url
-    userinfo = f"{parsed.username}:***" if parsed.username else "***"
-    host = parsed.hostname or ""
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
-    return parsed._replace(netloc=f"{userinfo}@{host}").geturl()
 
 
 class SQLConnection:

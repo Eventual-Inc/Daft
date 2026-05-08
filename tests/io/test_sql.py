@@ -118,6 +118,9 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
         ("mysql://user@host/db", "mysql://user@host/db"),
         ("trino://host:443", "trino://host:443"),
         ("not a url", "not a url"),
+        # Non-numeric port — parsed.port raises ValueError; must not propagate
+        # and must not leak the password.
+        ("trino://alice:hunter2@host:badport/db", "<redacted>"),
     ],
 )
 def test_redact_url(url, expected):
