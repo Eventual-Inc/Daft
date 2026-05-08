@@ -62,7 +62,7 @@ class SQLConnection:
                     )
                 dialect = connection.engine.dialect.name
                 driver = connection.engine.driver
-                url = connection.engine.url.render_as_string()
+                url = connection.engine.url.render_as_string(hide_password=True)
             return cls(conn_factory, driver, dialect, url)
         except Exception as e:
             raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
