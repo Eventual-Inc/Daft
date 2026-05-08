@@ -155,8 +155,13 @@ impl LocalPhysicalPlan {
     }
 
     #[must_use]
-    pub fn arced(self) -> LocalPhysicalPlanRef {
-        self.into()
+    pub fn arced(mut self) -> LocalPhysicalPlanRef {
+        // `is_task_leaf` is intrinsic to the node (does it have children?), so
+        // we set it once here on the way to Arc-wrapping. Every constructor
+        // funnels through `arced()`, so this catches every node creation —
+        // including reconstruction via `with_new_children`.
+        self.context_mut().is_task_leaf = self.children().is_empty();
+        Arc::new(self)
     }
 
     pub fn get_stats_state(&self) -> &StatsState {
@@ -383,40 +388,26 @@ impl LocalPhysicalPlan {
         }
     }
 
-    /// Walk the plan tree and tag every node with its position relative to the
-    /// enclosing task: `is_task_root` on the root only, `is_task_leaf` on
-    /// every node that has no children. Returns a fully rebuilt tree with the
-    /// markers set; the original is unchanged.
-    ///
-    /// These markers let consumers of `StatSnapshot`s (e.g. the dashboard's
-    /// per-task aggregator) attribute external row/byte I/O correctly across
-    /// fused chains: only the root snapshot's `rows.out`/`bytes.out` is the
-    /// task's external output, and only leaf snapshots' `rows.in`/`bytes.in`
-    /// is external input. Summing indiscriminately over all snapshots
-    /// double-counts internal data.
-    pub fn mark_task_topology(self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
-        fn rec(plan: LocalPhysicalPlanRef, is_root: bool) -> LocalPhysicalPlanRef {
-            let children = plan.children();
-            let is_leaf = children.is_empty();
-            if is_leaf {
-                let mut new_ctx = plan.context().clone();
-                new_ctx.is_task_root = is_root;
-                new_ctx.is_task_leaf = true;
-                plan.with_replaced_leaf_context(new_ctx)
-            } else {
-                let new_children: Vec<LocalPhysicalPlanRef> =
-                    children.into_iter().map(|c| rec(c, false)).collect();
-                let mut new_plan = plan.with_new_children(&new_children);
-                // `with_new_children` always returns a fresh Arc with refcount 1.
-                let inner = Arc::get_mut(&mut new_plan)
-                    .expect("with_new_children should return a uniquely-owned Arc");
-                let ctx = inner.context_mut();
-                ctx.is_task_root = is_root;
-                ctx.is_task_leaf = false;
-                new_plan
-            }
-        }
-        rec(self, true)
+    /// Mark this node as the root of its enclosing task's local plan, so
+    /// consumers of `StatSnapshot`s can attribute external `rows.out` /
+    /// `bytes.out` to it (vs. internal flow between fused operators). Returns
+    /// a fresh Arc; the original is unchanged. `is_task_leaf` is already set
+    /// at construction time by [`Self::arced`].
+    pub fn mark_task_root(self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
+        let children = self.children();
+        let mut rebuilt = if children.is_empty() {
+            // Single-node task: the root is also a leaf. Rebuild via the
+            // leaf constructor so we end up with a uniquely-owned Arc.
+            self.with_replaced_leaf_context(self.context().clone())
+        } else {
+            // `with_new_children` always returns a fresh Arc with refcount 1.
+            self.with_new_children(&children)
+        };
+        Arc::get_mut(&mut rebuilt)
+            .expect("rebuilt root should be uniquely-owned")
+            .context_mut()
+            .is_task_root = true;
+        rebuilt
     }
 
     pub fn physical_scan(
@@ -2517,7 +2508,7 @@ pub struct FlightShuffleReadInput {
 }
 
 #[cfg(test)]
-mod mark_task_topology_tests {
+mod task_topology_tests {
     use super::*;
 
     fn scan() -> LocalPhysicalPlanRef {
@@ -2540,25 +2531,40 @@ mod mark_task_topology_tests {
         )
     }
 
-    /// Single-node task: that node is both root and leaf.
+    /// Constructors set `is_task_leaf` based on the node's children — leaves
+    /// (no children) get `true`, others get `false` — regardless of how the
+    /// caller-supplied `LocalNodeContext` was initialised.
     #[test]
-    fn single_node_is_root_and_leaf() {
-        let tagged = scan().mark_task_topology();
-        let ctx = tagged.context();
-        assert!(ctx.is_task_root, "single node should be task root");
-        assert!(ctx.is_task_leaf, "single node should be task leaf");
+    fn arced_sets_is_task_leaf_from_children() {
+        let leaf = scan();
+        assert!(leaf.context().is_task_leaf);
+        assert!(!leaf.context().is_task_root);
+
+        let intermediate = limit(scan(), 10);
+        assert!(!intermediate.context().is_task_leaf);
+        assert!(!intermediate.context().is_task_root);
     }
 
-    /// Linear chain: only the outermost node is root, only the deepest is leaf.
+    /// Single-node task: marking the root keeps `is_task_leaf` true and adds
+    /// `is_task_root`.
+    #[test]
+    fn mark_task_root_on_leaf_keeps_leaf_flag() {
+        let tagged = scan().mark_task_root();
+        let ctx = tagged.context();
+        assert!(ctx.is_task_root);
+        assert!(ctx.is_task_leaf);
+    }
+
+    /// Linear chain: only the outermost node has `is_task_root`, only the
+    /// deepest has `is_task_leaf`.
     #[test]
     fn linear_chain_marks_root_and_single_leaf() {
-        let plan = limit(limit(scan(), 10), 5);
-        let tagged = plan.mark_task_topology();
+        let plan = limit(limit(scan(), 10), 5).mark_task_root();
         // Outer limit (root)
-        assert!(tagged.context().is_task_root);
-        assert!(!tagged.context().is_task_leaf);
+        assert!(plan.context().is_task_root);
+        assert!(!plan.context().is_task_leaf);
         // Inner limit (intermediate)
-        let inner = &tagged.children()[0];
+        let inner = &plan.children()[0];
         assert!(!inner.context().is_task_root);
         assert!(!inner.context().is_task_leaf);
         // Scan (leaf)
@@ -2567,23 +2573,21 @@ mod mark_task_topology_tests {
         assert!(leaf.context().is_task_leaf);
     }
 
-    /// Multi-leaf join-shape (cross join of two scans): the join is the root,
-    /// both scans are leaves, neither scan is a root.
+    /// Multi-leaf join shape: the join is the root, both scans are leaves,
+    /// neither scan is a root.
     #[test]
-    fn multi_leaf_marks_each_leaf() {
+    fn multi_leaf_each_leaf_marked() {
         let plan = LocalPhysicalPlan::cross_join(
             scan(),
             scan(),
             Arc::new(Schema::empty()),
             StatsState::NotMaterialized,
             LocalNodeContext::default(),
-        );
-        let tagged = plan.mark_task_topology();
-        // CrossJoin (root)
-        assert!(tagged.context().is_task_root);
-        assert!(!tagged.context().is_task_leaf);
-        // Both children are leaves
-        let children = tagged.children();
+        )
+        .mark_task_root();
+        assert!(plan.context().is_task_root);
+        assert!(!plan.context().is_task_leaf);
+        let children = plan.children();
         assert_eq!(children.len(), 2);
         for child in &children {
             assert!(!child.context().is_task_root);
@@ -2591,16 +2595,11 @@ mod mark_task_topology_tests {
         }
     }
 
-    /// `mark_task_topology` does not mutate the original plan.
+    /// `mark_task_root` does not mutate the original plan.
     #[test]
-    fn original_plan_unchanged() {
+    fn mark_task_root_does_not_mutate_original() {
         let plan = limit(scan(), 10);
-        let _tagged = plan.clone().mark_task_topology();
-        // Untouched root has default flags (false / false).
+        let _tagged = plan.clone().mark_task_root();
         assert!(!plan.context().is_task_root);
-        assert!(!plan.context().is_task_leaf);
-        let leaf = &plan.children()[0];
-        assert!(!leaf.context().is_task_root);
-        assert!(!leaf.context().is_task_leaf);
     }
 }
