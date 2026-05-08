@@ -246,15 +246,14 @@ impl AsofJoinProbeState {
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
-        join_schema: &SchemaRef,
-        left_schema_len: usize,
+        right_cols_to_keep: &HashSet<String>,
     ) -> DaftResult<()> {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
 
         let right_on_arr: Arc<dyn Array> = right_rb.eval_expression(right_on)?.to_arrow()?;
         self.right_rbs_and_on_keys.push((
-            prune_right_batch(right_rb, join_schema, left_schema_len),
+            prune_right_batch(right_rb, right_cols_to_keep),
             right_on_arr.clone(),
         ));
 
@@ -404,17 +403,7 @@ fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: 
     }
 }
 
-fn prune_right_batch(
-    rb: &RecordBatch,
-    join_schema: &SchemaRef,
-    left_schema_len: usize,
-) -> RecordBatch {
-    let right_cols_to_keep: HashSet<&str> = join_schema
-        .fields()
-        .iter()
-        .skip(left_schema_len)
-        .map(|f| f.name.as_ref())
-        .collect();
+fn prune_right_batch(rb: &RecordBatch, right_cols_to_keep: &HashSet<String>) -> RecordBatch {
     let kept_indices: Vec<usize> = rb
         .schema
         .fields()
@@ -477,6 +466,7 @@ pub struct AsofJoinOperator {
     right_on: BoundExpr,
     left_schema: SchemaRef,
     join_schema: SchemaRef,
+    right_cols_to_keep: HashSet<String>,
 }
 
 impl AsofJoinOperator {
@@ -488,6 +478,12 @@ impl AsofJoinOperator {
         left_schema: SchemaRef,
         join_schema: SchemaRef,
     ) -> DaftResult<Self> {
+        let right_cols_to_keep = join_schema
+            .fields()
+            .iter()
+            .skip(left_schema.len())
+            .map(|f| f.name.to_string())
+            .collect();
         Ok(Self {
             left_by,
             right_by,
@@ -495,6 +491,7 @@ impl AsofJoinOperator {
             right_on,
             left_schema,
             join_schema,
+            right_cols_to_keep,
         })
     }
 }
@@ -552,8 +549,7 @@ impl JoinOperator for AsofJoinOperator {
     ) -> ProbeResult<Self> {
         let right_on = self.right_on.clone();
         let right_by = self.right_by.clone();
-        let join_schema = self.join_schema.clone();
-        let left_schema_len = self.left_schema.len();
+        let right_cols_to_keep = self.right_cols_to_keep.clone();
 
         spawner
             .spawn(
@@ -566,13 +562,7 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        state.probe_batch(
-                            right_rb,
-                            &right_on,
-                            &right_by,
-                            &join_schema,
-                            left_schema_len,
-                        )?;
+                        state.probe_batch(right_rb, &right_on, &right_by, &right_cols_to_keep)?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
