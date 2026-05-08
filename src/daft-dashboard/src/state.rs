@@ -77,6 +77,15 @@ pub(crate) struct TaskInfo {
     /// mid-flight from `TaskStatsUpdate` events. Distinct from wall-clock
     /// elapsed time `end_sec - submit_sec`.
     pub cpu_us: u64,
+    /// External rows read into the task (sum of `rows.in` only on local plan
+    /// leaf nodes; internal flows between fused operators don't contribute).
+    pub rows_in: u64,
+    /// External rows emitted from the task (the local plan root's `rows.out`).
+    pub rows_out: u64,
+    /// External bytes read into the task (leaf nodes only).
+    pub bytes_in: u64,
+    /// External bytes emitted from the task (root only).
+    pub bytes_out: u64,
     /// Wall-clock timestamp (sec since epoch) of the most recent mid-flight
     /// stats refresh. Used to drop stale out-of-order updates. Internal-only;
     /// not serialised to dashboard clients.
@@ -116,6 +125,10 @@ pub(crate) struct TaskGroupSummary {
     pub failed_count: u32,
     pub cancelled_count: u32,
     pub total_cpu_us: u64,
+    pub total_rows_in: u64,
+    pub total_rows_out: u64,
+    pub total_bytes_in: u64,
+    pub total_bytes_out: u64,
     pub first_submit_sec: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_end_sec: Option<f64>,
@@ -204,6 +217,10 @@ impl TaskStore {
                 failed_count: 0,
                 cancelled_count: 0,
                 total_cpu_us: 0,
+                total_rows_in: 0,
+                total_rows_out: 0,
+                total_bytes_in: 0,
+                total_bytes_out: 0,
                 first_submit_sec: initial_sec,
                 last_end_sec: None,
                 retained_task_count: 0,
@@ -274,6 +291,10 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
             latest_stats_sec: None,
             sources: Vec::new(),
         });
@@ -329,6 +350,10 @@ impl TaskStore {
             return;
         }
         task.cpu_us = entry.totals.cpu_us;
+        task.rows_in = entry.totals.rows_in;
+        task.rows_out = entry.totals.rows_out;
+        task.bytes_in = entry.totals.bytes_in;
+        task.bytes_out = entry.totals.bytes_out;
         task.latest_stats_sec = Some(timestamp_sec);
     }
 
@@ -399,6 +424,10 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
             latest_stats_sec: None,
             sources: Vec::new(),
         });
@@ -441,6 +470,10 @@ impl TaskStore {
         status: TaskStatus,
         end_sec: f64,
         cpu_us: u64,
+        rows_in: u64,
+        rows_out: u64,
+        bytes_in: u64,
+        bytes_out: u64,
     ) {
         // Determine whether this task was previously submitted (exists in tasks).
         let was_submitted = self.tasks.contains_key(&task_id);
@@ -496,6 +529,10 @@ impl TaskStore {
         // Mid-flight `update_task_stats` writes only into the individual
         // TaskInfo, so end_task adds the full task total to the group sum.
         group.total_cpu_us += cpu_us;
+        group.total_rows_in += rows_in;
+        group.total_rows_out += rows_out;
+        group.total_bytes_in += bytes_in;
+        group.total_bytes_out += bytes_out;
         match group.last_end_sec {
             Some(prev) if prev >= end_sec => {}
             _ => group.last_end_sec = Some(end_sec),
@@ -518,6 +555,10 @@ impl TaskStore {
             end_sec: None,
             worker_id: None,
             cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
             latest_stats_sec: None,
             sources: Vec::new(),
         });
@@ -531,6 +572,10 @@ impl TaskStore {
         task.end_sec = Some(end_sec);
         task.worker_id = worker_id;
         task.cpu_us = cpu_us;
+        task.rows_in = rows_in;
+        task.rows_out = rows_out;
+        task.bytes_in = bytes_in;
+        task.bytes_out = bytes_out;
 
         // Apply retention policy.
         match &status {
@@ -894,7 +939,10 @@ mod task_store_tests {
     fn stats_entry(task_id: u32, cpu_us: u64) -> TaskStatsEntry {
         TaskStatsEntry {
             task_id,
-            totals: TaskTotals { cpu_us },
+            totals: TaskTotals {
+                cpu_us,
+                ..TaskTotals::default()
+            },
         }
     }
 
@@ -1027,7 +1075,7 @@ mod task_store_tests {
     fn update_task_stats_after_end_is_noop() {
         let mut store = TaskStore::default();
         store.submit_task(submit(1, 7, vec![7], "Filter", 0.0));
-        store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600);
+        store.end_task(1, 7, vec![7], 0, None, finished(), 1.0, 600, 0, 0, 0, 0);
 
         store.update_task_stats(stats_entry(1, 9_999), 2.0);
 
@@ -1047,7 +1095,7 @@ mod task_store_tests {
         store.update_task_stats(stats_entry(1, 300), 1.0);
         assert_eq!(store.groups[0].total_cpu_us, 0);
 
-        store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500);
+        store.end_task(1, 7, vec![7], 0, None, finished(), 2.0, 500, 0, 0, 0, 0);
 
         assert_eq!(store.tasks.get(&1).unwrap().cpu_us, 500);
         assert_eq!(store.groups[0].total_cpu_us, 500);
@@ -1088,6 +1136,10 @@ mod task_store_tests {
             finished(),
             1.0,
             500,
+            0,
+            0,
+            0,
+            0,
         );
         // Submit arrives later with the same single-node chain.
         store.submit_task(submit(42, 7, vec![7], "Filter", 0.5));
@@ -1143,6 +1195,10 @@ mod task_store_tests {
             TaskStatus::Finished,
             2.0,
             123,
+            0,
+            0,
+            0,
+            0,
         );
         {
             let g = &store.groups[0];
