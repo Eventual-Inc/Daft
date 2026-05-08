@@ -7,6 +7,7 @@ from sqlalchemy import Column, Float, Integer, MetaData, String, Table, create_e
 
 import daft
 from daft.datatype import DataType
+from daft.sql.sql_connection import SQLConnection, _redact_url
 
 
 @pytest.fixture()
@@ -100,3 +101,44 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
 
     assert len(result["value"]) == 50
     assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("trino://alice:hunter2@trino.example.com:443", "trino://alice:***@trino.example.com:443"),
+        (
+            "trino://alice:hunter2@trino.example.com:443/db?param=1",
+            "trino://alice:***@trino.example.com:443/db?param=1",
+        ),
+        ("postgresql://user:p%40ss@host:5432/db", "postgresql://user:***@host:5432/db"),
+        ("mysql+pymysql://:secret@host/db", "mysql+pymysql://***@host/db"),
+        # No password — should be returned unchanged.
+        ("sqlite:///my.db", "sqlite:///my.db"),
+        ("mysql://user@host/db", "mysql://user@host/db"),
+        ("trino://host:443", "trino://host:443"),
+        ("not a url", "not a url"),
+    ],
+)
+def test_redact_url(url, expected):
+    assert _redact_url(url) == expected
+
+
+def test_execute_sql_error_does_not_leak_password():
+    """Connection failures must not include the password in the raised error."""
+    password = "super-secret-pw"
+    url = f"postgresql+psycopg2://alice:{password}@127.0.0.1:1/nope"
+    conn = SQLConnection.from_url(url)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        conn.execute_sql_query("SELECT 1")
+
+    message = str(exc_info.value)
+    assert password not in message
+    assert "alice:***@127.0.0.1:1" in message
+
+
+def test_repr_does_not_leak_password():
+    password = "super-secret-pw"
+    conn = SQLConnection.from_url(f"postgresql://alice:{password}@host:5432/db")
+    assert password not in repr(conn)

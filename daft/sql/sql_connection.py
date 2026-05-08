@@ -16,6 +16,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _redact_url(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "<redacted>"
+    if parsed.password is None:
+        return url
+    userinfo = f"{parsed.username}:***" if parsed.username else "***"
+    host = parsed.hostname or ""
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return parsed._replace(netloc=f"{userinfo}@{host}").geturl()
+
+
 class SQLConnection:
     def __init__(self, conn: str | Callable[[], Connection], driver: str, dialect: str, url: str) -> None:
         self.conn = conn
@@ -24,7 +38,8 @@ class SQLConnection:
         self.url = url
 
     def __repr__(self) -> str:
-        return f"SQLConnection(conn={self.conn})"
+        conn = _redact_url(self.conn) if isinstance(self.conn, str) else self.conn
+        return f"SQLConnection(conn={conn})"
 
     @classmethod
     def from_url(cls, url: str) -> SQLConnection:
@@ -143,7 +158,7 @@ class SQLConnection:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.conn}, error: {e}") from e
+            raise RuntimeError(f"Failed to execute sql: {sql} with url: {_redact_url(self.conn)}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         from sqlalchemy import create_engine, text
@@ -162,5 +177,5 @@ class SQLConnection:
             pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
             return pa.Table.from_pydict(pydict, schema=schema)
         except Exception as e:
-            connection_str = self.conn if isinstance(self.conn, str) else self.conn.__name__
+            connection_str = _redact_url(self.conn) if isinstance(self.conn, str) else self.conn.__name__
             raise RuntimeError(f"Failed to execute sql: {sql} from connection: {connection_str}, error: {e}") from e
