@@ -6,6 +6,7 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_writers::{AsyncFileWriter, make_ipc_writer};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
     shuffle_dirs
@@ -14,13 +15,12 @@ fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
         .collect()
 }
 
-fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64) -> String {
-    let dir = &shuffle_dirs[(partition_ref_id as usize) % shuffle_dirs.len()];
+fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: Uuid) -> String {
+    // Bucket across `shuffle_dirs` using the low 64 bits of the UUID (the random
+    // tail in v7), so bucketing distribution doesn't depend on the timestamp prefix.
+    let (_, low) = partition_ref_id.as_u64_pair();
+    let dir = &shuffle_dirs[(low as usize) % shuffle_dirs.len()];
     format!("{}/partition_ref_{}", dir, partition_ref_id)
-}
-
-pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
-    ((input_id as u64) << 32) | partition_idx as u64
 }
 
 // Result of a writer task
@@ -41,19 +41,19 @@ struct InProgressShuffleCacheState {
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
     writer_sender_weak: async_channel::WeakSender<MicroPartition>,
-    partition_ref_id: u64,
+    partition_ref_id: Uuid,
     schema: SchemaRef,
 }
 
 impl InProgressShuffleCache {
     pub fn try_new(
-        partition_ref_id: u64,
         schema: SchemaRef,
         dirs: &[String],
         shuffle_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
     ) -> DaftResult<Self> {
+        let partition_ref_id = Uuid::now_v7();
         // Create the directories
         // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
         // And raise an error if we can't find any directories with space.
@@ -85,7 +85,7 @@ impl InProgressShuffleCache {
 
     fn try_new_with_writer(
         writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
-        partition_ref_id: u64,
+        partition_ref_id: Uuid,
         schema: SchemaRef,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
@@ -222,7 +222,7 @@ async fn writer_task(
 
 #[derive(Debug, Clone)]
 pub struct PartitionCache {
-    pub partition_ref_id: u64,
+    pub partition_ref_id: Uuid,
     pub schema: SchemaRef,
     pub bytes_per_file: Vec<usize>,
     pub file_paths: Vec<String>,
@@ -257,7 +257,8 @@ mod tests {
         let writer = dummy_writer_factory.create_writer(0, None)?;
 
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
+        let cache =
+            InProgressShuffleCache::try_new_with_writer(writer, Uuid::now_v7(), dummy_schema())?;
 
         // Create and push some partitions
         // Since we have 1 partition, all data goes to partition 0
@@ -289,7 +290,8 @@ mod tests {
             make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(dummy_writer_factory));
         let writer = dummy_writer_factory.create_writer(0, None)?;
 
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
+        let cache =
+            InProgressShuffleCache::try_new_with_writer(writer, Uuid::now_v7(), dummy_schema())?;
 
         // Push 1000 empty partitions
         for _ in 0..1000 {
@@ -323,7 +325,8 @@ mod tests {
         let writer = failing_writer_factory.create_writer(0, None)?;
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
+        let cache =
+            InProgressShuffleCache::try_new_with_writer(writer, Uuid::now_v7(), dummy_schema())?;
 
         let mut found_failure = false;
         // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
@@ -386,7 +389,8 @@ mod tests {
         let writer = failing_writer_factory.create_writer(0, None)?;
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
+        let cache =
+            InProgressShuffleCache::try_new_with_writer(writer, Uuid::now_v7(), dummy_schema())?;
 
         // Create and push a partition
         let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];

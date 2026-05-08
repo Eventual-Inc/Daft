@@ -6,8 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use tracing::{Span, instrument};
 
@@ -61,16 +60,10 @@ pub(crate) struct FlightIntoPartitionsState {
 }
 
 impl FlightIntoPartitionsState {
-    fn try_new(
-        shared: Arc<FlightShared>,
-        input_id: InputId,
-        num_partitions: usize,
-    ) -> DaftResult<Self> {
+    fn try_new(shared: Arc<FlightShared>, num_partitions: usize) -> DaftResult<Self> {
         let mut caches = Vec::with_capacity(num_partitions);
-        for partition_idx in 0..num_partitions {
-            let partition_ref_id = partition_ref_id(input_id, partition_idx);
+        for _ in 0..num_partitions {
             let cache = InProgressShuffleCache::try_new(
-                partition_ref_id,
                 shared.schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,
@@ -319,7 +312,7 @@ impl BlockingSink for IntoPartitionsSink {
         )]
     }
 
-    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
+    fn make_state(&self, _: InputId) -> DaftResult<Self::State> {
         match &self.backend {
             IntoPartitionsBackend::Ray { .. } => {
                 Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
@@ -327,7 +320,7 @@ impl BlockingSink for IntoPartitionsSink {
                 }))
             }
             IntoPartitionsBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
-                FlightIntoPartitionsState::try_new(shared.clone(), input_id, self.num_partitions)?,
+                FlightIntoPartitionsState::try_new(shared.clone(), self.num_partitions)?,
             )),
         }
     }

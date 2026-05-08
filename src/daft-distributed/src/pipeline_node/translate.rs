@@ -236,16 +236,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )),
                 &self.meter,
             ),
-            LogicalPlan::IntoBatches(into_batches) => DistributedPipelineNode::new(
-                Arc::new(IntoBatchesNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    into_batches.batch_size,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )),
-                &self.meter,
-            ),
+            LogicalPlan::IntoBatches(into_batches) => {
+                let backend = self.select_backend();
+                DistributedPipelineNode::new(
+                    Arc::new(IntoBatchesNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        into_batches.batch_size,
+                        node.schema(),
+                        backend,
+                        self.curr_node.pop().unwrap(),
+                    )),
+                    &self.meter,
+                )
+            }
             LogicalPlan::Limit(limit) => DistributedPipelineNode::new(
                 Arc::new(LimitNode::new(
                     self.get_next_pipeline_node_id(),

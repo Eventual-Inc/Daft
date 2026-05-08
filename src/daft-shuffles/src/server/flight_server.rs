@@ -15,6 +15,7 @@ use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
+use uuid::Uuid;
 
 use super::stream::FlightDataStreamReader;
 use crate::{
@@ -24,7 +25,7 @@ use crate::{
 
 struct ParsedTicket {
     shuffle_id: u64,
-    partition_ref_ids: Vec<u64>,
+    partition_ref_ids: Vec<Uuid>,
 }
 
 impl ParsedTicket {
@@ -32,7 +33,8 @@ impl ParsedTicket {
         let ticket_str = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is comma-separated list of u64s
+        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is a
+        // comma-separated list of UUIDs.
         let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
         if parts.len() < 2 {
             return Err(Status::invalid_argument(
@@ -47,7 +49,7 @@ impl ParsedTicket {
             .split(',')
             .filter(|id| !id.is_empty())
             .map(|id| {
-                id.parse::<u64>().map_err(|e| {
+                Uuid::parse_str(id).map_err(|e| {
                     Status::invalid_argument(format!("Invalid partition ref id: {}", e))
                 })
             })
@@ -63,7 +65,7 @@ impl ParsedTicket {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct FlightPartitionKey {
     shuffle_id: u64,
-    partition_ref_id: u64,
+    partition_ref_id: Uuid,
 }
 
 #[derive(Clone, Default)]
@@ -97,7 +99,7 @@ impl ShuffleFlightServer {
     async fn get_shuffle_file_paths(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        partition_ref_ids: &[Uuid],
     ) -> Option<(Vec<String>, SchemaRef)> {
         let partitions = self.shuffle_partitions.lock().await;
 
@@ -133,7 +135,7 @@ impl ShuffleFlightServer {
     pub async fn get_partition_local(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        partition_ref_ids: &[Uuid],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let (file_paths, schema) = self
             .get_shuffle_file_paths(shuffle_id, partition_ref_ids)
