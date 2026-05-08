@@ -57,17 +57,12 @@ struct Manifest {
     committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
-    /// Identifier of the execution that staged this checkpoint. Older manifests
-    /// predate this field; `serde(default)` yields empty on absence.
-    #[serde(default)]
-    query_id: String,
 }
 
 struct StagedEntry {
     num_key_files: usize,
     num_file_files: usize,
     created_at: SystemTime,
-    query_id: String,
     /// In-flight PUTs spawned by `stage_keys` / `stage_files`.
     /// Drained by `checkpoint()`. Aborts on drop (e.g. abandoned checkpoint).
     pending: JoinSet<CheckpointResult<()>>,
@@ -78,12 +73,11 @@ struct StagedEntry {
 }
 
 impl StagedEntry {
-    fn new(query_id: String) -> Self {
+    fn new() -> Self {
         Self {
             num_key_files: 0,
             num_file_files: 0,
             created_at: SystemTime::now(),
-            query_id,
             pending: JoinSet::new(),
             first_error: Arc::new(OnceLock::new()),
         }
@@ -313,7 +307,6 @@ impl S3CheckpointStore {
     async fn reserve_slots(
         &self,
         id: &CheckpointId,
-        query_id: &str,
         update: impl FnOnce(&mut StagedEntry) -> usize,
     ) -> CheckpointResult<usize> {
         {
@@ -335,9 +328,7 @@ impl S3CheckpointStore {
         let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
             message: format!("staged lock poisoned: {e}"),
         })?;
-        let entry = staged
-            .entry(id.clone())
-            .or_insert_with(|| StagedEntry::new(query_id.to_string()));
+        let entry = staged.entry(id.clone()).or_insert_with(StagedEntry::new);
         Ok(update(entry))
     }
 
@@ -485,12 +476,7 @@ impl S3CheckpointStore {
 
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
-    async fn stage_keys(
-        &self,
-        id: &CheckpointId,
-        query_id: &str,
-        keys: Series,
-    ) -> CheckpointResult<()> {
+    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
         self.check_first_error(id)?;
         // Persist under the canonical column name so the on-disk key files
         // are stable across renames of the source column. The scan operator
@@ -498,7 +484,7 @@ impl CheckpointStore for S3CheckpointStore {
         let canonical = keys.rename(common_checkpoint_config::SEALED_KEYS_COLUMN);
         let parquet_bytes = super::keys_codec::write_series_as_parquet(&canonical)?;
         let idx = self
-            .reserve_slots(id, query_id, |e| {
+            .reserve_slots(id, |e| {
                 let i = e.num_key_files;
                 e.num_key_files += 1;
                 i
@@ -510,7 +496,6 @@ impl CheckpointStore for S3CheckpointStore {
     async fn stage_files(
         &self,
         id: &CheckpointId,
-        query_id: &str,
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()> {
         if files.is_empty() {
@@ -519,7 +504,7 @@ impl CheckpointStore for S3CheckpointStore {
         self.check_first_error(id)?;
         let blob = Self::encode_file_metadata(&files)?;
         let idx = self
-            .reserve_slots(id, query_id, |e| {
+            .reserve_slots(id, |e| {
                 let i = e.num_file_files;
                 e.num_file_files += 1;
                 i
@@ -543,13 +528,12 @@ impl CheckpointStore for S3CheckpointStore {
                     entry.num_key_files,
                     entry.num_file_files,
                     entry.created_at,
-                    entry.query_id.clone(),
                     pending,
                 )
             })
         };
 
-        let (num_key_files, num_file_files, created_at, query_id, pending) = match drain {
+        let (num_key_files, num_file_files, created_at, pending) = match drain {
             Some(data) => data,
             None => {
                 // No in-memory staged entry for this id. Two sub-cases, both
@@ -558,12 +542,10 @@ impl CheckpointStore for S3CheckpointStore {
                 //       read_manifest succeeds; nothing more to do.
                 //   (b) Never staged at all (e.g. 0-row source after the
                 //       anti-join — the sink generated an id but no SCKO or
-                //       sink call ever landed keys/files). There's no query_id
-                //       to record, so we *cannot* write a manifest without
-                //       violating the downstream single-query-id invariant.
-                //       Succeed quietly — consumers using `list_checkpoints`
-                //       simply see no Checkpointed entry for this id, which
-                //       matches the empty-input flow's expected semantics.
+                //       sink call ever landed keys/files). Succeed quietly —
+                //       consumers using `list_checkpoints` simply see no
+                //       Checkpointed entry for this id, which matches the
+                //       empty-input flow's expected semantics.
                 return match self.read_manifest(id).await {
                     Ok(_) => Ok(()),
                     Err(CheckpointError::CheckpointNotFound { .. }) => Ok(()),
@@ -589,7 +571,6 @@ impl CheckpointStore for S3CheckpointStore {
             committed_at: None,
             num_key_files,
             num_file_files,
-            query_id,
         };
         self.write_manifest(id, &manifest).await?;
 
@@ -657,7 +638,6 @@ impl CheckpointStore for S3CheckpointStore {
                 return Ok(Checkpoint::new(
                     id.clone(),
                     CheckpointStatus::Staged,
-                    Arc::from(entry.query_id.as_str()),
                     entry.created_at,
                     None,
                     None,
@@ -676,7 +656,6 @@ impl CheckpointStore for S3CheckpointStore {
         Ok(Checkpoint::new(
             id.clone(),
             status,
-            Arc::from(manifest.query_id.as_str()),
             system_time_from_rfc3339(&manifest.created_at)?,
             Some(system_time_from_rfc3339(&manifest.sealed_at)?),
             manifest
@@ -709,7 +688,6 @@ impl CheckpointStore for S3CheckpointStore {
                 checkpoints.push(Checkpoint::new(
                     id.clone(),
                     CheckpointStatus::Staged,
-                    Arc::from(entry.query_id.as_str()),
                     entry.created_at,
                     None,
                     None,
@@ -726,7 +704,6 @@ impl CheckpointStore for S3CheckpointStore {
             checkpoints.push(Checkpoint::new(
                 id.clone(),
                 status,
-                Arc::from(manifest.query_id.as_str()),
                 system_time_from_rfc3339(&manifest.created_at)?,
                 Some(system_time_from_rfc3339(&manifest.sealed_at)?),
                 manifest
@@ -923,7 +900,6 @@ mod tests {
             committed_at: None,
             num_key_files: 3,
             num_file_files: 1,
-            query_id: "eager-phoenix-a4f821".to_string(),
         };
         let raw = serde_json::to_vec(&manifest).unwrap();
         let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
@@ -934,7 +910,6 @@ mod tests {
         assert_eq!(decoded.committed_at, None);
         assert_eq!(decoded.num_key_files, 3);
         assert_eq!(decoded.num_file_files, 1);
-        assert_eq!(decoded.query_id, "eager-phoenix-a4f821");
     }
 
     #[test]
@@ -948,29 +923,11 @@ mod tests {
             committed_at: Some(now.clone()),
             num_key_files: 1,
             num_file_files: 0,
-            query_id: "swift-otter-1c2b3a".to_string(),
         };
         let raw = serde_json::to_vec(&manifest).unwrap();
         let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
         assert_eq!(decoded.status, ManifestStatus::Committed);
         assert_eq!(decoded.committed_at, Some(now));
-    }
-
-    #[test]
-    fn test_manifest_query_id_default_on_old_payload() {
-        let now = rfc3339_from(SystemTime::now());
-        // Synthetic "old" manifest without the query_id field.
-        let raw = serde_json::json!({
-            "checkpoint_id": "task-0-checkpoint-abc",
-            "status": "checkpointed",
-            "created_at": &now,
-            "sealed_at": &now,
-            "committed_at": null,
-            "num_key_files": 0,
-            "num_file_files": 0,
-        });
-        let decoded: Manifest = serde_json::from_value(raw).unwrap();
-        assert_eq!(decoded.query_id, "");
     }
 
     #[test]
