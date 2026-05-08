@@ -67,16 +67,6 @@ impl LocalNodeContext {
         self.additional = Some(additional);
         self
     }
-
-    pub fn with_task_root(mut self, is_task_root: bool) -> Self {
-        self.is_task_root = is_task_root;
-        self
-    }
-
-    pub fn with_task_leaf(mut self, is_task_leaf: bool) -> Self {
-        self.is_task_leaf = is_task_leaf;
-        self
-    }
 }
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
