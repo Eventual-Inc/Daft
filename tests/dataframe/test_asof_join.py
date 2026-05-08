@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import datetime
+
+import pyarrow as pa
 import pytest
 
 import daft
@@ -656,10 +659,6 @@ class TestAsofJoinTypeMismatches:
 
     def test_time_date_asof_key_raises(self):
         """Time left asof key vs Date right asof key: no supertype exists, should raise."""
-        import datetime
-
-        import pyarrow as pa
-
         left = daft.from_arrow(pa.table({"ts": pa.array([3_600_000_000_000], type=pa.time64("ns")), "v": [1]}))
         right = daft.from_arrow(pa.table({"ts": pa.array([datetime.date(2021, 1, 1)]), "w": [10]}))
         with pytest.raises(Exception):
@@ -667,10 +666,6 @@ class TestAsofJoinTypeMismatches:
 
     def test_time_date_by_key_raises(self):
         """Time left by key vs Date right by key: no supertype exists, should raise."""
-        import datetime
-
-        import pyarrow as pa
-
         left = daft.from_arrow(
             pa.table({"g": pa.array([3_600_000_000_000], type=pa.time64("ns")), "ts": [1], "v": [1]})
         )
@@ -680,10 +675,6 @@ class TestAsofJoinTypeMismatches:
 
     def test_multiple_by_keys_first_coerces_second_raises(self):
         """Two by keys: first is int/float (coerces), second is Time/Date (no supertype, raises)."""
-        import datetime
-
-        import pyarrow as pa
-
         left = daft.from_arrow(
             pa.table({"g1": [1], "g2": pa.array([3_600_000_000_000], type=pa.time64("ns")), "ts": [10], "v": [1]})
         )
