@@ -661,7 +661,10 @@ class TestAsofJoinTypeMismatches:
         """Time left asof key vs Date right asof key: no supertype exists, should raise."""
         left = daft.from_arrow(pa.table({"ts": pa.array([3_600_000_000_000], type=pa.time64("ns")), "v": [1]}))
         right = daft.from_arrow(pa.table({"ts": pa.array([datetime.date(2021, 1, 1)]), "w": [10]}))
-        with pytest.raises(Exception):
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
             left.join_asof(right, on="ts").collect()
 
     def test_time_date_by_key_raises(self):
@@ -670,7 +673,10 @@ class TestAsofJoinTypeMismatches:
             pa.table({"g": pa.array([3_600_000_000_000], type=pa.time64("ns")), "ts": [1], "v": [1]})
         )
         right = daft.from_arrow(pa.table({"g": pa.array([datetime.date(2021, 1, 1)]), "ts": [1], "w": [10]}))
-        with pytest.raises(Exception):
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
             left.join_asof(right, on="ts", by="g").collect()
 
     def test_multiple_by_keys_first_coerces_second_raises(self):
@@ -681,7 +687,10 @@ class TestAsofJoinTypeMismatches:
         right = daft.from_arrow(
             pa.table({"g1": [1.0], "g2": pa.array([datetime.date(2021, 1, 1)]), "ts": [5], "w": [50]})
         )
-        with pytest.raises(Exception):
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
             left.join_asof(right, on="ts", by=["g1", "g2"]).collect()
 
 
