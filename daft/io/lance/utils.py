@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import zlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -11,6 +12,15 @@ if TYPE_CHECKING:
     from daft.dependencies import pa
 
 logger = logging.getLogger(__name__)
+
+
+def namespace_hash_prefix(object_id: str) -> str:
+    return format(zlib.crc32(object_id.encode()) & 0xFFFFFFFF, "08x")
+
+
+def namespace_physical_path(base_uri: str, object_id: str) -> str:
+    prefix = namespace_hash_prefix(object_id)
+    return base_uri.rstrip("/") + f"/{prefix}_{object_id}"
 
 
 def distribute_fragments_balanced(fragments: list[Any], fragment_group_size: int) -> list[dict[str, list[int]]]:

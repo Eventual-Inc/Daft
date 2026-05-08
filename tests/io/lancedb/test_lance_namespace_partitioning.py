@@ -41,9 +41,17 @@ class TestPartitionedWrite:
         manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
         manifest_table = manifest_ds.to_table()
         assert manifest_table.num_rows == 4
-        assert "_dataset_path" in manifest_table.column_names
+        assert "object_id" in manifest_table.column_names
+        assert "object_type" in manifest_table.column_names
+        assert "metadata" in manifest_table.column_names
+        assert "read_version" in manifest_table.column_names
+        assert "read_branch" in manifest_table.column_names
+        assert "read_tag" in manifest_table.column_names
         assert "partition_field_year" in manifest_table.column_names
         assert "partition_field_country" in manifest_table.column_names
+        for i in range(manifest_table.num_rows):
+            assert manifest_table.column("object_type")[i].as_py() == "table"
+            assert manifest_table.column("read_version")[i].as_py() is not None
 
     def test_manifest_metadata(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
@@ -55,31 +63,44 @@ class TestPartitionedWrite:
         spec = json.loads(metadata[b"partition_spec_v1"])
         assert spec["id"] == 1
         assert len(spec["fields"]) == 2
+        for field in spec["fields"]:
+            assert isinstance(field["transform"], dict)
+            assert "type" in field["transform"]
+            assert isinstance(field["result_type"], dict)
+            assert "type" in field["result_type"]
 
     def test_partition_dirs_are_random_base36(self, namespace_dir, sample_df):
+        import zlib
+
         sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
         import lance
 
         manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
         manifest_table = manifest_ds.to_table()
         for i in range(manifest_table.num_rows):
-            path = manifest_table.column("_dataset_path")[i].as_py()
-            parts = path.split("$")
+            object_id = manifest_table.column("object_id")[i].as_py()
+            parts = object_id.split("$")
             assert len(parts) == 3
             assert parts[0] == "v1"
             assert parts[2] == "dataset"
             dir_name = parts[1]
             assert len(dir_name) == 16
             assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in dir_name)
+            expected_hash = format(zlib.crc32(object_id.encode()) & 0xFFFFFFFF, "08x")
+            physical_dir = f"{expected_hash}_{object_id}"
+            assert os.path.exists(os.path.join(namespace_dir, physical_dir))
 
     def test_partition_columns_stripped_from_data(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
         import lance
 
+        from daft.io.lance.utils import namespace_physical_path
+
         manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
         manifest_table = manifest_ds.to_table()
-        path = manifest_table.column("_dataset_path")[0].as_py()
-        partition_ds = lance.dataset(os.path.join(namespace_dir, path))
+        object_id = manifest_table.column("object_id")[0].as_py()
+        ds_uri = namespace_physical_path(namespace_dir, object_id)
+        partition_ds = lance.dataset(ds_uri)
         schema_names = set(partition_ds.schema.names)
         assert "year" not in schema_names
         assert "country" not in schema_names
@@ -113,8 +134,8 @@ class TestPartitionedWrite:
         import lance
 
         manifest = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
-        paths = manifest.column("_dataset_path").to_pylist()
-        assert len(paths) == len(set(paths)), f"Duplicate manifest rows: {paths}"
+        object_ids = manifest.column("object_id").to_pylist()
+        assert len(object_ids) == len(set(object_ids)), f"Duplicate manifest rows: {object_ids}"
         assert manifest.num_rows == 3
 
         read_back = daft.read_lance(namespace_dir, namespace_partitioning=True).collect()

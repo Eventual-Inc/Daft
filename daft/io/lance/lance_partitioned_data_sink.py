@@ -129,8 +129,8 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                 {
                     "field_id": spec.field_id,
                     "source_ids": [spec.source_id],
-                    "transform": spec.transform,
-                    "result_type": str(spec.result_type),
+                    "transform": {"type": spec.transform},
+                    "result_type": {"type": str(spec.result_type)},
                 }
             )
         return json.dumps({"id": 1, "fields": fields})
@@ -165,6 +165,7 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                 "Use mode='create' to create a new partitioned dataset."
             )
         manifest_table = manifest_ds.to_table()
+        self._existing_read_versions: dict[str, int] = {}
         for i in range(manifest_table.num_rows):
             pv = {}
             for spec in self._partition_field_specs:
@@ -172,11 +173,15 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                 if col_name in manifest_table.column_names:
                     pv[spec.field_id] = manifest_table.column(col_name)[i].as_py()
             key = _partition_key(pv)
-            path = manifest_table.column("_dataset_path")[i].as_py()
-            parts = path.split("$")
+            object_id = manifest_table.column("object_id")[i].as_py()
+            parts = object_id.split("$")
             if len(parts) >= 2:
                 self._partition_dirs[key] = parts[1]
                 self._spec_version = parts[0]
+            if "read_version" in manifest_table.column_names:
+                rv = manifest_table.column("read_version")[i].as_py()
+                if rv is not None:
+                    self._existing_read_versions[parts[1]] = rv
 
         self._existing_version = manifest_ds.version
 
@@ -185,6 +190,14 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
 
     def schema(self) -> Schema:
         return self._schema
+
+    def _object_id_for_dir(self, dir_name: str) -> str:
+        return f"{self._spec_version}${dir_name}$dataset"
+
+    def _physical_path_for_dir(self, dir_name: str) -> str:
+        from daft.io.lance.utils import namespace_physical_path
+
+        return namespace_physical_path(self._table_uri, self._object_id_for_dir(dir_name))
 
     def write(
         self, micropartitions: Iterator[MicroPartition]
@@ -202,7 +215,7 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                     self._partition_dirs[key] = _generate_partition_dir_name()
                 dir_name = self._partition_dirs[key]
 
-                dataset_path = self._table_uri.rstrip("/") + f"/{self._spec_version}${dir_name}$dataset"
+                dataset_path = self._physical_path_for_dir(dir_name)
 
                 write_table = group_table.drop_columns(
                     [c for c in self._partition_col_names if c in group_table.column_names]
@@ -254,8 +267,9 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                     partition_map[dir_name] = (partition_values, [])
                 partition_map[dir_name][1].extend(fragments)
 
+        partition_versions: dict[str, int] = {}
         for dir_name, (partition_values, fragments) in partition_map.items():
-            dataset_path = self._table_uri.rstrip("/") + f"/{self._spec_version}${dir_name}$dataset"
+            dataset_path = self._physical_path_for_dir(dir_name)
 
             existing_version: int | None = None
             if self._mode == "append":
@@ -267,21 +281,23 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
 
             if existing_version is not None:
                 operation = lance.LanceOperation.Append(fragments)
-                lance.LanceDataset.commit(
+                committed_ds = lance.LanceDataset.commit(
                     dataset_path,
                     operation,
                     read_version=existing_version,
                     storage_options=self._storage_options,
                 )
+                partition_versions[dir_name] = committed_ds.version
             else:
                 operation = lance.LanceOperation.Overwrite(self._data_schema, fragments)
-                lance.LanceDataset.commit(
+                committed_ds = lance.LanceDataset.commit(
                     dataset_path,
                     operation,
                     storage_options=self._storage_options,
                 )
+                partition_versions[dir_name] = committed_ds.version
 
-        self._write_manifest(lance, partition_map)
+        self._write_manifest(lance, partition_map, partition_versions)
 
         total_fragments = sum(len(frags) for _, frags in partition_map.values())
         return MicroPartition.from_pydict(
@@ -296,18 +312,20 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
         self,
         lance_module: ModuleType,
         partition_map: dict[str, tuple[dict[str, Any], list[Any]]],
+        partition_versions: dict[str, int],
     ) -> None:
         manifest_uri = self._table_uri.rstrip("/") + "/__manifest"
 
-        all_partitions: dict[str, dict[str, Any]] = {}
+        all_partitions: dict[str, tuple[dict[str, Any], int | None]] = {}
 
         if self._mode == "append":
+            existing_read_versions = getattr(self, "_existing_read_versions", {})
             try:
                 existing_ds = lance_module.dataset(manifest_uri, storage_options=self._storage_options)
                 existing_table = existing_ds.to_table()
                 for i in range(existing_table.num_rows):
-                    path = existing_table.column("_dataset_path")[i].as_py()
-                    parts = path.split("$")
+                    object_id = existing_table.column("object_id")[i].as_py()
+                    parts = object_id.split("$")
                     if len(parts) >= 2:
                         dir_name = parts[1]
                         pv: dict[str, Any] = {}
@@ -315,31 +333,51 @@ class LancePartitionedDataSink(DataSink[list[tuple[dict[str, Any], str, list[Any
                             col = f"partition_field_{spec.field_id}"
                             if col in existing_table.column_names:
                                 pv[spec.source_field] = existing_table.column(col)[i].as_py()
-                        all_partitions[dir_name] = pv
+                        rv = existing_read_versions.get(dir_name)
+                        all_partitions[dir_name] = (pv, rv)
             except (ValueError, FileNotFoundError, OSError):
                 pass
 
         for dir_name, (partition_values, _) in partition_map.items():
-            all_partitions[dir_name] = partition_values
+            all_partitions[dir_name] = (partition_values, partition_versions.get(dir_name))
 
-        columns: dict[str, list[Any]] = {"_dataset_path": []}
+        columns: dict[str, list[Any]] = {
+            "object_id": [],
+            "object_type": [],
+            "metadata": [],
+            "read_version": [],
+            "read_branch": [],
+            "read_tag": [],
+        }
         for spec in self._partition_field_specs:
             columns[f"partition_field_{spec.field_id}"] = []
 
-        for dir_name, partition_values in all_partitions.items():
-            columns["_dataset_path"].append(f"{self._spec_version}${dir_name}$dataset")
+        for dir_name, (partition_values, rv) in all_partitions.items():
+            columns["object_id"].append(self._object_id_for_dir(dir_name))
+            columns["object_type"].append("table")
+            columns["metadata"].append("{}")
+            columns["read_version"].append(rv)
+            columns["read_branch"].append(None)
+            columns["read_tag"].append(None)
             for spec in self._partition_field_specs:
                 columns[f"partition_field_{spec.field_id}"].append(partition_values.get(spec.source_field))
 
-        manifest_fields: list[pa.Field] = [pa.field("_dataset_path", pa.utf8())]
+        manifest_fields: list[pa.Field] = [
+            pa.field("object_id", pa.utf8()),
+            pa.field("object_type", pa.utf8()),
+            pa.field("metadata", pa.utf8()),
+            pa.field("read_version", pa.uint64()),
+            pa.field("read_branch", pa.utf8()),
+            pa.field("read_tag", pa.utf8()),
+        ]
         for spec in self._partition_field_specs:
             manifest_fields.append(pa.field(f"partition_field_{spec.field_id}", spec.result_type))
 
-        metadata: dict[bytes | str, bytes | str] = {
+        schema_metadata: dict[bytes | str, bytes | str] = {
             "partition_spec_v1": self._build_partition_spec_json(),
             "schema": self._build_namespace_schema_json(),
         }
-        manifest_schema = pa.schema(manifest_fields, metadata=metadata)
+        manifest_schema = pa.schema(manifest_fields, metadata=schema_metadata)
 
         arrays = []
         for field in manifest_fields:

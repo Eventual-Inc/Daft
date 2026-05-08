@@ -105,7 +105,8 @@ def _build_partition_fields(partition_spec: dict[str, Any], namespace_schema: pa
     for field_def in partition_spec.get("fields", []):
         field_id = field_def["field_id"]
         source_ids = field_def.get("source_ids", [])
-        transform_name = field_def.get("transform", "identity")
+        transform_raw = field_def.get("transform", {"type": "identity"})
+        transform_name = transform_raw["type"] if isinstance(transform_raw, dict) else transform_raw
 
         if source_ids:
             source_idx = source_ids[0]
@@ -137,6 +138,7 @@ def _lancedb_namespace_factory_function(
     limit: int | None = None,
     partition_values: dict[str, Any] | None = None,
     partition_col_types: dict[str, str] | None = None,
+    read_version: int | None = None,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -145,7 +147,10 @@ def _lancedb_namespace_factory_function(
             "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
         ) from e
 
-    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
+    kwargs = dict(open_kwargs or {})
+    if read_version is not None:
+        kwargs["version"] = read_version
+    ds = lance.dataset(ds_uri, **kwargs)
 
     non_partition_columns = None
     if required_columns is not None:
@@ -246,9 +251,11 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         if ns_schema_json and "fields" in ns_schema_json:
             return self._schema_from_json(ns_schema_json)
 
+        from .utils import namespace_physical_path
+
         for i in range(manifest_table.num_rows):
-            path = manifest_table.column("_dataset_path")[i].as_py()
-            ds_uri = self._namespace_uri + "/" + path
+            object_id = manifest_table.column("object_id")[i].as_py()
+            ds_uri = namespace_physical_path(self._namespace_uri, object_id)
             try:
                 import lance
 
@@ -322,6 +329,8 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        from .utils import namespace_physical_path
+
         required_columns: list[str] | None
         if pushdowns.columns is None:
             required_columns = None
@@ -337,6 +346,8 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
 
         pushed_arrow_filter = combine_filters_to_arrow(self._pushed_filters)
 
+        has_read_version = "read_version" in self._manifest_table.column_names
+
         for i in range(self._manifest_table.num_rows):
             partition_values = {}
             for field_def in self._partition_spec.get("fields", []):
@@ -349,11 +360,15 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
                 if not self._evaluate_partition_filter(pushdowns.partition_filters, partition_values):
                     continue
 
-            dataset_path = self._manifest_table.column("_dataset_path")[i].as_py()
-            ds_uri = self._namespace_uri + "/" + dataset_path
+            object_id = self._manifest_table.column("object_id")[i].as_py()
+            ds_uri = namespace_physical_path(self._namespace_uri, object_id)
+
+            read_version: int | None = None
+            if has_read_version:
+                read_version = self._manifest_table.column("read_version")[i].as_py()
 
             yield from self._create_scan_tasks_for_partition(
-                ds_uri, partition_values, required_columns, pushed_arrow_filter, pushdowns
+                ds_uri, partition_values, required_columns, pushed_arrow_filter, pushdowns, read_version
             )
 
     def _evaluate_partition_filter(self, partition_filter: PyExpr, partition_values: dict[str, Any]) -> bool:
@@ -389,11 +404,12 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         required_columns: list[str] | None,
         pushed_arrow_filter: Optional["pa.compute.Expression"],
         pushdowns: PyPushdowns,
+        read_version: int | None = None,
     ) -> Iterator[ScanTask]:
         import lance
 
         try:
-            ds = lance.dataset(ds_uri, storage_options=self._storage_options)
+            ds = lance.dataset(ds_uri, storage_options=self._storage_options, version=read_version)
         except Exception as e:
             logger.warning("Failed to open partition dataset at %s: %s", ds_uri, e)
             return
@@ -419,6 +435,7 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
                     pushdowns.limit,
                     partition_values,
                     self._partition_col_types,
+                    read_version,
                 ),
                 schema=self._schema._schema,
                 num_rows=num_rows,
