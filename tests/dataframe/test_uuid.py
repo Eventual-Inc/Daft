@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+import time
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.functions import format, uuid
+from daft.functions import format, uuid, uuidv7
 
 
 def test_uuid_column_generation(make_df) -> None:
@@ -18,6 +19,34 @@ def test_uuid_column_generation(make_df) -> None:
     assert len(set(values)) == 200
     uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     assert all(isinstance(v, str) and uuid_re.match(v) is not None for v in values)
+
+
+def test_uuidv7_column_generation(make_df) -> None:
+    data = {"a": list(range(200))}
+    before_ms = int(time.time() * 1000)
+    df = make_df(data).with_column("uuid", uuidv7()).collect()
+    after_ms = int(time.time() * 1000)
+
+    assert len(df) == 200
+    assert df.schema()["uuid"].dtype == DataType.uuid()
+
+    values = df.to_pydict()["uuid"]
+    assert len(set(values)) == 200
+    assert values == sorted(values)
+
+    uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    assert all(isinstance(v, str) and uuid_re.match(v) is not None for v in values)
+
+    timestamp_ms = int(values[0].replace("-", "")[:12], 16)
+    assert before_ms <= timestamp_ms <= after_ms
+
+
+def test_uuid_version_argument_supports_v7(make_df) -> None:
+    data = {"a": list(range(10))}
+    df = make_df(data).with_column("uuid", uuid(version="v7")).collect()
+
+    assert df.schema()["uuid"].dtype == DataType.uuid()
+    assert all(v[14] == "7" for v in df.to_pydict()["uuid"])
 
 
 def test_uuid_empty_table(make_df) -> None:

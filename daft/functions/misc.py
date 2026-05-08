@@ -50,11 +50,15 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
-def uuid() -> Expression:
+def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     """Generates a column of UUID strings.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
-    (e.g. two separate columns) are independent and will produce different values.
+    (e.g. two separate columns) are independent and will produce different values. By default,
+    this generates UUIDv4 values. Pass ``version="v7"`` to generate time-ordered UUIDv7 values.
+
+    Args:
+        version: UUID version to generate. Supported values are ``"v4"`` and ``"v7"``.
 
     Returns:
         Expression (UUID Expression): An expression that generates UUID values.
@@ -69,7 +73,27 @@ def uuid() -> Expression:
         >>> df.schema()["u2"].dtype == daft.DataType.uuid()
         True
     """
-    return Expression._call_builtin_scalar_fn("uuid")
+    if version == "v4":
+        return Expression._call_builtin_scalar_fn("uuid")
+    if version == "v7":
+        return Expression._call_builtin_scalar_fn("uuidv7")
+    raise ValueError("`version` must be 'v4' or 'v7'")
+
+
+def uuidv7() -> Expression:
+    """Generates a column of time-ordered UUIDv7 strings.
+
+    Returns:
+        Expression (UUID Expression): An expression that generates UUIDv7 values.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import uuidv7
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]}).with_column("u", uuidv7())
+        >>> df.schema()["u"].dtype == daft.DataType.uuid()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("uuidv7")
 
 
 def random_int(low: int, high: int, seed: int | None = None) -> Expression:
