@@ -129,6 +129,7 @@ def test_redact_url(url, expected):
 
 def test_execute_sql_error_does_not_leak_password():
     """Connection failures must not include the password in the raised error."""
+    pytest.importorskip("psycopg2")
     password = "super-secret-pw"
     url = f"postgresql+psycopg2://alice:{password}@127.0.0.1:1/nope"
     conn = SQLConnection.from_url(url)
