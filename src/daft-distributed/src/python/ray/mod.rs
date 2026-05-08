@@ -3,10 +3,9 @@ mod worker;
 mod worker_manager;
 
 use common_error::DaftResult;
+pub use daft_partition_refs::RayPartitionRef;
 use pyo3::prelude::*;
-pub(crate) use task::{
-    FlightShufflePartitionRef, RayPartitionRef, RaySwordfishTask, RayTaskResult,
-};
+pub(crate) use task::{RaySwordfishTask, RayTaskResult};
 pub(crate) use worker::RaySwordfishWorker;
 pub(crate) use worker_manager::RayWorkerManager;
 

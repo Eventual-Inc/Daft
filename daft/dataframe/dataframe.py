@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.checkpoint import CheckpointStore
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.lance.rest_config import LanceRestConfig
@@ -380,7 +382,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
             ╭─────────────┬────────╮
-            │ column_name ┆ type   │
+            │ Column Name ┆ DType  │
             ╞═════════════╪════════╡
             │ x           ┆ Int64  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -1212,6 +1214,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1221,13 +1224,22 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.checkpoint-`` are reserved when ``checkpoint`` is provided.
+            checkpoint (CheckpointStore, optional): Checkpoint store to make the write idempotent across process restarts. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
             DataFrame: The operations that occurred with this write.
 
         Note:
-            This call is **blocking** and will execute the DataFrame when called
+            This call is **blocking** and will execute the DataFrame when called.
+
+            When ``checkpoint`` is provided and ``write_iceberg`` raises *after* the
+            catalog commit landed (e.g. a transient failure during the
+            post-commit ``mark_committed`` bookkeeping), the user data is
+            already durable in Iceberg. The next call to ``write_iceberg`` with
+            the same ``checkpoint`` will detect the snapshot via its markers,
+            finish the bookkeeping, and exit cleanly without producing a
+            duplicate snapshot.
 
         Examples:
             >>> import pyiceberg
@@ -1257,10 +1269,29 @@ class DataFrame:
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
+        if checkpoint is not None and mode == "overwrite":
+            raise NotImplementedError(
+                "write_iceberg with checkpoint=... currently supports mode='append' only; "
+                "overwrite + checkpoint is tracked separately."
+            )
+
+        if checkpoint is not None and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("write_iceberg with checkpoint=... requires pyiceberg>=0.7.0")
+
+        if checkpoint is not None and snapshot_properties:
+            for key in snapshot_properties:
+                if key.startswith("daft.checkpoint-"):
+                    raise ValueError(
+                        f"snapshot_properties keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}"
+                    )
+
         io_config = (
             _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
         )
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        if checkpoint is not None:
+            return self._write_iceberg_with_checkpoint(table, io_config, snapshot_properties, checkpoint)
 
         operations = []
         path = []
@@ -1373,6 +1404,189 @@ class DataFrame:
         df._metadata = write_df._metadata
         return df
 
+    def _write_iceberg_with_checkpoint(
+        self,
+        table: "pyiceberg.table.Table",
+        io_config: IOConfig,
+        snapshot_properties: dict[str, str] | None,
+        checkpoint: "CheckpointStore",
+    ) -> "DataFrame":
+        """Idempotent Iceberg commit driven by the checkpoint store.
+
+        Files come from `checkpoint.get_checkpointed_files()` (the store is the source
+        of truth — no re-execution after a crash). The snapshot summary carries
+        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart can
+        recognize previously-committed work and skip it.
+
+        Concurrency assumption: at most one Python process per checkpoint path at a
+        time. The retry loop is defensive against transient `CommitFailedException`,
+        not multi-writer safety.
+        """
+        import pyarrow as pa
+        import pyiceberg
+        from packaging.version import parse
+        from pyiceberg.exceptions import CommitFailedException
+
+        from daft import from_pydict
+
+        builder = self._builder.write_iceberg(table, io_config)
+        write_df = DataFrame(builder)
+
+        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+        if not pending:
+            # Fresh run: execute the pipeline. SCKO + sink populate the store.
+            write_df.collect()
+            pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+
+        if not pending:
+            # Source filter dropped everything (everything already committed in a
+            # prior run). Nothing to commit; return an empty result.
+            empty = from_pydict(
+                {
+                    "operation": pa.array([], type=pa.string()),
+                    "rows": pa.array([], type=pa.int64()),
+                    "file_size": pa.array([], type=pa.int64()),
+                    "file_name": pa.array([], type=pa.string()),
+                }
+            )
+            empty._metadata = write_df._metadata
+            return empty
+
+        # Single-query-id invariant: all pending entries share the run that staged them.
+        our_query_id = pending[0].query_id
+        if not our_query_id or any(c.query_id != our_query_id for c in pending):
+            offending = sorted({c.query_id for c in pending})
+            raise RuntimeError(
+                "Checkpoint store contains pending entries with mismatched or empty query_ids; "
+                f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
+                "concurrent writers against the same path; the store was reused across "
+                "different destinations (one store per destination — see CheckpointStore docs); "
+                "or pre-feature legacy entries left behind in the store (empty query_id). "
+                "Resolve by using a fresh checkpoint path or clearing the store."
+            )
+        our_ids = [c.id for c in pending]
+        store_path = checkpoint.path
+
+        # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
+        # is an Arrow IPC stream of a MicroPartition produced by the iceberg
+        # writer (see `IcebergWriteVisitors.to_metadata` and the encode side in
+        # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
+        # python-typed `data_file` column whose cells are pickled
+        # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
+        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
+        # surfaces deep inside MicroPartition with a confusing error — wrap so
+        # the caller sees a clear message naming the contract.
+        data_files: list[Any] = []
+        for fm in checkpoint.get_checkpointed_files():
+            try:
+                mp = MicroPartition.from_ipc_stream(fm.data)
+                data_files.extend(mp.to_pydict()["data_file"])
+            except Exception as e:
+                raise RuntimeError(
+                    "failed to decode iceberg DataFile metadata from the checkpoint store; "
+                    "the on-disk format is an Arrow IPC stream of a MicroPartition with a "
+                    "python `data_file` column carrying pickled pyiceberg.DataFile objects. "
+                    "Did pyiceberg change the DataFile shape, or is the store from a different "
+                    f"writer version? Underlying error: {e}"
+                ) from e
+
+        # Pending entries exist but carry no data files. Happens when the source
+        # filter drops every input row (e.g. re-run after a fully-committed call)
+        # — the sink still seals an empty Checkpointed entry. There is nothing
+        # to commit; mark the empty entries Committed so they don't persist as
+        # pending forever, and return an empty result.
+        if not data_files:
+            checkpoint.mark_committed(our_ids)
+            empty = from_pydict(
+                {
+                    "operation": pa.array([], type=pa.string()),
+                    "rows": pa.array([], type=pa.int64()),
+                    "file_size": pa.array([], type=pa.int64()),
+                    "file_name": pa.array([], type=pa.string()),
+                }
+            )
+            empty._metadata = write_df._metadata
+            return empty
+
+        full_props = dict(snapshot_properties or {})
+        full_props["daft.checkpoint-store"] = store_path
+        full_props["daft.checkpoint-query"] = our_query_id
+
+        def _build_result() -> "DataFrame":
+            ops: list[str] = []
+            paths: list[str] = []
+            row_counts: list[int] = []
+            sizes: list[int] = []
+            for df_ in data_files:
+                ops.append("ADD")
+                paths.append(df_.file_path)
+                row_counts.append(df_.record_count)
+                sizes.append(df_.file_size_in_bytes)
+            result = from_pydict(
+                {
+                    "operation": pa.array(ops, type=pa.string()),
+                    "rows": pa.array(row_counts, type=pa.int64()),
+                    "file_size": pa.array(sizes, type=pa.int64()),
+                    "file_name": pa.array(paths, type=pa.string()),
+                }
+            )
+            result._metadata = write_df._metadata
+            return result
+
+        # Honor the table's `commit.manifest-merge.enabled` property the same
+        # way the non-checkpoint branch does — users who set it expect manifest
+        # merging regardless of whether they pass `checkpoint=`.
+        from pyiceberg.table import TableProperties
+
+        if parse(pyiceberg.__version__) >= parse("0.8.0"):
+            from pyiceberg.utils.properties import property_as_bool
+        else:
+            from pyiceberg.table import PropertyUtil
+
+            property_as_bool = PropertyUtil.property_as_bool
+
+        max_retries = 2  # defensive only; transient catalog errors
+        last_err: Exception | None = None
+        for _ in range(max_retries):
+            table.refresh()
+            # Recovery check: did a prior attempt (or restart) already land our work?
+            for snap in reversed(table.metadata.snapshots):
+                summary = snap.summary
+                if summary is None:
+                    continue
+                if (
+                    summary.get("daft.checkpoint-store") == store_path
+                    and summary.get("daft.checkpoint-query") == our_query_id
+                ):
+                    checkpoint.mark_committed(our_ids)
+                    return _build_result()
+
+            try:
+                tx = table.transaction()
+                update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
+                manifest_merge_enabled = property_as_bool(
+                    tx.table_metadata.properties,
+                    TableProperties.MANIFEST_MERGE_ENABLED,
+                    TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+                )
+                append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+                with append_method() as append_files:
+                    for df_ in data_files:
+                        append_files.append_data_file(df_)
+                tx.commit_transaction()
+                checkpoint.mark_committed(our_ids)
+                return _build_result()
+            except CommitFailedException as e:
+                # Narrow on purpose: only optimistic-concurrency conflicts (the
+                # catalog raised because the branch head moved) retry. Other
+                # transient catalog errors — REST/network 5xx, auth blips,
+                # pyiceberg internals — propagate to the caller, who can wrap
+                # this whole `write_iceberg` in their own retry policy.
+                last_err = e
+                continue
+
+        raise last_err or CommitFailedException(f"write_iceberg with checkpoint exhausted {max_retries} retries")
+
     @DataframePublicAPI
     def write_paimon(
         self,
@@ -1407,7 +1621,7 @@ class DataFrame:
         except ImportError:
             raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
 
-        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+        from daft.io.paimon import PaimonDataSink
 
         return self.write_sink(PaimonDataSink(table, mode))
 
@@ -1425,6 +1639,7 @@ class DataFrame:
         dynamo_table_name: str | None = None,
         allow_unsafe_rename: bool = False,
         io_config: IOConfig | None = None,
+        checkpoint: "CheckpointStore | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1626,7 +1841,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = pa.record_batch(table.get_add_actions())
+                old_actions = pa.table(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
@@ -1649,6 +1864,13 @@ class DataFrame:
                     metadata_param,
                 )
             table.update_incremental()
+
+        # Mark all checkpointed entries as committed after successful catalog commit.
+        if checkpoint is not None:
+            ckpts = checkpoint.list_checkpoints()
+            ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
+            if ids:
+                checkpoint.mark_committed(ids)
 
         with_operations = from_pydict(
             {
@@ -1704,6 +1926,7 @@ class DataFrame:
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        partition_cols: list[str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1730,6 +1953,11 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
+          partition_cols (list[str], optional): Column names to partition the dataset by. When provided,
+              data is written as a partitioned Lance namespace: each unique combination of partition
+              values becomes a separate Lance dataset, and a ``__manifest`` table is created to track
+              partition metadata. Partition columns are stripped from per-partition data files and
+              stored only in the manifest. Cannot be combined with ``mode="merge"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -1780,11 +2008,20 @@ class DataFrame:
             ╰───────────────┴──────────────────┴─────────────────┴─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+
+            Write a partitioned Lance namespace:
+
+            >>> df = daft.from_pydict({"year": [2024, 2025], "region": ["US", "EU"], "value": [10, 20]})
+            >>> df.write_lance("/tmp/lance/my_namespace", partition_cols=["year", "region"])  # doctest: +SKIP
+            >>> daft.read_lance("/tmp/lance/my_namespace", namespace_partitioning=True).show()  # doctest: +SKIP
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
         from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
+
+        if partition_cols is not None and mode == "merge":
+            raise ValueError("partition_cols is not supported with merge mode")
 
         if schema is None:
             schema = self.schema()
@@ -1812,7 +2049,15 @@ class DataFrame:
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            if partition_cols is not None:
+                from daft.io.lance.lance_partitioned_data_sink import LancePartitionedDataSink
+
+                partition_sink: DataSink[Any] = LancePartitionedDataSink(
+                    uri, schema, mode, io_config, partition_cols=partition_cols, **sanitized_kwargs
+                )
+                return self.write_sink(partition_sink)
+            else:
+                sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
             return self.write_sink(sink)
 
         # Merge mode semantics
@@ -3478,6 +3723,113 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def join_asof(
+        self,
+        other: "DataFrame",
+        *,
+        on: ColumnInputType | None = None,
+        left_on: ColumnInputType | None = None,
+        right_on: ColumnInputType | None = None,
+        by: list[ColumnInputType] | ColumnInputType | None = None,
+        left_by: list[ColumnInputType] | ColumnInputType | None = None,
+        right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        strategy: Literal["backward"] = "backward",
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> "DataFrame":
+        """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
+
+        Args:
+            other: Right-hand DataFrame (e.g. feature table).
+            on: Asof key column when it has the same name on both sides. Exactly one column.
+            left_on: Asof key on the left when names differ. Exactly one column; use with ``right_on``.
+            right_on: Asof key on the right when names differ. Exactly one column; use with ``left_on``.
+            by: Equality key column(s) with the same name on both sides (entity / group columns).
+            left_by: Equality keys on the left when names differ; use with ``right_by``.
+            right_by: Equality keys on the right when names differ; use with ``left_by``.
+            strategy: Match strategy. Currently only ``"backward"`` is supported.
+
+        Returns:
+            DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
+
+        Raises:
+            ValueError: if ``on`` is set and ``left_on`` or ``right_on`` is not None.
+            ValueError: if ``on`` is None but ``left_on`` or ``right_on`` is missing.
+            ValueError: if both ``by`` and ``left_by`` / ``right_by`` are set.
+            ValueError: if only one of ``left_by`` and ``right_by`` is set.
+            ValueError: if ``left_by`` and ``right_by`` have different lengths.
+
+        Examples:
+            >>> import daft
+            >>> left = daft.from_pydict({"entity": ["A", "A", "B"], "timestamp": [10, 11, 10]})
+            >>> right = daft.from_pydict(
+            ...     {
+            ...         "entity": ["A", "A", "A", "B", "B"],
+            ...         "timestamp": [9, 10, 11, 9, 11],
+            ...         "value": [1.0, 2.0, 3.0, 5.0, 6.0],
+            ...     }
+            ... )
+            >>> left.join_asof(right, on="timestamp", by="entity").sort(["entity", "timestamp"]).show()
+            ╭────────┬───────────┬─────────╮
+            │ entity ┆ timestamp ┆ value   │
+            │ ---    ┆ ---       ┆ ---     │
+            │ String ┆ Int64     ┆ Float64 │
+            ╞════════╪═══════════╪═════════╡
+            │ A      ┆ 10        ┆ 2       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ A      ┆ 11        ┆ 3       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ B      ┆ 10        ┆ 5       │
+            ╰────────┴───────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        if on is not None:
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is set then `left_on` and `right_on` must be None")
+            left_on_expr = column_input_to_expression(on)
+            right_on_expr = column_input_to_expression(on)
+        else:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must be set")
+            left_on_expr = column_input_to_expression(left_on)
+            right_on_expr = column_input_to_expression(right_on)
+
+        if by is not None:
+            if left_by is not None or right_by is not None:
+                raise ValueError("Cannot specify both `by` and `left_by`/`right_by`")
+            by_tuple = tuple(by) if isinstance(by, list) else (by,)
+            left_by_exprs = column_inputs_to_expressions(by_tuple)
+            right_by_exprs = column_inputs_to_expressions(by_tuple)
+        else:
+            if left_by is None and right_by is None:
+                left_by_exprs = []
+                right_by_exprs = []
+            elif left_by is None or right_by is None:
+                raise ValueError("Specify both `left_by` and `right_by`, or neither")
+            else:
+                left_by_tuple = tuple(left_by) if isinstance(left_by, list) else (left_by,)
+                right_by_tuple = tuple(right_by) if isinstance(right_by, list) else (right_by,)
+                left_by_exprs = column_inputs_to_expressions(left_by_tuple)
+                right_by_exprs = column_inputs_to_expressions(right_by_tuple)
+                if len(left_by_exprs) != len(right_by_exprs):
+                    raise ValueError(
+                        "left_by and right_by must have the same number of columns, got "
+                        f"{len(left_by_exprs)} and {len(right_by_exprs)}"
+                    )
+
+        builder = self._builder.join_asof(
+            other._builder,
+            left_by=left_by_exprs,
+            right_by=right_by_exprs,
+            left_on=left_on_expr,
+            right_on=right_on_expr,
+            prefix=prefix,
+            suffix=suffix,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
         """Concatenates two DataFrames together in a "vertical" concatenation.
 
@@ -3977,6 +4329,10 @@ class DataFrame:
             return expr.string_agg()
         elif op == "skew":
             return expr.skew()
+        elif op == "product":
+            return expr.product()
+        elif op == "count_distinct":
+            return expr.count_distinct()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -4111,6 +4467,67 @@ class DataFrame:
         return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
 
     @DataframePublicAPI
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global skew on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute skewness for
+
+        Returns:
+            DataFrame: Globally aggregated skewness. Should be a single row.
+
+        Note:
+            Daft uses the **biased (population) skewness** formula, which is equivalent to
+            ``scipy.stats.skew(bias=True)``. This differs from pandas' default ``DataFrame.skew()``,
+            which uses the adjusted Fisher-Pearson (sample) formula. For small samples, the two
+            formulas can produce meaningfully different results.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4, 5]})
+            >>> df = df.skew("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 0       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(Expression.skew, cols)
+
+    @DataframePublicAPI
+    def product(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global product on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: Globally aggregated products. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3]})
+            >>> df = df.product("col_a")
+            >>> df.show()
+            ╭───────╮
+            │ col_a │
+            │ ---   │
+            │ Int64 │
+            ╞═══════╡
+            │ 6     │
+            ╰───────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        return self._apply_agg_fn(Expression.product, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame.
 
@@ -4189,6 +4606,32 @@ class DataFrame:
             (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.any_value, cols)
+
+    @DataframePublicAPI
+    def count_distinct(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global count of distinct values on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to count distinct values
+        Returns:
+            DataFrame: Globally aggregated count of distinct values. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 2, 3, 3, 3]})
+            >>> df = df.count_distinct("col_a")
+            >>> df.show()
+            ╭────────╮
+            │ col_a  │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        return self._apply_agg_fn(Expression.count_distinct, cols)
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType | int) -> "DataFrame":
@@ -5582,6 +6025,66 @@ class GroupedDataFrame:
             DataFrame: DataFrame with the grouped skew per column.
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
+
+    def product(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped product on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to product
+
+        Returns:
+            DataFrame: DataFrame with grouped products.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [1, 2, 3, 100]})
+            >>> df = df.groupby("keys").product()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬───────╮
+            │ keys   ┆ col_a │
+            │ ---    ┆ ---   │
+            │ String ┆ Int64 │
+            ╞════════╪═══════╡
+            │ a      ┆ 6     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ b      ┆ 100   │
+            ╰────────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(Expression.product, cols, self.group_by)
+
+    def count_distinct(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped count of distinct values on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to count distinct values
+
+        Returns:
+            DataFrame: DataFrame with grouped count of distinct values per column.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b", "b", "b"], "vals": [1, 1, 2, 3, 3, 3]})
+            >>> df = df.groupby("keys").count_distinct("vals")
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬────────╮
+            │ keys   ┆ vals   │
+            │ ---    ┆ ---    │
+            │ String ┆ UInt64 │
+            ╞════════╪════════╡
+            │ a      ┆ 2      │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ b      ┆ 1      │
+            ╰────────┴────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(Expression.count_distinct, cols, self.group_by)
 
     def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.

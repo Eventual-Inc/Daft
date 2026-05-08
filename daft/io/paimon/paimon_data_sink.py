@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa  # noqa: TID253
-
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.io.sink import DataSink, WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
@@ -30,6 +29,11 @@ class PaimonDataSink(DataSink[list[Any]]):
             raise ValueError(f"Only 'append' or 'overwrite' mode is supported for write_paimon, got: {mode!r}")
         self._table = table
         self._mode = mode
+
+        # Apply pypaimon patch for complex type stats
+        from daft.io.paimon.paimon_write import _patch_pypaimon_stats_for_complex_types
+
+        _patch_pypaimon_stats_for_complex_types()
 
         from pypaimon.schema.data_types import PyarrowFieldParser
 

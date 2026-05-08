@@ -1,8 +1,9 @@
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array};
+use daft_core::datatypes::UInt64Array;
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_groupby::IntoGroups;
 use rand::SeedableRng;
 
 use crate::RecordBatch;
@@ -110,8 +111,29 @@ impl RecordBatch {
         let output_tables = group_idx
             .into_iter()
             .map(|gidx| {
-                let gidx = UInt64Array::from_vec("idx", gidx);
+                let gidx = UInt64Array::from_vec("idx", gidx.into_vec());
                 self.take(&gidx)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok((output_tables, pkeys_per_output_table))
+    }
+
+    pub fn partition_by_value_projected(
+        &self,
+        partition_keys: &[BoundExpr],
+        projection: &[usize],
+    ) -> DaftResult<(Vec<Self>, Self)> {
+        let partition_key_table = self.eval_expression_list(partition_keys)?;
+        let (key_idx, group_idx) = partition_key_table.make_groups()?;
+        let key_idx = UInt64Array::from_vec("idx", key_idx);
+        let pkeys_per_output_table = partition_key_table.take(&key_idx)?;
+        drop(partition_key_table);
+        let projected = self.get_columns(projection);
+        let output_tables = group_idx
+            .into_iter()
+            .map(|gidx| {
+                let gidx = UInt64Array::from_vec("idx", gidx.into_vec());
+                projected.take(&gidx)
             })
             .collect::<DaftResult<Vec<_>>>()?;
         Ok((output_tables, pkeys_per_output_table))

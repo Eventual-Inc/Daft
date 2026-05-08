@@ -224,6 +224,9 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     per_input
                         .runtime_stats
                         .add_build_rows_inserted(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_build_bytes_inserted(partition.size_bytes() as u64);
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &self.op, &self.task_spawner, input_id)?;
                 }
@@ -235,8 +238,10 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
                     }
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("Build join should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "BuildExecutionContext should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {

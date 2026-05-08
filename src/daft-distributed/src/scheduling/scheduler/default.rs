@@ -152,8 +152,8 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         // If we need to autoscale, return the resource requests of the pending tasks
         let needs_autoscaling = self.needs_autoscaling();
         needs_autoscaling.then(|| {
-            self.pending_tasks
-                .iter()
+            super::pending_tasks_in_priority_order(&self.pending_tasks)
+                .into_iter()
                 .map(|task| task.task.resource_request().clone())
                 .collect()
         })
@@ -651,6 +651,54 @@ mod tests {
 
         // Should request 4 workers (ratio 5 total demand / 1 capacity = 5.0 > default threshold 1.25)
         assert_eq!(scheduler.get_autoscaling_request().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_default_scheduler_autoscaling_request_follows_priority_order() {
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&HashMap::new());
+
+        let tasks = vec![
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(1)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(3)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(2)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+
+        let autoscaling_request = scheduler.get_autoscaling_request().unwrap();
+        let requested_cpus = autoscaling_request
+            .iter()
+            .map(TaskResourceRequest::num_cpus)
+            .collect::<Vec<_>>();
+
+        assert_eq!(requested_cpus, vec![3.0, 2.0, 1.0]);
     }
 
     #[test]

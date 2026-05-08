@@ -23,8 +23,7 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef}
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use materialize::{materialize_all_pipeline_outputs, task_outputs_from_pipeline};
-use serde::{Deserialize, Serialize};
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -61,6 +60,7 @@ mod scan_source;
 mod shuffles;
 mod sink;
 mod sort;
+mod stage_checkpoint_keys;
 mod top_n;
 mod translate;
 mod udf;
@@ -69,6 +69,50 @@ mod vllm;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
+
+/// Stream wrapper that fires a one-shot callback the first time the
+/// underlying stream returns `Poll::Ready(None)` *or* the wrapper itself
+/// is dropped (whichever comes first). Used to notify the
+/// `StatisticsManager` that a distributed pipeline node has finished
+/// producing tasks, including via cancellation / early termination.
+struct OnEndStream<S> {
+    inner: S,
+    on_end: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl<S> OnEndStream<S> {
+    fn new<F: FnOnce() + Send + 'static>(inner: S, on_end: F) -> Self {
+        Self {
+            inner,
+            on_end: Some(Box::new(on_end)),
+        }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for OnEndStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(None) => {
+                if let Some(cb) = self.on_end.take() {
+                    cb();
+                }
+                Poll::Ready(None)
+            }
+            other => other,
+        }
+    }
+}
+
+impl<S> Drop for OnEndStream<S> {
+    fn drop(&mut self) {
+        if let Some(cb) = self.on_end.take() {
+            cb();
+        }
+    }
+}
+
 pub(crate) type NodeID = u32;
 pub(crate) type NodeName = Arc<str>;
 /// Fingerprint identifying tasks with functionally identical plans.
@@ -201,54 +245,6 @@ impl MaterializedOutput {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FlightShufflePartitionRef {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_address: String,
-    pub cache_id: u32,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum ShufflePartitionRef {
-    Ray(PartitionRef),
-    Flight(FlightShufflePartitionRef),
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ShuffleWriteOutput {
-    pub partitions: Vec<ShufflePartitionRef>,
-}
-
-impl ShuffleWriteOutput {
-    pub fn new(
-        partitions: Vec<ShufflePartitionRef>,
-        _worker_id: WorkerId,
-        _task_id: TaskID,
-    ) -> Self {
-        Self { partitions }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum TaskOutput {
-    Materialized(MaterializedOutput),
-    ShuffleWrite(ShuffleWriteOutput),
-}
-
-impl TaskOutput {
-    pub fn into_materialized(self) -> DaftResult<MaterializedOutput> {
-        match self {
-            Self::Materialized(materialized_output) => Ok(materialized_output),
-            Self::ShuffleWrite(_) => Err(common_error::DaftError::InternalError(
-                "Expected materialized task output but received shuffle write output".to_string(),
-            )),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
@@ -364,7 +360,15 @@ impl DistributedPipelineNode {
         self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
-        self.op.produce_tasks(plan_context)
+        let node_id = self.node_id();
+        let stats_manager = plan_context.statistics_manager().clone();
+        let inner = self.op.produce_tasks(plan_context);
+        TaskBuilderStream::new(
+            OnEndStream::new(inner.task_builder_stream, move || {
+                stats_manager.notify_produce_complete(node_id);
+            })
+            .boxed(),
+        )
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
@@ -479,18 +483,6 @@ impl TaskBuilderStream {
         materialize_all_pipeline_outputs(stream, scheduler_handle, None)
     }
 
-    pub fn task_outputs(
-        self,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-        query_idx: QueryIdx,
-        task_id_counter: TaskIDCounter,
-    ) -> impl Stream<Item = DaftResult<TaskOutput>> + Send + Unpin + 'static {
-        let stream = self
-            .task_builder_stream
-            .map(move |builder| builder.build(query_idx, &task_id_counter));
-        task_outputs_from_pipeline(stream, scheduler_handle, None)
-    }
-
     pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
@@ -510,6 +502,12 @@ impl Stream for TaskBuilderStream {
         self.task_builder_stream.poll_next_unpin(cx)
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
+#[cfg(test)]
+mod lifecycle_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {

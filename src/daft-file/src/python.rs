@@ -31,7 +31,7 @@ impl PyFileReference {
     }
 
     pub fn __enter__(&self) -> PyResult<PyDaftFile> {
-        Ok(DaftFile::load_blocking(self.inner.as_ref().clone(), true)?.into())
+        Ok(DaftFile::load_blocking(self.inner.as_ref().clone(), true, None)?.into())
     }
 
     pub fn _get_file(&self) -> FileReference {
@@ -90,6 +90,14 @@ impl PyFileReference {
         // If all else fails, return the full URL
         Ok(url.clone())
     }
+
+    fn offset(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.offset)
+    }
+
+    fn length(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.length)
+    }
 }
 
 #[pyclass]
@@ -133,8 +141,9 @@ impl PyDaftFile {
 #[pymethods]
 impl PyDaftFile {
     #[staticmethod]
-    fn _from_file_reference(f: PyFileReference) -> PyResult<Self> {
-        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false)?.into())
+    #[pyo3(signature=(f, buffer_size=None))]
+    fn _from_file_reference(f: PyFileReference, buffer_size: Option<usize>) -> PyResult<Self> {
+        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false, buffer_size)?.into())
     }
 
     #[pyo3(signature=(size=-1))]

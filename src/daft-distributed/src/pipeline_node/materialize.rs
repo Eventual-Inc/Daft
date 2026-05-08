@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_runtime::{JoinSet, OrderedJoinSet};
 use futures::{Stream, StreamExt};
 
-use super::{MaterializedOutput, TaskOutput};
+use super::MaterializedOutput;
 use crate::{
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
@@ -14,11 +14,11 @@ use crate::{
     },
 };
 
-pub(crate) fn task_outputs_from_pipeline<T: Task>(
+pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     input: impl Stream<Item = SubmittableTask<T>> + Send + Unpin + 'static,
     scheduler_handle: SchedulerHandle<T>,
     joinset: Option<JoinSet<DaftResult<()>>>,
-) -> impl Stream<Item = DaftResult<TaskOutput>> + Send + Unpin + 'static {
+) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
     /// Force all tasks in the `input`` stream to start running if un-submitted
     async fn task_finalizer<T: Task>(
         mut input: impl Stream<Item = SubmittableTask<T>> + Unpin,
@@ -37,9 +37,9 @@ pub(crate) fn task_outputs_from_pipeline<T: Task>(
     /// Materialize the output of all running or finished tasks
     async fn task_materializer(
         mut finalized_tasks_receiver: Receiver<SubmittedTask>,
-        tx: Sender<DaftResult<TaskOutput>>,
+        tx: Sender<DaftResult<MaterializedOutput>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<DaftResult<Option<TaskOutput>>> =
+        let mut pending_tasks: OrderedJoinSet<DaftResult<Option<MaterializedOutput>>> =
             OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
@@ -90,15 +90,6 @@ pub(crate) fn task_outputs_from_pipeline<T: Task>(
         tokio_stream::wrappers::ReceiverStream::new(materialized_results_receiver);
     JoinableForwardingStream::new(materialized_result_stream, joinset)
         .map(|result| result.and_then(|result| result))
-}
-
-pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
-    input: impl Stream<Item = SubmittableTask<T>> + Send + Unpin + 'static,
-    scheduler_handle: SchedulerHandle<T>,
-    joinset: Option<JoinSet<DaftResult<()>>>,
-) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-    task_outputs_from_pipeline(input, scheduler_handle, joinset)
-        .map(|result| result.and_then(TaskOutput::into_materialized))
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file, file_size
+from daft.functions import file, file_path, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -278,3 +278,129 @@ def test_file_name_property_various_formats(url, expected_name):
     file = daft.File(url)
     assert file.name == expected_name
     assert file.path == url
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_function():
+    """Test file_path() extracts the URL from a File column."""
+    paths = ["s3://bucket/file1.csv", "/local/path/file2.txt", "https://example.com/file3.json"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.with_column("extracted_path", file_path(daft.col("file")))
+    result = df.to_pydict()
+    assert result["extracted_path"] == paths
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_enables_string_operations():
+    """Test that file_path() output can be used with string expressions like endswith."""
+    paths = ["/data/report.pdf", "/data/image.png", "/data/notes.pdf"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.where(file_path(daft.col("file")).endswith(".pdf"))
+    result = df.to_pydict()
+    assert len(result["file"]) == 2
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_expression_method():
+    """Test that .file_path() works as an expression method."""
+    paths = ["/data/report.pdf", "/data/image.png"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.with_column("extracted_path", daft.col("file").file_path())
+    result = df.to_pydict()
+    assert result["extracted_path"] == paths
+
+
+def test_file_offset_and_length_properties():
+    f = daft.File("s3://bucket/blob", offset=100, length=50)
+    assert f.offset == 100
+    assert f.length == 50
+
+
+def test_file_offset_and_length_default_to_none():
+    f = daft.File("s3://bucket/blob")
+    assert f.offset is None
+    assert f.length is None
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read(tmp_path: Path):
+    data = b"0123456789abcdef"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()), offset=4, length=6)
+    with f.open() as fh:
+        result = fh.read()
+    assert result == b"456789"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read_in_udf(tmp_path: Path):
+    data = b"AAABBBCCC"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    @daft.func
+    def read_bytes(file: daft.File) -> bytes:
+        with file.open() as f:
+            return f.read()
+
+    df = daft.from_pydict({"file": [daft.File(str(temp_file.absolute()), offset=3, length=3)]})
+    df = df.select(read_bytes(df["file"]).alias("data"))
+    assert df.to_pydict()["data"] == [b"BBB"]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_partial_range_raises(tmp_path: Path):
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(b"some data")
+    path = str(temp_file.absolute())
+
+    f_offset_only = daft.File(path, offset=10)
+    with pytest.raises(Exception):
+        with f_offset_only.open() as fh:
+            fh.read()
+
+    f_length_only = daft.File(path, length=10)
+    with pytest.raises(Exception):
+        with f_length_only.open() as fh:
+            fh.read()
+
+
+# ── buffer_size tests ──
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+@pytest.mark.parametrize("buffer_size", [64, 4096, 65536, None])
+def test_open_with_buffer_size_reads_correctly(tmp_path: Path, buffer_size):
+    data = b"hello world" * 100
+    temp_file = tmp_path / "buf_test.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open(buffer_size=buffer_size) as fh:
+        result = fh.read()
+    assert result == data
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_mime_type_with_small_buffer(tmp_path: Path):
+    content = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    temp_file = tmp_path / "img.png"
+    temp_file.write_bytes(content)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.mime_type() == "image/png"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_size_with_small_buffer(tmp_path: Path):
+    data = bytes(range(256)) * 4
+    temp_file = tmp_path / "sized.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.size() == 1024

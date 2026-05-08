@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use axum::{
     Json, Router,
@@ -7,10 +11,17 @@ use axum::{
     routing::post,
 };
 use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
-use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
-fn secs_from_epoch() -> f64 {
+const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
+
+/// Maximum number of queries the dashboard will retain in memory. Once
+/// exceeded, the oldest terminal queries (by `start_sec`) are evicted by
+/// [`evict_old_queries`]. Active queries are never evicted, so the cap may
+/// be exceeded transiently while many queries are running concurrently.
+pub(crate) const MAX_QUERIES_RETAINED: usize = 1000;
+
+pub(crate) fn secs_from_epoch() -> f64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -19,7 +30,7 @@ fn secs_from_epoch() -> f64 {
 
 use crate::state::{
     DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
-    QueryInfo, QueryState,
+    QueryInfo, QueryState, TaskStatus, TaskStore,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -30,6 +41,9 @@ pub struct StartQueryArgs {
     pub runner: Option<String>,
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
+    pub python_version: Option<String>,
+    pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
 }
 
 async fn query_start(
@@ -37,30 +51,70 @@ async fn query_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<StartQueryArgs>,
 ) -> StatusCode {
+    apply_query_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_query_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: StartQueryArgs,
+) -> StatusCode {
     if state.queries.contains_key(&query_id) {
         return StatusCode::BAD_REQUEST;
     }
 
     let query_info = QueryInfo {
-        id: query_id.clone().into(),
+        id: query_id.clone(),
         start_sec: args.start_sec,
+        last_heartbeat_sec: secs_from_epoch(),
         unoptimized_plan: args.unoptimized_plan,
         runner: args
             .runner
             .unwrap_or_else(|| "Native (Swordfish)".to_string()),
         ray_dashboard_url: args.ray_dashboard_url,
         entrypoint: args.entrypoint,
+        python_version: args.python_version,
+        daft_version: args.daft_version,
+        ray_version: args.ray_version,
         state: QueryState::Pending,
     };
 
     state.queries.insert(query_id.clone(), query_info);
 
-    // Ping clients
     let Some(query_info) = state.queries.get(&query_id) else {
         tracing::error!("Query `{}` not found", query_id);
         return StatusCode::BAD_REQUEST;
     };
+
     state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct QueryHeartbeatArgs {
+    pub timestamp_sec: f64,
+}
+
+async fn query_heartbeat(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(_args): Json<QueryHeartbeatArgs>,
+) -> StatusCode {
+    let query_info = state.queries.get_mut(&query_id);
+    let Some(mut query_info) = query_info else {
+        tracing::error!("Query `{}` not found", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    // Record the dashboard server's clock as the heartbeat even though
+    // the request includes a timestamp according to the runner's clock,
+    // because we care about how *recent* the heartbeat is, and we don't
+    // have the runner's *current* clock to compare against.
+    query_info.last_heartbeat_sec = secs_from_epoch();
+
+    state.ping_clients_on_query_update(query_info.value());
+
     StatusCode::OK
 }
 
@@ -74,6 +128,14 @@ async fn plan_start(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanStartArgs>,
+) -> StatusCode {
+    apply_plan_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_plan_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: PlanStartArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -104,6 +166,14 @@ async fn plan_end(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanEndArgs>,
+) -> StatusCode {
+    apply_plan_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_plan_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: PlanEndArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -182,6 +252,14 @@ async fn exec_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecStartArgs>,
 ) -> StatusCode {
+    apply_exec_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_exec_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecStartArgs,
+) -> StatusCode {
     tracing::info!("Received exec_start for query {}", query_id);
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -202,6 +280,7 @@ async fn exec_start(
                     exec_start_sec: args.exec_start_sec,
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
+                    task_store: TaskStore::default(),
                 },
             };
 
@@ -239,6 +318,15 @@ async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
+    apply_operator_start(&state, query_id, op_id, secs_from_epoch())
+}
+
+pub(crate) fn apply_operator_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    operator_id: usize,
+    timestamp: f64,
+) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
         tracing::error!("Query {} not found in exec_op_start", query_id);
@@ -249,11 +337,11 @@ async fn exec_op_start(
         return StatusCode::OK;
     };
 
-    if let Some(op) = exec_info.operators.get_mut(&op_id) {
+    if let Some(op) = exec_info.operators.get_mut(&operator_id) {
         op.status = OperatorStatus::Executing;
-        op.start_sec = Some(secs_from_epoch());
+        op.start_sec = Some(timestamp);
     } else {
-        tracing::warn!("Operator {} not found for query {}", op_id, query_id);
+        tracing::warn!("Operator {} not found for query {}", operator_id, query_id);
     }
 
     state.ping_clients_on_operator_update(query_info.value());
@@ -263,6 +351,15 @@ async fn exec_op_start(
 async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
+) -> StatusCode {
+    apply_operator_end(&state, query_id, op_id, secs_from_epoch())
+}
+
+pub(crate) fn apply_operator_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    operator_id: usize,
+    timestamp: f64,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -274,11 +371,11 @@ async fn exec_op_end(
         return StatusCode::OK;
     };
 
-    if let Some(op) = exec_info.operators.get_mut(&op_id) {
+    if let Some(op) = exec_info.operators.get_mut(&operator_id) {
         op.status = OperatorStatus::Finished;
-        op.end_sec = Some(secs_from_epoch());
+        op.end_sec = Some(timestamp);
     } else {
-        tracing::warn!("Operator {} not found for query {}", op_id, query_id);
+        tracing::warn!("Operator {} not found for query {}", operator_id, query_id);
     }
 
     state.ping_clients_on_operator_update(query_info.value());
@@ -379,6 +476,14 @@ async fn exec_emit_stats(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEmitStatsArgsRecv>,
 ) -> StatusCode {
+    apply_emit_stats(&state, query_id, args)
+}
+
+pub(crate) fn apply_emit_stats(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecEmitStatsArgsRecv,
+) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
         tracing::error!("Query {} not found in exec_emit_stats", query_id);
@@ -446,6 +551,14 @@ async fn exec_end(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEndArgs>,
 ) -> StatusCode {
+    apply_exec_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_exec_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecEndArgs,
+) -> StatusCode {
     tracing::info!("Received exec_end for query {}", query_id);
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -497,14 +610,20 @@ pub struct FinalizeArgs {
     pub end_sec: f64,
     pub end_state: QueryEndState,
     pub error_message: Option<String>,
-    // IPC-serialized RecordBatch
-    pub results: Option<Vec<u8>>,
 }
 
 async fn query_end(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<FinalizeArgs>,
+) -> StatusCode {
+    apply_query_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_query_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: FinalizeArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -545,22 +664,6 @@ async fn query_end(
         }
     }
 
-    let results = if let Some(results) = &args.results {
-        match RecordBatch::from_ipc_stream(results) {
-            Ok(results) => Some(results),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to deserialize results for query `{}`: {}",
-                    query_id,
-                    e
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-        }
-    } else {
-        None
-    };
-
     query_info.state = match args.end_state {
         QueryEndState::Finished => match (plan_info, exec_info, exec_end_sec) {
             (Some(plan_info), Some(exec_info), Some(exec_end_sec)) => QueryState::Finished {
@@ -568,7 +671,6 @@ async fn query_end(
                 exec_info,
                 exec_end_sec,
                 end_sec: args.end_sec,
-                results,
             },
             (plan_info, exec_info, exec_end_sec) => {
                 // If we are missing info but the query is finished, we still transition to Finished
@@ -588,10 +690,10 @@ async fn query_end(
                         exec_start_sec: query_info.start_sec,
                         physical_plan: query_info.unoptimized_plan.clone(),
                         operators: HashMap::new(),
+                        task_store: TaskStore::default(),
                     }),
                     exec_end_sec: exec_end_sec.unwrap_or(args.end_sec),
                     end_sec: args.end_sec,
-                    results,
                 }
             }
         },
@@ -635,11 +737,369 @@ async fn query_end(
                 message: args.error_message,
             }
         }
-        QueryEndState::Dead => todo!(),
     };
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
+}
+
+/// Periodic eviction of old terminal queries to bound dashboard memory usage.
+/// Not an HTTP handler.
+///
+/// Only terminal queries are eligible for eviction; active queries are kept so
+/// the dashboard can continue reporting on them (and so heartbeats land in a
+/// known map entry). If active queries alone exceed the retention limit, the
+/// cap is exceeded until they reach a terminal state.
+pub(crate) async fn evict_old_queries(state: Arc<DashboardState>) {
+    let total = state.queries.len();
+    if total <= MAX_QUERIES_RETAINED {
+        return;
+    }
+    let target_evictions = total - MAX_QUERIES_RETAINED;
+
+    let mut terminal: Vec<(QueryID, f64)> = state
+        .queries
+        .iter()
+        .filter(|q| !q.is_active())
+        .map(|q| (q.id.clone(), q.start_sec))
+        .collect();
+
+    terminal.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let evicted = terminal.len().min(target_evictions);
+    for (id, _) in terminal.into_iter().take(evicted) {
+        state.queries.remove(&id);
+        state.query_clients.remove(&id);
+    }
+
+    if evicted < target_evictions {
+        tracing::warn!(
+            "Dashboard query cap ({}) exceeded by {} active queries; \
+             eviction will resume once they reach a terminal state",
+            MAX_QUERIES_RETAINED,
+            target_evictions - evicted,
+        );
+    }
+}
+
+/// periodic check for dead queries. Not an HTTP handler.
+pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
+    let dead_threshold = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        - DEAD_QUERY_THRESHOLD_SEC;
+
+    // Only check active queries (not already terminal)
+    let active_queries = state.queries.iter_mut().filter(|q| q.is_active());
+    for mut q in active_queries {
+        if q.last_heartbeat_sec < dead_threshold {
+            tracing::error!(
+                "Marking query {} as dead, last heartbeat {:?}",
+                q.id,
+                SystemTime::UNIX_EPOCH + Duration::from_secs_f64(q.last_heartbeat_sec),
+            );
+            let (plan_info, exec_info) = match &q.state {
+                QueryState::Setup { plan_info, .. } => (Some(plan_info.clone()), None),
+                QueryState::Executing {
+                    plan_info,
+                    exec_info,
+                }
+                | QueryState::Finalizing {
+                    plan_info,
+                    exec_info,
+                    ..
+                } => (Some(plan_info.clone()), Some(exec_info.clone())),
+                _ => (None, None),
+            };
+            q.state = QueryState::Dead {
+                plan_info,
+                exec_info,
+                marked_dead_sec: secs_from_epoch(),
+            };
+
+            state.ping_clients_on_query_update(&q);
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[serde(tag = "status")]
+pub enum TaskOutcomeArgs {
+    Success,
+    Failed { message: String },
+    Cancelled,
+}
+
+/// Scalar totals for a single task. Shared between `TaskEndArgs` (final
+/// numbers) and mid-flight `TaskStatsEntry` (in-progress refresh).
+///
+/// CPU duration is the only task-level total we currently report; it sums
+/// correctly across all nodes in the fused pipeline. rows/bytes I/O totals
+/// require head/leaf identification (see follow-up ticket) and are
+/// intentionally omitted to avoid double-counting.
+#[derive(Clone, Deserialize, Serialize, Default)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskTotals {
+    pub cpu_us: u64,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskSubmitArgs {
+    pub submit_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<TaskSourceArgs>,
+}
+
+/// Source data attached to a task on submit. Mirrors
+/// `daft_context::subscribers::events::TaskSource`. Externally tagged on the
+/// wire (`{"PhysicalScan": {...}}` / `{"InMemoryScan": {...}}`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum TaskSourceArgs {
+    PhysicalScan(PhysicalScanSourceArgs),
+    InMemoryScan(InMemoryScanSourceArgs),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PhysicalScanSourceArgs {
+    pub source_id: u32,
+    pub scan_tasks: u32,
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct InMemoryScanSourceArgs {
+    pub source_id: u32,
+    pub partitions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+}
+
+/// Driver-side "task has been scheduled to a worker".
+///
+/// What the dashboard currently treats as the running transition. Distinct
+/// from a hypothetical `TaskStartArgs` reporting the actual start of
+/// execution on a worker (see #6840 / follow-up issue).
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskScheduledArgs {
+    pub scheduled_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskEndArgs {
+    pub end_sec: f64,
+    pub task_id: u32,
+    pub last_node_id: usize,
+    pub node_ids: Vec<usize>,
+    pub plan_fingerprint: u32,
+    pub worker_id: Option<String>,
+    pub outcome: TaskOutcomeArgs,
+    pub totals: TaskTotals,
+}
+
+async fn task_submit(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskSubmitArgs>,
+) -> StatusCode {
+    apply_task_submit(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_submit(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskSubmitArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_submit", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        // Task events may arrive before exec_start or after exec_end; that's ok.
+        return StatusCode::OK;
+    };
+
+    exec_info.task_store.submit_task(args);
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_scheduled(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskScheduledArgs>,
+) -> StatusCode {
+    apply_task_scheduled(&state, query_id, args)
+}
+
+pub(crate) fn apply_task_scheduled(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskScheduledArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_scheduled", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    exec_info.task_store.task_scheduled(
+        args.task_id,
+        args.last_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.worker_id,
+        args.scheduled_sec,
+    );
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+async fn task_end(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TaskEndArgs>,
+) -> StatusCode {
+    apply_task_end(&state, query_id, args)
+}
+
+/// One task's scalar totals inside a `TasksStatsUpdateArgs*` batch. Reuses
+/// `TaskTotals` so end-of-task and mid-task progress share a payload shape.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TaskStatsEntry {
+    pub task_id: u32,
+    pub totals: TaskTotals,
+}
+
+/// Worker_id is intentionally absent from this payload.
+///
+/// The worker-side `DashboardSubscriber` mints its own UUID per process which
+/// doesn't match the scheduler-assigned `WorkerId` carried on `TaskScheduled`
+/// / `TaskStart` / `TaskEnd` events. The scheduler is the source of truth for
+/// `worker_id`; stats updates only carry per-task scalars.
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct TasksStatsUpdateArgs {
+    pub timestamp_sec: f64,
+    pub tasks: Vec<TaskStatsEntry>,
+}
+
+async fn tasks_stats_update(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<TasksStatsUpdateArgs>,
+) -> StatusCode {
+    apply_tasks_stats_update(&state, query_id, args)
+}
+
+pub(crate) fn apply_tasks_stats_update(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TasksStatsUpdateArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        // Stats updates may arrive before the dashboard knows about the query
+        // (race during exec_start) or after the query ends. Drop silently.
+        return StatusCode::OK;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    for entry in args.tasks {
+        exec_info
+            .task_store
+            .update_task_stats(entry, args.timestamp_sec);
+    }
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+pub(crate) fn apply_task_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: TaskEndArgs,
+) -> StatusCode {
+    let Some(mut query_info) = state.queries.get_mut(&query_id) else {
+        tracing::error!("Query `{}` not found in task_end", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    let Some(exec_info) = active_exec_info_mut(&mut query_info.state) else {
+        return StatusCode::OK;
+    };
+
+    let status = match &args.outcome {
+        TaskOutcomeArgs::Success => TaskStatus::Finished,
+        TaskOutcomeArgs::Failed { message } => TaskStatus::Failed {
+            message: Some(message.clone()),
+        },
+        TaskOutcomeArgs::Cancelled => TaskStatus::Cancelled,
+    };
+
+    exec_info.task_store.end_task(
+        args.task_id,
+        args.last_node_id,
+        args.node_ids,
+        args.plan_fingerprint,
+        args.worker_id,
+        status,
+        args.end_sec,
+        args.totals.cpu_us,
+    );
+
+    state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+/// Returns the `ExecInfo` for any state where task events are meaningful. Task
+/// events are ignored outside of these states (pre-exec or terminal-no-exec).
+fn active_exec_info_mut(state: &mut QueryState) -> Option<&mut ExecInfo> {
+    match state {
+        QueryState::Executing { exec_info, .. }
+        | QueryState::Finalizing { exec_info, .. }
+        | QueryState::Finished { exec_info, .. } => Some(exec_info),
+        QueryState::Failed {
+            exec_info: Some(exec_info),
+            ..
+        }
+        | QueryState::Canceled {
+            exec_info: Some(exec_info),
+            ..
+        }
+        | QueryState::Dead {
+            exec_info: Some(exec_info),
+            ..
+        } => Some(exec_info),
+        _ => None,
+    }
 }
 
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
@@ -647,6 +1107,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         // Query lifecycle
         // TODO: Consider replacing with websocket for active engine -> server communication
         .route("/query/{query_id}/start", post(query_start))
+        .route("/query/{query_id}/heartbeat", post(query_heartbeat))
         .route("/query/{query_id}/plan_start", post(plan_start))
         .route("/query/{query_id}/plan_end", post(plan_end))
         .route("/query/{query_id}/exec/start", post(exec_start))
@@ -654,5 +1115,164 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/{op_id}/end", post(exec_op_end))
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
+        .route("/query/{query_id}/task/submit", post(task_submit))
+        .route("/query/{query_id}/task/schedule", post(task_scheduled))
+        .route("/query/{query_id}/task/end", post(task_end))
+        .route("/query/{query_id}/tasks/stats", post(tasks_stats_update))
         .route("/query/{query_id}/end", post(query_end))
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    use std::sync::Arc;
+
+    use super::{DashboardState, MAX_QUERIES_RETAINED, QueryInfo, QueryState, evict_old_queries};
+
+    fn insert_query(state: &DashboardState, id: &str, start_sec: f64, active: bool) {
+        let qid: common_metrics::QueryID = Arc::from(id);
+        // Eviction inspects only `is_active()` and `start_sec`, so terminal
+        // queries use the minimal `Dead` variant (no PlanInfo/ExecInfo needed).
+        let query_state = if active {
+            QueryState::Pending
+        } else {
+            QueryState::Dead {
+                plan_info: None,
+                exec_info: None,
+                marked_dead_sec: start_sec,
+            }
+        };
+        state.queries.insert(
+            qid.clone(),
+            QueryInfo {
+                id: qid,
+                start_sec,
+                last_heartbeat_sec: start_sec,
+                unoptimized_plan: Arc::from(""),
+                runner: "test".to_string(),
+                ray_dashboard_url: None,
+                entrypoint: None,
+                python_version: None,
+                daft_version: None,
+                ray_version: None,
+                state: query_state,
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn no_eviction_when_under_limit() {
+        let state = Arc::new(DashboardState::new());
+        for i in 0..10 {
+            insert_query(&state, &format!("q{}", i), i as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn evicts_oldest_terminal_queries_first() {
+        let state = Arc::new(DashboardState::new());
+        // Insert MAX_QUERIES_RETAINED + 5 terminal queries with strictly
+        // increasing start_sec; the 5 oldest should be evicted.
+        for i in 0..(MAX_QUERIES_RETAINED + 5) {
+            insert_query(&state, &format!("q{}", i), i as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        for i in 0..5 {
+            assert!(
+                !state.queries.contains_key(format!("q{}", i).as_str()),
+                "expected q{} to be evicted",
+                i
+            );
+        }
+        for i in 5..(MAX_QUERIES_RETAINED + 5) {
+            assert!(
+                state.queries.contains_key(format!("q{}", i).as_str()),
+                "expected q{} to be retained",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn active_queries_are_never_evicted() {
+        let state = Arc::new(DashboardState::new());
+        // All active: nothing should be evicted, even past the cap.
+        for i in 0..(MAX_QUERIES_RETAINED + 3) {
+            insert_query(&state, &format!("q{}", i), i as f64, true);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED + 3);
+    }
+
+    /// Regression: `Finalizing` queries are awaiting `query_end` and must not
+    /// be evicted, otherwise their final outcome is silently dropped.
+    #[tokio::test]
+    async fn finalizing_queries_are_not_evicted() {
+        use crate::state::{ExecInfo, PlanInfo};
+        let state = Arc::new(DashboardState::new());
+        // One finalizing query at the oldest start_sec, then enough terminal
+        // queries to push the total over the cap.
+        let qid: common_metrics::QueryID = Arc::from("finalizing");
+        state.queries.insert(
+            qid.clone(),
+            QueryInfo {
+                id: qid,
+                start_sec: 0.0,
+                last_heartbeat_sec: 0.0,
+                unoptimized_plan: Arc::from(""),
+                runner: "test".to_string(),
+                ray_dashboard_url: None,
+                entrypoint: None,
+                python_version: None,
+                daft_version: None,
+                ray_version: None,
+                state: QueryState::Finalizing {
+                    plan_info: PlanInfo {
+                        plan_start_sec: 0.0,
+                        plan_end_sec: 0.0,
+                        optimized_plan: Arc::from(""),
+                    },
+                    exec_info: ExecInfo {
+                        exec_start_sec: 0.0,
+                        physical_plan: Arc::from(""),
+                        operators: Default::default(),
+                        task_store: Default::default(),
+                    },
+                    exec_end_sec: 0.0,
+                },
+            },
+        );
+        for i in 0..MAX_QUERIES_RETAINED {
+            insert_query(&state, &format!("term{}", i), (10 + i) as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        assert!(
+            state.queries.contains_key("finalizing"),
+            "finalizing query must be retained"
+        );
+        assert!(!state.queries.contains_key("term0"));
+    }
+
+    #[tokio::test]
+    async fn mixed_active_and_terminal_evicts_only_terminal() {
+        let state = Arc::new(DashboardState::new());
+        // 3 active queries (oldest start_sec) + MAX_QUERIES_RETAINED terminal.
+        // Cap exceeded by 3; the 3 oldest *terminal* queries should be evicted,
+        // leaving the active ones in place.
+        for i in 0..3 {
+            insert_query(&state, &format!("active{}", i), i as f64, true);
+        }
+        for i in 0..MAX_QUERIES_RETAINED {
+            insert_query(&state, &format!("term{}", i), (10 + i) as f64, false);
+        }
+        evict_old_queries(state.clone()).await;
+        assert_eq!(state.queries.len(), MAX_QUERIES_RETAINED);
+        for i in 0..3 {
+            assert!(state.queries.contains_key(format!("active{}", i).as_str()));
+            assert!(!state.queries.contains_key(format!("term{}", i).as_str()));
+        }
+    }
 }

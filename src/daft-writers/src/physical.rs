@@ -174,6 +174,9 @@ fn create_native_writer(
     io_config: Option<daft_io::IOConfig>,
     format_option: Option<FormatSinkOption>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
+    let (path, io_config) = parse_url_and_config(root_dir, io_config)?;
+    let root_dir = path.as_str();
+
     match file_format {
         FileFormat::Parquet => {
             create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
@@ -189,5 +192,25 @@ fn create_native_writer(
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
         )),
+    }
+}
+
+fn parse_url_and_config(
+    root_dir: &str,
+    io_config: Option<daft_io::IOConfig>,
+) -> DaftResult<(String, Option<daft_io::IOConfig>)> {
+    let (source_type, path) = daft_io::parse_url(root_dir)?;
+    match source_type {
+        #[cfg(feature = "python")]
+        daft_io::SourceType::Gravitino => {
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for Gravitino writes".to_string())
+            })?;
+            crate::storage_backend::GravitinoStorageBackend::parse_gravitino_url_and_config(
+                path.as_ref(),
+                io_config,
+            )
+        }
+        _ => Ok((root_dir.to_string(), io_config)),
     }
 }

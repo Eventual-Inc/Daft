@@ -140,6 +140,13 @@ def test_series_casting_integer_to_non_integer_or_float(source_dtype, dest_dtype
     ],
 )
 def test_series_casting_float_to_non_integer_or_float(source_dtype, dest_dtype, expected) -> None:
+    if source_dtype == pa.float16() and dest_dtype in (
+        DataType.decimal128(16, 8),
+        DataType.string(),
+        DataType.binary(),
+    ):
+        pytest.skip("arrow Float16 cast: Decimal128 unsupported, string repr differs from Float32/Float64")
+
     data = pa.array([1.0, 2.0, 3.0, None, 5.0, None])
 
     s = Series.from_arrow(data.cast(source_dtype))
@@ -1127,19 +1134,18 @@ def test_series_cast_timestamp_numeric(dtype, result_n1, result_0, result_p1) ->
             timedelta(microseconds=0),
             timedelta(microseconds=1),
         ),
-        # Casting between duration types is currently not supported in Arrow2.
-        # (
-        #     DataType.duration(TimeUnit.s()),
-        #     timedelta(seconds=-1),
-        #     timedelta(seconds=0),
-        #     timedelta(seconds=1),
-        # ),
-        # (
-        #     DataType.duration(TimeUnit.ms()),
-        #     timedelta(milliseconds=-1),
-        #     timedelta(milliseconds=0),
-        #     timedelta(milliseconds=1),
-        # ),
+        (
+            DataType.duration(TimeUnit.s()),
+            timedelta(seconds=-1),
+            timedelta(seconds=0),
+            timedelta(seconds=1),
+        ),
+        (
+            DataType.duration(TimeUnit.ms()),
+            timedelta(milliseconds=-1),
+            timedelta(milliseconds=0),
+            timedelta(milliseconds=1),
+        ),
     ],
 )
 def test_series_cast_duration_numeric(dtype, result_n1, result_0, result_p1) -> None:
@@ -1147,6 +1153,23 @@ def test_series_cast_duration_numeric(dtype, result_n1, result_0, result_p1) -> 
     series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
     casted = series.cast(DataType.int64())
     assert casted.to_pylist() == [-1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ["from_tu", "to_tu", "from_vals", "to_vals"],
+    [
+        (TimeUnit.s(), TimeUnit.ms(), [1, 2], [timedelta(milliseconds=1000), timedelta(milliseconds=2000)]),
+        (TimeUnit.ms(), TimeUnit.s(), [1000, 2500], [timedelta(seconds=1), timedelta(seconds=2)]),
+        (TimeUnit.us(), TimeUnit.ns(), [1, 2], [timedelta(microseconds=1), timedelta(microseconds=2)]),
+        (TimeUnit.ns(), TimeUnit.us(), [1000, 2000], [timedelta(microseconds=1), timedelta(microseconds=2)]),
+        (TimeUnit.s(), TimeUnit.ns(), [1], [timedelta(seconds=1)]),
+    ],
+)
+def test_series_cast_duration_duration(from_tu, to_tu, from_vals, to_vals) -> None:
+    src = Series.from_pylist(from_vals).cast(DataType.duration(from_tu))
+    casted = src.cast(DataType.duration(to_tu))
+    assert casted.datatype() == DataType.duration(to_tu)
+    assert casted.to_pylist() == to_vals
 
 
 @pytest.mark.parametrize(

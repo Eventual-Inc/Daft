@@ -10,8 +10,10 @@ use crate::{
 /// Given an expression, extract the indexes of used columns and remap them to
 /// new indexes from 0...count-1, where count is the # of used columns.
 ///
-/// Note that if there are no used columns, we just return the first
-/// because we can't execute UDFs on empty recordbatches.
+/// Returns an empty `Vec` when the expression has no column references (e.g.
+/// after constant folding inlines a literal-valued column). Callers pass the
+/// result to `RecordBatch::get_columns`, which preserves `num_rows` even when
+/// the column slice is empty.
 pub fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
     let mut count = 0;
     let mut cols_to_idx = HashMap::new();
@@ -37,15 +39,10 @@ pub fn remap_used_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
         })
         .expect("Error occurred when visiting for required columns");
 
-    let required_cols = if cols_to_idx.is_empty() {
-        vec![0]
-    } else {
-        let mut required_cols = vec![0; count];
-        for (original_idx, final_idx) in cols_to_idx {
-            required_cols[final_idx] = original_idx;
-        }
-        required_cols
-    };
+    let mut required_cols = vec![0; count];
+    for (original_idx, final_idx) in cols_to_idx {
+        required_cols[final_idx] = original_idx;
+    }
 
     (BoundExpr::new_unchecked(new_expr.data), required_cols)
 }

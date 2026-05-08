@@ -6,14 +6,21 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
+from daft.daft import (
+    IOConfig,
+    PyDaftContext,
+    PyDaftEventLogConfig,
+    PyDaftExecutionConfig,
+    PyDaftPlanningConfig,
+    PyQueryResult,
+)
 from daft.daft import get_context as _get_context
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
     from daft.daft import PyQueryMetadata
-    from daft.runners.partitioning import PartitionT
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -45,6 +52,10 @@ class DaftContext:
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
 
+    @property
+    def daft_event_log_config(self) -> PyDaftEventLogConfig:
+        return self._ctx._daft_event_log_config
+
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
         """Attaches a subscriber to this context.
 
@@ -67,6 +78,9 @@ class DaftContext:
 
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
+
+    def _notify_query_heartbeat(self, query_id: str) -> None:
+        self._ctx.notify_query_heartbeat(query_id)
 
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
         """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
@@ -93,17 +107,55 @@ class DaftContext:
     def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
         self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
 
-    def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
-        from daft.recordbatch.micropartition import MicroPartition
-
-        if not isinstance(result, MicroPartition):
-            raise ValueError("Query Managers only support the Native Runner for now")
-        self._ctx.notify_result_out(query_id, result._micropartition)
-
 
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""
     return DaftContext(_get_context())
+
+
+@contextlib.contextmanager
+def with_subscriber(alias: str, subscriber: Subscriber) -> Generator[None, None, None]:
+    """Context manager that attaches a subscriber to the current context, and detaches it afterwards.
+
+    Args:
+        alias (str): Alias of subscriber to attach
+        subscriber (Subscriber): Subscriber instance that will receive events
+
+    Examples:
+        >>> with daft.with_subscriber("my_subscriber", ...):
+        ...     df = daft.from_pydict({"x": [1, 2, 3]})
+        ...     df = df.with_column("y", df["x"] + 1)
+        ...     df = df.limit(5)
+        ...     df.collect()
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    try:
+        yield
+    finally:
+        ctx.detach_subscriber(alias)
+
+
+def attach_subscriber(alias: str, subscriber: Subscriber) -> DaftContext:
+    """Attaches a subscriber to the current context.
+
+    Args:
+        alias (str): Name-based alias for the subscriber
+        subscriber (Subscriber): Subscriber instance that will receive events
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    return ctx
+
+
+def detach_subscriber(alias: str) -> None:
+    """Detaches a subscriber from the current context.
+
+    Args:
+        alias (str): Alias of subscriber to detach
+    """
+    ctx = get_context()
+    ctx.detach_subscriber(alias)
 
 
 @contextlib.contextmanager
@@ -287,3 +339,59 @@ def set_execution_config(
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
         return ctx
+
+
+def set_event_log_config(
+    config: PyDaftEventLogConfig | None = None,
+    enabled: bool | None = None,
+    path: str | Path | None = None,
+) -> DaftContext:
+    """Globally sets configuration parameters which control Daft event logging.
+
+    These configuration values are used to control whether Daft emits event logs during query execution and
+    where those event logs are written.
+
+    This is an experimental feature.
+
+    Args:
+        config: A PyDaftEventLogConfig object to set the config to, before applying other kwargs. Defaults to None
+            which indicates that the old (current) config should be used.
+        enabled: Whether event logging should be enabled. Defaults to None, which leaves the current setting unchanged.
+        path: Directory where event logs should be written. Defaults to None, which leaves the current path unchanged.
+    """
+    ctx = get_context()
+    with ctx._lock:
+        old_config = ctx.daft_event_log_config if config is None else config
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = str(path)
+
+        new_config = old_config.with_config_values(**kwargs)
+        ctx._ctx._daft_event_log_config = new_config
+        return ctx
+
+
+@contextlib.contextmanager
+def event_log_ctx(
+    path: str | Path | None = None,
+    *,
+    enabled: bool = True,
+) -> Generator[None, None, None]:
+    """Context manager that temporarily sets event logging configuration.
+
+    This is an experimental feature.
+
+    Args:
+        path: Directory where event logs should be written while inside the context. Defaults to None, which leaves
+            the current path unchanged.
+        enabled: Whether event logging should be enabled while inside the context. Defaults to True.
+    """
+    original_config = get_context().daft_event_log_config
+    try:
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = path
+        set_event_log_config(**kwargs)
+        yield
+    finally:
+        set_event_log_config(config=original_config)

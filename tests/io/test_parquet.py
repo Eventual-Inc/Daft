@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import io
 import os
 import tempfile
 import uuid
@@ -435,7 +436,7 @@ def test_parquet_read_databricks_generated_file():
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_parquet_count(tmp_path_factory, capsys):
+def test_parquet_count(tmp_path_factory):
     path = str(tmp_path_factory.mktemp("parquet_count"))
     data = {
         "string_content": ["a"] * 10,
@@ -445,11 +446,9 @@ def test_parquet_count(tmp_path_factory, capsys):
     df.write_parquet(path, write_mode="overwrite")
 
     df = daft.read_parquet(path).count(1)
-    _ = capsys.readouterr()
-    df.explain(True)
-    actual = capsys.readouterr()
-
-    assert "Project: col(int_id) as count" in actual.out
+    actual = io.StringIO()
+    df.explain(True, file=actual)
+    assert "Project: col(int_id) as count" in actual.getvalue()
 
     result = df.to_pydict()
     assert result == {"count": [10]}

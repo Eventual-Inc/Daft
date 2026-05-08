@@ -11,6 +11,7 @@ There are two main ways to work with videos in Daft:
 - [daft.VideoFile](../api/datatypes/file_types.md) for working with video files
   - [daft.functions.video_file](../api/functions/video_file.md) for working with video files
   - [daft.functions.video_metadata](../api/functions/video_metadata.md) for working with video metadata
+  - [daft.functions.video_frames](../api/functions/video_frames.md) for decoding video frames from a `VideoFile`
   - [daft.functions.video_keyframes](../api/functions/video_keyframes.md) for working with video keyframes
 
 ### Reading Video Frames with `daft.read_video_frames`
@@ -248,6 +249,29 @@ df = (
     .with_column("metadata", video_metadata(daft.col("file")))
     .with_column("keyframes", video_keyframes(daft.col("file")))
     .select("path", "file", "size", "metadata", "keyframes")
+)
+
+df.show(3)
+```
+
+You can also decode frames from a `VideoFile` column with `video_frames`. This keeps one row per input video and returns the decoded frames as a list of structs. Use `.explode("frames")` if you want one row per frame.
+
+```python
+import daft
+from daft.functions import video_file, video_frames
+
+df = (
+    daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/videos/*.mp4")
+    .with_column("video", video_file(daft.col("path"), verify=True))
+    .with_column(
+        "frames",
+        video_frames(
+            daft.col("video"),
+            start_time=0.0,
+            end_time=0.2,
+        ),
+    )
+    .select("path", "frames")
 )
 
 df.show(3)

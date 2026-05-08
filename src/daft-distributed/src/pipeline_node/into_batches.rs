@@ -50,17 +50,23 @@ impl RuntimeStats for IntoBatchesStats {
         if let StatSnapshot::Default(snapshot) = snapshot
             && let Some(phase) = &node_info.node_phase
         {
-            // Track input rows for the initial local batching pass and output rows for the rebatch pass.
+            // Track input rows/bytes for the initial local batching pass and output rows/bytes for the rebatch pass.
             if phase == INITIAL_BATCH_PHASE {
                 self.base.add_rows_in(snapshot.rows_in);
+                self.base.add_bytes_in(snapshot.bytes_in);
             } else if phase == REBATCH_PHASE {
                 self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_out(snapshot.bytes_out);
             }
         }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
     }
 }
 

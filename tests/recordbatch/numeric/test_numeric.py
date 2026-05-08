@@ -843,3 +843,257 @@ def test_table_shift_right_syntactic_sugar() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
     shift_table = table.eval_expression_list([col("a").shift_right(1)])
     assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_table.get_column_by_name("a").to_pylist()
+
+
+def test_e() -> None:
+    from daft.functions import e
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    result = table.eval_expression_list([e().alias("e")])
+    values = result.get_column_by_name("e").to_pylist()
+    assert len(values) == 3
+    for v in values:
+        assert v == pytest.approx(math.e, rel=1e-10)
+
+
+def test_pi() -> None:
+    from daft.functions import pi
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    result = table.eval_expression_list([pi().alias("pi")])
+    values = result.get_column_by_name("pi").to_pylist()
+    assert len(values) == 3
+    for v in values:
+        assert v == pytest.approx(math.pi, rel=1e-10)
+
+
+def test_factorial() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5, 10, None]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [1, 1, 2, 6, 24, 120, 3628800, None]
+    assert values == expected
+
+
+def test_factorial_negative() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [-1, -5]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None]
+
+
+def test_factorial_overflow() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [20, 21, 100]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2432902008176640000, None, None]
+
+
+def test_factorial_float_input() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
+        table.eval_expression_list([factorial(col("a"))])
+
+
+def test_factorial_bad_input() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
+        table.eval_expression_list([factorial(col("a"))])
+
+
+def test_bin() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 7, 255, 1024, None]})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = ["0", "1", "10", "111", "11111111", "10000000000", None]
+    assert values == expected
+
+
+def test_bin_negative() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -2, -(2**63)], type=pa.int64())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["1" * 64, "1" * 63 + "0", "1" + "0" * 63]
+
+
+def test_bin_unsigned_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 7, 255], type=pa.uint16())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "111", "11111111"]
+
+
+def test_bin_signed_small_width() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -128], type=pa.int8())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["1" * 64, "1" * 56 + "10000000"]
+
+
+def test_bin_uint64_max() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "1" + "0" * 63, "1" * 64]
+
+
+def test_bin_float_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
+    with pytest.raises(ValueError, match="Expected input to bin to be integer"):
+        table.eval_expression_list([bin(col("a"))])
+
+
+def test_bin_bad_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to bin to be integer"):
+        table.eval_expression_list([bin(col("a"))])
+
+
+def test_hypot() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": [3.0, 5.0, 0.0, None], "b": [4.0, 12.0, 0.0, None]})
+    result = table.eval_expression_list([hypot(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [5.0, 13.0, 0.0, None]
+    assert values == expected
+
+
+def test_hypot_integers() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": [3, 5], "b": [4, 12]})
+    result = table.eval_expression_list([hypot(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [5.0, 13.0]
+    assert values == expected
+
+
+def test_hypot_bad_input() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": ["a", "b"], "b": ["c", "d"]})
+    with pytest.raises(ValueError, match="Expected inputs to hypot to be numeric"):
+        table.eval_expression_list([hypot(col("a"), col("b"))])
+
+
+def test_pmod() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 10, 0, 5], "b": [3, 4, 5, 5]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [1, 2, 0, 0]
+
+
+def test_pmod_negative() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-7, 7, -7, -8], type=pa.int64()), "b": pa.array([3, -3, -3, -3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2, 1, -1, -2]
+
+
+def test_pmod_float() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7.5, -7.0, 1.0, -1.0], "b": [2.5, 3.0, -3.0, -3.0]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0.0, 2.0, 1.0, -1.0]
+
+
+def test_pmod_zero_divisor() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 0, -3, 5], "b": [0, 0, 0, 2]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None, None, 1]
+
+
+def test_pmod_int_boundary() -> None:
+    from daft.functions import pmod
+
+    # i64::MIN exercises the wrapping path: i64::MIN % -1 would panic without
+    # wrapping_rem; pmod(i64::MIN, -1) is mathematically 0.
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-(2**63), -(2**63)], type=pa.int64()), "b": pa.array([-1, 3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        pytest.param(float("nan"), 3.0, float("nan"), id="nan_dividend"),
+        pytest.param(1.0, float("nan"), float("nan"), id="nan_divisor"),
+        pytest.param(float("inf"), 3.0, float("nan"), id="inf_dividend"),
+        pytest.param(1.0, float("inf"), 1.0, id="inf_divisor_positive_a"),
+        pytest.param(-1.0, float("inf"), float("nan"), id="inf_divisor_negative_a"),
+    ],
+)
+def test_pmod_float_nan_inf(a: float, b: float, expected: float) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [a], "b": [b]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    [value] = result.get_column_by_name("result").to_pylist()
+    if math.isnan(expected):
+        assert math.isnan(value)
+    else:
+        assert value == expected
+
+
+@pytest.mark.parametrize(
+    "a_arrow, b_arrow",
+    [
+        pytest.param(pa.int8(), pa.int8(), id="i8/i8"),
+        pytest.param(pa.int32(), pa.int64(), id="i32/i64"),
+        pytest.param(pa.int8(), pa.int32(), id="i8/i32"),
+        pytest.param(pa.uint16(), pa.uint32(), id="u16/u32"),
+    ],
+)
+def test_pmod_int_cross_width(a_arrow: pa.DataType, b_arrow: pa.DataType) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": pa.array([7, 5, 0], type=a_arrow), "b": pa.array([3, 4, 2], type=b_arrow)})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [1, 1, 0]
+
+
+def test_pmod_bad_input() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": ["x", "y"], "b": [1, 2]})
+    with pytest.raises(ValueError, match="Expected inputs to pmod to be numeric"):
+        table.eval_expression_list([pmod(col("a"), col("b"))])

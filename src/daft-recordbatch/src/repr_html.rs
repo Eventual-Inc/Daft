@@ -48,6 +48,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.u64().unwrap();
             arr.html_value(idx, truncate)
         }
+        DataType::Float16 => {
+            let arr = s.f16().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::Float32 => {
             let arr = s.f32().unwrap();
             arr.html_value(idx, truncate)
@@ -80,7 +84,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.interval().unwrap();
             arr.html_value(idx, truncate)
         }
-
+        DataType::Uuid => {
+            let arr = s.uuid().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::Binary => {
             let arr = s.binary().unwrap();
             arr.html_value(idx, truncate)
@@ -150,6 +157,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
         }
         DataType::Unknown => {
             panic!("Unknown data type")
+        }
+        DataType::Union { .. } => {
+            let arr = s.union().unwrap();
+            arr.html_value(idx, truncate)
         }
     }
 }

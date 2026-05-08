@@ -7,7 +7,10 @@ use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit};
+use crate::{
+    field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit,
+    union_mode::UnionMode,
+};
 pub type DaftDataType = DataType;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -42,6 +45,9 @@ pub enum DataType {
 
     /// An [`u64`]
     UInt64,
+
+    /// A [`f16`] (IEEE 754 half-precision)
+    Float16,
 
     /// A [`f32`]
     Float32,
@@ -89,6 +95,9 @@ pub enum DataType {
 
     /// Opaque binary data of fixed size. Enum parameter specifies the number of bytes per value.
     FixedSizeBinary(usize),
+
+    /// A UUID (Universally Unique Identifier) represented as a 16-byte value.
+    Uuid,
 
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
@@ -138,6 +147,8 @@ pub enum DataType {
 
     Unknown,
     File(MediaType),
+
+    Union(Vec<Field>, Vec<i8>, UnionMode),
 }
 
 impl Display for DataType {
@@ -153,6 +164,7 @@ impl Display for DataType {
             Self::UInt16 => write!(f, "UInt16"),
             Self::UInt32 => write!(f, "UInt32"),
             Self::UInt64 => write!(f, "UInt64"),
+            Self::Float16 => write!(f, "Float16"),
             Self::Float32 => write!(f, "Float32"),
             Self::Float64 => write!(f, "Float64"),
             Self::Decimal128(precision, scale) => {
@@ -171,6 +183,7 @@ impl Display for DataType {
             Self::Interval => write!(f, "Interval"),
             Self::Binary => write!(f, "Binary"),
             Self::FixedSizeBinary(size) => write!(f, "Binary[{size}]"),
+            Self::Uuid => write!(f, "UUID"),
             Self::Utf8 => write!(f, "String"),
             Self::FixedSizeList(child_dtype, size) => write!(f, "List[{child_dtype}; {size}]"),
             Self::List(child_dtype) => write!(f, "List[{child_dtype}]"),
@@ -213,6 +226,23 @@ impl Display for DataType {
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
             Self::File(format) => write!(f, "File[{format}]"),
+            Self::Union(fields, ids, mode) => {
+                let mut contents = String::default();
+                for (index, field) in fields.iter().enumerate() {
+                    if index != 0 {
+                        write!(&mut contents, ", ")?;
+                    }
+                    if !(field.name.is_empty() && field.dtype.is_null()) {
+                        write!(&mut contents, "{}: {}", field.name, field.dtype)?;
+                    }
+                }
+
+                write!(
+                    f,
+                    "Union[{}; type_ids: {:?}; mode: {}]",
+                    contents, ids, mode
+                )
+            }
         }
     }
 }
@@ -260,6 +290,7 @@ impl DataType {
             Self::UInt16 => arrow_schema::DataType::UInt16,
             Self::UInt32 => arrow_schema::DataType::UInt32,
             Self::UInt64 => arrow_schema::DataType::UInt64,
+            Self::Float16 => arrow_schema::DataType::Float16,
             Self::Float32 => arrow_schema::DataType::Float32,
             Self::Float64 => arrow_schema::DataType::Float64,
             Self::Timestamp(unit, tz) => {
@@ -308,7 +339,16 @@ impl DataType {
             }
             Self::Date => arrow_schema::DataType::Date32,
             Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
-
+            Self::Union(fields, ids, mode) => arrow_schema::DataType::Union(
+                arrow_schema::UnionFields::try_new(
+                    ids.clone(),
+                    fields
+                        .iter()
+                        .map(|f| f.to_arrow())
+                        .collect::<DaftResult<Vec<arrow_schema::Field>>>()?,
+                )?,
+                mode.to_arrow(),
+            ),
             _ => {
                 return Err(DaftError::TypeError(format!(
                     "Can not convert {self:?} into arrow type"
@@ -323,6 +363,7 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            Uuid => FixedSizeBinary(16),
 
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
@@ -379,9 +420,12 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
+            Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
+                Field::new("offset", Int64),
+                Field::new("length", Int64),
             ]),
             _ => {
                 assert!(self.is_physical());
@@ -417,11 +461,11 @@ impl DataType {
             | Self::UInt16
             | Self::UInt32
             | Self::UInt64
-            // DataType::Float16
+            | Self::Float16
             | Self::Float32
             | Self::Float64 => true,
             Self::Extension(_, inner, _) => inner.is_numeric(),
-            _ => false
+            _ => false,
         }
     }
 
@@ -436,12 +480,12 @@ impl DataType {
             | Self::UInt16
             | Self::UInt32
             | Self::UInt64
-            // DataType::Float16
+            | Self::Float16
             | Self::Float32
             | Self::Float64
             | Self::Decimal128(..) => true,
             Self::Extension(_, inner, _) => inner.is_primitive(),
-            _ => false
+            _ => false,
         }
     }
 
@@ -485,11 +529,7 @@ impl DataType {
 
     #[inline]
     pub fn is_floating(&self) -> bool {
-        matches!(
-            self,
-            // DataType::Float16 |
-            Self::Float32 | Self::Float64
-        )
+        matches!(self, Self::Float16 | Self::Float32 | Self::Float64)
     }
 
     #[inline]
@@ -614,6 +654,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_float16(&self) -> bool {
+        matches!(self, Self::Float16)
+    }
+
+    #[inline]
     pub fn is_float32(&self) -> bool {
         matches!(self, Self::Float32)
     }
@@ -664,6 +709,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid)
+    }
+
+    #[inline]
     pub fn is_fixed_size_list(&self) -> bool {
         matches!(self, Self::FixedSizeList(..))
     }
@@ -698,6 +748,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_union(&self) -> bool {
+        matches!(self, Self::Union(..))
+    }
+
+    #[inline]
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`
@@ -705,6 +760,7 @@ impl DataType {
             Self::Int16 => Self::Float32,
             Self::UInt8 => Self::Float32,
             Self::UInt16 => Self::Float32,
+            Self::Float16 => Self::Float16,
             Self::Float32 => Self::Float32,
 
             // All numeric types that coerce to `f64`
@@ -740,6 +796,7 @@ impl DataType {
             Self::UInt16 => Some(2.),
             Self::UInt32 => Some(4.),
             Self::UInt64 => Some(8.),
+            Self::Float16 => Some(2.),
             Self::Float32 => Some(4.),
             Self::Float64 => Some(8.),
             Self::Utf8 => Some(VARIABLE_TYPE_SIZE),
@@ -790,6 +847,7 @@ impl DataType {
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
+                | Self::Uuid
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)
@@ -980,6 +1038,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::UInt32 => Self::UInt32,
             arrow_schema::DataType::UInt64 => Self::UInt64,
 
+            arrow_schema::DataType::Float16 => Self::Float16,
             arrow_schema::DataType::Float32 => Self::Float32,
             arrow_schema::DataType::Float64 => Self::Float64,
             arrow_schema::DataType::Timestamp(time_unit, tz) => Self::Timestamp(
@@ -1034,6 +1093,18 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                 let value = Box::new(value);
 
                 Self::Map { key, value }
+            }
+            arrow_schema::DataType::Union(union_fields, mode) => {
+                let fields = union_fields
+                    .iter()
+                    .map(|(_, f)| Field::try_from(f.as_ref()))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let ids = union_fields.iter().map(|(id, _)| id).collect::<Vec<i8>>();
+                let mode = match mode {
+                    arrow_schema::UnionMode::Sparse => UnionMode::Sparse,
+                    arrow_schema::UnionMode::Dense => UnionMode::Dense,
+                };
+                Self::Union(fields, ids, mode)
             }
             other => {
                 return Err(DaftError::ValueError(format!(
@@ -1149,6 +1220,7 @@ mod test {
     #[case(DataType::FixedShapeSparseTensor(Box::new(DataType::Float32), vec![100, 100],true))]
     #[case(DataType::File(MediaType::Video))]
     #[case(DataType::File(MediaType::Audio))]
+    #[case(DataType::File(MediaType::Image))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Binary), None))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Int32), Some("meta".to_string())))]
     // To convert extension types to arrow_rs, you must use `Field::to_arrow`

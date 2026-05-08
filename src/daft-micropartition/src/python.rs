@@ -832,7 +832,7 @@ impl PyMicroPartition {
         multithreaded_io: Option<bool>,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::new(vec![
-            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Uuid),
             Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
             Field::new(
                 "WARC-Date",

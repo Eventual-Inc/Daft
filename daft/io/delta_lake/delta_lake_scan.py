@@ -194,7 +194,7 @@ class DeltaLakeScanOperator(ScanOperator):
 
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
-        add_actions = pa.record_batch(self._table.get_add_actions())
+        add_actions = pa.table(self._table.get_add_actions())
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",

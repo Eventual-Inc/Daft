@@ -7,12 +7,13 @@ use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, optimization::replace_columns_with_expressions,
     resolved_col,
 };
+use daft_scan::ScanState;
 use indexmap::IndexSet;
 
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, Join, Pivot, Project, UDFProject},
     source_info::SourceInfo,
 };
 
@@ -140,24 +141,44 @@ impl PushDownProjection {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
                 let required_columns = plan.required_columns().single();
+                // If the Source has a checkpoint, only allow projection pushdown
+                // when the `on=` key column is still required downstream —
+                // otherwise pruning would strip the key before the anti-join
+                // built by `RewriteCheckpointSource` can use it. When the user's
+                // query legitimately doesn't reference the key (e.g. `.select('value')`),
+                // keep the full Source schema and let the Project trim columns
+                // above the anti-join in memory.
+                if let Some(cfg) = source.checkpoint.as_ref()
+                    && !required_columns.contains(cfg.key_column.as_str())
+                {
+                    return Ok(Transformed::no(plan));
+                }
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
+                            // Don't modify materialized scans — their tasks are already built.
+                            if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                                return Ok(Transformed::no(plan));
+                            }
                             let pruned_upstream_schema = upstream_schema
                                 .into_iter()
                                 .filter(|field| required_columns.contains(&*field.name))
                                 .cloned()
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema);
-                            let new_source: LogicalPlan = Source::new(
-                                schema.into(),
-                                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
-                                    external_info.pushdowns.with_columns(Some(Arc::new(
-                                        required_columns.iter().cloned().collect(),
-                                    ))),
-                                ))),
-                            )
-                            .into();
+                            let mut new_source_node =
+                                source
+                                    .clone()
+                                    .with_source_info(Arc::new(SourceInfo::Physical(
+                                        external_info.with_pushdowns(
+                                            external_info.pushdowns.with_columns(Some(Arc::new(
+                                                required_columns.iter().cloned().collect(),
+                                            ))),
+                                        ),
+                                    )));
+                            new_source_node.output_schema = schema.into();
+                            let new_source: LogicalPlan =
+                                LogicalPlan::Source(new_source_node).into();
                             let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
                             // Retry optimization now that the upstream node is different.
                             let new_plan = self
@@ -456,6 +477,7 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
+            LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
             LogicalPlan::Distinct(distinct) => {
                 if distinct.columns.is_none() {
                     // Cannot push down past a Distinct if the distinct is on all columns
@@ -499,6 +521,7 @@ impl PushDownProjection {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
             LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
+            LogicalPlan::StageCheckpointKeys(_) => Ok(Transformed::no(plan)),
             LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }
     }
@@ -649,6 +672,7 @@ impl PushDownProjection {
             }
             // Joins also do column projection
             LogicalPlan::Join(join) => self.try_optimize_join(join, plan.clone()),
+            LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
             // Pivots also do column projection
             LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
             _ => Ok(Transformed::no(plan)),
@@ -673,6 +697,7 @@ mod tests {
 
     use crate::{
         LogicalPlan,
+        builder::LogicalPlanBuilder,
         ops::{Project, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
@@ -982,5 +1007,27 @@ mod tests {
         )
         .into();
         assert_optimized_plan_eq(plan, expected).unwrap();
+    }
+
+    #[test]
+    fn test_projection_does_not_pushdown_into_materialized_scan() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+        let source = dummy_scan_node(scan_op).build();
+        let materialized_source: Arc<LogicalPlan> = match source.as_ref() {
+            LogicalPlan::Source(source) => {
+                LogicalPlan::Source(source.clone().build_materialized_scan_source()?).into()
+            }
+            _ => panic!("Expected Source plan"),
+        };
+        let plan = LogicalPlanBuilder::from(materialized_source)
+            .select(vec![resolved_col("a")])?
+            .build();
+
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+
+        Ok(())
     }
 }

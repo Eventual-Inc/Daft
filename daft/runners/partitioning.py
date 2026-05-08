@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 from uuid import uuid4
 
-from daft.daft import PyMicroPartitionSet
+from daft.daft import FlightPartitionRef, PyMicroPartitionSet
 from daft.datatype import TimeUnit
 from daft.recordbatch import MicroPartition
 
@@ -88,6 +88,14 @@ class PartitionMetadata(PartialPartitionMetadata):
         return PartitionMetadata(
             num_rows=len(table),
             size_bytes=table.size_bytes(),
+            boundaries=None,
+        )
+
+    @classmethod
+    def from_flight_partition_ref(cls, flight_partition_ref: FlightPartitionRef) -> PartitionMetadata:
+        return PartitionMetadata(
+            num_rows=flight_partition_ref.num_rows,
+            size_bytes=flight_partition_ref.size_bytes,
             boundaries=None,
         )
 

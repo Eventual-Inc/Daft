@@ -12,15 +12,15 @@ use super::as_arrow::AsArrow;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
         ops::arrow::sort::primitive::{
             common::multi_column_idx_sort, indices::indices_sorted_unstable_by, sort::sort_by,
         },
     },
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, DataType, Decimal128Array,
-        ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array,
-        IntervalArray, NullArray, NumericNative, Utf8Array,
+        ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float16Array, Float32Array,
+        Float64Array, IntervalArray, NullArray, NumericNative, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
@@ -256,6 +256,54 @@ where
         let arrow_array = self.as_arrow()?;
 
         let result = sort_by(arrow_array, |l, r| l.cmp(r), &options, None);
+
+        Self::from_arrow(self.field().clone(), Arc::new(result))
+    }
+}
+
+impl Float16Array {
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow()?;
+
+        let result = indices_sorted_unstable_by(
+            arrow_array,
+            cmp_float::<half::f16>,
+            descending,
+            nulls_first,
+        );
+
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
+    }
+
+    pub fn argsort_multikey(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow()?;
+        primitive_argsort_multikey(
+            arrow_array,
+            self.name(),
+            others,
+            descending,
+            nulls_first,
+            cmp_float::<half::f16>,
+        )
+    }
+
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let options = SortOptions {
+            descending,
+            nulls_first,
+        };
+
+        let arrow_array = self.as_arrow()?;
+
+        let result = sort_by(arrow_array, cmp_float::<half::f16>, &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }
@@ -561,6 +609,12 @@ impl StructArray {
     }
 }
 
+impl UnionArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for UnionArray")
+    }
+}
+
 impl ExtensionArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for ExtensionArray")
@@ -602,6 +656,13 @@ impl DurationArray {
 }
 
 impl TimestampArray {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl UuidArray {
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))

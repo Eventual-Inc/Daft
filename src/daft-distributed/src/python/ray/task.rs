@@ -1,27 +1,24 @@
-use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
+use daft_partition_refs::{FlightPartitionRef, PyFlightPartitionRef, RayPartitionRef};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
-    pipeline_node::{
-        FlightShufflePartitionRef as RustFlightShufflePartitionRef, MaterializedOutput,
-        ShufflePartitionRef, ShuffleWriteOutput, TaskOutput,
-    },
+    pipeline_node::MaterializedOutput,
     scheduling::{
         task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
 
-#[pyclass(module = "daft.daft", name = "RayTaskResult", from_py_object)]
+#[pyclass(module = "daft.daft", name = "RayTaskResult", frozen, from_py_object)]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
-    Success(Vec<RayPartitionRef>, Vec<u8>),
-    RayShuffleSuccess(Vec<RayPartitionRef>, Vec<u8>),
-    FlightShuffleSuccess(Vec<FlightShufflePartitionRef>, Vec<u8>),
+    SuccessRay(Vec<RayPartitionRef>, Vec<u8>),
+    SuccessFlight(Vec<PyFlightPartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -29,24 +26,16 @@ pub(crate) enum RayTaskResult {
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
-    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
-        Self::Success(ray_part_refs, stats_serialized)
+    fn success_ray(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
+        Self::SuccessRay(ray_part_refs, stats_serialized)
     }
 
     #[staticmethod]
-    fn ray_shuffle_success(
-        shuffle_part_refs: Vec<RayPartitionRef>,
+    fn success_flight(
+        flight_part_refs: Vec<PyFlightPartitionRef>,
         stats_serialized: Vec<u8>,
     ) -> Self {
-        Self::RayShuffleSuccess(shuffle_part_refs, stats_serialized)
-    }
-
-    #[staticmethod]
-    fn flight_shuffle_success(
-        shuffle_part_refs: Vec<FlightShufflePartitionRef>,
-        stats_serialized: Vec<u8>,
-    ) -> Self {
-        Self::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)
+        Self::SuccessFlight(flight_part_refs, stats_serialized)
     }
 
     #[staticmethod]
@@ -113,55 +102,28 @@ impl TaskResultHandle for RayTaskResultHandle {
             let ray_task_result = fut.await;
 
             match ray_task_result {
-                Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
-                    let materialized_output = MaterializedOutput::new(
-                        ray_part_refs
-                            .into_iter()
-                            .map(|ray_part_ref| Arc::new(ray_part_ref) as PartitionRef)
-                            .collect(),
-                        worker_id.clone(),
-                        ip_address.clone(),
-                        task_id,
-                    );
-
+                Ok(RayTaskResult::SuccessRay(ray_part_refs, stats_serialized)) => {
                     TaskStatus::Success {
-                        result: TaskOutput::Materialized(materialized_output),
-                        stats,
+                        result: MaterializedOutput::new(
+                            into_partition_refs(ray_part_refs),
+                            worker_id.clone(),
+                            ip_address,
+                            task_id,
+                        ),
+                        stats: ExecutionStats::decode(&stats_serialized),
                     }
                 }
-                Ok(RayTaskResult::RayShuffleSuccess(ray_part_refs, stats_serialized)) => {
-                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
-                    let shuffle_output = ShuffleWriteOutput::new(
-                        ray_part_refs
-                            .into_iter()
-                            .map(|ray_part_ref| {
-                                ShufflePartitionRef::Ray(Arc::new(ray_part_ref) as PartitionRef)
-                            })
-                            .collect(),
-                        worker_id.clone(),
-                        task_id,
-                    );
-
+                Ok(RayTaskResult::SuccessFlight(flight_part_refs, stats_serialized)) => {
+                    let inner_refs: Vec<FlightPartitionRef> =
+                        flight_part_refs.into_iter().map(Into::into).collect();
                     TaskStatus::Success {
-                        result: TaskOutput::ShuffleWrite(shuffle_output),
-                        stats,
-                    }
-                }
-                Ok(RayTaskResult::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)) => {
-                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
-                    let shuffle_output = ShuffleWriteOutput::new(
-                        shuffle_part_refs
-                            .into_iter()
-                            .map(ShufflePartitionRef::from)
-                            .collect(),
-                        worker_id.clone(),
-                        task_id,
-                    );
-
-                    TaskStatus::Success {
-                        result: TaskOutput::ShuffleWrite(shuffle_output),
-                        stats,
+                        result: MaterializedOutput::new(
+                            into_partition_refs(inner_refs),
+                            worker_id.clone(),
+                            ip_address,
+                            task_id,
+                        ),
+                        stats: ExecutionStats::decode(&stats_serialized),
                     }
                 }
                 Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
@@ -180,102 +142,11 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen, from_py_object)]
-#[derive(Debug, Clone)]
-pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<Py<PyAny>>,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[pymethods]
-impl RayPartitionRef {
-    #[new]
-    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
-        Self {
-            object_ref: Arc::new(object_ref),
-            num_rows,
-            size_bytes,
-        }
-    }
-
-    #[getter]
-    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
-        self.object_ref.clone_ref(py)
-    }
-
-    #[getter]
-    pub fn get_num_rows(&self) -> usize {
-        self.num_rows
-    }
-
-    #[getter]
-    pub fn get_size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-}
-
-impl Partition for RayPartitionRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-    fn num_rows(&self) -> usize {
-        self.num_rows
-    }
-}
-
-#[pyclass(
-    module = "daft.daft",
-    name = "FlightShufflePartitionRef",
-    frozen,
-    from_py_object
-)]
-#[derive(Debug, Clone)]
-pub(crate) struct FlightShufflePartitionRef {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_address: String,
-    pub cache_id: u32,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[pymethods]
-impl FlightShufflePartitionRef {
-    #[new]
-    pub fn new(
-        shuffle_id: u64,
-        partition_idx: usize,
-        server_address: String,
-        cache_id: u32,
-        num_rows: usize,
-        size_bytes: usize,
-    ) -> Self {
-        Self {
-            shuffle_id,
-            partition_idx,
-            server_address,
-            cache_id,
-            num_rows,
-            size_bytes,
-        }
-    }
-}
-
-impl From<FlightShufflePartitionRef> for ShufflePartitionRef {
-    fn from(py_ref: FlightShufflePartitionRef) -> Self {
-        Self::Flight(RustFlightShufflePartitionRef {
-            shuffle_id: py_ref.shuffle_id,
-            partition_idx: py_ref.partition_idx,
-            server_address: py_ref.server_address,
-            cache_id: py_ref.cache_id,
-            num_rows: py_ref.num_rows,
-            size_bytes: py_ref.size_bytes,
-        })
-    }
+fn into_partition_refs<T: Partition + 'static>(parts: Vec<T>) -> Vec<PartitionRef> {
+    parts
+        .into_iter()
+        .map(|p| Arc::new(p) as PartitionRef)
+        .collect()
 }
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]

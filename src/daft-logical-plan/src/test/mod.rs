@@ -22,6 +22,7 @@ pub fn dummy_scan_operator_with_size(
         num_scan_tasks: 1,
         num_rows_per_task,
         supports_count_pushdown_flag: false,
+        stats: None,
     }))
 }
 
@@ -49,5 +50,6 @@ pub fn dummy_scan_operator_for_aggregation(
         num_scan_tasks: 1,
         num_rows_per_task: None,
         supports_count_pushdown_flag,
+        stats: None,
     }))
 }

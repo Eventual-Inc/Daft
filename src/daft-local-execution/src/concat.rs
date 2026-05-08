@@ -96,8 +96,8 @@ impl ConcatNode {
                     );
                     break;
                 }
-                PipelineMessage::ShuffleMetadata { .. } => {
-                    unreachable!("ConcatNode should not receive shuffle metadata")
+                PipelineMessage::FlightPartitionRef { .. } => {
+                    unreachable!("ConcatNode should not receive flight partition refs from child")
                 }
             }
         }

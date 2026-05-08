@@ -94,8 +94,8 @@ def read_mcap(
 
     Args:
         path: mcap file path
-        start_time: Start time in milliseconds to filter messages.
-        end_time: End time in milliseconds to filter messages.
+        start_time: Start time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
+        end_time: End time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
         topics: List of topics to filter messages.
         batch_size: Number of messages to read in each batch.
         topic_start_time_resolver: Optional callable to compute per-file, per-topic start times.

@@ -88,7 +88,7 @@ impl ColumnRangeStatistics {
             // Numeric types
             DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
             DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
-            DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
+            DataType::Float16 | DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
 
             // String types
             DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(..) |
@@ -98,7 +98,7 @@ impl ColumnRangeStatistics {
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File(_) => false,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Uuid | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File(_) | DataType::Union(..) => false,
             #[cfg(feature = "python")]
             DataType::Python => false,
         }

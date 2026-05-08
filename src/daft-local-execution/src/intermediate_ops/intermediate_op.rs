@@ -20,9 +20,9 @@ use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    buffer::RowBasedBuffer,
+    batch_manager::BatchManager,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchManager, BatchingStrategy},
+    dynamic_batching::BatchingStrategy,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
@@ -48,6 +48,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self>;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
@@ -83,38 +84,15 @@ struct WorkerResult<Op: IntermediateOperator> {
     elapsed: Duration,
 }
 
-struct InputState {
-    buffer: RowBasedBuffer,
-    active_workers: usize,
-    pending_flush: bool,
-}
-
-impl InputState {
-    fn can_flush(&self) -> bool {
-        self.pending_flush && self.active_workers == 0 && self.buffer.is_empty()
-    }
-
-    fn next_batch_if_ready(&mut self) -> DaftResult<Option<MicroPartition>> {
-        let batch = self.buffer.next_batch_if_ready()?;
-        if batch.is_some() {
-            Ok(batch)
-        } else if self.pending_flush {
-            self.buffer.pop_all()
-        } else {
-            Ok(None)
-        }
-    }
-}
-
 struct ExecutionContext<Op: IntermediateOperator> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<WorkerResult<Op>>>,
     operator_states: Vec<Op::State>,
     output_sender: Sender<PipelineMessage>,
-    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    batch_manager: BatchManager<Op::BatchingStrategy>,
+    active_workers: HashMap<InputId, usize>,
     per_input_stats: HashMap<InputId, Arc<Op::Stats>>,
-    input_states: HashMap<InputId, InputState>,
     stats_manager: RuntimeStatsManagerHandle,
     meter: Meter,
     node_info: Arc<NodeInfo>,
@@ -137,17 +115,10 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
 
     fn dispatch_ready_batches(&mut self, input_id: InputId) -> DaftResult<()> {
         while !self.operator_states.is_empty() {
-            let batch = {
-                let input = self
-                    .input_states
-                    .get_mut(&input_id)
-                    .expect("Input should be present");
-                let Some(batch) = input.next_batch_if_ready()? else {
-                    break;
-                };
-                input.active_workers += 1;
-                batch
+            let Some(batch) = self.batch_manager.next_batch(input_id)? else {
+                break;
             };
+            *self.active_workers.entry(input_id).or_insert(0) += 1;
             let state = self.operator_states.pop().unwrap();
             let op = self.op.clone();
             let task_spawner = self.task_spawner.clone();
@@ -155,7 +126,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             self.task_set.spawn(async move {
                 let now = Instant::now();
                 let (new_state, result) = op
-                    .execute(batch, state, runtime_stats, &task_spawner)
+                    .execute(batch, state, runtime_stats, &task_spawner, input_id)
                     .await??;
                 let elapsed = now.elapsed();
                 Ok(WorkerResult {
@@ -170,7 +141,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     }
 
     fn try_dispatch(&mut self) -> DaftResult<()> {
-        let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        let mut input_ids: Vec<InputId> = self.batch_manager.input_ids().collect();
         input_ids.sort_unstable();
         for input_id in input_ids {
             if self.operator_states.is_empty() {
@@ -182,12 +153,10 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     }
 
     async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<ControlFlow<(), ()>> {
-        let input_state = self
-            .input_states
-            .get_mut(&input_id)
-            .expect("Input should be present");
-        if input_state.can_flush() {
-            self.input_states.remove(&input_id);
+        let workers_idle = self.active_workers.get(&input_id).copied().unwrap_or(0) == 0;
+        if workers_idle && self.batch_manager.can_flush(input_id) {
+            _ = self.batch_manager.drain(input_id)?;
+            self.active_workers.remove(&input_id);
             self.per_input_stats.remove(&input_id);
             if self
                 .output_sender
@@ -214,9 +183,11 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
 
         let runtime_stats = self.get_or_create_stats(input_id);
         runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+        runtime_stats.increment_num_tasks();
         self.batch_manager
-            .record_execution_stats(runtime_stats.as_ref(), result.len(), elapsed);
+            .record_completion(runtime_stats.as_ref(), result.len(), elapsed);
         runtime_stats.add_rows_out(result.len() as u64);
+        runtime_stats.add_bytes_out(result.size_bytes() as u64);
 
         if self
             .output_sender
@@ -230,12 +201,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             return Ok(ControlFlow::Break(()));
         }
 
-        let new_requirements = self.batch_manager.calculate_batch_size();
-        for input in self.input_states.values_mut() {
-            input.buffer.update_bounds(new_requirements);
-        }
-
-        self.input_states.get_mut(&input_id).unwrap().active_workers -= 1;
+        *self.active_workers.get_mut(&input_id).unwrap() -= 1;
         self.operator_states.push(state);
         self.try_dispatch()?;
         self.try_flush_input(input_id).await
@@ -264,42 +230,34 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                         self.stats_manager.activate_node(self.node_id);
                         self.node_initialized = true;
                     }
-                    self.get_or_create_stats(input_id)
-                        .add_rows_in(partition.len() as u64);
-                    let (lower, upper) = self.batch_manager.calculate_batch_size().values();
-                    let input = self
-                        .input_states
-                        .entry(input_id)
-                        .or_insert_with(|| InputState {
-                            buffer: RowBasedBuffer::new(lower, upper),
-                            active_workers: 0,
-                            pending_flush: false,
-                        });
-                    input.buffer.push(partition);
+                    let stats = self.get_or_create_stats(input_id);
+                    stats.add_rows_in(partition.len() as u64);
+                    stats.add_bytes_in(partition.size_bytes() as u64);
+                    self.batch_manager.push(input_id, partition);
                     self.try_dispatch()?;
                     ControlFlow::Continue(())
                 }
                 PipelineEvent::Flush(input_id) => {
-                    let Some(input) = self.input_states.get_mut(&input_id) else {
+                    if !self.batch_manager.has_input(input_id) {
                         let _ = self
                             .output_sender
                             .send(PipelineMessage::Flush(input_id))
                             .await;
                         return Ok(());
-                    };
-                    input.pending_flush = true;
+                    }
+                    self.batch_manager.set_pending_flush(input_id);
                     self.try_dispatch()?;
                     self.try_flush_input(input_id).await?
                 }
-                PipelineEvent::ShuffleMetadata => {
-                    unreachable!("IntermediateNode should not receive shuffle metadata")
+                PipelineEvent::FlightPartitionRef => {
+                    unreachable!(
+                        "IntermediateNode should not receive flight partition refs from child"
+                    )
                 }
                 PipelineEvent::InputClosed => {
-                    for input_state in self.input_states.values_mut() {
-                        input_state.pending_flush = true;
-                    }
+                    self.batch_manager.set_all_pending_flush();
                     self.try_dispatch()?;
-                    let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+                    let mut input_ids: Vec<InputId> = self.batch_manager.input_ids().collect();
                     input_ids.sort_unstable();
                     let mut cf = ControlFlow::Continue(());
                     for input_id in input_ids {
@@ -464,11 +422,10 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                 let operator_states: Vec<Op::State> =
                     (0..op.max_concurrency()).map(|_| op.make_state()).collect();
 
-                let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
-                    PipelineExecutionSnafu {
+                let batch_manager =
+                    BatchManager::new(op.batching_strategy().context(PipelineExecutionSnafu {
                         node_name: op.name().to_string(),
-                    },
-                )?));
+                    })?);
 
                 let mut ctx = ExecutionContext {
                     op,
@@ -477,8 +434,8 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     operator_states,
                     output_sender: destination_sender,
                     batch_manager,
+                    active_workers: HashMap::new(),
                     per_input_stats: HashMap::new(),
-                    input_states: HashMap::new(),
                     stats_manager: stats_manager.clone(),
                     meter,
                     node_info,

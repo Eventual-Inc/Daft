@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use arrow_array::builder::LargeStringBuilder;
+use arrow_array::builder::FixedSizeBinaryBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, Schema},
-    series::Series,
+    prelude::{DataType, Field, FromArrow, Schema, UuidArray},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{
     ExprRef,
@@ -28,13 +28,14 @@ impl ScalarUDF for Uuid {
     fn call(&self, _inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
         let len = ctx.row_count;
 
-        const UUID_STR_LEN: usize = 36; // "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        let mut builder = LargeStringBuilder::with_capacity(len, len * UUID_STR_LEN);
+        let mut builder = FixedSizeBinaryBuilder::with_capacity(len, 16);
         for _ in 0..len {
-            builder.append_value(RustUuid::new_v4().to_string());
+            builder.append_value(RustUuid::new_v4())?;
         }
-        let arrow_arr: arrow_array::ArrayRef = Arc::new(builder.finish());
-        Series::from_arrow(Arc::new(Field::new("", DataType::Utf8)), arrow_arr)
+        Ok(
+            UuidArray::from_arrow(Field::new("", DataType::Uuid), Arc::new(builder.finish()))?
+                .into_series(),
+        )
     }
 
     fn is_deterministic(&self) -> bool {
@@ -52,7 +53,7 @@ impl ScalarUDF for Uuid {
                 inputs.len()
             )));
         }
-        Ok(Field::new("", DataType::Utf8))
+        Ok(Field::new("", DataType::Uuid))
     }
 
     fn docstring(&self) -> &'static str {

@@ -295,7 +295,7 @@ class LocalFileDataSink(DataSink[dict]):
         """
         return micropartition.to_pylist()
 
-    def _write_data_to_files(self, data: list[Any]) -> dict::
+    def _write_data_to_files(self, data: list[Any]) -> dict:
         """Write data to one or more files based on size limits.
 
         Args:

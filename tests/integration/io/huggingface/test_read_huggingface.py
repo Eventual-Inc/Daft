@@ -26,7 +26,7 @@ def test_read_huggingface_datasets_doesnt_fail():
 @pytest.mark.parametrize(
     "path, sort_key",
     [
-        ("Eventual-Inc/sample-parquet", "foo"),
+        pytest.param("Eventual-Inc/sample-parquet", "foo", marks=pytest.mark.skip(reason="Flaky: HF API 504 timeouts")),
         ("fka/awesome-chatgpt-prompts", "act"),
         ("SWE-Gym/SWE-Gym", "instance_id"),
     ],

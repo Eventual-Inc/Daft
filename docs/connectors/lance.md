@@ -141,6 +141,34 @@ filtered = df_local.where(df_local["score"] >= 0.8)
 filtered.show()
 ```
 
+### Filtering with Custom SQL Expressions
+
+Daft supports passing raw SQL filter strings directly to the Lance scanner via `default_scan_options`. This allows you to leverage Lance's native SQL capabilities, including GeoSpatial functions, which might not be directly expressible in Daft's DataFrame API yet.
+
+You can also use this mechanism to perform SQL-based projections (calculations) during the scan.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # Example: Using GeoSpatial functions for filtering and projection
+    # Assume we have a dataset with 'point' and 'linestring' columns (GeoArrow types)
+
+    df = daft.read_lance(
+        "/path/to/geo/dataset",
+        default_scan_options={
+            # Calculate distance during scan and project it as a new column
+            "columns": {"distance": "st_distance(point, linestring)"},
+            # Filter rows where linestring intersects with a specific geometry
+            "filter": "st_intersects(linestring, st_geomfromtext('LINESTRING ( 2 0, 0 2 )'))",
+            "with_row_id": True
+        }
+    )
+
+    df.show()
+    ```
+
 ## Writing to Lance
 
 Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`. You can write to both file-based and REST-based Lance tables.

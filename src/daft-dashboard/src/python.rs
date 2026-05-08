@@ -11,7 +11,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use crate::{DEFAULT_SERVER_PORT, state::GLOBAL_DASHBOARD_STATE};
+use crate::{DEFAULT_SERVER_PORT, ServerOptions, state::GLOBAL_DASHBOARD_STATE};
 
 static DASHBOARD_ENABLED: AtomicBool = AtomicBool::new(false);
 static RUNNING_PORT: AtomicU16 = AtomicU16::new(DEFAULT_SERVER_PORT);
@@ -110,12 +110,9 @@ pub fn launch(noop_if_initialized: bool, port: Option<u16>) -> PyResult<Connecti
     let _ = std::thread::spawn(move || {
         DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
         let res = tokio_runtime().block_on(async {
-            super::launch_server(
-                std::net::IpAddr::V4(super::DEFAULT_SERVER_ADDR),
-                port,
-                async move { recv.await.unwrap() },
-            )
-            .await
+            let options =
+                ServerOptions::new(std::net::IpAddr::V4(super::DEFAULT_SERVER_ADDR), port);
+            super::launch_server(options, async move { recv.await.unwrap() }).await
         });
         DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
         res

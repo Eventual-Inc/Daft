@@ -96,6 +96,14 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
+::: daft.dataframe.DataFrame.write_json
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_parquet
+    options:
+        heading_level: 3
+
 ::: daft.dataframe.DataFrame.write_deltalake
     options:
         heading_level: 3
@@ -108,7 +116,27 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
-::: daft.dataframe.DataFrame.write_parquet
+::: daft.dataframe.DataFrame.write_sql
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_bigtable
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_clickhouse
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_huggingface
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_turbopuffer
+    options:
+        heading_level: 3
+
+::: daft.dataframe.DataFrame.write_sink
     options:
         heading_level: 3
 

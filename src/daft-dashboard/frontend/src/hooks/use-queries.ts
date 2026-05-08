@@ -40,6 +40,7 @@ export type CanceledStatus = {
 
 export type DeadStatus = {
   status: "Dead";
+  duration_sec: number;
 };
 
 export type QueryStatus =
@@ -71,6 +72,9 @@ export type QuerySummary = {
   runner: string;
   ray_dashboard_url?: string;
   entrypoint?: string;
+  python_version?: string;
+  daft_version?: string;
+  ray_version?: string;
 };
 
 export type QuerySummaryMap = { [_: string]: QuerySummary };

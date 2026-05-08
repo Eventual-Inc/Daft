@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::prelude::{CountMode, DataType, Schema};
+use daft_core::prelude::{CountMode, DataType, Field, Schema};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
@@ -151,7 +151,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     approx_sketch_col,
                     SketchType::HyperLogLog
                 ));
-                final_stage(merge_sketch_col);
+                final_stage(merge_sketch_col.hll_cardinality());
             }
             AggExpr::Mean(expr) => {
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
@@ -161,6 +161,31 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_count_col = second_stage!(AggExpr::Sum(count_col));
 
                 final_stage(merge_mean(global_sum_col, global_count_col));
+            }
+            AggExpr::Median(expr) => {
+                let median_input = match expr.to_field(schema)?.dtype {
+                    DataType::List(inner_dtype) | DataType::FixedSizeList(inner_dtype, _)
+                        if inner_dtype.is_numeric() =>
+                    {
+                        first_stage!(AggExpr::Concat(expr.clone(), None))
+                    }
+                    _ => first_stage!(AggExpr::List(expr.clone())),
+                };
+                let global_median_col = second_stage!(AggExpr::Median(median_input));
+                final_stage(global_median_col);
+            }
+            AggExpr::Percentile(expr, percentage) => {
+                let percentile_input = match expr.to_field(schema)?.dtype {
+                    DataType::List(inner_dtype) | DataType::FixedSizeList(inner_dtype, _)
+                        if inner_dtype.is_numeric() =>
+                    {
+                        first_stage!(AggExpr::Concat(expr.clone(), None))
+                    }
+                    _ => first_stage!(AggExpr::List(expr.clone())),
+                };
+                let global_percentile_col =
+                    second_stage!(AggExpr::Percentile(percentile_input, percentage.clone()));
+                final_stage(global_percentile_col);
             }
             AggExpr::Stddev(expr, ddof) => {
                 // The stddev calculation we're performing here is:
@@ -334,6 +359,35 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 // or to the final projection list here. The grouped aggregate sinks
                 // will call `agg()` with the original MapGroups expression when
                 // `partial_agg_exprs` is empty.
+            }
+            AggExpr::AggFn { handle, inputs } => {
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let input_types: Vec<DataType> =
+                    input_fields.iter().map(|f| f.dtype.clone()).collect();
+                let return_field = Field::new(
+                    input_fields[0].name.clone(),
+                    handle.return_dtype(&input_types)?,
+                );
+
+                let partial_col = first_stage!(AggExpr::AggFnMap {
+                    handle: handle.clone(),
+                    inputs: inputs.clone(),
+                });
+                let final_col = second_stage!(AggExpr::AggFnReduce {
+                    handle: handle.clone(),
+                    partial: partial_col,
+                    return_field,
+                });
+                final_stage(final_col);
+            }
+            AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
+                return Err(common_error::DaftError::InternalError(
+                    "AggFnMap / AggFnReduce must not appear in the top-level aggregation list"
+                        .to_string(),
+                ));
             }
             // Only necessary for Flotilla
             AggExpr::ApproxSketch(expr, sketch_type) => {

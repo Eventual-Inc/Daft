@@ -51,6 +51,28 @@ impl StructArray {
     }
 }
 
+impl UnionArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        let type_id = self.ids()[idx];
+        let value_offset = if let Some(offsets) = self.offsets() {
+            offsets[idx] as usize
+        } else {
+            idx
+        };
+
+        let child_idx = self.type_idx(type_id);
+        let child = &self.children[child_idx];
+        child.get_lit(value_offset)
+    }
+}
+
 impl TensorArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(
@@ -168,6 +190,23 @@ impl MapArray {
     }
 }
 
+impl UuidArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.physical.is_valid(idx) {
+            Literal::Uuid(uuid::Uuid::from_slice(self.physical.get(idx).unwrap()).unwrap())
+        } else {
+            Literal::Null
+        }
+    }
+}
+
 impl ExtensionArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(
@@ -244,6 +283,7 @@ impl_array_get_lit!(UInt8Array, UInt8);
 impl_array_get_lit!(UInt16Array, UInt16);
 impl_array_get_lit!(UInt32Array, UInt32);
 impl_array_get_lit!(UInt64Array, UInt64);
+impl_array_get_lit!(Float16Array, Float16);
 impl_array_get_lit!(Float32Array, Float32);
 impl_array_get_lit!(Float64Array, Float64);
 impl_array_get_lit!(Utf8Array, Utf8);

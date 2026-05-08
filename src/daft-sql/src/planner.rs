@@ -29,18 +29,70 @@ use sqlparser::{
     ast::{
         self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
         FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
-        Subscript, TableAlias, TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator,
-        Value, WildcardAdditionalOptions, With,
+        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleBucket, TableSampleKind,
+        TableSampleQuantity, TableSampleSeed, TableSampleUnit, TableWithJoins, TimezoneInfo,
+        UnaryOperator, Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
-    tokenizer::{Token, Tokenizer},
+    tokenizer::{Token, TokenWithSpan, Tokenizer},
 };
 
 use crate::{
     column_not_found_err, error::*, invalid_operation_err, schema::sql_dtype_to_dtype,
     statement::Statement, table_not_found_err, unsupported_sql_err,
 };
+
+/// Map a sqlparser ParserError to PlannerError with caret-formatted message.
+///
+/// This extracts the structured location from the ParserError and includes it
+/// directly in the error type rather than relying on string parsing.
+fn map_parser_error(sql: &str, e: sqlparser::parser::ParserError) -> PlannerError {
+    let error_str = e.to_string();
+    let raw_msg = error_str
+        .strip_prefix("sql parser error: ")
+        .unwrap_or(&error_str);
+
+    // Try to extract location from the error string
+    // sqlparser embeds location as ` at Line: X, Column: Y` at the end
+    let (line, column, reason) =
+        if let Some((reason, line, column)) = extract_location_from_message(raw_msg) {
+            (line, column, reason.to_string())
+        } else {
+            // For EOF errors, compute position from the SQL text
+            let (eof_line, eof_col) = eof_position(sql);
+            (eof_line, eof_col, raw_msg.to_string())
+        };
+
+    PlannerError::caret_error(reason, sql, line, column)
+}
+
+/// Try to extract ` at Line: X, Column: Y` from the end of an error message.
+/// Returns (reason_without_suffix, line, column) if found.
+fn extract_location_from_message(msg: &str) -> Option<(&str, u64, u64)> {
+    let marker = " at Line: ";
+    let marker_pos = msg.rfind(marker)?;
+    let rest = &msg[marker_pos + marker.len()..];
+    let comma_pos = rest.find(", Column: ")?;
+    let line: u64 = rest[..comma_pos].parse().ok()?;
+    let column: u64 = rest[comma_pos + ", Column: ".len()..].parse().ok()?;
+    if line == 0 {
+        return None;
+    }
+    let reason = &msg[..marker_pos];
+    Some((reason, line, column))
+}
+
+/// Compute the 1-indexed line and column of the position just past the end of the SQL text.
+fn eof_position(sql: &str) -> (u64, u64) {
+    let lines: Vec<&str> = sql.lines().collect();
+    if lines.is_empty() {
+        return (0, 0);
+    }
+    let last_line = lines.len();
+    let last_col = lines[last_line - 1].len() + 1;
+    (last_line as u64, last_col as u64)
+}
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
 /// This is an incremental step towards proper name resolution.
@@ -263,13 +315,21 @@ impl SQLPlanner<'_> {
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
-        let tokens: Vec<sqlparser::tokenizer::Token> =
-            Tokenizer::new(&GenericDialect {}, input).tokenize()?;
+        let tokens: Vec<TokenWithSpan> = Tokenizer::new(&GenericDialect {}, input)
+            .tokenize_with_location()
+            .map_err(|e| {
+                PlannerError::caret_error(
+                    e.message.clone(),
+                    input,
+                    e.location.line,
+                    e.location.column,
+                )
+            })?;
 
         let from_positions: Vec<usize> = tokens
             .iter()
             .enumerate()
-            .filter_map(|(i, token)| match token {
+            .filter_map(|(i, tws)| match &tws.token {
                 Token::Word(w) if w.keyword == sqlparser::keywords::Keyword::FROM => Some(i),
                 _ => None,
             })
@@ -279,8 +339,12 @@ impl SQLPlanner<'_> {
             let next_token = tokens
                 .iter()
                 .skip(pos + 1)
-                .find(|token| !matches!(token, Token::Whitespace(_)));
-            if let Some(Token::Word(w)) = next_token {
+                .find(|tws| !matches!(tws.token, Token::Whitespace(_)));
+            if let Some(TokenWithSpan {
+                token: Token::Word(w),
+                ..
+            }) = next_token
+            {
                 match w.keyword {
                     sqlparser::keywords::Keyword::LATERAL
                     | sqlparser::keywords::Keyword::TABLE
@@ -300,15 +364,20 @@ impl SQLPlanner<'_> {
                 trailing_commas: true,
                 ..Default::default()
             })
-            .with_tokens(tokens);
+            .with_tokens_with_locations(tokens);
 
         // currently only allow one statement
-        let statements = parser.parse_statements()?;
+        let statements = parser
+            .parse_statements()
+            .map_err(|e| map_parser_error(input, e))?;
         if statements.len() > 1 {
             unsupported_sql_err!(
                 "Only exactly one SQL statement allowed, found {}",
                 statements.len()
             )
+        }
+        if statements.is_empty() {
+            invalid_operation_err!("Empty SQL statement")
         }
 
         // plan single statement
@@ -959,23 +1028,25 @@ impl SQLPlanner<'_> {
         &self,
         rel: &sqlparser::ast::TableFactor,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let (plan, alias) = match rel {
+        let (plan, alias, sample) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: Some(args),
                 alias,
+                sample,
                 ..
             } => {
                 let tbl_fn = match name.0.first().unwrap() {
                     ast::ObjectNamePart::Identifier(ident) => ident.value.as_str(),
                     ast::ObjectNamePart::Function(func) => func.name.value.as_str(),
                 };
-                (self.plan_table_function(tbl_fn, args)?, alias)
+                (self.plan_table_function(tbl_fn, args)?, alias, sample)
             }
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: None,
                 alias,
+                sample,
                 ..
             } => {
                 let plan = if is_table_path(name) {
@@ -988,7 +1059,7 @@ impl SQLPlanner<'_> {
                     self.plan_relation_table(name)?
                 };
 
-                (plan, alias)
+                (plan, alias, sample)
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
@@ -999,7 +1070,7 @@ impl SQLPlanner<'_> {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                (subquery, alias)
+                (subquery, alias, &None)
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -1035,6 +1106,12 @@ impl SQLPlanner<'_> {
                 unsupported_sql_err!("Unsupported table factor: SemanticView")
             }
         };
+        // Apply sample operation if present
+        let plan = if let Some(sample_kind) = sample {
+            self.plan_sample(plan, sample_kind)?
+        } else {
+            plan
+        };
         if let Some(alias) = alias {
             apply_table_alias(plan, alias)
         } else {
@@ -1059,6 +1136,196 @@ impl SQLPlanner<'_> {
             settings: None,
         };
         self.plan_table_function(func, &args)
+    }
+
+    /// Plans a TABLESAMPLE/SAMPLE clause and returns the sampled plan.
+    fn plan_sample(
+        &self,
+        plan: LogicalPlanBuilder,
+        sample_kind: &TableSampleKind,
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
+        let table_sample = match sample_kind {
+            TableSampleKind::BeforeTableAlias(sample)
+            | TableSampleKind::AfterTableAlias(sample) => sample.as_ref(),
+        };
+
+        let TableSample {
+            quantity,
+            seed,
+            name,
+            bucket,
+            ..
+        } = table_sample;
+
+        // Parse sampling parameters
+        let (fraction, size) =
+            self.parse_sample_quantity(quantity.as_ref(), name.as_ref(), bucket.as_ref())?;
+
+        // Parse seed if present
+        let seed_value = self.parse_sample_seed(seed.as_ref())?;
+
+        // Apply sample operation
+        let with_replacement = false;
+        plan.sample(fraction, size, with_replacement, seed_value)
+            .map_err(|e| e.into())
+    }
+
+    /// Parse the sample quantity (PERCENT, ROWS, BUCKET, or bare number)
+    fn parse_sample_quantity(
+        &self,
+        quantity: Option<&TableSampleQuantity>,
+        name: Option<&ast::TableSampleMethod>,
+        bucket: Option<&TableSampleBucket>,
+    ) -> SQLPlannerResult<(Option<f64>, Option<usize>)> {
+        let mut fraction = None;
+        let mut size = None;
+
+        // Handle BUCKET syntax (Spark style): BUCKET x OUT OF y
+        if let Some(TableSampleBucket { bucket, total, .. }) = bucket {
+            let (bucket_num, total_num) = self.parse_bucket_values(bucket, total)?;
+            fraction = Some(bucket_num / total_num);
+        } else if let Some(TableSampleQuantity { value, unit, .. }) = quantity {
+            let num = self.parse_quantity_value(value)?;
+            match unit {
+                Some(TableSampleUnit::Percent) => {
+                    self.validate_percent(num)?;
+                    fraction = Some(num / 100.0);
+                }
+                Some(TableSampleUnit::Rows) => {
+                    self.validate_rows(num)?;
+                    size = Some(num as usize);
+                }
+                None => {
+                    // No unit - check if it's Postgres SYSTEM/BERNOULLI (treat as percent)
+                    // or generic syntax (treat as fraction 0.0-1.0)
+                    if self.is_postgres_method(name) {
+                        self.validate_percent(num)?;
+                        fraction = Some(num / 100.0);
+                    } else {
+                        self.validate_fraction(num)?;
+                        fraction = Some(num);
+                    }
+                }
+            }
+        } else if bucket.is_none() {
+            unsupported_sql_err!("SAMPLE requires a quantity or BUCKET clause");
+        }
+
+        Ok((fraction, size))
+    }
+
+    /// Check if the sampling method is Postgres-style (SYSTEM or BERNOULLI)
+    fn is_postgres_method(&self, name: Option<&ast::TableSampleMethod>) -> bool {
+        matches!(
+            name,
+            Some(ast::TableSampleMethod::System) | Some(ast::TableSampleMethod::Bernoulli)
+        )
+    }
+
+    /// Parse and validate bucket values
+    fn parse_bucket_values(
+        &self,
+        bucket: &ast::Value,
+        total: &ast::Value,
+    ) -> SQLPlannerResult<(f64, f64)> {
+        let (bucket_str, total_str) = match (bucket, total) {
+            (ast::Value::Number(b, _), ast::Value::Number(t, _)) => (b.clone(), t.clone()),
+            _ => unsupported_sql_err!("BUCKET values must be numeric literals"),
+        };
+
+        let bucket_num: f64 = bucket_str.parse().map_err(|_| {
+            PlannerError::invalid_operation(format!("Invalid BUCKET number: {bucket_str}"))
+        })?;
+        let total_num: f64 = total_str.parse().map_err(|_| {
+            PlannerError::invalid_operation(format!("Invalid total number: {total_str}"))
+        })?;
+
+        if total_num == 0.0 {
+            return Err(PlannerError::invalid_operation(
+                "BUCKET total must be non-zero",
+            ));
+        }
+        if bucket_num < 0.0 || total_num < 0.0 {
+            return Err(PlannerError::invalid_operation(
+                "BUCKET values must be non-negative",
+            ));
+        }
+        if bucket_num > total_num {
+            return Err(PlannerError::invalid_operation(format!(
+                "BUCKET number ({bucket_num}) cannot exceed total ({total_num})"
+            )));
+        }
+
+        Ok((bucket_num, total_num))
+    }
+
+    /// Parse the numeric value from a quantity expression
+    fn parse_quantity_value(&self, value: &ast::Expr) -> SQLPlannerResult<f64> {
+        if let ast::Expr::Value(ast::ValueWithSpan {
+            value: ast::Value::Number(num_str, _),
+            ..
+        }) = value
+        {
+            let num: f64 = num_str.parse().map_err(|_| {
+                PlannerError::invalid_operation(format!("Invalid SAMPLE quantity: {num_str}"))
+            })?;
+
+            if num < 0.0 {
+                return Err(PlannerError::invalid_operation(format!(
+                    "SAMPLE quantity must be non-negative, got: {num}"
+                )));
+            }
+
+            Ok(num)
+        } else {
+            unsupported_sql_err!("SAMPLE quantity must be a numeric literal");
+        }
+    }
+
+    /// Validate percentage (0-100)
+    fn validate_percent(&self, num: f64) -> SQLPlannerResult<()> {
+        if num > 100.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE percent must be between 0 and 100, got: {num}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate fraction (0.0-1.0)
+    fn validate_fraction(&self, num: f64) -> SQLPlannerResult<()> {
+        if num > 1.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate rows count (must be whole number)
+    fn validate_rows(&self, num: f64) -> SQLPlannerResult<()> {
+        if num.fract() != 0.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE ROWS quantity must be a whole number, got: {num}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Parse the REPEATABLE seed value if present
+    fn parse_sample_seed(&self, seed: Option<&TableSampleSeed>) -> SQLPlannerResult<Option<u64>> {
+        if let Some(seed_info) = seed {
+            if let ast::Value::Number(seed_str, _) = &seed_info.value {
+                let seed_num: u64 = seed_str.parse().map_err(|_| {
+                    PlannerError::invalid_operation(format!("Invalid SAMPLE seed: {seed_str}"))
+                })?;
+                Ok(Some(seed_num))
+            } else {
+                unsupported_sql_err!("SAMPLE seed must be a numeric literal")
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns a normalized daft identifier from an sqlparser ObjectName
@@ -2177,19 +2444,26 @@ pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
 }
 
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
+    let sql = s.as_ref();
     let session = Session::empty();
     let mut planner = SQLPlanner::new(&session);
 
-    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
+    let tokens = Tokenizer::new(&GenericDialect {}, sql)
+        .tokenize_with_location()
+        .map_err(|e| {
+            PlannerError::caret_error(e.message.clone(), sql, e.location.line, e.location.column)
+        })?;
 
     let mut parser = Parser::new(&GenericDialect {})
         .with_options(ParserOptions {
             trailing_commas: true,
             ..Default::default()
         })
-        .with_tokens(tokens);
+        .with_tokens_with_locations(tokens);
 
-    let expr = parser.parse_select_item()?;
+    let expr = parser
+        .parse_select_item()
+        .map_err(|e| map_parser_error(sql, e))?;
     let exprs = planner.select_item_to_expr(&expr)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())

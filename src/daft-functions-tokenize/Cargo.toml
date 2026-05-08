@@ -10,6 +10,7 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tiktoken-rs = {workspace = true}
 typetag = {workspace = true}
+rustc-hash = "1.1"  # Same as tiktoken-rs
 
 [lints]
 workspace = true

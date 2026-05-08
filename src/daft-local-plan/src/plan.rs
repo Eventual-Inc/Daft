@@ -23,6 +23,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
+use daft_partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -75,6 +76,7 @@ pub enum LocalPhysicalPlan {
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    StageCheckpointKeys(StageCheckpointKeys),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -107,9 +109,11 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
+    GatherWrite(GatherWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     NestedLoopJoin(NestedLoopJoin),
+    AsofJoin(AsofJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
     VLLMProject(VLLMProject),
@@ -150,6 +154,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
             | Self::HashAggregate(HashAggregate { stats_state, .. })
             | Self::Dedup(Dedup { stats_state, .. })
@@ -159,10 +164,12 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
             | Self::NestedLoopJoin(NestedLoopJoin { stats_state, .. })
+            | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
+            | Self::GatherWrite(GatherWrite { stats_state, .. })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -200,6 +207,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { context, .. })
             | Self::Sample(Sample { context, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { context, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
             | Self::HashAggregate(HashAggregate { context, .. })
             | Self::Dedup(Dedup { context, .. })
@@ -209,10 +217,12 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::NestedLoopJoin(NestedLoopJoin { context, .. })
+            | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -308,6 +318,23 @@ impl LocalPhysicalPlan {
         Self::Filter(Filter {
             input,
             predicate,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn stage_checkpoint_keys(
+        input: LocalPhysicalPlanRef,
+        checkpoint_config: common_checkpoint_config::CheckpointConfig,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::StageCheckpointKeys(StageCheckpointKeys {
+            input,
+            checkpoint_config,
             schema,
             stats_state,
             context,
@@ -825,6 +852,32 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        left_by: Vec<BoundExpr>,
+        right_by: Vec<BoundExpr>,
+        left_on: BoundExpr,
+        right_on: BoundExpr,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
@@ -941,6 +994,7 @@ impl LocalPhysicalPlan {
     pub fn into_partitions(
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
+        backend: ShuffleBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -949,6 +1003,7 @@ impl LocalPhysicalPlan {
             input,
             num_partitions,
             schema,
+            backend,
             stats_state,
             context,
         })
@@ -981,7 +1036,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
         schema: SchemaRef,
-        backend: RepartitionWriteBackend,
+        backend: ShuffleBackend,
         repartition_spec: RepartitionSpec,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -992,6 +1047,23 @@ impl LocalPhysicalPlan {
             schema,
             backend,
             repartition_spec,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn gather_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        backend: ShuffleBackend,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::GatherWrite(GatherWrite {
+            input,
+            schema,
+            backend,
             stats_state,
             context,
         })
@@ -1036,10 +1108,12 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::SortMergeJoin(SortMergeJoin { schema, .. })
             | Self::NestedLoopJoin(NestedLoopJoin { schema, .. })
+            | Self::AsofJoin(AsofJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { schema, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1059,6 +1133,7 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
+            Self::GatherWrite(GatherWrite { schema, .. }) => schema,
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1116,6 +1191,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { input, .. })
             | Self::Concat(Concat { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { input, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { input, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { input, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1132,6 +1208,7 @@ impl LocalPhysicalPlan {
             Self::NestedLoopJoin(NestedLoopJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
+            Self::AsofJoin(AsofJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1144,6 +1221,7 @@ impl LocalPhysicalPlan {
             }
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
+            Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
@@ -1371,6 +1449,16 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                Self::StageCheckpointKeys(StageCheckpointKeys {
+                    checkpoint_config,
+                    context,
+                    ..
+                }) => Self::stage_checkpoint_keys(
+                    new_child.clone(),
+                    checkpoint_config.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::WindowPartitionOnly(WindowPartitionOnly {
                     partition_by,
                     schema,
@@ -1574,11 +1662,13 @@ impl LocalPhysicalPlan {
                 ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
+                    backend,
                     context,
                     ..
                 }) => Self::into_partitions(
                     new_child.clone(),
                     *num_partitions,
+                    backend.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1615,6 +1705,18 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                Self::GatherWrite(GatherWrite {
+                    schema,
+                    backend,
+                    context,
+                    ..
+                }) => Self::gather_write(
+                    new_child.clone(),
+                    schema.clone(),
+                    backend.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::ShuffleRead(_) => panic!(
                     "LocalPhysicalPlan::with_new_children: ShuffleRead should have 0 children"
                 ),
@@ -1633,6 +1735,9 @@ impl LocalPhysicalPlan {
                     panic!(
                         "LocalPhysicalPlan::with_new_children: NestedLoopJoin should have 2 children"
                     )
+                }
+                Self::AsofJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: AsofJoin should have 2 children")
                 }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
@@ -1704,6 +1809,26 @@ impl LocalPhysicalPlan {
                     new_left.clone(),
                     new_right.clone(),
                     predicate.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
+                Self::AsofJoin(AsofJoin {
+                    left_by,
+                    right_by,
+                    left_on,
+                    right_on,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::asof_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_by.clone(),
+                    right_by.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -1841,6 +1966,16 @@ pub struct DistributedActorPoolProject {
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: BoundExpr,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StageCheckpointKeys {
+    pub input: LocalPhysicalPlanRef,
+    pub checkpoint_config: common_checkpoint_config::CheckpointConfig,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -2045,6 +2180,20 @@ pub struct SortMergeJoin {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
+pub struct AsofJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub left_by: Vec<BoundExpr>,
+    pub right_by: Vec<BoundExpr>,
+    pub left_on: BoundExpr,
+    pub right_on: BoundExpr,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -2174,8 +2323,19 @@ pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShuffleBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2191,22 +2351,9 @@ pub struct VLLMProject {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum RepartitionWriteBackend {
-    Ray,
-    Flight {
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-    },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
-    Flight {
-        shuffle_id: u64,
-        server_cache_mapping: HashMap<String, Vec<u32>>,
-    },
+    Flight,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2214,8 +2361,17 @@ pub struct RepartitionWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
-    pub backend: RepartitionWriteBackend,
+    pub backend: ShuffleBackend,
     pub repartition_spec: RepartitionSpec,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GatherWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -2231,5 +2387,5 @@ pub struct ShuffleRead {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub partition_idx: usize,
+    pub refs: Vec<FlightPartitionRef>,
 }

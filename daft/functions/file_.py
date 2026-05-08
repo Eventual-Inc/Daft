@@ -59,6 +59,36 @@ def audio_file(url: Expression, verify: bool = False, io_config: IOConfig | None
     return url._eval_expressions("audio_file", verify=verify, io_config=io_config)
 
 
+def image_file(url: Expression, verify: bool = False, io_config: IOConfig | None = None) -> Expression:
+    """Converts a string containing a file reference to a `daft.ImageFile` reference.
+
+    Args:
+        url (String Expression): the url of the file
+        verify:
+            If True, verify that the file exists and is an image file.
+            If **ANY** files are not images, this will produce an error.
+
+        io_config (IOConfig, default=None): The IO configuration to use.
+
+    Returns:
+        Expression (File[Image] Expression): An expression containing the file reference.
+
+    """
+    return url._eval_expressions("image_file", verify=verify, io_config=io_config)
+
+
+def file_path(file: Expression) -> Expression:
+    """Returns the path (URL) of the file as a string.
+
+    Args:
+        file (File Expression): expression to evaluate.
+
+    Returns:
+        Expression (String Expression): expression containing the file path
+    """
+    return file._eval_expressions("file_path")
+
+
 def file_size(file: Expression) -> Expression:
     """Returns the size of the file in bytes.
 

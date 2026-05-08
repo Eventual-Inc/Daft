@@ -46,8 +46,8 @@ def test_start_ray_workers_uses_configured_worker_startup_timeout(monkeypatch):
             self.get_address = _RemoteMethod(address)
 
     class _FakeActorOptions:
-        def remote(self, *, num_cpus: int, num_gpus: int) -> _FakeActor:
-            captured["remote_args"] = {"num_cpus": num_cpus, "num_gpus": num_gpus}
+        def remote(self, **kwargs: object) -> _FakeActor:
+            captured["remote_args"] = kwargs
             return _FakeActor("grpc://10.0.0.1:9999")
 
     class _FakeRaySwordfishActor:

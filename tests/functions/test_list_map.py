@@ -70,3 +70,15 @@ def test_list_map_struct_field_extraction_without_alias():
 
     expected = [["a1", "a2"], ["a3"], []]
     assert res == expected
+
+
+def test_list_map_empty_row_first():
+    df = daft.from_pydict({"nums": [[], [1, 2], [3]]})
+    actual = df.select(daft.col("nums").list_map(daft.element() * 2)).to_pydict()["nums"]
+    assert actual == [[], [2, 4], [6]]
+
+
+def test_list_map_null_row_middle():
+    df = daft.from_pydict({"nums": [[1, 2], None, [3, 4]]})
+    actual = df.select(daft.col("nums").list_map(daft.element() * 2)).to_pydict()["nums"]
+    assert actual == [[2, 4], None, [6, 8]]
