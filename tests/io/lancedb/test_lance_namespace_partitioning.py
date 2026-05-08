@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import zlib
 
+import pyarrow as arrow_pa
 import pytest
 
 import daft
@@ -27,6 +29,14 @@ def sample_df():
     )
 
 
+def _table_rows(manifest_table: arrow_pa.Table) -> list[int]:
+    return [i for i in range(manifest_table.num_rows) if manifest_table.column("object_type")[i].as_py() == "table"]
+
+
+def _namespace_rows(manifest_table: arrow_pa.Table) -> list[int]:
+    return [i for i in range(manifest_table.num_rows) if manifest_table.column("object_type")[i].as_py() == "namespace"]
+
+
 class TestPartitionedWrite:
     def test_basic_write(self, namespace_dir, sample_df):
         result = sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
@@ -34,24 +44,42 @@ class TestPartitionedWrite:
         assert result_dict["num_partitions"] == [4]
         assert result_dict["num_fragments"] == [4]
 
-    def test_manifest_created(self, namespace_dir, sample_df):
+    def test_manifest_schema(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
         import lance
 
         manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
         manifest_table = manifest_ds.to_table()
-        assert manifest_table.num_rows == 4
-        assert "object_id" in manifest_table.column_names
-        assert "object_type" in manifest_table.column_names
-        assert "metadata" in manifest_table.column_names
-        assert "read_version" in manifest_table.column_names
-        assert "read_branch" in manifest_table.column_names
-        assert "read_tag" in manifest_table.column_names
+        for col in ["object_id", "object_type", "metadata", "read_version", "read_branch", "read_tag"]:
+            assert col in manifest_table.column_names
         assert "partition_field_year" in manifest_table.column_names
         assert "partition_field_country" in manifest_table.column_names
-        for i in range(manifest_table.num_rows):
+
+    def test_manifest_namespace_hierarchy(self, namespace_dir, sample_df):
+        """With 2 partition cols and 4 unique combos, expect 11 manifest rows.
+
+        1 root ns + 2 year ns + 4 (year,country) ns + 4 tables = 11 rows.
+        """
+        sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
+        import lance
+
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        ns_rows = _namespace_rows(manifest_table)
+        tbl_rows = _table_rows(manifest_table)
+        assert len(ns_rows) == 7
+        assert len(tbl_rows) == 4
+        assert manifest_table.num_rows == 11
+
+        # Root namespace
+        root_oids = [manifest_table.column("object_id")[i].as_py() for i in ns_rows]
+        assert "v1" in root_oids
+
+        # Table rows have read_version set and object_type == "table"
+        for i in tbl_rows:
             assert manifest_table.column("object_type")[i].as_py() == "table"
             assert manifest_table.column("read_version")[i].as_py() is not None
+            oid = manifest_table.column("object_id")[i].as_py()
+            assert oid.endswith("$dataset")
 
     def test_manifest_metadata(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
@@ -69,23 +97,49 @@ class TestPartitionedWrite:
             assert isinstance(field["result_type"], dict)
             assert "type" in field["result_type"]
 
-    def test_partition_dirs_are_random_base36(self, namespace_dir, sample_df):
-        import zlib
+    def test_hierarchical_object_ids(self, namespace_dir, sample_df):
+        """Two partition cols produce object_ids with 2 intermediate segments.
 
+        Format: v1$<id1>$<id2>$dataset for tables.
+        """
+        sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
+        import lance
+
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        for i in _table_rows(manifest_table):
+            oid = manifest_table.column("object_id")[i].as_py()
+            parts = oid.split("$")
+            assert len(parts) == 4
+            assert parts[0] == "v1"
+            assert parts[3] == "dataset"
+            for seg in parts[1:3]:
+                assert len(seg) == 16
+                assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in seg)
+
+    def test_shared_parent_namespaces(self, namespace_dir, sample_df):
+        """Tables sharing a year value should share the same first namespace segment."""
+        sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
+        import lance
+
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        year_to_seg: dict[int, str] = {}
+        for i in _table_rows(manifest_table):
+            oid = manifest_table.column("object_id")[i].as_py()
+            year = manifest_table.column("partition_field_year")[i].as_py()
+            seg1 = oid.split("$")[1]
+            if year in year_to_seg:
+                assert year_to_seg[year] == seg1, f"Tables with year={year} should share first segment"
+            else:
+                year_to_seg[year] = seg1
+        assert len(year_to_seg) == 2
+
+    def test_hash_prefixed_physical_dirs(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
         import lance
 
-        manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
-        manifest_table = manifest_ds.to_table()
-        for i in range(manifest_table.num_rows):
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        for i in _table_rows(manifest_table):
             object_id = manifest_table.column("object_id")[i].as_py()
-            parts = object_id.split("$")
-            assert len(parts) == 3
-            assert parts[0] == "v1"
-            assert parts[2] == "dataset"
-            dir_name = parts[1]
-            assert len(dir_name) == 16
-            assert all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in dir_name)
             expected_hash = format(zlib.crc32(object_id.encode()) & 0xFFFFFFFF, "08x")
             physical_dir = f"{expected_hash}_{object_id}"
             assert os.path.exists(os.path.join(namespace_dir, physical_dir))
@@ -96,9 +150,9 @@ class TestPartitionedWrite:
 
         from daft.io.lance.utils import namespace_physical_path
 
-        manifest_ds = lance.dataset(os.path.join(namespace_dir, "__manifest"))
-        manifest_table = manifest_ds.to_table()
-        object_id = manifest_table.column("object_id")[0].as_py()
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        tbl_idx = _table_rows(manifest_table)[0]
+        object_id = manifest_table.column("object_id")[tbl_idx].as_py()
         ds_uri = namespace_physical_path(namespace_dir, object_id)
         partition_ds = lance.dataset(ds_uri)
         schema_names = set(partition_ds.schema.names)
@@ -111,6 +165,18 @@ class TestPartitionedWrite:
         df = daft.from_pydict({"region": ["east", "west", "east"], "val": [1, 2, 3]})
         result = df.write_lance(namespace_dir, partition_cols=["region"], mode="create")
         assert result.to_pydict()["num_partitions"] == [2]
+
+    def test_single_partition_col_object_id_depth(self, namespace_dir):
+        """Single partition col produces v1$<id>$dataset (3 segments)."""
+        df = daft.from_pydict({"region": ["east", "west", "east"], "val": [1, 2, 3]})
+        df.write_lance(namespace_dir, partition_cols=["region"], mode="create")
+        import lance
+
+        manifest_table = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
+        for i in _table_rows(manifest_table):
+            oid = manifest_table.column("object_id")[i].as_py()
+            parts = oid.split("$")
+            assert len(parts) == 3
 
     def test_create_mode_fails_if_exists(self, namespace_dir, sample_df):
         sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
@@ -134,9 +200,9 @@ class TestPartitionedWrite:
         import lance
 
         manifest = lance.dataset(os.path.join(namespace_dir, "__manifest")).to_table()
-        object_ids = manifest.column("object_id").to_pylist()
-        assert len(object_ids) == len(set(object_ids)), f"Duplicate manifest rows: {object_ids}"
-        assert manifest.num_rows == 3
+        table_oids = [manifest.column("object_id")[i].as_py() for i in _table_rows(manifest)]
+        assert len(table_oids) == len(set(table_oids)), f"Duplicate table rows: {table_oids}"
+        assert len(table_oids) == 3
 
         read_back = daft.read_lance(namespace_dir, namespace_partitioning=True).collect()
         result = read_back.to_pydict()

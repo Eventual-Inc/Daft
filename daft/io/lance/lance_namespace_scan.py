@@ -253,7 +253,10 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
 
         from .utils import namespace_physical_path
 
+        has_object_type = "object_type" in manifest_table.column_names
         for i in range(manifest_table.num_rows):
+            if has_object_type and manifest_table.column("object_type")[i].as_py() != "table":
+                continue
             object_id = manifest_table.column("object_id")[i].as_py()
             ds_uri = namespace_physical_path(self._namespace_uri, object_id)
             try:
@@ -348,7 +351,12 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
 
         has_read_version = "read_version" in self._manifest_table.column_names
 
+        has_object_type = "object_type" in self._manifest_table.column_names
+
         for i in range(self._manifest_table.num_rows):
+            if has_object_type and self._manifest_table.column("object_type")[i].as_py() != "table":
+                continue
+
             partition_values = {}
             for field_def in self._partition_spec.get("fields", []):
                 fid = field_def["field_id"]
