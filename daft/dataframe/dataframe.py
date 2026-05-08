@@ -1926,7 +1926,6 @@ class DataFrame:
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
-        partition_cols: list[str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1953,11 +1952,6 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
-          partition_cols (list[str], optional): Column names to partition the dataset by. When provided,
-              data is written as a partitioned Lance namespace: each unique combination of partition
-              values becomes a separate Lance dataset, and a ``__manifest`` table is created to track
-              partition metadata. Partition columns are stripped from per-partition data files and
-              stored only in the manifest. Cannot be combined with ``mode="merge"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -2008,20 +2002,11 @@ class DataFrame:
             ╰───────────────┴──────────────────┴─────────────────┴─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
-
-            Write a partitioned Lance namespace:
-
-            >>> df = daft.from_pydict({"year": [2024, 2025], "region": ["US", "EU"], "value": [10, 20]})
-            >>> df.write_lance("/tmp/lance/my_namespace", partition_cols=["year", "region"])  # doctest: +SKIP
-            >>> daft.read_lance("/tmp/lance/my_namespace", namespace_partitioning=True).show()  # doctest: +SKIP
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
         from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
-
-        if partition_cols is not None and mode == "merge":
-            raise ValueError("partition_cols is not supported with merge mode")
 
         if schema is None:
             schema = self.schema()
@@ -2049,15 +2034,7 @@ class DataFrame:
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            if partition_cols is not None:
-                from daft.io.lance.lance_partitioned_data_sink import LancePartitionedDataSink
-
-                partition_sink: DataSink[Any] = LancePartitionedDataSink(
-                    uri, schema, mode, io_config, partition_cols=partition_cols, **sanitized_kwargs
-                )
-                return self.write_sink(partition_sink)
-            else:
-                sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
             return self.write_sink(sink)
 
         # Merge mode semantics
