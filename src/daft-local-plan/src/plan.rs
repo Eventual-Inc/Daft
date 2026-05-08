@@ -314,104 +314,19 @@ impl LocalPhysicalPlan {
         }
     }
 
-    /// Rebuild a leaf node with a replaced `LocalNodeContext`. Only leaf
-    /// variants (no children in `children()`) are supported — non-leaves can
-    /// be rebuilt cheaply via `with_new_children` followed by an in-place
-    /// context patch on the freshly returned Arc.
-    fn with_replaced_leaf_context(&self, new_context: LocalNodeContext) -> LocalPhysicalPlanRef {
-        match self {
-            Self::PhysicalScan(PhysicalScan {
-                source_id,
-                source_config,
-                pushdowns,
-                schema,
-                stats_state,
-                ..
-            }) => Self::physical_scan(
-                *source_id,
-                source_config.clone(),
-                pushdowns.clone(),
-                schema.clone(),
-                stats_state.clone(),
-                new_context,
-            ),
-            Self::GlobScan(GlobScan {
-                source_id,
-                pushdowns,
-                schema,
-                stats_state,
-                io_config,
-                ..
-            }) => Self::glob_scan(
-                *source_id,
-                pushdowns.clone(),
-                schema.clone(),
-                stats_state.clone(),
-                io_config.clone(),
-                new_context,
-            ),
-            Self::PlaceholderScan(PlaceholderScan {
-                schema,
-                stats_state,
-                ..
-            }) => Self::placeholder_scan(schema.clone(), stats_state.clone(), new_context),
-            Self::InMemoryScan(InMemoryScan {
-                source_id,
-                schema,
-                size_bytes,
-                stats_state,
-                ..
-            }) => Self::in_memory_scan(
-                *source_id,
-                schema.clone(),
-                *size_bytes,
-                stats_state.clone(),
-                new_context,
-            ),
-            Self::ShuffleRead(ShuffleRead {
-                source_id,
-                schema,
-                backend,
-                stats_state,
-                ..
-            }) => Self::shuffle_read(
-                *source_id,
-                schema.clone(),
-                backend.clone(),
-                stats_state.clone(),
-                new_context,
-            ),
-            _ => panic!(
-                "with_replaced_leaf_context: variant {} is not a leaf",
-                self.name()
-            ),
-        }
-    }
-
     /// Mark this node as the root of its enclosing task's local plan, so
     /// consumers of `StatSnapshot`s can attribute external `rows.out` /
-    /// `bytes.out` to it (vs. internal flow between fused operators). Returns
-    /// the same Arc when it's uniquely owned (the common case at task-build
-    /// time, when the builder is the sole owner); otherwise rebuilds just
-    /// the root so it can be mutated. `is_task_leaf` is already set at
-    /// construction time by [`Self::arced`].
+    /// `bytes.out` to it (vs. internal flow between fused operators).
+    /// `is_task_leaf` is already set at construction time by [`Self::arced`].
+    ///
+    /// Called from `SwordfishTaskBuilder::build` where the builder owns the
+    /// only Arc to the plan, so we mutate the context in place.
     pub fn mark_task_root(mut self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
-        if let Some(inner) = Arc::get_mut(&mut self) {
-            inner.context_mut().is_task_root = true;
-            return self;
-        }
-        // Shared Arc: rebuild the root node so we own a fresh one, then mutate.
-        let children = self.children();
-        let mut rebuilt = if children.is_empty() {
-            self.with_replaced_leaf_context(self.context().clone())
-        } else {
-            self.with_new_children(&children)
-        };
-        Arc::get_mut(&mut rebuilt)
-            .expect("rebuilt root should be uniquely-owned")
+        Arc::get_mut(&mut self)
+            .expect("SwordfishTaskBuilder must own the only Arc to its plan at build time")
             .context_mut()
             .is_task_root = true;
-        rebuilt
+        self
     }
 
     pub fn physical_scan(
@@ -2599,11 +2514,13 @@ mod task_topology_tests {
         }
     }
 
-    /// `mark_task_root` does not mutate the original plan.
+    /// `mark_task_root` requires sole Arc ownership and panics if shared,
+    /// because at task-build time the builder is the only owner.
     #[test]
-    fn mark_task_root_does_not_mutate_original() {
-        let plan = limit(scan(), 10);
-        let _tagged = plan.clone().mark_task_root();
-        assert!(!plan.context().is_task_root);
+    #[should_panic(expected = "must own the only Arc")]
+    fn mark_task_root_panics_on_shared_arc() {
+        let plan = scan();
+        let _retained = plan.clone();
+        let _ = plan.mark_task_root();
     }
 }
