@@ -15,11 +15,7 @@ use daft_core::{
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
-use daft_dsl::{
-    Expr,
-    expr::bound_expr::BoundExpr,
-    join::{get_right_cols_to_drop, infer_asof_join_schema},
-};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_groupby::IntoGroups;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -250,14 +246,15 @@ impl AsofJoinProbeState {
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
-        right_cols_to_drop: &HashSet<String>,
+        join_schema: &SchemaRef,
+        left_schema_len: usize,
     ) -> DaftResult<()> {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
 
         let right_on_arr: Arc<dyn Array> = right_rb.eval_expression(right_on)?.to_arrow()?;
         self.right_rbs_and_on_keys.push((
-            prune_right_batch(right_rb, right_cols_to_drop),
+            prune_right_batch(right_rb, join_schema, left_schema_len),
             right_on_arr.clone(),
         ));
 
@@ -407,13 +404,23 @@ fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: 
     }
 }
 
-fn prune_right_batch(rb: &RecordBatch, right_cols_to_drop: &HashSet<String>) -> RecordBatch {
+fn prune_right_batch(
+    rb: &RecordBatch,
+    join_schema: &SchemaRef,
+    left_schema_len: usize,
+) -> RecordBatch {
+    let right_cols_to_keep: HashSet<&str> = join_schema
+        .fields()
+        .iter()
+        .skip(left_schema_len)
+        .map(|f| f.name.as_ref())
+        .collect();
     let kept_indices: Vec<usize> = rb
         .schema
         .fields()
         .iter()
         .enumerate()
-        .filter_map(|(i, f)| (!right_cols_to_drop.contains(f.name.as_ref())).then_some(i))
+        .filter_map(|(i, f)| right_cols_to_keep.contains(f.name.as_ref()).then_some(i))
         .collect();
     rb.get_columns(&kept_indices)
 }
@@ -469,7 +476,6 @@ pub struct AsofJoinOperator {
     left_on: BoundExpr,
     right_on: BoundExpr,
     left_schema: SchemaRef,
-    right_cols_to_drop: HashSet<String>,
     join_schema: SchemaRef,
 }
 
@@ -480,24 +486,14 @@ impl AsofJoinOperator {
         left_on: BoundExpr,
         right_on: BoundExpr,
         left_schema: SchemaRef,
-        right_schema: SchemaRef,
+        join_schema: SchemaRef,
     ) -> DaftResult<Self> {
-        let right_cols_to_drop = get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
-            let (unwrapped, _) = e.inner().clone().unwrap_alias();
-            match unwrapped.as_ref() {
-                Expr::Column(_) => Some(unwrapped.name().to_string()),
-                _ => None,
-            }
-        });
-        let join_schema = infer_asof_join_schema(&left_schema, &right_schema, &right_cols_to_drop)?;
-
         Ok(Self {
             left_by,
             right_by,
             left_on,
             right_on,
             left_schema,
-            right_cols_to_drop,
             join_schema,
         })
     }
@@ -556,7 +552,8 @@ impl JoinOperator for AsofJoinOperator {
     ) -> ProbeResult<Self> {
         let right_on = self.right_on.clone();
         let right_by = self.right_by.clone();
-        let right_cols_to_drop = self.right_cols_to_drop.clone();
+        let join_schema = self.join_schema.clone();
+        let left_schema_len = self.left_schema.len();
 
         spawner
             .spawn(
@@ -569,7 +566,13 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        state.probe_batch(right_rb, &right_on, &right_by, &right_cols_to_drop)?;
+                        state.probe_batch(
+                            right_rb,
+                            &right_on,
+                            &right_by,
+                            &join_schema,
+                            left_schema_len,
+                        )?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
