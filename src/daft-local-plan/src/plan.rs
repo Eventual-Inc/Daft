@@ -391,16 +391,20 @@ impl LocalPhysicalPlan {
     /// Mark this node as the root of its enclosing task's local plan, so
     /// consumers of `StatSnapshot`s can attribute external `rows.out` /
     /// `bytes.out` to it (vs. internal flow between fused operators). Returns
-    /// a fresh Arc; the original is unchanged. `is_task_leaf` is already set
-    /// at construction time by [`Self::arced`].
-    pub fn mark_task_root(self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
+    /// the same Arc when it's uniquely owned (the common case at task-build
+    /// time, when the builder is the sole owner); otherwise rebuilds just
+    /// the root so it can be mutated. `is_task_leaf` is already set at
+    /// construction time by [`Self::arced`].
+    pub fn mark_task_root(mut self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
+        if let Some(inner) = Arc::get_mut(&mut self) {
+            inner.context_mut().is_task_root = true;
+            return self;
+        }
+        // Shared Arc: rebuild the root node so we own a fresh one, then mutate.
         let children = self.children();
         let mut rebuilt = if children.is_empty() {
-            // Single-node task: the root is also a leaf. Rebuild via the
-            // leaf constructor so we end up with a uniquely-owned Arc.
             self.with_replaced_leaf_context(self.context().clone())
         } else {
-            // `with_new_children` always returns a fresh Arc with refcount 1.
             self.with_new_children(&children)
         };
         Arc::get_mut(&mut rebuilt)
