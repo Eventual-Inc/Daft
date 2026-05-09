@@ -134,7 +134,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method, metrics
+from daft.udf import udf, udaf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
@@ -302,6 +302,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "udaf",
     "udf",
     "with_subscriber",
     "write_table",
