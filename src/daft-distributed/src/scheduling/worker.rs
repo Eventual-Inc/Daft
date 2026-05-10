@@ -43,6 +43,12 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    fn cleanup_shuffle_dirs(
+        &self,
+        _dirs: Vec<String>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
 }

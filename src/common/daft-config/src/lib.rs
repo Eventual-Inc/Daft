@@ -292,11 +292,51 @@ impl DaftExecutionConfig {
     }
 }
 
+/// Configurations for Daft Event Logging to use during the execution of a Dataframe
+///  Note that this should be immutable for a given end-to-end execution of a logical plan.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct DaftEventLogConfig {
+    pub enabled: bool,
+    pub path: String,
+}
+
+impl Default for DaftEventLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: "~/.daft/events".to_string(),
+        }
+    }
+}
+
+impl DaftEventLogConfig {
+    const ENV_DAFT_EVENT_LOG_ENABLED: &'static str = "DAFT_EVENT_LOG_ENABLED";
+    const ENV_DAFT_EVENT_LOG_DIR: &'static str = "DAFT_EVENT_LOG_DIR";
+
+    pub fn from_env() -> Self {
+        let mut config = Self::default();
+
+        if let Some(enabled) = parse_bool_from_env(Self::ENV_DAFT_EVENT_LOG_ENABLED) {
+            config.enabled = enabled;
+        }
+
+        if let Some(path) = parse_string_from_env(Self::ENV_DAFT_EVENT_LOG_DIR, true) {
+            config.enabled = true;
+            config.path = path;
+        }
+
+        config
+    }
+}
+
 #[cfg(feature = "python")]
 mod python;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
+pub use python::PyDaftEventLogConfig;
 #[cfg(feature = "python")]
 pub use python::PyDaftExecutionConfig;
 #[cfg(feature = "python")]
@@ -306,6 +346,7 @@ pub use python::PyDaftPlanningConfig;
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyDaftExecutionConfig>()?;
     parent.add_class::<python::PyDaftPlanningConfig>()?;
+    parent.add_class::<python::PyDaftEventLogConfig>()?;
 
     Ok(())
 }

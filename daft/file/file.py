@@ -7,12 +7,16 @@ from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from daft.daft import PyDaftFile, PyFileReference, io_put
 from daft.datatype import MediaType
-from daft.dependencies import av, sf
+from daft.dependencies import av, pil_image, sf
+
+BUFFER_SNIFF: int = 4096
+BUFFER_METADATA: int = 65536
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
     from daft.file.audio import AudioFile
+    from daft.file.image import ImageFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
 
@@ -103,8 +107,8 @@ class _DaftWritableFile:
 
 
 class _DaftReadableTextFile:
-    def __init__(self, file_ref: PyFileReference, encoding: str) -> None:
-        self._inner = PyDaftFile._from_file_reference(file_ref)
+    def __init__(self, file_ref: PyFileReference, encoding: str, buffer_size: int | None = None) -> None:
+        self._inner = PyDaftFile._from_file_reference(file_ref, buffer_size=buffer_size)
         self._encoding = encoding
 
     def __enter__(self) -> _DaftReadableTextFile:
@@ -213,24 +217,37 @@ class File:
         return instance
 
     def __init__(
-        self, url: str, io_config: IOConfig | None = None, media_type: MediaType = MediaType.unknown()
+        self,
+        url: str,
+        io_config: IOConfig | None = None,
+        media_type: MediaType = MediaType.unknown(),
+        offset: int | None = None,
+        length: int | None = None,
     ) -> None:
-        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config))  # type: ignore
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, offset, length))  # type: ignore
 
     @overload
-    def open(self, mode: Literal["rb"] = "rb", encoding: str = "utf-8") -> PyDaftFile: ...
+    def open(
+        self, mode: Literal["rb"] = "rb", encoding: str = "utf-8", buffer_size: int | None = None
+    ) -> PyDaftFile: ...
 
     @overload
-    def open(self, mode: Literal["r", "rt"], encoding: str = "utf-8") -> _DaftReadableTextFile: ...
+    def open(
+        self, mode: Literal["r", "rt"], encoding: str = "utf-8", buffer_size: int | None = None
+    ) -> _DaftReadableTextFile: ...
 
     @overload
-    def open(self, mode: Literal["w", "wt", "wb"], encoding: str = "utf-8") -> _DaftWritableFile: ...
+    def open(
+        self, mode: Literal["w", "wt", "wb"], encoding: str = "utf-8", buffer_size: int | None = None
+    ) -> _DaftWritableFile: ...
 
-    def open(self, mode: str = "rb", encoding: str = "utf-8") -> PyDaftFile | _DaftReadableTextFile | _DaftWritableFile:
+    def open(
+        self, mode: str = "rb", encoding: str = "utf-8", buffer_size: int | None = None
+    ) -> PyDaftFile | _DaftReadableTextFile | _DaftWritableFile:
         if mode == "rb":
-            return PyDaftFile._from_file_reference(self._inner)
+            return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
         if mode in ("r", "rt"):
-            return _DaftReadableTextFile(file_ref=self._inner, encoding=encoding)
+            return _DaftReadableTextFile(file_ref=self._inner, encoding=encoding, buffer_size=buffer_size)
         if mode in ("w", "wt", "wb"):
             inner = cast("Any", self._inner)
             # FileReference may grow trailing fields (offset/length on main); unpack defensively.
@@ -283,15 +300,25 @@ class File:
         """
         return self._inner.name()
 
+    @property
+    def offset(self) -> int | None:
+        """The byte offset for range reads, or None for full-file reads."""
+        return self._inner.offset()
+
+    @property
+    def length(self) -> int | None:
+        """The byte length for range reads, or None for full-file reads."""
+        return self._inner.length()
+
     def size(self) -> int:
-        return PyDaftFile._from_file_reference(self._inner).size()
+        return PyDaftFile._from_file_reference(self._inner, buffer_size=BUFFER_SNIFF).size()
 
     def mime_type(self) -> str:
         """Attempts to determine the MIME type of the file.
 
         If the MIME type is undetectable, returns 'application/octet-stream'.
         """
-        with self.open() as f:
+        with self.open(buffer_size=BUFFER_SNIFF) as f:
             maybe_mime_type = f.guess_mime_type()
             return maybe_mime_type if maybe_mime_type else "application/octet-stream"
 
@@ -335,6 +362,12 @@ class File:
             return True
         return False
 
+    def is_image(self) -> bool:
+        mimetype = self.mime_type()
+        if mimetype.startswith("image/"):
+            return True
+        return False
+
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
         if not av.module_available():
@@ -366,6 +399,23 @@ class File:
             raise ValueError(f"File {self} is not an audio file")
 
         cls = AudioFile.__new__(AudioFile)
+        cls._inner = self._inner
+
+        return cls
+
+    def as_image(self) -> ImageFile:
+        """Convert to ImageFile if this file contains image data."""
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required to convert files to images. "
+                "Please install it with: pip install 'daft[image]'"
+            )
+        from daft.file.image import ImageFile
+
+        if not self.is_image():
+            raise ValueError(f"File {self} is not an image file")
+
+        cls = ImageFile.__new__(ImageFile)
         cls._inner = self._inner
 
         return cls

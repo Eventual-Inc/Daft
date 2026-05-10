@@ -81,7 +81,7 @@ jobs:
         python-version: ["3.10", "3.13"]
         daft-runner: [ray, native]
         pyarrow-version: ["22.0.0"]
-        os: [ubuntu-latest, macos-latest]
+        os: [blacksmith-8vcpu-ubuntu-2204, macos-latest]
         coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
@@ -176,7 +176,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
 
     - name: Install imagehash compatibility test dependency
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
+      if: ${{ matrix.os == 'blacksmith-8vcpu-ubuntu-2204' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
       run: |
         source .venv/bin/activate
         uv pip install imagehash==4.3.2
@@ -203,8 +203,16 @@ jobs:
         # Limit xdist workers on macOS: with only 3 CPUs, "-n auto" (3 workers) causes
         # excessive resource contention when each worker spins up its own Ray cluster,
         # leading to UDF actor scheduling timeouts.
+        # Limit on Blacksmith Linux: coverage + llvm-cov + Ray per worker can OOM "-n auto"
+        # (often observed as pytest exiting 143 = SIGTERM).
         # See runner specs: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
-        if [ "$RUNNER_OS" == "macOS" ]; then PYTEST_WORKERS=2; else PYTEST_WORKERS=auto; fi
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
         pytest -n $PYTEST_WORKERS --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
@@ -225,6 +233,7 @@ jobs:
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Build library and Test with pytest (no coverage)
       if: matrix.coverage == false
@@ -232,14 +241,22 @@ jobs:
         set -o pipefail
         source .venv/bin/activate
         maturin develop --uv
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          PYTEST_WORKERS=2
+        elif [[ "${UNIT_TEST_RUNNER_OS_LABEL:-}" == blacksmith-* ]]; then
+          PYTEST_WORKERS=4
+        else
+          PYTEST_WORKERS=auto
+        fi
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest -n auto --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        pytest -n $PYTEST_WORKERS --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
       env:
         RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        UNIT_TEST_RUNNER_OS_LABEL: ${{ matrix.os }}
 
     - name: Upload coverage report
       if: matrix.coverage != false
@@ -284,7 +301,7 @@ jobs:
   integration-test-build:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2204
     timeout-minutes: 90
     env:
       package-name: daft
@@ -658,6 +675,10 @@ jobs:
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
       package-name: daft
+    strategy:
+      fail-fast: false
+      matrix:
+        daft-runner: [native, ray]
     steps:
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@v1.3.1
@@ -719,22 +740,15 @@ jobs:
         docker compose -f ./docker-compose.yml up -d
         popd
 
-    - name: Run sql integration tests (native)
+    # Same tests as sequential native+ray, but parallel matrix jobs — matches integration-test-io.
+    - name: Run sql integration tests (${{ matrix.daft-runner }})
       run: |
         set -o pipefail
         source .venv/bin/activate
         pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
-        DAFT_RUNNER: native
-    - name: Run sql integration tests (ray)
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
-        python tools/aggregate_test_durations.py sql_pytest_output.txt
-      env:
-        DAFT_RUNNER: ray
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v3.0.1
@@ -790,15 +804,37 @@ jobs:
       with:
         distribution: "temurin"
         java-version: "17"
+    # We check out the UC source only for its etc/ directory — the seed
+    # catalog references volume files relative to the server's cwd, e.g.
+    # "etc/data/managed/unity/default/volumes/txt_files". The server is
+    # run via the prebuilt Docker image below, so we no longer need the
+    # source for sbt, just for the seed data files Daft reads from disk.
     - uses: actions/checkout@v6
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
         submodules: true
         path: unitycatalog
+    # The UC Docker image's WORKDIR is /home/unitycatalog, so when the
+    # server canonicalizes the seed volume's relative storage_location
+    # against its cwd it reports paths like
+    # "/home/unitycatalog/etc/data/managed/.../a.txt" back to clients.
+    # Daft (running on the host) reads those paths directly from the host
+    # filesystem, so we symlink that absolute path to the etc/ directory
+    # we just checked out. Without this, every volume read fails with
+    # FileNotFoundError on /home/unitycatalog/etc/data/...
+    - name: Stage UC seed data on host
+      run: |
+        sudo mkdir -p /home/unitycatalog
+        sudo ln -s "$GITHUB_WORKSPACE/unitycatalog/etc" /home/unitycatalog/etc
+    # Use the prebuilt image pinned to the same commit as the checkout
+    # above. This avoids the sbt cold-cache compile (~minutes) and the
+    # background-process lifecycle issues of `bin/start-uc-server &`.
     - name: Start UC Server
-      working-directory: ./unitycatalog
-      run: bin/start-uc-server -p 3000 &
+      run: |
+        docker run -d --name uc-server \
+          -p 3000:8080 \
+          unitycatalog/unitycatalog:main-20dd382
     - name: Download built wheels
       uses: actions/download-artifact@v8
       with:
@@ -847,6 +883,18 @@ jobs:
         popd
 
       # Unity tests
+    - name: Wait for UC Server
+      run: |
+        for i in $(seq 1 60); do
+          if curl -fsS http://127.0.0.1:3000/api/2.1/unity-catalog/catalogs > /dev/null 2>&1; then
+            echo "UC server is up"
+            exit 0
+          fi
+          echo "Waiting for UC server on port 3000... ($i/60)"
+          sleep 5
+        done
+        echo "UC server failed to come up within 5 minutes" >&2
+        exit 1
     - name: Run Unity integration tests (native)
       if: always()
       run: |
@@ -874,6 +922,10 @@ jobs:
         DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
         DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
       # Iceberg tests
+    - name: Wait for Iceberg test tables
+      run: |
+        source .venv/bin/activate
+        python tests/integration/iceberg/docker-compose/wait-for-tables.py
     - name: Run Iceberg integration tests (native)
       if: always()
       run: |
@@ -936,6 +988,7 @@ jobs:
         GRAVITINO_METALAKE: metalake_demo
       # Paimon tests: pypaimon is installed separately here because its dependencies conflict with the project's main dependencies
     - name: Install pypaimon
+      if: always()
       run: |
         source .venv/bin/activate
         uv pip install pypaimon==1.3.1
@@ -953,6 +1006,7 @@ jobs:
     - name: Cleanup Docker services
       if: always()
       run: |
+        docker rm -f uc-server || true
         pushd ./tests/integration/gravitino/docker-compose/
         docker compose -f ./docker-compose.yml down --volumes || true
         popd
@@ -1456,6 +1510,7 @@ jobs:
           --max-new 25 \
           --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
     - name: Post sticky PR comment
+      if: github.event.pull_request.head.repo.full_name == github.repository
       uses: marocchino/sticky-pull-request-comment@v2
       with:
         header: rust-dependency-budget

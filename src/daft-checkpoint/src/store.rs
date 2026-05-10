@@ -93,18 +93,29 @@ pub trait CheckpointStore: Send + Sync {
     /// Checkpoint (seal) a staged entry — couples the staged keys and files, making them
     /// visible to readers. No further staging is allowed after this call.
     ///
-    /// Returns [`CheckpointNotFound`] if the ID was never staged.
+    /// **Idempotent and tolerant of unstaged ids.** No-op if the checkpoint
+    /// has already been sealed (post-restart retry), and also a no-op if the
+    /// id was never staged (an empty pipeline run that auto-generated an id
+    /// but never produced any keys or files — sealing nothing is sealing
+    /// nothing). Callers that need to detect unstaged ids must do so via
+    /// [`get_checkpoint`](Self::get_checkpoint) or
+    /// [`list_checkpoints`](Self::list_checkpoints) instead.
     ///
-    /// **Idempotent** — no-op if the checkpoint has already been sealed.
     /// This supports retry after message loss (e.g., worker sends checkpoint,
-    /// acknowledgement is lost, worker retries).
-    ///
-    /// [`CheckpointNotFound`]: crate::error::CheckpointError::CheckpointNotFound
+    /// acknowledgement is lost, worker retries) and post-crash retry where
+    /// the in-memory staged state has been lost.
     async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()>;
 
     /// Stream all checkpointed source keys (both checkpointed and committed)
     /// as columnar [`Series`] chunks. Useful for building a filter to skip
     /// already-processed inputs on re-run.
+    ///
+    /// Each streamed [`Series`] is named
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN)
+    /// regardless of what column name was passed to [`stage_keys`](Self::stage_keys).
+    /// Implementations must rename on staging so the read side is stable
+    /// across renames of the source's key column — see
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN).
     async fn get_checkpointed_keys(
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Series>>>;

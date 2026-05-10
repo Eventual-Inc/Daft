@@ -180,12 +180,42 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
-    reason="shuffle tests are meant for the ray runner",
+    reason="distributed shuffle tests require the ray runner",
 )
-def test_random_shuffle_uses_ray_shuffle_path_under_flight_shuffle_config(flight_shuffle_ctx):
+def test_flight_random_shuffle(flight_shuffle_ctx):
+    """Ensures `df.shuffle(...)` produces a permutation of the input under the Flight backend."""
     with flight_shuffle_ctx():
         df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
-        shuffled = df.shuffle(seed=0).to_pydict()["id"]
+        shuffle_df = df.shuffle(seed=0)
+
+        buf = io.StringIO()
+        shuffle_df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "RandomShuffle(Flight)" in plan, f"expected RandomShuffle(Flight) in plan:\n{plan}"
+        assert "RandomShuffle(Ray)" not in plan, f"unexpected RandomShuffle(Ray) in plan:\n{plan}"
+
+        shuffled = shuffle_df.to_pydict()["id"]
+
+    assert sorted(shuffled) == list(range(32))
+    assert shuffled != list(range(32))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_ray_random_shuffle():
+    """Ensures `df.shuffle(...)` produces a permutation of the input under the Ray backend."""
+    df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
+    shuffle_df = df.shuffle(seed=0)
+
+    buf = io.StringIO()
+    shuffle_df.explain(show_all=True, file=buf)
+    plan = buf.getvalue()
+    assert "RandomShuffle(Ray)" in plan, f"expected RandomShuffle(Ray) in plan:\n{plan}"
+    assert "RandomShuffle(Flight)" not in plan, f"unexpected RandomShuffle(Flight) in plan:\n{plan}"
+
+    shuffled = shuffle_df.to_pydict()["id"]
 
     assert sorted(shuffled) == list(range(32))
     assert shuffled != list(range(32))

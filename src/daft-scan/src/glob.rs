@@ -559,7 +559,8 @@ impl ScanOperator for GlobScanOperator {
                     };
                     // Extend partition values based on whether a file_path_column is set (this column is inherently a partition).
                     if let Some(fp_col) = &file_path_column {
-                        let trimmed = path.trim_start_matches("file://");
+                        let trimmed =
+                            daft_io::strip_file_uri_to_path(&path).unwrap_or(path.as_str());
                         let file_paths_column_series =
                             Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed)))
                                 .into_series();

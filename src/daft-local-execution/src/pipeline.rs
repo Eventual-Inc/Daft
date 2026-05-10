@@ -362,6 +362,8 @@ impl BuilderContext {
             node_category,
             node_phase,
             context,
+            is_task_root: node_context.is_task_root,
+            is_task_leaf: node_context.is_task_leaf,
         }
     }
 }
@@ -1357,7 +1359,10 @@ fn physical_plan_to_pipeline(
                 right_on.clone(),
                 left.schema().clone(),
                 right.schema().clone(),
-            );
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: "AsofJoin",
+            })?;
 
             JoinNode::new(
                 Arc::new(asof_join_op),

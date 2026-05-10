@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     pipeline_node::MaterializedOutput,
-    scheduling::task::{TaskContext, TaskResourceRequest},
+    scheduling::task::{TaskContext, TaskMetadata, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
 
@@ -75,6 +75,10 @@ impl<T: Task> PendingTask<T> {
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
+    }
+
+    fn task_metadata(&self) -> TaskMetadata {
+        self.task.task_metadata()
     }
 }
 

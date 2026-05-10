@@ -401,6 +401,29 @@ def minhash(
     )
 
 
+def simhash(
+    text: Expression,
+    *,
+    ngram_size: int = 3,
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+) -> Expression:
+    """Compute a SimHash fingerprint of the input text.
+
+    SimHash produces a 64-bit locality-sensitive hash from character n-grams.
+    Similar texts produce fingerprints with small bitwise Hamming distance,
+    making it useful for near-duplicate detection.
+
+    Args:
+        text (String Expression): The expression to hash.
+        ngram_size (int, default=3): Character n-gram size. Defaults to 3.
+        hash_function (str, default="xxhash3_64"): Hash function for n-grams. One of "murmurhash3", "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", or "sha1". Defaults to "xxhash3_64".
+
+    Returns:
+        Expression (UInt64 Expression): SimHash fingerprint.
+    """
+    return Expression._call_builtin_scalar_fn("simhash", text, ngram_size=ngram_size, hash_function=hash_function)
+
+
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
@@ -728,6 +751,42 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     """
     key_expr = Expression._to_expression(key)
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
+
+
+def map_keys(expr: Expression) -> Expression:
+    """Returns a list of all keys in the map.
+
+    Args:
+        expr: the map expression to get from
+
+    Returns:
+        Expression: the keys list expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1), ("b", 2)], [("c", 3)], [], None], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("keys", df["map_col"].map_keys())
+        >>> df.show()
+        ╭────────────────────┬──────────────╮
+        │ map_col            ┆ keys         │
+        │ ---                ┆ ---          │
+        │ Map[String: Int64] ┆ List[String] │
+        ╞════════════════════╪══════════════╡
+        │ {"a": 1, "b": 2}   ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c": 3}           ┆ [c]          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}                 ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None               ┆ None         │
+        ╰────────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._from_pyexpr(expr._expr.map_keys())
 
 
 def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:

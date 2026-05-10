@@ -17,8 +17,11 @@ use crate::{
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Use a non-canonical input column name so every contract test that
+/// round-trips through `stage_keys` -> `get_checkpointed_keys` actually
+/// exercises the canonical-name rename inside the store impl.
 pub fn keys(values: &[&str]) -> Series {
-    Utf8Array::from_slice("key", values).into_series()
+    Utf8Array::from_slice("src_key", values).into_series()
 }
 
 pub fn file(data: &[u8]) -> FileMetadata {
@@ -158,12 +161,9 @@ pub async fn test_idempotency(store: &dyn CheckpointStore) {
 }
 
 pub async fn test_error_paths(store: &dyn CheckpointStore) {
-    // Seal unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
+    // Sealing an unknown ID is a tolerated no-op (covers empty-pipeline-run
+    // flows where an id is auto-generated but never staged).
+    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
 
     // mark_committed unknown ID
     let err = store
