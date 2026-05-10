@@ -130,9 +130,10 @@ def test_daft_custom_location(local_iceberg_catalog):
 @pytest.mark.integration()
 def test_write_iceberg_target_file_size(local_iceberg_catalog):
     """write_iceberg respects the write.target-file-size-bytes table property."""
-    _, local_pyiceberg_catalog = local_iceberg_catalog
+    catalog_name, local_pyiceberg_catalog = local_iceberg_catalog
+    data = {"x": list(range(1_000))}
     schema = pa.schema([("x", pa.int64())])
-    arrow_table = pa.Table.from_pydict({"x": list(range(1_000))}, schema=schema)
+    arrow_table = pa.Table.from_pydict(data, schema=schema)
 
     table_name = "pyiceberg.target_file_size_test"
     try:
@@ -144,5 +145,8 @@ def test_write_iceberg_target_file_size(local_iceberg_catalog):
         )
         files_written = daft.from_arrow(arrow_table).write_iceberg(table, mode="overwrite")
         assert len(files_written) > 1
+
+        read_back = daft.read_table(f"{catalog_name}.{table_name}").sort("x").to_pydict()
+        assert read_back == data
     finally:
         local_pyiceberg_catalog.drop_table(table_name)
