@@ -9,7 +9,6 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
@@ -18,7 +17,7 @@ use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleF
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
-use super::source::{Source, SourceStream};
+use super::source::{Source, SourceStream, StatsProvider};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{NodeName, PipelineMessage},
@@ -211,8 +210,10 @@ async fn forward_partition_stream(
     sender: Sender<PipelineMessage>,
     input_id: InputId,
 ) -> DaftResult<InputId> {
+    let mut emitted_any = false;
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
+        emitted_any = true;
         if sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -221,8 +222,21 @@ async fn forward_partition_stream(
             .await
             .is_err()
         {
-            break;
+            return Ok(input_id);
         }
+    }
+    // If the stream produced no batches (all refs were zero-row / file-less),
+    // still emit a single empty `MicroPartition` so the downstream pipeline
+    // sees one output per input. Matches the `inputs.is_empty()` branch in
+    // `spawn_flight_shuffle_processor`.
+    if !emitted_any {
+        let empty = MicroPartition::empty(Some(schema.clone()));
+        let _ = sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: empty,
+            })
+            .await;
     }
     Ok(input_id)
 }
@@ -249,7 +263,7 @@ impl Source for ShuffleReadSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        _io_stats: IOStatsRef,
+        _stats_provider: StatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);

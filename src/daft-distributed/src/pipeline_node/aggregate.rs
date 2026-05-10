@@ -391,13 +391,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         )?;
 
         if split_details.first_stage_aggs.is_empty()
-        // Special case for:
-        // - ApproxCountDistinct: we can't recursively merge HLL sketches  TODO: Look for alternative approaches for this
-        // - List: it is more efficient to do a single post-repartition aggregate
-        // - Decimal128: we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
+            // Special case for:
+            // - List: it is more efficient to do a single post-repartition aggregate
+            // - Decimal128: we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
             || aggregations
                 .iter()
-                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_) | AggExpr::List(_)))
+                .any(|agg| matches!(agg.as_ref(), AggExpr::List(_)))
             || split_details
                 .first_stage_schema
                 .fields()

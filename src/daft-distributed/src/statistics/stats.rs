@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
@@ -29,6 +29,36 @@ pub trait RuntimeStats: Send + Sync + 'static {
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
+/// Per-node operator lifecycle state used to drive `OperatorStart` /
+/// `OperatorEnd` event emission. Lives inside `RuntimeNodeManager` so the
+/// per-event hot path can update it via a single short-lived per-node
+/// lock instead of a query-wide one.
+///
+/// Phase tracks Start/End emission; `pending_tasks` and `produce_complete`
+/// are the inputs to the End-firing condition. `produce_complete` is
+/// sticky rather than a phase transition because `OnEndStream::Drop` can
+/// fire before the scheduler emits the first `TaskEvent::Submitted`.
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+enum LifecyclePhase {
+    /// `OperatorStart` not yet fired.
+    #[default]
+    Pending,
+    /// `OperatorStart` fired, `OperatorEnd` not yet.
+    Started,
+    /// `OperatorEnd` fired (terminal).
+    Ended,
+}
+
+#[derive(Default)]
+struct OperatorLifecycle {
+    phase: LifecyclePhase,
+    pending_tasks: u64,
+    /// Sticky: set once the node's task stream is exhausted or dropped.
+    /// Together with `phase == Started` and `pending_tasks == 0`, this
+    /// triggers the `Ended` transition.
+    produce_complete: bool,
+}
+
 pub struct RuntimeNodeManager {
     node_info: Arc<NodeInfo>,
     pub node_kv: Vec<KeyValue>,
@@ -38,6 +68,8 @@ pub struct RuntimeNodeManager {
     completed_tasks: Counter,
     failed_tasks: Counter,
     cancelled_tasks: Counter,
+
+    lifecycle: Mutex<OperatorLifecycle>,
 }
 
 impl RuntimeNodeManager {
@@ -63,12 +95,78 @@ impl RuntimeNodeManager {
                 None,
                 Some(UNIT_TASKS.into()),
             ),
+            lifecycle: Mutex::new(OperatorLifecycle::default()),
         }
     }
 
     /// Returns the accumulated stats for this node as (NodeInfo, StatSnapshot) for export to the driver.
     pub fn export_snapshot(&self) -> (Arc<NodeInfo>, StatSnapshot) {
         (self.node_info.clone(), self.runtime_stats.export_snapshot())
+    }
+
+    pub fn node_info(&self) -> &Arc<NodeInfo> {
+        &self.node_info
+    }
+
+    /// Record that a task touching this node has been submitted. Returns
+    /// `true` iff this is the first such submission, i.e. the caller should
+    /// fire an `OperatorStart` event for this node.
+    pub fn on_task_submitted(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.pending_tasks += 1;
+        if s.phase == LifecyclePhase::Pending {
+            s.phase = LifecyclePhase::Started;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Record that a task touching this node has finished (Completed,
+    /// Failed, or Cancelled — including retryable failures, which mirror
+    /// the unconditional active-counter decrement in `handle_task_event`).
+    /// Returns `true` iff the caller should now fire `OperatorEnd`.
+    pub fn on_task_finished(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.pending_tasks = s.pending_tasks.saturating_sub(1);
+        Self::maybe_end(&mut s)
+    }
+
+    /// Record that this node's pipeline-task stream has been fully drained
+    /// or dropped — i.e. no further tasks will reference this node. Returns
+    /// `true` iff the caller should fire `OperatorEnd`.
+    pub fn on_produce_complete(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        s.produce_complete = true;
+        Self::maybe_end(&mut s)
+    }
+
+    /// Transition `Started → Ended` once both `produce_complete` is set
+    /// and `pending_tasks` has drained to 0. No-op in `Pending` (no Start
+    /// fired) or `Ended` (terminal).
+    fn maybe_end(s: &mut OperatorLifecycle) -> bool {
+        if s.phase == LifecyclePhase::Started && s.produce_complete && s.pending_tasks == 0 {
+            s.phase = LifecyclePhase::Ended;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Force-finalize the lifecycle for this node: if it ever started but
+    /// hasn't ended yet, mark it ended and tell the caller to fire a
+    /// synthetic `OperatorEnd`. Used at query teardown to flush operators
+    /// whose in-flight tasks were aborted before emitting terminal
+    /// `TaskEvent`s (e.g. scheduler crash, KeyboardInterrupt, actor death).
+    /// Idempotent: returns `false` if already ended or never started.
+    pub fn force_end(&self) -> bool {
+        let mut s = self.lifecycle.lock().unwrap();
+        if s.phase == LifecyclePhase::Started {
+            s.phase = LifecyclePhase::Ended;
+            true
+        } else {
+            false
+        }
     }
 
     /// The distributed node id (cheap accessor — avoids snapshotting when a
@@ -326,6 +424,7 @@ mod tests {
         TaskEvent::Completed {
             context: TaskContext::default(),
             stats: ExecutionStats::new("q".into(), nodes),
+            worker_id: "worker-1".into(),
         }
     }
 
@@ -351,6 +450,7 @@ mod tests {
     fn scheduled_event() -> TaskEvent {
         TaskEvent::Scheduled {
             context: TaskContext::default(),
+            worker_id: "worker-1".into(),
         }
     }
 
@@ -358,6 +458,8 @@ mod tests {
         TaskEvent::Failed {
             context: TaskContext::default(),
             reason: "boom".into(),
+            worker_id: None,
+            retryable: false,
         }
     }
 
@@ -441,6 +543,8 @@ mod tests {
                 node_category: NodeCategory::Intermediate,
                 node_phase: None,
                 context: HashMap::new(),
+                is_task_root: false,
+                is_task_leaf: false,
             });
 
             let distributed_ctx = PipelineNodeContext::new(
@@ -474,6 +578,7 @@ mod tests {
             let event = TaskEvent::Completed {
                 context: TaskContext::new(0, 42, 1, vec![42], 0),
                 stats: ExecutionStats::new("".into(), vec![(local_node_info, local_snapshot)]),
+                worker_id: "worker-1".into(),
             };
 
             manager.handle_task_event(&event);

@@ -17,7 +17,7 @@ use crate::pipeline_node::{
 
 impl LogicalPlanToPipelineNodeTranslator {
     /// Pick the shuffle backend implied by the current execution config.
-    fn select_backend(&self) -> DistributedShuffleBackend {
+    pub(crate) fn select_backend(&self) -> DistributedShuffleBackend {
         if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
             DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),

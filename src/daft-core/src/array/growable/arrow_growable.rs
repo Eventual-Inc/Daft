@@ -43,7 +43,7 @@ fn grower_from_dtype(dtype: &DataType, capacity: usize) -> ValueGrower {
             builder: BooleanBufferBuilder::new(capacity),
         },
         DataType::Int8 | DataType::UInt8 => fixed_width(1),
-        DataType::Int16 | DataType::UInt16 => fixed_width(2),
+        DataType::Int16 | DataType::UInt16 | DataType::Float16 => fixed_width(2),
         DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Date => fixed_width(4),
         DataType::Int64
         | DataType::UInt64

@@ -137,6 +137,7 @@ def test_pivot_with_nulls(make_df, repartition_nparts, with_morsel_size):
         ("min", {"group": ["A", "B"], "1": [10, 30]}),
         ("count", {"group": ["A", "B"], "1": [2, 2]}),
         ("product", {"group": ["A", "B"], "1": [200, 1200]}),
+        ("count_distinct", {"group": ["A", "B"], "1": [2, 2]}),
     ],
 )
 def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected, with_morsel_size):

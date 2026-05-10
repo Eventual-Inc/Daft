@@ -10,6 +10,7 @@ import daft
 pyiceberg = pytest.importorskip("pyiceberg")
 
 
+import requests
 import tenacity
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.table import Table
@@ -46,7 +47,26 @@ cloud_tables_names = [
 
 @pytest.fixture(scope="session")
 def local_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
-    cat = load_catalog(
+    catalog = _load_local_rest_catalog()
+
+    # ensure all tables are available
+    for name in local_tables_names:
+        _load_table(catalog, name)
+
+    catalog_name = "_local_iceberg_catalog"
+    daft.attach_catalog(catalog, alias=catalog_name)
+    yield catalog_name, catalog
+    daft.detach_catalog(alias=catalog_name)
+
+
+@tenacity.retry(
+    stop=tenacity.stop_after_delay(60),
+    retry=tenacity.retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout)),
+    wait=tenacity.wait_fixed(5),
+    reraise=True,
+)
+def _load_local_rest_catalog() -> Catalog:
+    return load_catalog(
         "local",
         **{
             "type": "rest",
@@ -56,15 +76,6 @@ def local_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
             "s3.secret-access-key": "password",
         },
     )
-
-    # ensure all tables are available
-    for name in local_tables_names:
-        _load_table(cat, name)
-
-    catalog_name = "_local_iceberg_catalog"
-    daft.attach_catalog(cat, alias=catalog_name)
-    yield catalog_name, cat
-    daft.detach_catalog(alias=catalog_name)
 
 
 @pytest.fixture(scope="session")
@@ -87,7 +98,9 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
 
 @tenacity.retry(
     stop=tenacity.stop_after_delay(60),
-    retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
+    retry=tenacity.retry_if_exception_type(
+        (pyiceberg.exceptions.NoSuchTableError, requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+    ),
     wait=tenacity.wait_fixed(5),
     reraise=True,
 )

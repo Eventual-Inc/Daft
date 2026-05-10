@@ -154,7 +154,7 @@ df = daft.read_parquet("s3://bucket/sensors/*.parquet")
 # Prepare for Bigtable (create composite row key)
 df = df.with_column(
     "row_key",
-    col("device_id").str.concat("#").str.concat(col("timestamp").cast(str)),
+    col("device_id").concat("#").concat(col("timestamp").cast(str)),
 )
 
 # Write to Bigtable
