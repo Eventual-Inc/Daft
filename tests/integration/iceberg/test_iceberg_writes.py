@@ -60,7 +60,6 @@ def test_pyiceberg_written_catalog(local_iceberg_catalog):
 
 
 @pytest.mark.integration()
-@pytest.mark.skip
 def test_daft_written_catalog(local_iceberg_catalog):
     catalog_name, local_pyiceberg_catalog = local_iceberg_catalog
     with table_written_by_daft(local_pyiceberg_catalog) as catalog_table_name:
