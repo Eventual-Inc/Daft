@@ -53,7 +53,7 @@ def test_path_file_can_write_text(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
-def test_path_file_write_flush_persists_data(tmp_path: Path):
+def test_path_file_write_buffers_until_close(tmp_path: Path):
     temp_file = tmp_path / "flush_test.txt"
     temp_file.write_text("before")
     f = daft.File(str(temp_file.absolute()))
@@ -61,7 +61,7 @@ def test_path_file_write_flush_persists_data(tmp_path: Path):
     with f.open("w") as writer:
         writer.write("hello")
         writer.flush()
-        assert temp_file.read_text() == "hello"
+        assert temp_file.read_text() == "before"
         writer.write(" world")
 
     assert temp_file.read_text() == "hello world"
@@ -89,6 +89,25 @@ def test_path_file_can_read_text_with_encoding(tmp_path: Path):
 
     with f.open("r", encoding="latin-1") as reader:
         assert reader.read() == "café"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_text_mode_iterates_lines(tmp_path: Path):
+    temp_file = tmp_path / "lines.txt"
+    temp_file.write_text("alpha\nbeta\ngamma\n")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("r") as reader:
+        assert reader.readline() == "alpha\n"
+        assert reader.readline() == "beta\n"
+        assert reader.readline() == "gamma\n"
+        assert reader.readline() == ""
+
+    with f.open("r") as reader:
+        assert list(reader) == ["alpha\n", "beta\n", "gamma\n"]
+
+    with f.open("r") as reader:
+        assert reader.readlines() == ["alpha\n", "beta\n", "gamma\n"]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")

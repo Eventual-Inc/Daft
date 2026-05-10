@@ -87,9 +87,10 @@ class _DaftWritableFile:
         return self._buffer.truncate(size)
 
     def flush(self) -> None:
+        # No-op: writes are buffered and committed in a single io_put on close();
+        # flushing here would re-PUT the whole buffer on every call.
         if self._closed:
             raise ValueError("I/O operation on closed file")
-        io_put(path=self.path, data=self._buffer.getvalue(), multithreaded_io=True, io_config=self._io_config)
 
     def close(self) -> None:
         if self._closed:
@@ -122,6 +123,41 @@ class _DaftReadableTextFile:
         if isinstance(data, str):
             return data
         return data.decode(self._encoding)
+
+    def readline(self, size: int = -1) -> str:
+        # Read bytes one at a time until a newline or EOF; safe for UTF-8 because
+        # \n (0x0A) is a single-byte codepoint that never appears mid-codepoint.
+        line = bytearray()
+        while size < 0 or len(line) < size:
+            chunk = self._inner.read(1)
+            if not chunk:
+                break
+            line.extend(chunk)
+            if line.endswith(b"\n"):
+                break
+        return bytes(line).decode(self._encoding)
+
+    def readlines(self, hint: int = -1) -> list[str]:
+        lines: list[str] = []
+        total = 0
+        while True:
+            line = self.readline()
+            if not line:
+                break
+            lines.append(line)
+            total += len(line)
+            if hint >= 0 and total >= hint:
+                break
+        return lines
+
+    def __iter__(self) -> _DaftReadableTextFile:
+        return self
+
+    def __next__(self) -> str:
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
 
     def seek(self, offset: int, whence: int = 0) -> int:
         return self._inner.seek(offset, whence)
@@ -197,7 +233,8 @@ class File:
             return _DaftReadableTextFile(file_ref=self._inner, encoding=encoding)
         if mode in ("w", "wt", "wb"):
             inner = cast("Any", self._inner)
-            _, path, io_config = inner._get_file()
+            # FileReference may grow trailing fields (offset/length on main); unpack defensively.
+            _, path, io_config, *_ = inner._get_file()
             return _DaftWritableFile(path=path, io_config=io_config, mode=mode, encoding=encoding)
         raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rt', 'rb', 'w', 'wt', and 'wb'")
 
