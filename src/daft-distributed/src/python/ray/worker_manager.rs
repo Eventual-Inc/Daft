@@ -173,7 +173,7 @@ impl WorkerManager for RayWorkerManager {
     fn cleanup_shuffle_dirs(
         &self,
         dirs: Vec<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + 'static>> {
         Box::pin(super::clear_shuffle_dirs_on_all_nodes(dirs))
     }
 

@@ -43,10 +43,13 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    /// Return a `'static` future for cleaning up shuffle dirs across all workers.
+    /// Implementations must not borrow `self` so callers can spawn this future
+    /// detached (fire-and-forget) without keeping the worker manager alive.
     fn cleanup_shuffle_dirs(
         &self,
         _dirs: Vec<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + 'static>> {
         Box::pin(async { Ok(()) })
     }
     #[allow(dead_code)]

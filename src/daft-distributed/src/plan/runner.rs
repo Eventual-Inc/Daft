@@ -210,10 +210,28 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             }
         }
 
-        if !shuffle_dirs.is_empty()
-            && let Err(e) = self.worker_manager.cleanup_shuffle_dirs(shuffle_dirs).await
-        {
-            tracing::warn!("Failed to clear flight shuffle directories: {}", e);
+        // Fire-and-forget the shuffle-dir cleanup so the query returns immediately.
+        // The cleanup `_clear_flight_shuffle_dirs` Ray task previously sat on the
+        // critical path (observed ~26 s on a TPC-H Q5 SF1000 / 4× i8g.4xlarge trace).
+        // Detaching it doesn't affect correctness: dirs are scoped to the shuffle_id
+        // which won't be reused; if the actor dies before cleanup finishes the local
+        // NVMe instance store is reclaimed by Ray on session teardown anyway.
+        if !shuffle_dirs.is_empty() {
+            let cleanup_fut = self.worker_manager.cleanup_shuffle_dirs(shuffle_dirs);
+            tokio::spawn(async move {
+                let t0 = std::time::Instant::now();
+                match cleanup_fut.await {
+                    Ok(()) => tracing::info!(
+                        target: "daft_distributed::cleanup",
+                        dur_ms = t0.elapsed().as_millis() as u64,
+                        "flight shuffle dirs cleaned",
+                    ),
+                    Err(e) => tracing::warn!(
+                        target: "daft_distributed::cleanup",
+                        "Failed to clear flight shuffle directories: {}", e,
+                    ),
+                }
+            });
         }
 
         Ok(())
