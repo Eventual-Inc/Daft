@@ -677,33 +677,38 @@ class TestRead:
         ]
 
     def test_pruning_skips_unmatched_partitions(self, namespace_dir, sample_df, monkeypatch):
-        """Verify partition pruning only opens the matching partition dataset.
+        """Verify partition pruning only scans the matching partition dataset.
 
         When a partition filter rules out 3 of 4 partitions, only the matching
-        table should be opened (i.e. partition pruning happens via the manifest).
+        table should be *scanned*. The planner may open additional datasets for
+        schema sniffing (e.g., to detect sibling-leaf stitching), but actual
+        data reads (via ``.scanner(...)``) should hit only the matched leaf.
         """
         import lance
 
         sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
 
-        opened = []
+        scanned_uris: list[str] = []
         real_dataset = lance.dataset
 
-        def tracking_dataset(uri, *args, **kwargs):
-            opened.append(str(uri))
-            return real_dataset(uri, *args, **kwargs)
+        def tracing_dataset(uri, *args, **kwargs):
+            ds = real_dataset(uri, *args, **kwargs)
+            if "__manifest" in str(uri):
+                return ds
+            real_scanner = ds.scanner
 
-        monkeypatch.setattr(lance, "dataset", tracking_dataset)
+            def tracing_scanner(*sa, **sk):
+                scanned_uris.append(str(uri))
+                return real_scanner(*sa, **sk)
+
+            ds.scanner = tracing_scanner
+            return ds
+
+        monkeypatch.setattr(lance, "dataset", tracing_dataset)
         df = daft.read_lance(namespace_dir, namespace_partitioning=True)
         df.where((df["year"] == 2025) & (df["country"] == "UK")).to_pydict()
 
-        # Manifest is always opened; among partition datasets only the matching one
-        # should be opened.
-        non_manifest_opens = [u for u in opened if "__manifest" not in u]
-        # Each opened partition dataset should be the (2025, UK) one. We can't easily
-        # name-check it without parsing object_ids, but exactly 1 distinct ds_uri
-        # confirms pruning.
-        assert len(set(non_manifest_opens)) == 1, non_manifest_opens
+        assert len(set(scanned_uris)) == 1, scanned_uris
 
 
 # ===========================================================================
@@ -1262,6 +1267,66 @@ class TestSpecLiteralFixture:
         dirs_on_disk.discard("__manifest")
         expected_dirs = set(expected.keys())
         assert dirs_on_disk == expected_dirs
+
+    def test_heterogeneous_leaf_schemas_fixture(self):
+        """Read a checked-in fixture exercising legacy JSON shape + sibling-leaf stitching.
+
+        The fixture at ``tests/assets/lance/partitioned-namespace/heterogeneous-leaf-schemas``
+        encodes a real-world scenario from the partitioning bench: topic-keyed
+        partitions where each (robot, topic) leaf stores one signal column
+        (speed-topic leaves have ``[ts, speed]``; caption-topic leaves have
+        ``[ts, caption]``). The leaves under each robot are written in
+        lockstep — same row count, positional alignment — so the reader
+        stitches them column-wise into wider rows.
+
+        Also exercises the *legacy* partition-spec JSON shape (``"transform":
+        "identity"`` as a bare string, ``"result_type": "large_string"``
+        rather than ``{"type": ...}``, and ``"source_ids": []``).
+        """
+        fixture = "tests/assets/lance/partitioned-namespace/heterogeneous-leaf-schemas"
+        df = daft.read_lance(fixture, namespace_partitioning=True)
+        schema_names = {f.name for f in df.schema()}
+        assert schema_names == {"ts", "speed", "caption", "robot_id", "topic"}
+
+        # 6 rows after stitching: 2 robots × 3 rows per stitched leaf-group.
+        assert df.count_rows() == 6
+
+        # Each row carries both `speed` and `caption` populated positionally.
+        full = df.to_pydict()
+        # robot_a rows: speed values from speed leaf, caption values from caption leaf.
+        # robot_b rows: same pattern.
+        by_robot: dict[str, list[tuple]] = {}
+        for r, ts_v, sp, cap in zip(full["robot_id"], full["ts"], full["speed"], full["caption"]):
+            by_robot.setdefault(r, []).append((ts_v, sp, cap))
+
+        assert sorted(by_robot["robot_a"], key=lambda x: x[0]) == [
+            (100, 12.5, "left turn"),
+            (200, 13.1, "straight"),
+            (300, 11.8, None),
+        ]
+        assert sorted(by_robot["robot_b"], key=lambda x: x[0]) == [
+            (100, 25.0, None),
+            (200, 24.8, "highway"),
+            (300, 26.1, "exit"),
+        ]
+
+        # Partition filter on the parent partition (robot_id) prunes the
+        # stitched group; partition col that varies WITHIN a stitch group
+        # (topic) is NULL in stitched rows.
+        robot_a = df.where(df["robot_id"] == "robot_a").to_pydict()
+        assert len(robot_a["ts"]) == 3
+        assert sorted(zip(robot_a["ts"], robot_a["speed"], robot_a["caption"])) == [
+            (100, 12.5, "left turn"),
+            (200, 13.1, "straight"),
+            (300, 11.8, None),
+        ]
+
+        # Projection on individual columns works without scanning useless leaves.
+        speed_only = df.select("robot_id", "speed").to_pydict()
+        assert sorted(speed_only["speed"]) == sorted([12.5, 13.1, 11.8, 25.0, 24.8, 26.1])
+        caption_only = df.select("robot_id", "caption").to_pydict()
+        caption_non_null = sorted(v for v in caption_only["caption"] if v is not None)
+        assert caption_non_null == sorted(["left turn", "straight", "highway", "exit"])
 
     def test_disjoint_leaf_schemas_only_scans_matching_leaves(self, tmp_path):
         """Selecting a column skips leaves without that column.

@@ -10,6 +10,7 @@ pushdown, and emits one ScanTask per fragment (or fragment group).
 # isort: dont-add-import: from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Iterator
 from typing import Any, Optional
 
@@ -26,6 +27,7 @@ from daft.recordbatch import RecordBatch
 from ..pushdowns import SupportsPushdownFilters
 from .lance_namespace import (
     COL_LOCATION,
+    COL_OBJECT_ID,
     COL_OBJECT_TYPE,
     COL_READ_VERSION,
     LANCE_FIELD_ID_KEY,
@@ -205,12 +207,16 @@ def _compute_leaf_projection(
     each topic has its own signal set). Passing a column to
     ``lance.scanner(columns=...)`` that the leaf doesn't have raises
     ``LanceError(Schema)``; this is a metadata-only check that decides up
-    front whether a leaf can satisfy the projection at all.
+    front what to scan from each leaf.
 
-    We treat the projection as a hard requirement: a leaf is **skipped**
-    if any requested data column is missing from it. Rows from such a leaf
-    contribute nothing to the query result — we never fabricate NULL
-    columns for them.
+    Behavior is per-leaf:
+
+    - If the leaf has *none* of the requested data columns, **skip** it —
+      the leaf can't contribute meaningful rows for this query.
+    - Otherwise, scan the leaf with the intersection of requested columns
+      and the leaf's schema. Columns requested but absent from the leaf
+      are filled with NULL by Daft's planner at a higher layer; we do not
+      fabricate column data here.
 
     Args:
         leaf_names: Column names in the leaf's Arrow schema.
@@ -222,10 +228,9 @@ def _compute_leaf_projection(
         ``(leaf_cols, skip)``:
 
         - ``leaf_cols`` — list to pass to ``ds.scanner(columns=...)`` (or
-          ``None`` if the user wants Lance's default behavior, e.g. no data
-          columns or no projection at all).
-        - ``skip`` — True iff any requested data column is absent from this
-          leaf; the caller should drop the leaf entirely.
+          ``None`` if the user requested no data columns).
+        - ``skip`` — True iff the user requested at least one data column
+          and the leaf has none of them; the caller should drop this leaf.
     """
     if required_columns is None:
         return None, False
@@ -236,9 +241,10 @@ def _compute_leaf_projection(
     if not data_cols_requested:
         return None, False
 
-    if not all(c in leaf_names for c in data_cols_requested):
+    leaf_cols = [c for c in data_cols_requested if c in leaf_names]
+    if not leaf_cols:
         return None, True
-    return data_cols_requested, False
+    return leaf_cols, False
 
 
 def _lance_namespace_factory_function(
@@ -316,6 +322,140 @@ def _lance_namespace_factory_function(
                         rb = rb.slice(0, remaining)
                 yield from _emit(rb, fid)
                 rows_yielded += len(rb)
+
+
+def _lance_namespace_stitched_factory_function(
+    leaf_uris: list[str],
+    leaf_read_versions: list[int | None],
+    required_columns: list[str] | None = None,
+    filter: Optional["pa.compute.Expression"] = None,
+    limit: int | None = None,
+    partition_values: dict[str, Any] | None = None,
+    partition_field_types: dict[str, pa.DataType] | None = None,
+    storage_options: dict[str, str] | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+) -> Iterator[PyRecordBatch]:
+    """Positional horizontal merge across sibling leaves of a partitioned namespace.
+
+    Sibling leaves under the same parent intermediate namespace carry
+    column-wise slices of the same logical rows (e.g., a `(robot_id, topic)`
+    namespace where each topic stores its own signal column for that robot,
+    written in lockstep). At read time, we scan all such siblings and zip
+    their columns positionally — index 0 in leaf A corresponds to index 0
+    in leaf B. This is the partitioned-namespace analog of Lance's
+    in-fragment column-stitching, which is itself positional.
+
+    Requires identical row counts across stitched leaves; mismatches raise.
+    """
+    try:
+        import lance
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
+
+    pv = partition_values or {}
+    pft = partition_field_types or {}
+
+    # `_rowid` is requested so we can cheaply verify alignment at the
+    # boundaries; we drop it after stitching. (Format guarantees the
+    # zip is safe; we just sanity-check first+last _rowid per leaf.)
+    leaf_scan_opts: dict[str, Any] = dict(default_scan_options or {})
+    leaf_scan_opts["with_row_id"] = True
+
+    # Peek schemas first so we only scan leaves that contribute new data.
+    # E.g., for select(ts, speed) on a (speed, caption) stitch group, the
+    # caption leaf has [ts, caption] but `ts` is already covered by the
+    # speed leaf and `caption` wasn't requested — caption leaf scans nothing.
+    leaf_handles: list[tuple[Any, list[str]]] = []
+    claimed: set[str] = set()
+    data_cols_requested = (
+        None
+        if required_columns is None
+        else [c for c in required_columns if c not in pv and c not in _SYNTHETIC_LEAF_COLS]
+    )
+    for uri, version in zip(leaf_uris, leaf_read_versions):
+        open_kwargs: dict[str, Any] = {"default_scan_options": leaf_scan_opts}
+        if storage_options is not None:
+            open_kwargs["storage_options"] = storage_options
+        if version is not None:
+            open_kwargs["version"] = version
+        ds = lance.dataset(uri, **open_kwargs)
+        leaf_names = set(ds.schema.names)
+
+        if data_cols_requested is None:
+            # No projection → scan every column we haven't already taken.
+            new_cols = [c for c in ds.schema.names if c not in claimed and c not in _SYNTHETIC_LEAF_COLS]
+        else:
+            new_cols = [c for c in data_cols_requested if c in leaf_names and c not in claimed]
+
+        if not new_cols:
+            continue
+        leaf_handles.append((ds, new_cols))
+        claimed.update(new_cols)
+
+    if not leaf_handles:
+        return
+
+    leaf_tables: list[pa.Table] = []
+    for ds, new_cols in leaf_handles:
+        scan_cols = list(new_cols) + ["_rowid"]
+        leaf_tables.append(ds.to_table(columns=scan_cols, filter=filter))
+
+    # Positional horizontal merge — the format guarantees siblings are
+    # written in lockstep, so a zip is safe and ~10× cheaper than a join.
+    # Verify (1) all leaves share the same row count, (2) first+last
+    # `_rowid` match across leaves; bail loudly if either invariant
+    # breaks.
+    row_counts = {t.num_rows for t in leaf_tables}
+    if len(row_counts) != 1:
+        raise ValueError(
+            f"Cannot stitch sibling leaves with mismatched row counts: {sorted(row_counts)}. "
+            "Stitched leaves must be written in lockstep with the same number of rows."
+        )
+    n_rows = next(iter(row_counts))
+    if n_rows > 0:
+        boundary_rowids: list[tuple[Any, Any]] = []
+        for tbl in leaf_tables:
+            if "_rowid" not in tbl.column_names:
+                continue
+            rid = tbl.column("_rowid")
+            boundary_rowids.append((rid[0].as_py(), rid[n_rows - 1].as_py()))
+        if len(set(boundary_rowids)) > 1:
+            raise ValueError(
+                f"Cannot stitch sibling leaves with misaligned `_rowid`s "
+                f"(first/last per leaf: {boundary_rowids}). "
+                "Stitched leaves must be written in lockstep with identical row ids."
+            )
+
+    seen: set[str] = {"_rowid"}  # internal; never propagate
+    combined: pa.Table = leaf_tables[0]
+    if "_rowid" in combined.column_names:
+        combined = combined.drop(["_rowid"])
+    for n in combined.column_names:
+        seen.add(n)
+    for tbl in leaf_tables[1:]:
+        for name in tbl.column_names:
+            if name in seen:
+                continue
+            combined = combined.append_column(name, tbl.column(name))
+            seen.add(name)
+
+    # Inject partition values that are constant across the stitch group.
+    n_rows = combined.num_rows
+    for col_name, value in pv.items():
+        if col_name in combined.column_names:
+            continue
+        if required_columns is not None and col_name not in required_columns:
+            continue
+        dtype = pft.get(col_name, pa.utf8())
+        combined = combined.append_column(col_name, pa.array([value] * n_rows, type=dtype))
+
+    if limit is not None and combined.num_rows > limit:
+        combined = combined.slice(0, limit)
+
+    for rb in combined.to_batches():
+        yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
 
 
 class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
@@ -444,40 +584,195 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
 
         partition_field_ids = [f["field_id"] for f in self._partition_spec.get("fields", [])]
 
+        # Group manifest table rows by their parent intermediate namespace.
+        # Two leaves whose object_ids differ only in the last namespace segment
+        # are stitch-siblings: they're independently-written Lance datasets
+        # representing column-wise slices of the same logical rows (matched
+        # by Lance's stable `_rowid`). This is the partitioned-namespace
+        # analog of Lance's in-fragment column-stitching pattern.
+        parent_to_indices: dict[str, list[int]] = defaultdict(list)
         for i in range(self._manifest_table.num_rows):
             if self._manifest_table.column(COL_OBJECT_TYPE)[i].as_py() != OBJECT_TYPE_TABLE:
                 continue
-            location = self._manifest_table.column(COL_LOCATION)[i].as_py()
-            if location is None:
-                logger.warning("Skipping table row at index %d: missing location", i)
-                continue
+            oid = self._manifest_table.column(COL_OBJECT_ID)[i].as_py()
+            parts = oid.split("$")
+            # Parts shape: ["v<N>", <ns_1>, ..., <ns_K>, "dataset"].
+            # A leaf can have siblings only if there is at least one namespace
+            # above it besides the spec-version: i.e., parts has at least 4
+            # segments. With fewer, every leaf is its own parent and there's
+            # nothing to stitch.
+            if len(parts) >= 4:
+                parent = "$".join(parts[:-2])
+            else:
+                parent = oid  # unique parent => no stitching candidates
+            parent_to_indices[parent].append(i)
 
-            partition_values: dict[str, Any] = {}
+        # Namespace data columns (everything except partition cols + synthetic).
+        namespace_data_cols = {
+            n for n in self._namespace_pa_schema.names if n not in partition_field_ids
+        } - _SYNTHETIC_LEAF_COLS
+
+        for parent, indices in parent_to_indices.items():
+            stitch = len(indices) > 1 and self._siblings_are_column_partitioned(indices, namespace_data_cols)
+            if not stitch:
+                for i in indices:
+                    yield from self._emit_single_leaf_tasks(
+                        i,
+                        partition_field_ids,
+                        required_columns,
+                        pushed_arrow_filter,
+                        pushdowns,
+                    )
+            else:
+                yield from self._emit_stitched_task(
+                    indices,
+                    partition_field_ids,
+                    required_columns,
+                    pushed_arrow_filter,
+                    pushdowns,
+                )
+
+    def _siblings_are_column_partitioned(self, indices: list[int], namespace_data_cols: set[str]) -> bool:
+        """Decide whether sibling leaves are column-partitioned (and so should stitch).
+
+        Sniff the first leaf's data schema. If it's a *proper subset* of the
+        namespace's data columns, the namespace's leaves carry column-wise
+        slices of a wider logical row — stitch them on `_rowid`. If the first
+        leaf has the full namespace data schema, all leaves probably do, and
+        we treat them as ordinary row-partitioned siblings to be unioned.
+
+        One leaf-open per parent group; cheap relative to per-leaf scan tasks.
+        Returns False on any error opening the leaf (safe default).
+        """
+        import lance
+
+        loc = self._manifest_table.column(COL_LOCATION)[indices[0]].as_py()
+        if loc is None:
+            return False
+        uri = f"{self._namespace_uri}/{loc}"
+        try:
+            ds = lance.dataset(uri, storage_options=self._storage_options)
+        except Exception as e:
+            logger.warning("Sibling stitching check: could not open %s: %s", uri, e)
+            return False
+        leaf_data_cols = set(ds.schema.names) - _SYNTHETIC_LEAF_COLS
+        return leaf_data_cols < namespace_data_cols
+
+    def _emit_single_leaf_tasks(
+        self,
+        i: int,
+        partition_field_ids: list[str],
+        required_columns: list[str] | None,
+        pushed_arrow_filter: Optional["pa.compute.Expression"],
+        pushdowns: PyPushdowns,
+    ) -> Iterator[ScanTask]:
+        location = self._manifest_table.column(COL_LOCATION)[i].as_py()
+        if location is None:
+            logger.warning("Skipping table row at index %d: missing location", i)
+            return
+
+        partition_values: dict[str, Any] = {}
+        for fid in partition_field_ids:
+            col = f"{PARTITION_FIELD_PREFIX}{fid}"
+            if col in self._manifest_table.column_names:
+                partition_values[fid] = self._manifest_table.column(col)[i].as_py()
+
+        if pushdowns.partition_filters is not None and not self._partition_filter_matches(
+            pushdowns.partition_filters, partition_values
+        ):
+            return
+
+        ds_uri = f"{self._namespace_uri}/{location}"
+        read_version: int | None = None
+        if COL_READ_VERSION in self._manifest_table.column_names:
+            rv = self._manifest_table.column(COL_READ_VERSION)[i].as_py()
+            if rv is not None:
+                read_version = int(rv)
+
+        yield from self._partition_scan_tasks(
+            ds_uri=ds_uri,
+            partition_values=partition_values,
+            required_columns=required_columns,
+            pushed_arrow_filter=pushed_arrow_filter,
+            pushdowns=pushdowns,
+            read_version=read_version,
+        )
+
+    def _emit_stitched_task(
+        self,
+        indices: list[int],
+        partition_field_ids: list[str],
+        required_columns: list[str] | None,
+        pushed_arrow_filter: Optional["pa.compute.Expression"],
+        pushdowns: PyPushdowns,
+    ) -> Iterator[ScanTask]:
+        leaf_uris: list[str] = []
+        leaf_read_versions: list[int | None] = []
+
+        # Partition values shared by all stitch-siblings: those that match
+        # across the indices. The varying ones (typically the last partition
+        # col — e.g., "topic") become NULL in stitched output rows because
+        # the row aggregates across multiple values of that field.
+        per_index_pvs: list[dict[str, Any]] = []
+        for i in indices:
+            pv: dict[str, Any] = {}
             for fid in partition_field_ids:
                 col = f"{PARTITION_FIELD_PREFIX}{fid}"
                 if col in self._manifest_table.column_names:
-                    partition_values[fid] = self._manifest_table.column(col)[i].as_py()
+                    pv[fid] = self._manifest_table.column(col)[i].as_py()
+            per_index_pvs.append(pv)
 
-            if pushdowns.partition_filters is not None and not self._partition_filter_matches(
-                pushdowns.partition_filters, partition_values
-            ):
+        shared_pvs: dict[str, Any] = {}
+        if per_index_pvs:
+            for fid in partition_field_ids:
+                first = per_index_pvs[0].get(fid)
+                if all(p.get(fid) == first for p in per_index_pvs):
+                    shared_pvs[fid] = first
+
+        if pushdowns.partition_filters is not None and not self._partition_filter_matches(
+            pushdowns.partition_filters, shared_pvs
+        ):
+            return
+
+        for i in indices:
+            location = self._manifest_table.column(COL_LOCATION)[i].as_py()
+            if location is None:
+                logger.warning("Skipping stitched leaf at index %d: missing location", i)
                 continue
-
-            ds_uri = f"{self._namespace_uri}/{location}"
-            read_version: int | None = None
+            leaf_uris.append(f"{self._namespace_uri}/{location}")
+            rv: int | None = None
             if COL_READ_VERSION in self._manifest_table.column_names:
-                rv = self._manifest_table.column(COL_READ_VERSION)[i].as_py()
-                if rv is not None:
-                    read_version = int(rv)
+                raw = self._manifest_table.column(COL_READ_VERSION)[i].as_py()
+                if raw is not None:
+                    rv = int(raw)
+            leaf_read_versions.append(rv)
 
-            yield from self._partition_scan_tasks(
-                ds_uri=ds_uri,
-                partition_values=partition_values,
-                required_columns=required_columns,
-                pushed_arrow_filter=pushed_arrow_filter,
-                pushdowns=pushdowns,
-                read_version=read_version,
-            )
+        if not leaf_uris:
+            return
+
+        # Stitched task: scan all sibling leaves and join their columns on
+        # Lance's stable `_rowid`. One task per stitch group.
+        yield ScanTask.python_factory_func_scan_task(
+            module=_lance_namespace_stitched_factory_function.__module__,
+            func_name=_lance_namespace_stitched_factory_function.__name__,
+            func_args=(
+                leaf_uris,
+                leaf_read_versions,
+                required_columns,
+                pushed_arrow_filter,
+                pushdowns.limit,
+                shared_pvs,
+                self._partition_field_types,
+                self._storage_options,
+                self._default_scan_options,
+            ),
+            schema=self._schema._schema,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=pushdowns,
+            stats=None,
+            source_name=self.display_name(),
+        )
 
     # ---- Internals --------------------------------------------------------
 
