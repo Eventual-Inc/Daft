@@ -106,15 +106,13 @@ def test_write_paimon_roundtrip_native_verify(append_only_table):
 # ---------------------------------------------------------------------------
 
 
-def test_write_paimon_overwrite_full(append_only_table):
-    """mode='overwrite' should replace all existing data."""
-    table, _ = append_only_table
-    initial = daft.from_pydict(
-        {"id": [1, 2], "name": ["a", "b"], "value": [1.0, 2.0], "dt": ["2024-01-01", "2024-01-01"]}
-    )
+def test_write_paimon_overwrite_full_unpartitioned(append_only_table_no_partition):
+    """mode='overwrite' on an unpartitioned table should replace all existing data."""
+    table, _ = append_only_table_no_partition
+    initial = daft.from_pydict({"id": [1, 2], "name": ["a", "b"]})
     initial.write_paimon(table)
 
-    replacement = daft.from_pydict({"id": [100], "name": ["z"], "value": [99.0], "dt": ["2024-06-01"]})
+    replacement = daft.from_pydict({"id": [100], "name": ["z"]})
     result = replacement.write_paimon(table, mode="overwrite")
     result_dict = result.to_pydict()
     assert all(op == "OVERWRITE" for op in result_dict["operation"])
@@ -122,6 +120,30 @@ def test_write_paimon_overwrite_full(append_only_table):
     final = daft.read_paimon(table).to_arrow()
     assert final.num_rows == 1
     assert final.column("id").to_pylist() == [100]
+
+
+def test_write_paimon_overwrite_dynamic_partition(append_only_table):
+    """mode='overwrite' on a partitioned table should only replace touched partitions."""
+    table, _ = append_only_table
+    initial = daft.from_pydict(
+        {
+            "id": [1, 2, 3, 4],
+            "name": ["a", "b", "c", "d"],
+            "value": [1.0, 2.0, 3.0, 4.0],
+            "dt": ["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"],
+        }
+    )
+    initial.write_paimon(table)
+    assert daft.read_paimon(table).count_rows() == 4
+
+    replacement = daft.from_pydict({"id": [10], "name": ["x"], "value": [10.0], "dt": ["2024-01-01"]})
+    result = replacement.write_paimon(table, mode="overwrite")
+    result_dict = result.to_pydict()
+    assert all(op == "OVERWRITE" for op in result_dict["operation"])
+
+    final = daft.read_paimon(table).sort("id").to_pydict()
+    assert final["id"] == [3, 4, 10]
+    assert final["dt"] == ["2024-01-02", "2024-01-02", "2024-01-01"]
 
 
 # ---------------------------------------------------------------------------

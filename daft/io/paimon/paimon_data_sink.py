@@ -39,7 +39,7 @@ class PaimonDataSink(DataSink[list[Any]]):
 
         self._target_schema: pa.Schema = PyarrowFieldParser.from_paimon_schema(table.fields)
         self._write_builder = table.new_batch_write_builder()
-        if mode == "overwrite":
+        if mode == "overwrite" and not table.partition_keys:
             self._write_builder.overwrite({})
 
     def name(self) -> str:
@@ -91,14 +91,60 @@ class PaimonDataSink(DataSink[list[Any]]):
             rows_written=total_rows,
         )
 
-    def finalize(self, write_results: list[WriteResult[list[Any]]]) -> MicroPartition:
-        all_commit_messages = [msg for wr in write_results for msg in wr.result]
+    def _commit_dynamic_overwrite(self, commit_messages: list[Any]) -> None:
+        """Overwrite only the partitions touched by the new data.
+
+        Builds an OR-predicate covering all touched partitions, then commits
+        in a single atomic operation.  We bypass pypaimon's ``overwrite()``
+        because it builds the predicate with ``partition_keys_fields`` indices
+        which are incompatible with ``FileScanner.trim_and_transform_predicate``
+        (expects full-table-schema indices).
+        """
+        import time
+
+        from pypaimon.common.predicate_builder import PredicateBuilder
+
+        unique_partitions = {msg.partition for msg in commit_messages}
+
+        predicate_builder = PredicateBuilder(self._table.fields)
+        partition_predicates = []
+        for partition_tuple in unique_partitions:
+            partition_spec = dict(zip(self._table.partition_keys, partition_tuple))
+            sub = [predicate_builder.equal(k, v) for k, v in partition_spec.items()]
+            pred = PredicateBuilder.and_predicates(sub)
+            if pred is not None:
+                partition_predicates.append(pred)
+        partition_filter = PredicateBuilder.or_predicates(partition_predicates)
 
         table_commit = self._write_builder.new_commit()
         try:
-            table_commit.commit(all_commit_messages)
+            fsc = table_commit.file_store_commit
+            commit_id = int(time.time_ns() / 1_000_000)
+            fsc._try_commit(
+                commit_kind="OVERWRITE",
+                commit_identifier=commit_id,
+                commit_entries_plan=lambda snapshot: fsc._generate_overwrite_entries(
+                    snapshot,
+                    partition_filter,
+                    commit_messages,
+                ),
+                detect_conflicts=True,
+                allow_rollback=False,
+            )
         finally:
             table_commit.close()
+
+    def finalize(self, write_results: list[WriteResult[list[Any]]]) -> MicroPartition:
+        all_commit_messages = [msg for wr in write_results for msg in wr.result]
+
+        if self._mode == "overwrite" and self._table.partition_keys:
+            self._commit_dynamic_overwrite(all_commit_messages)
+        else:
+            table_commit = self._write_builder.new_commit()
+            try:
+                table_commit.commit(all_commit_messages)
+            finally:
+                table_commit.close()
 
         operation_label = "OVERWRITE" if self._mode == "overwrite" else "ADD"
         all_files = [f for msg in all_commit_messages for f in msg.new_files]
