@@ -165,6 +165,22 @@ impl LimitNode {
         }
     }
 
+    /// Build a single empty-input scan task with this node's output schema.
+    /// Used to keep downstream blocking sinks (notably ungrouped aggregates)
+    /// running when no rows reach them — e.g. when the limit is 0 or when
+    /// every input row is skipped — so they still emit their finalize output.
+    fn build_empty_scan_task(self: &Arc<Self>) -> SwordfishTaskBuilder {
+        let empty_plan = LocalPhysicalPlan::in_memory_scan(
+            self.node_id(),
+            self.config.schema.clone(),
+            0,
+            StatsState::Materialized(PlanStats::empty().into()),
+            LocalNodeContext::new(Some(self.node_id() as usize)),
+        );
+        SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
+            .with_psets(self.node_id(), vec![])
+    }
+
     fn process_materialized_output(
         self: &Arc<Self>,
         materialized_output: MaterializedOutput,
@@ -271,6 +287,15 @@ impl LimitNode {
 
         let mut input = std::pin::pin!(input.peekable());
 
+        // Limit=0 (with no offset to skip) yields no rows. Emit a single empty
+        // scan task so downstream blocking sinks like ungrouped aggregates
+        // still finalize and produce their one-row null result, then bail out
+        // without consuming the input.
+        if limit_state.is_take_done() && limit_state.is_skip_done() {
+            let _ = result_tx.send(self.build_empty_scan_task()).await;
+            return Ok(());
+        }
+
         // Try to estimate initial concurrency from scan task metadata (e.g. Parquet row counts).
         // This avoids the bottleneck of running one task sequentially just to measure output size.
         if let Some(first) = input.as_mut().peek().await
@@ -322,17 +347,7 @@ impl LimitNode {
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
-                            self.node_id(),
-                            self.config.schema.clone(),
-                            0,
-                            StatsState::Materialized(PlanStats::empty().into()),
-                            LocalNodeContext::new(Some(self.node_id() as usize)),
-                        );
-                        let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
-                                .with_psets(self.node_id(), vec![]);
-                        if result_tx.send(empty_scan_builder).await.is_err() {
+                        if result_tx.send(self.build_empty_scan_task()).await.is_err() {
                             return Ok(());
                         }
                     } else {
@@ -536,6 +551,23 @@ mod tests {
 
         let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
         assert_limit_rows_out(&stats, 7);
+        Ok(())
+    }
+
+    /// Limit = 0 on a non-empty `InMemorySource`: the execution loop must
+    /// still emit a single empty downstream task (rather than producing zero
+    /// tasks) so blocking ops like ungrouped aggregates downstream still
+    /// finalize and emit their one-row null result. Verifies `rows_out == 0`
+    /// and the pipeline completes without hanging.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_zero_emits_empty_task() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_zero_emits_empty_task");
+        let (source, plan_config) =
+            build_in_memory_source(0, vec![make_partition(&[1, 2, 3, 4, 5])], &meter);
+        let pipeline = wrap_with_limit(source, &plan_config, 0, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+        assert_limit_rows_out(&stats, 0);
         Ok(())
     }
 
