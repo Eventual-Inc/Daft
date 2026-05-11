@@ -30,16 +30,18 @@ use tokio::sync::Mutex;
 use crate::shuffle_cache::{PartitionCache, partition_ref_id};
 
 /// Bytes of pending data per partition before we flush it as a single IPC batch.
-/// 256 KiB is big enough to amortize the ~1 KiB per-batch IPC metadata over a meaningful payload
-/// (overhead < 0.5%), and small enough that we don't blow the writer task's working set.
-const COALESCE_THRESHOLD_BYTES: usize = 256 * 1024;
+/// 1 MiB amortizes the ~1 KiB per-batch IPC metadata to ~0.1% overhead and keeps batches
+/// under gRPC's 4 MiB default max message size with room for IPC framing. It also cuts
+/// client-side per-batch decode count ~4× vs a 256 KiB threshold, which is the dominant
+/// residual cost on the read side.
+const COALESCE_THRESHOLD_BYTES: usize = 1024 * 1024;
 
 /// Hard cap on the writer task's *total* per-map-task buffered bytes across all partitions.
 /// When exceeded, we flush the largest-buffered partition even if it's below the coalesce
-/// threshold. This restores bounded-memory streaming behavior — without this, a 500-partition
-/// map task with sub-threshold cells could otherwise hold ~N * COALESCE_THRESHOLD ≈ 128 MiB
-/// in memory until close.
-const MAX_TOTAL_BUFFER_BYTES: usize = 64 * 1024 * 1024;
+/// threshold. This is the memory-safety backstop — in normal operation the per-partition
+/// threshold fires first. Sized at 256 MiB so a 16-worker node uses ~4 GiB worst case
+/// (~3% of an r5.4xlarge), while still bounding pathological skew / very-high-N cases.
+const MAX_TOTAL_BUFFER_BYTES: usize = 256 * 1024 * 1024;
 
 /// A `Write` wrapper that counts bytes passed through to the inner writer.
 /// Used so we can ask "what byte offset are we at?" without seeking.
