@@ -399,8 +399,14 @@ def _lance_namespace_stitched_factory_function(
 
     leaf_tables: list[pa.Table] = []
     for ds, new_cols in leaf_handles:
-        scan_cols = list(new_cols) + ["_rowid"]
-        leaf_tables.append(ds.to_table(columns=scan_cols, filter=filter))
+        leaf_data_cols = [c for c in ds.schema.names if c not in _SYNTHETIC_LEAF_COLS]
+        if set(new_cols) == set(leaf_data_cols):
+            # Full leaf read — let Lance take the no-projection fast path.
+            # Passing an explicit `columns=` list scales poorly with column
+            # count (>30x slower at 250 cols).
+            leaf_tables.append(ds.to_table(filter=filter))
+        else:
+            leaf_tables.append(ds.to_table(columns=list(new_cols) + ["_rowid"], filter=filter))
 
     # Positional horizontal merge — the format guarantees siblings are
     # written in lockstep, so a zip is safe and ~10× cheaper than a join.
@@ -428,29 +434,34 @@ def _lance_namespace_stitched_factory_function(
                 "Stitched leaves must be written in lockstep with identical row ids."
             )
 
-    seen: set[str] = {"_rowid"}  # internal; never propagate
-    combined: pa.Table = leaf_tables[0]
-    if "_rowid" in combined.column_names:
-        combined = combined.drop(["_rowid"])
-    for n in combined.column_names:
-        seen.add(n)
-    for tbl in leaf_tables[1:]:
+    # Build the stitched table in a single pa.Table.from_arrays call.
+    # `pa.Table.append_column` is O(current_n_cols), so a per-column loop is
+    # O(N²) in total column count — pathological for wide column-stitched
+    # leaves (e.g. signal datasets with thousands of columns).
+    arrays: list[Any] = []
+    names: list[str] = []
+    seen: set[str] = set()
+    for tbl in leaf_tables:
         for name in tbl.column_names:
-            if name in seen:
+            if name == "_rowid" or name in seen:
                 continue
-            combined = combined.append_column(name, tbl.column(name))
+            arrays.append(tbl.column(name))
+            names.append(name)
             seen.add(name)
 
     # Inject partition values that are constant across the stitch group.
-    n_rows = combined.num_rows
+    n_rows = leaf_tables[0].num_rows
     for col_name, value in pv.items():
-        if col_name in combined.column_names:
+        if col_name in seen:
             continue
         if required_columns is not None and col_name not in required_columns:
             continue
         dtype = pft.get(col_name, pa.utf8())
-        combined = combined.append_column(col_name, pa.array([value] * n_rows, type=dtype))
+        arrays.append(pa.array([value] * n_rows, type=dtype))
+        names.append(col_name)
+        seen.add(col_name)
 
+    combined = pa.Table.from_arrays(arrays, names=names)
     if limit is not None and combined.num_rows > limit:
         combined = combined.slice(0, limit)
 
