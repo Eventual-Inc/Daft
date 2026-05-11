@@ -17,6 +17,7 @@ from daft.daft import PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, Scan
 from daft.datatype import DataType, _ensure_registered_super_ext_type
 from daft.dependencies import pa
 from daft.expressions import Expression
+from daft.expressions.expressions import ExpressionsProjection
 from daft.io.partitioning import PartitionTransform
 from daft.io.scan import ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
@@ -27,6 +28,7 @@ from .lance_namespace import (
     COL_LOCATION,
     COL_OBJECT_TYPE,
     COL_READ_VERSION,
+    LANCE_FIELD_ID_KEY,
     METADATA_KEY_SCHEMA,
     OBJECT_TYPE_TABLE,
     PARTITION_FIELD_PREFIX,
@@ -105,21 +107,42 @@ def _read_manifest(
     return manifest_table, partition_spec, namespace_schema, f"v{spec_n}"
 
 
+def _schema_field_by_lance_field_id(namespace_schema: pa.Schema, target_id: int) -> pa.Field | None:
+    """Find a schema field by its `lance:field_id` metadata value.
+
+    Per the partitioning spec, `source_ids` references the logical
+    ``lance:field_id`` stored in field metadata — not the positional index of
+    the field in the Arrow schema. Field IDs can be non-sequential or start
+    above zero in spec-compliant namespaces written by other tools.
+    """
+    target = str(target_id)
+    for field in namespace_schema:
+        md = field.metadata or {}
+        raw = md.get(LANCE_FIELD_ID_KEY.encode(), md.get(LANCE_FIELD_ID_KEY))
+        if raw is None:
+            continue
+        raw_str = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+        if raw_str == target:
+            return field
+    return None
+
+
 def _build_partition_keys(partition_spec: dict[str, Any], namespace_schema: pa.Schema) -> list[PyPartitionField]:
     fields: list[PyPartitionField] = []
     for field_def in partition_spec.get("fields", []):
         field_id = field_def["field_id"]
         source_ids = field_def.get("source_ids", [])
 
+        source_arrow_field: pa.Field | None = None
         if source_ids:
-            # source_ids reference lance:field_id; for v1 we assigned positional ids
-            # to the namespace schema, so the lookup is positional.
-            source_idx = int(source_ids[0])
-            source_arrow_field = namespace_schema.field(source_idx)
-        elif field_id in namespace_schema.names:
+            source_arrow_field = _schema_field_by_lance_field_id(namespace_schema, int(source_ids[0]))
+        if source_arrow_field is None and field_id in namespace_schema.names:
             source_arrow_field = namespace_schema.field(namespace_schema.get_field_index(field_id))
-        else:
-            raise ValueError(f"Cannot resolve source field for partition field {field_id!r}")
+        if source_arrow_field is None:
+            raise ValueError(
+                f"Cannot resolve source field for partition field {field_id!r}; "
+                f"source_ids={source_ids} not found by lance:field_id and no schema field named {field_id!r}."
+            )
 
         source_type = DataType.from_arrow_type(source_arrow_field.type)
         transform, result_type = _transform_from_spec(field_def.get("transform"), source_type)
@@ -158,6 +181,13 @@ def _inject_partition_columns(
     return pa.RecordBatch.from_arrays(columns, names=names)
 
 
+def _inject_fragment_id(rb: pa.RecordBatch, fragment_id: int) -> pa.RecordBatch:
+    """Append a constant fragment_id column to a record batch."""
+    columns = list(rb.columns) + [pa.array([fragment_id] * len(rb), type=pa.int64())]
+    names = list(rb.schema.names) + ["fragment_id"]
+    return pa.RecordBatch.from_arrays(columns, names=names)
+
+
 def _lance_namespace_factory_function(
     ds_uri: str,
     fragment_ids: list[int] | None = None,
@@ -168,6 +198,8 @@ def _lance_namespace_factory_function(
     partition_field_types: dict[str, pa.DataType] | None = None,
     read_version: int | None = None,
     storage_options: dict[str, str] | None = None,
+    include_fragment_id: bool = False,
+    default_scan_options: dict[str, Any] | None = None,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -181,24 +213,34 @@ def _lance_namespace_factory_function(
         kwargs["storage_options"] = storage_options
     if read_version is not None:
         kwargs["version"] = read_version
+    if default_scan_options is not None:
+        kwargs["default_scan_options"] = default_scan_options
     ds = lance.dataset(ds_uri, **kwargs)
 
     pv = partition_values or {}
     pft = partition_field_types or {}
 
-    # Strip partition columns from what we ask the leaf dataset to return;
-    # they're injected afterward.
+    # Strip partition columns and fragment_id from what we ask the leaf dataset
+    # to return; they're injected afterward.
     non_partition_cols: list[str] | None = None
     if required_columns is not None:
-        non_partition_cols = [c for c in required_columns if c not in pv]
+        non_partition_cols = [c for c in required_columns if c not in pv and c != "fragment_id"]
         if not non_partition_cols:
             non_partition_cols = None
 
+    def _emit(rb: pa.RecordBatch, fragment_id: int | None) -> Iterator[PyRecordBatch]:
+        rb = _inject_partition_columns(rb, pv, pft, required_columns)
+        if include_fragment_id and fragment_id is not None:
+            rb = _inject_fragment_id(rb, fragment_id)
+        yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+
     if fragment_ids is None:
+        # Scanning the whole dataset — Lance doesn't expose per-row fragment ids
+        # through the dataset-level scanner. include_fragment_id requires the
+        # per-fragment path.
         scanner = ds.scanner(columns=non_partition_cols, filter=filter, limit=limit)
         for rb in scanner.to_batches():
-            rb = _inject_partition_columns(rb, pv, pft, required_columns)
-            yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+            yield from _emit(rb, None)
     else:
         rows_yielded = 0
         for fid in fragment_ids:
@@ -219,8 +261,7 @@ def _lance_namespace_factory_function(
                         break
                     if len(rb) > remaining:
                         rb = rb.slice(0, remaining)
-                rb = _inject_partition_columns(rb, pv, pft, required_columns)
-                yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                yield from _emit(rb, fid)
                 rows_yielded += len(rb)
 
 
@@ -230,10 +271,14 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         namespace_uri: str,
         storage_options: dict[str, str] | None = None,
         fragment_group_size: int | None = None,
+        include_fragment_id: bool = False,
+        default_scan_options: dict[str, Any] | None = None,
     ) -> None:
         self._namespace_uri = namespace_uri.rstrip("/")
         self._storage_options = storage_options
         self._fragment_group_size = fragment_group_size
+        self._include_fragment_id = include_fragment_id
+        self._default_scan_options = default_scan_options
         self._pushed_filters: list[PyExpr] | None = None
         self._remaining_filters: list[PyExpr] | None = None
 
@@ -248,6 +293,25 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
 
         if namespace_schema is None:
             namespace_schema = self._infer_namespace_schema_from_leaves()
+
+        # Reflect `with_row_address` and similar scan options on the namespace
+        # schema so Daft's planner sees the surfaced columns.
+        if self._default_scan_options:
+            extras: list[pa.Field] = []
+            opts = self._default_scan_options
+            if opts.get("with_row_address") or opts.get("with_rowaddr"):
+                extras.append(pa.field("_rowaddr", pa.uint64()))
+            if opts.get("with_row_id"):
+                extras.append(pa.field("_rowid", pa.uint64()))
+            if extras:
+                namespace_schema = pa.schema(list(namespace_schema) + extras, metadata=namespace_schema.metadata)
+
+        if self._include_fragment_id:
+            namespace_schema = pa.schema(
+                list(namespace_schema) + [pa.field("fragment_id", pa.int64())],
+                metadata=namespace_schema.metadata,
+            )
+
         self._namespace_pa_schema = namespace_schema
         self._schema = Schema.from_pyarrow_schema(namespace_schema)
         self._partition_keys = _build_partition_keys(partition_spec, namespace_schema)
@@ -399,8 +463,6 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
                 dtype = self._partition_field_types.get(fid, pa.utf8())
                 arrays[fid] = pa.array([value], type=dtype)
 
-            from daft.expressions.expressions import ExpressionsProjection
-
             rb = RecordBatch.from_pydict(arrays)
             result = rb.eval_expression_list(ExpressionsProjection([Expression._from_pyexpr(partition_filter)]))
             col = result.to_arrow_table().column(0)
@@ -422,7 +484,13 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
         import lance
 
         try:
-            ds = lance.dataset(ds_uri, storage_options=self._storage_options, version=read_version)
+            open_kwargs: dict[str, Any] = {
+                "storage_options": self._storage_options,
+                "version": read_version,
+            }
+            if self._default_scan_options is not None:
+                open_kwargs["default_scan_options"] = self._default_scan_options
+            ds = lance.dataset(ds_uri, **open_kwargs)
         except Exception as e:
             logger.warning("Failed to open partition dataset at %s: %s", ds_uri, e)
             return
@@ -450,6 +518,8 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
                     self._partition_field_types,
                     read_version,
                     self._storage_options,
+                    self._include_fragment_id,
+                    self._default_scan_options,
                 ),
                 schema=self._schema._schema,
                 num_rows=num_rows,

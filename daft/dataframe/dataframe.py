@@ -1967,11 +1967,17 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
-          partition_cols (Optional[List[str]]): When provided, writes a partitioned Lance namespace following the
-              `Lance Partitioning Spec <https://lance.org/format/namespace/partitioning-spec/>`_. The data is split
-              into one Lance table per unique combination of partition column values, and a ``__manifest`` Lance
-              table records the namespace + table inventory along with the partition spec. Not compatible with
-              ``mode="merge"``.
+          partition_cols (Optional[List[str]]): When provided, writes (or enriches) a partitioned Lance namespace
+              following the `Lance Partitioning Spec <https://lance.org/format/namespace/partitioning-spec/>`_.
+              The data is split into one Lance table per unique combination of partition column values, and a
+              ``__manifest`` Lance table records the namespace + table inventory along with the partition spec.
+
+              With ``mode="merge"`` and ``partition_cols`` set, ``write_lance`` performs a fast-path **column merge**:
+              new columns are written as raw ``.lance`` files alongside existing data and stitched into each leaf
+              fragment's metadata — base data is never rewritten. The input DataFrame must include the partition
+              columns, ``fragment_id``, and ``_rowaddr``. Read with ``namespace_partitioning=True,
+              include_fragment_id=True, default_scan_options={"with_row_address": True}`` to surface the required
+              metadata columns.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -2053,7 +2059,19 @@ class DataFrame:
         # File-based Lance table (existing logic)
         if partition_cols is not None:
             if mode == "merge":
-                raise ValueError("partition_cols is not supported with mode='merge'")
+                from daft.io.lance.lance_partitioned_merge import merge_columns_partitioned
+
+                io_config = (
+                    _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+                )
+                storage_options = io_config_to_storage_options(io_config, str(uri))
+                return merge_columns_partitioned(
+                    self,
+                    uri,
+                    partition_cols,
+                    storage_options=storage_options,
+                )
+
             from daft.io.lance.lance_partitioned_data_sink import LancePartitionedDataSink
 
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}

@@ -178,6 +178,47 @@ class TestWriteModes:
         with pytest.raises(ValueError):
             df.write_lance(namespace_dir, partition_cols=["k"], mode="append")
 
+    def test_read_lance_warns_on_ignored_args_under_namespace_partitioning(self, namespace_dir, sample_df):
+        """Single-dataset args should warn rather than silently no-op.
+
+        Args targeting a single Lance dataset have no effect on a partitioned
+        namespace; surfacing this as a warning prevents silent no-ops.
+        """
+        sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
+        import warnings as _warnings
+
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            daft.read_lance(namespace_dir, namespace_partitioning=True, version=5).count_rows()
+        messages = [str(w.message) for w in caught]
+        assert any("version" in m and "ignores" in m for m in messages), messages
+
+    def test_read_lance_no_warning_when_args_default(self, namespace_dir, sample_df):
+        sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
+        import warnings as _warnings
+
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            daft.read_lance(namespace_dir, namespace_partitioning=True).count_rows()
+        # No ignored-arg warning should appear when the args are all defaults.
+        assert not any("ignores argument" in str(w.message) for w in caught)
+
+    def test_null_partition_values_preserved(self, namespace_dir):
+        """NULL partition values land in their own partition, not dropped.
+
+        Rows with NULL partition values should land in their own NULL partition,
+        not be silently dropped during the partition grouping.
+        """
+        df = daft.from_pydict({"key": ["a", None, "b", None], "val": [1, 2, 3, 4]})
+        df.write_lance(namespace_dir, partition_cols=["key"], mode="create")
+        result = daft.read_lance(namespace_dir, namespace_partitioning=True).to_pydict()
+        # All 4 rows must round-trip.
+        assert len(result["val"]) == 4
+        assert sorted(v for v in result["val"]) == [1, 2, 3, 4]
+        # The NULL-keyed values land in their own partition.
+        null_vals = sorted(v for k, v in zip(result["key"], result["val"]) if k is None)
+        assert null_vals == [2, 4]
+
 
 # ===========================================================================
 # Manifest table schema
@@ -670,6 +711,205 @@ class TestRead:
 # ===========================================================================
 
 
+class TestFragmentIdAndRowAddr:
+    """Read-side support needed for the fast-path partitioned merge.
+
+    `include_fragment_id` exposes per-leaf fragment ids, and
+    `default_scan_options={'with_row_address': True}` exposes `_rowaddr`.
+    """
+
+    def test_include_fragment_id_adds_column(self, namespace_dir, sample_df):
+        sample_df.write_lance(namespace_dir, partition_cols=["year"], mode="create")
+        df = daft.read_lance(namespace_dir, namespace_partitioning=True, include_fragment_id=True)
+        names = {f.name for f in df.schema()}
+        assert "fragment_id" in names
+
+    def test_include_fragment_id_values_match_leaf(self, namespace_dir):
+        # Write a small partitioned dataset, then read with fragment_id and verify
+        # every emitted fragment_id corresponds to an actual fragment in the
+        # matching leaf table.
+        import lance
+
+        df_in = daft.from_pydict(
+            {
+                "robot_id": [1, 1, 2, 2, 2],
+                "ts": [10, 11, 20, 21, 22],
+                "v": [1.0, 2.0, 3.0, 4.0, 5.0],
+            }
+        )
+        df_in.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = daft.read_lance(namespace_dir, namespace_partitioning=True, include_fragment_id=True).to_pydict()
+
+        # Build a {robot_id: set(fragment_ids)} from the manifest's leaves.
+        _, manifest = _open_manifest(namespace_dir)
+        leaf_ids: dict[int, set[int]] = {}
+        for i in _table_row_indices(manifest):
+            robot_id = manifest.column("partition_field_robot_id")[i].as_py()
+            loc = manifest.column("location")[i].as_py()
+            ds = lance.dataset(os.path.join(namespace_dir, loc))
+            leaf_ids[robot_id] = {f.fragment_id for f in ds.get_fragments()}
+
+        for r, fid in zip(df["robot_id"], df["fragment_id"]):
+            assert fid in leaf_ids[r], (r, fid, leaf_ids[r])
+
+    def test_with_row_address_exposes_rowaddr(self, namespace_dir):
+        df_in = daft.from_pydict({"k": ["a", "a", "b"], "v": [1, 2, 3]})
+        df_in.write_lance(namespace_dir, partition_cols=["k"], mode="create")
+
+        df = daft.read_lance(
+            namespace_dir,
+            namespace_partitioning=True,
+            include_fragment_id=True,
+            default_scan_options={"with_row_address": True},
+        ).to_pydict()
+        assert "_rowaddr" in df
+        # row addresses are unique per leaf table.
+        for k_val in set(df["k"]):
+            addrs = [a for k, a in zip(df["k"], df["_rowaddr"]) if k == k_val]
+            assert len(addrs) == len(set(addrs))
+
+
+class TestPartitionedMerge:
+    """End-to-end enrichment via the partitioned fast-path merge.
+
+    Reads with fragment_id + _rowaddr, computes a new column, writes back
+    via partitioned fast-path merge. Verifies the new column is visible
+    after re-read with values aligned per row, the base data is unchanged,
+    and the manifest's leaf read_versions are bumped.
+    """
+
+    @pytest.fixture
+    def base_df(self):
+        return daft.from_pydict(
+            {
+                "robot_id": [1, 1, 1, 2, 2],
+                "ts": [10, 11, 12, 20, 21],
+                "v": [1.0, 2.0, 3.0, 4.0, 5.0],
+            }
+        )
+
+    def _read_with_meta(self, uri):
+        return daft.read_lance(
+            uri,
+            namespace_partitioning=True,
+            include_fragment_id=True,
+            default_scan_options={"with_row_address": True},
+        )
+
+    def test_merge_requires_fragment_id(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        # Build an input lacking fragment_id (and _rowaddr).
+        df = daft.read_lance(namespace_dir, namespace_partitioning=True)
+        df = df.with_column("enriched", df["v"] * 10)
+        with pytest.raises(ValueError, match="fragment_id"):
+            df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+    def test_merge_requires_rowaddr(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = daft.read_lance(namespace_dir, namespace_partitioning=True, include_fragment_id=True)
+        df = df.with_column("enriched", df["v"] * 10)
+        with pytest.raises(ValueError, match="_rowaddr"):
+            df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+    def test_merge_requires_new_columns(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = self._read_with_meta(namespace_dir)
+        # No new columns added.
+        with pytest.raises(ValueError, match="new column"):
+            df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+    def test_merge_unknown_partition_raises(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = self._read_with_meta(namespace_dir)
+        # Manually mutate the robot_id to an unknown partition value.
+        df = df.with_column("robot_id", df["robot_id"] + 99)
+        df = df.with_column("enriched", df["v"] * 10)
+        with pytest.raises(ValueError, match="partition"):
+            df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+    def test_merge_adds_new_column(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = self._read_with_meta(namespace_dir)
+        df = df.with_column("enriched", df["v"] * 10)
+
+        df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+        result = daft.read_lance(namespace_dir, namespace_partitioning=True).to_pydict()
+        # Base columns preserved.
+        assert sorted(zip(result["robot_id"], result["ts"], result["v"])) == [
+            (1, 10, 1.0),
+            (1, 11, 2.0),
+            (1, 12, 3.0),
+            (2, 20, 4.0),
+            (2, 21, 5.0),
+        ]
+        # Enriched column matches v * 10 with rows aligned.
+        rows = sorted(zip(result["robot_id"], result["ts"], result["v"], result["enriched"]))
+        for _, _, v, e in rows:
+            assert e == pytest.approx(v * 10)
+
+    def test_merge_bumps_leaf_read_versions(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        _, manifest_before = _open_manifest(namespace_dir)
+        before = {
+            manifest_before.column("object_id")[i].as_py(): manifest_before.column("read_version")[i].as_py()
+            for i in _table_row_indices(manifest_before)
+        }
+
+        df = self._read_with_meta(namespace_dir)
+        df = df.with_column("enriched", df["v"] * 10)
+        df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+        _, manifest_after = _open_manifest(namespace_dir)
+        after = {
+            manifest_after.column("object_id")[i].as_py(): manifest_after.column("read_version")[i].as_py()
+            for i in _table_row_indices(manifest_after)
+        }
+        for oid, v0 in before.items():
+            assert after[oid] is not None
+            assert after[oid] > v0, (oid, v0, after[oid])
+
+    def test_merge_updates_namespace_schema_metadata(self, namespace_dir, base_df):
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = self._read_with_meta(namespace_dir)
+        df = df.with_column("enriched", df["v"] * 10)
+        df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+        ds, _ = _open_manifest(namespace_dir)
+        schema_obj = json.loads(_decode_meta(ds.schema.metadata, "schema"))
+        names = {f["name"] for f in schema_obj["fields"]}
+        assert "enriched" in names
+        # Existing fields keep their lance:field_id; new field gets a fresh one.
+        ids = {f["name"]: int(f["metadata"]["lance:field_id"]) for f in schema_obj["fields"]}
+        assert ids["enriched"] not in {ids["robot_id"], ids["ts"], ids["v"]}
+
+    def test_merge_does_not_rewrite_base_data_files(self, namespace_dir, base_df):
+        """Fast-path merge writes a NEW .lance file alongside existing ones.
+
+        The original data files must remain untouched.
+        """
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        _, manifest = _open_manifest(namespace_dir)
+        # Snapshot the data files of each leaf table.
+        files_before: dict[str, set[str]] = {}
+        for i in _table_row_indices(manifest):
+            loc = manifest.column("location")[i].as_py()
+            data_dir = os.path.join(namespace_dir, loc, "data")
+            files_before[loc] = set(os.listdir(data_dir))
+
+        df = self._read_with_meta(namespace_dir)
+        df = df.with_column("enriched", df["v"] * 10)
+        df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+        for loc, before in files_before.items():
+            data_dir = os.path.join(namespace_dir, loc, "data")
+            after = set(os.listdir(data_dir))
+            # The original files must still be present.
+            assert before <= after, (loc, before - after)
+            # And the merge added at least one new file.
+            assert len(after - before) >= 1, (loc, after, before)
+
+
 class TestRoundtrip:
     def test_simple_roundtrip(self, namespace_dir):
         original = {"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [10.0, 20.0, 30.0]}
@@ -1022,6 +1262,86 @@ class TestSpecLiteralFixture:
         dirs_on_disk.discard("__manifest")
         expected_dirs = set(expected.keys())
         assert dirs_on_disk == expected_dirs
+
+    def test_source_ids_resolved_by_lance_field_id_not_position(self, tmp_path):
+        """`source_ids` references `lance:field_id`, not Arrow positional index.
+
+        Build a manifest with non-positional field_ids (e.g., 10, 42, 99) and
+        verify the reader resolves the partition source field correctly.
+        """
+        import datetime as _dt
+
+        import lance
+
+        root = str(tmp_path / "ns")
+        os.makedirs(root, exist_ok=True)
+
+        schema_json = {
+            "fields": [
+                {"name": "id", "nullable": False, "type": {"type": "int64"}, "metadata": {"lance:field_id": "10"}},
+                {"name": "country", "nullable": True, "type": {"type": "utf8"}, "metadata": {"lance:field_id": "42"}},
+                {
+                    "name": "event_date",
+                    "nullable": True,
+                    "type": {"type": "date32"},
+                    "metadata": {"lance:field_id": "99"},
+                },
+            ]
+        }
+        # Partition spec references source_id 99 -> event_date.
+        partition_spec_v1 = {
+            "id": 1,
+            "fields": [
+                {
+                    "field_id": "event_date",
+                    "source_ids": [99],
+                    "transform": {"type": "identity"},
+                    "result_type": {"type": "date32"},
+                }
+            ],
+        }
+
+        leaf_pa_schema = pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("country", pa.utf8())])
+        leaf_table = pa.table({"id": [1, 2], "country": ["US", "JP"]}, schema=leaf_pa_schema)
+        location = "deadbeef_v1$ns0000000000000000$dataset"
+        lance.write_dataset(leaf_table, os.path.join(root, location))
+
+        manifest_schema = pa.schema(
+            [
+                pa.field("object_id", pa.utf8(), nullable=False),
+                pa.field("object_type", pa.utf8(), nullable=False),
+                pa.field("location", pa.utf8()),
+                pa.field("metadata", pa.utf8()),
+                pa.field("base_objects", pa.list_(pa.utf8())),
+                pa.field("read_version", pa.uint64()),
+                pa.field("read_branch", pa.utf8()),
+                pa.field("read_tag", pa.utf8()),
+                pa.field("partition_field_event_date", pa.date32()),
+            ],
+            metadata={
+                "partition_spec_v1": json.dumps(partition_spec_v1),
+                "schema": json.dumps(schema_json),
+            },
+        )
+        rows = {
+            "object_id": ["v1", "v1$ns0000000000000000", "v1$ns0000000000000000$dataset"],
+            "object_type": ["namespace", "namespace", "table"],
+            "location": [None, None, location],
+            "metadata": ["{}", "{}", "{}"],
+            "base_objects": [None, None, None],
+            "read_version": [None, None, 1],
+            "read_branch": [None, None, None],
+            "read_tag": [None, None, None],
+            "partition_field_event_date": [None, _dt.date(2025, 1, 1), _dt.date(2025, 1, 1)],
+        }
+        arrays = [pa.array(rows[f.name], type=f.type) for f in manifest_schema]
+        manifest_table = pa.Table.from_arrays(arrays, schema=manifest_schema)
+        lance.write_dataset(manifest_table, os.path.join(root, "__manifest"))
+
+        result = daft.read_lance(root, namespace_partitioning=True).to_pydict()
+        assert sorted(result["id"]) == [1, 2]
+        assert set(result["country"]) == {"US", "JP"}
+        assert all(d == _dt.date(2025, 1, 1) for d in result["event_date"])
 
 
 # ===========================================================================

@@ -34,6 +34,22 @@ if TYPE_CHECKING:
 LanceDataset = Any
 
 
+def _warn_ignored_namespace_args(**kwargs: Any) -> None:
+    """Warn about read_lance args that have no effect under namespace_partitioning=True.
+
+    These args target a single Lance dataset; in a partitioned namespace there
+    is no single dataset to apply them to. To keep behavior debuggable we emit
+    a warning rather than silently dropping them.
+    """
+    ignored = [name for name, value in kwargs.items() if value is not None]
+    if ignored:
+        warnings.warn(
+            f"read_lance(namespace_partitioning=True) ignores argument(s): {', '.join(sorted(ignored))}. "
+            "These options target a single Lance dataset and have no effect on a partitioned namespace.",
+            stacklevel=3,
+        )
+
+
 @PublicAPI
 def read_lance(
     uri: str | pathlib.Path,
@@ -166,10 +182,20 @@ def read_lance(
         storage_options = io_config_to_storage_options(io_config, uri_str)
 
         if namespace_partitioning:
+            _warn_ignored_namespace_args(
+                version=version,
+                asof=asof,
+                block_size=block_size,
+                commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                metadata_cache_size_bytes=metadata_cache_size_bytes,
+            )
             lance_operator = LanceNamespaceScanOperator(
                 uri_str,
                 storage_options=storage_options,
                 fragment_group_size=fragment_group_size,
+                include_fragment_id=bool(include_fragment_id),
+                default_scan_options=default_scan_options,
             )
         else:
             ds = construct_lance_dataset(

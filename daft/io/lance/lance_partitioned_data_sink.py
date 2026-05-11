@@ -26,6 +26,7 @@ from daft.context import get_context
 from daft.datatype import DataType
 from daft.dependencies import pa
 from daft.io import DataSink
+from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
@@ -98,8 +99,6 @@ class LancePartitionedDataSink(DataSink[_WriteResultPayload]):
         partition_cols: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
-        from daft.io.object_store_options import io_config_to_storage_options
-
         lance = self._import_lance()
 
         if not isinstance(uri, (str, pathlib.Path)):
@@ -343,8 +342,16 @@ class LancePartitionedDataSink(DataSink[_WriteResultPayload]):
             pv: dict[str, Any] = {}
             for col_name in self._partition_col_names:
                 val = unique_combos.column(col_name)[i]
-                pv[col_name] = val.as_py()
-                col_mask = pa.compute.equal(table.column(col_name), val)
+                py_val = val.as_py()
+                pv[col_name] = py_val
+                col = table.column(col_name)
+                # `pa.compute.equal(col, null_scalar)` returns nulls, which
+                # `table.filter` treats as False — silently dropping every row
+                # whose partition value is NULL. Use `is_null` to keep them.
+                if py_val is None:
+                    col_mask = pa.compute.is_null(col)
+                else:
+                    col_mask = pa.compute.equal(col, val)
                 mask = col_mask if mask is None else pa.compute.and_(mask, col_mask)
             filtered = table.filter(mask)
             groups.append((pv, filtered))
@@ -442,8 +449,10 @@ class LancePartitionedDataSink(DataSink[_WriteResultPayload]):
         # 1. Root namespace row (v1).
         rows.append(self._row(make_object_id(_SPEC_VERSION, [], is_table=False), OBJECT_TYPE_NAMESPACE, {}))
 
-        # 2. Intermediate namespace rows, sorted by depth so parents precede children.
-        for prefix in sorted(prefix_to_id.keys(), key=lambda p: (len(p), p)):
+        # 2. Intermediate namespace rows, sorted by depth so parents precede
+        # children. Use a string secondary key so `None`s in the tuple don't
+        # break comparison.
+        for prefix in sorted(prefix_to_id.keys(), key=lambda p: (len(p), tuple(repr(v) for v in p))):
             ns_segments: list[str] = []
             for depth in range(1, len(prefix) + 1):
                 ns_segments.append(prefix_to_id[prefix[:depth]])
