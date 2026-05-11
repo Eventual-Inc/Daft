@@ -13,7 +13,11 @@ use common_runtime::RuntimeTask;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
-use std::io::SeekFrom;
+use std::{
+    io::SeekFrom,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, BufReader},
     sync::Mutex,
@@ -78,6 +82,55 @@ enum FileReadSpec {
     /// Read [start, end) bytes from the file, treating the bytes as a stream of IPC
     /// batch messages (no schema header — the server has already emitted one).
     Range { path: String, start: u64, end: u64 },
+}
+
+/// Process-wide aggregate counters for shuffle read throughput diagnostics.
+pub mod read_agg {
+    use std::sync::atomic::AtomicU64;
+    /// Number of `do_get` responses served by this server.
+    pub static RESPONSES: AtomicU64 = AtomicU64::new(0);
+    /// Number of file specs (whole or ranged) opened across all responses.
+    pub static SPECS_OPENED: AtomicU64 = AtomicU64::new(0);
+    /// Total bytes of IPC body shipped to clients.
+    pub static BYTES_SHIPPED: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent inside `do_get` handler, including stream consumption.
+    pub static HANDLER_US: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent opening files / seeking before streaming bytes.
+    pub static OPEN_US: AtomicU64 = AtomicU64::new(0);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReadAggSnapshot {
+    pub responses: u64,
+    pub specs_opened: u64,
+    pub bytes_shipped: u64,
+    pub handler_us: u64,
+    pub open_us: u64,
+}
+
+pub fn read_agg_snapshot() -> ReadAggSnapshot {
+    ReadAggSnapshot {
+        responses: read_agg::RESPONSES.load(Ordering::Relaxed),
+        specs_opened: read_agg::SPECS_OPENED.load(Ordering::Relaxed),
+        bytes_shipped: read_agg::BYTES_SHIPPED.load(Ordering::Relaxed),
+        handler_us: read_agg::HANDLER_US.load(Ordering::Relaxed),
+        open_us: read_agg::OPEN_US.load(Ordering::Relaxed),
+    }
+}
+
+pub fn log_read_agg_summary(label: &str) {
+    let s = read_agg_snapshot();
+    let mb = 1024.0 * 1024.0;
+    tracing::info!(
+        target: "daft_shuffles::read_agg",
+        label = label,
+        responses = s.responses,
+        specs_opened = s.specs_opened,
+        bytes_shipped_mib = format_args!("{:.1}", s.bytes_shipped as f64 / mb),
+        handler_ms = s.handler_us / 1000,
+        open_ms = s.open_us / 1000,
+        "shuffle read agg summary",
+    );
 }
 
 /// How many files inside a single Flight response to open / prefetch concurrently.
@@ -283,25 +336,32 @@ impl FlightService for ShuffleFlightServer {
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
+        let t_handler = Instant::now();
         let ticket = request.into_inner();
         let ticket = ParsedTicket::from_ticket(&ticket)?;
+        let shuffle_id = ticket.shuffle_id;
+        let num_refs = ticket.partition_ref_ids.len();
 
         let (specs, schema) = self
-            .get_shuffle_file_specs(ticket.shuffle_id, &ticket.partition_ref_ids)
+            .get_shuffle_file_specs(shuffle_id, &ticket.partition_ref_ids)
             .await
             .ok_or_else(|| {
                 Status::not_found(format!(
                     "Shuffle partitions not found for shuffle {} refs {:?}",
-                    ticket.shuffle_id, ticket.partition_ref_ids
+                    shuffle_id, ticket.partition_ref_ids
                 ))
             })?;
+        let num_specs = specs.len() as u64;
+        read_agg::SPECS_OPENED.fetch_add(num_specs, Ordering::Relaxed);
 
         let file_stream = futures::stream::iter(specs);
         let flight_data_stream = file_stream
             .map(|spec| async move {
+                let t0 = Instant::now();
                 let stream = open_spec_as_flight_stream(spec)
                     .await
                     .map_err(|e| Status::internal(e.to_string()))?;
+                read_agg::OPEN_US.fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
                 Ok::<_, Status>(stream.map_err(|e| Status::internal(e.to_string())))
             })
             .buffered(READ_PREFETCH)
@@ -315,7 +375,49 @@ impl FlightService for ShuffleFlightServer {
         let flight_data =
             futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
-        Ok(Response::new(Box::pin(flight_data)))
+        // Wrap the stream to count bytes shipped as the client pulls them.
+        let bytes_counter = std::sync::Arc::new(AtomicU64::new(0));
+        let bytes_counter_for_stream = bytes_counter.clone();
+        let counted = flight_data.inspect(move |item| {
+            if let Ok(fd) = item {
+                let n = fd.data_header.len() as u64 + fd.data_body.len() as u64;
+                bytes_counter_for_stream.fetch_add(n, Ordering::Relaxed);
+            }
+        });
+
+        // Trace the handler-level metadata (entry; we know num_specs but the actual
+        // bytes/duration come from the stream below).
+        tracing::debug!(
+            target: "daft_shuffles::do_get",
+            shuffle_id = shuffle_id,
+            num_refs = num_refs,
+            num_specs = num_specs,
+            "do_get accepted",
+        );
+
+        // On stream end, emit aggregate counters. We can't easily attach a future
+        // to the gRPC stream completion, so account for handler-entry time only
+        // and accumulate bytes as the stream is consumed.
+        read_agg::HANDLER_US.fetch_add(t_handler.elapsed().as_micros() as u64, Ordering::Relaxed);
+        read_agg::RESPONSES.fetch_add(1, Ordering::Relaxed);
+        // bytes_counter is moved into the closure; the stream itself updates BYTES_SHIPPED below.
+        let bytes_counter_for_drop = bytes_counter;
+        let counted = counted.chain(futures::stream::once(async move {
+            let n = bytes_counter_for_drop.load(Ordering::Relaxed);
+            read_agg::BYTES_SHIPPED.fetch_add(n, Ordering::Relaxed);
+            // sentinel that yields nothing — we use map+filter to drop it
+            Ok::<FlightData, Status>(FlightData::default())
+        }))
+        // strip the synthetic sentinel (data_header empty AND data_body empty)
+        .filter(|item| {
+            let keep = match item {
+                Ok(fd) => !(fd.data_header.is_empty() && fd.data_body.is_empty()),
+                Err(_) => true,
+            };
+            std::future::ready(keep)
+        });
+
+        Ok(Response::new(Box::pin(counted)))
     }
 
     async fn do_put(

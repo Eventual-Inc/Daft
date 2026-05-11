@@ -473,7 +473,16 @@ impl NativeExecutor {
             None
         };
 
-        if !self.plans.contains_key(&fingerprint) {
+        let cache_hit = self.plans.contains_key(&fingerprint);
+        tracing::info!(
+            target: "daft_local_execution::plan_cache",
+            fingerprint = fingerprint,
+            input_id = input_id,
+            hit = cache_hit,
+            active_plans_before = self.plans.len(),
+            "plan cache lookup",
+        );
+        if !cache_hit {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
             let shuffle_address = self.shuffle_address();
@@ -579,6 +588,13 @@ impl NativeExecutor {
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
                 plan_state.task_handle.await??;
+                // Per-plan shuffle agg summaries (cheap; one log line each).
+                daft_shuffles::multi_partition_cache::log_agg_summary(&format!(
+                    "plan_finished fingerprint={fingerprint}"
+                ));
+                daft_shuffles::server::flight_server::log_read_agg_summary(&format!(
+                    "plan_finished fingerprint={fingerprint}"
+                ));
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
                 Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
             }

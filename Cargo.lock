@@ -3373,6 +3373,8 @@ dependencies = [
  "futures",
  "tokio",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

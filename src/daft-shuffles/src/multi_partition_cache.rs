@@ -18,6 +18,8 @@ use std::{
     fs::File,
     io::{self, Write},
     path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -80,9 +82,105 @@ struct WriteCommand {
     micropartition: MicroPartition,
 }
 
-/// How many times the per-task memory-cap eviction fired during the most recent run.
-/// Bench-only counter; not exposed in any production API.
-pub static CAP_EVICTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Process-wide aggregate counters for shuffle write throughput diagnostics.
+/// Enabled at all times (atomic adds are cheap). Emitted via tracing::info on
+/// `MultiPartitionShuffleCache::close()` and exposed via [`agg_snapshot`] so that
+/// drivers (e.g. flotilla `RemoteFlotillaRunner`) can dump a final summary.
+///
+/// All times are in microseconds, all sizes in bytes. Counters are monotonic
+/// across the lifetime of the process.
+pub mod agg {
+    use std::sync::atomic::AtomicU64;
+    /// Number of `MultiPartitionShuffleCache::close()` calls completed.
+    pub static CACHES_CLOSED: AtomicU64 = AtomicU64::new(0);
+    /// Number of `push_partition_data` calls observed by writer tasks.
+    pub static PUSHES: AtomicU64 = AtomicU64::new(0);
+    /// Number of IPC RecordBatch messages emitted to disk (one per `flush_partition`).
+    pub static FLUSHES_TOTAL: AtomicU64 = AtomicU64::new(0);
+    /// Subset of FLUSHES_TOTAL that fired because a partition crossed the 1 MiB coalesce threshold.
+    pub static FLUSHES_COALESCE: AtomicU64 = AtomicU64::new(0);
+    /// Subset of FLUSHES_TOTAL that fired under the per-task memory cap (evicting the largest).
+    pub static FLUSHES_EVICTION: AtomicU64 = AtomicU64::new(0);
+    /// Subset of FLUSHES_TOTAL that fired during drain on `close()`.
+    pub static FLUSHES_DRAIN: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent inside `RecordBatch::concat` on the writer task.
+    pub static CONCAT_US: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent inside `StreamWriter::write` (IPC encode + disk write).
+    pub static ENCODE_WRITE_US: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent inside `IpcWriter::finish` (closes / flushes the file).
+    pub static FINISH_US: AtomicU64 = AtomicU64::new(0);
+    /// Sum of in-memory `MicroPartition::size_bytes` pushed to writer tasks (input side).
+    pub static INPUT_BYTES: AtomicU64 = AtomicU64::new(0);
+    /// Sum of on-disk file sizes produced (output side, includes IPC metadata).
+    pub static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
+    /// Number of unique files produced (i.e. number of map tasks that closed).
+    pub static FILES_PRODUCED: AtomicU64 = AtomicU64::new(0);
+}
+
+/// Legacy alias for bench compatibility; see `agg::FLUSHES_EVICTION`.
+pub use agg::FLUSHES_EVICTION as CAP_EVICTIONS;
+
+/// Snapshot all aggregate counters into a struct for one-shot logging.
+#[derive(Debug, Clone, Copy)]
+pub struct AggSnapshot {
+    pub caches_closed: u64,
+    pub pushes: u64,
+    pub flushes_total: u64,
+    pub flushes_coalesce: u64,
+    pub flushes_eviction: u64,
+    pub flushes_drain: u64,
+    pub concat_us: u64,
+    pub encode_write_us: u64,
+    pub finish_us: u64,
+    pub input_bytes: u64,
+    pub output_bytes: u64,
+    pub files_produced: u64,
+}
+
+pub fn agg_snapshot() -> AggSnapshot {
+    AggSnapshot {
+        caches_closed: agg::CACHES_CLOSED.load(Ordering::Relaxed),
+        pushes: agg::PUSHES.load(Ordering::Relaxed),
+        flushes_total: agg::FLUSHES_TOTAL.load(Ordering::Relaxed),
+        flushes_coalesce: agg::FLUSHES_COALESCE.load(Ordering::Relaxed),
+        flushes_eviction: agg::FLUSHES_EVICTION.load(Ordering::Relaxed),
+        flushes_drain: agg::FLUSHES_DRAIN.load(Ordering::Relaxed),
+        concat_us: agg::CONCAT_US.load(Ordering::Relaxed),
+        encode_write_us: agg::ENCODE_WRITE_US.load(Ordering::Relaxed),
+        finish_us: agg::FINISH_US.load(Ordering::Relaxed),
+        input_bytes: agg::INPUT_BYTES.load(Ordering::Relaxed),
+        output_bytes: agg::OUTPUT_BYTES.load(Ordering::Relaxed),
+        files_produced: agg::FILES_PRODUCED.load(Ordering::Relaxed),
+    }
+}
+
+/// Emit a one-line aggregate-snapshot log. Call this at end of query / process for a
+/// cluster-wide cost breakdown.
+pub fn log_agg_summary(label: &str) {
+    let s = agg_snapshot();
+    let mb = 1024.0 * 1024.0;
+    tracing::info!(
+        target: "daft_shuffles::agg",
+        label = label,
+        caches_closed = s.caches_closed,
+        files_produced = s.files_produced,
+        pushes = s.pushes,
+        flushes_total = s.flushes_total,
+        flushes_coalesce = s.flushes_coalesce,
+        flushes_eviction = s.flushes_eviction,
+        flushes_drain = s.flushes_drain,
+        concat_ms = s.concat_us / 1000,
+        encode_write_ms = s.encode_write_us / 1000,
+        finish_ms = s.finish_us / 1000,
+        input_mib = format_args!("{:.1}", s.input_bytes as f64 / mb),
+        output_mib = format_args!("{:.1}", s.output_bytes as f64 / mb),
+        amp = format_args!(
+            "{:.2}",
+            if s.input_bytes == 0 { 0.0 } else { s.output_bytes as f64 / s.input_bytes as f64 }
+        ),
+        "shuffle agg summary",
+    );
+}
 
 #[derive(Default)]
 struct WriterTaskResult {
@@ -148,7 +246,7 @@ impl MultiPartitionShuffleCache {
         let (tx, rx) = async_channel::bounded::<WriteCommand>(num_cpus * 2);
         let task_file_path = file_path.clone();
         let task = get_io_runtime(true).spawn(async move {
-            writer_task(rx, stream_writer, task_file_path, num_partitions).await
+            writer_task(rx, stream_writer, task_file_path, num_partitions, input_id).await
         });
 
         let sender_weak = tx.downgrade();
@@ -271,6 +369,7 @@ async fn writer_task(
     mut writer: arrow_ipc::writer::StreamWriter<CountingFile>,
     file_path: String,
     num_partitions: usize,
+    input_id: u32,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
     let mut ranges_per_partition: Vec<Vec<(u64, u64)>> = vec![Vec::new(); num_partitions];
@@ -283,6 +382,15 @@ async fn writer_task(
     let mut buffers: Vec<Vec<RecordBatch>> = (0..num_partitions).map(|_| Vec::new()).collect();
     let mut buffer_bytes: Vec<usize> = vec![0; num_partitions];
     let mut total_buffer_bytes: usize = 0;
+
+    // Per-task timing counters (microseconds).
+    let mut local_concat_us: u64 = 0;
+    let mut local_encode_write_us: u64 = 0;
+    let mut local_pushes: u64 = 0;
+    let mut local_input_bytes: u64 = 0;
+    let mut local_flushes_coalesce: u64 = 0;
+    let mut local_flushes_eviction: u64 = 0;
+    let mut local_flushes_drain: u64 = 0;
 
     while let Ok(cmd) = rx.recv().await {
         let WriteCommand {
@@ -301,11 +409,13 @@ async fn writer_task(
         if rows == 0 {
             continue;
         }
+        local_pushes += 1;
 
         for batch in micropartition.record_batches() {
             let bytes = batch.size_bytes();
             buffer_bytes[partition_idx] += bytes;
             total_buffer_bytes += bytes;
+            local_input_bytes += bytes as u64;
             buffers[partition_idx].push(batch.clone());
         }
         rows_per_partition[partition_idx] += rows;
@@ -317,12 +427,13 @@ async fn writer_task(
             let batches = std::mem::take(&mut buffers[partition_idx]);
             buffer_bytes[partition_idx] = 0;
             total_buffer_bytes -= flushed_bytes;
-            writer = flush_partition(&io_runtime, writer, batches).await.map(
-                |(w, before, after)| {
-                    ranges_per_partition[partition_idx].push((before, after));
-                    w
-                },
-            )?;
+            local_flushes_coalesce += 1;
+            let (w, before, after, c_us, ew_us) =
+                flush_partition(&io_runtime, writer, batches).await?;
+            ranges_per_partition[partition_idx].push((before, after));
+            writer = w;
+            local_concat_us += c_us;
+            local_encode_write_us += ew_us;
             continue;
         }
 
@@ -337,13 +448,13 @@ async fn writer_task(
             let batches = std::mem::take(&mut buffers[victim]);
             buffer_bytes[victim] = 0;
             total_buffer_bytes -= flushed_bytes;
-            CAP_EVICTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            writer = flush_partition(&io_runtime, writer, batches).await.map(
-                |(w, before, after)| {
-                    ranges_per_partition[victim].push((before, after));
-                    w
-                },
-            )?;
+            local_flushes_eviction += 1;
+            let (w, before, after, c_us, ew_us) =
+                flush_partition(&io_runtime, writer, batches).await?;
+            ranges_per_partition[victim].push((before, after));
+            writer = w;
+            local_concat_us += c_us;
+            local_encode_write_us += ew_us;
         }
     }
 
@@ -353,19 +464,59 @@ async fn writer_task(
             continue;
         }
         let batches = std::mem::take(&mut buffers[partition_idx]);
-        writer = flush_partition(&io_runtime, writer, batches)
-            .await
-            .map(|(w, before, after)| {
-                ranges_per_partition[partition_idx].push((before, after));
-                w
-            })?;
+        local_flushes_drain += 1;
+        let (w, before, after, c_us, ew_us) =
+            flush_partition(&io_runtime, writer, batches).await?;
+        ranges_per_partition[partition_idx].push((before, after));
+        writer = w;
+        local_concat_us += c_us;
+        local_encode_write_us += ew_us;
     }
 
+    let t_finish = Instant::now();
     writer
         .finish()
         .map_err(|e| DaftError::InternalError(format!("IPC finish failed: {}", e)))?;
+    let finish_us = t_finish.elapsed().as_micros() as u64;
     let total_file_bytes = writer.get_ref().position();
     drop(writer);
+
+    // Per-task summary log (cheap; only emitted at task end).
+    let total_flushes = local_flushes_coalesce + local_flushes_eviction + local_flushes_drain;
+    tracing::info!(
+        target: "daft_shuffles::cache",
+        input_id = input_id,
+        num_partitions = num_partitions,
+        pushes = local_pushes,
+        flushes_total = total_flushes,
+        flushes_coalesce = local_flushes_coalesce,
+        flushes_eviction = local_flushes_eviction,
+        flushes_drain = local_flushes_drain,
+        concat_ms = local_concat_us / 1000,
+        encode_write_ms = local_encode_write_us / 1000,
+        finish_ms = finish_us / 1000,
+        input_bytes = local_input_bytes,
+        output_bytes = total_file_bytes,
+        amp = format_args!(
+            "{:.2}",
+            if local_input_bytes == 0 { 0.0 } else { total_file_bytes as f64 / local_input_bytes as f64 }
+        ),
+        "shuffle cache closed",
+    );
+
+    // Bump aggregates.
+    agg::CACHES_CLOSED.fetch_add(1, Ordering::Relaxed);
+    agg::FILES_PRODUCED.fetch_add(1, Ordering::Relaxed);
+    agg::PUSHES.fetch_add(local_pushes, Ordering::Relaxed);
+    agg::FLUSHES_TOTAL.fetch_add(total_flushes, Ordering::Relaxed);
+    agg::FLUSHES_COALESCE.fetch_add(local_flushes_coalesce, Ordering::Relaxed);
+    agg::FLUSHES_EVICTION.fetch_add(local_flushes_eviction, Ordering::Relaxed);
+    agg::FLUSHES_DRAIN.fetch_add(local_flushes_drain, Ordering::Relaxed);
+    agg::CONCAT_US.fetch_add(local_concat_us, Ordering::Relaxed);
+    agg::ENCODE_WRITE_US.fetch_add(local_encode_write_us, Ordering::Relaxed);
+    agg::FINISH_US.fetch_add(finish_us, Ordering::Relaxed);
+    agg::INPUT_BYTES.fetch_add(local_input_bytes, Ordering::Relaxed);
+    agg::OUTPUT_BYTES.fetch_add(total_file_bytes, Ordering::Relaxed);
 
     Ok(WriterTaskResult {
         ranges_per_partition,
@@ -388,23 +539,36 @@ fn largest_partition(buffer_bytes: &[usize]) -> Option<usize> {
 }
 
 /// Concat the buffered daft batches into one arrow batch, write it as a single IPC message,
-/// and return the byte range it occupied. Done on the io runtime so concat/encode don't
-/// block the writer task's recv loop.
+/// and return the byte range it occupied + microsecond timings for the two sub-phases
+/// (concat, encode+write). Done on the io runtime so concat/encode don't block the
+/// writer task's recv loop.
 async fn flush_partition(
     io_runtime: &common_runtime::Runtime,
     mut writer: arrow_ipc::writer::StreamWriter<CountingFile>,
     batches: Vec<RecordBatch>,
-) -> DaftResult<(arrow_ipc::writer::StreamWriter<CountingFile>, u64, u64)> {
+) -> DaftResult<(arrow_ipc::writer::StreamWriter<CountingFile>, u64, u64, u64, u64)> {
     io_runtime
         .spawn(async move {
+            let t0 = Instant::now();
             let merged = RecordBatch::concat(&batches)?;
             let arrow_batch: arrow_array::RecordBatch = merged.try_into()?;
+            let concat_us = t0.elapsed().as_micros() as u64;
+
+            let t1 = Instant::now();
             let offset_before = writer.get_ref().position();
             writer
                 .write(&arrow_batch)
                 .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
             let offset_after = writer.get_ref().position();
-            Ok::<_, DaftError>((writer, offset_before, offset_after))
+            let encode_write_us = t1.elapsed().as_micros() as u64;
+
+            Ok::<_, DaftError>((
+                writer,
+                offset_before,
+                offset_after,
+                concat_us,
+                encode_write_us,
+            ))
         })
         .await?
 }

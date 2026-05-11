@@ -25,8 +25,10 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_shuffles::{
     client::flight_client::ShuffleFlightClient,
-    multi_partition_cache::{CAP_EVICTIONS, MultiPartitionShuffleCache},
-    server::flight_server::{ShuffleFlightServer, start_server_loop},
+    multi_partition_cache::{
+        CAP_EVICTIONS, MultiPartitionShuffleCache, log_agg_summary,
+    },
+    server::flight_server::{ShuffleFlightServer, log_read_agg_summary, start_server_loop},
     shuffle_cache::{InProgressShuffleCache, PartitionCache, partition_ref_id},
 };
 use futures::StreamExt;
@@ -350,6 +352,16 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> DaftResult<()> {
+    // Install a tracing subscriber if DAFT_TRACE is set (e.g. DAFT_TRACE=info).
+    if let Ok(level) = std::env::var("DAFT_TRACE") {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_new(level)
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_writer(std::io::stderr)
+            .try_init();
+    }
     let cfg = parse_args();
     let host_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0);
 
@@ -590,6 +602,10 @@ async fn main() -> DaftResult<()> {
         percentile(&file_sizes_f, 0.5) / 1024.0,
         bytes_read_total as f64 / (1024.0 * 1024.0)
     );
+
+    // Emit aggregate summaries (subscriber-respecting; no-op if DAFT_TRACE unset).
+    log_agg_summary("bench end");
+    log_read_agg_summary("bench end");
 
     // Cleanup: drop the server handle, remove the temp dir.
     drop(server_handle);

@@ -16,6 +16,8 @@ daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 tokio = {workspace = true, features = ["fs", "io-util", "macros", "rt-multi-thread"]}
 tonic = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
 
 [[bin]]
 name = "shuffle_bench"
