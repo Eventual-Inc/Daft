@@ -103,9 +103,8 @@ class PaimonDataSink(DataSink[list[Any]]):
         if not commit_messages:
             return
 
-        import time
-
         from pypaimon.common.predicate_builder import PredicateBuilder
+        from pypaimon.write.table_commit import BATCH_COMMIT_IDENTIFIER
 
         unique_partitions = {msg.partition for msg in commit_messages}
 
@@ -122,10 +121,9 @@ class PaimonDataSink(DataSink[list[Any]]):
         table_commit = self._write_builder.new_commit()
         try:
             fsc = table_commit.file_store_commit
-            commit_id = int(time.time_ns() / 1_000_000)
             fsc._try_commit(
                 commit_kind="OVERWRITE",
-                commit_identifier=commit_id,
+                commit_identifier=BATCH_COMMIT_IDENTIFIER,
                 commit_entries_plan=lambda snapshot: fsc._generate_overwrite_entries(
                     snapshot,
                     partition_filter,
