@@ -25,7 +25,7 @@ const CONTINUATION_MARKER: i32 = -1;
 /// over flight. This is an optimization where we skip converting the ipc files to RecordBatches
 /// and instead read the data directly into FlightData, since we already know that the data is in
 /// arrow ipc stream format.
-pub struct FlightDataStreamReader<R: AsyncRead + AsyncSeek + Unpin> {
+pub struct FlightDataStreamReader<R: AsyncRead + Unpin> {
     state: Option<ReadState<R>>,
 }
 
@@ -36,6 +36,17 @@ impl<R: AsyncRead + AsyncSeek + Unpin> FlightDataStreamReader<R> {
         Ok(Self {
             state: Some(ReadState { reader }),
         })
+    }
+}
+
+impl<R: AsyncRead + Unpin> FlightDataStreamReader<R> {
+    /// Construct from a reader that has already been positioned past the IPC stream metadata
+    /// (schema header). Used for ranged reads where the reader is a `Take<File>` and the file
+    /// has already been seeked to a batch boundary.
+    pub fn from_skipped(reader: R) -> Self {
+        Self {
+            state: Some(ReadState { reader }),
+        }
     }
 
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<FlightData>> {

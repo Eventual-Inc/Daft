@@ -6,8 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    multi_partition_cache::MultiPartitionShuffleCache, server::flight_server::ShuffleFlightServer,
 };
 use tracing::{Span, instrument};
 
@@ -56,7 +55,8 @@ impl RayIntoPartitionsState {
 
 pub(crate) struct FlightIntoPartitionsState {
     shared: Arc<FlightShared>,
-    caches: Vec<InProgressShuffleCache>,
+    cache: Arc<MultiPartitionShuffleCache>,
+    num_partitions: usize,
     rotation_offset: usize,
 }
 
@@ -66,27 +66,22 @@ impl FlightIntoPartitionsState {
         input_id: InputId,
         num_partitions: usize,
     ) -> DaftResult<Self> {
-        let mut caches = Vec::with_capacity(num_partitions);
-        for partition_idx in 0..num_partitions {
-            let partition_ref_id = partition_ref_id(input_id, partition_idx);
-            let cache = InProgressShuffleCache::try_new(
-                partition_ref_id,
-                shared.schema.clone(),
-                &shared.shuffle_dirs,
-                shared.shuffle_id,
-                shared.target_in_memory_size_per_partition,
-                shared.compression.as_deref(),
-            )?;
-            caches.push(cache);
-        }
+        let cache = Arc::new(MultiPartitionShuffleCache::try_new(
+            input_id,
+            num_partitions,
+            shared.schema.clone(),
+            &shared.shuffle_dirs,
+            shared.shuffle_id,
+        )?);
         Ok(Self {
             shared,
-            caches,
+            cache,
+            num_partitions,
             rotation_offset: 0,
         })
     }
 
-    /// Slice the input into N row-chunks and append each to its cache,
+    /// Slice the input into N row-chunks and append each to its bucket,
     /// rotating the bucket offset per call so that `div_ceil` front-loading
     /// doesn't consistently favour early buckets.
     async fn push(&mut self, input: MicroPartition) -> DaftResult<()> {
@@ -94,7 +89,7 @@ impl FlightIntoPartitionsState {
         if total == 0 {
             return Ok(());
         }
-        let n = self.caches.len();
+        let n = self.num_partitions;
         let rows_per_bucket = total.div_ceil(n);
 
         for i in 0..n {
@@ -105,19 +100,16 @@ impl FlightIntoPartitionsState {
             let end = (start + rows_per_bucket).min(total);
             let slice = input.slice(start, end)?;
             let bucket = (i + self.rotation_offset) % n;
-            self.caches[bucket].push_partition_data(slice).await?;
+            self.cache.push_partition_data(bucket, slice).await?;
         }
         self.rotation_offset = (self.rotation_offset + 1) % n;
         Ok(())
     }
 
     async fn finalize(self) -> DaftResult<Vec<FlightPartitionRef>> {
-        let Self { shared, caches, .. } = self;
+        let Self { shared, cache, .. } = self;
 
-        let closed_list = futures::future::try_join_all(
-            caches.into_iter().map(|c| async move { c.close().await }),
-        )
-        .await?;
+        let closed_list = cache.close().await?;
 
         let refs: Vec<_> = closed_list
             .iter()
@@ -160,10 +152,8 @@ impl IntoPartitionsState {
 struct FlightShared {
     shuffle_id: u64,
     shuffle_dirs: Vec<String>,
-    compression: Option<String>,
     local_server: Arc<ShuffleFlightServer>,
     shuffle_address: String,
-    target_in_memory_size_per_partition: usize,
     schema: SchemaRef,
 }
 
@@ -203,26 +193,17 @@ impl IntoPartitionsSink {
         schema: SchemaRef,
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
-        compression: Option<String>,
+        _compression: Option<String>, // TODO: re-introduce when MultiPartitionShuffleCache supports it
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
     ) -> DaftResult<Self> {
-        // Mirror `RepartitionSink::try_new_flight`: divide a global 2000 MiB budget
-        // evenly across the output partitions, clamped to [8 MiB, 128 MiB] per
-        // cache so we spill at roughly the same rate regardless of N.
-        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
-        let target_in_memory_size_per_partition = (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
-            / num_partitions.max(1))
-        .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
         Ok(Self {
             num_partitions,
             backend: IntoPartitionsBackend::Flight(Arc::new(FlightShared {
                 shuffle_id,
                 shuffle_dirs,
-                compression,
                 local_server,
                 shuffle_address,
-                target_in_memory_size_per_partition,
                 schema,
             })),
         })

@@ -11,8 +11,7 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    multi_partition_cache::MultiPartitionShuffleCache, server::flight_server::ShuffleFlightServer,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -42,16 +41,17 @@ impl RayRepartitionState {
 }
 
 pub(crate) struct FlightRepartitionState {
-    partitions: Arc<Vec<Arc<InProgressShuffleCache>>>,
+    /// One combined-file cache per map task (input_id). Holds all N output partitions
+    /// inside a single IPC file with an in-memory byte-range index.
+    cache: Arc<MultiPartitionShuffleCache>,
 }
 
 impl FlightRepartitionState {
     async fn push(&self, parts: Vec<MicroPartition>) -> DaftResult<()> {
-        let push_futures = self
-            .partitions
-            .iter()
-            .zip(parts)
-            .map(|(cache, partition)| cache.push_partition_data(partition));
+        let push_futures = parts
+            .into_iter()
+            .enumerate()
+            .map(|(partition_idx, mp)| self.cache.push_partition_data(partition_idx, mp));
         futures::future::try_join_all(push_futures).await?;
         Ok(())
     }
@@ -80,13 +80,13 @@ enum RepartitionBackend {
     Flight {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
-        compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
-        target_in_memory_size_per_partition: usize,
         schema: SchemaRef,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressShuffleCache>>>>>,
+        // One MultiPartitionShuffleCache per map task (keyed by InputId). All N output
+        // partitions for that map task live in one IPC file with byte-range metadata.
+        caches: Mutex<HashMap<InputId, Arc<MultiPartitionShuffleCache>>>,
     },
 }
 
@@ -121,23 +121,18 @@ impl RepartitionSink {
         shuffle_id: u64,
         repartition_spec: RepartitionSpec,
         shuffle_dirs: Vec<String>,
-        compression: Option<String>,
+        _compression: Option<String>, // TODO: re-introduce when MultiPartitionShuffleCache supports it
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
     ) -> DaftResult<Self> {
-        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
         Ok(Self {
             backend: RepartitionBackend::Flight {
                 shuffle_id,
                 shuffle_dirs,
-                compression,
                 local_server,
                 shuffle_address,
-                target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
-                    / num_partitions)
-                    .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
                 schema,
-                partitions: Mutex::new(HashMap::new()),
+                caches: Mutex::new(HashMap::new()),
             },
             repartition_spec,
             num_partitions,
@@ -266,15 +261,29 @@ impl BlockingSink for RepartitionSink {
                 spawner
                     .spawn(
                         async move {
-                            let partitions = states
-                                .into_iter()
-                                .next()
-                                .expect("Flight repartition finalize requires at least one state")
-                                .partitions;
-                            let finalized = futures::future::try_join_all(
-                                partitions.iter().map(|partition| partition.close()),
-                            )
-                            .await?;
+                            // De-dup caches across states: per InputId, all worker states share the
+                            // same Arc<MultiPartitionShuffleCache> (memoized in make_state). Close
+                            // each unique cache once; closing returns one PartitionCache per
+                            // output partition, all referencing the same physical file with
+                            // disjoint byte ranges.
+                            let mut unique: HashMap<usize, Arc<MultiPartitionShuffleCache>> =
+                                HashMap::new();
+                            for state in states {
+                                let ptr = Arc::as_ptr(&state.cache) as usize;
+                                unique.entry(ptr).or_insert(state.cache);
+                            }
+                            if unique.is_empty() {
+                                return Err(common_error::DaftError::InternalError(
+                                    "Flight repartition finalize requires at least one state"
+                                        .to_string(),
+                                ));
+                            }
+                            let close_futures =
+                                unique.into_values().map(|cache| async move { cache.close().await });
+                            let per_cache: Vec<Vec<_>> =
+                                futures::future::try_join_all(close_futures).await?;
+                            let finalized: Vec<_> =
+                                per_cache.into_iter().flatten().collect();
                             local_server
                                 .register_shuffle_partitions(shuffle_id, finalized.clone())
                                 .await?;
@@ -333,37 +342,26 @@ impl BlockingSink for RepartitionSink {
             RepartitionBackend::Flight {
                 shuffle_dirs,
                 shuffle_id,
-                target_in_memory_size_per_partition,
-                compression,
                 schema,
-                partitions,
+                caches,
                 ..
             } => {
-                let mut partitions = partitions.lock().unwrap();
-                let partition_set = match partitions.entry(input_id) {
+                let mut caches = caches.lock().unwrap();
+                let cache = match caches.entry(input_id) {
                     std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        let partition_set = Arc::new(
-                            (0..self.num_partitions)
-                                .map(|partition_idx| {
-                                    Ok(Arc::new(InProgressShuffleCache::try_new(
-                                        partition_ref_id(input_id, partition_idx),
-                                        schema.clone(),
-                                        shuffle_dirs,
-                                        *shuffle_id,
-                                        *target_in_memory_size_per_partition,
-                                        compression.as_deref(),
-                                    )?))
-                                })
-                                .collect::<DaftResult<Vec<_>>>()?,
-                        );
-                        e.insert(partition_set.clone());
-                        partition_set
+                        let cache = Arc::new(MultiPartitionShuffleCache::try_new(
+                            input_id,
+                            self.num_partitions,
+                            schema.clone(),
+                            shuffle_dirs,
+                            *shuffle_id,
+                        )?);
+                        e.insert(cache.clone());
+                        cache
                     }
                 };
-                Ok(RepartitionState::Flight(FlightRepartitionState {
-                    partitions: partition_set,
-                }))
+                Ok(RepartitionState::Flight(FlightRepartitionState { cache }))
             }
         }
     }

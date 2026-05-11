@@ -151,6 +151,7 @@ impl InProgressShuffleCache {
                 file_paths: result.file_paths,
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
+                byte_ranges: None,
             }),
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
@@ -228,6 +229,9 @@ pub struct PartitionCache {
     pub file_paths: Vec<String>,
     pub num_rows: usize,
     pub size_bytes: usize,
+    /// If present, byte_ranges[i] is the (start, end) range to read within file_paths[i].
+    /// Used when a single physical file serves multiple output partitions (combined-file shuffle).
+    pub byte_ranges: Option<Vec<(u64, u64)>>,
 }
 
 #[cfg(test)]

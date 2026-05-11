@@ -3356,6 +3356,7 @@ dependencies = [
 name = "daft-shuffles"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array 57.3.0",
  "arrow-flight",
  "arrow-ipc",
  "arrow-schema 57.3.0",
@@ -3363,6 +3364,7 @@ dependencies = [
  "common-error",
  "common-runtime",
  "daft-core",
+ "daft-dsl",
  "daft-io",
  "daft-micropartition",
  "daft-recordbatch",
