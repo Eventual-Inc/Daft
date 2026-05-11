@@ -228,9 +228,7 @@ impl ScalarUDF for AddMonths {
             .iter()
             .zip(months_arr.iter())
             .map(|(opt_days, opt_months)| match (opt_days, opt_months) {
-                (Some(days), Some(m)) => {
-                    shift_months(days_to_date(days), m).map(date_to_days)
-                }
+                (Some(days), Some(m)) => shift_months(days_to_date(days), m).map(date_to_days),
                 _ => None,
             })
             .collect();
@@ -292,8 +290,8 @@ fn months_between_dt(end: NaiveDateTime, start: NaiveDateTime) -> f64 {
     let end_date = end.date();
     let start_date = start.date();
 
-    let months_diff =
-        (end_date.year() - start_date.year()) * 12 + (end_date.month() as i32 - start_date.month() as i32);
+    let months_diff = (end_date.year() - start_date.year()) * 12
+        + (end_date.month() as i32 - start_date.month() as i32);
 
     let same_day = end_date.day() == start_date.day();
     let both_last_day = is_last_day_of_month(end_date) && is_last_day_of_month(start_date);
@@ -303,10 +301,10 @@ fn months_between_dt(end: NaiveDateTime, start: NaiveDateTime) -> f64 {
 
     // Seconds-of-day component (Spark normalizes time-of-day to a per-31-day fraction)
     let seconds_per_day = 86_400.0_f64;
-    let t_end = end.num_seconds_from_midnight() as f64
-        + (end.nanosecond() as f64) / 1_000_000_000.0;
-    let t_start = start.num_seconds_from_midnight() as f64
-        + (start.nanosecond() as f64) / 1_000_000_000.0;
+    let t_end =
+        end.num_seconds_from_midnight() as f64 + (end.nanosecond() as f64) / 1_000_000_000.0;
+    let t_start =
+        start.num_seconds_from_midnight() as f64 + (start.nanosecond() as f64) / 1_000_000_000.0;
 
     let day_diff = end_date.day() as i32 - start_date.day() as i32;
     let time_diff_days = (t_end - t_start) / seconds_per_day;

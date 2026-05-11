@@ -1213,6 +1213,6 @@ def test_add_months_months_between_sql() -> None:
     add_result = daft.sql("SELECT add_months(start, n) as shifted FROM df").to_pydict()
     assert add_result["shifted"] == [date(2023, 2, 28)]
 
-    between_result = daft.sql("SELECT months_between(\"end\", ref) as diff FROM df").to_pydict()
+    between_result = daft.sql('SELECT months_between("end", ref) as diff FROM df').to_pydict()
     # Pure-date inputs: 4 + (28 - 30) / 31 = 3.93548387
     assert between_result["diff"][0] == pytest.approx(3.93548387, abs=1e-8)
