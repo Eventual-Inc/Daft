@@ -188,6 +188,59 @@ def _inject_fragment_id(rb: pa.RecordBatch, fragment_id: int) -> pa.RecordBatch:
     return pa.RecordBatch.from_arrays(columns, names=names)
 
 
+# Synthetic columns that don't live in a Lance leaf's data schema but are
+# injected by us (or by Lance scan options) when reading a namespace.
+_SYNTHETIC_LEAF_COLS = frozenset({"fragment_id", "_rowaddr", "_rowid"})
+
+
+def _compute_leaf_projection(
+    leaf_names: set[str],
+    required_columns: list[str] | None,
+    partition_field_names: set[str],
+) -> tuple[list[str] | None, bool]:
+    """Compute the leaf-level projection or skip the leaf entirely.
+
+    Different leaves in a partitioned namespace may have different schemas
+    (e.g., after a partial column merge, or topic-keyed partitioning where
+    each topic has its own signal set). Passing a column to
+    ``lance.scanner(columns=...)`` that the leaf doesn't have raises
+    ``LanceError(Schema)``; this is a metadata-only check that decides up
+    front whether a leaf can satisfy the projection at all.
+
+    We treat the projection as a hard requirement: a leaf is **skipped**
+    if any requested data column is missing from it. Rows from such a leaf
+    contribute nothing to the query result — we never fabricate NULL
+    columns for them.
+
+    Args:
+        leaf_names: Column names in the leaf's Arrow schema.
+        required_columns: Daft's projection, or None for "all columns".
+        partition_field_names: Set of partition field ids — injected after
+            the scan, so not requested from the leaf.
+
+    Returns:
+        ``(leaf_cols, skip)``:
+
+        - ``leaf_cols`` — list to pass to ``ds.scanner(columns=...)`` (or
+          ``None`` if the user wants Lance's default behavior, e.g. no data
+          columns or no projection at all).
+        - ``skip`` — True iff any requested data column is absent from this
+          leaf; the caller should drop the leaf entirely.
+    """
+    if required_columns is None:
+        return None, False
+
+    data_cols_requested = [
+        c for c in required_columns if c not in partition_field_names and c not in _SYNTHETIC_LEAF_COLS
+    ]
+    if not data_cols_requested:
+        return None, False
+
+    if not all(c in leaf_names for c in data_cols_requested):
+        return None, True
+    return data_cols_requested, False
+
+
 def _lance_namespace_factory_function(
     ds_uri: str,
     fragment_ids: list[int] | None = None,
@@ -220,13 +273,13 @@ def _lance_namespace_factory_function(
     pv = partition_values or {}
     pft = partition_field_types or {}
 
-    # Strip partition columns and fragment_id from what we ask the leaf dataset
-    # to return; they're injected afterward.
-    non_partition_cols: list[str] | None = None
-    if required_columns is not None:
-        non_partition_cols = [c for c in required_columns if c not in pv and c != "fragment_id"]
-        if not non_partition_cols:
-            non_partition_cols = None
+    # Leaves in a partitioned namespace may have disjoint schemas (after a
+    # partial column merge or topic-keyed partitioning). Skip this leaf if
+    # any requested data column is absent — no NULL fabrication.
+    leaf_names = set(ds.schema.names)
+    leaf_cols, skip = _compute_leaf_projection(leaf_names, required_columns, set(pv.keys()))
+    if skip:
+        return
 
     def _emit(rb: pa.RecordBatch, fragment_id: int | None) -> Iterator[PyRecordBatch]:
         rb = _inject_partition_columns(rb, pv, pft, required_columns)
@@ -238,7 +291,7 @@ def _lance_namespace_factory_function(
         # Scanning the whole dataset — Lance doesn't expose per-row fragment ids
         # through the dataset-level scanner. include_fragment_id requires the
         # per-fragment path.
-        scanner = ds.scanner(columns=non_partition_cols, filter=filter, limit=limit)
+        scanner = ds.scanner(columns=leaf_cols, filter=filter, limit=limit)
         for rb in scanner.to_batches():
             yield from _emit(rb, None)
     else:
@@ -250,7 +303,7 @@ def _lance_namespace_factory_function(
             fragment_limit = (limit - rows_yielded) if limit is not None else None
             scanner = ds.scanner(
                 fragments=[fragment],
-                columns=non_partition_cols,
+                columns=leaf_cols,
                 filter=filter,
                 limit=fragment_limit,
             )
@@ -493,6 +546,14 @@ class LanceNamespaceScanOperator(ScanOperator, SupportsPushdownFilters):
             ds = lance.dataset(ds_uri, **open_kwargs)
         except Exception as e:
             logger.warning("Failed to open partition dataset at %s: %s", ds_uri, e)
+            return
+
+        # Metadata-only check: if this leaf can't satisfy the projection
+        # (e.g., it's missing a requested column because of disjoint per-leaf
+        # schemas), don't emit scan tasks for it at all.
+        leaf_names = set(ds.schema.names)
+        _, skip = _compute_leaf_projection(leaf_names, required_columns, set(partition_values.keys()))
+        if skip:
             return
 
         fragments = list(ds.get_fragments())

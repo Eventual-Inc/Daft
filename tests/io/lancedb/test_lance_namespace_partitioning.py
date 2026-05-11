@@ -1263,6 +1263,110 @@ class TestSpecLiteralFixture:
         expected_dirs = set(expected.keys())
         assert dirs_on_disk == expected_dirs
 
+    def test_disjoint_leaf_schemas_only_scans_matching_leaves(self, tmp_path):
+        """Selecting a column skips leaves without that column.
+
+        Different leaves may have different schemas (after partial merge or
+        topic-keyed partitioning). Selecting a column should only scan the
+        leaves that actually have it; leaves without it must be skipped.
+        """
+        import datetime as _dt
+
+        import lance
+
+        root = str(tmp_path / "ns")
+        os.makedirs(root, exist_ok=True)
+
+        # Namespace schema (logical union): topic, ts, scalar_0.
+        schema_json = {
+            "fields": [
+                {"name": "topic", "nullable": False, "type": {"type": "utf8"}, "metadata": {"lance:field_id": "0"}},
+                {"name": "ts", "nullable": True, "type": {"type": "int64"}, "metadata": {"lance:field_id": "1"}},
+                {
+                    "name": "scalar_0",
+                    "nullable": True,
+                    "type": {"type": "float64"},
+                    "metadata": {"lance:field_id": "2"},
+                },
+            ]
+        }
+        partition_spec_v1 = {
+            "id": 1,
+            "fields": [
+                {
+                    "field_id": "topic",
+                    "source_ids": [0],
+                    "transform": {"type": "identity"},
+                    "result_type": {"type": "utf8"},
+                }
+            ],
+        }
+
+        # Leaf A (topic="A"): only [ts]. Leaf B (topic="B"): [ts, scalar_0].
+        leaf_a_schema = pa.schema([pa.field("ts", pa.int64())])
+        leaf_a_table = pa.table({"ts": [10, 11, 12]}, schema=leaf_a_schema)
+        lance.write_dataset(leaf_a_table, os.path.join(root, "aaaaaaaa_v1$nsa00000000000000$dataset"))
+
+        leaf_b_schema = pa.schema([pa.field("ts", pa.int64()), pa.field("scalar_0", pa.float64())])
+        leaf_b_table = pa.table(
+            {"ts": [20, 21], "scalar_0": [3.14, 2.71]},
+            schema=leaf_b_schema,
+        )
+        lance.write_dataset(leaf_b_table, os.path.join(root, "bbbbbbbb_v1$nsb00000000000000$dataset"))
+
+        manifest_schema = pa.schema(
+            [
+                pa.field("object_id", pa.utf8(), nullable=False),
+                pa.field("object_type", pa.utf8(), nullable=False),
+                pa.field("location", pa.utf8()),
+                pa.field("metadata", pa.utf8()),
+                pa.field("base_objects", pa.list_(pa.utf8())),
+                pa.field("read_version", pa.uint64()),
+                pa.field("read_branch", pa.utf8()),
+                pa.field("read_tag", pa.utf8()),
+                pa.field("partition_field_topic", pa.utf8()),
+            ],
+            metadata={
+                "partition_spec_v1": json.dumps(partition_spec_v1),
+                "schema": json.dumps(schema_json),
+            },
+        )
+        rows = {
+            "object_id": [
+                "v1",
+                "v1$nsa00000000000000",
+                "v1$nsa00000000000000$dataset",
+                "v1$nsb00000000000000",
+                "v1$nsb00000000000000$dataset",
+            ],
+            "object_type": ["namespace", "namespace", "table", "namespace", "table"],
+            "location": [
+                None,
+                None,
+                "aaaaaaaa_v1$nsa00000000000000$dataset",
+                None,
+                "bbbbbbbb_v1$nsb00000000000000$dataset",
+            ],
+            "metadata": ["{}"] * 5,
+            "base_objects": [None] * 5,
+            "read_version": [None, None, 1, None, 1],
+            "read_branch": [None] * 5,
+            "read_tag": [None] * 5,
+            "partition_field_topic": [None, "A", "A", "B", "B"],
+        }
+        arrays = [pa.array(rows[f.name], type=f.type) for f in manifest_schema]
+        manifest_table = pa.Table.from_arrays(arrays, schema=manifest_schema)
+        lance.write_dataset(manifest_table, os.path.join(root, "__manifest"))
+
+        _ = _dt  # silence
+
+        # Selecting scalar_0 should NOT error; should return only B's 2 rows.
+        result = daft.read_lance(root, namespace_partitioning=True).select("scalar_0").to_pydict()
+        non_null = sorted(v for v in result["scalar_0"] if v is not None)
+        assert non_null == [pytest.approx(2.71), pytest.approx(3.14)]
+        # And we should only get rows from B (no NULLs from skipping A).
+        assert len(result["scalar_0"]) == 2
+
     def test_source_ids_resolved_by_lance_field_id_not_position(self, tmp_path):
         """`source_ids` references `lance:field_id`, not Arrow positional index.
 
