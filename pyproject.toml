@@ -110,6 +110,7 @@ dev = [
   "ray[data, client]==2.55.0",
   # Lance
   "pylance==0.39.0",
+  "lance-namespace-urllib3-client==0.7.6",
   # Iceberg
   "pyiceberg==0.11.0",
   "pydantic==2.12.4",

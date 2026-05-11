@@ -11,6 +11,7 @@ from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
 from daft.io._checkpoint import attach_checkpoint
 from daft.io.lance.lance_merge_column import merge_columns_internal
+from daft.io.lance.lance_namespace_scan import LanceNamespaceScanOperator
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
 from daft.io.lance.rest_scan import LanceRestScanOperator
@@ -21,6 +22,7 @@ from daft.logical.builder import LogicalPlanBuilder
 if TYPE_CHECKING:
     from daft.checkpoint import CheckpointConfig
     from daft.dependencies import pa
+    from daft.io.scan import ScanOperator
 
     try:
         from lance.dataset import LanceDataset
@@ -46,6 +48,7 @@ def read_lance(
     metadata_cache_size_bytes: int | None = None,
     fragment_group_size: int | None = None,
     include_fragment_id: bool | None = None,
+    namespace_partitioning: bool = False,
     checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table or Lance REST service.
@@ -101,6 +104,12 @@ def read_lance(
         include_fragment_id : Optional, bool
             Whether to display fragment_id.
             if you have the behavior of 'merge_columns_df' or 'write_lance(mode = 'merge')', the `include_fragment_id` must be set to True
+        namespace_partitioning : bool, optional
+            When True, treat ``uri`` as the root of a partitioned Lance namespace following the
+            `Lance Partitioning Spec <https://lance.org/format/namespace/partitioning-spec/>`_:
+            discover partition tables via the ``__manifest`` Lance table at ``uri/__manifest``
+            and push partition column filters into manifest-level pruning. The resulting
+            DataFrame's schema includes the partition columns. Defaults to False.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
@@ -140,12 +149,13 @@ def read_lance(
     uri_str = str(uri)
     uri_type, uri_info = parse_lance_uri(uri_str)
 
+    lance_operator: ScanOperator
     if uri_type == "rest":
         # REST-based Lance table
         if rest_config is None:
             raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
 
-        lance_operator: LanceDBScanOperator | LanceRestScanOperator = LanceRestScanOperator(
+        lance_operator = LanceRestScanOperator(
             rest_config=rest_config,
             namespace=uri_info["namespace"],
             table_name=uri_info["table_name"],
@@ -155,21 +165,28 @@ def read_lance(
         io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
         storage_options = io_config_to_storage_options(io_config, uri_str)
 
-        ds = construct_lance_dataset(
-            uri_str,
-            storage_options=storage_options,
-            version=version,
-            asof=asof,
-            block_size=block_size,
-            commit_lock=commit_lock,
-            index_cache_size=index_cache_size,
-            default_scan_options=default_scan_options,
-            metadata_cache_size_bytes=metadata_cache_size_bytes,
-        )
+        if namespace_partitioning:
+            lance_operator = LanceNamespaceScanOperator(
+                uri_str,
+                storage_options=storage_options,
+                fragment_group_size=fragment_group_size,
+            )
+        else:
+            ds = construct_lance_dataset(
+                uri_str,
+                storage_options=storage_options,
+                version=version,
+                asof=asof,
+                block_size=block_size,
+                commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                default_scan_options=default_scan_options,
+                metadata_cache_size_bytes=metadata_cache_size_bytes,
+            )
 
-        lance_operator = LanceDBScanOperator(
-            ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
-        )
+            lance_operator = LanceDBScanOperator(
+                ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
+            )
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

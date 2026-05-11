@@ -1940,6 +1940,7 @@ class DataFrame:
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        partition_cols: list[str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -1966,6 +1967,11 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
+          partition_cols (Optional[List[str]]): When provided, writes a partitioned Lance namespace following the
+              `Lance Partitioning Spec <https://lance.org/format/namespace/partitioning-spec/>`_. The data is split
+              into one Lance table per unique combination of partition column values, and a ``__manifest`` Lance
+              table records the namespace + table inventory along with the partition spec. Not compatible with
+              ``mode="merge"``.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -2045,6 +2051,22 @@ class DataFrame:
             )
 
         # File-based Lance table (existing logic)
+        if partition_cols is not None:
+            if mode == "merge":
+                raise ValueError("partition_cols is not supported with mode='merge'")
+            from daft.io.lance.lance_partitioned_data_sink import LancePartitionedDataSink
+
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            part_sink = LancePartitionedDataSink(
+                uri,
+                schema,
+                mode,
+                io_config,
+                partition_cols=partition_cols,
+                **sanitized_kwargs,
+            )
+            return self.write_sink(part_sink)
+
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
