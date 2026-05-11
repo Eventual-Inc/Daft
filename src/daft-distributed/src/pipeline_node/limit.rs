@@ -531,6 +531,24 @@ mod tests {
         }
     }
 
+    /// Assert the limit node ran exactly `expected` downstream tasks.
+    /// `num_tasks` is incremented per task instance executed on a worker,
+    /// keyed by the emitting node's id, so this directly verifies how many
+    /// SwordfishTaskBuilders the limit node sent downstream.
+    fn assert_limit_num_tasks(
+        stats: &[(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)],
+        expected: u64,
+    ) {
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("limit node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => assert_eq!(s.num_tasks, expected),
+            other => panic!("expected Default snapshot for limit, got: {other:?}"),
+        }
+    }
+
     /// Limit on an `InMemorySource`: input task builders carry `psets` rather
     /// than scan tasks, so `estimated_num_rows()` returns `None` and the
     /// execution loop takes the fallback `max_concurrent_tasks = 1` branch.
@@ -557,8 +575,12 @@ mod tests {
     /// Limit = 0 on a non-empty `InMemorySource`: the execution loop must
     /// still emit a single empty downstream task (rather than producing zero
     /// tasks) so blocking ops like ungrouped aggregates downstream still
-    /// finalize and emit their one-row null result. Verifies `rows_out == 0`
-    /// and the pipeline completes without hanging.
+    /// finalize and emit their one-row null result.
+    ///
+    /// Asserts `num_tasks == 1` directly — without the short-circuit fix the
+    /// execution loop emits zero tasks (max_concurrent_tasks collapses to 0
+    /// because total_remaining is 0), so `rows_out == 0` alone wouldn't
+    /// distinguish the buggy path from the fixed one.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_limit_zero_emits_empty_task() -> DaftResult<()> {
         let meter = Meter::test_scope("test_limit_zero_emits_empty_task");
@@ -568,6 +590,7 @@ mod tests {
 
         let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
         assert_limit_rows_out(&stats, 0);
+        assert_limit_num_tasks(&stats, 1);
         Ok(())
     }
 
