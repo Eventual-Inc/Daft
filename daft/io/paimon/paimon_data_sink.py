@@ -100,6 +100,9 @@ class PaimonDataSink(DataSink[list[Any]]):
         which are incompatible with ``FileScanner.trim_and_transform_predicate``
         (expects full-table-schema indices).
         """
+        if not commit_messages:
+            return
+
         import time
 
         from pypaimon.common.predicate_builder import PredicateBuilder
