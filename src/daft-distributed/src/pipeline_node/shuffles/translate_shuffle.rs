@@ -100,8 +100,11 @@ impl LogicalPlanToPipelineNodeTranslator {
         match self.plan_config.config.shuffle_algorithm.as_str() {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
-            "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
-            "auto" => {
+            "flight_shuffle" | "auto" => {
+                // Apply the same geometric-mean heuristic Ray-plasma uses. Without this
+                // PreShuffleMergeNode is skipped on the Flight path, which fuses
+                // RepartitionWrite into the upstream task and erases the cross-stage
+                // overlap that pre-merge provides.
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 Ok(geometric_mean
