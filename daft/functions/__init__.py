@@ -134,7 +134,6 @@ from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     uuid,
-    uuidv7,
     random_int,
     eq_null_safe,
     cast,
@@ -542,7 +541,6 @@ __all__ = [
     "upload",
     "upper",
     "uuid",
-    "uuidv7",
     "value_counts",
     "var",
     "video_file",

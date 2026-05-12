@@ -79,23 +79,6 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
         return Expression._call_builtin_scalar_fn("uuidv7")
     raise ValueError("`version` must be 'v4' or 'v7'")
 
-
-def uuidv7() -> Expression:
-    """Generates a column of time-ordered UUIDv7 strings.
-
-    Returns:
-        Expression (UUID Expression): An expression that generates UUIDv7 values.
-
-    Examples:
-        >>> import daft
-        >>> from daft.functions import uuidv7
-        >>> df = daft.from_pydict({"foo": [1, 2, 3]}).with_column("u", uuidv7())
-        >>> df.schema()["u"].dtype == daft.DataType.uuid()
-        True
-    """
-    return Expression._call_builtin_scalar_fn("uuidv7")
-
-
 def random_int(low: int, high: int, seed: int | None = None) -> Expression:
     """Generates a column of random integer values.
 

@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 import time
 
+import pytest
+
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.functions import format, uuid, uuidv7
+from daft.functions import format, uuid
 
 
 def test_uuid_column_generation(make_df) -> None:
@@ -24,7 +26,7 @@ def test_uuid_column_generation(make_df) -> None:
 def test_uuidv7_column_generation(make_df) -> None:
     data = {"a": list(range(200))}
     before_ms = int(time.time() * 1000)
-    df = make_df(data).with_column("uuid", uuidv7()).collect()
+    df = make_df(data).with_column("uuid", uuid(version="v7")).collect()
     after_ms = int(time.time() * 1000)
 
     assert len(df) == 200
@@ -47,6 +49,11 @@ def test_uuid_version_argument_supports_v7(make_df) -> None:
 
     assert df.schema()["uuid"].dtype == DataType.uuid()
     assert all(v[14] == "7" for v in df.to_pydict()["uuid"])
+
+
+def test_uuid_version_argument_rejects_invalid_version() -> None:
+    with pytest.raises(ValueError, match="`version` must be 'v4' or 'v7'"):
+        uuid(version="v1")
 
 
 def test_uuid_empty_table(make_df) -> None:
