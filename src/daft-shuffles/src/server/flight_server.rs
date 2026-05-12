@@ -24,7 +24,11 @@ use tokio::{
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::{partition_file_writer::PartitionFileWriter, shuffle_cache::PartitionCache};
+use crate::{
+    coalescer::{self, CoalescerConfig, CoalescerState},
+    partition_file_writer::PartitionFileWriter,
+    shuffle_cache::PartitionCache,
+};
 
 struct ParsedTicket {
     shuffle_id: u64,
@@ -188,7 +192,7 @@ const fn parse_usize(s: &str) -> usize {
     n
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ShuffleFlightServer {
     shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
     /// One `PartitionFileWriter` per `(shuffle_id, partition_idx)`. Map tasks call
@@ -196,11 +200,31 @@ pub struct ShuffleFlightServer {
     /// for the partition; all map tasks for the same partition write into the same
     /// file. Created lazily on first contribution, dropped when this server is.
     partition_writers: Arc<Mutex<HashMap<(u64, usize), Arc<PartitionFileWriter>>>>,
+    /// Async coalescer state. Triggered from `register_shuffle_partitions`; rewrites
+    /// per-partition entry groups into a single combined file once the entry count +
+    /// total-bytes thresholds are crossed. See `coalescer.rs` for the policy. `None`
+    /// disables coalescing — kept as an option so callers that want raw write paths
+    /// (tests, micro-benchmarks) can opt out.
+    coalescer: Option<Arc<CoalescerState>>,
+}
+
+impl Default for ShuffleFlightServer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShuffleFlightServer {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_coalescer(Some(CoalescerConfig::default()))
+    }
+
+    pub fn with_coalescer(cfg: Option<CoalescerConfig>) -> Self {
+        Self {
+            shuffle_partitions: Arc::new(Mutex::new(HashMap::new())),
+            partition_writers: Arc::new(Mutex::new(HashMap::new())),
+            coalescer: cfg.map(|c| Arc::new(CoalescerState::new(c))),
+        }
     }
 
     /// Get (or create on first call) the shared file writer for one output partition
@@ -236,17 +260,135 @@ impl ShuffleFlightServer {
         shuffle_id: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        for partition in partitions {
-            shuffle_partitions.insert(
-                FlightPartitionKey {
-                    shuffle_id,
-                    partition_ref_id: partition.partition_ref_id,
-                },
-                partition,
-            );
+        {
+            let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+            for partition in partitions {
+                shuffle_partitions.insert(
+                    FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: partition.partition_ref_id,
+                    },
+                    partition,
+                );
+            }
         }
+        self.maybe_dispatch_coalesce(shuffle_id).await;
         Ok(())
+    }
+
+    /// Scan the cache for any `(shuffle_id, partition_idx)` group that has crossed
+    /// the coalescer's thresholds and isn't already being rewritten. For each
+    /// candidate, spawn a coalesce task. Non-blocking: the spawned tasks pull a
+    /// permit from the bounded `Semaphore`, do their I/O off the request path,
+    /// and swap the cache entries on completion.
+    ///
+    /// Scoped to one shuffle_id at a time because that's the granularity at which
+    /// new entries arrive — checking other shuffles would just waste work.
+    async fn maybe_dispatch_coalesce(&self, shuffle_id: u64) {
+        let Some(coalescer) = &self.coalescer else {
+            return;
+        };
+
+        // Snapshot under the lock: (ref_id, cache_clone) for this shuffle only.
+        let entries_snapshot: Vec<(u64, PartitionCache)> = {
+            let partitions = self.shuffle_partitions.lock().await;
+            partitions
+                .iter()
+                .filter(|(k, _)| k.shuffle_id == shuffle_id)
+                .map(|(k, v)| (k.partition_ref_id, v.clone()))
+                .collect()
+        };
+
+        // Pick candidate (shuffle_id, partition_idx) groups; skip any already in flight.
+        let in_flight = coalescer.in_flight.lock().await;
+        let candidates = coalescer::pick_candidates(
+            entries_snapshot
+                .iter()
+                .map(|(ref_id, cache)| (shuffle_id, *ref_id, cache)),
+            &coalescer.cfg,
+            &in_flight,
+        );
+        drop(in_flight);
+
+        if candidates.is_empty() {
+            return;
+        }
+
+        // Mark all picked groups in-flight before spawning, so a second
+        // `register_shuffle_partitions` racing in doesn't re-pick them.
+        {
+            let mut in_flight = coalescer.in_flight.lock().await;
+            for key in &candidates {
+                in_flight.insert(*key);
+            }
+        }
+
+        for (shuffle_id, partition_idx) in candidates {
+            // Bump seq for this group so coalesced filenames don't collide across passes.
+            let seq = {
+                let mut seqs = coalescer.seq.lock().await;
+                let entry = seqs.entry((shuffle_id, partition_idx)).or_insert(0);
+                let v = *entry;
+                *entry += 1;
+                v
+            };
+
+            // Per-group plan: take only the entries currently registered for this
+            // (shuffle_id, partition_idx). Any entries that arrive later will be
+            // picked up by a subsequent dispatch.
+            let group_entries: Vec<(u64, PartitionCache)> = entries_snapshot
+                .iter()
+                .filter(|(ref_id, _)| (*ref_id & 0xFFFF_FFFF) as usize == partition_idx)
+                .cloned()
+                .collect();
+
+            let plan = coalescer::build_plan(
+                shuffle_id,
+                partition_idx,
+                group_entries.iter().map(|(r, c)| (*r, c)),
+                seq,
+            );
+
+            let Some(plan) = plan else {
+                let mut in_flight = coalescer.in_flight.lock().await;
+                in_flight.remove(&(shuffle_id, partition_idx));
+                continue;
+            };
+
+            let server = self.clone();
+            let coalescer_arc = coalescer.clone();
+            let permits = coalescer.permits.clone();
+            tokio::spawn(async move {
+                // Acquire a permit before doing real work — keeps total disk I/O bounded.
+                let _permit = permits.acquire_owned().await.ok();
+                let result = coalescer::execute_plan(plan).await;
+                match result {
+                    Ok(updated) => {
+                        let mut partitions = server.shuffle_partitions.lock().await;
+                        for (ref_id, new_cache) in updated {
+                            partitions.insert(
+                                FlightPartitionKey {
+                                    shuffle_id,
+                                    partition_ref_id: ref_id,
+                                },
+                                new_cache,
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "daft_shuffles::coalescer",
+                            shuffle_id = shuffle_id,
+                            partition_idx = partition_idx,
+                            error = %e,
+                            "coalesce failed; leaving original entries in place"
+                        );
+                    }
+                }
+                let mut in_flight = coalescer_arc.in_flight.lock().await;
+                in_flight.remove(&(shuffle_id, partition_idx));
+            });
+        }
     }
 
     async fn get_shuffle_file_specs(
