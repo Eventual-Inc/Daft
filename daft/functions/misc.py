@@ -79,6 +79,7 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
         return Expression._call_builtin_scalar_fn("uuidv7")
     raise ValueError("`version` must be 'v4' or 'v7'")
 
+
 def random_int(low: int, high: int, seed: int | None = None) -> Expression:
     """Generates a column of random integer values.
 
