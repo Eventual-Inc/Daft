@@ -11,7 +11,7 @@ from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
 from daft.io._checkpoint import attach_checkpoint
 from daft.io.lance.lance_merge_column import merge_columns_internal
-from daft.io.lance.lance_namespace_scan import LanceNamespaceScanOperator
+from daft.io.lance.lance_namespace_scan import LanceNamespaceDataSource
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
 from daft.io.lance.rest_scan import LanceRestScanOperator
@@ -165,17 +165,18 @@ def read_lance(
     uri_str = str(uri)
     uri_type, uri_info = parse_lance_uri(uri_str)
 
-    lance_operator: ScanOperator
+    handle: ScanOperatorHandle
     if uri_type == "rest":
         # REST-based Lance table
         if rest_config is None:
             raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
 
-        lance_operator = LanceRestScanOperator(
+        rest_operator: ScanOperator = LanceRestScanOperator(
             rest_config=rest_config,
             namespace=uri_info["namespace"],
             table_name=uri_info["table_name"],
         )
+        handle = ScanOperatorHandle.from_python_scan_operator(rest_operator)
     else:
         # File-based Lance table (existing logic)
         io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -190,13 +191,14 @@ def read_lance(
                 index_cache_size=index_cache_size,
                 metadata_cache_size_bytes=metadata_cache_size_bytes,
             )
-            lance_operator = LanceNamespaceScanOperator(
+            source = LanceNamespaceDataSource(
                 uri_str,
                 storage_options=storage_options,
                 fragment_group_size=fragment_group_size,
                 include_fragment_id=bool(include_fragment_id),
                 default_scan_options=default_scan_options,
             )
+            handle = ScanOperatorHandle.from_data_source(source)
         else:
             ds = construct_lance_dataset(
                 uri_str,
@@ -210,11 +212,11 @@ def read_lance(
                 metadata_cache_size_bytes=metadata_cache_size_bytes,
             )
 
-            lance_operator = LanceDBScanOperator(
+            lancedb_operator: ScanOperator = LanceDBScanOperator(
                 ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
             )
+            handle = ScanOperatorHandle.from_python_scan_operator(lancedb_operator)
 
-    handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
