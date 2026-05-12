@@ -1428,6 +1428,34 @@ class TestSpecLiteralFixture:
         caption_non_null = sorted(v for v in caption_only["caption"] if v is not None)
         assert caption_non_null == sorted(["left turn", "straight", "highway", "exit"])
 
+    def test_empty_namespace_fixture(self):
+        """Read a spec-compliant empty partitioned namespace.
+
+        Manifest has only the root ``v1`` row, zero table rows, no leaf
+        directories. The reader should surface the declared schema from the
+        manifest's ``schema`` JSON metadata and produce zero rows for any
+        query, including filtered ones.
+        """
+        fixture = "tests/assets/lance/partitioned-namespace/empty"
+        df = daft.read_lance(fixture, namespace_partitioning=True)
+
+        # Schema comes from the manifest's `schema` JSON, not from any leaf.
+        schema_names = {f.name for f in df.schema()}
+        assert schema_names == {"robot_id", "ts", "value"}
+
+        # Zero rows but the right column shape.
+        assert df.count_rows() == 0
+        result = df.to_pydict()
+        assert result == {"robot_id": [], "ts": [], "value": []}
+
+        # Column projection on an empty namespace.
+        projected = df.select("robot_id", "ts").to_pydict()
+        assert projected == {"robot_id": [], "ts": []}
+
+        # Partition filters don't error on an empty namespace either.
+        filtered = df.where(df["robot_id"] == "r1").to_pydict()
+        assert filtered == {"robot_id": [], "ts": [], "value": []}
+
     def test_disjoint_leaf_schemas_only_scans_matching_leaves(self, tmp_path):
         """Selecting a column skips leaves without that column.
 
