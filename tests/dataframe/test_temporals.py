@@ -1153,3 +1153,12 @@ def test_utc_timestamp_sql() -> None:
     to_result = daft.sql("SELECT to_utc_timestamp(ts, 'Europe/London') AS utc FROM df").to_pydict()
     # The naive wall-clock 02:40 interpreted in BST is 01:40 UTC.
     assert to_result["utc"] == [datetime(2017, 7, 14, 1, 40)]
+
+
+def test_convert_timezone_sql() -> None:
+    # Spark-style argument order: convert_timezone(target_tz, source_ts).
+    # Source carries a UTC label; 12:00 UTC == 07:00 EST on 2021-01-01.
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc)]})  # noqa: F841
+    result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
+    expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
+    assert result["ny"] == [expected]

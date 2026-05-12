@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use arrow_array::Int64Array;
+use arrow_array::{
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray,
+};
 use common_error::DaftError;
 use daft_core::prelude::{AsArrow, TimeUnit};
 use daft_dsl::functions::{UnaryArg, prelude::*};
@@ -8,6 +11,18 @@ use daft_schema::time_unit::{
     naive_datetime_to_timestamp, naive_local_to_timestamp, parse_timezone,
     timestamp_to_naive_datetime, timestamp_to_naive_local,
 };
+
+// Build an Arrow timestamp array with the physical type that matches the
+// logical Daft TimeUnit. Using the typed PrimitiveArray variants (rather than
+// Int64Array) keeps the Arrow physical dtype aligned with the Field dtype.
+fn build_timestamp_array(values: Vec<Option<i64>>, time_unit: TimeUnit) -> arrow_array::ArrayRef {
+    match time_unit {
+        TimeUnit::Seconds => Arc::new(TimestampSecondArray::from(values)),
+        TimeUnit::Milliseconds => Arc::new(TimestampMillisecondArray::from(values)),
+        TimeUnit::Microseconds => Arc::new(TimestampMicrosecondArray::from(values)),
+        TimeUnit::Nanoseconds => Arc::new(TimestampNanosecondArray::from(values)),
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Time;
@@ -209,7 +224,7 @@ impl ScalarUDF for FromUtcTimestamp {
             }
         }
 
-        let arrow_arr: arrow_array::ArrayRef = Arc::new(Int64Array::from(values));
+        let arrow_arr = build_timestamp_array(values, time_unit);
         Series::from_arrow(
             Arc::new(Field::new(
                 input.name().to_string(),
@@ -290,7 +305,7 @@ impl ScalarUDF for ToUtcTimestamp {
             }
         }
 
-        let arrow_arr: arrow_array::ArrayRef = Arc::new(Int64Array::from(values));
+        let arrow_arr = build_timestamp_array(values, time_unit);
         Series::from_arrow(
             Arc::new(Field::new(
                 input.name().to_string(),

@@ -1166,6 +1166,13 @@ def from_utc_timestamp(expr: Expression, timezone: str) -> Expression:
     Returns:
         Expression: A tz-naive Timestamp expression representing the wall-clock in ``timezone``.
 
+    Note:
+        Unlike Spark, Daft does not silently resolve DST transitions during this
+        conversion. ``from_utc_timestamp`` itself maps UTC instants to local time
+        via :func:`chrono::TimeZone::from_utc_datetime`, which is unambiguous and
+        never errors. The strict DST handling only applies to :func:`to_utc_timestamp`
+        (see its docstring).
+
     Examples:
         >>> import daft
         >>> from datetime import datetime
@@ -1191,6 +1198,14 @@ def to_utc_timestamp(expr: Expression, timezone: str) -> Expression:
 
     Returns:
         Expression: A tz-naive Timestamp expression representing the UTC instant.
+
+    Note:
+        DST transition handling differs from Spark. When the local wall-clock falls
+        in a non-existent gap (e.g. the spring-forward hour) or an ambiguous overlap
+        (e.g. the fall-back hour), Daft raises a ``ValueError`` rather than silently
+        picking a side. Spark instead advances past the gap and resolves ambiguity
+        to the pre-transition offset. If you need Spark-compatible behavior, filter
+        or pre-shift these inputs before calling.
 
     Examples:
         >>> import daft
