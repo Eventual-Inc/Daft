@@ -71,13 +71,19 @@ struct FlightPartitionKey {
 }
 
 /// How the Flight server should read one file's contribution to a partition response.
+/// One `FileReadSpec` corresponds to exactly one `open()` syscall on the read side —
+/// `Ranges` may carry multiple byte ranges within the same file (combined-file shuffle),
+/// which are all served from a single open.
 #[derive(Debug, Clone)]
 enum FileReadSpec {
     /// Read the whole IPC stream file. Used by the legacy per-partition cache.
     Whole { path: String },
-    /// Read [start, end) bytes from the file, treating the bytes as a stream of IPC
-    /// batch messages (no schema header — the server has already emitted one).
-    Range { path: String, start: u64, end: u64 },
+    /// Read multiple [start, end) byte ranges from a single file, in file order.
+    /// Each range contains a contiguous run of IPC batch messages (no schema header —
+    /// the server has already emitted one). Used by the combined-file shuffle: many
+    /// partition_refs in one response can share the same physical file (one per map
+    /// task), so we batch their ranges into a single open + seek-loop.
+    Ranges { path: String, ranges: Vec<(u64, u64)> },
 }
 
 /// Process-wide aggregate counters for shuffle read throughput diagnostics.
@@ -228,7 +234,14 @@ impl ShuffleFlightServer {
             .schema
             .clone();
 
-        let mut specs = Vec::new();
+        // Group ranged reads by file path so each physical file is opened once per response,
+        // even when multiple partition_refs in this request share the same combined-file map
+        // task output (the common case in the combined-file shuffle design).
+        let mut whole_specs = Vec::new();
+        let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+        let mut first_seen: HashMap<String, usize> = HashMap::new();
+        let mut order: Vec<String> = Vec::new();
+
         for partition_ref_id in partition_ref_ids {
             let Some(cache) = partitions.get(&FlightPartitionKey {
                 shuffle_id,
@@ -238,21 +251,31 @@ impl ShuffleFlightServer {
             };
             match &cache.byte_ranges {
                 Some(ranges) => {
-                    // Combined-file mode: one entry per (file_path, range).
                     for (path, (start, end)) in cache.file_paths.iter().zip(ranges.iter()) {
-                        specs.push(FileReadSpec::Range {
-                            path: path.clone(),
-                            start: *start,
-                            end: *end,
-                        });
+                        if !first_seen.contains_key(path) {
+                            first_seen.insert(path.clone(), order.len());
+                            order.push(path.clone());
+                        }
+                        ranges_by_path
+                            .entry(path.clone())
+                            .or_default()
+                            .push((*start, *end));
                     }
                 }
                 None => {
                     for path in &cache.file_paths {
-                        specs.push(FileReadSpec::Whole { path: path.clone() });
+                        whole_specs.push(FileReadSpec::Whole { path: path.clone() });
                     }
                 }
             }
+        }
+
+        let mut specs = whole_specs;
+        for path in order {
+            let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
+            // Sort by start so sequential reads are forward seeks (kind to readahead).
+            ranges.sort_unstable_by_key(|(s, _)| *s);
+            specs.push(FileReadSpec::Ranges { path, ranges });
         }
 
         Some((specs, schema))
@@ -363,35 +386,51 @@ fn read_spec_sync(
 ) -> DaftResult<Vec<RecordBatch>> {
     use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
 
-    // Build a Read source that delivers a complete IPC stream (schema + batches + EOS)
-    // regardless of whether the underlying spec is Whole or Range.
-    let (reader, body_bytes): (Box<dyn Read + Send>, u64) = match spec {
+    let mut batches = Vec::new();
+    match spec {
         FileReadSpec::Whole { path } => {
             let file = std::fs::File::open(&path)?;
             let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
+            read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
             // 64 KiB buf; small enough to stay cache-friendly, large enough to amortize
             // syscalls on the typical 1-4 MiB per-batch flushes.
-            let buf = StdBufReader::with_capacity(64 * 1024, file);
-            (Box::new(buf), body_bytes)
+            let reader = StdBufReader::with_capacity(64 * 1024, file);
+            let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+            decode_batches_into(stream_reader, fields, schema, &mut batches)?;
         }
-        FileReadSpec::Range { path, start, end } => {
+        FileReadSpec::Ranges { path, ranges } => {
+            // Single open serves all ranges. The IPC stream format has no concept of
+            // gaps inside a stream, so we decode each range as its own mini-stream
+            // (schema header prefix → range bytes → EOS) and concat the batches.
+            // Skipping the open for ranges 2..N is where the wall-clock saving comes from.
             let mut file = std::fs::File::open(&path)?;
-            file.seek(std::io::SeekFrom::Start(start))?;
-            let body_bytes = end - start;
-            let take = file.take(body_bytes);
-            // Chain: synthetic schema header  →  batch bytes from the range  →  EOS marker.
-            // Disambiguate to `std::io::Read::chain` because this file also imports
-            // `tokio::io::AsyncReadExt`, which provides its own (async) `chain`.
-            let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-            let with_body = Read::chain(schema_prefix, take);
-            let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
-            (Box::new(StdBufReader::with_capacity(64 * 1024, chained)), body_bytes)
+            let mut body_bytes_acc: u64 = 0;
+            for (start, end) in ranges {
+                file.seek(std::io::SeekFrom::Start(start))?;
+                let body_bytes = end - start;
+                body_bytes_acc += body_bytes;
+                let take = (&mut file).take(body_bytes);
+                // Disambiguate to `std::io::Read::chain` because this file also imports
+                // `tokio::io::AsyncReadExt`, which provides its own (async) `chain`.
+                let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
+                let with_body = Read::chain(schema_prefix, take);
+                let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+                let reader = StdBufReader::with_capacity(64 * 1024, chained);
+                let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+                decode_batches_into(stream_reader, fields, schema, &mut batches)?;
+            }
+            read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
         }
-    };
-    read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
+    }
+    Ok(batches)
+}
 
-    let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-    let mut batches = Vec::new();
+fn decode_batches_into<R: std::io::Read>(
+    stream_reader: arrow_ipc::reader::StreamReader<R>,
+    fields: &[FieldRef],
+    schema: &SchemaRef,
+    out: &mut Vec<RecordBatch>,
+) -> DaftResult<()> {
     for arrow_batch in stream_reader {
         let arrow_batch = arrow_batch?;
         let num_rows = arrow_batch.num_rows();
@@ -400,9 +439,9 @@ fn read_spec_sync(
             .zip(arrow_batch.columns())
             .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
             .collect::<DaftResult<Vec<_>>>()?;
-        batches.push(RecordBatch::new_with_size(schema.clone(), columns, num_rows)?);
+        out.push(RecordBatch::new_with_size(schema.clone(), columns, num_rows)?);
     }
-    Ok(batches)
+    Ok(())
 }
 
 #[tonic::async_trait]
@@ -581,14 +620,28 @@ async fn open_spec_as_flight_stream(
             let reader = FlightDataStreamReader::try_new(BufReader::new(file)).await?;
             Ok(Box::pin(reader.into_stream()))
         }
-        FileReadSpec::Range { path, start, end } => {
-            let mut file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
-            file.seek(SeekFrom::Start(start))
-                .await
-                .map_err(DaftError::IoError)?;
-            let limited = file.take(end - start);
-            let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));
-            Ok(Box::pin(reader.into_stream()))
+        FileReadSpec::Ranges { path, ranges } => {
+            // One file open serves all ranges. We hold ownership of `file` across the
+            // outer for-loop; each iteration borrows it mutably via `(&mut file).take(n)`
+            // for the duration of one range's stream. The borrow is released when the
+            // inner stream is dropped at end of the iteration body, allowing the next
+            // seek + take.
+            let file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
+            let stream = async_stream::try_stream! {
+                let mut file = file;
+                for (start, end) in ranges {
+                    file.seek(SeekFrom::Start(start)).await.map_err(DaftError::IoError)?;
+                    let limited = (&mut file).take(end - start);
+                    let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));
+                    // The unfold-backed stream is !Unpin; pin it on the heap so we can
+                    // call .next().await on it.
+                    let mut inner = Box::pin(reader.into_stream());
+                    while let Some(item) = inner.next().await {
+                        yield item?;
+                    }
+                }
+            };
+            Ok(Box::pin(stream))
         }
     }
 }
