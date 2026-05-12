@@ -604,6 +604,7 @@ async fn main() -> DaftResult<()> {
     // Emit aggregate summaries (subscriber-respecting; no-op if DAFT_TRACE unset).
     log_agg_summary("bench end");
     log_read_agg_summary("bench end");
+    daft_shuffles::server::read_cache::log_cache_agg_summary("bench end");
 
     // Cleanup: drop the server handle, remove the temp dir.
     drop(server_handle);
