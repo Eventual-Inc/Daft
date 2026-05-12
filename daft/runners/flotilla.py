@@ -109,8 +109,24 @@ class RaySwordfishActor:
         num_gpus: int,
         is_head: bool = False,
         event_log_dir: str | None = None,
+        dashboard_url: str | None = None,
     ) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
+
+        if dashboard_url:
+            os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
+            try:
+                from daft.daft import refresh_dashboard_subscriber
+
+                refresh_dashboard_subscriber()
+            except ImportError:
+                pass
+            except Exception as e:
+                # Surface unexpected refresh failures so an operator debugging
+                # absent live task stats has something to grep for. Don't
+                # raise — worker startup must succeed even without the
+                # dashboard subscriber.
+                logger.warning("Failed to refresh worker dashboard subscriber: %s", e)
 
         if event_log_dir:
             _attach_remote_event_log_subscriber(
@@ -334,6 +350,19 @@ def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
+    dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
+    task_events_enabled = os.environ.get("DAFT_TASK_EVENTS_ENABLED")
+
+    # Workers need DAFT_DASHBOARD_URL to construct a DashboardSubscriber that
+    # POSTs per-task progress updates, and DAFT_TASK_EVENTS_ENABLED to gate
+    # emission. Both are propagated via runtime_env env_vars rather than
+    # inheriting from the driver process (Ray actors don't inherit by default).
+    worker_env_vars: dict[str, str] = {}
+    if dashboard_url:
+        worker_env_vars["DAFT_DASHBOARD_URL"] = dashboard_url
+    if task_events_enabled:
+        worker_env_vars["DAFT_TASK_EVENTS_ENABLED"] = task_events_enabled
+
     actors = []
     for node in ray.nodes():
         if (
@@ -352,11 +381,13 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                     node_id=node["NodeID"],
                     soft=False,
                 ),
+                runtime_env=({"env_vars": worker_env_vars} if worker_env_vars else None),
             ).remote(
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
                 is_head=is_head,
                 event_log_dir=event_log_dir,
+                dashboard_url=dashboard_url,
             )
             actors.append((node, actor))
 
@@ -410,8 +441,12 @@ class RemoteFlotillaRunner:
                 refresh_dashboard_subscriber()
             except ImportError:
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                # Surface unexpected refresh failures so an operator debugging
+                # absent dashboard signal has something to grep for. Don't
+                # raise — runner startup must succeed even without the
+                # dashboard subscriber.
+                logger.warning("Failed to refresh runner dashboard subscriber: %s", e)
 
         if event_log_dir:
             _attach_remote_event_log_subscriber(
@@ -452,6 +487,10 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
+            # `finish()` synthesizes any missing OperatorEnd events for
+            # nodes that started but never naturally drained, dispatching
+            # them on the actor's local `DaftContext` (whose `_dashboard`
+            # subscriber forwards them straight to the dashboard server).
             stats: PyExecutionStats = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)

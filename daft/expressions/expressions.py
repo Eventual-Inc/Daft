@@ -2688,6 +2688,16 @@ class Expression:
 
         return map_get(self, key)
 
+    def map_keys(self) -> Expression:
+        """Returns a list of all keys in the map.
+
+        Tip: See Also
+            [`daft.functions.map_keys`](https://docs.daft.ai/en/stable/api/functions/map_keys/)
+        """
+        from daft.functions import map_keys
+
+        return map_keys(self)
+
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Get a subset of each list or binary value.
 

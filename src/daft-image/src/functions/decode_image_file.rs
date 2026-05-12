@@ -74,7 +74,7 @@ impl ScalarUDF for DecodeImageFile {
                     None => None,
                     Some(file_ref) => {
                         let result = (|| {
-                            let mut file = DaftFile::load_blocking(file_ref, true)?;
+                            let mut file = DaftFile::load_blocking(file_ref, true, None)?;
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).map_err(|e| {
                                 DaftError::ComputeError(format!("Failed to read file: {e}"))

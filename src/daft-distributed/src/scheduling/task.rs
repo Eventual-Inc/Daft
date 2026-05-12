@@ -554,9 +554,16 @@ impl SwordfishTaskBuilder {
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());
 
+        // Mark the root of the local plan so the worker's NodeInfo carries
+        // `is_task_root` on the StatSnapshot it ships back. `is_task_leaf` is
+        // already set on every node by `LocalPhysicalPlan::arced`. Together
+        // they let the dashboard's per-task aggregator attribute external
+        // row/byte I/O without double-counting fused chains.
+        let plan = self.plan.mark_task_root();
+
         let task = SwordfishTask {
             task_context,
-            plan: self.plan,
+            plan,
             resource_request,
             config: self.config.clone(),
             inputs: self.inputs,

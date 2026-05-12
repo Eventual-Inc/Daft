@@ -8,6 +8,9 @@ from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image, sf
 
+BUFFER_SNIFF: int = 4096
+BUFFER_METADATA: int = 65536
+
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
@@ -59,8 +62,8 @@ class File:
     ) -> None:
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, offset, length))  # type: ignore
 
-    def open(self) -> PyDaftFile:
-        return PyDaftFile._from_file_reference(self._inner)
+    def open(self, buffer_size: int | None = None) -> PyDaftFile:
+        return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -118,14 +121,14 @@ class File:
         return self._inner.length()
 
     def size(self) -> int:
-        return PyDaftFile._from_file_reference(self._inner).size()
+        return PyDaftFile._from_file_reference(self._inner, buffer_size=BUFFER_SNIFF).size()
 
     def mime_type(self) -> str:
         """Attempts to determine the MIME type of the file.
 
         If the MIME type is undetectable, returns 'application/octet-stream'.
         """
-        with self.open() as f:
+        with self.open(buffer_size=BUFFER_SNIFF) as f:
             maybe_mime_type = f.guess_mime_type()
             return maybe_mime_type if maybe_mime_type else "application/octet-stream"
 

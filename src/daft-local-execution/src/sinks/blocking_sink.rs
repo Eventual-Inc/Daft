@@ -8,7 +8,7 @@ use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    Meter, QueryID,
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
@@ -155,7 +155,6 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
         CheckpointStoreRef,
         CheckpointIdMap,
         daft_checkpoint::FileFormat,
-        QueryID,
     )>,
 }
 
@@ -187,9 +186,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         store: CheckpointStoreRef,
         id_map: CheckpointIdMap,
         file_format: daft_checkpoint::FileFormat,
-        query_id: QueryID,
     ) -> Self {
-        self.checkpoint = Some((store, id_map, file_format, query_id));
+        self.checkpoint = Some((store, id_map, file_format));
         self
     }
 
@@ -240,28 +238,23 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             CheckpointStoreRef,
             CheckpointIdMap,
             daft_checkpoint::FileFormat,
-            QueryID,
         )>,
     ) {
         tasks.spawn(async move {
             let checkpoint_id = checkpoint
                 .as_ref()
-                .map(|(_, id_map, _, _)| id_map.get_or_generate(input_id));
+                .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
 
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
                     // Stage write results as file metadata before sending.
-                    if let Some((ref store, _, file_format, ref query_id)) = checkpoint {
+                    if let Some((ref store, _, file_format)) = checkpoint {
                         let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
                         if !file_metadata.is_empty() {
                             store
-                                .stage_files(
-                                    checkpoint_id.as_ref().unwrap(),
-                                    query_id,
-                                    file_metadata,
-                                )
+                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
                                 .await?;
                         }
                     }
@@ -290,7 +283,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
                 }
             }
-            if let Some((store, _, _, _)) = &checkpoint {
+            if let Some((store, _, _)) = &checkpoint {
                 store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
@@ -311,7 +304,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             CheckpointStoreRef,
             CheckpointIdMap,
             daft_checkpoint::FileFormat,
-            QueryID,
         )>,
     ) -> DaftResult<()> {
         let node_id = node_info.id;
