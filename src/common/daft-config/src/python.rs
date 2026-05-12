@@ -126,6 +126,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         flight_shuffle_size_threshold_bytes=None,
         flight_shuffle_writer=None,
+        flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -167,6 +168,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_size_threshold_bytes: Option<usize>,
         flight_shuffle_writer: Option<&str>,
+        flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -327,6 +329,15 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_writer = flight_shuffle_writer.to_string();
+        }
+
+        if let Some(flight_shuffle_compression) = flight_shuffle_compression {
+            if !matches!(flight_shuffle_compression, "none" | "lz4" | "zstd") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_compression must be 'none', 'lz4', or 'zstd'",
+                ));
+            }
+            config.flight_shuffle_compression = flight_shuffle_compression.to_string();
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -509,6 +520,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_writer(&self) -> PyResult<&str> {
         Ok(self.config.flight_shuffle_writer.as_str())
+    }
+
+    #[getter]
+    fn flight_shuffle_compression(&self) -> PyResult<&str> {
+        Ok(self.config.flight_shuffle_compression.as_str())
     }
 
     #[getter]

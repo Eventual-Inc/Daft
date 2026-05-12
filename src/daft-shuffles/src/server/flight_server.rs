@@ -205,13 +205,15 @@ impl ShuffleFlightServer {
 
     /// Get (or create on first call) the shared file writer for one output partition
     /// of one shuffle. All concurrent map tasks for the same `(shuffle_id, partition_idx)`
-    /// hand back the same `Arc`.
+    /// hand back the same `Arc`. `compression` is honored only on the first-create call —
+    /// subsequent calls for the same partition reuse the existing writer regardless.
     pub async fn get_or_create_partition_writer(
         &self,
         shuffle_id: u64,
         partition_idx: usize,
         shuffle_dirs: &[String],
         schema: &SchemaRef,
+        compression: Option<arrow_ipc::CompressionType>,
     ) -> DaftResult<Arc<PartitionFileWriter>> {
         let key = (shuffle_id, partition_idx);
         let mut writers = self.partition_writers.lock().await;
@@ -223,6 +225,7 @@ impl ShuffleFlightServer {
             shuffle_id,
             partition_idx,
             schema,
+            compression,
         )?);
         writers.insert(key, writer.clone());
         Ok(writer)

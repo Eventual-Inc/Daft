@@ -29,8 +29,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_size_hint: Option<usize>,
     ) -> DistributedShuffleBackend {
         let flight = || {
+            let compression = match self.plan_config.config.flight_shuffle_compression.as_str() {
+                "none" => None,
+                other => Some(other.to_string()),
+            };
             DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                compression,
                 ..Default::default()
             })
         };

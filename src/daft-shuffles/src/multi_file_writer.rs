@@ -41,6 +41,7 @@ pub async fn write_partitions_multi_file(
     shuffle_id: u64,
     shuffle_dirs: &[String],
     schema: SchemaRef,
+    compression: Option<arrow_ipc::CompressionType>,
     partitions_per_output: Vec<Vec<MicroPartition>>,
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
@@ -73,6 +74,9 @@ pub async fn write_partitions_multi_file(
                 std::fs::create_dir_all(&shuffle_dir)?;
             }
             let arrow_schema = schema_for_write.to_arrow()?;
+            let write_options = IpcWriteOptions::default()
+                .try_with_compression(compression)
+                .map_err(|e| DaftError::InternalError(format!("IPC compression init failed: {}", e)))?;
             let mut caches = Vec::with_capacity(num_partitions);
             let mut total: u64 = 0;
             for (partition_idx, slot) in concated_per_partition.into_iter().enumerate() {
@@ -88,7 +92,7 @@ pub async fn write_partitions_multi_file(
                         let mut writer = StreamWriter::try_new_with_options(
                             counting,
                             &arrow_schema,
-                            IpcWriteOptions::default(),
+                            write_options.clone(),
                         )
                         .map_err(|e| {
                             DaftError::InternalError(format!("IPC writer init failed: {}", e))

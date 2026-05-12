@@ -175,6 +175,12 @@ pub struct DaftExecutionConfig {
     ///   partition), each a complete single-batch stream. Read side uses whole-file reads.
     ///   Same isolation as oneshot but with more file handles.
     pub flight_shuffle_writer: String,
+    /// IPC compression for the Flight repartition sink's on-disk batches:
+    /// `"none"` (default), `"lz4"`, or `"zstd"`. Read side decompresses transparently —
+    /// the compression marker travels in each batch header. Most useful when EBS
+    /// bandwidth is the binding bottleneck; cost is ~0.5-1 s of CPU per actor for
+    /// 132 GB of LZ4 encode/decode on a 16-core box.
+    pub flight_shuffle_compression: String,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -225,6 +231,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_size_threshold_bytes: 25 * 1024 * 1024 * 1024, // 25 GiB
             flight_shuffle_writer: "oneshot".to_string(),
+            flight_shuffle_compression: "none".to_string(),
             enable_multi_glob_path_tasks: false,
         }
     }

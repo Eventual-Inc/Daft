@@ -63,6 +63,7 @@ pub async fn write_partitions_one_shot(
     shuffle_id: u64,
     shuffle_dirs: &[String],
     schema: SchemaRef,
+    compression: Option<arrow_ipc::CompressionType>,
     partitions_per_output: Vec<Vec<MicroPartition>>,
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
@@ -97,10 +98,13 @@ pub async fn write_partitions_one_shot(
             let file = File::create(&file_path)?;
             let counting = CountingFile::new(file);
             let arrow_schema = schema_for_write.to_arrow()?;
+            let write_options = arrow_ipc::writer::IpcWriteOptions::default()
+                .try_with_compression(compression)
+                .map_err(|e| DaftError::InternalError(format!("IPC compression init failed: {}", e)))?;
             let mut writer = arrow_ipc::writer::StreamWriter::try_new_with_options(
                 counting,
                 &arrow_schema,
-                arrow_ipc::writer::IpcWriteOptions::default(),
+                write_options,
             )
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 

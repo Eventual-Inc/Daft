@@ -246,6 +246,7 @@ def set_execution_config(
     flight_shuffle_dirs: list[str] | None = None,
     flight_shuffle_size_threshold_bytes: int | None = None,
     flight_shuffle_writer: str | None = None,
+    flight_shuffle_compression: str | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -298,6 +299,7 @@ def set_execution_config(
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         flight_shuffle_size_threshold_bytes: Per-shuffle estimated-input-bytes threshold for routing the distributed shuffle to the Flight backend instead of Ray-plasma. Used in the "auto" / non-explicit shuffle modes. Above this, Flight is preferred (better at large shuffles that would force plasma to spill); below it, Ray-plasma is preferred (better in-memory). Defaults to 25 GiB.
         flight_shuffle_writer: Flight repartition sink write path. One of "oneshot" (default — one combined file per map task; per-task isolation), "append" (shared per-partition file appended by all map tasks; best read-side throughput, weaker fault isolation), or "multi_file" (one whole-file output per (map_task, partition); same isolation as oneshot with more file handles).
+        flight_shuffle_compression: IPC compression for Flight shuffle batches. One of "none" (default), "lz4", or "zstd". Most useful when EBS bandwidth dominates over CPU.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -343,6 +345,7 @@ def set_execution_config(
             flight_shuffle_dirs=flight_shuffle_dirs,
             flight_shuffle_size_threshold_bytes=flight_shuffle_size_threshold_bytes,
             flight_shuffle_writer=flight_shuffle_writer,
+            flight_shuffle_compression=flight_shuffle_compression,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 

@@ -10,7 +10,7 @@ use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
     multi_file_writer::write_partitions_multi_file,
     multi_partition_cache::repartition_agg, oneshot_writer::write_partitions_one_shot,
-    server::flight_server::ShuffleFlightServer,
+    parse_flight_compression, server::flight_server::ShuffleFlightServer,
     shuffle_cache::{PartitionCache, partition_ref_id},
 };
 use itertools::Itertools;
@@ -90,6 +90,7 @@ enum RepartitionBackend {
         shuffle_address: String,
         schema: SchemaRef,
         writer_mode: FlightWriterMode,
+        compression: Option<arrow_ipc::CompressionType>,
     },
 }
 
@@ -124,7 +125,7 @@ impl RepartitionSink {
         shuffle_id: u64,
         repartition_spec: RepartitionSpec,
         shuffle_dirs: Vec<String>,
-        _compression: Option<String>, // TODO: re-introduce when oneshot writer supports it
+        compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
         writer_mode: &str,
@@ -137,6 +138,7 @@ impl RepartitionSink {
                 shuffle_address,
                 schema,
                 writer_mode: FlightWriterMode::from_config(writer_mode)?,
+                compression: parse_flight_compression(compression.as_deref())?,
             },
             repartition_spec,
             num_partitions,
@@ -267,6 +269,7 @@ impl BlockingSink for RepartitionSink {
                 shuffle_address,
                 schema,
                 writer_mode,
+                compression,
             } => {
                 let shuffle_id = *shuffle_id;
                 let shuffle_dirs = shuffle_dirs.clone();
@@ -274,6 +277,7 @@ impl BlockingSink for RepartitionSink {
                 let shuffle_address = shuffle_address.clone();
                 let schema = schema.clone();
                 let writer_mode = *writer_mode;
+                let compression = *compression;
                 spawner
                     .spawn(
                         async move {
@@ -287,6 +291,7 @@ impl BlockingSink for RepartitionSink {
                                         shuffle_id,
                                         &shuffle_dirs,
                                         schema.clone(),
+                                        compression,
                                         per_partition,
                                     )
                                     .await?
@@ -298,6 +303,7 @@ impl BlockingSink for RepartitionSink {
                                         &shuffle_dirs,
                                         &schema,
                                         &local_server,
+                                        compression,
                                         per_partition,
                                     )
                                     .await?
@@ -308,6 +314,7 @@ impl BlockingSink for RepartitionSink {
                                         shuffle_id,
                                         &shuffle_dirs,
                                         schema.clone(),
+                                        compression,
                                         per_partition,
                                     )
                                     .await?
@@ -410,6 +417,7 @@ async fn write_per_partition_append(
     shuffle_dirs: &[String],
     schema: &SchemaRef,
     local_server: &Arc<ShuffleFlightServer>,
+    compression: Option<arrow_ipc::CompressionType>,
     partitions_per_output: Vec<Vec<MicroPartition>>,
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
@@ -442,6 +450,7 @@ async fn write_per_partition_append(
                         partition_idx,
                         shuffle_dirs,
                         schema,
+                        compression,
                     )
                     .await?;
                 let (before, after) = writer.write_batch(&arrow_batch).await?;

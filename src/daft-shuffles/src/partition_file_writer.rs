@@ -66,6 +66,7 @@ impl PartitionFileWriter {
         shuffle_id: u64,
         partition_idx: usize,
         schema: &SchemaRef,
+        compression: Option<arrow_ipc::CompressionType>,
     ) -> DaftResult<Self> {
         let dir_idx = partition_idx % shuffle_dirs.len();
         let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
@@ -76,12 +77,11 @@ impl PartitionFileWriter {
         let file = File::create(&file_path)?;
         let counting = CountingFile::new(file);
         let arrow_schema = schema.to_arrow()?;
-        let writer = StreamWriter::try_new_with_options(
-            counting,
-            &arrow_schema,
-            IpcWriteOptions::default(),
-        )
-        .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
+        let write_options = IpcWriteOptions::default()
+            .try_with_compression(compression)
+            .map_err(|e| DaftError::InternalError(format!("IPC compression init failed: {}", e)))?;
+        let writer = StreamWriter::try_new_with_options(counting, &arrow_schema, write_options)
+            .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
         Ok(Self {
             file_path,
             writer: Mutex::new(writer),
