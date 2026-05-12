@@ -368,3 +368,39 @@ def test_file_partial_range_raises(tmp_path: Path):
     with pytest.raises(Exception):
         with f_length_only.open() as fh:
             fh.read()
+
+
+# ── buffer_size tests ──
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+@pytest.mark.parametrize("buffer_size", [64, 4096, 65536, None])
+def test_open_with_buffer_size_reads_correctly(tmp_path: Path, buffer_size):
+    data = b"hello world" * 100
+    temp_file = tmp_path / "buf_test.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open(buffer_size=buffer_size) as fh:
+        result = fh.read()
+    assert result == data
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_mime_type_with_small_buffer(tmp_path: Path):
+    content = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    temp_file = tmp_path / "img.png"
+    temp_file.write_bytes(content)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.mime_type() == "image/png"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_size_with_small_buffer(tmp_path: Path):
+    data = bytes(range(256)) * 4
+    temp_file = tmp_path / "sized.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.size() == 1024

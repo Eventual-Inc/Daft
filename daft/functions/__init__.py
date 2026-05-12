@@ -72,6 +72,8 @@ from .datetime import (
     date_add,
     date_sub,
     date_diff,
+    add_months,
+    months_between,
     date_from_unix_date,
     timestamp_seconds,
     timestamp_millis,
@@ -91,7 +93,8 @@ from .similarity import (
     jaccard_similarity,
 )
 
-from .file_ import file, file_path, file_size, video_file, audio_file, guess_mime_type
+from .image_file_ import image_file_metadata, decode_image_file
+from .file_ import file, file_path, file_size, video_file, audio_file, image_file, guess_mime_type
 
 from .image import (
     resize,
@@ -148,6 +151,7 @@ from .misc import (
     coalesce,
     get,
     map_get,
+    map_keys,
     slice,
     when,
 )
@@ -272,6 +276,7 @@ from .window import (
 
 __all__ = [
     "abs",
+    "add_months",
     "any_value",
     "approx_count_distinct",
     "approx_percentiles",
@@ -337,6 +342,7 @@ __all__ = [
     "day_of_year",
     "decode",
     "decode_image",
+    "decode_image_file",
     "decompress",
     "degrees",
     "dense_rank",
@@ -375,6 +381,8 @@ __all__ = [
     "ilike",
     "image_attribute",
     "image_channel",
+    "image_file",
+    "image_file_metadata",
     "image_hash",
     "image_height",
     "image_mode",
@@ -423,6 +431,7 @@ __all__ = [
     "make_timestamp",
     "make_timestamp_ltz",
     "map_get",
+    "map_keys",
     "max",
     "mean",
     "median",
@@ -433,6 +442,7 @@ __all__ = [
     "minute",
     "monotonically_increasing_id",
     "month",
+    "months_between",
     "nanosecond",
     "negate",
     "next_day",

@@ -12,7 +12,6 @@ use daft_io::{IOClient, IOConfig, get_io_client, strip_file_uri_to_path};
 use futures::{
     StreamExt, TryStreamExt,
     future::{join_all, try_join_all},
-    lock::Mutex as AsyncMutex,
     stream::{self, BoxStream},
 };
 use serde::{Deserialize, Serialize};
@@ -37,8 +36,6 @@ fn system_time_from_rfc3339(s: &str) -> CheckpointResult<SystemTime> {
             message: format!("failed to parse timestamp {s:?}: {e}"),
         })
 }
-
-type ManifestCache = Arc<Vec<(CheckpointId, Manifest)>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -107,9 +104,6 @@ pub struct S3CheckpointStore {
     prefix: String,
     client: Arc<IOClient>,
     staged: Mutex<HashMap<CheckpointId, StagedEntry>>,
-    /// Cached result of the last `sealed_manifests()` S3 fetch.
-    /// Invalidated by `checkpoint()` and `mark_committed()`.
-    manifest_cache: AsyncMutex<Option<ManifestCache>>,
 }
 
 impl S3CheckpointStore {
@@ -122,7 +116,6 @@ impl S3CheckpointStore {
             prefix: prefix.into().trim_end_matches('/').to_string(),
             client,
             staged: Mutex::new(HashMap::new()),
-            manifest_cache: AsyncMutex::new(None),
         })
     }
 
@@ -339,21 +332,12 @@ impl S3CheckpointStore {
         Ok(update(entry))
     }
 
-    async fn invalidate_manifest_cache(&self) {
-        *self.manifest_cache.lock().await = None;
-    }
-
-    /// Returns all sealed manifests (checkpointed + committed) as `(id, manifest)` pairs.
-    ///
-    /// Results are cached until `checkpoint()` or `mark_committed()` writes to S3.
-    async fn sealed_manifests(&self) -> CheckpointResult<Arc<Vec<(CheckpointId, Manifest)>>> {
-        // Hold the lock for the entire fetch so concurrent callers wait rather than
-        // issuing duplicate S3 requests (stampede prevention).
-        let mut cache = self.manifest_cache.lock().await;
-        if let Some(cached) = cache.as_ref() {
-            return Ok(Arc::clone(cached));
-        }
-
+    /// Returns all sealed manifests (checkpointed + committed) as `(id, manifest)`
+    /// pairs. Re-globs and re-reads on every call — there is intentionally no
+    /// cache. The store is observed across processes (workers write, drivers
+    /// read), so a cached snapshot in one process would silently miss writes
+    /// committed by another.
+    async fn sealed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
         let ids: Vec<CheckpointId> = manifest_paths
             .iter()
@@ -396,9 +380,7 @@ impl S3CheckpointStore {
             .buffered(64)
             .try_collect()
             .await?;
-        let result = Arc::new(ids.into_iter().zip(manifests).collect::<Vec<_>>());
-        *cache = Some(Arc::clone(&result));
-        Ok(result)
+        Ok(ids.into_iter().zip(manifests).collect())
     }
 
     fn fetch_paths<T: Send + 'static>(
@@ -483,7 +465,7 @@ impl S3CheckpointStore {
     pub async fn sealed_file_paths(&self) -> CheckpointResult<Vec<String>> {
         let sealed = self.sealed_manifests().await?;
         let mut paths: Vec<String> = Vec::new();
-        for (id, manifest) in sealed.iter() {
+        for (id, manifest) in &sealed {
             for i in 0..manifest.num_key_files {
                 paths.push(self.key_path(id, i));
             }
@@ -496,7 +478,11 @@ impl S3CheckpointStore {
 impl CheckpointStore for S3CheckpointStore {
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
         self.check_first_error(id)?;
-        let parquet_bytes = super::keys_codec::write_series_as_parquet(&keys)?;
+        // Persist under the canonical column name so the on-disk key files
+        // are stable across renames of the source column. The scan operator
+        // and the optimizer rule both read using `SEALED_KEYS_COLUMN`.
+        let canonical = keys.rename(common_checkpoint_config::SEALED_KEYS_COLUMN);
+        let parquet_bytes = super::keys_codec::write_series_as_parquet(&canonical)?;
         let idx = self
             .reserve_slots(id, |e| {
                 let i = e.num_key_files;
@@ -550,16 +536,21 @@ impl CheckpointStore for S3CheckpointStore {
         let (num_key_files, num_file_files, created_at, pending) = match drain {
             Some(data) => data,
             None => {
-                // No staged entry. Two sub-cases:
-                //   (a) Already sealed in a prior call — idempotent retry. read_manifest succeeds.
-                //   (b) Never staged at all (e.g. 0-row source after anti-join). Write empty manifest.
-                match self.read_manifest(id).await {
-                    Ok(_) => return Ok(()),
-                    Err(CheckpointError::CheckpointNotFound { .. }) => {
-                        (0, 0, SystemTime::now(), JoinSet::new())
-                    }
-                    Err(e) => return Err(e),
-                }
+                // No in-memory staged entry for this id. Two sub-cases, both
+                // handled as a no-op success:
+                //   (a) Already sealed in a prior call — idempotent retry.
+                //       read_manifest succeeds; nothing more to do.
+                //   (b) Never staged at all (e.g. 0-row source after the
+                //       anti-join — the sink generated an id but no SCKO or
+                //       sink call ever landed keys/files). Succeed quietly —
+                //       consumers using `list_checkpoints` simply see no
+                //       Checkpointed entry for this id, which matches the
+                //       empty-input flow's expected semantics.
+                return match self.read_manifest(id).await {
+                    Ok(_) => Ok(()),
+                    Err(CheckpointError::CheckpointNotFound { .. }) => Ok(()),
+                    Err(e) => Err(e),
+                };
             }
         };
 
@@ -582,7 +573,6 @@ impl CheckpointStore for S3CheckpointStore {
             num_file_files,
         };
         self.write_manifest(id, &manifest).await?;
-        self.invalidate_manifest_cache().await;
 
         // Remove from staged only after manifest is durably written.
         self.staged
@@ -601,7 +591,7 @@ impl CheckpointStore for S3CheckpointStore {
         // Include both checkpointed and committed keys — all are needed for the
         // skip-on-rerun filter.
         let mut key_paths: Vec<String> = Vec::new();
-        for (id, manifest) in self.sealed_manifests().await?.iter() {
+        for (id, manifest) in &self.sealed_manifests().await? {
             for i in 0..manifest.num_key_files {
                 key_paths.push(self.key_path(id, i));
             }
@@ -618,7 +608,7 @@ impl CheckpointStore for S3CheckpointStore {
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>> {
         let mut file_paths: Vec<String> = Vec::new();
-        for (id, manifest) in self.sealed_manifests().await?.iter() {
+        for (id, manifest) in &self.sealed_manifests().await? {
             if manifest.status == ManifestStatus::Committed {
                 continue; // Already committed to the catalog — files no longer needed.
             }
@@ -705,7 +695,7 @@ impl CheckpointStore for S3CheckpointStore {
             }
         }
 
-        for (id, manifest) in sealed.iter() {
+        for (id, manifest) in &sealed {
             let status = if manifest.status == ManifestStatus::Committed {
                 CheckpointStatus::Committed
             } else {
@@ -774,7 +764,6 @@ impl CheckpointStore for S3CheckpointStore {
             async move { self.write_manifest(id, &updated).await }
         }))
         .await?;
-        self.invalidate_manifest_cache().await;
 
         Ok(())
     }

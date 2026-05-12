@@ -7,7 +7,7 @@ use daft_dsl::{
 };
 use daft_functions_temporal::{
     current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
-    date_arithmetic::{DateAdd, DateDiff, DateSub},
+    date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween},
     date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz},
     date_navigation::{LastDay, NextDay},
     epoch_conversions::{
@@ -36,6 +36,8 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("date_add", SQLDateAdd);
         parent.add_fn("date_sub", SQLDateSub);
         parent.add_fn("date_diff", SQLDateDiff);
+        parent.add_fn("add_months", SQLAddMonths);
+        parent.add_fn("months_between", SQLMonthsBetween);
         parent.add_fn("date_from_unix_date", SQLDateFromUnixDate);
         parent.add_fn("timestamp_seconds", SQLTimestampSeconds);
         parent.add_fn("timestamp_millis", SQLTimestampMillis);
@@ -712,5 +714,72 @@ impl SQLFunction for SQLNextDay {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["date", "day_of_week"]
+    }
+}
+
+// --- AddMonths / MonthsBetween (Spark-style month arithmetic) ---
+
+pub struct SQLAddMonths;
+
+impl SQLFunction for SQLAddMonths {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("add_months expects 2 arguments, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let months = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(AddMonths)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::unnamed(months),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Adds a number of months to a date or timestamp, clamping to the last day of the target month if needed."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "months"]
+    }
+}
+
+pub struct SQLMonthsBetween;
+
+impl SQLFunction for SQLMonthsBetween {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("months_between expects 2 arguments, got {}", inputs.len());
+        }
+        let end_date = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let start_date = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(MonthsBetween)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(end_date),
+                FunctionArg::unnamed(start_date),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of months between two dates or timestamps as a Float64.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["end_date", "start_date"]
     }
 }

@@ -10,6 +10,7 @@ pub enum MediaType {
     Unknown,
     Video,
     Audio,
+    Image,
 }
 
 #[cfg(feature = "python")]
@@ -27,6 +28,10 @@ impl MediaType {
     pub fn audio() -> Self {
         Self::Audio
     }
+    #[staticmethod]
+    pub fn image() -> Self {
+        Self::Image
+    }
 }
 
 impl std::fmt::Display for MediaType {
@@ -35,6 +40,7 @@ impl std::fmt::Display for MediaType {
             Self::Unknown => write!(f, "Unknown"),
             Self::Video => write!(f, "Video"),
             Self::Audio => write!(f, "Audio"),
+            Self::Image => write!(f, "Image"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use common_error::DaftError;
 use daft_core::{
     datatypes::FileArray,
-    file::{FileReference, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
+    file::{FileReference, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
     series::IntoSeries,
     with_match_file_types,
 };
@@ -10,7 +10,7 @@ use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
-use crate::file::DaftFile;
+use crate::file::{BUFFER_SIZE_SNIFF, DaftFile};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct File;
@@ -38,7 +38,11 @@ impl ScalarUDF for File {
 
         Ok(match input.data_type() {
             DataType::File(MediaType::Unknown) => input,
-            DataType::File(MediaType::Video) => input.cast(&DataType::File(MediaType::Unknown))?,
+            DataType::File(MediaType::Video)
+            | DataType::File(MediaType::Audio)
+            | DataType::File(MediaType::Image) => {
+                input.cast(&DataType::File(MediaType::Unknown))?
+            }
             DataType::Utf8 => FileArray::<MediaTypeUnknown>::new_from_reference_array(
                 input.name(),
                 input.utf8()?,
@@ -92,7 +96,8 @@ impl ScalarUDF for VideoFile {
 
         // TODO(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -185,7 +190,8 @@ impl ScalarUDF for AudioFile {
 
         // TODO(universalmind303): can we use an async stream here instead so we're not blocking on each iteration
         fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
-            let mut daft_file = DaftFile::load_blocking(file_ref.clone(), false)?;
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
 
             let mime_type = daft_file.guess_mime_type();
             match mime_type {
@@ -246,6 +252,98 @@ impl ScalarUDF for AudioFile {
         let input = input.to_field(schema)?;
 
         Ok(Field::new(input.name, DataType::File(MediaType::Audio)))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ImageFile;
+#[derive(FunctionArgs)]
+struct ImageFileArgs<T> {
+    input: T,
+    verify: bool,
+    #[arg(optional)]
+    io_config: Option<IOConfig>,
+}
+
+#[typetag::serde]
+impl ScalarUDF for ImageFile {
+    fn name(&self) -> &'static str {
+        "image_file"
+    }
+
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let ImageFileArgs {
+            input,
+            verify,
+            io_config,
+        } = args.try_into()?;
+
+        fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
+
+            let mime_type = daft_file.guess_mime_type();
+            match mime_type {
+                Some(mime_type) if mime_type.starts_with("image") => Ok(file_ref),
+                Some(mime_type) => Err(DaftError::ValueError(format!(
+                    "Invalid image file: {:?}",
+                    mime_type
+                ))),
+                None => Err(DaftError::ValueError("Invalid image file".to_string())),
+            }
+        }
+        Ok(match input.data_type() {
+            DataType::File(MediaType::Image) => input,
+            DataType::File(MediaType::Unknown) => {
+                let casted = input.cast(&DataType::File(MediaType::Image))?;
+                let files = casted.file::<MediaTypeImage>()?.clone();
+
+                if verify {
+                    for file in files.into_iter().flatten() {
+                        verify_file(file)?;
+                    }
+                }
+                files.into_series()
+            }
+            DataType::Utf8 => {
+                let utf8 = input.utf8()?;
+                let data = utf8.into_iter().map(|data| {
+                    data.map(|data| {
+                        let file_ref = FileReference::new(
+                            MediaType::Image,
+                            data.to_string(),
+                            io_config.clone(),
+                        );
+                        if verify {
+                            verify_file(file_ref)
+                        } else {
+                            Ok(file_ref)
+                        }
+                    })
+                    .transpose()
+                });
+                FileArray::<MediaTypeImage>::new_from_file_references(input.name(), data)?
+                    .into_series()
+            }
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported data type for 'image_file' function: {}. Expected String",
+                    input.data_type()
+                )));
+            }
+        })
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let ImageFileArgs { input, .. } = args.try_into()?;
+
+        let input = input.to_field(schema)?;
+
+        Ok(Field::new(input.name, DataType::File(MediaType::Image)))
     }
 }
 
@@ -311,7 +409,7 @@ impl ScalarUDF for Size {
                 let opt: Option<u64> = s
                     .get(i)
                     .map(|f| {
-                        let f = DaftFile::load_blocking(f, false)?;
+                        let f = DaftFile::load_blocking(f, false, Some(BUFFER_SIZE_SNIFF))?;
                         let size = f.size()?;
                         DaftResult::Ok(size as _)
                     })

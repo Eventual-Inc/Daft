@@ -4,6 +4,7 @@ name = "common-checkpoint-config"
 version = {workspace = true}
 
 [dependencies]
+common-hashable-float-wrapper = {path = "../hashable-float-wrapper", default-features = false}
 common-io-config = {path = "../io-config", default-features = false}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}

@@ -1,0 +1,145 @@
+name: Issue Component Labeller
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  apply-component-labels:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Apply labels from Component(s)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const body = context.payload.issue.body || "";
+          const currentLabels = new Set(
+            (context.payload.issue.labels || []).map((label) =>
+              typeof label === "string" ? label : label.name,
+            ),
+          );
+
+          // Map component choices to existing repo labels where semantics are clear.
+          // Unmapped components are intentionally left as no-op until dedicated labels exist.
+          const componentToLabels = {
+            "Built-in Functions": ["expression"],
+            "UDFs (User Defined Functions)": ["python"],
+          };
+
+          const managedLabels = new Set(
+            Object.values(componentToLabels).flat(),
+          );
+
+          const componentSection = extractSection(body, "Component(s)");
+          if (!componentSection) {
+            core.info("No Component(s) section found. Skipping component label management.");
+            return;
+          }
+
+          const selectedComponents = parseSelections(componentSection);
+
+          const desiredLabels = new Set();
+          for (const component of selectedComponents) {
+            const mappedLabels = componentToLabels[component] || [];
+            for (const mappedLabel of mappedLabels) {
+              desiredLabels.add(mappedLabel);
+            }
+          }
+
+          const labelsToRemove = [];
+          for (const label of managedLabels) {
+            if (currentLabels.has(label) && !desiredLabels.has(label)) {
+              labelsToRemove.push(label);
+            }
+          }
+
+          await removeManagedLabels(labelsToRemove);
+
+          const labelsToAdd = [];
+          for (const label of desiredLabels) {
+            if (!currentLabels.has(label)) {
+              labelsToAdd.push(label);
+            }
+          }
+
+          if (labelsToAdd.length > 0) {
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: labelsToAdd,
+            });
+          }
+
+          if (labelsToAdd.length === 0 && labelsToRemove.length === 0) {
+            core.info("No component label changes needed.");
+          } else {
+            core.info(
+              `Component labels updated. Added: [${labelsToAdd.join(", ")}], removed: [${labelsToRemove.join(", ")}]`,
+            );
+          }
+
+          async function removeManagedLabels(labels) {
+            for (const label of labels) {
+              if (!currentLabels.has(label)) {
+                continue;
+              }
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.issue.number,
+                  name: label,
+                });
+              } catch (error) {
+                // Labels may be removed by another actor between webhook dispatch and execution.
+                if (error?.status === 404) {
+                  core.info(`Label '${label}' already absent; skipping remove.`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+          }
+
+          function extractSection(markdownBody, heading) {
+            const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(
+              `###\\s*${escapedHeading}\\s*\\n+([\\s\\S]*?)(?=\\n###\\s|$)`,
+              "i",
+            );
+            const match = markdownBody.match(regex);
+            return match ? match[1].trim() : null;
+          }
+
+          function parseSelections(sectionText) {
+            const lines = sectionText
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0 && line !== "_No response_");
+
+            const rawSelections = [];
+            for (const line of lines) {
+              if (line.startsWith("- [x]")) {
+                rawSelections.push(line.replace(/^- \[x\]\s*/i, "").trim());
+              } else if (line.startsWith("-")) {
+                rawSelections.push(line.replace(/^-+\s*/, "").trim());
+              } else {
+                rawSelections.push(line);
+              }
+            }
+
+            const selections = [];
+            for (const selection of rawSelections) {
+              for (const part of selection.split(",")) {
+                const normalized = part.trim();
+                if (normalized.length > 0) {
+                  selections.push(normalized);
+                }
+              }
+            }
+            return selections;
+          }

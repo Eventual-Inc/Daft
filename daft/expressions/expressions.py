@@ -2688,6 +2688,16 @@ class Expression:
 
         return map_get(self, key)
 
+    def map_keys(self) -> Expression:
+        """Returns a list of all keys in the map.
+
+        Tip: See Also
+            [`daft.functions.map_keys`](https://docs.daft.ai/en/stable/api/functions/map_keys/)
+        """
+        from daft.functions import map_keys
+
+        return map_keys(self)
+
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Get a subset of each list or binary value.
 
@@ -2947,6 +2957,21 @@ class Expression:
             height=height,
             is_key_frame=is_key_frame,
         )
+
+    def image_file_metadata(self) -> Expression:
+        """Gets metadata for an image file (width, height, format, mode).
+
+        Reads only the file header without decoding pixel data.
+        """
+        from daft.functions import image_file_metadata
+
+        return image_file_metadata(self)
+
+    def decode_image_file(self) -> Expression:
+        """Decodes an image file into an Image column."""
+        from daft.functions import decode_image_file
+
+        return decode_image_file(self)
 
 
 class WhenExpr(Expression):

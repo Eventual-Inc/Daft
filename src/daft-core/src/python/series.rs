@@ -165,6 +165,32 @@ impl PySeries {
         self.series.to_pyarrow(py)
     }
 
+    pub fn __arrow_c_schema__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let target_field = self.series.field().to_arrow()?;
+        common_arrow_ffi::field_to_pycapsule(py, &target_field)
+    }
+
+    #[pyo3(signature = (requested_schema=None))]
+    pub fn __arrow_c_array__<'py>(
+        &self,
+        py: Python<'py>,
+        requested_schema: Option<Bound<'py, pyo3::types::PyCapsule>>,
+    ) -> PyResult<Py<PyAny>> {
+        let array = self.series.to_arrow()?;
+        let target_field = if let Some(capsule) = requested_schema.as_ref() {
+            common_arrow_ffi::field_from_requested_schema(capsule)?
+        } else {
+            self.series.field().to_arrow()?
+        };
+        let array = if array.data_type() != target_field.data_type() {
+            arrow::compute::cast(&array, target_field.data_type()).map_err(DaftError::from)?
+        } else {
+            array
+        };
+        let data = array.to_data();
+        common_arrow_ffi::array_to_pycapsules(py, &data, &target_field)
+    }
+
     pub fn __iter__(&self) -> PySeriesIterator {
         PySeriesIterator::new(self.series.clone())
     }
@@ -450,6 +476,10 @@ impl PySeries {
         Ok(self.series.map_get(&key.series)?.into())
     }
 
+    pub fn map_keys(&self) -> PyResult<Self> {
+        Ok(self.series.map_keys()?.into())
+    }
+
     pub fn if_else(&self, other: &Self, predicate: &Self) -> PyResult<Self> {
         Ok(self
             .series
@@ -562,6 +592,31 @@ impl ToPyArrow for Series {
             pyo3::intern!(py, "_import_from_c"),
             (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
         )?;
+
+        // PyArrow's _import_from_c drops extension metadata for unregistered types,
+        // so we re-wrap as a DaftExtension to preserve the dtype info for Python consumers.
+        if self.data_type().is_extension() {
+            let is_already_extension = array
+                .getattr(pyo3::intern!(py, "type"))?
+                .is_instance(&pyarrow.getattr(pyo3::intern!(py, "BaseExtensionType"))?)?;
+            if !is_already_extension {
+                let dtype_json = self.data_type().to_json()?;
+                let daft_ext_mod =
+                    pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?;
+                daft_ext_mod
+                    .call_method0(pyo3::intern!(py, "_ensure_registered_super_ext_type"))?;
+                let ext_type_cls =
+                    pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.extension_type"))?
+                        .getattr(pyo3::intern!(py, "DaftExtension"))?;
+                let ext_type = ext_type_cls.call1((
+                    array.getattr(pyo3::intern!(py, "type"))?,
+                    dtype_json.as_bytes(),
+                ))?;
+                return pyarrow
+                    .getattr(pyo3::intern!(py, "ExtensionArray"))?
+                    .call_method1(pyo3::intern!(py, "from_storage"), (ext_type, &array));
+            }
+        }
 
         // For FixedShapeTensor, re-wrap the storage array as a PyArrow canonical
         // FixedShapeTensorArray instead of returning a DaftExtension array.

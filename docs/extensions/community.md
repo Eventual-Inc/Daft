@@ -19,6 +19,7 @@ Each project installs and versions independently of Daft.
 | [daft-lance](#daft-lance) | Python UDF-based | [daft-engine/daft-lance](https://github.com/daft-engine/daft-lance) | Lance-specific distributed operations for compaction, scalar indexing, column merging, and REST catalog operations. |
 | [daft-html](#daft-html) | Native ABI | [daft-engine/daft-html](https://github.com/daft-engine/daft-html) | Native HTML document processing functions exposed as Daft expressions. |
 | [daft-geo](#daft-geo) | Native ABI / Datatypes | [daft-engine/daft-geo](https://github.com/daft-engine/daft-geo) | Geospatial prototype showing native functions and extension-backed datatypes. |
+| [daft-qdrant](#daft-qdrant) | Python UDF-based | [qdrant-labs/daft-qdrant](https://github.com/qdrant-labs/daft-qdrant) | Write vector embeddings and their payloads into [Qdrant](https://qdrant.tech/) collections. |
 
 To propose a new extension for this list, open a PR against this page.
 
@@ -133,3 +134,27 @@ df.show()
 
 See the [daft-geo README](https://github.com/daft-engine/daft-geo#readme) for
 current capabilities and caveats.
+
+## daft-qdrant
+
+`daft-qdrant` adds a `write_qdrant` DataFrame method for writing vector
+embeddings and their payloads into [Qdrant](https://qdrant.tech/) collections.
+
+```bash
+pip install daft-qdrant
+```
+
+```python
+import daft
+import daft_qdrant
+
+df = daft.from_pydict({
+    "id": [1, 2, 3],
+    "vector": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
+    "label": ["cat", "dog", "bird"],
+})
+
+df.write_qdrant("my-collection", url="http://localhost:6333")
+```
+
+See the [daft-qdrant README](https://github.com/qdrant-labs/daft-qdrant#readme) for embedding pipeline examples and additional options.
