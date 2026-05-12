@@ -249,7 +249,7 @@ arrow-buffer = "57.1.0"
 arrow-csv = "57.1.0"
 arrow-data = "57.1.0"
 arrow-flight = "57.1.0"
-arrow-ipc = "57.1.0"
+arrow-ipc = {version = "57.1.0", features = ["lz4", "zstd"]}
 arrow-json = "57.1.0"
 arrow-row = "57.1.0"
 arrow-schema = "57.1.0"
