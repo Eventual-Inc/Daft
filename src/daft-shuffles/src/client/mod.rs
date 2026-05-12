@@ -1,18 +1,31 @@
 pub mod flight_client;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
-use common_error::DaftResult;
+use arrow_flight::{Ticket, client::FlightClient};
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
-use tokio::sync::Mutex;
+use tonic::transport::{Channel, Endpoint};
 
-use crate::client::flight_client::ShuffleFlightClient;
+use crate::client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream;
 
-#[derive(Clone)]
+/// Manages a per-server `tonic::transport::Channel` so concurrent `fetch_partition`
+/// calls to the same server can issue `do_get`s in parallel over tonic's HTTP/2
+/// multiplexed connection.
+///
+/// The previous design held an `Arc<Mutex<ShuffleFlightClient>>` per server: every
+/// `fetch_partition` had to take the inner `Mutex` for the duration of
+/// `client.do_get(ticket).await`, serializing request setup against every other
+/// fetch on the same server. With shared `Channel`s and a fresh `FlightClient`
+/// per request, do_gets fan out independently.
+#[derive(Clone, Default)]
 pub struct FlightClientManager {
-    clients: Arc<Mutex<HashMap<String, Arc<Mutex<ShuffleFlightClient>>>>>,
+    channels: Arc<RwLock<HashMap<String, Channel>>>,
 }
 
 impl FlightClientManager {
@@ -27,32 +40,65 @@ impl FlightClientManager {
         partition_ref_ids: &[u64],
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let client = {
-            let mut clients = self.clients.lock().await;
-            clients
-                .entry(server_address.to_string())
-                .or_insert_with(|| {
-                    Arc::new(Mutex::new(ShuffleFlightClient::new(
-                        server_address.to_string(),
-                    )))
-                })
-                .clone()
-        };
+        let channel = self.get_or_connect(server_address).await?;
 
-        let stream = client
-            .lock()
-            .await
-            .get_partition(shuffle_id, partition_ref_ids, schema)
-            .await?
-            .boxed();
-        Ok(stream)
+        // Fresh FlightClient per request. Construction is essentially free (no I/O):
+        // `FlightClient::new(channel)` wraps the channel in a tonic-generated client.
+        let raw = FlightClient::new(channel)
+            .into_inner()
+            .max_decoding_message_size(usize::MAX);
+        let mut client = FlightClient::new_from_inner(raw);
+
+        let ticket = Ticket::new(format!(
+            "{}:{}",
+            shuffle_id,
+            partition_ref_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+
+        let stream = client.do_get(ticket).await.map_err(|e| {
+            DaftError::External(
+                format!(
+                    "Error fetching partition refs {:?} from shuffle {} at {}. {}",
+                    partition_ref_ids, shuffle_id, server_address, e
+                )
+                .into(),
+            )
+        })?;
+
+        let daft_stream =
+            FlightRecordBatchStreamToDaftRecordBatchStream::new(stream, schema).boxed();
+        Ok(daft_stream)
     }
-}
 
-impl Default for FlightClientManager {
-    fn default() -> Self {
-        Self {
-            clients: Arc::new(Mutex::new(HashMap::new())),
+    /// Cheap hot-path: read-lock the map and clone the cached `Channel` (Arc inside).
+    /// Slow path (first call per server): release the read lock, do the async connect,
+    /// then take the write lock to insert. Two concurrent slow paths on the same
+    /// server are tolerated — last writer wins, both end up with equivalent channels.
+    async fn get_or_connect(&self, server_address: &str) -> DaftResult<Channel> {
+        {
+            let channels = self.channels.read().expect("channels lock poisoned");
+            if let Some(ch) = channels.get(server_address) {
+                return Ok(ch.clone());
+            }
         }
+
+        let endpoint = Endpoint::from_shared(server_address.to_string()).map_err(|e| {
+            DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
+        })?;
+        let channel = endpoint.connect().await.map_err(|e| {
+            DaftError::External(format!("Failed to connect to endpoint: {:?}", e).into())
+        })?;
+
+        {
+            let mut channels = self.channels.write().expect("channels lock poisoned");
+            channels
+                .entry(server_address.to_string())
+                .or_insert_with(|| channel.clone());
+        }
+        Ok(channel)
     }
 }
