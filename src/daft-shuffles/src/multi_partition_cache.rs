@@ -687,14 +687,18 @@ fn largest_partition(buffer_bytes: &[usize]) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
-/// Concat the buffered daft batches into one arrow batch, write it as a single IPC message,
-/// and return the byte range it occupied + microsecond timings for the two sub-phases
-/// (concat, encode+write).
+/// Write each buffered batch as its own IPC message and return the byte range covering
+/// all M messages + microsecond timings for the two sub-phases (now: `to_arrow` conv,
+/// encode+write). On-disk amp at SF1000 was 1.01× even with one-batch-per-flush, so the
+/// per-message metadata cost is negligible — and we save the 50 GB memcpy of RecordBatch
+/// concat at every flush. The byte range still covers a contiguous slice (we know no
+/// other partition's data is interleaved between offset_before and offset_after because
+/// the writer task is single-threaded per cache).
 ///
 /// Runs on `spawn_blocking` (dedicated blocking-thread pool) rather than the io_runtime's
-/// async workers. Concat is CPU-bound (column-wise allocate-and-copy) and IPC encode +
-/// `std::fs::File::write` are blocking I/O; running either on an async worker would tie
-/// up a thread that should be progressing other futures.
+/// async workers. IPC encode is CPU-bound and `std::fs::File::write` is blocking I/O;
+/// running either on an async worker would tie up a thread that should be progressing
+/// other futures.
 async fn flush_partition_blocking(
     io_runtime: &common_runtime::Runtime,
     mut writer: arrow_ipc::writer::StreamWriter<CountingFile>,
@@ -702,24 +706,26 @@ async fn flush_partition_blocking(
 ) -> DaftResult<(arrow_ipc::writer::StreamWriter<CountingFile>, u64, u64, u64, u64)> {
     io_runtime
         .spawn_blocking(move || {
-            let t0 = Instant::now();
-            let merged = RecordBatch::concat(&batches)?;
-            let arrow_batch: arrow_array::RecordBatch = merged.try_into()?;
-            let concat_us = t0.elapsed().as_micros() as u64;
-
-            let t1 = Instant::now();
+            let mut to_arrow_us: u64 = 0;
+            let mut encode_write_us: u64 = 0;
             let offset_before = writer.get_ref().position();
-            writer
-                .write(&arrow_batch)
-                .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
-            let offset_after = writer.get_ref().position();
-            let encode_write_us = t1.elapsed().as_micros() as u64;
+            for batch in batches {
+                let t0 = Instant::now();
+                let arrow_batch: arrow_array::RecordBatch = batch.try_into()?;
+                to_arrow_us += t0.elapsed().as_micros() as u64;
 
+                let t1 = Instant::now();
+                writer
+                    .write(&arrow_batch)
+                    .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
+                encode_write_us += t1.elapsed().as_micros() as u64;
+            }
+            let offset_after = writer.get_ref().position();
             Ok::<_, DaftError>((
                 writer,
                 offset_before,
                 offset_after,
-                concat_us,
+                to_arrow_us,
                 encode_write_us,
             ))
         })
