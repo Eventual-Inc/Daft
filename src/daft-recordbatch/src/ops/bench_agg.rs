@@ -203,4 +203,117 @@ mod bench {
             );
         }
     }
+
+    /// Long-string 2-column benchmark: shape that hits the packed-u64 path
+    /// (2 Utf8 cols) with keys well above the legacy avg-bytes-per-row gate.
+    /// Compares the packed-u64 inline path against the fallback across the
+    /// full count/sum/min/max/count+sum agg matrix.
+    fn make_two_long_string_batch(
+        num_rows: usize,
+        num_distinct1: usize,
+        num_distinct2: usize,
+    ) -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        use std::sync::Arc;
+
+        let keys1: Vec<String> = (0..num_rows)
+            .map(|i| format!("alpha_long_string_value_{:08}", i % num_distinct1))
+            .collect();
+        let keys2: Vec<String> = (0..num_rows)
+            .map(|i| format!("region_long_string_value_{:08}", i % num_distinct2))
+            .collect();
+        let vals: Vec<i64> = (0..num_rows).map(|i| (i % 10000) as i64).collect();
+
+        let key1_refs: Vec<&str> = keys1.iter().map(String::as_str).collect();
+        let key2_refs: Vec<&str> = keys2.iter().map(String::as_str).collect();
+
+        let key1_series = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(key1_refs)),
+        )
+        .unwrap();
+        let key2_series = Series::from_arrow(
+            Arc::new(Field::new("key2", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(key2_refs)),
+        )
+        .unwrap();
+        let val_series = Int64Array::from_vec("val", vals).into_series();
+
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb =
+            RecordBatch::from_nonempty_columns(vec![key1_series, key2_series, val_series]).unwrap();
+
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        (rb, group_by, schema)
+    }
+
+    fn run_two_string_bench(num_rows: usize, num_distinct1: usize, num_distinct2: usize) {
+        let (rb, group_by, schema) = make_two_long_string_batch(num_rows, num_distinct1, num_distinct2);
+        let groups = num_distinct1 * num_distinct2;
+
+        let count_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let sum_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let min_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let max_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let count_sum_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+        ];
+
+        eprintln!(
+            "\n  rows={num_rows:>10}  distinct=({num_distinct1}x{num_distinct2}={groups}) (2 Utf8 cols)"
+        );
+        eprintln!(
+            "  {:>14} {:>14} {:>14} {:>10}",
+            "agg", "inline (ms)", "fallback (ms)", "speedup"
+        );
+        eprintln!("  {}", "-".repeat(58));
+
+        for (label, agg) in [
+            ("count", &count_agg),
+            ("sum", &sum_agg),
+            ("min", &min_agg),
+            ("max", &max_agg),
+            ("count+sum", &count_sum_agg),
+        ] {
+            let inline_ms = bench_fn(label, WARMUP, ITERS, || {
+                rb.agg_groupby_inline(agg, &group_by).unwrap();
+            });
+            let fallback_ms = bench_fn(label, WARMUP, ITERS, || {
+                rb.agg_groupby_fallback(agg, &group_by).unwrap();
+            });
+            let speedup = fallback_ms / inline_ms;
+            eprintln!("  {label:>14} {inline_ms:>14.2} {fallback_ms:>14.2} {speedup:>9.2}x");
+        }
+    }
+
+    #[test]
+    #[ignore = "manual benchmark"]
+    fn bench_packed_u64_two_strings() {
+        eprintln!("\nPacked-u64 benchmark: 2 Utf8 keys, full agg matrix");
+        eprintln!("warmup={WARMUP} iters={ITERS}");
+
+        let shapes: &[(usize, usize, usize)] = &[
+            (1_200_000, 8, 4),
+            (1_200_000, 64, 32),
+            (5_000_000, 8, 4),
+            (5_000_000, 1_000, 100),
+        ];
+        for &(num_rows, d1, d2) in shapes {
+            run_two_string_bench(num_rows, d1, d2);
+        }
+    }
 }
