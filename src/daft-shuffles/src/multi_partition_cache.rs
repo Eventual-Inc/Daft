@@ -540,7 +540,7 @@ fn writer_task(
     let mut total_buffer_bytes: usize = 0;
 
     // Per-task timing counters (microseconds).
-    let mut local_to_arrow_us: u64 = 0;
+    let mut local_concat_us: u64 = 0;
     let mut local_encode_write_us: u64 = 0;
     let mut local_pushes: u64 = 0;
     let mut local_input_bytes: u64 = 0;
@@ -551,25 +551,32 @@ fn writer_task(
     // Inline flush helper closure captures `&mut writer` and the timing accumulators.
     // No spawn — the writer task itself runs on spawn_blocking, so we can do CPU work
     // directly here without tying up an async worker.
+    //
+    // Concat is intentional: we tried writing each buffered batch as its own IPC message
+    // (saving the ~50 GB memcpy of RecordBatch::concat per actor), but at SF1000 / N=512
+    // that produced ~15 M tiny IPC messages, blowing on-disk amp from 1.01× to 1.34×
+    // (~16 GB of extra metadata) and ballooning read-side open + decode by ~3.5×.
+    // Concat costs ~50 GB memcpy = ~3 s wall on 16 cores, far cheaper than the
+    // metadata + read-side blow-up.
     let mut flush_one = |partition_idx: usize,
                          batches: Vec<RecordBatch>,
                          writer: &mut arrow_ipc::writer::StreamWriter<CountingFile>,
-                         to_arrow_us: &mut u64,
+                         concat_us: &mut u64,
                          encode_write_us: &mut u64|
      -> DaftResult<(u64, u64)> {
-        let offset_before = writer.get_ref().position();
-        for batch in batches {
-            let t0 = Instant::now();
-            let arrow_batch: arrow_array::RecordBatch = batch.try_into()?;
-            *to_arrow_us += t0.elapsed().as_micros() as u64;
+        let t0 = Instant::now();
+        let merged = RecordBatch::concat(&batches)?;
+        let arrow_batch: arrow_array::RecordBatch = merged.try_into()?;
+        *concat_us += t0.elapsed().as_micros() as u64;
 
-            let t1 = Instant::now();
-            writer
-                .write(&arrow_batch)
-                .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
-            *encode_write_us += t1.elapsed().as_micros() as u64;
-        }
+        let t1 = Instant::now();
+        let offset_before = writer.get_ref().position();
+        writer
+            .write(&arrow_batch)
+            .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
         let offset_after = writer.get_ref().position();
+        *encode_write_us += t1.elapsed().as_micros() as u64;
+
         record_flush_size(offset_after - offset_before);
         ranges_per_partition[partition_idx].push((offset_before, offset_after));
         Ok((offset_before, offset_after))
@@ -606,7 +613,7 @@ fn writer_task(
                     partition_idx,
                     batches,
                     &mut writer,
-                    &mut local_to_arrow_us,
+                    &mut local_concat_us,
                     &mut local_encode_write_us,
                 )?;
             }
@@ -627,7 +634,7 @@ fn writer_task(
                 victim,
                 batches,
                 &mut writer,
-                &mut local_to_arrow_us,
+                &mut local_concat_us,
                 &mut local_encode_write_us,
             )?;
         }
@@ -644,7 +651,7 @@ fn writer_task(
             partition_idx,
             batches,
             &mut writer,
-            &mut local_to_arrow_us,
+            &mut local_concat_us,
             &mut local_encode_write_us,
         )?;
     }
@@ -668,7 +675,7 @@ fn writer_task(
         flushes_coalesce = local_flushes_coalesce,
         flushes_eviction = local_flushes_eviction,
         flushes_drain = local_flushes_drain,
-        concat_ms = local_to_arrow_us / 1000,
+        concat_ms = local_concat_us / 1000,
         encode_write_ms = local_encode_write_us / 1000,
         finish_ms = finish_us / 1000,
         input_bytes = local_input_bytes,
@@ -688,7 +695,7 @@ fn writer_task(
     agg::FLUSHES_COALESCE.fetch_add(local_flushes_coalesce, Ordering::Relaxed);
     agg::FLUSHES_EVICTION.fetch_add(local_flushes_eviction, Ordering::Relaxed);
     agg::FLUSHES_DRAIN.fetch_add(local_flushes_drain, Ordering::Relaxed);
-    agg::CONCAT_US.fetch_add(local_to_arrow_us, Ordering::Relaxed);
+    agg::CONCAT_US.fetch_add(local_concat_us, Ordering::Relaxed);
     agg::ENCODE_WRITE_US.fetch_add(local_encode_write_us, Ordering::Relaxed);
     agg::FINISH_US.fetch_add(finish_us, Ordering::Relaxed);
     agg::INPUT_BYTES.fetch_add(local_input_bytes, Ordering::Relaxed);
