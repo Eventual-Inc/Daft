@@ -286,18 +286,36 @@ fn is_last_day_of_month(date: NaiveDate) -> bool {
     }
 }
 
+// Number of *complete* months between two dates, matching Java's
+// ChronoUnit.MONTHS.between semantics (truncate toward zero). The naive
+// `(year_diff * 12) + month_diff` is one too large when chrono's end-of-month
+// clamping pushes `start + m_raw months` past `end` — e.g. (2021-02-15,
+// 2020-12-30): start + 2 months clamps to 2021-02-28 which is after 2021-02-15,
+// so only 1 full month fits. The mirror case applies in the negative direction.
+fn months_diff_floor(end: NaiveDate, start: NaiveDate) -> i32 {
+    let m_raw = (end.year() - start.year()) * 12 + (end.month() as i32 - start.month() as i32);
+    match shift_months(start, m_raw) {
+        Some(shifted) if m_raw > 0 && shifted > end => m_raw - 1,
+        Some(shifted) if m_raw < 0 && shifted < end => m_raw + 1,
+        _ => m_raw,
+    }
+}
+
 fn months_between_dt(end: NaiveDateTime, start: NaiveDateTime) -> f64 {
     let end_date = end.date();
     let start_date = start.date();
 
-    let months_diff = (end_date.year() - start_date.year()) * 12
-        + (end_date.month() as i32 - start_date.month() as i32);
-
     let same_day = end_date.day() == start_date.day();
     let both_last_day = is_last_day_of_month(end_date) && is_last_day_of_month(start_date);
     if same_day || both_last_day {
-        return months_diff as f64;
+        // Both fast-path cases align with ChronoUnit.MONTHS.between, so the
+        // naive month delta is exact here.
+        let m = (end_date.year() - start_date.year()) * 12
+            + (end_date.month() as i32 - start_date.month() as i32);
+        return m as f64;
     }
+
+    let months_diff = months_diff_floor(end_date, start_date);
 
     // Seconds-of-day component (Spark normalizes time-of-day to a per-31-day fraction)
     let seconds_per_day = 86_400.0_f64;

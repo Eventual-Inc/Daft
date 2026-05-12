@@ -1162,8 +1162,9 @@ def test_months_between_spark_doc_example() -> None:
     assert result == pytest.approx(3.94959677, abs=1e-8)
 
 
-def test_months_between_with_time_component() -> None:
-    # Same date-of-month but different time-of-day should still yield 0 when day matches.
+def test_months_between_same_day_ignores_time_of_day() -> None:
+    # Same calendar day: the same-day fast path returns the integer month diff
+    # regardless of any time-of-day component.
     df = daft.from_pydict(
         {
             "a": [datetime(2021, 6, 15, 12, 0)],
@@ -1172,6 +1173,30 @@ def test_months_between_with_time_component() -> None:
     )
     df = df.with_column("diff", months_between(col("a"), col("b")))
     assert df.to_pydict()["diff"] == [0.0]
+
+
+def test_months_between_clamping_off_by_one() -> None:
+    # start + m_raw months clamps PAST end, so Spark counts only m_raw - 1
+    # complete months. months_between(2021-02-15, 2020-12-30):
+    #   shift_months(2020-12-30, 2) = 2021-02-28 (clamped) > 2021-02-15
+    #   so months_diff_floor = 1, day_diff = 15 - 30 = -15
+    #   result = 1 + (-15)/31 = 0.51612903
+    df = daft.from_pydict({"a": [date(2021, 2, 15)], "b": [date(2020, 12, 30)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(0.51612903, abs=1e-8)
+
+
+def test_months_between_negative_clamping() -> None:
+    # Mirror of the previous case in the negative direction.
+    # months_between(2020-12-30, 2021-02-15):
+    #   m_raw = -2; shift_months(2021-02-15, -2) = 2020-12-15 < 2020-12-30
+    #   so months_diff_floor = -1, day_diff = 30 - 15 = 15
+    #   result = -1 + 15/31 = -0.51612903
+    df = daft.from_pydict({"a": [date(2020, 12, 30)], "b": [date(2021, 2, 15)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(-0.51612903, abs=1e-8)
 
 
 def test_months_between_negative() -> None:
