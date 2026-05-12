@@ -124,3 +124,28 @@ def test_daft_custom_location(local_iceberg_catalog):
             assert file_path.startswith(custom_data_location), f"File found outside custom location: {file_path}"
     finally:
         local_pyiceberg_catalog.drop_table(table_name)
+
+
+@pytest.mark.integration()
+def test_write_iceberg_target_file_size(local_iceberg_catalog):
+    """write_iceberg respects the write.target-file-size-bytes table property."""
+    catalog_name, local_pyiceberg_catalog = local_iceberg_catalog
+    data = {"x": list(range(1_000))}
+    schema = pa.schema([("x", pa.int64())])
+    arrow_table = pa.Table.from_pydict(data, schema=schema)
+
+    table_name = "pyiceberg.target_file_size_test"
+    try:
+        table = local_pyiceberg_catalog.create_table(
+            table_name,
+            schema=schema,
+            # 1 KB target forces the ~8 KB of data to split across multiple files.
+            properties={"write.target-file-size-bytes": "1024"},
+        )
+        files_written = daft.from_arrow(arrow_table).write_iceberg(table, mode="overwrite")
+        assert len(files_written) > 1
+
+        read_back = daft.read_table(f"{catalog_name}.{table_name}").sort("x").to_pydict()
+        assert read_back == data
+    finally:
+        local_pyiceberg_catalog.drop_table(table_name)
