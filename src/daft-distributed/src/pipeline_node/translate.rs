@@ -15,6 +15,7 @@ use daft_dsl::{
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
+    stats::StatsState,
 };
 use daft_scan::{ScanState, scan_task_iters};
 use daft_schema::schema::Schema;
@@ -356,15 +357,19 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 | RepartitionSpec::Random(_)
                 | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
+                    let input_size_hint = size_hint_from_stats(repartition.input.stats_state());
                     self.gen_repartition_node(
                         repartition.repartition_spec.clone(),
                         node.schema(),
                         child,
+                        input_size_hint,
                     )?
                 }
             },
             LogicalPlan::IntoPartitions(into_partitions) => {
-                let backend = self.select_backend();
+                // No size routing for IntoPartitions; it usually targets a small partition
+                // count and Ray-plasma is fine. select_backend(None) → Ray under "auto".
+                let backend = self.select_backend(None);
                 DistributedPipelineNode::new(
                     Arc::new(IntoPartitionsNode::new(
                         self.get_next_pipeline_node_id(),
@@ -437,6 +442,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     );
 
                     // Second stage: Repartition to distribute the dataset
+                    let input_size_hint = size_hint_from_stats(distinct.input.stats_state());
                     let repartition = self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
@@ -444,6 +450,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )),
                         distinct.input.schema(),
                         initial_distinct,
+                        input_size_hint,
                     )?;
 
                     // Last stage: Redo the distinct to get the final result
@@ -474,6 +481,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
+                    let input_size_hint = size_hint_from_stats(window.input.stats_state());
                     self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
@@ -481,6 +489,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )),
                         window.input.schema(),
                         input_node,
+                        input_size_hint,
                     )?
                 };
 
@@ -636,7 +645,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
             }
             LogicalPlan::Shuffle(shuffle) => {
-                let backend = self.select_backend();
+                let input_size_hint = size_hint_from_stats(shuffle.input.stats_state());
+                let backend = self.select_backend(input_size_hint);
                 DistributedPipelineNode::new(
                     Arc::new(RandomShuffleNode::new(
                         self.get_next_pipeline_node_id(),
@@ -662,5 +672,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
         };
         self.curr_node.push(output);
         Ok(TreeNodeRecursion::Continue)
+    }
+}
+
+/// Extract the input-bytes estimate from a logical-plan node's StatsState, returning
+/// `None` if stats weren't materialized for this node (in which case the backend
+/// selector falls back to its non-hinted default).
+fn size_hint_from_stats(stats: &StatsState) -> Option<usize> {
+    match stats {
+        StatsState::Materialized(s) => Some(s.approx_stats.size_bytes),
+        StatsState::NotMaterialized => None,
     }
 }

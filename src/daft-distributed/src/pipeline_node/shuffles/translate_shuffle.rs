@@ -17,14 +17,40 @@ use crate::pipeline_node::{
 
 impl LogicalPlanToPipelineNodeTranslator {
     /// Pick the shuffle backend implied by the current execution config.
-    pub(crate) fn select_backend(&self) -> DistributedShuffleBackend {
-        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+    ///
+    /// `input_size_hint` is the estimated input-bytes flowing into the shuffle, from
+    /// logical-plan stats. When the algorithm is `"auto"` (and the upstream stats are
+    /// materialized), this routes large shuffles to Flight (which controls disk spill
+    /// directly) and small shuffles to Ray-plasma (which keeps things in-memory and
+    /// avoids the per-task disk-write tax). Explicit `"flight_shuffle"` / `"map_reduce"`
+    /// / `"pre_shuffle_merge"` settings force their respective backends regardless of
+    /// size.
+    pub(crate) fn select_backend(
+        &self,
+        input_size_hint: Option<usize>,
+    ) -> DistributedShuffleBackend {
+        let flight = || {
             DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
                 ..Default::default()
             })
-        } else {
-            DistributedShuffleBackend::Ray
+        };
+        match self.plan_config.config.shuffle_algorithm.as_str() {
+            "flight_shuffle" => flight(),
+            "auto" => match input_size_hint {
+                Some(bytes)
+                    if bytes
+                        >= self
+                            .plan_config
+                            .config
+                            .flight_shuffle_size_threshold_bytes =>
+                {
+                    flight()
+                }
+                _ => DistributedShuffleBackend::Ray,
+            },
+            // "pre_shuffle_merge", "map_reduce", or anything else: keep Ray.
+            _ => DistributedShuffleBackend::Ray,
         }
     }
 
@@ -33,8 +59,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
+        input_size_hint: Option<usize>,
     ) -> DaftResult<DistributedPipelineNode> {
-        let backend = self.select_backend();
+        let backend = self.select_backend(input_size_hint);
         self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
     }
 
@@ -100,8 +127,11 @@ impl LogicalPlanToPipelineNodeTranslator {
         match self.plan_config.config.shuffle_algorithm.as_str() {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
-            "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
-            "auto" => {
+            "flight_shuffle" | "auto" => {
+                // Apply the same geometric-mean heuristic Ray-plasma uses. Without this
+                // PreShuffleMergeNode is skipped on the Flight path, which fuses
+                // RepartitionWrite into the upstream task and erases the cross-stage
+                // overlap that pre-merge provides.
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 Ok(geometric_mean
@@ -122,7 +152,9 @@ impl LogicalPlanToPipelineNodeTranslator {
             return input_node;
         }
 
-        let backend = self.select_backend();
+        // Gathers funnel into a single partition; routing them through Flight rarely
+        // helps, so don't pass a size hint. select_backend will pick Ray for "auto".
+        let backend = self.select_backend(None);
 
         let node_id = self.get_next_pipeline_node_id();
         DistributedPipelineNode::new(

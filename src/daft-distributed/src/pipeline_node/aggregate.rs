@@ -252,6 +252,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         let shuffle = if partition_by.is_empty() {
             self.gen_gather_node(input_node)
         } else {
+            // No upstream stats threaded into the agg planner today. Pass `None` so
+            // select_backend falls back to its default (Ray under "auto"). If we want
+            // to route large agg shuffles to Flight in the future, plumb stats from
+            // the LogicalPlan::Aggregate node here.
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     None,
@@ -259,6 +263,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 input_node.config().schema.clone(),
                 input_node,
+                None,
             )?
         };
 
@@ -308,6 +313,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         let shuffle = if split_details.partition_by.is_empty() {
             self.gen_gather_node(initial_agg)
         } else {
+            // Post-pre-agg the data is heavily compressed; the shuffle here is
+            // small in practice (e.g. the n_name shuffle in TPC-H Q5). Ray-plasma
+            // is the right default; pass None to keep that behaviour under "auto".
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
@@ -319,6 +327,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 split_details.first_stage_schema.clone(),
                 initial_agg,
+                None,
             )?
         };
 

@@ -123,6 +123,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        flight_shuffle_size_threshold_bytes=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -161,6 +162,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        flight_shuffle_size_threshold_bytes: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -302,6 +304,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(flight_shuffle_size_threshold_bytes) = flight_shuffle_size_threshold_bytes {
+            config.flight_shuffle_size_threshold_bytes = flight_shuffle_size_threshold_bytes;
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -469,6 +475,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+
+    #[getter]
+    fn flight_shuffle_size_threshold_bytes(&self) -> PyResult<usize> {
+        Ok(self.config.flight_shuffle_size_threshold_bytes)
     }
 
     #[getter]

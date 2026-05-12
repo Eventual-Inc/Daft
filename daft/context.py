@@ -243,6 +243,7 @@ def set_execution_config(
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    flight_shuffle_size_threshold_bytes: int | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -292,6 +293,7 @@ def set_execution_config(
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        flight_shuffle_size_threshold_bytes: Per-shuffle estimated-input-bytes threshold for routing the distributed shuffle to the Flight backend instead of Ray-plasma. Used in the "auto" / non-explicit shuffle modes. Above this, Flight is preferred (better at large shuffles that would force plasma to spill); below it, Ray-plasma is preferred (better in-memory). Defaults to 25 GiB.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -334,6 +336,7 @@ def set_execution_config(
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            flight_shuffle_size_threshold_bytes=flight_shuffle_size_threshold_bytes,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
