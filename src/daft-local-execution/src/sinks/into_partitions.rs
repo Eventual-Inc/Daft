@@ -92,6 +92,12 @@ impl FlightIntoPartitionsState {
         let n = self.num_partitions;
         let rows_per_bucket = total.div_ceil(n);
 
+        // Build a Vec<MicroPartition> of length N indexed by bucket; empty entries for
+        // buckets that don't receive a slice this call. Single batched push.
+        let schema = self.shared.schema.clone();
+        let mut partitioned: Vec<MicroPartition> = (0..n)
+            .map(|_| MicroPartition::empty(Some(schema.clone())))
+            .collect();
         for i in 0..n {
             let start = i * rows_per_bucket;
             if start >= total {
@@ -100,8 +106,9 @@ impl FlightIntoPartitionsState {
             let end = (start + rows_per_bucket).min(total);
             let slice = input.slice(start, end)?;
             let bucket = (i + self.rotation_offset) % n;
-            self.cache.push_partition_data(bucket, slice).await?;
+            partitioned[bucket] = slice;
         }
+        self.cache.push_all(partitioned).await?;
         self.rotation_offset = (self.rotation_offset + 1) % n;
         Ok(())
     }

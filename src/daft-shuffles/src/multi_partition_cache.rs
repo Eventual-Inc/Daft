@@ -99,9 +99,10 @@ impl Write for CountingFile {
     }
 }
 
+/// A single batched push from a sink call: one element per output partition (already
+/// ordered by partition_idx; empty MicroPartitions are skipped on the writer side).
 struct WriteCommand {
-    partition_idx: usize,
-    micropartition: MicroPartition,
+    partitioned: Vec<MicroPartition>,
 }
 
 /// Process-wide aggregate counters for shuffle write throughput diagnostics.
@@ -413,17 +414,20 @@ impl MultiPartitionShuffleCache {
         })
     }
 
-    pub async fn push_partition_data(
-        &self,
-        partition_idx: usize,
-        micropartition: MicroPartition,
-    ) -> DaftResult<()> {
+    /// Push one batched sink call's output (one element per partition_idx) as a single
+    /// channel send. Replaces the old per-partition `push_partition_data` API; sending
+    /// all N partitions in one command avoids `try_join_all` over N futures and N
+    /// channel sends per sink call (the previous implementation paid 512 sends × ~6 ms
+    /// of channel backpressure per sink call at SF1000 / N=512).
+    pub async fn push_all(&self, partitioned: Vec<MicroPartition>) -> DaftResult<()> {
+        debug_assert_eq!(
+            partitioned.len(),
+            self.num_partitions,
+            "push_all expects one MicroPartition per output partition",
+        );
         let send_result = match self.sender_weak.upgrade() {
             Some(sender) => sender
-                .send(WriteCommand {
-                    partition_idx,
-                    micropartition,
-                })
+                .send(WriteCommand { partitioned })
                 .await
                 .map_err(|e| e.to_string()),
             None => Err("Combined shuffle cache has been closed".to_string()),
@@ -542,53 +546,46 @@ async fn writer_task(
     let mut local_flushes_drain: u64 = 0;
 
     while let Ok(cmd) = rx.recv().await {
-        let WriteCommand {
-            partition_idx,
-            micropartition,
-        } = cmd;
+        let WriteCommand { partitioned } = cmd;
+        debug_assert_eq!(partitioned.len(), num_partitions);
 
-        if partition_idx >= num_partitions {
-            return Err(DaftError::InternalError(format!(
-                "partition_idx {} out of bounds (num_partitions = {})",
-                partition_idx, num_partitions
-            )));
+        // Ingest all N partitions from this batched sink call into the per-partition
+        // buffers. After ingestion, check coalesce/eviction once at the end (rather
+        // than once per partition) — flushes are still bounded by the cap.
+        for (partition_idx, micropartition) in partitioned.into_iter().enumerate() {
+            let rows = micropartition.len();
+            if rows == 0 {
+                continue;
+            }
+            local_pushes += 1;
+            for batch in micropartition.record_batches() {
+                let bytes = batch.size_bytes();
+                buffer_bytes[partition_idx] += bytes;
+                total_buffer_bytes += bytes;
+                local_input_bytes += bytes as u64;
+                buffers[partition_idx].push(batch.clone());
+            }
+            rows_per_partition[partition_idx] += rows;
+            bytes_per_partition[partition_idx] += micropartition.size_bytes();
+
+            // Per-partition coalesce: emit a big batch once this partition has filled up.
+            if buffer_bytes[partition_idx] >= COALESCE_THRESHOLD_BYTES {
+                let flushed_bytes = buffer_bytes[partition_idx];
+                let batches = std::mem::take(&mut buffers[partition_idx]);
+                buffer_bytes[partition_idx] = 0;
+                total_buffer_bytes -= flushed_bytes;
+                local_flushes_coalesce += 1;
+                let (w, before, after, c_us, ew_us) =
+                    flush_partition_blocking(&io_runtime, writer, batches).await?;
+                record_flush_size(after - before);
+                ranges_per_partition[partition_idx].push((before, after));
+                writer = w;
+                local_concat_us += c_us;
+                local_encode_write_us += ew_us;
+            }
         }
 
-        let rows = micropartition.len();
-        if rows == 0 {
-            continue;
-        }
-        local_pushes += 1;
-
-        for batch in micropartition.record_batches() {
-            let bytes = batch.size_bytes();
-            buffer_bytes[partition_idx] += bytes;
-            total_buffer_bytes += bytes;
-            local_input_bytes += bytes as u64;
-            buffers[partition_idx].push(batch.clone());
-        }
-        rows_per_partition[partition_idx] += rows;
-        bytes_per_partition[partition_idx] += micropartition.size_bytes();
-
-        // Per-partition coalesce: emit a big batch once this partition has filled up.
-        if buffer_bytes[partition_idx] >= COALESCE_THRESHOLD_BYTES {
-            let flushed_bytes = buffer_bytes[partition_idx];
-            let batches = std::mem::take(&mut buffers[partition_idx]);
-            buffer_bytes[partition_idx] = 0;
-            total_buffer_bytes -= flushed_bytes;
-            local_flushes_coalesce += 1;
-            let (w, before, after, c_us, ew_us) =
-                flush_partition(&io_runtime, writer, batches).await?;
-            record_flush_size(after - before);
-            ranges_per_partition[partition_idx].push((before, after));
-            writer = w;
-            local_concat_us += c_us;
-            local_encode_write_us += ew_us;
-            continue;
-        }
-
-        // Memory backstop: if total across all partitions is over budget, flush the largest
-        // partition's buffer to disk regardless of size. Keeps worst-case memory bounded.
+        // Memory backstop: flush largest partition(s) until under cap.
         while total_buffer_bytes > MAX_TOTAL_BUFFER_BYTES {
             let Some(victim) = largest_partition(&buffer_bytes) else { break };
             let flushed_bytes = buffer_bytes[victim];
@@ -600,7 +597,7 @@ async fn writer_task(
             total_buffer_bytes -= flushed_bytes;
             local_flushes_eviction += 1;
             let (w, before, after, c_us, ew_us) =
-                flush_partition(&io_runtime, writer, batches).await?;
+                flush_partition_blocking(&io_runtime, writer, batches).await?;
             record_flush_size(after - before);
             ranges_per_partition[victim].push((before, after));
             writer = w;
@@ -617,7 +614,7 @@ async fn writer_task(
         let batches = std::mem::take(&mut buffers[partition_idx]);
         local_flushes_drain += 1;
         let (w, before, after, c_us, ew_us) =
-            flush_partition(&io_runtime, writer, batches).await?;
+            flush_partition_blocking(&io_runtime, writer, batches).await?;
         record_flush_size(after - before);
         ranges_per_partition[partition_idx].push((before, after));
         writer = w;
@@ -692,15 +689,19 @@ fn largest_partition(buffer_bytes: &[usize]) -> Option<usize> {
 
 /// Concat the buffered daft batches into one arrow batch, write it as a single IPC message,
 /// and return the byte range it occupied + microsecond timings for the two sub-phases
-/// (concat, encode+write). Done on the io runtime so concat/encode don't block the
-/// writer task's recv loop.
-async fn flush_partition(
+/// (concat, encode+write).
+///
+/// Runs on `spawn_blocking` (dedicated blocking-thread pool) rather than the io_runtime's
+/// async workers. Concat is CPU-bound (column-wise allocate-and-copy) and IPC encode +
+/// `std::fs::File::write` are blocking I/O; running either on an async worker would tie
+/// up a thread that should be progressing other futures.
+async fn flush_partition_blocking(
     io_runtime: &common_runtime::Runtime,
     mut writer: arrow_ipc::writer::StreamWriter<CountingFile>,
     batches: Vec<RecordBatch>,
 ) -> DaftResult<(arrow_ipc::writer::StreamWriter<CountingFile>, u64, u64, u64, u64)> {
     io_runtime
-        .spawn(async move {
+        .spawn_blocking(move || {
             let t0 = Instant::now();
             let merged = RecordBatch::concat(&batches)?;
             let arrow_batch: arrow_array::RecordBatch = merged.try_into()?;

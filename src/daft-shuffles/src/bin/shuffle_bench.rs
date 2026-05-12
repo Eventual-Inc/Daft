@@ -323,9 +323,7 @@ async fn run_map_task_combined(
         partition_time_ms += t0.elapsed().as_secs_f64() * 1000.0;
 
         let t1 = Instant::now();
-        for (partition_idx, mp) in parts.into_iter().enumerate() {
-            cache.push_partition_data(partition_idx, mp).await?;
-        }
+        cache.push_all(parts).await?;
         push_time_ms += t1.elapsed().as_secs_f64() * 1000.0;
     }
 

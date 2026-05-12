@@ -49,12 +49,10 @@ pub(crate) struct FlightRepartitionState {
 
 impl FlightRepartitionState {
     async fn push(&self, parts: Vec<MicroPartition>) -> DaftResult<()> {
-        let push_futures = parts
-            .into_iter()
-            .enumerate()
-            .map(|(partition_idx, mp)| self.cache.push_partition_data(partition_idx, mp));
-        futures::future::try_join_all(push_futures).await?;
-        Ok(())
+        // Single batched channel send into the writer task — avoids the
+        // try_join_all-over-N pattern (which paid 512 sends × channel backpressure
+        // per sink call at SF1000).
+        self.cache.push_all(parts).await
     }
 }
 
