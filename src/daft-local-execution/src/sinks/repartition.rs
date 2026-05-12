@@ -8,8 +8,8 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    multi_partition_cache::repartition_agg, oneshot_writer::write_partitions_one_shot,
-    server::flight_server::ShuffleFlightServer,
+    multi_partition_cache::repartition_agg, server::flight_server::ShuffleFlightServer,
+    shuffle_cache::{PartitionCache, partition_ref_id},
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -244,11 +244,12 @@ impl BlockingSink for RepartitionSink {
                             use std::sync::atomic::Ordering;
                             use std::time::Instant;
                             let t_close = Instant::now();
-                            let partition_caches = write_partitions_one_shot(
+                            let partition_caches = write_per_partition_append(
                                 input_id,
                                 shuffle_id,
                                 &shuffle_dirs,
-                                schema,
+                                &schema,
+                                &local_server,
                                 per_partition,
                             )
                             .await?;
@@ -337,4 +338,98 @@ fn flatten_per_partition(
         }
     }
     (per_partition, input_id)
+}
+
+/// Concat each output partition's `Vec<MicroPartition>` in parallel, then append each
+/// non-empty partition's IPC message to the per-`(shuffle_id, partition_idx)` shared
+/// file managed by `local_server`. Returns one `PartitionCache` per output partition
+/// pointing at the shared file with the byte range this map task occupies.
+async fn write_per_partition_append(
+    input_id: InputId,
+    shuffle_id: u64,
+    shuffle_dirs: &[String],
+    schema: &SchemaRef,
+    local_server: &Arc<ShuffleFlightServer>,
+    partitions_per_output: Vec<Vec<MicroPartition>>,
+) -> DaftResult<Vec<PartitionCache>> {
+    let num_partitions = partitions_per_output.len();
+
+    // Phase 1 (parallel): concat each output partition's MicroPartitions into a single
+    // arrow batch, no I/O. Empty partitions stay as None.
+    let mut concat_futs = Vec::with_capacity(num_partitions);
+    for parts in partitions_per_output {
+        concat_futs.push(tokio::spawn(async move { concat_one_partition(parts) }));
+    }
+    let concated_results = futures::future::join_all(concat_futs).await;
+    let mut concated_per_partition: Vec<Option<(usize, usize, arrow_array::RecordBatch)>> =
+        Vec::with_capacity(num_partitions);
+    for jr in concated_results {
+        let inner = jr.map_err(|e| common_error::DaftError::InternalError(e.to_string()))?;
+        concated_per_partition.push(inner?);
+    }
+
+    // Phase 2 (per-partition): get/create the shared writer for this partition's file
+    // and append our IPC message. The writer's mutex serializes concurrent map tasks
+    // writing to the same file; concat work has already happened.
+    let mut caches = Vec::with_capacity(num_partitions);
+    for (partition_idx, slot) in concated_per_partition.into_iter().enumerate() {
+        let ref_id = partition_ref_id(input_id, partition_idx);
+        let (num_rows, size_bytes, byte_ranges, file_paths, bytes_per_file) = match slot {
+            Some((rows, bytes, arrow_batch)) => {
+                let writer = local_server
+                    .get_or_create_partition_writer(
+                        shuffle_id,
+                        partition_idx,
+                        shuffle_dirs,
+                        schema,
+                    )
+                    .await?;
+                let (before, after) = writer.write_batch(&arrow_batch).await?;
+                (
+                    rows,
+                    bytes,
+                    Some(vec![(before, after)]),
+                    vec![writer.file_path.clone()],
+                    vec![(after - before) as usize],
+                )
+            }
+            None => (0, 0, Some(Vec::new()), Vec::new(), Vec::new()),
+        };
+        caches.push(PartitionCache {
+            partition_ref_id: ref_id,
+            schema: schema.clone(),
+            bytes_per_file,
+            file_paths,
+            num_rows,
+            size_bytes,
+            byte_ranges,
+        });
+    }
+    Ok(caches)
+}
+
+/// Concat one output partition's MicroPartitions into a single arrow RecordBatch.
+/// Returns `Some((num_rows, size_bytes, batch))` if non-empty, else `None`. Identical
+/// to the helper inside `oneshot_writer.rs` — duplicated to keep this experiment
+/// self-contained.
+fn concat_one_partition(
+    parts: Vec<MicroPartition>,
+) -> DaftResult<Option<(usize, usize, arrow_array::RecordBatch)>> {
+    if parts.is_empty() {
+        return Ok(None);
+    }
+    let total_rows: usize = parts.iter().map(|p| p.len()).sum();
+    if total_rows == 0 {
+        return Ok(None);
+    }
+    let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
+    let combined = MicroPartition::concat(parts)?;
+    let concated = combined.concat_or_get()?;
+    match concated {
+        Some(rb) => {
+            let arrow_batch: arrow_array::RecordBatch = rb.try_into()?;
+            Ok(Some((total_rows, size_bytes, arrow_batch)))
+        }
+        None => Ok(None),
+    }
 }
