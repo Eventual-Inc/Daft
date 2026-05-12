@@ -2797,6 +2797,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-schema",
  "paste",
  "serde",
  "typetag",

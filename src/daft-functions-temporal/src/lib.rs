@@ -3,7 +3,7 @@ pub mod date_arithmetic;
 pub mod date_construction;
 pub mod date_navigation;
 pub mod epoch_conversions;
-mod time;
+pub mod time;
 mod to_string;
 mod total;
 pub mod truncate;
@@ -26,7 +26,7 @@ use epoch_conversions::{
     DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
 };
 use serde::{Deserialize, Serialize};
-use time::{ConvertTimeZone, ReplaceTimeZone, Time};
+use time::{ConvertTimeZone, FromUtcTimestamp, ReplaceTimeZone, Time, ToUtcTimestamp};
 use truncate::Truncate;
 use unix_timestamp::UnixTimestamp;
 
@@ -111,6 +111,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(to_string::ToString);
         parent.add_fn(ConvertTimeZone);
         parent.add_fn(ReplaceTimeZone);
+        parent.add_fn(FromUtcTimestamp);
+        parent.add_fn(ToUtcTimestamp);
         parent.add_fn(Truncate);
         parent.add_fn(TotalDays);
         parent.add_fn(TotalHours);

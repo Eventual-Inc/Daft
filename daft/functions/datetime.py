@@ -1152,6 +1152,75 @@ def replace_time_zone(expr: Expression, timezone: str | None = None) -> Expressi
     return Expression._call_builtin_scalar_fn("replace_time_zone", expr, timezone)
 
 
+def from_utc_timestamp(expr: Expression, timezone: str) -> Expression:
+    """Interprets a UTC timestamp and returns the wall-clock time in the given timezone.
+
+    Mirrors Spark's ``from_utc_timestamp``. The input is treated as a UTC instant
+    regardless of any timezone label, and the result is a tz-naive Timestamp whose
+    value reads as the wall-clock time in ``timezone``.
+
+    Args:
+        expr: A Timestamp expression interpreted as UTC.
+        timezone: Target timezone name (e.g. ``"America/Los_Angeles"`` or ``"+01:00"``).
+
+    Returns:
+        Expression: A tz-naive Timestamp expression representing the wall-clock in ``timezone``.
+
+    Examples:
+        >>> import daft
+        >>> from datetime import datetime
+        >>> from daft.functions import from_utc_timestamp
+        >>> df = daft.from_pydict({"ts": [datetime(2017, 7, 14, 2, 40)]})
+        >>> df = df.with_column("local", from_utc_timestamp(df["ts"], "Europe/London"))
+        >>> df.to_pydict()["local"]
+        [datetime.datetime(2017, 7, 14, 3, 40)]
+    """
+    return Expression._call_builtin_scalar_fn("from_utc_timestamp", expr, timezone=timezone)
+
+
+def to_utc_timestamp(expr: Expression, timezone: str) -> Expression:
+    """Interprets a wall-clock timestamp in the given timezone and returns the UTC instant.
+
+    Mirrors Spark's ``to_utc_timestamp``. The input's wall-clock value is treated as
+    local time in ``timezone`` and converted to the equivalent UTC instant, returned as
+    a tz-naive Timestamp.
+
+    Args:
+        expr: A Timestamp expression whose wall-clock is interpreted in ``timezone``.
+        timezone: Source timezone name.
+
+    Returns:
+        Expression: A tz-naive Timestamp expression representing the UTC instant.
+
+    Examples:
+        >>> import daft
+        >>> from datetime import datetime
+        >>> from daft.functions import to_utc_timestamp
+        >>> df = daft.from_pydict({"ts": [datetime(2017, 7, 14, 3, 40)]})
+        >>> df = df.with_column("utc", to_utc_timestamp(df["ts"], "Europe/London"))
+        >>> df.to_pydict()["utc"]
+        [datetime.datetime(2017, 7, 14, 2, 40)]
+    """
+    return Expression._call_builtin_scalar_fn("to_utc_timestamp", expr, timezone=timezone)
+
+
+def convert_timezone(target_timezone: str, source_timestamp: Expression) -> Expression:
+    """Spark-style alias for :func:`convert_time_zone`.
+
+    Note Spark's argument order is ``(target_timezone, source_timestamp)`` which is the
+    reverse of Daft's :func:`convert_time_zone`. The source timestamp must already carry
+    a timezone (this alias does not accept a ``from_timezone`` argument).
+
+    Args:
+        target_timezone: Target timezone name.
+        source_timestamp: A tz-aware Timestamp expression.
+
+    Returns:
+        Expression: Timestamp expression in the target timezone.
+    """
+    return convert_time_zone(source_timestamp, target_timezone)
+
+
 def date_trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
     """Truncates the datetime column to the specified interval.
 
