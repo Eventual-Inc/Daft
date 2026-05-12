@@ -840,7 +840,9 @@ impl LogicalPlan {
                     right_on,
                     ..
                 }) => {
-                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_right_cols_to_drop};
+                    use daft_dsl::{Column, Expr, ResolvedColumn};
+
+                    use crate::ops::get_right_cols_to_drop;
 
                     let right_cols_to_drop =
                         get_right_cols_to_drop(right_by, left_on, right_on, |e| {

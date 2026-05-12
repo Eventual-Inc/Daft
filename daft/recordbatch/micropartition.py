@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
     import pandas as pd
 
+    from daft.convert import ArrowStreamExportable
+
 logger = logging.getLogger(__name__)
 
 
@@ -103,6 +105,11 @@ class MicroPartition:
     def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> MicroPartition:
         schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
         pyt = _PyMicroPartition.from_arrow_record_batches(rbs, schema._schema)
+        return MicroPartition._from_pymicropartition(pyt)
+
+    @staticmethod
+    def from_arrow_stream(obj: ArrowStreamExportable) -> MicroPartition:
+        pyt = _PyMicroPartition.from_arrow_stream(obj)
         return MicroPartition._from_pymicropartition(pyt)
 
     @staticmethod

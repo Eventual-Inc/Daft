@@ -7,7 +7,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
@@ -464,7 +464,13 @@ impl DashboardSubscriber {
                     .iter()
                     .map(|t| daft_dashboard::engine::TaskStatsEntry {
                         task_id: t.task_id,
-                        totals: daft_dashboard::engine::TaskTotals { cpu_us: t.cpu_us },
+                        totals: daft_dashboard::engine::TaskTotals {
+                            cpu_us: t.cpu_us,
+                            rows_in: t.rows_in,
+                            rows_out: t.rows_out,
+                            bytes_in: t.bytes_in,
+                            bytes_out: t.bytes_out,
+                        },
                     })
                     .collect(),
             },
@@ -526,18 +532,22 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
 
-        // See `TaskTotals` for why only `cpu_us` is reported here.
-        let mut totals = daft_dashboard::engine::TaskTotals::default();
-        for (_, snapshot) in &event.stats {
-            let stats = snapshot.to_stats();
-            for (name, stat) in stats.iter() {
-                if let (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) =
-                    (name, stat)
-                {
-                    totals.cpu_us += d.as_micros() as u64;
-                }
-            }
+        // Aggregate per-snapshot scalars across the task's local plan nodes.
+        // `is_task_root` / `is_task_leaf` filtering (and the source-leaf
+        // `rows.out` / `bytes.read` fallback) lives in
+        // `common_metrics::task_io::TaskExternalIo` so this site and the
+        // mid-flight aggregator in `daft-local-execution` stay in lockstep.
+        let mut io = common_metrics::task_io::TaskExternalIo::default();
+        for (node_info, snapshot) in &event.stats {
+            io.accumulate(node_info, snapshot);
         }
+        let totals = daft_dashboard::engine::TaskTotals {
+            cpu_us: io.cpu_us,
+            rows_in: io.rows_in,
+            rows_out: io.rows_out,
+            bytes_in: io.bytes_in,
+            bytes_out: io.bytes_out,
+        };
 
         let outcome = match &event.outcome {
             crate::subscribers::events::TaskOutcome::Success => {

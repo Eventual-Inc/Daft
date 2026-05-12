@@ -106,6 +106,12 @@ export type TaskInfo = {
   end_sec?: number;
   worker_id?: string;
   cpu_us: number;
+  /** External rows read into the task (sum from local plan leaves only). */
+  rows_in: number;
+  /** External rows emitted from the task (the local plan root only). */
+  rows_out: number;
+  bytes_in: number;
+  bytes_out: number;
   /** Absent when the task has no recorded sources. */
   sources?: TaskSource[];
 };
@@ -122,6 +128,10 @@ export type TaskGroupSummary = {
   failed_count: number;
   cancelled_count: number;
   total_cpu_us: number;
+  total_rows_in: number;
+  total_rows_out: number;
+  total_bytes_in: number;
+  total_bytes_out: number;
   first_submit_sec: number;
   last_end_sec?: number;
   /** How many individual tasks for this group are in the retained `tasks` map. */

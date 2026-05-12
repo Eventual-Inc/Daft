@@ -4,6 +4,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod snapshot;
+pub mod task_io;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 

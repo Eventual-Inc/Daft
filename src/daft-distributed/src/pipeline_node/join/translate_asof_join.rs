@@ -50,19 +50,29 @@ impl LogicalPlanToPipelineNodeTranslator {
         left_node: DistributedPipelineNode,
         right_node: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
-        // Normalize the by
         let (left_by, right_by) = daft_dsl::join::normalize_join_keys(
             asof_join.left_by.clone(),
             asof_join.right_by.clone(),
             left_node.config().schema.clone(),
             right_node.config().schema.clone(),
         )?;
+        let (left_on_exprs, right_on_exprs) = daft_dsl::join::normalize_join_keys(
+            vec![asof_join.left_on.clone()],
+            vec![asof_join.right_on.clone()],
+            left_node.config().schema.clone(),
+            right_node.config().schema.clone(),
+        )?;
 
-        // Bind keys to schemas
         let left_by = BoundExpr::bind_all(&left_by, &left_node.config().schema)?;
         let right_by = BoundExpr::bind_all(&right_by, &right_node.config().schema)?;
-        let left_on = BoundExpr::try_new(asof_join.left_on.clone(), &left_node.config().schema)?;
-        let right_on = BoundExpr::try_new(asof_join.right_on.clone(), &right_node.config().schema)?;
+        let left_on = BoundExpr::try_new(
+            left_on_exprs.into_iter().next().unwrap(),
+            &left_node.config().schema,
+        )?;
+        let right_on = BoundExpr::try_new(
+            right_on_exprs.into_iter().next().unwrap(),
+            &right_node.config().schema,
+        )?;
 
         self.gen_asof_join_nodes(
             left_node,

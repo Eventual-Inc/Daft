@@ -10,8 +10,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    DURATION_KEY, NodeID, QueryEndState, QueryID, Stat, StatSnapshot, ops::NodeInfo,
-    snapshot::StatSnapshotImpl,
+    NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -514,6 +513,7 @@ impl RuntimeStatsManager {
                                 emit_per_task_stats_updates(
                                     &query_id,
                                     &input_stats,
+                                    &node_info_map,
                                     &subscribers,
                                 );
                                 last_task_stats_emit = Some(now);
@@ -598,6 +598,7 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
 fn emit_per_task_stats_updates(
     query_id: &QueryID,
     input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
     subscribers: &[Arc<dyn Subscriber>],
 ) {
     // Iterate over every (node, input) pair, including nodes whose
@@ -606,22 +607,38 @@ fn emit_per_task_stats_updates(
     // `input_stats` and still holds the cumulative cpu_us it accumulated.
     // Skipping those would make a task's reported cpu_us non-monotonic
     // (going down as upstream operators finish).
-    let mut by_input: HashMap<InputId, TaskStatsSnapshot> = HashMap::new();
-    for (&(_, input_id), stats) in input_stats {
+    // Per-task running totals. `TaskExternalIo::accumulate` does the
+    // is_task_root / is_task_leaf filtering plus source-leaf fallback so the
+    // logic stays in lockstep with `on_task_end` in the dashboard subscriber.
+    let mut by_input: HashMap<InputId, common_metrics::task_io::TaskExternalIo> = HashMap::new();
+    let default_node_info = NodeInfo::default();
+    for (&(node_id, input_id), stats) in input_stats {
         let snapshot = stats.snapshot();
-        let stats_vec = snapshot.to_stats();
-        let acc = by_input
+        let node_info = node_info_map
+            .get(&node_id)
+            .map(Arc::as_ref)
+            .unwrap_or(&default_node_info);
+        by_input
             .entry(input_id)
-            .or_insert_with(|| TaskStatsSnapshot {
-                task_id: input_id,
-                cpu_us: 0,
-            });
-        for (key, stat) in &stats_vec.0 {
-            if let (DURATION_KEY, Stat::Duration(d)) = (key.as_ref(), stat) {
-                acc.cpu_us += d.as_micros() as u64;
-            }
-        }
+            .or_default()
+            .accumulate(node_info, &snapshot);
     }
+    let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
+        .into_iter()
+        .map(|(input_id, io)| {
+            (
+                input_id,
+                TaskStatsSnapshot {
+                    task_id: input_id,
+                    cpu_us: io.cpu_us,
+                    rows_in: io.rows_in,
+                    rows_out: io.rows_out,
+                    bytes_in: io.bytes_in,
+                    bytes_out: io.bytes_out,
+                },
+            )
+        })
+        .collect();
 
     if by_input.is_empty() {
         return;

@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
 import {
+  formatBytes,
+  formatCount,
   formatDuration,
   getStatusIcon,
   getStatusColor,
@@ -164,7 +166,7 @@ export default function TasksSidebar({
         ) : (
           <>
             <div
-              className="overflow-hidden transition-all duration-500 ease-in-out"
+              className="overflow-x-auto overflow-y-hidden transition-all duration-500 ease-in-out"
               style={{
                 maxHeight: queryActive ? "600px" : "0px",
                 opacity: queryActive ? 1 : 0,
@@ -260,15 +262,15 @@ function TaskSourceCell({ sources }: { sources: TaskSource[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // In-flight tasks "top" section. Shows running tasks first (sorted by wall-
 // clock duration descending), then pending tasks. The State column lets
 // users tell pending and running apart; Source surfaces scan paths.
 // ---------------------------------------------------------------------------
+// Columns: Local Plan | Source | State | Rows in | Rows out | Bytes in | Bytes out | CPU
 // Local Plan and Source share remaining width 1:2 so the (typically long)
-// source path gets enough room before the fixed-width State and CPU columns.
+// source path gets enough room before the fixed-width State, I/O, and CPU columns.
 const RUNNING_GRID_COLS =
-  "grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_90px_90px]";
+  "grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_90px_70px_70px_80px_80px_90px]";
 
 function RunningTasksSection({
   tasks,
@@ -284,7 +286,7 @@ function RunningTasksSection({
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="border-b border-zinc-700">
+    <div className="border-b border-zinc-700 min-w-[900px] w-fit">
       <div className="px-4 py-2 bg-emerald-950/30 border-b border-zinc-800 flex items-center gap-2">
         <span className={`${main.className} text-xs font-bold text-emerald-300 uppercase tracking-wider`}>
           In-flight ({totalInflight})
@@ -293,13 +295,17 @@ function RunningTasksSection({
           {totalRunning} running · {totalPending} pending
         </span>
       </div>
-      <div className="min-w-[300px]">
+      <div>
         <div
           className={`grid ${RUNNING_GRID_COLS} gap-0 items-center min-h-[32px] bg-zinc-800/50 border-b border-zinc-800`}
         >
           <RunningHeader align="left">Local Plan</RunningHeader>
           <RunningHeader align="left">Source</RunningHeader>
           <RunningHeader align="left">State</RunningHeader>
+          <RunningHeader align="right">Rows in</RunningHeader>
+          <RunningHeader align="right">Rows out</RunningHeader>
+          <RunningHeader align="right">Bytes in</RunningHeader>
+          <RunningHeader align="right">Bytes out</RunningHeader>
           <RunningHeader align="right">CPU</RunningHeader>
         </div>
         {Array.from({ length: TOP_K_RUNNING }, (_, i) => {
@@ -354,7 +360,8 @@ function RunningTaskRow({
   // TaskStatsUpdate events; re-renders driven by taskStore prop changes
   // upstream, so no per-second timer needed. Trailing ellipsis hints this is
   // a running snapshot, not final. Pending tasks show \u2014 since they have no
-  // operator work yet.
+  // operator work yet. The rows/bytes I/O counters use is_task_root /
+  // is_task_leaf filtering so they reflect only the task's external traffic.
   const cpu = isRunning
     ? formatDuration(task.cpu_us / 1_000_000) + "\u2026"
     : "\u2014";
@@ -380,6 +387,18 @@ function RunningTaskRow({
       >
         {isRunning ? "running" : "pending"}
       </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatCount(task.rows_in)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatCount(task.rows_out)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatBytes(task.bytes_in)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatBytes(task.bytes_out)}
+      </div>
       <div
         className={`${main.className} px-3 text-xs text-right font-mono ${isRunning ? "text-emerald-300" : "text-zinc-500"}`}
       >
@@ -395,9 +414,11 @@ function RunningTaskRow({
 // single section header that carries the distributed-plan chips. The section
 // header is fixed, not collapsible — it's purely a visual hierarchy hint.
 // ---------------------------------------------------------------------------
-// Columns: chevron | Local Plan | Tasks | Status | CPU
+// Columns: chevron | Local Plan | Tasks | Status | Rows in | Rows out | Bytes in | Bytes out | CPU
+// (Distributed Plan lives in the section header above each row group, not in
+// this per-row grid.)
 const GRID_COLS =
-  "grid-cols-[32px_minmax(220px,3fr)_90px_130px_100px]";
+  "grid-cols-[32px_minmax(220px,2fr)_90px_130px_80px_80px_90px_90px_100px]";
 
 function TaskTypeTable({
   sections,
@@ -409,7 +430,7 @@ function TaskTypeTable({
   onHoverNodes: (ids: ReadonlySet<number> | null) => void;
 }) {
   return (
-    <div className="min-w-[800px]">
+    <div className="min-w-[920px]">
       {/* Header */}
       <div
         className={`bg-zinc-800 grid ${GRID_COLS} gap-0 items-center min-h-[48px] border-b border-zinc-700 sticky top-0 z-10`}
@@ -418,6 +439,10 @@ function TaskTypeTable({
         <HeaderCell align="left">Local Plan</HeaderCell>
         <HeaderCell align="right">Tasks</HeaderCell>
         <HeaderCell align="left">Status</HeaderCell>
+        <HeaderCell align="right">Rows in</HeaderCell>
+        <HeaderCell align="right">Rows out</HeaderCell>
+        <HeaderCell align="right">Bytes in</HeaderCell>
+        <HeaderCell align="right">Bytes out</HeaderCell>
         <HeaderCell align="right" last>
           CPU
         </HeaderCell>
@@ -542,6 +567,18 @@ function TaskTypeGroupRow({
         </Cell>
         <Cell align="left">
           <StatusSummary counts={row.status_counts} />
+        </Cell>
+        <Cell align="right">
+          <Mono>{formatCount(row.total_rows_in)}</Mono>
+        </Cell>
+        <Cell align="right">
+          <Mono>{formatCount(row.total_rows_out)}</Mono>
+        </Cell>
+        <Cell align="right">
+          <Mono>{formatBytes(row.total_bytes_in)}</Mono>
+        </Cell>
+        <Cell align="right">
+          <Mono>{formatBytes(row.total_bytes_out)}</Mono>
         </Cell>
         <Cell align="right" last>
           <Mono>{formatDuration(row.total_cpu_sec)}</Mono>
@@ -675,10 +712,13 @@ function StatusSummary({
 // ---------------------------------------------------------------------------
 // Expanded task-level sub-table.
 // ---------------------------------------------------------------------------
-// Per-task rows/bytes stats are not surfaced yet — they require correct
-// head/leaf identification across the fused pipeline. See follow-up ticket.
+// Per-task rows/bytes I/O reflect only the task's external traffic. Internal
+// flow between fused operators is filtered out by `is_task_root` /
+// `is_task_leaf` on each StatSnapshot's NodeInfo before the dashboard
+// aggregator sums it up.
+// Columns: status | Task ID | Source | Worker | Status | Rows in | Rows out | Bytes in | Bytes out | Duration | CPU
 const SUB_GRID_COLS =
-  "grid-cols-[32px_80px_minmax(180px,2fr)_minmax(120px,1fr)_110px_100px_100px]";
+  "grid-cols-[32px_80px_minmax(180px,2fr)_minmax(120px,1fr)_110px_70px_70px_80px_80px_100px_100px]";
 
 function ExpandedTaskList({
   tasks,
@@ -711,6 +751,10 @@ function ExpandedTaskList({
         <SubHeader align="left">Source</SubHeader>
         <SubHeader align="left">Worker</SubHeader>
         <SubHeader align="left">Status</SubHeader>
+        <SubHeader align="right">Rows in</SubHeader>
+        <SubHeader align="right">Rows out</SubHeader>
+        <SubHeader align="right">Bytes in</SubHeader>
+        <SubHeader align="right">Bytes out</SubHeader>
         <SubHeader align="right">Duration</SubHeader>
         <SubHeader align="right">CPU</SubHeader>
       </div>
@@ -788,6 +832,18 @@ function TaskSubRow({ task }: { task: TaskInfo }) {
       </div>
       <div className={`${main.className} px-3 text-xs font-mono ${getStatusColor(displayStatus)}`}>
         {getStatusText(displayStatus)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatCount(task.rows_in)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatCount(task.rows_out)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatBytes(task.bytes_in)}
+      </div>
+      <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
+        {formatBytes(task.bytes_out)}
       </div>
       <div className={`${main.className} px-3 text-xs text-right text-zinc-300 font-mono`}>
         {duration}

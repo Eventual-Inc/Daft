@@ -15,6 +15,22 @@ export const statNumericValue = (stat: Stat | undefined): number => {
   return Number(stat.value) || 0;
 };
 
+/**
+ * Compact human-readable row count: 1234 → "1.2K", 1234567 → "1.2M". Useful
+ * for narrow table cells where the long-form `toLocaleString()` would wrap.
+ */
+export const formatCount = (count: number): string => {
+  if (!isFinite(count) || count <= 0) return "0";
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  } else if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`;
+  } else if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K`;
+  }
+  return count.toString();
+};
+
 export const formatBytes = (bytes: number): string => {
   if (!isFinite(bytes) || bytes <= 0) return "0 B";
   if (bytes >= 1024 * 1024 * 1024) {

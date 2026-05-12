@@ -23,6 +23,7 @@
         * [Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
+        * [Aggregate UDFs](custom-code/udaf.md)
         * [Working with GPUs](custom-code/gpu.md)
         * [Legacy UDF Migration Guide](custom-code/migration.md)
         * [Legacy UDFs](custom-code/udfs.md)
