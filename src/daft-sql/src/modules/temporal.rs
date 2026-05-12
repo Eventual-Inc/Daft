@@ -17,6 +17,7 @@ use daft_functions_temporal::{
     },
     time::{ConvertTimeZone, FromUtcTimestamp, ToUtcTimestamp},
     truncate::Truncate,
+    unix_timestamp::UnixTimestamp,
 };
 use sqlparser::ast;
 
@@ -62,6 +63,12 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("from_utc_timestamp", SQLFromUtcTimestamp);
         parent.add_fn("to_utc_timestamp", SQLToUtcTimestamp);
         parent.add_fn("convert_timezone", SQLConvertTimezone);
+        parent.add_fn("unix_seconds", SQLUnixSeconds);
+        parent.add_fn("unix_millis", SQLUnixMillis);
+        parent.add_fn("unix_micros", SQLUnixMicros);
+        parent.add_fn("unix_timestamp", SQLUnixTimestamp);
+        parent.add_fn("to_unix_timestamp", SQLUnixTimestamp);
+        parent.add_fn("weekday", SQLWeekday);
     }
 }
 
@@ -1050,5 +1057,135 @@ impl SQLFunction for SQLConvertTimezone {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["target_timezone", "source_timestamp"]
+    }
+}
+
+// --- Unix extractor SQL functions (Spark parity) ---
+
+fn build_unix_extractor(
+    inputs: &[ast::FunctionArg],
+    planner: &crate::planner::SQLPlanner,
+    fn_name: &str,
+    time_unit: &str,
+) -> SQLPlannerResult<ExprRef> {
+    if inputs.len() != 1 {
+        invalid_operation_err!("{} expects 1 argument, got {}", fn_name, inputs.len());
+    }
+    let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+    Ok(BuiltinScalarFn {
+        func: BuiltinScalarFnVariant::Sync(Arc::new(UnixTimestamp)),
+        inputs: FunctionArgs::new_unchecked(vec![
+            FunctionArg::unnamed(input),
+            FunctionArg::named("time_unit".to_string(), lit(time_unit.to_string())),
+        ]),
+    }
+    .into())
+}
+
+pub struct SQLUnixSeconds;
+
+impl SQLFunction for SQLUnixSeconds {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        build_unix_extractor(inputs, planner, "unix_seconds", "s")
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of seconds since the Unix epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
+}
+
+pub struct SQLUnixMillis;
+
+impl SQLFunction for SQLUnixMillis {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        build_unix_extractor(inputs, planner, "unix_millis", "ms")
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of milliseconds since the Unix epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
+}
+
+pub struct SQLUnixMicros;
+
+impl SQLFunction for SQLUnixMicros {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        build_unix_extractor(inputs, planner, "unix_micros", "us")
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of microseconds since the Unix epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
+}
+
+pub struct SQLUnixTimestamp;
+
+impl SQLFunction for SQLUnixTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        build_unix_extractor(inputs, planner, "unix_timestamp", "s")
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of seconds since the Unix epoch (Spark default unit).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
+}
+
+pub struct SQLWeekday;
+
+impl SQLFunction for SQLWeekday {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("weekday expects 1 argument, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(DayOfWeek)),
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the day of the week with Monday=0, Sunday=6 numbering.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
     }
 }
