@@ -1,28 +1,40 @@
 //! Server-side async coalescer for Flight shuffle partition files.
 //!
-//! Map tasks register `PartitionCache` entries one-per-(task, partition); a read of
-//! partition P walks every entry for P and emits one file-range read per entry. When
-//! many small map tasks fan out across many output partitions, this leaves the read
-//! side doing N opens / N seeks per partition.
+//! Map tasks register `PartitionCache` entries one-per-(task, partition); a read
+//! of partition P walks every entry for P and emits one file-range read per
+//! entry. The cost asymmetry across writer modes:
 //!
-//! This module runs in the background on the Flight server, watches for
-//! `(shuffle_id, partition_idx)` groups whose entry count and total bytes cross
-//! configured thresholds, and rewrites them: read the source byte ranges, append
-//! them to a single new file under the same shuffle dir, and atomically swap each
-//! entry to point at its slice of the new file. Cache entries stay 1:1 (so
-//! `partition_ref_id`s stay stable for any in-flight tickets); they just all end up
-//! pointing at the same physical file, which `get_shuffle_file_specs` already
-//! collapses into a single open with multiple ranges.
+//! - `multi_file`: M files per partition, M opens per partition read, and each
+//!   source file holds *exactly one partition* — coalescing fully empties each
+//!   source and lets us unlink it. This is the natural target: clean disk
+//!   reduction (M*N → N files) and clean read-side reduction (M opens → 1).
+//! - `oneshot`: M files total (each with N partitions packed by byte range).
+//!   Coalescing partition P pulls P's range from each source into a new file,
+//!   so read-side opens drop from M to 1 per partition; but the sources still
+//!   reference the other N-1 partitions, so we cannot unlink them. Costs an
+//!   extra copy of the partition's bytes, in exchange for a sequential layout
+//!   on the read side.
+//! - `append`: already 1 file per partition with M ranges in a shared file.
+//!   Coalescing rewrites those M ranges as one contiguous block. Marginal on
+//!   NVMe, helpful on EBS; the most expendable target.
 //!
-//! Scope: only `byte_ranges = Some(_)` entries (oneshot + append writers, where
-//! the bytes are pure IPC batch messages with no schema header / EOS embedded in
-//! the range). Whole-file entries (multi_file writer) are skipped — coalescing
-//! them needs IPC header/EOS extraction; that can come later if it matters.
+//! Trigger: `register_shuffle_partitions` dispatches this on every map-task
+//! finalize. For each `(shuffle_id, partition_idx)` group whose entry count and
+//! total bytes exceed thresholds and that isn't already in flight, we plan +
+//! execute a rewrite on a bounded-concurrency permit pool.
 //!
-//! Fault model: source files are never deleted by the coalescer. Readers that
-//! opened a path before the swap keep using their handle; readers that look up
-//! after the swap get the new path. GC of orphaned source files happens at
-//! shuffle-cleanup time, not here. Worst case: 2x disk space until cleanup.
+//! Output entries stay 1:1 with sources — `partition_ref_id`s are stable for any
+//! in-flight tickets. Entries' `byte_ranges` are rewritten to point at slices of
+//! the new combined file; `get_shuffle_file_specs` already groups by `file_path`,
+//! so the read side naturally collapses to one open + N seeks.
+//!
+//! Fault model:
+//! - For multi_file sources (each source fully consumed by one coalesce),
+//!   we unlink the source after the cache swap. POSIX semantics keep any
+//!   already-open reader's handle valid through the unlink.
+//! - For range-form sources (oneshot, append — sources may still be referenced
+//!   by other partitions or by entries we're not rewriting), we never unlink.
+//!   GC of those happens at shuffle-cleanup time elsewhere.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -31,14 +43,21 @@ use std::{
     sync::Arc,
 };
 
+use arrow_ipc::writer::{IpcWriteOptions, StreamWriter};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
+use daft_schema::schema::SchemaRef;
 use tokio::sync::{Mutex, Semaphore};
 
 use crate::shuffle_cache::PartitionCache;
 
-/// Tunables for the coalescer. All defaults conservative — coalesce only when there
-/// are clearly many small entries.
+/// IPC EOS marker length appended by `StreamWriter::finish()`: continuation
+/// marker (4 bytes, 0xFFFFFFFF LE) + meta_len 0 (4 bytes). The reader strips
+/// this so we must too when extracting body bytes from a whole-file entry.
+const IPC_EOS_LEN: u64 = 8;
+
+/// Tunables for the coalescer. All defaults conservative — coalesce only when
+/// there are clearly many small entries.
 #[derive(Clone, Copy, Debug)]
 pub struct CoalescerConfig {
     /// Minimum number of cache entries for a `(shuffle_id, partition_idx)` group
@@ -71,11 +90,9 @@ pub fn pick_candidates<'a>(
     cfg: &CoalescerConfig,
     in_flight: &HashSet<(u64, usize)>,
 ) -> Vec<(u64, usize)> {
-    // Aggregate count + bytes per group.
     let mut by_group: HashMap<(u64, usize), (usize, u64)> = HashMap::new();
     for (shuffle_id, ref_id, cache) in entries {
-        // Range-form entries only — see module-level note.
-        if cache.byte_ranges.is_none() || cache.file_paths.is_empty() {
+        if cache.file_paths.is_empty() {
             continue;
         }
         let partition_idx = (ref_id & 0xFFFF_FFFF) as usize;
@@ -123,17 +140,12 @@ impl CoalescerState {
 pub struct CoalescePlan {
     pub shuffle_id: u64,
     pub partition_idx: usize,
-    /// (ref_id, cloned cache) snapshot at planning time. The actual cache may have
-    /// new entries appended afterwards; that's fine — we just won't coalesce those
-    /// in this pass.
     pub entries: Vec<(u64, PartitionCache)>,
-    /// Absolute path of the new combined file.
     pub out_path: String,
 }
 
-/// Build a coalesce plan from a snapshot of the cache. Returns `None` if no
-/// range-form entries with file paths exist (defensive — `pick_candidates`
-/// should have filtered those out already).
+/// Build a coalesce plan from a snapshot of the cache. Returns `None` if the
+/// group has no usable entries.
 pub fn build_plan<'a>(
     shuffle_id: u64,
     partition_idx: usize,
@@ -141,7 +153,7 @@ pub fn build_plan<'a>(
     seq: u64,
 ) -> Option<CoalescePlan> {
     let entries: Vec<(u64, PartitionCache)> = entries_for_group
-        .filter(|(_, c)| c.byte_ranges.is_some() && !c.file_paths.is_empty())
+        .filter(|(_, c)| !c.file_paths.is_empty())
         .map(|(ref_id, c)| (ref_id, c.clone()))
         .collect();
     if entries.is_empty() {
@@ -163,19 +175,36 @@ pub fn build_plan<'a>(
     })
 }
 
+/// Result of executing a plan: updated cache entries to swap in, plus source
+/// files that became fully dead (multi_file) and can be unlinked after the swap.
+pub struct CoalesceOutcome {
+    pub updated_entries: Vec<(u64, PartitionCache)>,
+    pub orphaned_sources: Vec<String>,
+}
+
 /// Execute the plan: read each source byte range, append to the output file,
 /// build updated cache entries that point at the output file. Runs on the
 /// blocking IO pool — file copy is pure syscalls, no async benefit.
-///
-/// Returns updated `(ref_id, PartitionCache)` pairs ready to swap into the
-/// server's `shuffle_partitions` map.
-pub async fn execute_plan(plan: CoalescePlan) -> DaftResult<Vec<(u64, PartitionCache)>> {
+pub async fn execute_plan(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
     get_io_runtime(true)
         .spawn_blocking(move || execute_plan_sync(plan))
         .await?
 }
 
-fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<Vec<(u64, PartitionCache)>> {
+/// Compute the byte length of the IPC schema header for the given schema. The
+/// header is what `StreamWriter::try_new_with_options` emits before any batches —
+/// continuation + meta_len + metadata padded to 8. For our writers `IpcWriteOptions`
+/// is `default()`, so this is deterministic per schema.
+fn schema_header_len(schema: &SchemaRef) -> DaftResult<u64> {
+    let arrow_schema = schema.to_arrow()?;
+    let mut buf: Vec<u8> = Vec::with_capacity(512);
+    let opts = IpcWriteOptions::default();
+    let _ = StreamWriter::try_new_with_options(&mut buf, &arrow_schema, opts)
+        .map_err(|e| DaftError::InternalError(format!("schema header probe: {}", e)))?;
+    Ok(buf.len() as u64)
+}
+
+fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
     let CoalescePlan {
         shuffle_id: _,
         partition_idx: _,
@@ -190,22 +219,55 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<Vec<(u64, PartitionCache)
         ))
     })?;
     let mut cursor: u64 = 0;
-    // 1 MiB copy buffer — large enough to amortize syscalls, small enough to stay L2-friendly.
+    // 1 MiB copy buffer — amortizes syscalls, stays L2-friendly.
     let mut buf = vec![0u8; 1024 * 1024];
 
-    let mut updated: Vec<(u64, PartitionCache)> = Vec::with_capacity(entries.len());
+    let mut updated_entries: Vec<(u64, PartitionCache)> = Vec::with_capacity(entries.len());
+    let mut orphaned_sources: Vec<String> = Vec::new();
 
     for (ref_id, cache) in entries {
-        let ranges = cache
-            .byte_ranges
-            .as_ref()
-            .expect("planner filtered out non-range entries");
-        // Each cache may carry multiple files (rare but supported). Walk them in order.
-        let mut new_byte_ranges: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
-        let mut new_file_paths: Vec<String> = Vec::with_capacity(ranges.len());
-        let mut new_bytes_per_file: Vec<usize> = Vec::with_capacity(ranges.len());
+        // For whole-file entries (multi_file), the body bytes (pure batch
+        // messages) live in [header_len, file_size - eos_len). We strip these
+        // before writing so the coalesced output stays a valid stream of pure
+        // batch messages, matching the on-read contract for range-form caches.
+        let header_len = if cache.byte_ranges.is_none() {
+            schema_header_len(&cache.schema)?
+        } else {
+            0
+        };
 
-        for (src_path, (start, end)) in cache.file_paths.iter().zip(ranges.iter()) {
+        let mut new_byte_ranges: Vec<(u64, u64)> = Vec::with_capacity(cache.file_paths.len());
+        let mut new_file_paths: Vec<String> = Vec::with_capacity(cache.file_paths.len());
+        let mut new_bytes_per_file: Vec<usize> = Vec::with_capacity(cache.file_paths.len());
+
+        // Resolve (start, end) per source file from either explicit ranges or
+        // whole-file body bounds. Iterate either way through the same copy loop.
+        let source_ranges: Vec<(String, u64, u64)> = match &cache.byte_ranges {
+            Some(ranges) => cache
+                .file_paths
+                .iter()
+                .zip(ranges.iter())
+                .map(|(p, (s, e))| (p.clone(), *s, *e))
+                .collect(),
+            None => {
+                let mut v = Vec::with_capacity(cache.file_paths.len());
+                for p in &cache.file_paths {
+                    let meta = std::fs::metadata(p).map_err(|e| {
+                        DaftError::IoError(std::io::Error::new(
+                            e.kind(),
+                            format!("coalescer stat {}: {}", p, e),
+                        ))
+                    })?;
+                    let size = meta.len();
+                    let body_start = header_len.min(size);
+                    let body_end = size.saturating_sub(IPC_EOS_LEN).max(body_start);
+                    v.push((p.clone(), body_start, body_end));
+                }
+                v
+            }
+        };
+
+        for (src_path, start, end) in &source_ranges {
             let len = end.saturating_sub(*start);
             if len == 0 {
                 new_file_paths.push(out_path.clone());
@@ -234,7 +296,16 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<Vec<(u64, PartitionCache)
             new_bytes_per_file.push(len as usize);
         }
 
-        updated.push((
+        // Sources are fully dead only when each source's *entire* contents were
+        // copied. That's true for whole-file (multi_file) entries by definition:
+        // each source held exactly one partition's data, and we just rewrote
+        // every cache reference to it. For range-form sources we cannot make
+        // this claim — sibling partitions may still reference the same file.
+        if cache.byte_ranges.is_none() {
+            orphaned_sources.extend(cache.file_paths.iter().cloned());
+        }
+
+        updated_entries.push((
             ref_id,
             PartitionCache {
                 partition_ref_id: cache.partition_ref_id,
@@ -250,5 +321,8 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<Vec<(u64, PartitionCache)
 
     out.flush()?;
     drop(out);
-    Ok(updated)
+    Ok(CoalesceOutcome {
+        updated_entries,
+        orphaned_sources,
+    })
 }

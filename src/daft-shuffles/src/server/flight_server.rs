@@ -363,16 +363,32 @@ impl ShuffleFlightServer {
                 let _permit = permits.acquire_owned().await.ok();
                 let result = coalescer::execute_plan(plan).await;
                 match result {
-                    Ok(updated) => {
-                        let mut partitions = server.shuffle_partitions.lock().await;
-                        for (ref_id, new_cache) in updated {
-                            partitions.insert(
-                                FlightPartitionKey {
-                                    shuffle_id,
-                                    partition_ref_id: ref_id,
-                                },
-                                new_cache,
-                            );
+                    Ok(outcome) => {
+                        {
+                            let mut partitions = server.shuffle_partitions.lock().await;
+                            for (ref_id, new_cache) in outcome.updated_entries {
+                                partitions.insert(
+                                    FlightPartitionKey {
+                                        shuffle_id,
+                                        partition_ref_id: ref_id,
+                                    },
+                                    new_cache,
+                                );
+                            }
+                        }
+                        // After the cache swap, source files of whole-file
+                        // (multi_file) entries are unreachable to new lookups.
+                        // POSIX keeps any reader that already opened them
+                        // working; unlink frees the disk immediately.
+                        for path in outcome.orphaned_sources {
+                            if let Err(e) = std::fs::remove_file(&path) {
+                                tracing::warn!(
+                                    target: "daft_shuffles::coalescer",
+                                    path = %path,
+                                    error = %e,
+                                    "failed to unlink coalesced source"
+                                );
+                            }
                         }
                     }
                     Err(e) => {
