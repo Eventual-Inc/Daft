@@ -11,7 +11,8 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    multi_partition_cache::MultiPartitionShuffleCache, server::flight_server::ShuffleFlightServer,
+    multi_partition_cache::{MultiPartitionShuffleCache, repartition_agg},
+    server::flight_server::ShuffleFlightServer,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -157,6 +158,15 @@ impl BlockingSink for RepartitionSink {
         spawner
             .spawn(
                 async move {
+                    use std::sync::atomic::Ordering;
+                    use std::time::Instant;
+                    let t_sink = Instant::now();
+                    let input_rows = input.len() as u64;
+                    let input_bytes = input.size_bytes() as u64;
+                    repartition_agg::SINK_INPUT_ROWS.fetch_add(input_rows, Ordering::Relaxed);
+                    repartition_agg::SINK_INPUT_BYTES.fetch_add(input_bytes, Ordering::Relaxed);
+
+                    let t_partition = Instant::now();
                     let partitioned = match repartition_spec {
                         RepartitionSpec::Hash(config) => {
                             let bound_exprs = BoundExpr::bind_all(&config.by, &input.schema())?;
@@ -171,8 +181,24 @@ impl BlockingSink for RepartitionSink {
                             &config.descending,
                         )?,
                     };
+                    repartition_agg::PARTITION_CALLS.fetch_add(1, Ordering::Relaxed);
+                    repartition_agg::PARTITION_US.fetch_add(
+                        t_partition.elapsed().as_micros() as u64,
+                        Ordering::Relaxed,
+                    );
 
+                    let t_push = Instant::now();
                     state.push(partitioned).await?;
+                    repartition_agg::PUSH_US.fetch_add(
+                        t_push.elapsed().as_micros() as u64,
+                        Ordering::Relaxed,
+                    );
+
+                    repartition_agg::SINK_CALLS.fetch_add(1, Ordering::Relaxed);
+                    repartition_agg::SINK_US.fetch_add(
+                        t_sink.elapsed().as_micros() as u64,
+                        Ordering::Relaxed,
+                    );
                     Ok(state)
                 },
                 Span::current(),
@@ -280,8 +306,15 @@ impl BlockingSink for RepartitionSink {
                             }
                             let close_futures =
                                 unique.into_values().map(|cache| async move { cache.close().await });
+                            let t_close = std::time::Instant::now();
                             let per_cache: Vec<Vec<_>> =
                                 futures::future::try_join_all(close_futures).await?;
+                            repartition_agg::FINALIZE_CLOSE_US.fetch_add(
+                                t_close.elapsed().as_micros() as u64,
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                            repartition_agg::FINALIZE_CALLS
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let finalized: Vec<_> =
                                 per_cache.into_iter().flatten().collect();
                             local_server

@@ -41,9 +41,31 @@ const COALESCE_THRESHOLD_BYTES: usize = 1024 * 1024;
 /// Hard cap on the writer task's *total* per-map-task buffered bytes across all partitions.
 /// When exceeded, we flush the largest-buffered partition even if it's below the coalesce
 /// threshold. This is the memory-safety backstop — in normal operation the per-partition
-/// threshold fires first. Sized at 256 MiB so a 16-worker node uses ~4 GiB worst case
-/// (~3% of an r5.4xlarge), while still bounding pathological skew / very-high-N cases.
-const MAX_TOTAL_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+/// threshold fires first.
+///
+/// Bumped to 1 GiB for the eviction experiment (log from 2026-05-12 SF1000 Q5 showed
+/// 21 577 evictions vs 0 coalesce flushes — the cap was firing while the per-partition
+/// threshold never did). With N=512 partitions and 1 MiB threshold, the theoretical
+/// non-evicting ceiling is N * threshold = 512 MiB; doubling the cap to 1 GiB gives
+/// headroom for transient overshoot without changing eviction semantics under heavier
+/// skew. Per-node worst case at 16 workers: 16 GiB (~12% of r5.4xlarge RAM).
+/// Override via DAFT_SHUFFLE_MAX_BUFFER_MIB at compile time.
+const MAX_TOTAL_BUFFER_BYTES: usize = match option_env!("DAFT_SHUFFLE_MAX_BUFFER_MIB") {
+    Some(s) => parse_usize_const(s) * 1024 * 1024,
+    None => 1024 * 1024 * 1024,
+};
+
+const fn parse_usize_const(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut n: usize = 0;
+    while i < bytes.len() {
+        let d = (bytes[i] - b'0') as usize;
+        n = n * 10 + d;
+        i += 1;
+    }
+    n
+}
 
 /// A `Write` wrapper that counts bytes passed through to the inner writer.
 /// Used so we can ask "what byte offset are we at?" without seeking.
@@ -115,6 +137,99 @@ pub mod agg {
     pub static OUTPUT_BYTES: AtomicU64 = AtomicU64::new(0);
     /// Number of unique files produced (i.e. number of map tasks that closed).
     pub static FILES_PRODUCED: AtomicU64 = AtomicU64::new(0);
+
+    // Flush-size distribution buckets — count of flushes whose IPC-encoded body
+    // (offset_after - offset_before, including per-batch metadata) falls in each range.
+    pub static FLUSH_LT_4K: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_LT_16K: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_LT_64K: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_LT_256K: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_LT_1M: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_LT_4M: AtomicU64 = AtomicU64::new(0);
+    pub static FLUSH_GE_4M: AtomicU64 = AtomicU64::new(0);
+}
+
+/// Aggregates that live on the RepartitionSink side (pre-cache). Tracks where time
+/// goes between "BlockingSink::sink got called" and "push hit the writer task".
+pub mod repartition_agg {
+    use std::sync::atomic::AtomicU64;
+    /// Number of `RepartitionSink::sink` calls dispatched.
+    pub static SINK_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time inside `RepartitionSink::sink` from start of the async block to
+    /// state-return (includes partition_by_hash + all N pushes).
+    pub static SINK_US: AtomicU64 = AtomicU64::new(0);
+    /// Total rows received by sinks (sum of `MicroPartition::len()`).
+    pub static SINK_INPUT_ROWS: AtomicU64 = AtomicU64::new(0);
+    /// Total in-memory bytes received by sinks (sum of `MicroPartition::size_bytes()`).
+    pub static SINK_INPUT_BYTES: AtomicU64 = AtomicU64::new(0);
+    /// Calls to `partition_by_hash`/`partition_by_random`/`partition_by_range` per sink call.
+    pub static PARTITION_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time inside the partition_by_* call.
+    pub static PARTITION_US: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time inside the per-call `try_join_all` over `cache.push_partition_data`.
+    pub static PUSH_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of `RepartitionSink::finalize` calls completed.
+    pub static FINALIZE_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time inside the cache.close() drain on finalize (excludes register).
+    pub static FINALIZE_CLOSE_US: AtomicU64 = AtomicU64::new(0);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RepartitionAggSnapshot {
+    pub sink_calls: u64,
+    pub sink_us: u64,
+    pub sink_input_rows: u64,
+    pub sink_input_bytes: u64,
+    pub partition_calls: u64,
+    pub partition_us: u64,
+    pub push_us: u64,
+    pub finalize_calls: u64,
+    pub finalize_close_us: u64,
+}
+
+pub fn repartition_agg_snapshot() -> RepartitionAggSnapshot {
+    RepartitionAggSnapshot {
+        sink_calls: repartition_agg::SINK_CALLS.load(Ordering::Relaxed),
+        sink_us: repartition_agg::SINK_US.load(Ordering::Relaxed),
+        sink_input_rows: repartition_agg::SINK_INPUT_ROWS.load(Ordering::Relaxed),
+        sink_input_bytes: repartition_agg::SINK_INPUT_BYTES.load(Ordering::Relaxed),
+        partition_calls: repartition_agg::PARTITION_CALLS.load(Ordering::Relaxed),
+        partition_us: repartition_agg::PARTITION_US.load(Ordering::Relaxed),
+        push_us: repartition_agg::PUSH_US.load(Ordering::Relaxed),
+        finalize_calls: repartition_agg::FINALIZE_CALLS.load(Ordering::Relaxed),
+        finalize_close_us: repartition_agg::FINALIZE_CLOSE_US.load(Ordering::Relaxed),
+    }
+}
+
+pub fn log_repartition_agg_summary(label: &str) {
+    let s = repartition_agg_snapshot();
+    let mb = 1024.0 * 1024.0;
+    let avg_input_kib = if s.sink_calls == 0 {
+        0.0
+    } else {
+        (s.sink_input_bytes as f64 / s.sink_calls as f64) / 1024.0
+    };
+    let avg_rows = if s.sink_calls == 0 {
+        0
+    } else {
+        s.sink_input_rows / s.sink_calls
+    };
+    tracing::info!(
+        target: "daft_shuffles::repartition_agg",
+        label = label,
+        sink_calls = s.sink_calls,
+        sink_input_rows = s.sink_input_rows,
+        sink_input_mib = format_args!("{:.1}", s.sink_input_bytes as f64 / mb),
+        avg_input_kib = format_args!("{:.1}", avg_input_kib),
+        avg_input_rows = avg_rows,
+        sink_ms = s.sink_us / 1000,
+        partition_calls = s.partition_calls,
+        partition_ms = s.partition_us / 1000,
+        push_ms = s.push_us / 1000,
+        finalize_calls = s.finalize_calls,
+        finalize_close_ms = s.finalize_close_us / 1000,
+        "repartition agg summary",
+    );
 }
 
 /// Legacy alias for bench compatibility; see `agg::FLUSHES_EVICTION`.
@@ -159,6 +274,13 @@ pub fn agg_snapshot() -> AggSnapshot {
 pub fn log_agg_summary(label: &str) {
     let s = agg_snapshot();
     let mb = 1024.0 * 1024.0;
+    let lt_4k = agg::FLUSH_LT_4K.load(Ordering::Relaxed);
+    let lt_16k = agg::FLUSH_LT_16K.load(Ordering::Relaxed);
+    let lt_64k = agg::FLUSH_LT_64K.load(Ordering::Relaxed);
+    let lt_256k = agg::FLUSH_LT_256K.load(Ordering::Relaxed);
+    let lt_1m = agg::FLUSH_LT_1M.load(Ordering::Relaxed);
+    let lt_4m = agg::FLUSH_LT_4M.load(Ordering::Relaxed);
+    let ge_4m = agg::FLUSH_GE_4M.load(Ordering::Relaxed);
     tracing::info!(
         target: "daft_shuffles::agg",
         label = label,
@@ -169,6 +291,13 @@ pub fn log_agg_summary(label: &str) {
         flushes_coalesce = s.flushes_coalesce,
         flushes_eviction = s.flushes_eviction,
         flushes_drain = s.flushes_drain,
+        flush_lt_4k = lt_4k,
+        flush_lt_16k = lt_16k,
+        flush_lt_64k = lt_64k,
+        flush_lt_256k = lt_256k,
+        flush_lt_1m = lt_1m,
+        flush_lt_4m = lt_4m,
+        flush_ge_4m = ge_4m,
         concat_ms = s.concat_us / 1000,
         encode_write_ms = s.encode_write_us / 1000,
         finish_ms = s.finish_us / 1000,
@@ -180,6 +309,26 @@ pub fn log_agg_summary(label: &str) {
         ),
         "shuffle agg summary",
     );
+}
+
+/// Bump the appropriate flush-size bucket. Called on every `flush_partition`.
+fn record_flush_size(size_bytes: u64) {
+    let bucket = if size_bytes < 4 * 1024 {
+        &agg::FLUSH_LT_4K
+    } else if size_bytes < 16 * 1024 {
+        &agg::FLUSH_LT_16K
+    } else if size_bytes < 64 * 1024 {
+        &agg::FLUSH_LT_64K
+    } else if size_bytes < 256 * 1024 {
+        &agg::FLUSH_LT_256K
+    } else if size_bytes < 1024 * 1024 {
+        &agg::FLUSH_LT_1M
+    } else if size_bytes < 4 * 1024 * 1024 {
+        &agg::FLUSH_LT_4M
+    } else {
+        &agg::FLUSH_GE_4M
+    };
+    bucket.fetch_add(1, Ordering::Relaxed);
 }
 
 #[derive(Default)]
@@ -430,6 +579,7 @@ async fn writer_task(
             local_flushes_coalesce += 1;
             let (w, before, after, c_us, ew_us) =
                 flush_partition(&io_runtime, writer, batches).await?;
+            record_flush_size(after - before);
             ranges_per_partition[partition_idx].push((before, after));
             writer = w;
             local_concat_us += c_us;
@@ -451,6 +601,7 @@ async fn writer_task(
             local_flushes_eviction += 1;
             let (w, before, after, c_us, ew_us) =
                 flush_partition(&io_runtime, writer, batches).await?;
+            record_flush_size(after - before);
             ranges_per_partition[victim].push((before, after));
             writer = w;
             local_concat_us += c_us;
@@ -467,6 +618,7 @@ async fn writer_task(
         local_flushes_drain += 1;
         let (w, before, after, c_us, ew_us) =
             flush_partition(&io_runtime, writer, batches).await?;
+        record_flush_size(after - before);
         ranges_per_partition[partition_idx].push((before, after));
         writer = w;
         local_concat_us += c_us;

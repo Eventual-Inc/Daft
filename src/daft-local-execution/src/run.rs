@@ -592,6 +592,9 @@ impl NativeExecutor {
                 daft_shuffles::multi_partition_cache::log_agg_summary(&format!(
                     "plan_finished fingerprint={fingerprint}"
                 ));
+                daft_shuffles::multi_partition_cache::log_repartition_agg_summary(&format!(
+                    "plan_finished fingerprint={fingerprint}"
+                ));
                 daft_shuffles::server::flight_server::log_read_agg_summary(&format!(
                     "plan_finished fingerprint={fingerprint}"
                 ));
