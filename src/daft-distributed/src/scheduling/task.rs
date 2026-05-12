@@ -535,6 +535,21 @@ impl SwordfishTaskBuilder {
         let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
 
         let task_id = task_id_counter.next();
+        // Trace the chain of node_ids that contributed to this fingerprint. Lets us
+        // diagnose why the plan cache misses on the read side: if two tasks go through
+        // different `pending_node_ids` chains they get different fingerprints and each
+        // creates a fresh pipeline.
+        tracing::info!(
+            target: "daft_distributed::fingerprint",
+            task_id = task_id,
+            query_idx = query_idx,
+            plan_fingerprint = plan_fingerprint,
+            inner_fp = self.plan_fingerprint,
+            pending_node_ids = ?self.pending_node_ids,
+            last_node_id = self.pending_node_ids.last().copied().unwrap_or(0),
+            plan_name = self.plan.name(),
+            "task built",
+        );
         let task_context = TaskContext {
             query_idx,
             last_node_id: *self
