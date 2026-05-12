@@ -306,6 +306,37 @@ class TestManifestSchema:
         assert inner.name == "object_id", inner.name
         assert pa.types.is_string(inner.type)
 
+    def test_leaf_field_ids_match_namespace(self, namespace_dir, sample_df):
+        """Leaf-stored ``lance:field_id`` agrees with namespace declaration.
+
+        Per spec, each leaf's ``lance:field_id`` Arrow metadata must agree
+        with the namespace's ``schema`` JSON. Without pinning, Lance assigns
+        field ids sequentially per-leaf and two leaves can disagree about the
+        same column's id.
+        """
+        import lance
+
+        sample_df.write_lance(namespace_dir, partition_cols=["year", "country"], mode="create")
+        ds, manifest = _open_manifest(namespace_dir)
+
+        ns_ids = {
+            f["name"]: f["metadata"]["lance:field_id"]
+            for f in json.loads(_decode_meta(ds.schema.metadata, "schema"))["fields"]
+        }
+
+        for i in _table_row_indices(manifest):
+            location = manifest.column("location")[i].as_py()
+            leaf = lance.dataset(os.path.join(namespace_dir, location))
+            for f in leaf.schema:
+                md = dict(f.metadata or {})
+                raw = md.get(b"lance:field_id") or md.get("lance:field_id")
+                assert raw is not None, f"leaf {location} field {f.name!r} missing lance:field_id"
+                if isinstance(raw, (bytes, bytearray)):
+                    raw = raw.decode()
+                assert raw == ns_ids[f.name], (
+                    f"leaf {location} field {f.name!r}: lance:field_id={raw} but namespace says {ns_ids[f.name]}"
+                )
+
 
 # ===========================================================================
 # Root namespace properties (schema metadata)
@@ -888,6 +919,45 @@ class TestPartitionedMerge:
         ids = {f["name"]: int(f["metadata"]["lance:field_id"]) for f in schema_obj["fields"]}
         assert ids["enriched"] not in {ids["robot_id"], ids["ts"], ids["v"]}
 
+    def test_merge_pins_new_column_field_ids(self, namespace_dir, base_df):
+        """Merged column's ``lance:field_id`` matches namespace, consistently across leaves.
+
+        After a merge, the new column's ``lance:field_id`` Arrow metadata
+        must match the namespace's declared id on every touched leaf — and
+        the same (column name, field id) pair must hold across all leaves so
+        spec-strict readers resolving by id see a single, consistent column.
+        """
+        import lance
+
+        base_df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="create")
+        df = self._read_with_meta(namespace_dir)
+        df = df.with_column("enriched", df["v"] * 10)
+        df.write_lance(namespace_dir, partition_cols=["robot_id"], mode="merge")
+
+        ds, manifest = _open_manifest(namespace_dir)
+        ns_ids = {
+            f["name"]: f["metadata"]["lance:field_id"]
+            for f in json.loads(_decode_meta(ds.schema.metadata, "schema"))["fields"]
+        }
+        expected_enriched_id = ns_ids["enriched"]
+
+        seen: list[str] = []
+        for i in _table_row_indices(manifest):
+            location = manifest.column("location")[i].as_py()
+            leaf = lance.dataset(os.path.join(namespace_dir, location))
+            enriched_field = leaf.schema.field("enriched")
+            md = dict(enriched_field.metadata or {})
+            raw = md.get(b"lance:field_id") or md.get("lance:field_id")
+            assert raw is not None, f"leaf {location} missing lance:field_id on 'enriched'"
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode()
+            assert raw == expected_enriched_id, (
+                f"leaf {location}: enriched lance:field_id={raw} but namespace says {expected_enriched_id}"
+            )
+            seen.append(raw)
+        # All leaves agree on the same id for 'enriched'.
+        assert len(set(seen)) == 1, seen
+
     def test_merge_does_not_rewrite_base_data_files(self, namespace_dir, base_df):
         """Fast-path merge writes a NEW .lance file alongside existing ones.
 
@@ -1052,6 +1122,36 @@ class TestHelpers:
             pa.date32(),
         ]:
             assert json_arrow_to_arrow_type(arrow_type_to_json_arrow(dtype)) == dtype
+
+    def test_pin_field_ids(self):
+        from daft.io.lance.lance_namespace import pin_field_ids
+
+        # Field A already has unrelated metadata; field B has none; partition
+        # col is in the schema but not in the field_ids map (pass-through).
+        schema = pa.schema(
+            [
+                pa.field("a", pa.int64(), metadata={"daft:nullability": "non-null"}),
+                pa.field("b", pa.utf8()),
+                pa.field("partition_col", pa.utf8()),
+            ],
+            metadata={"namespace": "test"},
+        )
+        pinned = pin_field_ids(schema, {"a": 0, "b": 2})
+
+        # Schema-level metadata preserved.
+        assert pinned.metadata == schema.metadata
+
+        # field 'a' gets the new lance:field_id AND keeps its existing metadata.
+        a_md = pinned.field("a").metadata or {}
+        assert a_md.get(b"lance:field_id") == b"0"
+        assert a_md.get(b"daft:nullability") == b"non-null"
+
+        # field 'b' gets a fresh metadata dict with just lance:field_id.
+        b_md = pinned.field("b").metadata or {}
+        assert b_md.get(b"lance:field_id") == b"2"
+
+        # field not in the map is passed through unchanged.
+        assert pinned.field("partition_col").metadata == schema.field("partition_col").metadata
 
 
 # ===========================================================================

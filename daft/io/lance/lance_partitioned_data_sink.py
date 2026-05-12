@@ -51,6 +51,7 @@ from .lance_namespace import (
     make_partition_spec_json,
     manifest_arrow_schema,
     parse_object_id,
+    pin_field_ids,
     random_namespace_id,
 )
 
@@ -146,8 +147,14 @@ class LancePartitionedDataSink(DataSink[_WriteResultPayload]):
             for col in self._partition_col_names
         ]
 
-        # Leaf Lance datasets store everything except partition columns.
-        self._leaf_pa_schema = pa.schema([f for f in self._namespace_pa_schema if f.name not in partition_set])
+        # Leaf Lance datasets store everything except partition columns, with
+        # ``lance:field_id`` Arrow-field metadata pinned to the namespace's
+        # declared ids so leaves don't disagree about which physical column a
+        # given field id refers to (partitioning-spec requirement).
+        self._leaf_pa_schema = pin_field_ids(
+            pa.schema([f for f in self._namespace_pa_schema if f.name not in partition_set]),
+            self._field_ids,
+        )
 
         # State that may be reused across writes when appending.
         # prefix-of-partition-values -> 16-char base36 namespace id
@@ -197,8 +204,15 @@ class LancePartitionedDataSink(DataSink[_WriteResultPayload]):
                 dataset_path = f"{self._table_uri}/{location}"
 
                 # Drop partition columns — they're inherited from manifest.
+                # Reattach the leaf schema afterward so Lance writes the leaf
+                # with ``lance:field_id`` metadata pinned to the namespace's
+                # declared ids; ``drop_columns`` strips per-field metadata.
                 write_table = group_table.drop_columns(
                     [c for c in self._partition_col_names if c in group_table.column_names]
+                )
+                write_table = pa.Table.from_arrays(
+                    [write_table.column(name) for name in self._leaf_pa_schema.names],
+                    schema=self._leaf_pa_schema,
                 )
 
                 fragments = lance.fragment.write_fragments(

@@ -337,6 +337,34 @@ def make_partition_spec_json(spec_id: int, fields: list[PartitionFieldSpec]) -> 
     return json.dumps(payload)
 
 
+def pin_field_ids(arrow_schema: pa.Schema, field_ids: dict[str, int]) -> pa.Schema:
+    """Return ``arrow_schema`` with each field's ``lance:field_id`` pinned.
+
+    Per the Lance Partitioning Spec, every partition leaf must store
+    ``lance:field_id`` Arrow-field metadata that matches the namespace's
+    declared field id for that column — otherwise two leaves can disagree
+    about which physical column a given field id refers to. Lance preserves
+    this metadata round-trip through ``write_dataset`` / ``write_fragments``.
+
+    Fields not in ``field_ids`` pass through unchanged. Existing per-field
+    metadata under other keys is preserved; only the ``lance:field_id`` entry
+    is set or overwritten. Schema-level metadata is preserved.
+    """
+    new_fields: list[pa.Field] = []
+    for f in arrow_schema:
+        if f.name not in field_ids:
+            new_fields.append(f)
+            continue
+        merged: dict[str, str] = {}
+        for k, v in (f.metadata or {}).items():
+            key = k.decode() if isinstance(k, (bytes, bytearray)) else k
+            val = v.decode() if isinstance(v, (bytes, bytearray)) else v
+            merged[key] = val
+        merged[LANCE_FIELD_ID_KEY] = str(field_ids[f.name])
+        new_fields.append(f.with_metadata(merged))
+    return pa.schema(new_fields, metadata=arrow_schema.metadata)
+
+
 def make_namespace_schema_json(arrow_schema: pa.Schema, field_ids: dict[str, int]) -> str:
     """Serialize a namespace schema as the `schema` JSON property.
 

@@ -86,11 +86,13 @@ class _PartitionedFastPathWriter:
         partition_to_uri: dict[tuple[Any, ...], str],
         partition_col_names: list[str],
         new_column_names: list[str],
+        new_column_field_ids: dict[str, int],
         storage_options: dict[str, str] | None = None,
     ):
         self.partition_to_uri = partition_to_uri
         self.partition_col_names = partition_col_names
         self.new_column_names = new_column_names
+        self.new_column_field_ids = new_column_field_ids
         self.storage_options = storage_options
 
     @method.batch(return_dtype=_FAST_PATH_RETURN_DTYPE)
@@ -134,12 +136,25 @@ class _PartitionedFastPathWriter:
 
         rowaddrs = rowaddr_col.to_pylist() if hasattr(rowaddr_col, "to_pylist") else list(rowaddr_col)
 
-        # Build the new-column table; sort by _rowaddr to align with fragment row order.
+        # Build the new-column table; sort by _rowaddr to align with fragment
+        # row order. Pin ``lance:field_id`` Arrow metadata on each new column
+        # using the namespace-wide ids the planner computed, so the stored
+        # leaf data agrees with the namespace's schema declaration.
         arrays = []
         for s in data_cols:
             arr = pa.array(s.to_pylist() if hasattr(s, "to_pylist") else list(s))
             arrays.append(arr)
-        tbl = pa.table({name: arr for name, arr in zip(self.new_column_names, arrays)})
+        tbl_schema = pa.schema(
+            [
+                pa.field(
+                    name,
+                    arr.type,
+                    metadata={LANCE_FIELD_ID_KEY: str(self.new_column_field_ids[name])},
+                )
+                for name, arr in zip(self.new_column_names, arrays)
+            ]
+        )
+        tbl = pa.Table.from_arrays(arrays, schema=tbl_schema)
 
         sort_indices = pa.compute.sort_indices(
             pa.table({"_rowaddr": pa.array(rowaddrs, type=pa.uint64())}),
@@ -155,7 +170,14 @@ class _PartitionedFastPathWriter:
                 writer.write_batch(b)
         file_size = os.path.getsize(filepath)
 
-        # Stitch the new file into fragment metadata.
+        # Stitch the new file into fragment metadata. The ``fields`` array in
+        # a fragment-file entry uses *Lance-internal* field ids (what Lance
+        # needs to resolve the file against its lance_schema), NOT the
+        # namespace-wide ``lance:field_id`` from the spec. Those two id
+        # systems can diverge per-leaf and that's fine — Lance preserves the
+        # spec-level ``lance:field_id`` separately in Arrow field metadata
+        # (pinned on ``tbl_schema`` above), which is what spec-strict readers
+        # resolve through.
         leaf_ds = lance.dataset(leaf_uri, storage_options=self.storage_options)
         fragment = leaf_ds.get_fragment(frag_id)
         next_fid = max(f.id() for f in leaf_ds.lance_schema.fields()) + 1
@@ -177,7 +199,13 @@ class _PartitionedFastPathWriter:
         new_schema = leaf_ds.schema
         for col_name in self.new_column_names:
             col_idx = tbl.schema.get_field_index(col_name)
-            new_schema = new_schema.append(pa.field(col_name, tbl.schema.field(col_idx).type))
+            new_schema = new_schema.append(
+                pa.field(
+                    col_name,
+                    tbl.schema.field(col_idx).type,
+                    metadata={LANCE_FIELD_ID_KEY: str(self.new_column_field_ids[col_name])},
+                )
+            )
 
         return [
             {
@@ -374,11 +402,43 @@ def merge_columns_partitioned(
                 f"known partitions: {len(partition_to_uri)}."
             )
 
+    # Compute the namespace-wide ``lance:field_id`` for each new column UP
+    # FRONT. The per-(partition, fragment) UDF needs to pin these ids on the
+    # raw .lance file it writes — if instead each leaf computes its own next
+    # field id from ``lance_schema.fields()``, siblings under one parent can
+    # disagree about the same column's id.
+    existing_field_ids: dict[str, int] = {}
+    for f in namespace_schema:
+        md = f.metadata or {}
+        raw = md.get(LANCE_FIELD_ID_KEY.encode(), md.get(LANCE_FIELD_ID_KEY))
+        if raw is None:
+            continue
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode()
+        existing_field_ids[f.name] = int(raw)
+    _next_fid_seed = (max(existing_field_ids.values()) + 1) if existing_field_ids else 0
+
+    df_arrow_schema = df.to_arrow().schema
+    new_column_field_ids: dict[str, int] = {}
+    extended_field_ids = dict(existing_field_ids)
+    extended_fields = list(namespace_schema)
+    for c in new_cols:
+        idx = df_arrow_schema.get_field_index(c)
+        if idx < 0:
+            continue
+        fid = _next_fid_seed
+        _next_fid_seed += 1
+        new_column_field_ids[c] = fid
+        extended_field_ids[c] = fid
+        extended_fields.append(df_arrow_schema.field(idx).with_metadata({LANCE_FIELD_ID_KEY: str(fid)}))
+    extended_schema = pa.schema(extended_fields, metadata=namespace_schema.metadata)
+
     # Run per-(partition, fragment) merge in a single distributed pass.
     writer = _PartitionedFastPathWriter(
         partition_to_uri=partition_to_uri,
         partition_col_names=partition_cols,
         new_column_names=new_cols,
+        new_column_field_ids=new_column_field_ids,
         storage_options=storage_options,
     )
 
@@ -434,32 +494,6 @@ def merge_columns_partitioned(
     for leaf_uri, version in new_read_versions.items():
         key = uri_to_partition_key[leaf_uri]
         updated_read_versions[key] = version
-
-    # Extend the namespace schema with the new columns, assigning fresh field_ids.
-    existing_field_ids: dict[str, int] = {}
-    for f in namespace_schema:
-        md = f.metadata or {}
-        raw = md.get(LANCE_FIELD_ID_KEY.encode(), md.get(LANCE_FIELD_ID_KEY))
-        if raw is None:
-            continue
-        if isinstance(raw, (bytes, bytearray)):
-            raw = raw.decode()
-        existing_field_ids[f.name] = int(raw)
-    next_fid = (max(existing_field_ids.values()) + 1) if existing_field_ids else 0
-
-    df_arrow_schema = df.to_arrow().schema
-    extended_fields = list(namespace_schema)
-    extended_field_ids = dict(existing_field_ids)
-    for c in new_cols:
-        idx = df_arrow_schema.get_field_index(c)
-        if idx < 0:
-            continue
-        new_field = df_arrow_schema.field(idx).with_metadata({LANCE_FIELD_ID_KEY: str(next_fid)})
-        extended_fields.append(new_field)
-        extended_field_ids[c] = next_fid
-        next_fid += 1
-
-    extended_schema = pa.schema(extended_fields, metadata=namespace_schema.metadata)
 
     _rewrite_manifest(
         namespace_uri=namespace_uri,
