@@ -82,6 +82,12 @@ from .datetime import (
     make_timestamp,
     make_timestamp_ltz,
     next_day,
+    unix_seconds,
+    unix_millis,
+    unix_micros,
+    unix_timestamp,
+    to_unix_timestamp,
+    weekday,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -519,6 +525,7 @@ __all__ = [
     "to_struct",
     "to_title_case",
     "to_unix_epoch",
+    "to_unix_timestamp",
     "to_upper_camel_case",
     "to_upper_kebab_case",
     "to_upper_snake_case",
@@ -537,6 +544,10 @@ __all__ = [
     "try_deserialize",
     "try_encode",
     "unix_date",
+    "unix_micros",
+    "unix_millis",
+    "unix_seconds",
+    "unix_timestamp",
     "unnest",
     "upload",
     "upper",
@@ -548,6 +559,7 @@ __all__ = [
     "video_keyframes",
     "video_metadata",
     "week_of_year",
+    "weekday",
     "when",
     "year",
 ]
