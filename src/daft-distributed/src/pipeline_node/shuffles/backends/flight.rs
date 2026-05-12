@@ -61,7 +61,7 @@ pub(crate) async fn emit_read_tasks(
         );
 
         let task = SwordfishTaskBuilder::new(shuffle_read_plan, node, node_id)
-            .with_flight_shuffle_reads(node_id, vec![FlightShuffleReadInput { refs: psets }]);
+            .with_flight_shuffle_reads(node_id, vec![FlightShuffleReadInput::from_refs(psets)]);
 
         let _ = result_tx.send(task).await;
     }

@@ -500,13 +500,10 @@ impl SwordfishTaskBuilder {
                     // num_rows would be the number of files matching the glob patterns,
                     // but we can't estimate that at planning time
                 }
-                Input::FlightShuffle(shuffle_inputs) => {
-                    for input in shuffle_inputs {
-                        for part in &input.refs {
-                            total = total.saturating_add(part.num_rows);
-                            found_any = true;
-                        }
-                    }
+                Input::FlightShuffle(_) => {
+                    // FlightShuffleReadInput now ships pre-grouped `(server, partition_ref_ids)`
+                    // tuples without per-ref `num_rows`, so we can't contribute a row estimate
+                    // from here. LimitNode falls back to other estimation paths.
                 }
             }
         }

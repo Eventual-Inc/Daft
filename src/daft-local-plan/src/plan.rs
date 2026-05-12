@@ -2411,9 +2411,47 @@ pub struct ShuffleRead {
     pub context: LocalNodeContext,
 }
 
+/// One server's contribution to a Flight shuffle read: every partition_ref_id
+/// in the list lives on `server_address` under `shuffle_id`, and the reducer
+/// issues one Flight request per group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightShuffleServerGroup {
+    pub shuffle_id: u64,
+    pub server_address: String,
+    pub partition_ref_ids: Vec<u64>,
+}
+
+/// Input spec for a single Flight shuffle-read task. Pre-grouped by
+/// (shuffle_id, server_address) so the wire format ships ~N_servers entries
+/// instead of N_refs (~1024 for SF1000 Q5). Built once via `from_refs` at
+/// task-construction time; consumers iterate `server_groups` directly without
+/// re-grouping.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub refs: Vec<FlightPartitionRef>,
+    pub server_groups: Vec<FlightShuffleServerGroup>,
+}
+
+impl FlightShuffleReadInput {
+    pub fn from_refs(refs: Vec<FlightPartitionRef>) -> Self {
+        let mut groups: HashMap<(u64, String), Vec<u64>> = HashMap::new();
+        for r in refs {
+            groups
+                .entry((r.shuffle_id, r.server_address))
+                .or_default()
+                .push(r.partition_ref_id);
+        }
+        let server_groups = groups
+            .into_iter()
+            .map(
+                |((shuffle_id, server_address), partition_ref_ids)| FlightShuffleServerGroup {
+                    shuffle_id,
+                    server_address,
+                    partition_ref_ids,
+                },
+            )
+            .collect();
+        Self { server_groups }
+    }
 }
 
 #[cfg(test)]

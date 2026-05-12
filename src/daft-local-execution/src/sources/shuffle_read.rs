@@ -9,9 +9,8 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
-use daft_local_plan::{FlightShuffleReadInput, InputId};
+use daft_local_plan::{FlightShuffleReadInput, FlightShuffleServerGroup, InputId};
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
 use futures::{FutureExt, StreamExt, stream::BoxStream};
@@ -59,71 +58,43 @@ impl ShuffleReadSource {
         client_manager: FlightClientManager,
         local_server: Arc<ShuffleFlightServer>,
         local_address: &str,
-        refs: Vec<FlightPartitionRef>,
+        server_groups: Vec<FlightShuffleServerGroup>,
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let (local_refs, remote_refs): (Vec<_>, Vec<_>) = refs
-            .into_iter()
-            .partition(|r| r.server_address == local_address);
+        // server_groups are pre-grouped by (shuffle_id, server_address) at task-build
+        // time, so each group is exactly one Flight RPC (or one local call).
+        let mut streams: Vec<BoxStream<'static, DaftResult<RecordBatch>>> = Vec::new();
+        let mut remote_fetches = Vec::new();
 
-        let local_stream = if !local_refs.is_empty() {
-            Some(
-                local_server
-                    .get_partition_local(
-                        local_refs[0].shuffle_id,
-                        &local_refs
-                            .iter()
-                            .map(|r| r.partition_ref_id)
-                            .collect::<Vec<_>>(),
-                    )
-                    .await?,
-            )
-        } else {
-            None
-        };
-
-        let remote_stream = if remote_refs.is_empty() {
-            None
-        } else {
-            let mut refs_by_server: HashMap<(u64, String), Vec<u64>> = HashMap::new();
-            for partition_ref in remote_refs {
-                refs_by_server
-                    .entry((
-                        partition_ref.shuffle_id,
-                        partition_ref.server_address.clone(),
-                    ))
-                    .or_default()
-                    .push(partition_ref.partition_ref_id);
+        for group in server_groups {
+            if group.server_address == local_address {
+                let local_stream = local_server
+                    .get_partition_local(group.shuffle_id, &group.partition_ref_ids)
+                    .await?;
+                streams.push(local_stream);
+            } else {
+                let client_manager = client_manager.clone();
+                let schema = schema.clone();
+                remote_fetches.push(async move {
+                    client_manager
+                        .fetch_partition(
+                            group.shuffle_id,
+                            &group.server_address,
+                            &group.partition_ref_ids,
+                            schema,
+                        )
+                        .await
+                });
             }
-            let fetches = refs_by_server
-                .into_iter()
-                .map(|((shuffle_id, server_address), partition_ref_ids)| {
-                    let client_manager = client_manager.clone();
-                    let schema = schema.clone();
-                    async move {
-                        client_manager
-                            .fetch_partition(
-                                shuffle_id,
-                                &server_address,
-                                &partition_ref_ids,
-                                schema,
-                            )
-                            .await
-                    }
-                })
-                .collect::<Vec<_>>();
-            // Some(futures::future::try_join_all(fetches).await?)
-            let streams = futures::future::try_join_all(fetches).await?;
-            Some(futures::stream::select_all(streams).boxed())
-        };
+        }
 
-        match (local_stream, remote_stream) {
-            (None, None) => Ok(futures::stream::empty().boxed()),
-            (Some(local_stream), None) => Ok(local_stream.boxed()),
-            (None, Some(remote_stream)) => Ok(remote_stream.boxed()),
-            (Some(local_stream), Some(remote_stream)) => {
-                Ok(futures::stream::select(local_stream, remote_stream).boxed())
-            }
+        let remote_streams = futures::future::try_join_all(remote_fetches).await?;
+        streams.extend(remote_streams);
+
+        if streams.is_empty() {
+            Ok(futures::stream::empty().boxed())
+        } else {
+            Ok(futures::stream::select_all(streams).boxed())
         }
     }
 
@@ -149,7 +120,7 @@ impl ShuffleReadSource {
                 while task_set.len() < num_parallel_tasks
                     && let Some((input_id, input)) = pending_tasks.pop_front()
                 {
-                    let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, input.refs, schema.clone()).await?;
+                    let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, input.server_groups, schema.clone()).await?;
                     task_set.spawn(forward_partition_stream(stream, schema.clone(), output_sender.clone(), input_id));
                 }
 

@@ -142,7 +142,7 @@ impl ShuffleBackend {
                 let plan = wrap_plan(shuffle_read);
                 SwordfishTaskBuilder::new(plan, node, node_id).with_flight_shuffle_reads(
                     node_id,
-                    vec![FlightShuffleReadInput { refs: flight_refs }],
+                    vec![FlightShuffleReadInput::from_refs(flight_refs)],
                 )
             }
         }
