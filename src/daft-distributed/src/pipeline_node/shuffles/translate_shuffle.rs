@@ -66,7 +66,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_size_hint: Option<usize>,
     ) -> DaftResult<DistributedPipelineNode> {
         let backend = self.select_backend(input_size_hint);
-        self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
+        self.gen_repartition_node_with_backend(
+            repartition_spec,
+            schema,
+            child,
+            backend,
+            input_size_hint,
+        )
     }
 
     pub fn gen_repartition_node_with_backend(
@@ -75,6 +81,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         schema: SchemaRef,
         child: DistributedPipelineNode,
         backend: DistributedShuffleBackend,
+        input_size_hint: Option<usize>,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config
@@ -88,7 +95,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
+        let use_pre_shuffle_merge =
+            self.should_use_pre_shuffle_merge(&child, num_partitions, input_size_hint)?;
 
         let child_node = if use_pre_shuffle_merge {
             // Create merge node first
@@ -124,17 +132,37 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// `pre_shuffle_merge` config, independent of `shuffle_algorithm` — pre-merge
     /// works for both Ray and Flight backends:
     /// - `"always"` / `"never"` force the answer
-    /// - `"auto"` applies the geometric-mean heuristic over (input × target) partitions
+    /// - `"auto"` skips pre-merge when input partitions are already large enough
+    ///   that the consolidation ratio (inputs-per-merge-bucket) would be near 1 —
+    ///   in that regime the materialize barrier + hard worker affinity of
+    ///   `PreShuffleMergeNode` is pure overhead. Otherwise applies the
+    ///   geometric-mean heuristic over (input × target) partitions.
     fn should_use_pre_shuffle_merge(
         &self,
         child: &DistributedPipelineNode,
         target_num_partitions: usize,
+        input_size_hint: Option<usize>,
     ) -> DaftResult<bool> {
         match self.plan_config.config.pre_shuffle_merge.as_str() {
             "always" => Ok(true),
             "never" => Ok(false),
             "auto" => {
                 let input_num_partitions = child.config().clustering_spec.num_partitions();
+                // Size-based gate: if avg input partition is already ≥ 1/4 of the
+                // merge bucket size, pre-merge would pack <4 inputs per task — too
+                // little consolidation to outweigh the barrier + affinity cost.
+                // Pure-large-shuffle workloads (e.g. SF100 lineitem repartition)
+                // sit in this regime; TPC-H intermediate stages with small
+                // post-join partitions do not.
+                let threshold = self.plan_config.config.pre_shuffle_merge_threshold;
+                if let Some(total_bytes) = input_size_hint
+                    && input_num_partitions > 0
+                {
+                    let avg_partition_size = total_bytes / input_num_partitions;
+                    if avg_partition_size >= threshold / 4 {
+                        return Ok(false);
+                    }
+                }
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 Ok(geometric_mean
