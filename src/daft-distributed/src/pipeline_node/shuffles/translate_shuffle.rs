@@ -84,7 +84,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
+        let use_pre_shuffle_merge =
+            self.should_use_pre_shuffle_merge(&backend, &child, num_partitions)?;
 
         let child_node = if use_pre_shuffle_merge {
             // Create merge node first
@@ -116,22 +117,32 @@ impl LogicalPlanToPipelineNodeTranslator {
         ))
     }
 
-    /// Determine if we should use pre-shuffle merge strategy
+    /// Determine if we should use pre-shuffle merge strategy.
+    ///
+    /// Gated on the actual `backend` we'll use, not just the algorithm string. Flight
+    /// shuffles never use pre-merge: it would force the bulk shuffle bytes through
+    /// plasma before the disk write, defeating Flight's whole reason for existing
+    /// (skip plasma on big shuffles). For Ray-plasma the trade is different —
+    /// collapsing many small plasma objects into few large ones is a net win on the
+    /// consumer-deserialize side, so we keep the geometric-mean heuristic there.
     fn should_use_pre_shuffle_merge(
         &self,
+        backend: &DistributedShuffleBackend,
         child: &DistributedPipelineNode,
         target_num_partitions: usize,
     ) -> DaftResult<bool> {
+        if matches!(backend, DistributedShuffleBackend::Flight(_)) {
+            return Ok(false);
+        }
+
         let input_num_partitions = child.config().clustering_spec.num_partitions();
 
         match self.plan_config.config.shuffle_algorithm.as_str() {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
-            "flight_shuffle" | "auto" => {
-                // Apply the same geometric-mean heuristic Ray-plasma uses. Without this
-                // PreShuffleMergeNode is skipped on the Flight path, which fuses
-                // RepartitionWrite into the upstream task and erases the cross-stage
-                // overlap that pre-merge provides.
+            // "flight_shuffle" is handled above (early return); "auto" lands here only
+            // when select_backend chose Ray.
+            "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 Ok(geometric_mean
