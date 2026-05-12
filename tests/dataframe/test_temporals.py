@@ -1161,3 +1161,23 @@ def test_unix_extractors_sql() -> None:
     assert result["ut"] == [1609459200]
     assert result["tut"] == [1609459200]
     assert result["w"] == [4]  # 2021-01-01 is a Friday
+
+
+def test_unix_extractors_method_form() -> None:
+    # All six new functions also exposed as Expression methods for parity with
+    # the rest of the temporal API (day_of_week, unix_date, to_unix_epoch, ...).
+    df = daft.from_pydict({"d": [date(2021, 1, 1)]})
+    result = df.select(
+        col("d").unix_seconds().alias("s"),
+        col("d").unix_millis().alias("ms"),
+        col("d").unix_micros().alias("us"),
+        col("d").unix_timestamp().alias("ut"),
+        col("d").to_unix_timestamp().alias("tut"),
+        col("d").weekday().alias("w"),
+    ).to_pydict()
+    assert result["s"] == [1609459200]
+    assert result["ms"] == [1609459200000]
+    assert result["us"] == [1609459200000000]
+    assert result["ut"] == [1609459200]
+    assert result["tut"] == [1609459200]
+    assert result["w"] == [4]

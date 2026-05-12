@@ -82,11 +82,11 @@ from .datetime import (
     make_timestamp,
     make_timestamp_ltz,
     next_day,
-    unix_seconds,
-    unix_millis,
-    unix_micros,
-    unix_timestamp,
     to_unix_timestamp,
+    unix_micros,
+    unix_millis,
+    unix_seconds,
+    unix_timestamp,
     weekday,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
