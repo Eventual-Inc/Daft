@@ -3,15 +3,14 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
-    decode::FlightRecordBatchStream,
-    error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
 };
 use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
-use common_runtime::RuntimeTask;
-use daft_core::prelude::SchemaRef;
+use common_runtime::{RuntimeTask, get_io_runtime};
+use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
+use daft_schema::field::FieldRef;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use std::{
     io::SeekFrom,
@@ -25,10 +24,7 @@ use tokio::{
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::{
-    client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    shuffle_cache::PartitionCache,
-};
+use crate::shuffle_cache::PartitionCache;
 
 struct ParsedTicket {
     shuffle_id: u64,
@@ -87,16 +83,27 @@ enum FileReadSpec {
 /// Process-wide aggregate counters for shuffle read throughput diagnostics.
 pub mod read_agg {
     use std::sync::atomic::AtomicU64;
-    /// Number of `do_get` responses served by this server.
+    /// Number of `do_get` responses served by this server (remote / gRPC path).
     pub static RESPONSES: AtomicU64 = AtomicU64::new(0);
-    /// Number of file specs (whole or ranged) opened across all responses.
+    /// Number of file specs (whole or ranged) opened across all gRPC responses.
     pub static SPECS_OPENED: AtomicU64 = AtomicU64::new(0);
-    /// Total bytes of IPC body shipped to clients.
+    /// Total bytes of IPC body shipped to clients over gRPC.
     pub static BYTES_SHIPPED: AtomicU64 = AtomicU64::new(0);
     /// Total wall time spent inside `do_get` handler, including stream consumption.
     pub static HANDLER_US: AtomicU64 = AtomicU64::new(0);
-    /// Total wall time spent opening files / seeking before streaming bytes.
+    /// Total wall time spent opening files / seeking before streaming bytes (gRPC path).
     pub static OPEN_US: AtomicU64 = AtomicU64::new(0);
+
+    // Local-path counters. The local path bypasses gRPC entirely; we measure it
+    // separately so the local/remote split is visible in production.
+    /// Number of `get_partition_local` calls served in-process.
+    pub static LOCAL_RESPONSES: AtomicU64 = AtomicU64::new(0);
+    /// Number of file specs (whole or ranged) opened across all local responses.
+    pub static LOCAL_SPECS_OPENED: AtomicU64 = AtomicU64::new(0);
+    /// Total IPC body bytes consumed by the local path (no gRPC framing involved).
+    pub static LOCAL_BYTES: AtomicU64 = AtomicU64::new(0);
+    /// Total wall time spent opening files / seeking on the local path.
+    pub static LOCAL_OPEN_US: AtomicU64 = AtomicU64::new(0);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +113,10 @@ pub struct ReadAggSnapshot {
     pub bytes_shipped: u64,
     pub handler_us: u64,
     pub open_us: u64,
+    pub local_responses: u64,
+    pub local_specs_opened: u64,
+    pub local_bytes: u64,
+    pub local_open_us: u64,
 }
 
 pub fn read_agg_snapshot() -> ReadAggSnapshot {
@@ -115,12 +126,22 @@ pub fn read_agg_snapshot() -> ReadAggSnapshot {
         bytes_shipped: read_agg::BYTES_SHIPPED.load(Ordering::Relaxed),
         handler_us: read_agg::HANDLER_US.load(Ordering::Relaxed),
         open_us: read_agg::OPEN_US.load(Ordering::Relaxed),
+        local_responses: read_agg::LOCAL_RESPONSES.load(Ordering::Relaxed),
+        local_specs_opened: read_agg::LOCAL_SPECS_OPENED.load(Ordering::Relaxed),
+        local_bytes: read_agg::LOCAL_BYTES.load(Ordering::Relaxed),
+        local_open_us: read_agg::LOCAL_OPEN_US.load(Ordering::Relaxed),
     }
 }
 
 pub fn log_read_agg_summary(label: &str) {
     let s = read_agg_snapshot();
     let mb = 1024.0 * 1024.0;
+    let total_bytes = s.bytes_shipped + s.local_bytes;
+    let local_frac = if total_bytes == 0 {
+        0.0
+    } else {
+        s.local_bytes as f64 / total_bytes as f64
+    };
     tracing::info!(
         target: "daft_shuffles::read_agg",
         label = label,
@@ -129,6 +150,11 @@ pub fn log_read_agg_summary(label: &str) {
         bytes_shipped_mib = format_args!("{:.1}", s.bytes_shipped as f64 / mb),
         handler_ms = s.handler_us / 1000,
         open_ms = s.open_us / 1000,
+        local_responses = s.local_responses,
+        local_specs_opened = s.local_specs_opened,
+        local_bytes_mib = format_args!("{:.1}", s.local_bytes as f64 / mb),
+        local_open_ms = s.local_open_us / 1000,
+        local_frac = format_args!("{:.2}", local_frac),
         "shuffle read agg summary",
     );
 }
@@ -234,6 +260,13 @@ impl ShuffleFlightServer {
 
     /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
     /// Used when the reader runs on the same node as the shuffle server.
+    ///
+    /// This path bypasses the FlightData round-trip entirely: it opens IPC stream files
+    /// synchronously inside `spawn_blocking` and decodes them directly to `arrow_array::RecordBatch`
+    /// via `arrow_ipc::reader::StreamReader`, then wraps the columns into daft `Series`.
+    /// Compared to the gRPC `do_get` path, this avoids (1) the per-batch `FlightData`
+    /// alloc/wrap, (2) the per-spec synthetic schema-message construction, and
+    /// (3) the `FlightRecordBatchStream` re-parse of the schema we just constructed.
     pub async fn get_partition_local(
         &self,
         shuffle_id: u64,
@@ -249,37 +282,127 @@ impl ShuffleFlightServer {
                 ))
             })?;
 
-        let file_stream = futures::stream::iter(specs);
-        let flight_data_stream = file_stream
+        read_agg::LOCAL_RESPONSES.fetch_add(1, Ordering::Relaxed);
+        read_agg::LOCAL_SPECS_OPENED.fetch_add(specs.len() as u64, Ordering::Relaxed);
+
+        // Build the IPC schema header once. Range specs read from a byte range that
+        // does NOT include the file's schema header, so we prepend this buffer in front
+        // of the range bytes. Whole specs already have the schema header at the file start
+        // and do not need this prefix.
+        let arrow_schema = schema.to_arrow()?;
+        let schema_header_bytes = Arc::new(build_schema_header_bytes(&arrow_schema)?);
+        let fields: Arc<Vec<FieldRef>> = Arc::new(
+            schema
+                .fields()
+                .iter()
+                .map(|f| Arc::new(f.clone()))
+                .collect(),
+        );
+
+        let stream = futures::stream::iter(specs)
             .map(move |spec| {
                 let schema = schema.clone();
+                let schema_header_bytes = schema_header_bytes.clone();
+                let fields = fields.clone();
                 async move {
-                    let inner: BoxStream<'static, DaftResult<FlightData>> =
-                        open_spec_as_flight_stream(spec).await?;
-                    let inner =
-                        inner.map_err(|e| FlightError::from_external_error(Box::new(e)));
-
-                    let arrow_schema = schema.to_arrow().map_err(|e| {
-                        DaftError::InternalError(format!("Error converting schema to arrow: {}", e))
-                    })?;
-                    let options = IpcWriteOptions::default();
-                    let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
-                    let flight_data =
-                        futures::stream::once(async { Ok(flight_schema) }).chain(inner);
-
-                    // Doing some shenanigans here to reuse existing code
-                    // TODO: Refactor this to get Arrow RecordBatchStream directly using async IO
-                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
-                    let daft_stream =
-                        FlightRecordBatchStreamToDaftRecordBatchStream::new(arrow_stream, schema);
-                    Ok::<_, DaftError>(daft_stream)
+                    let batches =
+                        read_spec_local(spec, schema.clone(), schema_header_bytes, fields).await?;
+                    Ok::<_, DaftError>(futures::stream::iter(
+                        batches.into_iter().map(Ok::<RecordBatch, DaftError>),
+                    ))
                 }
             })
             .buffered(READ_PREFETCH)
             .try_flatten();
 
-        Ok(Box::pin(flight_data_stream))
+        Ok(Box::pin(stream))
     }
+}
+
+/// Build the IPC bytes that represent a schema-only stream header. Produced by writing
+/// an empty `StreamWriter` and dropping it without calling `finish()` (which would emit
+/// the EOS marker). Used as a prefix when feeding ranged file reads into `StreamReader`.
+fn build_schema_header_bytes(arrow_schema: &arrow_schema::Schema) -> DaftResult<Vec<u8>> {
+    let mut buf: Vec<u8> = Vec::with_capacity(512);
+    let opts = IpcWriteOptions::default();
+    let _writer = arrow_ipc::writer::StreamWriter::try_new_with_options(&mut buf, arrow_schema, opts)?;
+    // Drop without finish; `try_new_with_options` already wrote the schema message,
+    // and we want only those bytes — no batches, no EOS.
+    Ok(buf)
+}
+
+/// IPC EOS marker: continuation marker (0xFFFFFFFF as i32 LE) + meta_len 0.
+/// Appended after ranged reads so `StreamReader` stops cleanly at the end of our range
+/// instead of seeing torn metadata bytes from the next batch in the underlying file.
+const IPC_EOS_BYTES: [u8; 8] = [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00];
+
+/// Open a single `FileReadSpec` and decode all batches synchronously. Runs inside
+/// `spawn_blocking` so the file open + IPC decode CPU work doesn't tie up an async worker.
+async fn read_spec_local(
+    spec: FileReadSpec,
+    schema: SchemaRef,
+    schema_header_bytes: Arc<Vec<u8>>,
+    fields: Arc<Vec<FieldRef>>,
+) -> DaftResult<Vec<RecordBatch>> {
+    get_io_runtime(true)
+        .spawn_blocking(move || {
+            let t0 = Instant::now();
+            let result = read_spec_sync(spec, &schema_header_bytes, &fields, &schema);
+            read_agg::LOCAL_OPEN_US
+                .fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
+            result
+        })
+        .await?
+}
+
+fn read_spec_sync(
+    spec: FileReadSpec,
+    schema_header_bytes: &[u8],
+    fields: &[FieldRef],
+    schema: &SchemaRef,
+) -> DaftResult<Vec<RecordBatch>> {
+    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
+
+    // Build a Read source that delivers a complete IPC stream (schema + batches + EOS)
+    // regardless of whether the underlying spec is Whole or Range.
+    let (reader, body_bytes): (Box<dyn Read + Send>, u64) = match spec {
+        FileReadSpec::Whole { path } => {
+            let file = std::fs::File::open(&path)?;
+            let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
+            // 64 KiB buf; small enough to stay cache-friendly, large enough to amortize
+            // syscalls on the typical 1-4 MiB per-batch flushes.
+            let buf = StdBufReader::with_capacity(64 * 1024, file);
+            (Box::new(buf), body_bytes)
+        }
+        FileReadSpec::Range { path, start, end } => {
+            let mut file = std::fs::File::open(&path)?;
+            file.seek(std::io::SeekFrom::Start(start))?;
+            let body_bytes = end - start;
+            let take = file.take(body_bytes);
+            // Chain: synthetic schema header  →  batch bytes from the range  →  EOS marker.
+            // Disambiguate to `std::io::Read::chain` because this file also imports
+            // `tokio::io::AsyncReadExt`, which provides its own (async) `chain`.
+            let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
+            let with_body = Read::chain(schema_prefix, take);
+            let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+            (Box::new(StdBufReader::with_capacity(64 * 1024, chained)), body_bytes)
+        }
+    };
+    read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
+
+    let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+    let mut batches = Vec::new();
+    for arrow_batch in stream_reader {
+        let arrow_batch = arrow_batch?;
+        let num_rows = arrow_batch.num_rows();
+        let columns = fields
+            .iter()
+            .zip(arrow_batch.columns())
+            .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        batches.push(RecordBatch::new_with_size(schema.clone(), columns, num_rows)?);
+    }
+    Ok(batches)
 }
 
 #[tonic::async_trait]
