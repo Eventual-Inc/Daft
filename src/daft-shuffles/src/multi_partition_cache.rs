@@ -313,7 +313,7 @@ pub fn log_agg_summary(label: &str) {
 }
 
 /// Bump the appropriate flush-size bucket. Called on every `flush_partition`.
-fn record_flush_size(size_bytes: u64) {
+pub(crate) fn record_flush_size(size_bytes: u64) {
     let bucket = if size_bytes < 4 * 1024 {
         &agg::FLUSH_LT_4K
     } else if size_bytes < 16 * 1024 {
