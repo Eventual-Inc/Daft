@@ -7,7 +7,7 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::{AsofJoinStrategy, partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
@@ -39,6 +39,7 @@ pub(crate) struct AsofJoinNode {
     right_by: Vec<BoundExpr>,
     left_on: BoundExpr,
     right_on: BoundExpr,
+    strategy: AsofJoinStrategy,
     num_partitions: usize,
 
     left: DistributedPipelineNode,
@@ -56,6 +57,7 @@ impl AsofJoinNode {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         num_partitions: usize,
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
@@ -86,6 +88,7 @@ impl AsofJoinNode {
             right_by,
             left_on,
             right_on,
+            strategy,
             num_partitions,
             left,
             right,
@@ -136,6 +139,7 @@ impl AsofJoinNode {
             self.right_by.clone(),
             self.left_on.clone(),
             self.right_on.clone(),
+            self.strategy,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),

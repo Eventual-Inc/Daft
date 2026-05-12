@@ -88,6 +88,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "right_by": asof_join.right_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             "left_on": asof_join.left_on.to_string(),
             "right_on": asof_join.right_on.to_string(),
+            "strategy": asof_join.strategy.to_string(),
         }),
         LogicalPlan::Sink(_) => json!({}),
         LogicalPlan::Sample(sample) => json!({

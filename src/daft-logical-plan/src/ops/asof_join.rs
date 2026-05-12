@@ -5,6 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
+use daft_core::join::AsofJoinStrategy;
 use daft_dsl::{Column, Expr, ExprRef, UnresolvedColumn, resolved_col, unresolved_col};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
@@ -79,6 +80,7 @@ pub struct AsofJoin {
     pub right_by: Vec<ExprRef>,
     pub left_on: ExprRef,
     pub right_on: ExprRef,
+    pub strategy: AsofJoinStrategy,
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -93,6 +95,7 @@ impl AsofJoin {
         left_on: ExprRef,
         right_on: ExprRef,
         right_cols_to_drop: HashSet<String>,
+        strategy: AsofJoinStrategy,
     ) -> logical_plan::Result<Self> {
         let output_schema =
             infer_asof_join_schema(&left.schema(), &right.schema(), &right_cols_to_drop)?;
@@ -106,6 +109,7 @@ impl AsofJoin {
             right_by,
             left_on,
             right_on,
+            strategy,
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -221,7 +225,7 @@ impl AsofJoin {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec!["AsofJoin: strategy = backward".to_string()];
+        let mut res = vec![format!("AsofJoin: strategy = {}", self.strategy)];
         res.push(format!(
             "left_by = [{}]",
             self.left_by
