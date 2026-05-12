@@ -22,9 +22,8 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// logical-plan stats. When the algorithm is `"auto"` (and the upstream stats are
     /// materialized), this routes large shuffles to Flight (which controls disk spill
     /// directly) and small shuffles to Ray-plasma (which keeps things in-memory and
-    /// avoids the per-task disk-write tax). Explicit `"flight_shuffle"` / `"map_reduce"`
-    /// / `"pre_shuffle_merge"` settings force their respective backends regardless of
-    /// size.
+    /// avoids the per-task disk-write tax). Explicit `"flight"` / `"ray"` settings
+    /// force their respective backends regardless of size.
     pub(crate) fn select_backend(
         &self,
         input_size_hint: Option<usize>,
@@ -36,7 +35,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             })
         };
         match self.plan_config.config.shuffle_algorithm.as_str() {
-            "flight_shuffle" => flight(),
+            "flight" => flight(),
             "auto" => match input_size_hint {
                 Some(bytes)
                     if bytes
@@ -49,7 +48,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 }
                 _ => DistributedShuffleBackend::Ray,
             },
-            // "pre_shuffle_merge", "map_reduce", or anything else: keep Ray.
+            // "ray" or anything else: keep Ray.
             _ => DistributedShuffleBackend::Ray,
         }
     }
@@ -84,8 +83,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        let use_pre_shuffle_merge =
-            self.should_use_pre_shuffle_merge(&backend, &child, num_partitions)?;
+        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         let child_node = if use_pre_shuffle_merge {
             // Create merge node first
@@ -117,32 +115,21 @@ impl LogicalPlanToPipelineNodeTranslator {
         ))
     }
 
-    /// Determine if we should use pre-shuffle merge strategy.
-    ///
-    /// Gated on the actual `backend` we'll use, not just the algorithm string. Flight
-    /// shuffles never use pre-merge: it would force the bulk shuffle bytes through
-    /// plasma before the disk write, defeating Flight's whole reason for existing
-    /// (skip plasma on big shuffles). For Ray-plasma the trade is different —
-    /// collapsing many small plasma objects into few large ones is a net win on the
-    /// consumer-deserialize side, so we keep the geometric-mean heuristic there.
+    /// Decide whether to insert a Pre-Shuffle Merge stage. Driven by the
+    /// `pre_shuffle_merge` config, independent of `shuffle_algorithm` — pre-merge
+    /// works for both Ray and Flight backends:
+    /// - `"always"` / `"never"` force the answer
+    /// - `"auto"` applies the geometric-mean heuristic over (input × target) partitions
     fn should_use_pre_shuffle_merge(
         &self,
-        backend: &DistributedShuffleBackend,
         child: &DistributedPipelineNode,
         target_num_partitions: usize,
     ) -> DaftResult<bool> {
-        if matches!(backend, DistributedShuffleBackend::Flight(_)) {
-            return Ok(false);
-        }
-
-        let input_num_partitions = child.config().clustering_spec.num_partitions();
-
-        match self.plan_config.config.shuffle_algorithm.as_str() {
-            "pre_shuffle_merge" => Ok(true),
-            "map_reduce" => Ok(false),
-            // "flight_shuffle" is handled above (early return); "auto" lands here only
-            // when select_backend chose Ray.
+        match self.plan_config.config.pre_shuffle_merge.as_str() {
+            "always" => Ok(true),
+            "never" => Ok(false),
             "auto" => {
+                let input_num_partitions = child.config().clustering_spec.num_partitions();
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 Ok(geometric_mean
@@ -151,7 +138,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                         .config
                         .pre_shuffle_merge_partition_threshold)
             }
-            _ => Ok(false), // Default to naive map_reduce for unknown strategies
+            _ => Ok(false),
         }
     }
 

@@ -232,6 +232,7 @@ def set_execution_config(
     read_sql_partition_size_bytes: int | None = None,
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
+    pre_shuffle_merge: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     pre_shuffle_merge_partition_threshold: int | None = None,
     scantask_max_parallel: int | None = None,
@@ -244,6 +245,7 @@ def set_execution_config(
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     flight_shuffle_size_threshold_bytes: int | None = None,
+    flight_shuffle_writer: str | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -281,9 +283,10 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
-        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", and "flight_shuffle".
+        shuffle_algorithm: Distributed shuffle backend. One of "auto" (size-based routing between Ray-plasma and Flight; default), "ray", or "flight".
+        pre_shuffle_merge: Whether to insert a Pre-Shuffle Merge stage before each shuffle. One of "auto" (geometric-mean heuristic over input × target partitions; default), "always", or "never". Independent of shuffle_algorithm — works with both Ray and Flight backends.
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
-        pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
+        pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when pre_shuffle_merge is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
@@ -294,6 +297,7 @@ def set_execution_config(
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         flight_shuffle_size_threshold_bytes: Per-shuffle estimated-input-bytes threshold for routing the distributed shuffle to the Flight backend instead of Ray-plasma. Used in the "auto" / non-explicit shuffle modes. Above this, Flight is preferred (better at large shuffles that would force plasma to spill); below it, Ray-plasma is preferred (better in-memory). Defaults to 25 GiB.
+        flight_shuffle_writer: Flight repartition sink write path. One of "oneshot" (default — one combined file per map task; per-task isolation), "append" (shared per-partition file appended by all map tasks; best read-side throughput, weaker fault isolation), or "multi_file" (one whole-file output per (map_task, partition); same isolation as oneshot with more file handles).
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -325,6 +329,7 @@ def set_execution_config(
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
+            pre_shuffle_merge=pre_shuffle_merge,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             pre_shuffle_merge_partition_threshold=pre_shuffle_merge_partition_threshold,
             scantask_max_parallel=scantask_max_parallel,
@@ -337,6 +342,7 @@ def set_execution_config(
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
             flight_shuffle_size_threshold_bytes=flight_shuffle_size_threshold_bytes,
+            flight_shuffle_writer=flight_shuffle_writer,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 

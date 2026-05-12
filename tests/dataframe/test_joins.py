@@ -16,7 +16,7 @@ from tests.utils import sort_arrow_table
 @contextmanager
 def flight_shuffle_ctx():
     with tempfile.TemporaryDirectory() as temp_dir:
-        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+        with daft.execution_config_ctx(shuffle_algorithm="flight", flight_shuffle_dirs=[temp_dir]) as ctx:
             yield ctx
 
 

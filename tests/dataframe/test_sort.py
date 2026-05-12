@@ -22,7 +22,7 @@ NEGATIVE_NAN = struct.unpack("d", struct.pack("Q", 0xFFF8000000000000))[0]
 @contextmanager
 def flight_shuffle_ctx():
     with tempfile.TemporaryDirectory() as temp_dir:
-        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+        with daft.execution_config_ctx(shuffle_algorithm="flight", flight_shuffle_dirs=[temp_dir]) as ctx:
             yield ctx
 
 

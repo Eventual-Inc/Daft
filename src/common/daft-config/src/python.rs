@@ -112,6 +112,7 @@ impl PyDaftExecutionConfig {
         read_sql_partition_size_bytes=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
+        pre_shuffle_merge=None,
         pre_shuffle_merge_threshold=None,
         pre_shuffle_merge_partition_threshold=None,
         scantask_max_parallel=None,
@@ -124,6 +125,7 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
         flight_shuffle_size_threshold_bytes=None,
+        flight_shuffle_writer=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -151,6 +153,7 @@ impl PyDaftExecutionConfig {
         read_sql_partition_size_bytes: Option<usize>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
+        pre_shuffle_merge: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
         pre_shuffle_merge_partition_threshold: Option<usize>,
         scantask_max_parallel: Option<usize>,
@@ -163,6 +166,7 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_size_threshold_bytes: Option<usize>,
+        flight_shuffle_writer: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -243,15 +247,21 @@ impl PyDaftExecutionConfig {
         }
 
         if let Some(shuffle_algorithm) = shuffle_algorithm {
-            if !matches!(
-                shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
-            ) {
+            if !matches!(shuffle_algorithm, "auto" | "ray" | "flight") {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
+                    "shuffle_algorithm must be 'auto', 'ray', or 'flight'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
+        }
+
+        if let Some(pre_shuffle_merge) = pre_shuffle_merge {
+            if !matches!(pre_shuffle_merge, "auto" | "always" | "never") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "pre_shuffle_merge must be 'auto', 'always', or 'never'",
+                ));
+            }
+            config.pre_shuffle_merge = pre_shuffle_merge.to_string();
         }
 
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
@@ -308,6 +318,15 @@ impl PyDaftExecutionConfig {
 
         if let Some(flight_shuffle_size_threshold_bytes) = flight_shuffle_size_threshold_bytes {
             config.flight_shuffle_size_threshold_bytes = flight_shuffle_size_threshold_bytes;
+        }
+
+        if let Some(flight_shuffle_writer) = flight_shuffle_writer {
+            if !matches!(flight_shuffle_writer, "oneshot" | "append" | "multi_file") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_writer must be 'oneshot', 'append', or 'multi_file'",
+                ));
+            }
+            config.flight_shuffle_writer = flight_shuffle_writer.to_string();
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -434,6 +453,11 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn pre_shuffle_merge(&self) -> PyResult<&str> {
+        Ok(self.config.pre_shuffle_merge.as_str())
+    }
+
+    #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
         Ok(self.config.pre_shuffle_merge_threshold)
     }
@@ -480,6 +504,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_size_threshold_bytes(&self) -> PyResult<usize> {
         Ok(self.config.flight_shuffle_size_threshold_bytes)
+    }
+
+    #[getter]
+    fn flight_shuffle_writer(&self) -> PyResult<&str> {
+        Ok(self.config.flight_shuffle_writer.as_str())
     }
 
     #[getter]

@@ -8,7 +8,9 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    multi_partition_cache::repartition_agg, server::flight_server::ShuffleFlightServer,
+    multi_file_writer::write_partitions_multi_file,
+    multi_partition_cache::repartition_agg, oneshot_writer::write_partitions_one_shot,
+    server::flight_server::ShuffleFlightServer,
     shuffle_cache::{PartitionCache, partition_ref_id},
 };
 use itertools::Itertools;
@@ -49,6 +51,35 @@ impl RepartitionAccState {
     }
 }
 
+/// Selects which on-disk write path the Flight backend uses. Mirrors the
+/// `flight_shuffle_writer` execution config: `"oneshot"`, `"append"`, `"multi_file"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FlightWriterMode {
+    /// One combined IPC file per map task, N partitions delimited by byte ranges.
+    /// Default. Strongest per-task isolation.
+    Oneshot,
+    /// One shared IPC file per (shuffle_id, partition_idx); all map tasks append.
+    /// Best read-side sequential throughput; weaker fault isolation.
+    Append,
+    /// One IPC file per (map_task, partition_idx); each file is a complete stream.
+    /// Whole-file reads on the server side. Per-task isolation; more file handles.
+    MultiFile,
+}
+
+impl FlightWriterMode {
+    pub(crate) fn from_config(s: &str) -> DaftResult<Self> {
+        match s {
+            "oneshot" => Ok(Self::Oneshot),
+            "append" => Ok(Self::Append),
+            "multi_file" => Ok(Self::MultiFile),
+            other => Err(common_error::DaftError::ValueError(format!(
+                "flight_shuffle_writer must be 'oneshot', 'append', or 'multi_file' (got {})",
+                other
+            ))),
+        }
+    }
+}
+
 // TODO: unify shuffle backends in all local operations
 enum RepartitionBackend {
     Ray,
@@ -58,6 +89,7 @@ enum RepartitionBackend {
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
         schema: SchemaRef,
+        writer_mode: FlightWriterMode,
     },
 }
 
@@ -95,6 +127,7 @@ impl RepartitionSink {
         _compression: Option<String>, // TODO: re-introduce when oneshot writer supports it
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
+        writer_mode: &str,
     ) -> DaftResult<Self> {
         Ok(Self {
             backend: RepartitionBackend::Flight {
@@ -103,6 +136,7 @@ impl RepartitionSink {
                 local_server,
                 shuffle_address,
                 schema,
+                writer_mode: FlightWriterMode::from_config(writer_mode)?,
             },
             repartition_spec,
             num_partitions,
@@ -232,27 +266,53 @@ impl BlockingSink for RepartitionSink {
                 local_server,
                 shuffle_address,
                 schema,
+                writer_mode,
             } => {
                 let shuffle_id = *shuffle_id;
                 let shuffle_dirs = shuffle_dirs.clone();
                 let local_server = local_server.clone();
                 let shuffle_address = shuffle_address.clone();
                 let schema = schema.clone();
+                let writer_mode = *writer_mode;
                 spawner
                     .spawn(
                         async move {
                             use std::sync::atomic::Ordering;
                             use std::time::Instant;
                             let t_close = Instant::now();
-                            let partition_caches = write_per_partition_append(
-                                input_id,
-                                shuffle_id,
-                                &shuffle_dirs,
-                                &schema,
-                                &local_server,
-                                per_partition,
-                            )
-                            .await?;
+                            let partition_caches = match writer_mode {
+                                FlightWriterMode::Oneshot => {
+                                    write_partitions_one_shot(
+                                        input_id,
+                                        shuffle_id,
+                                        &shuffle_dirs,
+                                        schema.clone(),
+                                        per_partition,
+                                    )
+                                    .await?
+                                }
+                                FlightWriterMode::Append => {
+                                    write_per_partition_append(
+                                        input_id,
+                                        shuffle_id,
+                                        &shuffle_dirs,
+                                        &schema,
+                                        &local_server,
+                                        per_partition,
+                                    )
+                                    .await?
+                                }
+                                FlightWriterMode::MultiFile => {
+                                    write_partitions_multi_file(
+                                        input_id,
+                                        shuffle_id,
+                                        &shuffle_dirs,
+                                        schema.clone(),
+                                        per_partition,
+                                    )
+                                    .await?
+                                }
+                            };
                             repartition_agg::FINALIZE_CLOSE_US.fetch_add(
                                 t_close.elapsed().as_micros() as u64,
                                 Ordering::Relaxed,

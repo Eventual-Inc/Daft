@@ -2453,6 +2453,7 @@ class PyDaftExecutionConfig:
         read_sql_partition_size_bytes: int | None = None,
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
+        pre_shuffle_merge: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
         pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
@@ -2465,6 +2466,7 @@ class PyDaftExecutionConfig:
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         flight_shuffle_size_threshold_bytes: int | None = None,
+        flight_shuffle_writer: str | None = None,
         enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -2514,6 +2516,8 @@ class PyDaftExecutionConfig:
     @property
     def shuffle_algorithm(self) -> str: ...
     @property
+    def pre_shuffle_merge(self) -> str: ...
+    @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
     def pre_shuffle_merge_partition_threshold(self) -> int: ...
@@ -2533,6 +2537,8 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def flight_shuffle_size_threshold_bytes(self) -> int: ...
+    @property
+    def flight_shuffle_writer(self) -> str: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
     @property

@@ -140,7 +140,13 @@ pub struct DaftExecutionConfig {
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
     pub default_morsel_size: NonZeroUsize,
+    /// Distributed shuffle backend: `"ray"`, `"flight"`, or `"auto"` (size-based routing).
     pub shuffle_algorithm: String,
+    /// Whether to insert a Pre-Shuffle Merge stage before each shuffle:
+    /// `"auto"` applies the geometric-mean heuristic over input × target partitions,
+    /// `"always"` forces it on, `"never"` forces it off. Independent of `shuffle_algorithm` —
+    /// pre-merge is a producer-side stage that works with either Ray or Flight backends.
+    pub pre_shuffle_merge: String,
     pub pre_shuffle_merge_threshold: usize,
     pub pre_shuffle_merge_partition_threshold: usize,
     pub scantask_max_parallel: usize,
@@ -158,6 +164,17 @@ pub struct DaftExecutionConfig {
     /// in-memory-resident shuffles. Defaults to 25 GiB of estimated input bytes through
     /// the shuffle stage.
     pub flight_shuffle_size_threshold_bytes: usize,
+    /// Selects the on-disk write path for the Flight repartition sink:
+    /// - `"oneshot"` (default): each map task writes one combined IPC file with N output
+    ///   partitions delimited by byte ranges. Per-task isolation; well-tested fault
+    ///   tolerance.
+    /// - `"append"`: tasks append to a single shared IPC file per `(shuffle_id,
+    ///   partition_idx)`. Best read-side throughput (sequential per-partition reads) but
+    ///   weaker fault isolation — a mid-stream write failure can corrupt the shared file.
+    /// - `"multi_file"`: each map task writes N separate IPC files (one per output
+    ///   partition), each a complete single-batch stream. Read side uses whole-file reads.
+    ///   Same isolation as oneshot but with more file handles.
+    pub flight_shuffle_writer: String,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -194,6 +211,7 @@ impl Default for DaftExecutionConfig {
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
+            pre_shuffle_merge: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
@@ -206,6 +224,7 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_size_threshold_bytes: 25 * 1024 * 1024 * 1024, // 25 GiB
+            flight_shuffle_writer: "oneshot".to_string(),
             enable_multi_glob_path_tasks: false,
         }
     }
@@ -452,20 +471,20 @@ mod tests {
             unsafe {
                 std::env::set_var(
                     DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM,
-                    "pre_shuffle_merge  ",
+                    "ray  ",
                 );
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.shuffle_algorithm, "pre_shuffle_merge");
+            assert_eq!(cfg.shuffle_algorithm, "ray");
 
             unsafe {
                 std::env::set_var(
                     DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM,
-                    "map_reduce  ",
+                    "flight  ",
                 );
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.shuffle_algorithm, "map_reduce");
+            assert_eq!(cfg.shuffle_algorithm, "flight");
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM);

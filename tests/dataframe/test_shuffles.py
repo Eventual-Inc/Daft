@@ -46,7 +46,7 @@ def pre_shuffle_merge_ctx():
     """Fixture that provides a context manager for pre-shuffle merge testing."""
 
     def _ctx(threshold: int | None = None):
-        return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
+        return daft.execution_config_ctx(pre_shuffle_merge="always", pre_shuffle_merge_threshold=threshold)
 
     return _ctx
 
@@ -60,7 +60,7 @@ def flight_shuffle_ctx():
         # Create a temporary directory that automatically cleans up
         with tempfile.TemporaryDirectory() as temp_dir:
             # Use the temporary directory for flight shuffle
-            with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+            with daft.execution_config_ctx(shuffle_algorithm="flight", flight_shuffle_dirs=[temp_dir]) as ctx:
                 yield ctx
 
     return _ctx
@@ -266,7 +266,7 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
     [(4, 4), (8, 2), (2, 8), (7, 1)],
 )
 def test_flight_into_partitions(flight_shuffle_ctx, input_partitions, output_partitions):
-    """Exercises IntoPartitionsNode under `shuffle_algorithm="flight_shuffle"`.
+    """Exercises IntoPartitionsNode under `shuffle_algorithm="flight"`.
 
     Verifies that both upstream materialized outputs (FlightPartitionRefs) are
     consumed and downstream outputs are re-emitted as FlightPartitionRefs, across
@@ -489,7 +489,7 @@ def test_flight_gather_all_empty_inputs(flight_shuffle_ctx):
 def test_flight_gather(flight_shuffle_ctx, input_partitions):
     """Gather is triggered by top_n and ungrouped agg on multi-partition inputs.
 
-    Under `shuffle_algorithm="flight_shuffle"` this exercises the GatherWrite
+    Under `shuffle_algorithm="flight"` this exercises the GatherWrite
     blocking sink → ShuffleRead path (rather than the in-memory-scan shortcut).
     """
     rows = 1000
