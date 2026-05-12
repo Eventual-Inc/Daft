@@ -25,7 +25,7 @@ use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
 use crate::{
-    coalescer::{self, CoalescerConfig, CoalescerState},
+    coalescer::{self, SealConfig},
     partition_file_writer::PartitionFileWriter,
     shuffle_cache::PartitionCache,
 };
@@ -200,12 +200,9 @@ pub struct ShuffleFlightServer {
     /// for the partition; all map tasks for the same partition write into the same
     /// file. Created lazily on first contribution, dropped when this server is.
     partition_writers: Arc<Mutex<HashMap<(u64, usize), Arc<PartitionFileWriter>>>>,
-    /// Async coalescer state. Triggered from `register_shuffle_partitions`; rewrites
-    /// per-partition entry groups into a single combined file once the entry count +
-    /// total-bytes thresholds are crossed. See `coalescer.rs` for the policy. `None`
-    /// disables coalescing — kept as an option so callers that want raw write paths
-    /// (tests, micro-benchmarks) can opt out.
-    coalescer: Option<Arc<CoalescerState>>,
+    /// Tunables for `seal_shuffle`. Single shared config — there is no per-shuffle
+    /// state to track because seal is single-shot per shuffle.
+    seal_cfg: SealConfig,
 }
 
 impl Default for ShuffleFlightServer {
@@ -216,14 +213,14 @@ impl Default for ShuffleFlightServer {
 
 impl ShuffleFlightServer {
     pub fn new() -> Self {
-        Self::with_coalescer(Some(CoalescerConfig::default()))
+        Self::with_seal_config(SealConfig::default())
     }
 
-    pub fn with_coalescer(cfg: Option<CoalescerConfig>) -> Self {
+    pub fn with_seal_config(seal_cfg: SealConfig) -> Self {
         Self {
             shuffle_partitions: Arc::new(Mutex::new(HashMap::new())),
             partition_writers: Arc::new(Mutex::new(HashMap::new())),
-            coalescer: cfg.map(|c| Arc::new(CoalescerState::new(c))),
+            seal_cfg,
         }
     }
 
@@ -260,150 +257,139 @@ impl ShuffleFlightServer {
         shuffle_id: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        {
-            let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-            for partition in partitions {
-                shuffle_partitions.insert(
-                    FlightPartitionKey {
-                        shuffle_id,
-                        partition_ref_id: partition.partition_ref_id,
-                    },
-                    partition,
-                );
-            }
+        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+        for partition in partitions {
+            shuffle_partitions.insert(
+                FlightPartitionKey {
+                    shuffle_id,
+                    partition_ref_id: partition.partition_ref_id,
+                },
+                partition,
+            );
         }
-        self.maybe_dispatch_coalesce(shuffle_id).await;
         Ok(())
     }
 
-    /// Scan the cache for any `(shuffle_id, partition_idx)` group that has crossed
-    /// the coalescer's thresholds and isn't already being rewritten. For each
-    /// candidate, spawn a coalesce task. Non-blocking: the spawned tasks pull a
-    /// permit from the bounded `Semaphore`, do their I/O off the request path,
-    /// and swap the cache entries on completion.
+    /// Consolidate every `(shuffle_id, partition_idx)` group in the cache: rewrite
+    /// the M_per_worker per-task entries' source bytes into a single file per
+    /// partition, then update the cache entries to point at it. Called once per
+    /// shuffle by the orchestrator after the producer stage has fully drained
+    /// and before any consumer tasks start fetching.
     ///
-    /// Scoped to one shuffle_id at a time because that's the granularity at which
-    /// new entries arrive — checking other shuffles would just waste work.
-    async fn maybe_dispatch_coalesce(&self, shuffle_id: u64) {
-        let Some(coalescer) = &self.coalescer else {
-            return;
-        };
-
-        // Snapshot under the lock: (ref_id, cache_clone) for this shuffle only.
-        let entries_snapshot: Vec<(u64, PartitionCache)> = {
+    /// This is the seal-time path. Unlike the (now-removed) incremental dispatch,
+    /// it ignores entry-count + byte thresholds — every group with >1 entry gets
+    /// consolidated. Idempotent: a second call finds nothing to do.
+    pub async fn seal_shuffle(&self, shuffle_id: u64) -> DaftResult<()> {
+        // Snapshot every entry for this shuffle under the lock, group by
+        // partition_idx (low 32 bits of partition_ref_id).
+        let by_partition: HashMap<usize, Vec<(u64, PartitionCache)>> = {
             let partitions = self.shuffle_partitions.lock().await;
-            partitions
-                .iter()
-                .filter(|(k, _)| k.shuffle_id == shuffle_id)
-                .map(|(k, v)| (k.partition_ref_id, v.clone()))
-                .collect()
+            let mut by_partition: HashMap<usize, Vec<(u64, PartitionCache)>> = HashMap::new();
+            for (key, cache) in partitions.iter() {
+                if key.shuffle_id != shuffle_id {
+                    continue;
+                }
+                let partition_idx = (key.partition_ref_id & 0xFFFF_FFFF) as usize;
+                by_partition
+                    .entry(partition_idx)
+                    .or_default()
+                    .push((key.partition_ref_id, cache.clone()));
+            }
+            by_partition
         };
 
-        // Pick candidate (shuffle_id, partition_idx) groups; skip any already in flight.
-        let in_flight = coalescer.in_flight.lock().await;
-        let candidates = coalescer::pick_candidates(
-            entries_snapshot
-                .iter()
-                .map(|(ref_id, cache)| (shuffle_id, *ref_id, cache)),
-            &coalescer.cfg,
-            &in_flight,
-        );
-        drop(in_flight);
-
-        if candidates.is_empty() {
-            return;
+        // Only consolidate groups with >1 entry. Single-entry groups are already
+        // in their final form (1 file, no read-side coalescing benefit).
+        let groups: Vec<(usize, Vec<(u64, PartitionCache)>)> = by_partition
+            .into_iter()
+            .filter(|(_, v)| v.len() > 1)
+            .collect();
+        if groups.is_empty() {
+            return Ok(());
         }
 
-        // Mark all picked groups in-flight before spawning, so a second
-        // `register_shuffle_partitions` racing in doesn't re-pick them.
-        {
-            let mut in_flight = coalescer.in_flight.lock().await;
-            for key in &candidates {
-                in_flight.insert(*key);
+        let permits = Arc::new(tokio::sync::Semaphore::new(self.seal_cfg.max_concurrent));
+
+        // Fan out plan-build + execute_plan across partitions. Each task pulls
+        // a permit so total in-flight disk I/O stays bounded.
+        let mut handles = Vec::with_capacity(groups.len());
+        for (partition_idx, entries) in groups {
+            let Some(plan) = coalescer::build_plan(
+                shuffle_id,
+                partition_idx,
+                entries.iter().map(|(r, c)| (*r, c)),
+                0,
+            ) else {
+                continue;
+            };
+            let permits = permits.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permits.acquire_owned().await.ok();
+                coalescer::execute_plan(plan).await
+            }));
+        }
+
+        // Collect outcomes. If any individual coalesce fails, leave its original
+        // entries in place and surface the error — the seal is best-effort per
+        // group; correctness is preserved by not swapping for failed groups.
+        let mut updated_entries: Vec<(u64, PartitionCache)> = Vec::new();
+        let mut orphaned_sources: Vec<String> = Vec::new();
+        let mut first_err: Option<DaftError> = None;
+        for jh in handles {
+            match jh.await {
+                Ok(Ok(outcome)) => {
+                    updated_entries.extend(outcome.updated_entries);
+                    orphaned_sources.extend(outcome.orphaned_sources);
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        target: "daft_shuffles::seal",
+                        shuffle_id = shuffle_id,
+                        error = %e,
+                        "seal: per-group coalesce failed"
+                    );
+                    first_err.get_or_insert(e);
+                }
+                Err(join_err) => {
+                    tracing::warn!(
+                        target: "daft_shuffles::seal",
+                        shuffle_id = shuffle_id,
+                        error = %join_err,
+                        "seal: per-group coalesce task panicked"
+                    );
+                    first_err.get_or_insert_with(|| DaftError::InternalError(join_err.to_string()));
+                }
             }
         }
 
-        for (shuffle_id, partition_idx) in candidates {
-            // Bump seq for this group so coalesced filenames don't collide across passes.
-            let seq = {
-                let mut seqs = coalescer.seq.lock().await;
-                let entry = seqs.entry((shuffle_id, partition_idx)).or_insert(0);
-                let v = *entry;
-                *entry += 1;
-                v
-            };
+        // Single atomic swap of all successful outcomes. Failed groups keep
+        // their original entries — reads against them stay correct, just slower.
+        {
+            let mut partitions = self.shuffle_partitions.lock().await;
+            for (ref_id, new_cache) in updated_entries {
+                partitions.insert(
+                    FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: ref_id,
+                    },
+                    new_cache,
+                );
+            }
+        }
+        for path in orphaned_sources {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(
+                    target: "daft_shuffles::seal",
+                    path = %path,
+                    error = %e,
+                    "failed to unlink coalesced source"
+                );
+            }
+        }
 
-            // Per-group plan: take only the entries currently registered for this
-            // (shuffle_id, partition_idx). Any entries that arrive later will be
-            // picked up by a subsequent dispatch.
-            let group_entries: Vec<(u64, PartitionCache)> = entries_snapshot
-                .iter()
-                .filter(|(ref_id, _)| (*ref_id & 0xFFFF_FFFF) as usize == partition_idx)
-                .cloned()
-                .collect();
-
-            let plan = coalescer::build_plan(
-                shuffle_id,
-                partition_idx,
-                group_entries.iter().map(|(r, c)| (*r, c)),
-                seq,
-            );
-
-            let Some(plan) = plan else {
-                let mut in_flight = coalescer.in_flight.lock().await;
-                in_flight.remove(&(shuffle_id, partition_idx));
-                continue;
-            };
-
-            let server = self.clone();
-            let coalescer_arc = coalescer.clone();
-            let permits = coalescer.permits.clone();
-            tokio::spawn(async move {
-                // Acquire a permit before doing real work — keeps total disk I/O bounded.
-                let _permit = permits.acquire_owned().await.ok();
-                let result = coalescer::execute_plan(plan).await;
-                match result {
-                    Ok(outcome) => {
-                        {
-                            let mut partitions = server.shuffle_partitions.lock().await;
-                            for (ref_id, new_cache) in outcome.updated_entries {
-                                partitions.insert(
-                                    FlightPartitionKey {
-                                        shuffle_id,
-                                        partition_ref_id: ref_id,
-                                    },
-                                    new_cache,
-                                );
-                            }
-                        }
-                        // After the cache swap, source files of whole-file
-                        // (multi_file) entries are unreachable to new lookups.
-                        // POSIX keeps any reader that already opened them
-                        // working; unlink frees the disk immediately.
-                        for path in outcome.orphaned_sources {
-                            if let Err(e) = std::fs::remove_file(&path) {
-                                tracing::warn!(
-                                    target: "daft_shuffles::coalescer",
-                                    path = %path,
-                                    error = %e,
-                                    "failed to unlink coalesced source"
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            target: "daft_shuffles::coalescer",
-                            shuffle_id = shuffle_id,
-                            partition_idx = partition_idx,
-                            error = %e,
-                            "coalesce failed; leaving original entries in place"
-                        );
-                    }
-                }
-                let mut in_flight = coalescer_arc.in_flight.lock().await;
-                in_flight.remove(&(shuffle_id, partition_idx));
-            });
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 
@@ -549,6 +535,10 @@ fn build_schema_header_bytes(arrow_schema: &arrow_schema::Schema) -> DaftResult<
 /// Appended after ranged reads so `StreamReader` stops cleanly at the end of our range
 /// instead of seeing torn metadata bytes from the next batch in the underlying file.
 const IPC_EOS_BYTES: [u8; 8] = [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00];
+
+/// gRPC `do_action` type string for orchestrator-driven seal-time consolidation.
+/// The action body is a little-endian `u64` shuffle_id.
+pub const SEAL_SHUFFLE_ACTION: &str = "seal_shuffle";
 
 /// Open a single `FileReadSpec` and decode all batches synchronously. Runs inside
 /// `spawn_blocking` so the file open + IPC decode CPU work doesn't tie up an async worker.
@@ -789,16 +779,55 @@ impl FlightService for ShuffleFlightServer {
 
     async fn do_action(
         &self,
-        _request: Request<Action>,
+        request: Request<Action>,
     ) -> Result<Response<Self::DoActionStream>, Status> {
-        unimplemented!("Do action is not supported for shuffle server")
+        let action = request.into_inner();
+        match action.r#type.as_str() {
+            // Seal-time consolidation. Body is u64 shuffle_id (little-endian, 8 bytes).
+            // Called once per shuffle by the orchestrator after the producer stage
+            // drains; consolidates every (shuffle_id, partition_idx) group into a
+            // single file. Returns an empty result on success.
+            SEAL_SHUFFLE_ACTION => {
+                if action.body.len() != 8 {
+                    return Err(Status::invalid_argument(format!(
+                        "seal_shuffle expects 8-byte shuffle_id body, got {} bytes",
+                        action.body.len()
+                    )));
+                }
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&action.body);
+                let shuffle_id = u64::from_le_bytes(buf);
+                let t0 = Instant::now();
+                self.seal_shuffle(shuffle_id)
+                    .await
+                    .map_err(|e| Status::internal(format!("seal_shuffle failed: {}", e)))?;
+                tracing::info!(
+                    target: "daft_shuffles::seal",
+                    shuffle_id = shuffle_id,
+                    elapsed_ms = t0.elapsed().as_millis() as u64,
+                    "seal_shuffle completed"
+                );
+                let result = arrow_flight::Result { body: Default::default() };
+                let stream = futures::stream::once(async move { Ok(result) });
+                Ok(Response::new(Box::pin(stream)))
+            }
+            other => Err(Status::invalid_argument(format!(
+                "unsupported action type: {}",
+                other
+            ))),
+        }
     }
 
     async fn list_actions(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::ListActionsStream>, Status> {
-        unimplemented!("List actions is not supported for shuffle server")
+        let actions = vec![ActionType {
+            r#type: SEAL_SHUFFLE_ACTION.to_string(),
+            description: "Consolidate all (shuffle_id, partition_idx) groups for the given shuffle".to_string(),
+        }];
+        let stream = futures::stream::iter(actions.into_iter().map(Ok));
+        Ok(Response::new(Box::pin(stream)))
     }
 }
 

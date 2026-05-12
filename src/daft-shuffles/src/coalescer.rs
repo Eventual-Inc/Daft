@@ -1,53 +1,42 @@
-//! Server-side async coalescer for Flight shuffle partition files.
+//! Plan + execute helpers for the seal-time consolidation of Flight shuffle
+//! partition files.
 //!
-//! Map tasks register `PartitionCache` entries one-per-(task, partition); a read
-//! of partition P walks every entry for P and emits one file-range read per
-//! entry. The cost asymmetry across writer modes:
+//! Map tasks register `PartitionCache` entries one-per-(task, partition). After
+//! the producer stage drains, the orchestrator calls `seal_shuffle` on each
+//! participating Flight server; that path uses `build_plan` + `execute_plan` to
+//! rewrite the per-task byte ranges of each `(shuffle_id, partition_idx)` group
+//! into a single combined file, then swaps the cache entries in place.
 //!
-//! - `multi_file`: M files per partition, M opens per partition read, and each
-//!   source file holds *exactly one partition* — coalescing fully empties each
-//!   source and lets us unlink it. This is the natural target: clean disk
-//!   reduction (M*N → N files) and clean read-side reduction (M opens → 1).
-//! - `oneshot`: M files total (each with N partitions packed by byte range).
-//!   Coalescing partition P pulls P's range from each source into a new file,
-//!   so read-side opens drop from M to 1 per partition; but the sources still
-//!   reference the other N-1 partitions, so we cannot unlink them. Costs an
-//!   extra copy of the partition's bytes, in exchange for a sequential layout
-//!   on the read side.
-//! - `append`: already 1 file per partition with M ranges in a shared file.
-//!   Coalescing rewrites those M ranges as one contiguous block. Marginal on
-//!   NVMe, helpful on EBS; the most expendable target.
+//! Asymmetry across writer modes:
+//! - `multi_file`: each source file holds exactly one partition — fully empty
+//!   after seal, so seal can unlink the source. Read-side opens M→1.
+//! - `oneshot`: source files hold all partitions; seal pulls each partition's
+//!   range into a new file but leaves the source intact (other partitions still
+//!   reference it). Read-side opens M→1; disk doubles until shuffle cleanup.
+//! - `append`: already 1 file per partition with M ranges; seal rewrites those
+//!   ranges contiguously. Marginal on NVMe, useful on EBS.
 //!
-//! Trigger: `register_shuffle_partitions` dispatches this on every map-task
-//! finalize. For each `(shuffle_id, partition_idx)` group whose entry count and
-//! total bytes exceed thresholds and that isn't already in flight, we plan +
-//! execute a rewrite on a bounded-concurrency permit pool.
+//! Output entries stay 1:1 with sources — `partition_ref_id`s are stable so any
+//! in-flight read ticket keeps resolving. Entries' `byte_ranges` are rewritten
+//! to point at slices of the new combined file; `get_shuffle_file_specs` already
+//! groups by `file_path`, so the read side collapses to one open + N seeks.
 //!
-//! Output entries stay 1:1 with sources — `partition_ref_id`s are stable for any
-//! in-flight tickets. Entries' `byte_ranges` are rewritten to point at slices of
-//! the new combined file; `get_shuffle_file_specs` already groups by `file_path`,
-//! so the read side naturally collapses to one open + N seeks.
-//!
-//! Fault model:
+//! Source-cleanup model:
 //! - For multi_file sources (each source fully consumed by one coalesce),
-//!   we unlink the source after the cache swap. POSIX semantics keep any
+//!   seal unlinks the source after the cache swap. POSIX semantics keep any
 //!   already-open reader's handle valid through the unlink.
-//! - For range-form sources (oneshot, append — sources may still be referenced
-//!   by other partitions or by entries we're not rewriting), we never unlink.
-//!   GC of those happens at shuffle-cleanup time elsewhere.
+//! - For range-form sources (oneshot, append — siblings may still reference
+//!   the file), we never unlink here. GC happens at shuffle-cleanup elsewhere.
 
 use std::{
-    collections::{HashMap, HashSet},
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
-    sync::Arc,
 };
 
 use arrow_ipc::writer::{IpcWriteOptions, StreamWriter};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_schema::schema::SchemaRef;
-use tokio::sync::{Mutex, Semaphore};
 
 use crate::shuffle_cache::PartitionCache;
 
@@ -56,82 +45,18 @@ use crate::shuffle_cache::PartitionCache;
 /// this so we must too when extracting body bytes from a whole-file entry.
 const IPC_EOS_LEN: u64 = 8;
 
-/// Tunables for the coalescer. All defaults conservative — coalesce only when
-/// there are clearly many small entries.
+/// Tunables for seal-time consolidation.
 #[derive(Clone, Copy, Debug)]
-pub struct CoalescerConfig {
-    /// Minimum number of cache entries for a `(shuffle_id, partition_idx)` group
-    /// before coalescing fires. Below this, the per-entry read cost is bounded
-    /// regardless and rewriting is wasted I/O.
-    pub min_entries: usize,
-    /// Minimum total bytes across the group's entries before coalescing fires.
-    /// Below this, the entries are small enough that any open-cost win is rounding.
-    pub min_bytes: u64,
-    /// Maximum number of coalesce tasks running concurrently across all partitions.
-    /// Keeps the coalescer from saturating disk bandwidth that map tasks need.
+pub struct SealConfig {
+    /// Maximum number of coalesce tasks running concurrently inside one seal call.
+    /// Keeps total disk I/O bounded; seal is single-shot per shuffle so this only
+    /// gates within-shuffle parallelism, not cross-shuffle.
     pub max_concurrent: usize,
 }
 
-impl Default for CoalescerConfig {
+impl Default for SealConfig {
     fn default() -> Self {
-        Self {
-            min_entries: 16,
-            min_bytes: 64 * 1024 * 1024,
-            max_concurrent: 2,
-        }
-    }
-}
-
-/// Inspects a snapshot of registered partition caches and returns the
-/// `(shuffle_id, partition_idx)` groups that meet the configured thresholds and
-/// aren't already being coalesced. Pure function over the snapshot — no I/O.
-pub fn pick_candidates<'a>(
-    entries: impl Iterator<Item = (u64, u64, &'a PartitionCache)>,
-    cfg: &CoalescerConfig,
-    in_flight: &HashSet<(u64, usize)>,
-) -> Vec<(u64, usize)> {
-    let mut by_group: HashMap<(u64, usize), (usize, u64)> = HashMap::new();
-    for (shuffle_id, ref_id, cache) in entries {
-        if cache.file_paths.is_empty() {
-            continue;
-        }
-        let partition_idx = (ref_id & 0xFFFF_FFFF) as usize;
-        let key = (shuffle_id, partition_idx);
-        if in_flight.contains(&key) {
-            continue;
-        }
-        let entry_bytes: u64 = cache.bytes_per_file.iter().map(|b| *b as u64).sum();
-        let agg = by_group.entry(key).or_insert((0, 0));
-        agg.0 += 1;
-        agg.1 += entry_bytes;
-    }
-    by_group
-        .into_iter()
-        .filter(|(_, (count, bytes))| *count >= cfg.min_entries && *bytes >= cfg.min_bytes)
-        .map(|(key, _)| key)
-        .collect()
-}
-
-/// Shared state for the server's coalescer. Held by `ShuffleFlightServer`.
-pub struct CoalescerState {
-    pub cfg: CoalescerConfig,
-    pub in_flight: Mutex<HashSet<(u64, usize)>>,
-    pub permits: Arc<Semaphore>,
-    /// Per-(shuffle_id, partition_idx) monotonic sequence to suffix coalesced
-    /// file names — guarantees uniqueness if the same group gets coalesced more
-    /// than once across separate registers.
-    pub seq: Mutex<HashMap<(u64, usize), u64>>,
-}
-
-impl CoalescerState {
-    pub fn new(cfg: CoalescerConfig) -> Self {
-        let permits = Arc::new(Semaphore::new(cfg.max_concurrent));
-        Self {
-            cfg,
-            in_flight: Mutex::new(HashSet::new()),
-            permits,
-            seq: Mutex::new(HashMap::new()),
-        }
+        Self { max_concurrent: 2 }
     }
 }
 

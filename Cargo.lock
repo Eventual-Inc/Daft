@@ -400,6 +400,8 @@ dependencies = [
  "arrow-schema 57.3.0",
  "arrow-select",
  "flatbuffers",
+ "lz4_flex",
+ "zstd",
 ]
 
 [[package]]
@@ -2604,6 +2606,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-shuffles",
  "daft-stats",
  "futures",
  "itertools 0.14.0",

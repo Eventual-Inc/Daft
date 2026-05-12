@@ -87,6 +87,11 @@ impl RepartitionNode {
         let transposed_outputs =
             transpose_materialized_outputs_from_stream(outputs, self.num_partitions).await?;
 
+        // Producer stage has fully drained; ask every participating shuffle
+        // server to consolidate its per-task entry groups into one file per
+        // partition before any read task fires. No-op on the Ray backend.
+        self.shuffle_backend.seal(&transposed_outputs).await?;
+
         self.shuffle_backend
             .emit_read_tasks(transposed_outputs, self.as_ref(), result_tx)
             .await

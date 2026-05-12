@@ -148,6 +148,25 @@ impl ShuffleBackend {
         }
     }
 
+    /// Seal-time consolidation: tell each participating worker's Flight server to
+    /// rewrite its per-task entry groups into one file per partition. No-op for
+    /// the Ray backend (in-memory ObjectRefs need no rewriting).
+    ///
+    /// Called once per shuffle, between the producer-stage drain and the
+    /// emission of any read task, so consumers only ever see the consolidated
+    /// layout.
+    pub(crate) async fn seal(
+        &self,
+        partition_groups: &[Vec<MaterializedOutput>],
+    ) -> DaftResult<()> {
+        match &self.backend {
+            DistributedShuffleBackend::Ray => Ok(()),
+            DistributedShuffleBackend::Flight(cfg) => {
+                flight::seal(cfg.shuffle_id, partition_groups).await
+            }
+        }
+    }
+
     pub(crate) async fn emit_read_tasks(
         &self,
         partition_groups: Vec<Vec<MaterializedOutput>>,
