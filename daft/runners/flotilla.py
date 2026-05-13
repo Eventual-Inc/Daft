@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import json
 import logging
 import os
 import shutil
@@ -24,6 +25,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    get_loaded_extension_paths,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -106,8 +108,6 @@ def _load_extensions_from_env() -> None:
     paths_json = os.environ.get("DAFT_EXTENSION_PATHS")
     if not paths_json:
         return
-    import json
-
     import daft
 
     try:
@@ -129,10 +129,6 @@ def _extension_runtime_env() -> dict[str, dict[str, str]]:
     Returns an empty dict if no extensions are loaded. Callers should merge
     the returned dict into any existing `runtime_env` they pass to Ray.
     """
-    import json
-
-    from daft.daft import get_loaded_extension_paths
-
     paths = get_loaded_extension_paths()
     if not paths:
         return {}
