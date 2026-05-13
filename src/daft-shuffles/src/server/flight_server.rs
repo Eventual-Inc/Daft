@@ -1250,14 +1250,16 @@ impl FlightService for ShuffleFlightServer {
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
 
-        // Env-gated read-side concat: server reads M source batches, concats
-        // arrow-level into chunks of `chunk_target_bytes`, emits fewer/bigger
-        // FlightData items. Eliminates the client's per-message Flight tax at
-        // the cost of one in-memory concat per chunk.
-        let read_concat = std::env::var("DAFT_SHUFFLE_READ_CONCAT_BYTES")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .filter(|&n| n > 0);
+        // Read-side concat: server reads M source batches, concats arrow-level
+        // into chunks of `chunk_target_bytes`, emits fewer/bigger FlightData
+        // items. Eliminates the client's per-message Flight tax at the cost of
+        // one in-memory concat per chunk. Default 4 MiB target (proven 21% win
+        // at N=8192/M=200/8GiB on NVMe; bounded transient memory). Override
+        // via DAFT_SHUFFLE_READ_CONCAT_BYTES; set to 0 to disable.
+        let read_concat: Option<usize> = match std::env::var("DAFT_SHUFFLE_READ_CONCAT_BYTES") {
+            Ok(v) => v.parse::<usize>().ok().filter(|&n| n > 0),
+            Err(_) => Some(4 * 1024 * 1024),
+        };
 
         let flight_data_stream: Pin<
             Box<dyn Stream<Item = Result<FlightData, Status>> + Send + 'static>,
