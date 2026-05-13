@@ -16,6 +16,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# SQLAlchemy is an optional dependency (the connectorx-only code path doesn't
+# require it). Try to import `make_url` once at module load so `_redact_url`
+# — which runs on every error message and is meant to be cheap — can take
+# the SA branch without a per-call import lookup. The actual sqlalchemy.engine
+# imports used inside class methods stay inline (they only fire when the SA
+# code path is actually taken).
+try:
+    from sqlalchemy.engine import make_url as _sa_make_url
+except ImportError:
+    _sa_make_url = None  # type: ignore[assignment]
+
+
 # Query-parameter names whose values must be redacted. Substring match,
 # case-insensitive. Covers password / OAuth token / API key / key passphrase
 # styles used by common SQL drivers (Trino JWT auth, Snowflake key auth,
@@ -43,21 +55,21 @@ def _redact_url(url: str) -> str:
     # mis-parses, dropping the password into the fragment/path/query and
     # making it look "absent" — which would otherwise cause this function to
     # return the URL unchanged and leak credentials.
-    try:
-        from sqlalchemy.engine import make_url
-
-        sa_url = make_url(url)
-        sensitive_keys = [k for k in sa_url.query if _is_sensitive_param(k)]
-        if sa_url.password is None and not sensitive_keys:
-            return url
-        if sensitive_keys:
-            new_query = {k: ("***" if _is_sensitive_param(k) else v) for k, v in sa_url.query.items()}
-            sa_url = sa_url.set(query=new_query)
-        # SQLAlchemy percent-encodes '*' to '%2A' in query values; undo that
-        # for the redaction placeholder so the rendered URL stays readable.
-        return sa_url.render_as_string(hide_password=True).replace("%2A%2A%2A", "***")
-    except Exception:
-        pass
+    if _sa_make_url is not None:
+        try:
+            sa_url = _sa_make_url(url)
+            sensitive_keys = [k for k in sa_url.query if _is_sensitive_param(k)]
+            if sa_url.password is None and not sensitive_keys:
+                return url
+            if sensitive_keys:
+                new_query = {k: ("***" if _is_sensitive_param(k) else v) for k, v in sa_url.query.items()}
+                sa_url = sa_url.set(query=new_query)
+            # SQLAlchemy percent-encodes '*' to '%2A' in query values; undo
+            # that for the redaction placeholder so the rendered URL stays
+            # readable in error output.
+            return sa_url.render_as_string(hide_password=True).replace("%2A%2A%2A", "***")
+        except Exception:
+            pass
 
     # Fallback for environments without SQLAlchemy (the connectorx-only path).
     try:
@@ -75,20 +87,24 @@ def _redact_url(url: str) -> str:
             host = parsed.hostname or ""
             if parsed.port is not None:
                 host = f"{host}:{parsed.port}"
-            return parsed._replace(netloc=f"{userinfo}@{host}", query=redacted_query).geturl()
+            return (
+                parsed._replace(netloc=f"{userinfo}@{host}", query=redacted_query).geturl().replace("%2A%2A%2A", "***")
+            )
         if any_sensitive_query:
-            return parsed._replace(query=redacted_query).geturl()
-        # urlparse missed the password — but if there's an "@" before the
-        # path/query/fragment, it's almost certainly userinfo with unescaped
-        # special chars in the password. Over-redact to be safe.
-        if "://" in url:
+            return parsed._replace(query=redacted_query).geturl().replace("%2A%2A%2A", "***")
+        # If urlparse couldn't extract a username but the URL has "@" in the
+        # path-prefix region (before the first "/"), the userinfo almost
+        # certainly contains unescaped URL-special chars in the password
+        # (e.g. "trino://alice:p#ss@host/db" — urlparse stops the netloc at
+        # "#", losing the password). Over-redact to be safe. We deliberately
+        # gate on `username is None` so legitimate no-password URLs like
+        # "mysql://user@host/db" (which urlparse handles fine) pass through
+        # unchanged.
+        if "://" in url and parsed.username is None:
             after_scheme = url.split("://", 1)[1]
-            authority = after_scheme
-            for delim in ("/", "?", "#"):
-                idx = authority.find(delim)
-                if idx != -1:
-                    authority = authority[:idx]
-            if "@" in authority:
+            path_start = after_scheme.find("/")
+            authority_prefix = after_scheme if path_start == -1 else after_scheme[:path_start]
+            if "@" in authority_prefix:
                 return "<redacted>"
         return url
     except Exception:

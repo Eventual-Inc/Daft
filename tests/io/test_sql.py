@@ -196,6 +196,31 @@ def test_redact_url_redacts_sensitive_query_params(param_name):
     assert "http_scheme=https" in redacted
 
 
+def test_redact_url_fallback_when_sqlalchemy_unavailable(monkeypatch):
+    """Force the urllib.parse fallback by simulating SQLAlchemy being absent.
+
+    The fallback path is what runs in connectorx-only environments. Pin down
+    that it behaves consistently with the primary path for the safe cases
+    (no-password user-only URLs pass through unchanged) and still redacts
+    the leak vectors (sensitive query params, special-char passwords).
+    """
+    from daft.sql import sql_connection as sc
+
+    monkeypatch.setattr(sc, "_sa_make_url", None)
+
+    # No-password user-only URL: must NOT over-redact (Greptile-flagged divergence).
+    assert _redact_url("mysql://user@host/db") == "mysql://user@host/db"
+    # Standard userinfo password — fallback redacts.
+    assert _redact_url("postgresql://user:hunter2@host:5432/db") == "postgresql://user:***@host:5432/db"
+    # Sensitive query param — fallback redacts.
+    redacted = _redact_url("trino://alice@host:443?access_token=SECRET&http_scheme=https")
+    assert "SECRET" not in redacted
+    assert "access_token=***" in redacted
+    # Special-char password — urlparse loses the password into the fragment;
+    # over-redact since we can't safely reconstruct.
+    assert _redact_url("trino://alice:p#ss@host:443/db") == "<redacted>"
+
+
 def test_redact_url_customer_jwt_repro():
     """Customer-reported leak shape: JWT in `access_token=` query parameter, no userinfo password.
 
