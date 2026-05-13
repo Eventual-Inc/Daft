@@ -33,9 +33,7 @@ use std::{
     path::Path,
 };
 
-use arrow_array::RecordBatch;
 use arrow_ipc::writer::{IpcWriteOptions, StreamWriter};
-use arrow_select::concat::concat_batches;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_schema::schema::SchemaRef;
@@ -54,19 +52,11 @@ pub struct SealConfig {
     /// Keeps total disk I/O bounded; seal is single-shot per shuffle so this only
     /// gates within-shuffle parallelism, not cross-shuffle.
     pub max_concurrent: usize,
-    /// Arrow-level batch merge during seal: decode IPC bodies, concat the
-    /// RecordBatches, re-encode as one batch per partition. Collapses M
-    /// per-partition batches over Flight to 1. Costs CPU during seal, saves
-    /// per-batch overhead during read.
-    pub merge_batches: bool,
 }
 
 impl Default for SealConfig {
     fn default() -> Self {
-        Self {
-            max_concurrent: 2,
-            merge_batches: false,
-        }
+        Self { max_concurrent: 2 }
     }
 }
 
@@ -120,15 +110,9 @@ pub struct CoalesceOutcome {
 /// Execute the plan: read each source byte range, append to the output file,
 /// build updated cache entries that point at the output file. Runs on the
 /// blocking IO pool — file copy is pure syscalls, no async benefit.
-pub async fn execute_plan(plan: CoalescePlan, cfg: SealConfig) -> DaftResult<CoalesceOutcome> {
+pub async fn execute_plan(plan: CoalescePlan, _cfg: SealConfig) -> DaftResult<CoalesceOutcome> {
     get_io_runtime(true)
-        .spawn_blocking(move || {
-            if cfg.merge_batches {
-                execute_plan_sync_merge(plan)
-            } else {
-                execute_plan_sync(plan)
-            }
-        })
+        .spawn_blocking(move || execute_plan_sync(plan))
         .await?
 }
 
@@ -268,154 +252,3 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
     })
 }
 
-/// Arrow-level merge: decode source batches, concat into one RecordBatch per
-/// partition, re-encode. The first cache entry in `entries` carries the merged
-/// data; the remaining entries are rewritten to empty so the reducer's M-way
-/// query still resolves but only one entry contributes bytes.
-fn execute_plan_sync_merge(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
-    let CoalescePlan {
-        shuffle_id: _,
-        partition_idx: _,
-        entries,
-        out_path,
-    } = plan;
-
-    if entries.is_empty() {
-        return Ok(CoalesceOutcome {
-            updated_entries: Vec::new(),
-            orphaned_sources: Vec::new(),
-        });
-    }
-
-    let schema = entries[0].1.schema.clone();
-    let arrow_schema = schema.to_arrow()?;
-    let arrow_schema_ref: arrow_schema::SchemaRef = std::sync::Arc::new(arrow_schema.clone());
-    let header_len = schema_header_len(&schema)?;
-
-    // Build a single in-memory stream = [schema header][all body bytes][EOS]
-    // and decode it once via StreamReader. Cheaper than per-source streams
-    // because the schema is only parsed once.
-    let mut header_bytes: Vec<u8> = Vec::with_capacity(header_len as usize);
-    {
-        let opts = IpcWriteOptions::default();
-        let _ = StreamWriter::try_new_with_options(&mut header_bytes, &arrow_schema, opts)
-            .map_err(|e| DaftError::InternalError(format!("merge header probe: {}", e)))?;
-    }
-    // StreamWriter::try_new emits the schema header; we'll discard whatever EOS
-    // it stamps when dropped. But Drop on StreamWriter doesn't call finish, so
-    // header_bytes is just the schema header — good.
-    debug_assert_eq!(header_bytes.len() as u64, header_len);
-
-    let mut concat_body: Vec<u8> = Vec::new();
-    let mut total_rows: usize = 0;
-    let mut total_size_bytes: usize = 0;
-    let mut orphaned_sources: Vec<String> = Vec::new();
-
-    for (_, cache) in &entries {
-        total_rows += cache.num_rows;
-        total_size_bytes += cache.size_bytes;
-        let source_ranges: Vec<(String, u64, u64)> = match &cache.byte_ranges {
-            Some(ranges) => cache
-                .file_paths
-                .iter()
-                .zip(ranges.iter())
-                .map(|(p, (s, e))| (p.clone(), *s, *e))
-                .collect(),
-            None => {
-                let mut v = Vec::with_capacity(cache.file_paths.len());
-                for p in &cache.file_paths {
-                    let meta = std::fs::metadata(p)?;
-                    let size = meta.len();
-                    let body_start = header_len.min(size);
-                    let body_end = size.saturating_sub(IPC_EOS_LEN).max(body_start);
-                    v.push((p.clone(), body_start, body_end));
-                }
-                v
-            }
-        };
-        for (src_path, start, end) in &source_ranges {
-            let len = end.saturating_sub(*start) as usize;
-            if len == 0 {
-                continue;
-            }
-            let mut src = std::fs::File::open(src_path)?;
-            src.seek(SeekFrom::Start(*start))?;
-            let cur = concat_body.len();
-            concat_body.resize(cur + len, 0);
-            src.read_exact(&mut concat_body[cur..cur + len])?;
-        }
-        if cache.byte_ranges.is_none() {
-            orphaned_sources.extend(cache.file_paths.iter().cloned());
-        }
-    }
-
-    // Decode all batches, concat, write back as one batch.
-    let mut full_stream: Vec<u8> =
-        Vec::with_capacity(header_bytes.len() + concat_body.len() + IPC_EOS_LEN as usize);
-    full_stream.extend_from_slice(&header_bytes);
-    full_stream.extend_from_slice(&concat_body);
-    full_stream.extend_from_slice(&[0xFFu8, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0]);
-
-    let reader = arrow_ipc::reader::StreamReader::try_new(std::io::Cursor::new(&full_stream[..]), None)
-        .map_err(|e| DaftError::InternalError(format!("merge stream decode init: {}", e)))?;
-    let mut batches: Vec<RecordBatch> = Vec::new();
-    for b in reader {
-        batches.push(b.map_err(|e| DaftError::InternalError(format!("merge batch decode: {}", e)))?);
-    }
-    let merged = concat_batches(&arrow_schema_ref, batches.iter())
-        .map_err(|e| DaftError::InternalError(format!("merge concat_batches: {}", e)))?;
-
-    // Write merged batch — file = [schema header][1 batch][EOS]. Body bytes
-    // for the consolidated layout are [header_len, total - EOS_LEN).
-    {
-        let out = std::fs::File::create(&out_path)?;
-        let opts = IpcWriteOptions::default();
-        let mut writer = StreamWriter::try_new_with_options(out, &arrow_schema, opts)
-            .map_err(|e| DaftError::InternalError(format!("merge writer init: {}", e)))?;
-        writer
-            .write(&merged)
-            .map_err(|e| DaftError::InternalError(format!("merge write batch: {}", e)))?;
-        writer
-            .finish()
-            .map_err(|e| DaftError::InternalError(format!("merge writer finish: {}", e)))?;
-    }
-    let total = std::fs::metadata(&out_path)?.len();
-    let body_start = header_len;
-    let body_end = total.saturating_sub(IPC_EOS_LEN).max(body_start);
-    let body_len = body_end - body_start;
-
-    // First entry inherits the merged data; rest become empty.
-    let mut updated_entries: Vec<(u64, PartitionCache)> = Vec::with_capacity(entries.len());
-    let mut first = true;
-    for (ref_id, cache) in entries {
-        let (paths, ranges, sizes, rows, size) = if first {
-            first = false;
-            (
-                vec![out_path.clone()],
-                vec![(body_start, body_end)],
-                vec![body_len as usize],
-                total_rows,
-                total_size_bytes,
-            )
-        } else {
-            (Vec::new(), Vec::new(), Vec::new(), 0, 0)
-        };
-        updated_entries.push((
-            ref_id,
-            PartitionCache {
-                partition_ref_id: cache.partition_ref_id,
-                schema: cache.schema.clone(),
-                bytes_per_file: sizes,
-                file_paths: paths,
-                num_rows: rows,
-                size_bytes: size,
-                byte_ranges: Some(ranges),
-            },
-        ));
-    }
-
-    Ok(CoalesceOutcome {
-        updated_entries,
-        orphaned_sources,
-    })
-}
