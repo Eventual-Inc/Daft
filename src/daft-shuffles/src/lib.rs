@@ -1,5 +1,6 @@
 pub mod client;
 pub mod coalescer;
+pub mod decode_cache;
 pub mod multi_partition_cache;
 pub mod oneshot_writer;
 pub mod server;

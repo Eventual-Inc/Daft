@@ -5,6 +5,7 @@ arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
 arrow-select = "57.1.0"
 async-channel = "2.5.0"
+dashmap = {workspace = true}
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

@@ -3375,6 +3375,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-schema",
  "daft-writers",
+ "dashmap",
  "futures",
  "tokio",
  "tonic",

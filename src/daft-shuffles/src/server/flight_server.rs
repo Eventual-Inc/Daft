@@ -730,34 +730,47 @@ fn read_spec_sync(
     let mut batches = Vec::new();
     match spec {
         FileReadSpec::Whole { path, slot: _ } => {
-            // Per-spec File::open + sequential read. Sharing one FD across reducers
-            // via `slot_or_open` defeats the kernel's per-FD readahead heuristic on
-            // big shuffles whose working set exceeds page cache. With each spec
-            // getting its own FD and `seek + take` (sequential reads, not pread),
-            // the kernel sees a clean linear access pattern and ramps readahead
-            // aggressively. Measured 6% reduce-side throughput regression on big
-            // shuffles attributed to the FD-cache + pread combo.
+            // Per-spec File::open. Sharing one FD across reducers via slot_or_open
+            // defeats the kernel's per-FD readahead heuristic on big shuffles
+            // whose working set exceeds page cache (measured ~6% throughput drop).
+            // Legacy multi_file path; not on the hot oneshot path, no decode cache.
             let file = std::fs::File::open(&path)?;
             let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
             read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
             let reader = StdBufReader::with_capacity(64 * 1024, file);
             let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-            decode_batches_into(stream_reader, fields, schema, &mut batches)?;
+            let arrow_batches: Vec<arrow_array::RecordBatch> =
+                stream_reader.collect::<Result<_, _>>()?;
+            arrow_batches_to_daft_into(&arrow_batches, fields, schema, &mut batches)?;
         }
         FileReadSpec::Ranges { path, slot: _, ranges } => {
-            let mut file = std::fs::File::open(&path)?;
+            // Lazy per-spec File::open: only opened on the first cache miss.
+            // All cache hits → zero file syscalls. seek+take rather than pread
+            // gives the kernel a sequential per-FD access pattern (readahead).
+            let mut file: Option<std::fs::File> = None;
             let mut body_bytes_acc: u64 = 0;
             for (start, end) in ranges {
-                file.seek(std::io::SeekFrom::Start(start))?;
-                let body_bytes = end - start;
-                body_bytes_acc += body_bytes;
-                let take = (&mut file).take(body_bytes);
-                let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                let with_body = Read::chain(schema_prefix, take);
-                let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
-                let reader = StdBufReader::with_capacity(64 * 1024, chained);
-                let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                decode_batches_into(stream_reader, fields, schema, &mut batches)?;
+                body_bytes_acc += end - start;
+                let key = (path.clone(), start, end);
+                let arrow_batches = match crate::decode_cache::global().get(&key) {
+                    Some(cached) => cached,
+                    None => {
+                        let f = match file.as_mut() {
+                            Some(f) => f,
+                            None => {
+                                file = Some(std::fs::File::open(&path)?);
+                                file.as_mut().unwrap()
+                            }
+                        };
+                        let decoded =
+                            decode_range_to_arrow_batches(f, start, end, schema_header_bytes)?;
+                        let bytes = crate::decode_cache::estimate_batches_bytes(&decoded);
+                        let arc = Arc::new(decoded);
+                        crate::decode_cache::global().put(key, arc.clone(), bytes);
+                        arc
+                    }
+                };
+                arrow_batches_to_daft_into(&arrow_batches, fields, schema, &mut batches)?;
             }
             read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
         }
@@ -765,14 +778,42 @@ fn read_spec_sync(
     Ok(batches)
 }
 
-fn decode_batches_into<R: std::io::Read>(
-    stream_reader: arrow_ipc::reader::StreamReader<R>,
+/// Read `[start, end)` from `file`, prepend the schema header + append the EOS
+/// marker so a `StreamReader` parses it cleanly, and return the decoded arrow
+/// batches. Cache-friendly: the returned Vec is owned and Arc-wrappable.
+///
+/// Uses `seek+take` (not pread) so the kernel sees a sequential per-FD access
+/// pattern and ramps readahead. See the per-spec `File::open` rationale at
+/// the call sites.
+fn decode_range_to_arrow_batches(
+    file: &mut std::fs::File,
+    start: u64,
+    end: u64,
+    schema_header_bytes: &[u8],
+) -> DaftResult<Vec<arrow_array::RecordBatch>> {
+    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
+    let body_bytes = end - start;
+    file.seek(std::io::SeekFrom::Start(start))?;
+    let take = (&mut *file).take(body_bytes);
+    let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
+    let with_body = Read::chain(schema_prefix, take);
+    let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+    let reader = StdBufReader::with_capacity(64 * 1024, chained);
+    let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+    stream_reader
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(DaftError::ArrowRsError)
+}
+
+/// Convert `arrow_batches` to daft `RecordBatch`es by Arc-wrapping each column
+/// as a `Series`. Zero-copy for primitive types.
+fn arrow_batches_to_daft_into(
+    arrow_batches: &[arrow_array::RecordBatch],
     fields: &[FieldRef],
     schema: &SchemaRef,
     out: &mut Vec<RecordBatch>,
 ) -> DaftResult<()> {
-    for arrow_batch in stream_reader {
-        let arrow_batch = arrow_batch?;
+    for arrow_batch in arrow_batches {
         let num_rows = arrow_batch.num_rows();
         let columns = fields
             .iter()
@@ -800,7 +841,7 @@ fn concat_specs_into_flight_datas_sync(
     schema_header_bytes: &[u8],
     chunk_target_bytes: usize,
 ) -> DaftResult<Vec<FlightData>> {
-    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
+    use std::io::BufReader as StdBufReader;
 
     let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
     let mut pending_bytes: usize = 0;
@@ -814,7 +855,7 @@ fn concat_specs_into_flight_datas_sync(
     let mut dict_tracker = arrow_ipc::writer::DictionaryTracker::new(false);
     let mut compression_ctx = arrow_ipc::writer::CompressionContext::default();
 
-    let mut flush = |pending: &mut Vec<arrow_array::RecordBatch>,
+    let flush = |pending: &mut Vec<arrow_array::RecordBatch>,
                      pending_bytes: &mut usize,
                      flight_datas: &mut Vec<FlightData>,
                      dict_tracker: &mut arrow_ipc::writer::DictionaryTracker,
@@ -886,55 +927,57 @@ fn concat_specs_into_flight_datas_sync(
                 }
             }
             FileReadSpec::Ranges { path, slot: _, ranges } => {
-                let t_o = Instant::now();
-                // Per-spec File::open + seek+take rather than a cached FD + pread:
-                // sharing one FD across reducers defeats per-FD readahead and
-                // showed up as ~6% reduce-side throughput drop on big shuffles.
-                let mut file = std::fs::File::open(&path)?;
-                read_agg::CONCAT_OPEN_US
-                    .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
-                read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
+                // Lazy per-spec File::open; only on first cache miss. All cache
+                // hits → zero file syscalls. seek+take rather than pread so the
+                // kernel sees a sequential per-FD access pattern (readahead).
+                let mut file: Option<std::fs::File> = None;
                 let mut body_bytes_acc: u64 = 0;
                 for (start, end) in ranges {
-                    let body_bytes = end - start;
-                    body_bytes_acc += body_bytes;
-                    let t_sk = Instant::now();
-                    file.seek(std::io::SeekFrom::Start(start))?;
-                    read_agg::CONCAT_SEEK_US
-                        .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    let take = (&mut file).take(body_bytes);
-                    let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                    let with_body = Read::chain(schema_prefix, take);
-                    let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
-                    let t_si = Instant::now();
-                    let reader = StdBufReader::with_capacity(64 * 1024, chained);
-                    let stream_reader =
-                        arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                    read_agg::CONCAT_STREAM_INIT_US
-                        .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    let mut stream_reader = stream_reader;
-                    loop {
-                        let t_d = Instant::now();
-                        let next = stream_reader.next();
-                        read_agg::CONCAT_DECODE_US
-                            .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
-                        match next {
-                            Some(b) => {
-                                let batch = b?;
-                                read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
-                                pending_bytes += estimate_batch_size(&batch);
-                                pending.push(batch);
-                                if pending_bytes >= chunk_target_bytes {
-                                    flush(
-                                        &mut pending,
-                                        &mut pending_bytes,
-                                        &mut flight_datas,
-                                        &mut dict_tracker,
-                                        &mut compression_ctx,
-                                    )?;
+                    body_bytes_acc += end - start;
+                    let key = (path.clone(), start, end);
+                    let arrow_batches = match crate::decode_cache::global().get(&key) {
+                        Some(cached) => cached,
+                        None => {
+                            let f = match file.as_mut() {
+                                Some(f) => f,
+                                None => {
+                                    let t_o = Instant::now();
+                                    file = Some(std::fs::File::open(&path)?);
+                                    read_agg::CONCAT_OPEN_US.fetch_add(
+                                        t_o.elapsed().as_micros() as u64,
+                                        Ordering::Relaxed,
+                                    );
+                                    read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
+                                    file.as_mut().unwrap()
                                 }
-                            }
-                            None => break,
+                            };
+                            let t_d = Instant::now();
+                            let decoded = decode_range_to_arrow_batches(
+                                f,
+                                start,
+                                end,
+                                schema_header_bytes,
+                            )?;
+                            read_agg::CONCAT_DECODE_US
+                                .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                            let bytes = crate::decode_cache::estimate_batches_bytes(&decoded);
+                            let arc = Arc::new(decoded);
+                            crate::decode_cache::global().put(key, arc.clone(), bytes);
+                            arc
+                        }
+                    };
+                    for batch in arrow_batches.iter() {
+                        read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                        pending_bytes += estimate_batch_size(batch);
+                        pending.push(batch.clone());
+                        if pending_bytes >= chunk_target_bytes {
+                            flush(
+                                &mut pending,
+                                &mut pending_bytes,
+                                &mut flight_datas,
+                                &mut dict_tracker,
+                                &mut compression_ctx,
+                            )?;
                         }
                     }
                 }
