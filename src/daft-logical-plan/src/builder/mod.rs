@@ -17,8 +17,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -42,7 +42,7 @@ use crate::{
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self, Limit, Offset, SetQuantifier, UnionStrategy,
+        self, Limit, Offset, SetQuantifier, UnionStrategy, get_right_cols_to_drop,
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
@@ -142,6 +142,25 @@ impl LogicalPlanBuilder {
 
     pub fn with_plan_id(&self, id: usize) -> Self {
         self.with_new_plan(self.plan.clone().with_plan_id(id))
+    }
+
+    /// Attach checkpoint configuration to the current plan's Source node.
+    ///
+    /// Panics if the current plan root is not a `LogicalPlan::Source`.
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::CheckpointConfig,
+    ) -> DaftResult<Self> {
+        match self.plan.as_ref() {
+            LogicalPlan::Source(source) => {
+                let new_source = source.clone().with_checkpoint(config);
+                Ok(self.with_new_plan(LogicalPlan::Source(new_source)))
+            }
+            other => Err(DaftError::ValueError(format!(
+                "with_checkpoint can only be called on a Source node, got: {}",
+                other.name()
+            ))),
+        }
     }
 
     pub fn in_memory_scan(
@@ -1021,7 +1040,12 @@ impl LogicalPlanBuilder {
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(Some(execution_config.clone())),
+                    |builder| {
+                        let use_dp_ccp = cfg
+                            .as_ref()
+                            .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                        builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                    },
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -1091,7 +1115,12 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config.clone())),
+                |builder| {
+                    let use_dp_ccp = cfg
+                        .as_ref()
+                        .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                    builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                },
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1251,6 +1280,13 @@ impl PyLogicalPlanBuilder {
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
+    }
+
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::python::PyCheckpointConfig,
+    ) -> PyResult<Self> {
+        Ok(self.builder.with_checkpoint(config.config)?.into())
     }
 
     pub fn with_planning_config(

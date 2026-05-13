@@ -29,6 +29,7 @@ pub(crate) struct WriteStats {
     bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
 
     node_kv: Vec<KeyValue>,
 }
@@ -60,6 +61,7 @@ impl RuntimeStats for WriteStats {
                 None,
                 Some(UNIT_BYTES.into()),
             ),
+            num_tasks: meter.num_tasks_metric(),
 
             node_kv,
         }
@@ -76,6 +78,7 @@ impl RuntimeStats for WriteStats {
             rows_written,
             bytes_written,
             bytes_in: self.bytes_in.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -97,6 +100,10 @@ impl RuntimeStats for WriteStats {
 
     // bytes_out for WriteSink doesn't make sense — bytes_written is the meaningful metric.
     fn add_bytes_out(&self, _bytes: u64) {}
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
 }
 
 #[derive(Debug)]

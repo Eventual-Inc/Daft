@@ -12,7 +12,11 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub struct FilterStats {
     duration_us: Counter,
@@ -20,6 +24,7 @@ pub struct FilterStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     selectivity: Gauge,
     node_kv: Vec<KeyValue>,
 }
@@ -46,6 +51,7 @@ impl RuntimeStats for FilterStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             selectivity: meter.f64_gauge("selectivity"),
             node_kv,
         }
@@ -64,6 +70,7 @@ impl RuntimeStats for FilterStats {
             selectivity,
             bytes_in: self.bytes_in.load(ordering),
             bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -88,6 +95,10 @@ impl RuntimeStats for FilterStats {
     fn add_bytes_out(&self, bytes: u64) {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
     }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
 }
 
 pub struct FilterOperator {
@@ -111,6 +122,7 @@ impl IntermediateOperator for FilterOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let predicate = self.predicate.clone();
         task_spawner

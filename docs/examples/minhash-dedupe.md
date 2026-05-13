@@ -411,12 +411,12 @@ df_edges.show(5)
 First we need a few utilities
 
 ```python
-from daft import struct, Expression, DataFrame
-from daft.functions import when
+from daft import Expression, DataFrame
+from daft.functions import when, to_struct
 
 def ee(u: Expression, v: Expression):
     """Create a struct Expression with fields 'u' and 'v' for representing edges."""
-    return struct(u.alias("u"), v.alias("v"))
+    return to_struct(u.alias("u"), v.alias("v"))
 
 def canonicalize(edges: DataFrame) -> DataFrame:
     """Order edges so u < v and deduplicate for canonical representation."""

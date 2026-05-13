@@ -223,6 +223,16 @@ def power(base: Expression, expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("power", base, expr)
 
 
+def pmod(a: Expression, b: Expression) -> Expression:
+    """Returns the positive modulo of ``a`` by ``b``.
+
+    Computes ``r = a % b``; returns ``r`` when ``r >= 0`` and ``(r + b) % b`` otherwise.
+    Examples: ``pmod(-7, 3) == 2``, ``pmod(7, -3) == 1``, ``pmod(-7, -3) == -1``.
+    Returns NULL when ``b`` is 0.
+    """
+    return Expression._call_builtin_scalar_fn("pmod", a, b)
+
+
 def exp(expr: Expression) -> Expression:
     """The e^expr of a numeric expression."""
     return Expression._call_builtin_scalar_fn("exp", expr)
@@ -272,6 +282,15 @@ def between(expr: Expression, lower: Expression | int | float, upper: Expression
     upper = Expression._to_expression(upper)
 
     return Expression._from_pyexpr(expr._expr.between(lower._expr, upper._expr))
+
+
+def bin(expr: Expression) -> Expression:
+    """Returns the string representation of the binary value of an integer.
+
+    Inputs are promoted to 64-bit before conversion; negatives produce
+    64-character two's-complement strings (e.g. ``bin(-1)`` returns 64 ones).
+    """
+    return Expression._call_builtin_scalar_fn("bin", expr)
 
 
 def is_nan(expr: Expression) -> Expression:

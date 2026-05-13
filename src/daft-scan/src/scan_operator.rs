@@ -7,7 +7,7 @@ use std::{
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns, ScanTaskRef, SupportsPushdownFilters};
+use crate::{PartitionField, Pushdowns, ScanTaskRef, Statistics, SupportsPushdownFilters};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -35,6 +35,14 @@ pub trait ScanOperator: Send + Sync + Debug {
 
     fn supports_count_pushdown(&self) -> bool {
         false
+    }
+
+    /// Pre-computed statistics for this source, if known cheaply (e.g. from
+    /// manifest metadata). The optimizer populates `PlanStats` from this when
+    /// available, skipping per-scan-task aggregation. Returning `None` (the
+    /// default) preserves today's behavior of summing stats from scan tasks.
+    fn statistics(&self) -> Option<Statistics> {
+        None
     }
 
     fn supported_count_modes(&self) -> Vec<daft_core::count_mode::CountMode> {

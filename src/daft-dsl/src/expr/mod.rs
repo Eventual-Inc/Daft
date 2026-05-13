@@ -37,8 +37,8 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
-        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
-        function_display_without_formatter, function_semantic_id,
+        AggFnHandle, BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
+        FunctionEvaluator, function_display_without_formatter, function_semantic_id,
         python::{LegacyPythonUDF, RuntimePyObject},
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -464,6 +464,38 @@ pub enum AggExpr {
         func: MapGroupsFn,
         inputs: Vec<ExprRef>,
     },
+
+    #[display("{handle}({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFn {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal step 1: produces a Struct column of typed
+    /// accumulator states (one per group) from one input block.
+    #[display("{handle}.__map({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFnMap {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal: merges Struct partial states from `AggFnMap`
+    /// (or other `AggFnCombine` outputs) without finalizing.
+    /// Idempotent: combine(combine(s)) == combine(s).
+    #[display("{handle}.__combine({partial})")]
+    AggFnCombine {
+        handle: AggFnHandle,
+        partial: ExprRef,
+    },
+
+    /// Planner-internal final step: merges Struct partial states and
+    /// then finalizes to produce the typed output.
+    #[display("{handle}.__reduce({partial})")]
+    AggFnReduce {
+        handle: AggFnHandle,
+        partial: ExprRef,
+        return_field: Field,
+    },
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -566,6 +598,10 @@ impl AggExpr {
             Self::Median(_) => "Median",
             Self::Skew(_) => "Skew",
             Self::MapGroups { .. } => "Map Groups",
+            Self::AggFn { .. } => "Extension Agg",
+            Self::AggFnMap { .. } => "Extension Agg (Map)",
+            Self::AggFnCombine { .. } => "Extension Agg (Combine)",
+            Self::AggFnReduce { .. } => "Extension Agg (Reduce)",
         }
     }
 
@@ -594,6 +630,10 @@ impl AggExpr {
             | Self::Median(expr)
             | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
+            Self::AggFn { handle, .. }
+            | Self::AggFnMap { handle, .. }
+            | Self::AggFnCombine { handle, .. }
+            | Self::AggFnReduce { handle, .. } => handle.name(),
         }
     }
 
@@ -704,6 +744,34 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_skew()"))
             }
             Self::MapGroups { func, inputs } => func.semantic_id(inputs, schema),
+            Self::AggFn { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFn_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnMap { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFnMap_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnCombine {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnCombine_{}({partial_id})", handle.name()))
+            }
+            Self::AggFnReduce {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnReduce_{}({partial_id})", handle.name()))
+            }
         }
     }
 
@@ -732,11 +800,18 @@ impl AggExpr {
             | Self::Median(expr)
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
+            Self::AggFn { inputs, .. } | Self::AggFnMap { inputs, .. } => inputs.clone(),
+            Self::AggFnCombine { partial, .. } | Self::AggFnReduce { partial, .. } => {
+                vec![partial.clone()]
+            }
         }
     }
 
     pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
-        if let Self::MapGroups { func: _, inputs } = &self {
+        if let Self::MapGroups { func: _, inputs }
+        | Self::AggFn { inputs, .. }
+        | Self::AggFnMap { inputs, .. } = &self
+        {
             assert_eq!(children.len(), inputs.len());
         } else {
             assert_eq!(children.len(), 1);
@@ -764,6 +839,27 @@ impl AggExpr {
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.with_new_children(children.clone()),
                 inputs: children,
+            },
+            Self::AggFn { handle, inputs: _ } => Self::AggFn {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnMap { handle, inputs: _ } => Self::AggFnMap {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnCombine { handle, .. } => Self::AggFnCombine {
+                handle: handle.clone(),
+                partial: children.remove(0),
+            },
+            Self::AggFnReduce {
+                handle,
+                partial: _,
+                return_field,
+            } => Self::AggFnReduce {
+                handle: handle.clone(),
+                partial: children.remove(0),
+                return_field: return_field.clone(),
             },
             Self::ApproxPercentile(ApproxPercentileParams {
                 percentiles,
@@ -862,7 +958,18 @@ impl AggExpr {
                             )));
                         }
                     }
-                    SketchType::HyperLogLog => DataType::UInt64,
+                    SketchType::HyperLogLog => {
+                        if field.dtype == daft_core::array::ops::HLL_SKETCH_DTYPE {
+                            daft_core::array::ops::HLL_SKETCH_DTYPE
+                        } else {
+                            return Err(DaftError::TypeError(format!(
+                                "Expected input to merge_sketch() to be {} but received dtype {} for column \"{}\"",
+                                daft_core::array::ops::HLL_SKETCH_DTYPE,
+                                field.dtype,
+                                field.name,
+                            )));
+                        }
+                    }
                 };
                 Ok(Field::new(field.name, dtype))
             }
@@ -946,6 +1053,38 @@ impl AggExpr {
             }
 
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema),
+            Self::AggFn { handle, inputs } => {
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<_>>()?;
+                let input_types: Vec<DataType> =
+                    input_fields.iter().map(|f| f.dtype.clone()).collect();
+                Ok(Field::new(
+                    input_fields[0].name.clone(),
+                    handle.return_dtype(&input_types)?,
+                ))
+            }
+            Self::AggFnMap { handle, inputs } => {
+                // Including input field names in the column name avoids collisions when
+                // the same handle is used on different columns (e.g. `my_agg(a), my_agg(b)`).
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let state_fields = handle.state_fields(&input_fields)?;
+                Ok(Field::new(
+                    format!("{}({})", handle.name(), inputs_str),
+                    DataType::Struct(state_fields),
+                ))
+            }
+            Self::AggFnCombine { partial, .. } => partial.to_field(schema),
+            Self::AggFnReduce { return_field, .. } => Ok(return_field.clone()),
         }
     }
 }
@@ -1190,6 +1329,14 @@ impl Expr {
                 percentiles: HashableVecPercentiles(percentiles.to_vec()),
                 force_list_output,
             }),
+            inputs: vec![self],
+        }
+        .into()
+    }
+
+    pub fn hll_cardinality(self: ExprRef) -> ExprRef {
+        Self::Function {
+            func: FunctionExpr::Sketch(SketchExpr::HllCardinality),
             inputs: vec![self],
         }
         .into()

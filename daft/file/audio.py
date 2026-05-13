@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from daft.datatype import MediaType
 from daft.dependencies import librosa, np, sf
 from daft.file import File
+from daft.file.file import BUFFER_METADATA
 from daft.file.typing import AudioMetadata
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ class AudioFile(File):
                 - format: str - The format of the audio file
                 - subtype: str | None - The subtype of the audio file
         """
-        with self.open() as f:
+        with self.open(buffer_size=BUFFER_METADATA) as f:
             with sf.SoundFile(f) as af:
                 return AudioMetadata(
                     sample_rate=af.samplerate,

@@ -5,6 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
@@ -73,6 +74,7 @@ impl RepartitionState {
     }
 }
 
+// TODO: unify shuffle backends in all local operations
 enum RepartitionBackend {
     Ray,
     Flight {
@@ -82,6 +84,7 @@ enum RepartitionBackend {
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
         target_in_memory_size_per_partition: usize,
+        schema: SchemaRef,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
         partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressShuffleCache>>>>>,
     },
@@ -114,6 +117,7 @@ impl RepartitionSink {
     #[allow(clippy::too_many_arguments)]
     pub fn try_new_flight(
         num_partitions: usize,
+        schema: SchemaRef,
         shuffle_id: u64,
         repartition_spec: RepartitionSpec,
         shuffle_dirs: Vec<String>,
@@ -132,6 +136,7 @@ impl RepartitionSink {
                 target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
                     / num_partitions)
                     .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
+                schema,
                 partitions: Mutex::new(HashMap::new()),
             },
             repartition_spec,
@@ -330,6 +335,7 @@ impl BlockingSink for RepartitionSink {
                 shuffle_id,
                 target_in_memory_size_per_partition,
                 compression,
+                schema,
                 partitions,
                 ..
             } => {
@@ -342,6 +348,7 @@ impl BlockingSink for RepartitionSink {
                                 .map(|partition_idx| {
                                     Ok(Arc::new(InProgressShuffleCache::try_new(
                                         partition_ref_id(input_id, partition_idx),
+                                        schema.clone(),
                                         shuffle_dirs,
                                         *shuffle_id,
                                         *target_in_memory_size_per_partition,

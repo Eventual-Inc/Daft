@@ -13,7 +13,7 @@ Let's get started!
 First, let's install some dependencies.
 
 ```bash
-pip install daft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple
+pip install daft
 pip install transformers diffusers accelerate torch Pillow
 ```
 

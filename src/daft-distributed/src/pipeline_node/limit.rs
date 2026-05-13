@@ -72,6 +72,10 @@ impl RuntimeStats for LimitStats {
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 /// Keeps track of the remaining skip and take.
@@ -159,6 +163,22 @@ impl LimitNode {
             offset,
             child,
         }
+    }
+
+    /// Build a single empty-input scan task with this node's output schema.
+    /// Used to keep downstream blocking sinks (notably ungrouped aggregates)
+    /// running when no rows reach them — e.g. when the limit is 0 or when
+    /// every input row is skipped — so they still emit their finalize output.
+    fn build_empty_scan_task(self: &Arc<Self>) -> SwordfishTaskBuilder {
+        let empty_plan = LocalPhysicalPlan::in_memory_scan(
+            self.node_id(),
+            self.config.schema.clone(),
+            0,
+            StatsState::Materialized(PlanStats::empty().into()),
+            LocalNodeContext::new(Some(self.node_id() as usize)),
+        );
+        SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
+            .with_psets(self.node_id(), vec![])
     }
 
     fn process_materialized_output(
@@ -255,7 +275,7 @@ impl LimitNode {
 
     async fn limit_execution_loop(
         self: Arc<Self>,
-        mut input: TaskBuilderStream,
+        input: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
@@ -264,6 +284,26 @@ impl LimitNode {
         let mut limit_state = LimitState::new(self.limit, self.offset);
         let mut max_concurrent_tasks = 1;
         let mut input_exhausted = false;
+
+        let mut input = std::pin::pin!(input.peekable());
+
+        // Limit=0 (with no offset to skip) yields no rows. Emit a single empty
+        // scan task so downstream blocking sinks like ungrouped aggregates
+        // still finalize and produce their one-row null result, then bail out
+        // without consuming the input.
+        if limit_state.is_take_done() && limit_state.is_skip_done() {
+            let _ = result_tx.send(self.build_empty_scan_task()).await;
+            return Ok(());
+        }
+
+        // Try to estimate initial concurrency from scan task metadata (e.g. Parquet row counts).
+        // This avoids the bottleneck of running one task sequentially just to measure output size.
+        if let Some(first) = input.as_mut().peek().await
+            && let Some(est_rows) = first.estimated_num_rows()
+            && est_rows > 0
+        {
+            max_concurrent_tasks = limit_state.total_remaining().div_ceil(est_rows);
+        }
 
         // Keep submitting local limit tasks as long as we have remaining limit or we have input
         while !input_exhausted {
@@ -307,17 +347,7 @@ impl LimitNode {
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
-                            self.node_id(),
-                            self.config.schema.clone(),
-                            0,
-                            StatsState::Materialized(PlanStats::empty().into()),
-                            LocalNodeContext::new(Some(self.node_id() as usize)),
-                        );
-                        let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
-                                .with_psets(self.node_id(), vec![]);
-                        if result_tx.send(empty_scan_builder).await.is_err() {
+                        if result_tx.send(self.build_empty_scan_task()).await.is_err() {
                             return Ok(());
                         }
                     } else {
@@ -388,5 +418,221 @@ impl PipelineNodeImpl for LimitNode {
             plan_context.task_id_counter(),
         ));
         TaskBuilderStream::from(result_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, sync::Arc};
+
+    use common_error::DaftResult;
+    use common_metrics::{Meter, StatSnapshot};
+    use daft_scan::{
+        CsvSourceConfig, FileFormatConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
+        ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    };
+
+    use super::*;
+    use crate::pipeline_node::{
+        scan_source::ScanSourceNode,
+        test_helpers::{
+            build_in_memory_source, make_partition, run_pipeline_and_get_stats, test_plan_config,
+            test_schema,
+        },
+    };
+
+    /// Wrap a child source in a `LimitNode` and return the resulting pipeline.
+    fn wrap_with_limit(
+        source: DistributedPipelineNode,
+        plan_config: &PlanConfig,
+        limit: usize,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let limit_node = LimitNode::new(1, plan_config, limit, None, test_schema(), source);
+        DistributedPipelineNode::new(Arc::new(limit_node), meter)
+    }
+
+    fn write_csv_file(path: &std::path::Path, values: &[i64]) {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).expect("create csv file");
+        writeln!(file, "x").expect("write header");
+        for v in values {
+            writeln!(file, "{v}").expect("write row");
+        }
+        file.sync_all().expect("sync");
+    }
+
+    /// Build a CSV-backed `ScanSourceNode`. The scan tasks carry `size_bytes`,
+    /// which is what makes `SwordfishTaskBuilder::estimated_num_rows()` return
+    /// `Some(_)` via the `approx_num_rows` size-inflation path.
+    fn build_csv_scan_source(
+        file_paths: &[PathBuf],
+        plan_config: &PlanConfig,
+        meter: &Meter,
+    ) -> DistributedPipelineNode {
+        let schema = test_schema();
+        let csv_cfg = CsvSourceConfig {
+            delimiter: None,
+            has_headers: true,
+            double_quote: true,
+            quote: None,
+            escape_char: None,
+            comment: None,
+            allow_variable_columns: false,
+            buffer_size: None,
+            chunk_size: None,
+        };
+        let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
+        let storage_config = Arc::new(StorageConfig::new_internal(false, None));
+        let pushdowns = Pushdowns::default();
+
+        let scan_tasks: Vec<ScanTaskRef> = file_paths
+            .iter()
+            .map(|path| {
+                let size = std::fs::metadata(path).expect("file metadata").len();
+                Arc::new(ScanTask::new(
+                    vec![ScanSource {
+                        size_bytes: Some(size),
+                        metadata: None,
+                        statistics: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: path.to_string_lossy().into_owned(),
+                            chunk_spec: None,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
+                    }],
+                    source_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                    None,
+                ))
+            })
+            .collect();
+
+        let scan_source_node =
+            ScanSourceNode::new(0, plan_config, pushdowns, Arc::new(scan_tasks), schema);
+        DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
+    }
+
+    fn assert_limit_rows_out(
+        stats: &[(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)],
+        expected: u64,
+    ) {
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("limit node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => assert_eq!(s.rows_out, expected),
+            other => panic!("expected Default snapshot for limit, got: {other:?}"),
+        }
+    }
+
+    /// Assert the limit node ran exactly `expected` downstream tasks.
+    /// `num_tasks` is incremented per task instance executed on a worker,
+    /// keyed by the emitting node's id, so this directly verifies how many
+    /// SwordfishTaskBuilders the limit node sent downstream.
+    fn assert_limit_num_tasks(
+        stats: &[(Arc<common_metrics::ops::NodeInfo>, StatSnapshot)],
+        expected: u64,
+    ) {
+        let (_, snapshot) = stats
+            .iter()
+            .find(|(i, _)| i.id == 1)
+            .expect("limit node stats");
+        match snapshot {
+            StatSnapshot::Default(s) => assert_eq!(s.num_tasks, expected),
+            other => panic!("expected Default snapshot for limit, got: {other:?}"),
+        }
+    }
+
+    /// Limit on an `InMemorySource`: input task builders carry `psets` rather
+    /// than scan tasks, so `estimated_num_rows()` returns `None` and the
+    /// execution loop takes the fallback `max_concurrent_tasks = 1` branch.
+    /// Verifies the limit is correctly enforced.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_without_estimated_rows() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_without_estimated_rows");
+        let (source, plan_config) = build_in_memory_source(
+            0,
+            vec![
+                make_partition(&[1, 2, 3, 4, 5]),
+                make_partition(&[6, 7, 8, 9, 10]),
+                make_partition(&[11, 12, 13, 14, 15]),
+            ],
+            &meter,
+        );
+        let pipeline = wrap_with_limit(source, &plan_config, 7, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+        assert_limit_rows_out(&stats, 7);
+        Ok(())
+    }
+
+    /// Limit = 0 on a non-empty `InMemorySource`: the execution loop must
+    /// still emit a single empty downstream task (rather than producing zero
+    /// tasks) so blocking ops like ungrouped aggregates downstream still
+    /// finalize and emit their one-row null result.
+    ///
+    /// Asserts `num_tasks == 1` directly — without the short-circuit fix the
+    /// execution loop emits zero tasks (max_concurrent_tasks collapses to 0
+    /// because total_remaining is 0), so `rows_out == 0` alone wouldn't
+    /// distinguish the buggy path from the fixed one.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_zero_emits_empty_task() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_zero_emits_empty_task");
+        let (source, plan_config) =
+            build_in_memory_source(0, vec![make_partition(&[1, 2, 3, 4, 5])], &meter);
+        let pipeline = wrap_with_limit(source, &plan_config, 0, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+        assert_limit_rows_out(&stats, 0);
+        assert_limit_num_tasks(&stats, 1);
+        Ok(())
+    }
+
+    /// Limit on a CSV-backed `ScanSource`: scan tasks carry `size_bytes`, so
+    /// `estimated_num_rows()` returns `Some(_)` and the execution loop takes
+    /// the estimated-concurrency branch. Verifies the limit is correctly
+    /// enforced.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_limit_with_estimated_rows() -> DaftResult<()> {
+        let meter = Meter::test_scope("test_limit_with_estimated_rows");
+
+        let tmpdir = std::env::temp_dir().join(format!(
+            "daft_flotilla_limit_estimated_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::create_dir_all(&tmpdir).expect("create tmpdir");
+
+        let num_files: usize = 3;
+        let rows_per_file: usize = 5;
+        let mut file_paths = Vec::with_capacity(num_files);
+        for i in 0..num_files {
+            let path = tmpdir.join(format!("file_{i}.csv"));
+            let values: Vec<i64> = (0..rows_per_file)
+                .map(|j| (i * rows_per_file + j) as i64)
+                .collect();
+            write_csv_file(&path, &values);
+            file_paths.push(path);
+        }
+
+        let plan_config = test_plan_config();
+        let source = build_csv_scan_source(&file_paths, &plan_config, &meter);
+        let pipeline = wrap_with_limit(source, &plan_config, 7, &meter);
+
+        let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        assert_limit_rows_out(&stats, 7);
+        Ok(())
     }
 }

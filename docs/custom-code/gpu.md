@@ -36,7 +36,7 @@ class SmallModel:
         import torch
         self.model = torch.load(name).cuda()
 
-    @daft.method.batch(batch_size=16)
+    @daft.method.batch(return_dtype=DataType.float64(), batch_size=16)
     def infer(self, x: Series) -> Series:
         return self.model(x.to_arrow().to_numpy())
 ```

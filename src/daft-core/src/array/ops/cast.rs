@@ -32,7 +32,8 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
+    file::{DaftMediaType, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
+    prelude::ExtensionArray,
     series::{IntoSeries, Series},
     utils::display::display_time64,
     with_match_numeric_daft_types,
@@ -74,6 +75,13 @@ where
             #[cfg(feature = "python")]
             DataType::Python => {
                 Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
+            }
+            DataType::Extension(name, storage_type, metadata) => {
+                let casted_to_storage = self.cast(storage_type.as_ref())?;
+                Ok(
+                    ExtensionArray::from_series(&casted_to_storage, name, metadata.as_deref())?
+                        .into_series(),
+                )
             }
             _ => {
                 // Cast from DataArray to the target DataType
@@ -189,6 +197,17 @@ where
                 let result_array =
                     if arrow::compute::can_cast_types(&self_arrow_type, &target_arrow_type) {
                         arrow::compute::cast(data_to_cast.as_ref(), &target_arrow_type)?
+                    } else if matches!(dtype, DataType::Float16)
+                        && arrow::compute::can_cast_types(
+                            &self_arrow_type,
+                            &arrow::datatypes::DataType::Float32,
+                        )
+                    {
+                        let intermediate = arrow::compute::cast(
+                            data_to_cast.as_ref(),
+                            &arrow::datatypes::DataType::Float32,
+                        )?;
+                        arrow::compute::cast(intermediate.as_ref(), &target_arrow_type)?
                     } else if target_arrow_physical_type != target_arrow_type
                         && arrow::compute::can_cast_types(
                             &self_physical_arrow_type,
@@ -418,14 +437,34 @@ impl DurationArray {
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
             }
-            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            DataType::Duration(tu) => {
+                let self_tu = match self.data_type() {
+                    DataType::Duration(tu) => tu,
+                    ty => panic!("Wrong dtype for DurationArray: {ty}"),
+                };
+                let physical = match self_tu.cmp(tu) {
+                    std::cmp::Ordering::Equal => self.physical.clone(),
+                    std::cmp::Ordering::Greater => {
+                        let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
+                        self.physical
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                    std::cmp::Ordering::Less => {
+                        let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
+                        self.physical
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
+                    }
+                };
+                Ok(
+                    DurationArray::new(Field::new(self.name(), dtype.clone()), physical)
+                        .into_series(),
+                )
+            }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Int64 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
             DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Duration to {}",
-                dtype
+                "Cannot cast Duration to {dtype}"
             ))),
         }
     }
@@ -605,17 +644,16 @@ where
         use daft_schema::media_type::MediaType::*;
         match dtype {
             DataType::File(media_type) => match (media_type, T::get_type()) {
-                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) => {
+                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) | (Image, Image) => {
                     Ok(self.clone().into_series())
                 }
                 (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Unknown, Audio) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
-                (Video, Unknown) | (Audio, Unknown) => {
+                (Unknown, Image) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
+                (Video, Unknown) | (Audio, Unknown) | (Image, Unknown) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
-                (Video, Audio) | (Audio, Video) => {
-                    Err(DaftError::TypeError("invalid cast".to_string()))
-                }
+                _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {
                 Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
@@ -1067,7 +1105,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     use_offset_indices: bool,
 ) -> DaftResult<Series> {
     let item: Series = with_match_numeric_daft_types!(inner_dtype, |$T| {
-            let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
+            let mut values = vec![<<$T as DaftNumericType>::Native as num_traits::Zero>::zero(); n_values];
             let nulls = non_zero_values_array.nulls();
             for i in 0..non_zero_values_array.len() {
                 let is_valid = nulls.is_none_or(|v| v.is_valid(i));
@@ -1531,6 +1569,13 @@ impl FixedSizeListArray {
                 )
                 .into_series())
             }
+            DataType::Extension(name, storage_type, metadata) => {
+                let casted_to_storage = self.cast(storage_type.as_ref())?;
+                Ok(
+                    ExtensionArray::from_series(&casted_to_storage, name, metadata.as_deref())?
+                        .into_series(),
+                )
+            }
             _ => unimplemented!("FixedSizeList casting not implemented for dtype: {}", dtype),
         }
     }
@@ -1630,6 +1675,13 @@ impl ListArray {
                 let result = self.cast(&dtype.to_physical())?;
                 let result = result.fixed_size_list()?;
                 result.cast(dtype)
+            }
+            DataType::Extension(name, storage_type, metadata) => {
+                let casted_to_storage = self.cast(storage_type.as_ref())?;
+                Ok(
+                    ExtensionArray::from_series(&casted_to_storage, name, metadata.as_deref())?
+                        .into_series(),
+                )
             }
             _ => unimplemented!("List casting not implemented for dtype: {}", dtype),
         }
@@ -1742,6 +1794,27 @@ impl StructArray {
                         .into_series(),
                 )
             }
+            (DataType::Struct(..), DataType::File(media_type)) => {
+                use daft_schema::media_type::MediaType;
+                let casted_struct_array = self.cast(&dtype.to_physical())?.struct_()?.clone();
+                match media_type {
+                    MediaType::Video => Ok(FileArray::<MediaTypeVideo>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    MediaType::Audio => Ok(FileArray::<MediaTypeAudio>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    _ => Ok(FileArray::<MediaTypeUnknown>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                }
+            }
             (DataType::Struct(..), DataType::List(child_dtype)) => {
                 let casted_children = self
                     .children
@@ -1794,6 +1867,13 @@ impl StructArray {
             {
                 self.cast(&dtype.to_physical())?.cast(dtype)
             }
+            (_, DataType::Extension(name, storage_type, metadata)) => {
+                let casted_to_storage = self.cast(storage_type.as_ref())?;
+                Ok(
+                    ExtensionArray::from_series(&casted_to_storage, name, metadata.as_deref())?
+                        .into_series(),
+                )
+            }
             _ => unimplemented!(
                 "Daft casting from {} to {} not implemented",
                 self.data_type(),
@@ -1823,7 +1903,11 @@ mod tests {
     use super::*;
     use crate::{
         datatypes::DataArray,
-        prelude::{Decimal128Array, Decimal128Type, Float64Array},
+        hf16,
+        prelude::{
+            BinaryArray, BooleanArray, Decimal128Array, Decimal128Type, ExtensionArray,
+            Float16Array, Float32Array, Float64Array, Int32Array, Utf8Array,
+        },
     };
 
     fn create_test_decimal_array(
@@ -2004,7 +2088,7 @@ mod tests {
     fn test_utf8_to_int32_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  42  "), Some("-1"), Some("  100  "), None].into_iter(),
+            vec![Some("  42  "), Some("-1"), Some("  100  "), None],
         );
         let result = utf8_array
             .cast(&DataType::Int32)
@@ -2032,7 +2116,7 @@ mod tests {
     fn test_utf8_to_float64_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None],
         );
         let result = utf8_array
             .cast(&DataType::Float64)
@@ -2059,7 +2143,7 @@ mod tests {
         // Invalid strings should return None, not error
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  42  "), Some("not_a_number"), Some("  ")].into_iter(),
+            vec![Some("  42  "), Some("not_a_number"), Some("  ")],
         );
         let result = utf8_array
             .cast(&DataType::Int32)
@@ -2081,8 +2165,7 @@ mod tests {
                 Some("2024-06-15"),
                 Some("  2024-12-31  "),
                 None,
-            ]
-            .into_iter(),
+            ],
         );
         let result = utf8_array
             .cast(&DataType::Date)
@@ -2096,5 +2179,434 @@ mod tests {
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");
         assert!(values[2].is_some(), "Third date should parse successfully");
+    }
+
+    #[test]
+    fn test_float16_to_float32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(2.5), Some(-3.0)]);
+    }
+
+    #[test]
+    fn test_float32_to_float16() {
+        let arr = Float32Array::from_vec("test", vec![1.0, 2.5, -3.0]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_float16_to_int32() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let result = arr.cast(&DataType::Int32).unwrap();
+        let values: Vec<Option<i32>> = result.i32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1), Some(2), Some(-3)]);
+    }
+
+    #[test]
+    fn test_int32_to_float16() {
+        let arr = Int32Array::from_vec("test", vec![1, 2, -3]);
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.0)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_utf8_to_float16() {
+        let arr = Utf8Array::from_iter(
+            "test",
+            vec![Some("  1.5  "), Some("-2.5"), None].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.5)), Some(hf16!(-2.5)), None]);
+    }
+
+    #[test]
+    fn test_float16_to_float64() {
+        let arr = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(0.0), hf16!(-0.5)]);
+        let result = arr.cast(&DataType::Float64).unwrap();
+        let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), Some(0.0), Some(-0.5)]);
+    }
+
+    #[test]
+    fn test_float16_with_nulls() {
+        let arr = Float16Array::from_iter(
+            Field::new("test", DataType::Float16),
+            vec![Some(hf16!(1.0)), None, Some(hf16!(3.0))].into_iter(),
+        );
+        let result = arr.cast(&DataType::Float32).unwrap();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1.0), None, Some(3.0)]);
+    }
+
+    #[test]
+    fn test_float16_roundtrip_through_float32() {
+        let original = Float16Array::from_vec("test", vec![hf16!(1.0), hf16!(2.5), hf16!(-3.0)]);
+        let as_f32 = original.cast(&DataType::Float32).unwrap();
+        let back = as_f32.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = back.f16().unwrap().into_iter().collect();
+        assert_eq!(
+            values,
+            vec![Some(hf16!(1.0)), Some(hf16!(2.5)), Some(hf16!(-3.0))]
+        );
+    }
+
+    #[test]
+    fn test_bool_to_float16() {
+        let arr = BooleanArray::from_iter("test", vec![Some(true), Some(false), None].into_iter());
+        let result = arr.cast(&DataType::Float16).unwrap();
+        let values: Vec<Option<half::f16>> = result.f16().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(hf16!(1.0)), Some(hf16!(0.0)), None]);
+    }
+
+    #[test]
+    fn test_cast_utf8_to_extension() {
+        let extension_type =
+            DataType::Extension("test".to_string(), Box::new(DataType::Utf8), None);
+        let arr = Utf8Array::from_iter("test", vec![Some("test"), Some("test2"), Some("test3")]);
+
+        let result = arr
+            .cast(&extension_type)
+            .expect("Failed to cast Utf8 to Extension");
+        let extension_array = result.downcast::<ExtensionArray>().unwrap();
+        assert_eq!(extension_array.data_type(), &extension_type);
+    }
+
+    #[test]
+    fn test_cast_extension_to_storage_type() {
+        let extension_type =
+            DataType::Extension("test.utf8".to_string(), Box::new(DataType::Utf8), None);
+        let arr = Utf8Array::from_iter("col", vec![Some("hello"), Some("world")]);
+
+        // Utf8 -> Extension
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension -> Utf8
+        let unwrapped = ext_series.cast(&DataType::Utf8).unwrap();
+        assert_eq!(unwrapped.data_type(), &DataType::Utf8);
+        assert_eq!(unwrapped.utf8().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_cast_int64_to_extension_and_back() {
+        let extension_type =
+            DataType::Extension("test.counter".to_string(), Box::new(DataType::Int64), None);
+        let arr = Int64Array::from_values("col", vec![1i64, 2, 3]);
+
+        // Int64 -> Extension(Int64)
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension(Int64) -> Int64
+        let unwrapped = ext_series.cast(&DataType::Int64).unwrap();
+        assert_eq!(unwrapped.data_type(), &DataType::Int64);
+        let values: Vec<i64> = unwrapped.i64().unwrap().into_iter().flatten().collect();
+        assert_eq!(values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_cast_float64_to_extension_and_back() {
+        let extension_type = DataType::Extension(
+            "test.measurement".to_string(),
+            Box::new(DataType::Float64),
+            None,
+        );
+        let arr = Float64Array::from_values("col", vec![1.5, 2.5, 3.5]);
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        let unwrapped = ext_series.cast(&DataType::Float64).unwrap();
+        let values: Vec<f64> = unwrapped.f64().unwrap().into_iter().flatten().collect();
+        assert_eq!(values, vec![1.5, 2.5, 3.5]);
+    }
+
+    #[test]
+    fn test_cast_extension_with_metadata() {
+        let metadata = Some(r#"{"crs":"WGS84"}"#.to_string());
+        let extension_type = DataType::Extension(
+            "geo.point".to_string(),
+            Box::new(DataType::Utf8),
+            metadata.clone(),
+        );
+        let arr = Utf8Array::from_iter("col", vec![Some("POINT(0 0)"), Some("POINT(1 1)")]);
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Verify metadata survives cast
+        match ext_series.data_type() {
+            DataType::Extension(name, _, meta) => {
+                assert_eq!(name, "geo.point");
+                assert_eq!(meta, &metadata);
+            }
+            _ => panic!("Expected Extension type"),
+        }
+    }
+
+    #[test]
+    fn test_cast_extension_with_nulls() {
+        let extension_type =
+            DataType::Extension("test.nullable".to_string(), Box::new(DataType::Int64), None);
+        let arr = Int64Array::from_iter(
+            Field::new("col".to_string(), DataType::Int64),
+            vec![Some(1i64), None, Some(3)].into_iter(),
+        );
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+        assert_eq!(ext_series.len(), 3);
+
+        let unwrapped = ext_series.cast(&DataType::Int64).unwrap();
+        let values: Vec<Option<i64>> = unwrapped.i64().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(1), None, Some(3)]);
+    }
+
+    #[test]
+    fn test_cast_extension_to_different_extension() {
+        let ext_a = DataType::Extension("type.a".to_string(), Box::new(DataType::Int64), None);
+        let ext_b = DataType::Extension(
+            "type.b".to_string(),
+            Box::new(DataType::Int64),
+            Some("meta_b".to_string()),
+        );
+        let arr = Int64Array::from_values("col", vec![10i64, 20]);
+
+        // Int64 -> Extension A
+        let series_a = arr.cast(&ext_a).unwrap();
+        assert_eq!(series_a.data_type(), &ext_a);
+
+        // Extension A -> Extension B (same storage type, different name/metadata)
+        let series_b = series_a.cast(&ext_b).unwrap();
+        assert_eq!(series_b.data_type(), &ext_b);
+
+        // Extension B -> Int64
+        let unwrapped = series_b.cast(&DataType::Int64).unwrap();
+        let values: Vec<i64> = unwrapped.i64().unwrap().into_iter().flatten().collect();
+        assert_eq!(values, vec![10, 20]);
+    }
+
+    #[test]
+    fn test_cast_with_storage_type_coercion() {
+        // Extension with Int32 storage, cast from Int64 source
+        // This tests that the storage type cast happens correctly
+        let extension_type = DataType::Extension(
+            "test.small_int".to_string(),
+            Box::new(DataType::Int32),
+            None,
+        );
+        let arr = Int64Array::from_values("col", vec![1i64, 2, 3]);
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension(Int32) -> Int32
+        let unwrapped = ext_series.cast(&DataType::Int32).unwrap();
+        let values: Vec<i32> = unwrapped.i32().unwrap().into_iter().flatten().collect();
+        assert_eq!(values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_cast_binary_to_extension_and_back() {
+        let extension_type =
+            DataType::Extension("test.uuid".to_string(), Box::new(DataType::Binary), None);
+        let arr = BinaryArray::from_iter(
+            "col",
+            vec![Some(b"abc".as_slice()), Some(b"def".as_slice())],
+        );
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        let unwrapped = ext_series.cast(&DataType::Binary).unwrap();
+        assert_eq!(unwrapped.data_type(), &DataType::Binary);
+        assert_eq!(unwrapped.len(), 2);
+    }
+
+    #[test]
+    fn test_cast_boolean_to_extension_and_back() {
+        let extension_type =
+            DataType::Extension("test.flag".to_string(), Box::new(DataType::Boolean), None);
+        let arr = BooleanArray::from_iter("col", vec![Some(true), Some(false), None].into_iter());
+
+        let ext_series = arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        let unwrapped = ext_series.cast(&DataType::Boolean).unwrap();
+        let values: Vec<Option<bool>> = unwrapped.bool().unwrap().into_iter().collect();
+        assert_eq!(values, vec![Some(true), Some(false), None]);
+    }
+
+    #[test]
+    fn test_cast_fixed_size_list_to_extension_and_back() {
+        let fsl_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), 2);
+        let extension_type = DataType::Extension(
+            "geo.point".to_string(),
+            Box::new(fsl_dtype.clone()),
+            Some(r#"{"crs":"WGS84"}"#.to_string()),
+        );
+
+        let flat_child = Float64Array::from_values("item", vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let fsl_arr = FixedSizeListArray::new(
+            Field::new("col", fsl_dtype.clone()),
+            flat_child.into_series(),
+            None,
+        );
+
+        // FixedSizeList -> Extension(FixedSizeList)
+        let ext_series = fsl_arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension(FixedSizeList) -> FixedSizeList
+        let unwrapped = ext_series.cast(&fsl_dtype).unwrap();
+        assert_eq!(unwrapped.data_type(), &fsl_dtype);
+        assert_eq!(unwrapped.len(), 3);
+    }
+
+    #[test]
+    fn test_cast_list_to_extension_and_back() {
+        let list_dtype = DataType::List(Box::new(DataType::Int64));
+        let extension_type =
+            DataType::Extension("test.tags".to_string(), Box::new(list_dtype.clone()), None);
+
+        let flat_child = Int64Array::from_values("item", vec![10i64, 20, 30, 40, 50]);
+        let list_arr = ListArray::new(
+            Field::new("col", list_dtype.clone()),
+            flat_child.into_series(),
+            arrow::buffer::OffsetBuffer::from_lengths(vec![2, 3]),
+            None,
+        );
+
+        // List -> Extension(List)
+        let ext_series = list_arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension(List) -> List
+        let unwrapped = ext_series.cast(&list_dtype).unwrap();
+        assert_eq!(unwrapped.data_type(), &list_dtype);
+        assert_eq!(unwrapped.len(), 2);
+    }
+
+    #[test]
+    fn test_cast_struct_to_extension_and_back() {
+        let struct_dtype = DataType::Struct(vec![
+            Field::new("x", DataType::Float64),
+            Field::new("y", DataType::Float64),
+        ]);
+        let extension_type = DataType::Extension(
+            "geo.coordinate".to_string(),
+            Box::new(struct_dtype.clone()),
+            None,
+        );
+
+        let x_child = Float64Array::from_values("x", vec![1.0, 2.0]).into_series();
+        let y_child = Float64Array::from_values("y", vec![3.0, 4.0]).into_series();
+        let struct_arr = StructArray::new(
+            Arc::new(Field::new("col", struct_dtype.clone())),
+            vec![x_child, y_child],
+            None,
+        );
+
+        // Struct -> Extension(Struct)
+        let ext_series = struct_arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension(Struct) -> Struct
+        let unwrapped = ext_series.cast(&struct_dtype).unwrap();
+        assert_eq!(unwrapped.data_type(), &struct_dtype);
+        assert_eq!(unwrapped.len(), 2);
+    }
+
+    #[test]
+    fn test_cast_fixed_size_list_to_extension_with_nulls() {
+        let fsl_dtype = DataType::FixedSizeList(Box::new(DataType::Int32), 3);
+        let extension_type =
+            DataType::Extension("test.triple".to_string(), Box::new(fsl_dtype.clone()), None);
+
+        let flat_child = crate::datatypes::Int32Array::from_values(
+            "item",
+            (0..9i32).collect::<Vec<i32>>().into_iter(),
+        );
+        let nulls = arrow::buffer::NullBuffer::from(vec![true, false, true]);
+        let fsl_arr = FixedSizeListArray::new(
+            Field::new("col", fsl_dtype.clone()),
+            flat_child.into_series(),
+            Some(nulls),
+        );
+
+        let ext_series = fsl_arr.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+        assert_eq!(ext_series.len(), 3);
+
+        let unwrapped = ext_series.cast(&fsl_dtype).unwrap();
+        assert_eq!(unwrapped.data_type(), &fsl_dtype);
+        assert_eq!(unwrapped.len(), 3);
+    }
+
+    #[test]
+    fn test_cast_embedding_to_extension_and_back() {
+        let embedding_dtype = DataType::Embedding(Box::new(DataType::Float64), 3);
+        let extension_type = DataType::Extension(
+            "ml.embedding".to_string(),
+            Box::new(embedding_dtype.to_physical()),
+            Some(r#"{"model":"test"}"#.to_string()),
+        );
+
+        let flat_child = Float64Array::from_values("item", vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+        let fsl_arr = FixedSizeListArray::new(
+            Field::new(
+                "col",
+                DataType::FixedSizeList(Box::new(DataType::Float64), 3),
+            ),
+            flat_child.into_series(),
+            None,
+        );
+        let embedding_arr =
+            EmbeddingArray::new(Field::new("col", embedding_dtype.clone()), fsl_arr);
+        let embedding_series = embedding_arr.into_series();
+
+        // Embedding -> Extension(FixedSizeList) via physical fallthrough
+        let ext_series = embedding_series.cast(&extension_type).unwrap();
+        assert_eq!(ext_series.data_type(), &extension_type);
+
+        // Extension -> FixedSizeList
+        let unwrapped = ext_series.cast(&embedding_dtype.to_physical()).unwrap();
+        assert_eq!(unwrapped.len(), 2);
+    }
+
+    #[test]
+    fn test_cast_extension_to_extension_different_storage() {
+        // Extension(Int64) -> Extension(Float64) should work via storage coercion
+        let ext_int =
+            DataType::Extension("test.int_val".to_string(), Box::new(DataType::Int64), None);
+        let ext_float = DataType::Extension(
+            "test.float_val".to_string(),
+            Box::new(DataType::Float64),
+            None,
+        );
+
+        let arr = Int64Array::from_values("col", vec![1i64, 2, 3]);
+        let ext_int_series = arr.cast(&ext_int).unwrap();
+        assert_eq!(ext_int_series.data_type(), &ext_int);
+
+        // Extension(Int64) -> Extension(Float64)
+        let ext_float_series = ext_int_series.cast(&ext_float).unwrap();
+        assert_eq!(ext_float_series.data_type(), &ext_float);
+
+        // Unwrap and verify values
+        let unwrapped = ext_float_series.cast(&DataType::Float64).unwrap();
+        let values: Vec<f64> = unwrapped.f64().unwrap().into_iter().flatten().collect();
+        assert_eq!(values, vec![1.0, 2.0, 3.0]);
     }
 }

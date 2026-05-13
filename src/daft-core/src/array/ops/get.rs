@@ -301,10 +301,26 @@ where
                 .flatten()
         };
 
-        Some(FileReference::new(
+        let offset = self
+            .physical
+            .get("offset")
+            .ok()
+            .and_then(|s| s.i64().ok().and_then(|a| a.get(idx)))
+            .map(|v| v as u64);
+
+        let length = self
+            .physical
+            .get("length")
+            .ok()
+            .and_then(|s| s.i64().ok().and_then(|a| a.get(idx)))
+            .map(|v| v as u64);
+
+        Some(FileReference::new_with_range(
             T::get_type(),
             data.to_string(),
             io_config,
+            offset,
+            length,
         ))
     }
 }

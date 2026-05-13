@@ -9,12 +9,13 @@ use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 pub use plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit,
-    LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
-    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite,
-    RepartitionWriteBackend, Sample, SamplingMethod, ShuffleRead, ShuffleReadBackend, Sort,
-    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions,
+    Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
+    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite, Sample,
+    SamplingMethod, ShuffleBackend, ShuffleRead, ShuffleReadBackend, Sort, SortMergeJoin,
+    StageCheckpointKeys, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};

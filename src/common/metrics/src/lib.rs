@@ -4,6 +4,7 @@ pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod snapshot;
+pub mod task_io;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 
@@ -137,6 +138,7 @@ pub const TASK_ACTIVE_KEY: &str = "task.active";
 pub const TASK_COMPLETED_KEY: &str = "task.completed";
 pub const TASK_FAILED_KEY: &str = "task.failed";
 pub const TASK_CANCELLED_KEY: &str = "task.cancelled";
+pub const NUM_TASKS_KEY: &str = "task.count";
 
 // Execution attributes
 pub const ATTR_EXECUTION_RUNNER: &str = "execution.runner";

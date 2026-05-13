@@ -178,7 +178,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4754a624e5ae42081f464514be454b39711daae0458906dacde5f4c632f33a8"
 dependencies = [
  "arrow-arith",
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-cast",
  "arrow-csv",
@@ -198,12 +198,28 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7b3141e0ec5145a22d8694ea8b6d6f69305971c4fa1c1a13ef0195aef2d678b"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
  "chrono",
  "num-traits",
+]
+
+[[package]]
+name = "arrow-array"
+version = "56.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8548ca7c070d8db9ce7aa43f37393e4bfcf3f2d3681df278490772fd1673d08d"
+dependencies = [
+ "ahash",
+ "arrow-buffer 56.2.0",
+ "arrow-data 56.2.0",
+ "arrow-schema 56.2.0",
+ "chrono",
+ "half",
+ "hashbrown 0.16.1",
+ "num",
 ]
 
 [[package]]
@@ -220,6 +236,24 @@ dependencies = [
  "chrono-tz",
  "half",
  "hashbrown 0.16.1",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "arrow-array"
+version = "58.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841321891f247aa86c6112c80d83d89cb36e0addd020fa2425085b8eb6c3f579"
+dependencies = [
+ "ahash",
+ "arrow-buffer 58.2.0",
+ "arrow-data 58.2.0",
+ "arrow-schema 58.2.0",
+ "chrono",
+ "half",
+ "hashbrown 0.17.1",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -250,9 +284,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-buffer"
-version = "58.1.0"
+version = "58.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898f4cf1e9598fdb77f356fdf2134feedfd0ee8d5a4e0a5f573e7d0aec16baa4"
+checksum = "f955dfb73fae000425f49c8226d2044dab60fb7ad4af1e24f961756354d996c9"
 dependencies = [
  "bytes",
  "half",
@@ -266,7 +300,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "646bbb821e86fd57189c10b4fcdaa941deaf4181924917b0daa92735baa6ada5"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-ord",
@@ -287,7 +321,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da746f4180004e3ce7b83c977daf6394d768332349d3d913998b10a120b790a"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-cast",
  "arrow-schema 57.3.0",
  "chrono",
@@ -323,12 +357,12 @@ dependencies = [
 
 [[package]]
 name = "arrow-data"
-version = "58.1.0"
+version = "58.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42d10beeab2b1c3bb0b53a00f7c944a178b622173a5c7bcabc3cb45d90238df4"
+checksum = "db3b5846209775b6dc8056d77ff9a032b27043383dd5488abd0b663e265b9373"
 dependencies = [
- "arrow-buffer 58.1.0",
- "arrow-schema 58.1.0",
+ "arrow-buffer 58.2.0",
+ "arrow-schema 58.2.0",
  "half",
  "num-integer",
  "num-traits",
@@ -340,7 +374,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58c5b083668e6230eae3eab2fc4b5fb989974c845d0aa538dde61a4327c78675"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-cast",
  "arrow-ipc",
@@ -360,7 +394,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abf7df950701ab528bf7c0cf7eeadc0445d03ef5d6ffc151eaae6b38a58feff1"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -374,7 +408,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ff8357658bedc49792b13e2e862b80df908171275f8e6e075c460da5ee4bf86"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-cast",
  "arrow-data 57.3.0",
@@ -398,7 +432,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7d8f1870e03d4cbed632959498bcc84083b5a24bded52905ae1695bd29da45b"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -411,7 +445,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18228633bad92bff92a95746bbeb16e5fc318e8382b75619dec26db79e4de4c0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -438,9 +472,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-schema"
-version = "58.1.0"
+version = "58.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c30a1365d7a7dc50cc847e54154e6af49e4c4b0fddc9f607b687f29212082743"
+checksum = "18aa020f6bc8e5201dcd2d4b7f98c68f8a410ef37128263243e6ff2a47a67d4f"
 dependencies = [
  "bitflags 2.11.0",
 ]
@@ -452,7 +486,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68bf3e3efbd1278f770d67e5dc410257300b161b93baedb3aae836144edcaf4b"
 dependencies = [
  "ahash",
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -465,7 +499,7 @@ version = "57.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85e968097061b3c0e9fe3079cf2e703e487890700546b5b0647f60fca1b5a8d8"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -1714,6 +1748,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-checkpoint-config"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-hashable-float-wrapper",
+ "common-io-config",
+ "pyo3",
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1761,6 +1806,7 @@ dependencies = [
 name = "common-hashable-float-wrapper"
 version = "0.3.0-dev0"
 dependencies = [
+ "half",
  "serde",
 ]
 
@@ -1835,6 +1881,7 @@ name = "common-ndarray"
 version = "0.3.0-dev0"
 dependencies = [
  "common-py-serde",
+ "half",
  "ndarray",
  "numpy",
  "pyo3",
@@ -2268,6 +2315,7 @@ dependencies = [
  "daft-functions-tokenize",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-geo",
  "daft-hash",
  "daft-image",
  "daft-io",
@@ -2315,6 +2363,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-schema",
+ "half",
  "indexmap",
  "rstest",
 ]
@@ -2342,21 +2391,28 @@ dependencies = [
 name = "daft-checkpoint"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array 57.3.0",
+ "arrow-schema 57.3.0",
  "async-trait",
  "bytes",
  "chrono",
+ "common-checkpoint-config",
  "common-error",
+ "common-io-config",
+ "common-runtime",
  "daft-checkpoint",
  "daft-core",
  "daft-io",
- "daft-recordbatch",
+ "daft-scan",
+ "daft-schema",
  "futures",
+ "parquet",
+ "pyo3",
  "serde",
  "serde_json",
  "snafu",
  "tempfile",
  "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -2429,6 +2485,7 @@ dependencies = [
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
+ "half",
  "html-escape",
  "hyperloglog",
  "image",
@@ -2506,7 +2563,7 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
  "atoi_simd",
  "chrono",
@@ -2521,6 +2578,8 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2532,11 +2591,12 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
- "daft-checkpoint",
  "daft-context",
+ "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-io",
+ "daft-local-execution",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
@@ -2544,6 +2604,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-stats",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
@@ -2592,12 +2653,15 @@ dependencies = [
 name = "daft-ext"
 version = "0.1.1"
 dependencies = [
+ "arrow-array 56.2.0",
+ "arrow-array 57.3.0",
+ "arrow-array 58.2.0",
  "arrow-data 56.2.0",
  "arrow-data 57.3.0",
- "arrow-data 58.1.0",
+ "arrow-data 58.2.0",
  "arrow-schema 56.2.0",
  "arrow-schema 57.3.0",
- "arrow-schema 58.1.0",
+ "arrow-schema 58.2.0",
  "daft-ext-macros",
 ]
 
@@ -2606,7 +2670,7 @@ name = "daft-ext-internal"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
  "common-error",
  "daft-core",
@@ -2648,7 +2712,8 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
+ "arrow-buffer 57.3.0",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2660,6 +2725,7 @@ dependencies = [
  "snafu",
  "typetag",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2725,8 +2791,9 @@ dependencies = [
 name = "daft-functions-temporal"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "chrono",
+ "chrono-tz",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2779,6 +2846,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow",
+ "arrow-buffer 57.3.0",
  "chrono",
  "chrono-tz",
  "common-error",
@@ -2794,12 +2862,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-geo"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-buffer 57.3.0",
+ "daft-core",
+ "daft-dsl",
+ "serde",
+ "typetag",
+]
+
+[[package]]
 name = "daft-groupby"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "common-error",
  "daft-core",
+ "half",
  "hashbrown 0.16.1",
  "smallvec",
 ]
@@ -2826,6 +2906,7 @@ dependencies = [
  "criterion",
  "daft-core",
  "daft-dsl",
+ "daft-file",
  "daft-schema",
  "image",
  "log",
@@ -2921,8 +3002,12 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
+ "arrow-ipc",
+ "arrow-schema 57.3.0",
  "async-trait",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2983,9 +3068,10 @@ dependencies = [
 name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
  "bincode",
+ "common-checkpoint-config",
  "common-error",
  "common-io-config",
  "common-metrics",
@@ -3013,6 +3099,7 @@ dependencies = [
 name = "daft-logical-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3024,6 +3111,7 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-algebra",
+ "daft-checkpoint",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -3055,9 +3143,11 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow",
+ "arrow-array 57.3.0",
  "arrow-ipc",
  "bincode",
+ "common-arrow-ffi",
  "common-error",
  "common-partitioning",
  "common-runtime",
@@ -3074,7 +3164,6 @@ dependencies = [
  "dashmap",
  "futures",
  "pyo3",
- "rayon",
  "snafu",
  "tokio",
  "tracing",
@@ -3139,7 +3228,7 @@ name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-ipc",
  "async-recursion",
  "comfy-table",
@@ -3162,9 +3251,11 @@ dependencies = [
  "num-traits",
  "pyo3",
  "rand 0.9.2",
+ "rayon",
  "serde",
  "serde_json",
  "smallvec",
+ "typetag",
 ]
 
 [[package]]
@@ -3256,6 +3347,8 @@ dependencies = [
  "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
+ "serde",
+ "typetag",
  "uuid",
 ]
 
@@ -3284,7 +3377,7 @@ dependencies = [
 name = "daft-sketch"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
  "common-error",
  "serde_arrow",
@@ -3355,7 +3448,7 @@ dependencies = [
 name = "daft-warc"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "chrono",
  "common-error",
  "common-runtime",
@@ -3378,7 +3471,7 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-csv",
  "arrow-ipc",
  "arrow-json",
@@ -4242,6 +4335,7 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "num-traits",
+ "serde",
  "zerocopy",
 ]
 
@@ -4284,6 +4378,12 @@ dependencies = [
  "equivalent",
  "foldhash 0.2.0",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "heck"
@@ -5258,7 +5358,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5240d6977234968ff9ad254bfa73aa397fb51e41dcb22b1eb85835e9295485b"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-data 57.3.0",
  "arrow-schema 57.3.0",
@@ -5533,6 +5633,7 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778da78c64ddc928ebf5ad9df5edf0789410ff3bdbf3619aed51cd789a6af1e2"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",
@@ -5815,7 +5916,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ee96b29972a257b855ff2341b37e61af5f12d6af1158b6dcdb5b31ea07bb3cb"
 dependencies = [
  "ahash",
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-cast",
  "arrow-data 57.3.0",
@@ -7149,7 +7250,7 @@ version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "038967a6dda16f5c6ca5b6e1afec9cd2361d39f0db681ca338ac5f0ccece6469"
 dependencies = [
- "arrow-array",
+ "arrow-array 57.3.0",
  "arrow-schema 57.3.0",
  "bytemuck",
  "chrono",

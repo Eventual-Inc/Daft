@@ -17,6 +17,7 @@ pub enum NodeType {
 
     // Intermediate Ops
     // Consumes a MicroPartition and immediately produces a resulting one. Little internal state
+    CheckpointFilter,
     DistributedActorPoolProject,
     Explode,
     Filter,
@@ -38,6 +39,7 @@ pub enum NodeType {
     IntoPartitions,
     Pivot,
     Repartition,
+    Gather,
     RandomShuffle,
     Sort,
     TopN,
@@ -94,6 +96,15 @@ pub struct NodeInfo {
     pub node_category: NodeCategory,
     pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
+    /// True iff this node is the root of its enclosing distributed task's
+    /// local plan; its `rows.out`/`bytes.out` is the task's external output.
+    /// Set on the driver via `LocalPhysicalPlan::mark_task_topology`.
+    #[serde(default)]
+    pub is_task_root: bool,
+    /// True iff this node is a leaf of its enclosing distributed task's
+    /// local plan; its `rows.in`/`bytes.in` is the task's external input.
+    #[serde(default)]
+    pub is_task_leaf: bool,
 }
 
 impl NodeInfo {
