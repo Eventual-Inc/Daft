@@ -61,6 +61,12 @@ export function getEffectiveStatus(
   if (taskStore) {
     const group = taskStore.groups.find((g) => g.node_ids.includes(nodeId));
     if (group) {
+      // Tasks cancelled as part of a user-initiated cancellation → gray.
+      // Must come before the failed_count check: a task can have both
+      // failed_count > 0 and cancelled_count > 0 if some tasks failed before
+      // the cancellation arrived, and cancellation should win.
+      if (group.cancelled_count > 0 && queryStatus === "Canceled") return "Canceled";
+
       // On a successful query, failed_count may be non-zero from Flotilla task
       // retries that ultimately succeeded — don't override the Finished status.
       if (group.failed_count > 0 && queryStatus !== "Finished") return "Failed";
@@ -68,9 +74,6 @@ export function getEffectiveStatus(
       // When Daft terminates the query externally (Failed/Dead), tasks that
       // were still running never recorded an outcome — treat them as failed.
       if (group.running_count > 0 && (queryStatus === "Failed" || queryStatus === "Dead")) return "Failed";
-
-      // Tasks cancelled as part of a user-initiated cancellation → gray.
-      if (group.cancelled_count > 0 && queryStatus === "Canceled") return "Canceled";
     }
   }
 
