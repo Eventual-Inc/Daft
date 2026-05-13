@@ -346,8 +346,10 @@ impl AsofJoinProbeState {
             update_best_match(
                 &mut self.best_match[matched_left_idx],
                 &right_on_key_arrs,
-                rb_idx,
-                right_idx,
+                MatchCandidate {
+                    rb_idx,
+                    row_idx: right_idx,
+                },
                 &mut cmp_cache,
                 dir,
             )?;
@@ -357,11 +359,16 @@ impl AsofJoinProbeState {
     }
 }
 
+#[derive(Clone, Copy)]
+struct MatchCandidate {
+    rb_idx: usize,
+    row_idx: usize,
+}
+
 fn update_best_match(
     slot: &mut Option<(u32, u32)>,
     on_key_arrs: &[Arc<dyn Array>],
-    candidate_rb_idx: usize,
-    candidate_right_idx: usize,
+    candidate: MatchCandidate,
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
     dir: AsofJoinStrategy,
 ) -> DaftResult<()> {
@@ -372,42 +379,38 @@ fn update_best_match(
     let is_better = match *slot {
         None => true,
         Some((existing_rb_idx, existing_right_idx)) => is_candidate_better(
-            candidate_rb_idx,
-            candidate_right_idx,
-            on_key_arrs[candidate_rb_idx].as_ref(),
-            existing_rb_idx as usize,
-            existing_right_idx as usize,
-            on_key_arrs[existing_rb_idx as usize].as_ref(),
+            candidate,
+            MatchCandidate {
+                rb_idx: existing_rb_idx as usize,
+                row_idx: existing_right_idx as usize,
+            },
+            on_key_arrs,
             cmp_cache,
             preferred_ordering,
         )?,
     };
     if is_better {
-        *slot = Some((candidate_rb_idx as u32, candidate_right_idx as u32));
+        *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
     }
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn is_candidate_better(
-    candidate_rb_idx: usize,
-    candidate_right_idx: usize,
-    candidate_on_arr: &dyn Array,
-    existing_rb_idx: usize,
-    existing_right_idx: usize,
-    existing_on_arr: &dyn Array,
+    candidate: MatchCandidate,
+    existing: MatchCandidate,
+    on_key_arrs: &[Arc<dyn Array>],
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
     preferred_ordering: Ordering,
 ) -> DaftResult<bool> {
-    let cmp = match cmp_cache.entry((candidate_rb_idx, existing_rb_idx)) {
+    let cmp = match cmp_cache.entry((candidate.rb_idx, existing.rb_idx)) {
         Entry::Occupied(e) => e.into_mut(),
         Entry::Vacant(e) => e.insert(build_partial_compare_with_nulls(
-            candidate_on_arr,
-            existing_on_arr,
+            on_key_arrs[candidate.rb_idx].as_ref(),
+            on_key_arrs[existing.rb_idx].as_ref(),
             false,
         )?),
     };
-    Ok(cmp(candidate_right_idx, existing_right_idx) == Some(preferred_ordering))
+    Ok(cmp(candidate.row_idx, existing.row_idx) == Some(preferred_ordering))
 }
 
 fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: &GroupIndices) {
@@ -703,8 +706,10 @@ impl JoinOperator for AsofJoinOperator {
                                         update_best_match(
                                             curr_best_match,
                                             &global_right_on_key_arrs,
-                                            candidate_global_rb_idx,
-                                            candidate_right_idx as usize,
+                                            MatchCandidate {
+                                                rb_idx: candidate_global_rb_idx,
+                                                row_idx: candidate_right_idx as usize,
+                                            },
                                             &mut cmp_cache,
                                             strategy,
                                         )?;
