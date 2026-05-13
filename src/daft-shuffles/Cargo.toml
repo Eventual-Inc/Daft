@@ -24,6 +24,10 @@ tracing-subscriber = {workspace = true}
 name = "shuffle_bench"
 path = "src/bin/shuffle_bench.rs"
 
+[[bin]]
+name = "seal_bench"
+path = "src/bin/seal_bench.rs"
+
 [lints]
 workspace = true
 
