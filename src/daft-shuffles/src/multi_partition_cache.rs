@@ -331,6 +331,96 @@ pub fn log_repartition_agg_summary(label: &str) {
     );
 }
 
+/// Aggregates from the consumer-side shuffle-read operator's pending-queue
+/// dispatcher. Used to answer: "would cross-reducer queue-time coalescing
+/// actually batch anything, or is the queue empty by the time we dispatch?"
+pub mod read_queue_agg {
+    use std::sync::atomic::AtomicU64;
+    /// Total dispatches (i.e. successful pops of a `(InputId, FlightShuffleReadInput)`
+    /// off the operator's pending queue, into a spawn slot).
+    pub static DISPATCH_COUNT: AtomicU64 = AtomicU64::new(0);
+    /// Sum of queue-depth-before-pop across all dispatches.
+    /// `mean = QUEUE_DEPTH_SUM / DISPATCH_COUNT` is the avg queue depth at
+    /// dispatch time. mean ≈ 1 → no batching opportunity. mean >> 1 → batching
+    /// could combine ~mean items per call.
+    pub static QUEUE_DEPTH_SUM: AtomicU64 = AtomicU64::new(0);
+    /// Max queue-depth-before-pop observed.
+    pub static QUEUE_DEPTH_MAX: AtomicU64 = AtomicU64::new(0);
+    /// Bucketed histogram of queue-depth-before-pop.
+    pub static DEPTH_BUCKET_1: AtomicU64 = AtomicU64::new(0);
+    pub static DEPTH_BUCKET_2_4: AtomicU64 = AtomicU64::new(0);
+    pub static DEPTH_BUCKET_5_16: AtomicU64 = AtomicU64::new(0);
+    pub static DEPTH_BUCKET_17_64: AtomicU64 = AtomicU64::new(0);
+    pub static DEPTH_BUCKET_GT_64: AtomicU64 = AtomicU64::new(0);
+    /// Sum of "other queued entries that target ≥1 shared source server
+    /// address with this dispatched entry", across all dispatches.
+    /// `mean = SAME_SERVER_SUM / DISPATCH_COUNT` is the avg additional batch
+    /// size achievable by queue-time coalescing.
+    pub static SAME_SERVER_SUM: AtomicU64 = AtomicU64::new(0);
+    /// Max same-server-companion count observed.
+    pub static SAME_SERVER_MAX: AtomicU64 = AtomicU64::new(0);
+}
+
+/// Call once per dispatch from the shuffle_read operator.
+/// `queue_depth_before_pop` is the queue size including the entry being dispatched.
+/// `same_server_count` is the number of OTHER entries (post-pop) in the queue
+/// that target at least one source server in common with the dispatched entry.
+pub fn record_read_queue_dispatch(queue_depth_before_pop: usize, same_server_count: usize) {
+    use std::sync::atomic::Ordering;
+    read_queue_agg::DISPATCH_COUNT.fetch_add(1, Ordering::Relaxed);
+    read_queue_agg::QUEUE_DEPTH_SUM.fetch_add(queue_depth_before_pop as u64, Ordering::Relaxed);
+    fetch_max(&read_queue_agg::QUEUE_DEPTH_MAX, queue_depth_before_pop as u64);
+    let bucket = match queue_depth_before_pop {
+        0 | 1 => &read_queue_agg::DEPTH_BUCKET_1,
+        2..=4 => &read_queue_agg::DEPTH_BUCKET_2_4,
+        5..=16 => &read_queue_agg::DEPTH_BUCKET_5_16,
+        17..=64 => &read_queue_agg::DEPTH_BUCKET_17_64,
+        _ => &read_queue_agg::DEPTH_BUCKET_GT_64,
+    };
+    bucket.fetch_add(1, Ordering::Relaxed);
+    read_queue_agg::SAME_SERVER_SUM.fetch_add(same_server_count as u64, Ordering::Relaxed);
+    fetch_max(&read_queue_agg::SAME_SERVER_MAX, same_server_count as u64);
+}
+
+fn fetch_max(atomic: &std::sync::atomic::AtomicU64, v: u64) {
+    use std::sync::atomic::Ordering;
+    let mut prev = atomic.load(Ordering::Relaxed);
+    while v > prev {
+        match atomic.compare_exchange_weak(prev, v, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return,
+            Err(p) => prev = p,
+        }
+    }
+}
+
+pub fn log_read_queue_agg_summary(label: &str) {
+    use std::sync::atomic::Ordering;
+    let n = read_queue_agg::DISPATCH_COUNT.load(Ordering::Relaxed);
+    if n == 0 {
+        return;
+    }
+    let depth_sum = read_queue_agg::QUEUE_DEPTH_SUM.load(Ordering::Relaxed);
+    let depth_max = read_queue_agg::QUEUE_DEPTH_MAX.load(Ordering::Relaxed);
+    let ss_sum = read_queue_agg::SAME_SERVER_SUM.load(Ordering::Relaxed);
+    let ss_max = read_queue_agg::SAME_SERVER_MAX.load(Ordering::Relaxed);
+    let nz = n.max(1);
+    tracing::info!(
+        target: "daft_shuffles::read_queue_agg",
+        label = label,
+        dispatches = n,
+        avg_queue_depth = format_args!("{:.2}", depth_sum as f64 / nz as f64),
+        max_queue_depth = depth_max,
+        depth_eq_1 = read_queue_agg::DEPTH_BUCKET_1.load(Ordering::Relaxed),
+        depth_2_4 = read_queue_agg::DEPTH_BUCKET_2_4.load(Ordering::Relaxed),
+        depth_5_16 = read_queue_agg::DEPTH_BUCKET_5_16.load(Ordering::Relaxed),
+        depth_17_64 = read_queue_agg::DEPTH_BUCKET_17_64.load(Ordering::Relaxed),
+        depth_gt_64 = read_queue_agg::DEPTH_BUCKET_GT_64.load(Ordering::Relaxed),
+        avg_same_server_companions = format_args!("{:.2}", ss_sum as f64 / nz as f64),
+        max_same_server_companions = ss_max,
+        "read queue dispatcher agg summary",
+    );
+}
+
 /// Legacy alias for bench compatibility; see `agg::FLUSHES_EVICTION`.
 pub use agg::FLUSHES_EVICTION as CAP_EVICTIONS;
 

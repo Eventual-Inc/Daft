@@ -601,6 +601,9 @@ impl NativeExecutor {
                 daft_shuffles::server::flight_server::log_read_agg_summary(&format!(
                     "plan_finished fingerprint={fingerprint}"
                 ));
+                daft_shuffles::multi_partition_cache::log_read_queue_agg_summary(&format!(
+                    "plan_finished fingerprint={fingerprint}"
+                ));
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
                 Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
             }

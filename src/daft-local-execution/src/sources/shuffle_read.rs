@@ -12,7 +12,10 @@ use daft_core::prelude::SchemaRef;
 use daft_local_plan::{FlightShuffleReadInput, FlightShuffleServerGroup, InputId};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
+use daft_shuffles::{
+    client::FlightClientManager, multi_partition_cache::record_read_queue_dispatch,
+    server::flight_server::ShuffleFlightServer,
+};
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
@@ -120,6 +123,29 @@ impl ShuffleReadSource {
                 while task_set.len() < num_parallel_tasks
                     && let Some((input_id, input)) = pending_tasks.pop_front()
                 {
+                    // Snapshot queue state before consuming `input` so the
+                    // queue-time-coalescing instrumentation sees what a batched
+                    // dispatcher could have batched with. Counts how many of the
+                    // remaining queued entries target ≥1 source server in common
+                    // with the one we're about to dispatch.
+                    let queue_depth_before = pending_tasks.len() + 1;
+                    let same_server_count = {
+                        let dispatched_servers: std::collections::HashSet<&str> = input
+                            .server_groups
+                            .iter()
+                            .map(|g| g.server_address.as_str())
+                            .collect();
+                        pending_tasks
+                            .iter()
+                            .filter(|(_, other)| {
+                                other
+                                    .server_groups
+                                    .iter()
+                                    .any(|g| dispatched_servers.contains(g.server_address.as_str()))
+                            })
+                            .count()
+                    };
+                    record_read_queue_dispatch(queue_depth_before, same_server_count);
                     let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, input.server_groups, schema.clone()).await?;
                     task_set.spawn(forward_partition_stream(stream, schema.clone(), output_sender.clone(), input_id));
                 }
