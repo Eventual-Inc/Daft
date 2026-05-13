@@ -970,7 +970,13 @@ fn concat_specs_into_flight_datas_sync(
                         pending_bytes += estimate_batch_size(&batch);
                         pending.push(batch);
                         if pending_bytes >= chunk_target_bytes {
-                            flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+                            flush(
+                                &mut pending,
+                                &mut pending_bytes,
+                                &mut flight_datas,
+                                &mut dict_tracker,
+                                &mut compression_ctx,
+                            )?;
                         }
                     }
                 }
