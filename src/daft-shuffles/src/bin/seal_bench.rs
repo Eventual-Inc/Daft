@@ -488,6 +488,21 @@ async fn main() -> DaftResult<()> {
                 "file_write_bytes: {:.1} MiB",
                 w.file_write_bytes as f64 / (1024.0 * 1024.0)
             );
+            {
+                use std::sync::atomic::Ordering;
+                use daft_shuffles::multi_partition_cache::agg;
+                let lt_4k = agg::FLUSH_LT_4K.load(Ordering::Relaxed);
+                let lt_16k = agg::FLUSH_LT_16K.load(Ordering::Relaxed);
+                let lt_64k = agg::FLUSH_LT_64K.load(Ordering::Relaxed);
+                let lt_256k = agg::FLUSH_LT_256K.load(Ordering::Relaxed);
+                let lt_1m = agg::FLUSH_LT_1M.load(Ordering::Relaxed);
+                let lt_4m = agg::FLUSH_LT_4M.load(Ordering::Relaxed);
+                let ge_4m = agg::FLUSH_GE_4M.load(Ordering::Relaxed);
+                println!(
+                    "flush histogram: <4k={} <16k={} <64k={} <256k={} <1m={} <4m={} ≥4m={}",
+                    lt_4k, lt_16k, lt_64k, lt_256k, lt_1m, lt_4m, ge_4m,
+                );
+            }
             println!();
         }
     }
