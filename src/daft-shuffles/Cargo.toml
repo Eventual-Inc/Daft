@@ -29,6 +29,10 @@ path = "src/bin/shuffle_bench.rs"
 name = "seal_bench"
 path = "src/bin/seal_bench.rs"
 
+[[bin]]
+name = "repartition_bench"
+path = "src/bin/repartition_bench.rs"
+
 [lints]
 workspace = true
 
