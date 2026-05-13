@@ -490,103 +490,6 @@ fn build_join_output(
     ))
 }
 
-async fn finalize(
-    states: Vec<AsofJoinProbeState>,
-    build_state: Arc<AsofJoinFinalizedBuildState>,
-    join_schema: SchemaRef,
-    pruned_right_schema: SchemaRef,
-    dir: AsofJoinStrategy,
-) -> DaftResult<Option<MicroPartition>> {
-    // Each state's best_match stores a local_rb_idx scoped to that state's
-    // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
-    // to a global_rb_idx into the flat global_right_on_key_arrs / global_right_rbs.
-    let mut global_rb_offsets: Vec<usize> = Vec::with_capacity(states.len());
-    let mut global_right_on_key_arrs: Vec<Arc<dyn Array>> = Vec::new();
-    let mut state_best_matches: Vec<Vec<Option<(u32, u32)>>> = Vec::with_capacity(states.len());
-    let mut global_right_rbs: Vec<RecordBatch> = Vec::new();
-    let mut rb_count = 0;
-
-    for state in states {
-        global_rb_offsets.push(rb_count);
-        rb_count += state.right_rbs_and_on_keys.len();
-        for (rb, on_key_arr) in state.right_rbs_and_on_keys {
-            global_right_on_key_arrs.push(on_key_arr);
-            global_right_rbs.push(rb);
-        }
-        state_best_matches.push(state.best_match);
-    }
-
-    let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
-    let global_rb_offsets = Arc::new(global_rb_offsets);
-    let state_best_matches = Arc::new(state_best_matches);
-
-    let total_left_rows = build_state.left_rb.num_rows();
-    let rows_per_chunk = (total_left_rows / get_compute_pool_num_threads()).max(1024);
-
-    let chunk_tasks: Vec<_> = (0..total_left_rows)
-        .step_by(rows_per_chunk)
-        .map(|start| {
-            let end = (start + rows_per_chunk).min(total_left_rows);
-            let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
-            let global_right_on_key_arrs = global_right_on_key_arrs.clone();
-            let global_rb_offsets = global_rb_offsets.clone();
-            let state_best_matches = state_best_matches.clone();
-
-            get_compute_runtime().spawn(async move {
-                let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
-
-                for (chunk_row_idx, curr_best_match) in chunk.iter_mut().enumerate() {
-                    let global_left_idx = start + chunk_row_idx;
-                    for (state_idx, best_match) in state_best_matches.iter().enumerate() {
-                        let Some((candidate_local_rb_idx, candidate_right_idx)) =
-                            best_match[global_left_idx]
-                        else {
-                            continue;
-                        };
-                        let candidate_global_rb_idx =
-                            global_rb_offsets[state_idx] + candidate_local_rb_idx as usize;
-
-                        update_best_match(
-                            curr_best_match,
-                            &global_right_on_key_arrs,
-                            candidate_global_rb_idx,
-                            candidate_right_idx as usize,
-                            &mut cmp_cache,
-                            dir,
-                        )?;
-                    }
-                }
-                DaftResult::Ok(chunk)
-            })
-        })
-        .collect();
-
-    let mut global_best: Vec<Option<(u32, u32)>> = vec![None; total_left_rows];
-    for (i, task) in chunk_tasks.into_iter().enumerate() {
-        let chunk = task
-            .await
-            .map_err(|_| DaftError::InternalError("compute merge task dropped".into()))??;
-        let start = i * rows_per_chunk;
-        global_best[start..start + chunk.len()].copy_from_slice(&chunk);
-    }
-
-    match dir {
-        AsofJoinStrategy::Backward => {
-            forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
-        }
-        AsofJoinStrategy::Forward => {
-            backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
-        }
-    }
-
-    let right_rb = build_right_output(&global_best, global_right_rbs, pruned_right_schema)?;
-    Ok(Some(build_join_output(
-        &build_state.left_rb,
-        right_rb,
-        join_schema,
-    )?))
-}
-
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
     right_by: Vec<BoundExpr>,
@@ -742,8 +645,101 @@ impl JoinOperator for AsofJoinOperator {
                         )));
                     }
 
-                    let dir = strategy;
-                    finalize(states, build_state, join_schema, pruned_right_schema, dir).await
+                    // Each state's best_match stores a local_rb_idx scoped to that state's
+                    // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
+                    // to a global_rb_idx into the flat global_right_on_key_arrs / global_right_rbs.
+                    let mut global_rb_offsets: Vec<usize> = Vec::with_capacity(states.len());
+                    let mut global_right_on_key_arrs: Vec<Arc<dyn Array>> = Vec::new();
+                    let mut state_best_matches: Vec<Vec<Option<(u32, u32)>>> =
+                        Vec::with_capacity(states.len());
+                    let mut global_right_rbs: Vec<RecordBatch> = Vec::new();
+                    let mut rb_count = 0;
+
+                    for state in states {
+                        global_rb_offsets.push(rb_count);
+                        rb_count += state.right_rbs_and_on_keys.len();
+                        for (rb, on_key_arr) in state.right_rbs_and_on_keys {
+                            global_right_on_key_arrs.push(on_key_arr);
+                            global_right_rbs.push(rb);
+                        }
+                        state_best_matches.push(state.best_match);
+                    }
+
+                    let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
+                    let global_rb_offsets = Arc::new(global_rb_offsets);
+                    let state_best_matches = Arc::new(state_best_matches);
+
+                    let total_left_rows = build_state.left_rb.num_rows();
+                    let rows_per_chunk =
+                        (total_left_rows / get_compute_pool_num_threads()).max(1024);
+
+                    let chunk_tasks: Vec<_> = (0..total_left_rows)
+                        .step_by(rows_per_chunk)
+                        .map(|start| {
+                            let end = (start + rows_per_chunk).min(total_left_rows);
+                            let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
+                            let global_right_on_key_arrs = global_right_on_key_arrs.clone();
+                            let global_rb_offsets = global_rb_offsets.clone();
+                            let state_best_matches = state_best_matches.clone();
+
+                            get_compute_runtime().spawn(async move {
+                                let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> =
+                                    HashMap::new();
+
+                                for (chunk_row_idx, curr_best_match) in chunk.iter_mut().enumerate()
+                                {
+                                    let global_left_idx = start + chunk_row_idx;
+                                    for (state_idx, best_match) in
+                                        state_best_matches.iter().enumerate()
+                                    {
+                                        let Some((candidate_local_rb_idx, candidate_right_idx)) =
+                                            best_match[global_left_idx]
+                                        else {
+                                            continue;
+                                        };
+                                        let candidate_global_rb_idx = global_rb_offsets[state_idx]
+                                            + candidate_local_rb_idx as usize;
+
+                                        update_best_match(
+                                            curr_best_match,
+                                            &global_right_on_key_arrs,
+                                            candidate_global_rb_idx,
+                                            candidate_right_idx as usize,
+                                            &mut cmp_cache,
+                                            strategy,
+                                        )?;
+                                    }
+                                }
+                                DaftResult::Ok(chunk)
+                            })
+                        })
+                        .collect();
+
+                    let mut global_best: Vec<Option<(u32, u32)>> = vec![None; total_left_rows];
+                    for (i, task) in chunk_tasks.into_iter().enumerate() {
+                        let chunk = task.await.map_err(|_| {
+                            DaftError::InternalError("compute merge task dropped".into())
+                        })??;
+                        let start = i * rows_per_chunk;
+                        global_best[start..start + chunk.len()].copy_from_slice(&chunk);
+                    }
+
+                    match strategy {
+                        AsofJoinStrategy::Backward => {
+                            forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                        }
+                        AsofJoinStrategy::Forward => {
+                            backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                        }
+                    }
+
+                    let right_rb =
+                        build_right_output(&global_best, global_right_rbs, pruned_right_schema)?;
+                    Ok(Some(build_join_output(
+                        &build_state.left_rb,
+                        right_rb,
+                        join_schema,
+                    )?))
                 },
                 Span::current(),
             )

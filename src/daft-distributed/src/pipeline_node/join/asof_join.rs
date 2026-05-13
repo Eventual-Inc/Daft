@@ -439,8 +439,7 @@ impl AsofJoinNode {
     }
 
     /// Creates a single top_n(limit=1) task per partition over the per-worker top-1 outputs,
-    /// yielding the global extreme (max or min) per partition.
-    /// `descending` is passed through from `create_per_worker_carryover_tasks`.
+    /// yielding the global extreme (max or min) per partitions (determined by the descending parameter).
     ///
     /// Returns `Vec<Option<SubmittedTask>>` where `None` means the partition had no data.
     fn create_per_partition_carryover_tasks(
