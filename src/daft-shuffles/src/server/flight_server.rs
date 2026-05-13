@@ -78,7 +78,6 @@ struct FlightPartitionKey {
 /// One `FileReadSpec` corresponds to exactly one `open()` syscall on the read side —
 /// `Ranges` may carry multiple byte ranges within the same file (combined-file shuffle),
 /// which are all served from a single open.
-#[derive(Debug, Clone)]
 /// One byte range to read from a file, optionally with a row slice that the
 /// reader should apply to the decoded batch. The row slice is set when the
 /// writer coalesced K adjacent output partitions into one IPC batch — each
