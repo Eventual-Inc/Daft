@@ -48,7 +48,7 @@ mod repr_html;
 
 pub use growable::GrowableRecordBatch;
 pub use ops::joins::nested_loop_join::{nested_loop_inner_join, nested_loop_inner_join_indexed};
-pub use ops::{build_left_to_right_map, get_column_by_name, get_columns_by_name};
+pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]

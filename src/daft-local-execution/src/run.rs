@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
-    daft_context::{DaftContext, python::PyDaftContext},
+    daft_context::{python::PyDaftContext},
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,

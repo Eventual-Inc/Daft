@@ -282,6 +282,7 @@ impl LocalPhysicalPlan {
             | Self::Pivot(Pivot { context, .. })
             | Self::Concat(Concat { context, .. })
             | Self::HashJoin(HashJoin { context, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { context, .. })
             | Self::CrossJoin(CrossJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::AsofJoin(AsofJoin { context, .. })
