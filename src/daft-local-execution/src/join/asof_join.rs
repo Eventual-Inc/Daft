@@ -31,19 +31,6 @@ use crate::{
     pipeline::NodeName,
 };
 
-#[derive(Clone, Copy)]
-pub enum LocalAsofStrategyDirectional {
-    Backward,
-    Forward,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub enum LocalAsofStrategy {
-    Directional(LocalAsofStrategyDirectional),
-    Nearest,
-}
-
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
 // (the most-recent right event at or before the left event).
 //
@@ -269,7 +256,7 @@ pub(crate) struct AsofJoinProbeState {
 }
 
 impl AsofJoinProbeState {
-    fn probe_batch_directional(
+    fn probe_batch(
         &mut self,
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
@@ -356,7 +343,7 @@ impl AsofJoinProbeState {
                 continue;
             };
 
-            update_best_directional_match(
+            update_best_match(
                 &mut self.best_match[matched_left_idx],
                 &right_on_key_arrs,
                 MatchCandidate {
@@ -406,19 +393,6 @@ fn update_best_match(
         *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
     }
     Ok(())
-}
-
-#[allow(dead_code)]
-fn update_nearest_match(
-    _slot: &mut Option<(u32, u32)>,
-    _on_key_arrs: &[Arc<dyn Array>],
-    _candidate_rb_idx: usize,
-    _candidate_right_idx: usize,
-    _left_on_key_arr: &dyn Array,
-    _left_row_idx: usize,
-    _cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
-) -> DaftResult<()> {
-    unimplemented!("Nearest asof join is not yet implemented")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -520,12 +494,12 @@ fn build_join_output(
     ))
 }
 
-async fn finalize_directional(
+async fn finalize(
     states: Vec<AsofJoinProbeState>,
     build_state: Arc<AsofJoinFinalizedBuildState>,
     join_schema: SchemaRef,
     pruned_right_schema: SchemaRef,
-    dir: LocalAsofStrategyDirectional,
+    dir: AsofJoinStrategy,
 ) -> DaftResult<Option<MicroPartition>> {
     // Each state's best_match stores a local_rb_idx scoped to that state's
     // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
@@ -576,7 +550,7 @@ async fn finalize_directional(
                         let candidate_global_rb_idx =
                             global_rb_offsets[state_idx] + candidate_local_rb_idx as usize;
 
-                        update_best_directional_match(
+                        update_best_match(
                             curr_best_match,
                             &global_right_on_key_arrs,
                             candidate_global_rb_idx,
@@ -601,10 +575,10 @@ async fn finalize_directional(
     }
 
     match dir {
-        LocalAsofStrategyDirectional::Backward => {
+        AsofJoinStrategy::Backward => {
             forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
         }
-        LocalAsofStrategyDirectional::Forward => {
+        AsofJoinStrategy::Forward => {
             backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
         }
     }
@@ -615,15 +589,6 @@ async fn finalize_directional(
         right_rb,
         join_schema,
     )?))
-}
-
-async fn finalize_nearest(
-    _states: Vec<AsofJoinProbeState>,
-    _build_state: Arc<AsofJoinFinalizedBuildState>,
-    _join_schema: SchemaRef,
-    _pruned_right_schema: SchemaRef,
-) -> DaftResult<Option<MicroPartition>> {
-    unimplemented!("Nearest asof join is not yet implemented")
 }
 
 pub struct AsofJoinOperator {
@@ -647,14 +612,6 @@ impl AsofJoinOperator {
         left_schema: SchemaRef,
         join_schema: SchemaRef,
     ) -> DaftResult<Self> {
-        let local_strategy = match strategy {
-            AsofJoinStrategy::Backward => {
-                LocalAsofStrategy::Directional(LocalAsofStrategyDirectional::Backward)
-            }
-            AsofJoinStrategy::Forward => {
-                LocalAsofStrategy::Directional(LocalAsofStrategyDirectional::Forward)
-            }
-        };
         let right_cols_to_keep = join_schema
             .fields()
             .iter()
@@ -669,7 +626,7 @@ impl AsofJoinOperator {
             left_schema,
             join_schema,
             right_cols_to_keep,
-            strategy: local_strategy,
+            strategy,
         })
     }
 }
