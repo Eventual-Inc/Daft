@@ -38,12 +38,18 @@ enum AutoscaleStrategy {
 struct BisectState {
     /// Cluster CPU count when we last issued a request.
     cluster_cpus_at_last_request: f64,
+    /// Cluster GPU count when we last issued a request.
+    cluster_gpus_at_last_request: f64,
+    /// Cluster memory bytes when we last issued a request.
+    cluster_memory_at_last_request: usize,
     /// Total CPUs in our last request to Ray.
     last_requested_cpus: f64,
+    /// Total GPUs in our last request to Ray.
+    last_requested_gpus: f64,
+    /// Total memory bytes in our last request to Ray.
+    last_requested_memory: usize,
     /// When we issued the last request.
     last_request_time: Instant,
-    /// How long to wait before concluding request was rejected.
-    growth_timeout: Duration,
 }
 
 struct RayWorkerManagerState {
@@ -54,6 +60,7 @@ struct RayWorkerManagerState {
     autoscale_interval_secs: Duration,
     strategy: AutoscaleStrategy,
     bisect_state: Option<BisectState>,
+    bisect_growth_timeout: Duration,
 }
 
 impl RayWorkerManagerState {
@@ -122,6 +129,12 @@ impl RayWorkerManager {
                     _ => AutoscaleStrategy::Gradual,
                 },
                 bisect_state: None,
+                bisect_growth_timeout: Duration::from_secs(
+                    std::env::var(DAFT_AUTOSCALE_BISECT_TIMEOUT_ENV)
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS),
+                ),
             })),
         }
     }
@@ -369,6 +382,8 @@ impl RayWorkerManager {
     /// `growth_timeout`, assume the request was rejected (exceeded cluster ceiling) and halve
     /// the request. When the cluster does grow, greedily re-request all remaining demand.
     /// This converges on the cluster's actual capacity in O(log N) steps.
+    ///
+    /// Tracks CPU, GPU, and memory dimensions to handle zero-CPU bundles (e.g., pure GPU tasks).
     fn try_autoscale_bisect(
         state: &mut RayWorkerManagerState,
         bundles: Vec<TaskResourceRequest>,
@@ -377,56 +392,93 @@ impl RayWorkerManager {
             return Ok(());
         }
 
-        // Calculate current cluster CPU capacity
+        // Calculate current cluster capacity across all dimensions
         let current_cluster_cpus: f64 =
             state.ray_workers.values().map(|w| w.total_num_cpus()).sum();
+        let current_cluster_gpus: f64 =
+            state.ray_workers.values().map(|w| w.total_num_gpus()).sum();
+        let current_cluster_memory: usize = state
+            .ray_workers
+            .values()
+            .map(|w| w.total_memory_bytes())
+            .sum();
 
-        // Calculate total pending demand
+        // Calculate total pending demand across all dimensions
         let total_pending_cpus: f64 = bundles
             .iter()
             .map(|b| b.resource_request.num_cpus().unwrap_or(0.0))
             .sum();
+        let total_pending_gpus: f64 = bundles
+            .iter()
+            .map(|b| b.resource_request.num_gpus().unwrap_or(0.0))
+            .sum();
+        let total_pending_memory: usize = bundles
+            .iter()
+            .map(|b| b.resource_request.memory_bytes().unwrap_or(0))
+            .sum();
 
-        let request_cpus: f64 = match &state.bisect_state {
+        // Determine how much to request in each dimension
+        let (request_cpus, request_gpus, request_memory): (f64, f64, usize) = match &state
+            .bisect_state
+        {
             None => {
                 // First call ever: request all pending demand
                 tracing::info!(
                     target: "daft_distributed::autoscale",
-                    "Bisect autoscale: initial request for all pending demand ({:.0} CPUs)",
-                    total_pending_cpus
+                    "Bisect autoscale: initial request for all pending demand ({:.0} CPUs, {:.0} GPUs, {} bytes memory)",
+                    total_pending_cpus,
+                    total_pending_gpus,
+                    total_pending_memory
                 );
-                total_pending_cpus
+                (total_pending_cpus, total_pending_gpus, total_pending_memory)
             }
             Some(bisect) => {
                 let elapsed = bisect.last_request_time.elapsed();
-                let cluster_grew = current_cluster_cpus > bisect.cluster_cpus_at_last_request;
+                let cluster_grew = current_cluster_cpus > bisect.cluster_cpus_at_last_request
+                    || current_cluster_gpus > bisect.cluster_gpus_at_last_request
+                    || current_cluster_memory > bisect.cluster_memory_at_last_request;
 
                 if cluster_grew {
                     // Last request succeeded (cluster grew) -> greedily request all remaining demand
                     tracing::info!(
                         target: "daft_distributed::autoscale",
-                        "Bisect autoscale: cluster grew ({:.0} -> {:.0} CPUs), requesting all remaining demand ({:.0} CPUs)",
+                        "Bisect autoscale: cluster grew (CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes), requesting all remaining demand",
                         bisect.cluster_cpus_at_last_request,
                         current_cluster_cpus,
-                        total_pending_cpus
+                        bisect.cluster_gpus_at_last_request,
+                        current_cluster_gpus,
+                        bisect.cluster_memory_at_last_request,
+                        current_cluster_memory
                     );
-                    total_pending_cpus
-                } else if elapsed >= bisect.growth_timeout {
+                    (total_pending_cpus, total_pending_gpus, total_pending_memory)
+                } else if elapsed >= state.bisect_growth_timeout {
                     // Timeout with no growth -> request was rejected -> halve
-                    let halved = bisect.last_requested_cpus / 2.0;
-                    let min_bundle_cpus = bundles
-                        .first()
-                        .and_then(|b| b.resource_request.num_cpus())
-                        .unwrap_or(1.0);
-                    let result = halved.max(min_bundle_cpus);
+                    let halved_cpus = bisect.last_requested_cpus / 2.0;
+                    let halved_gpus = bisect.last_requested_gpus / 2.0;
+                    let halved_memory = bisect.last_requested_memory / 2;
+
+                    // Ensure we don't go below the first bundle's requirements
+                    let first = bundles.first().map(|b| &b.resource_request);
+                    let min_cpus = first.and_then(|r| r.num_cpus()).unwrap_or(0.0);
+                    let min_gpus = first.and_then(|r| r.num_gpus()).unwrap_or(0.0);
+                    let min_memory = first.and_then(|r| r.memory_bytes()).unwrap_or(0);
+
+                    let result_cpus = halved_cpus.max(min_cpus);
+                    let result_gpus = halved_gpus.max(min_gpus);
+                    let result_memory = halved_memory.max(min_memory);
+
                     tracing::warn!(
                         target: "daft_distributed::autoscale",
-                        "Bisect autoscale: no growth after {:.0}s, halving request from {:.0} to {:.0} CPUs",
+                        "Bisect autoscale: no growth after {:.0}s, halving request (CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes)",
                         elapsed.as_secs_f64(),
                         bisect.last_requested_cpus,
-                        result
+                        result_cpus,
+                        bisect.last_requested_gpus,
+                        result_gpus,
+                        bisect.last_requested_memory,
+                        result_memory
                     );
-                    result
+                    (result_cpus, result_gpus, result_memory)
                 } else if elapsed < state.autoscale_interval_secs {
                     // Less than one autoscaler cycle since last request, wait
                     return Ok(());
@@ -437,13 +489,21 @@ impl RayWorkerManager {
             }
         };
 
-        // Select bundles up to request_cpus
+        // Select bundles until all non-zero dimensions are satisfied
         let mut cpu_sum = 0.0;
+        let mut gpu_sum = 0.0;
+        let mut memory_sum: usize = 0;
         let mut selected_bundles = Vec::new();
         for bundle in &bundles {
             cpu_sum += bundle.resource_request.num_cpus().unwrap_or(0.0);
+            gpu_sum += bundle.resource_request.num_gpus().unwrap_or(0.0);
+            memory_sum += bundle.resource_request.memory_bytes().unwrap_or(0);
             selected_bundles.push(bundle);
-            if cpu_sum >= request_cpus {
+            // Break when we've accumulated enough in ALL non-zero dimensions
+            let cpu_satisfied = request_cpus <= 0.0 || cpu_sum >= request_cpus;
+            let gpu_satisfied = request_gpus <= 0.0 || gpu_sum >= request_gpus;
+            let memory_satisfied = request_memory == 0 || memory_sum >= request_memory;
+            if cpu_satisfied && gpu_satisfied && memory_satisfied {
                 break;
             }
         }
@@ -452,17 +512,14 @@ impl RayWorkerManager {
         Self::send_bundles_to_ray(&selected_bundles)?;
 
         // Update bisect state
-        let growth_timeout = Duration::from_secs(
-            std::env::var(DAFT_AUTOSCALE_BISECT_TIMEOUT_ENV)
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS),
-        );
         state.bisect_state = Some(BisectState {
             cluster_cpus_at_last_request: current_cluster_cpus,
+            cluster_gpus_at_last_request: current_cluster_gpus,
+            cluster_memory_at_last_request: current_cluster_memory,
             last_requested_cpus: cpu_sum,
+            last_requested_gpus: gpu_sum,
+            last_requested_memory: memory_sum,
             last_request_time: Instant::now(),
-            growth_timeout,
         });
 
         Ok(())
