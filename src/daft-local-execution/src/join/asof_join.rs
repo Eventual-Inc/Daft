@@ -395,7 +395,6 @@ fn update_best_match(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn is_candidate_better(
     candidate: MatchCandidate,
     existing: MatchCandidate,
