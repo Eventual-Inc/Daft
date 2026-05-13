@@ -1043,10 +1043,10 @@ fn agg_packed_u64_path(
         return Ok(None);
     }
     let cols = groupby_physical.as_materialized_series();
-    let Some(syms0) = symbolize_string_col(&cols[0])? else {
+    let Some(syms0) = symbolize_string_col(cols[0])? else {
         return Ok(None);
     };
-    let Some(syms1) = symbolize_string_col(&cols[1])? else {
+    let Some(syms1) = symbolize_string_col(cols[1])? else {
         return Ok(None);
     };
 
