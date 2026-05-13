@@ -203,6 +203,17 @@ pub struct ShuffleFlightServer {
     /// Tunables for `seal_shuffle`. Single shared config — there is no per-shuffle
     /// state to track because seal is single-shot per shuffle.
     seal_cfg: SealConfig,
+    /// Per-partition claim flag for pipelined seal: `true` means a seal task
+    /// owns this partition and no other trigger should fire. Cleared when the
+    /// task completes. Existence-only map — absence means idle.
+    sealing_partitions: Arc<Mutex<HashMap<(u64, usize), bool>>>,
+    /// Monotonic counter for naming consolidated output files when we may seal
+    /// the same partition multiple times (pipelined seals + final seal).
+    coalesce_seq: Arc<AtomicU64>,
+    /// Live pipelined seal handles per shuffle, awaited by `seal_shuffle` before
+    /// it runs the final mop-up pass. Tasks remove themselves on completion.
+    inflight_seals:
+        Arc<Mutex<HashMap<u64, Vec<tokio::task::JoinHandle<DaftResult<()>>>>>>,
 }
 
 impl Default for ShuffleFlightServer {
@@ -221,6 +232,9 @@ impl ShuffleFlightServer {
             shuffle_partitions: Arc::new(Mutex::new(HashMap::new())),
             partition_writers: Arc::new(Mutex::new(HashMap::new())),
             seal_cfg,
+            sealing_partitions: Arc::new(Mutex::new(HashMap::new())),
+            coalesce_seq: Arc::new(AtomicU64::new(1)),
+            inflight_seals: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -257,15 +271,156 @@ impl ShuffleFlightServer {
         shuffle_id: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        for partition in partitions {
-            shuffle_partitions.insert(
-                FlightPartitionKey {
-                    shuffle_id,
-                    partition_ref_id: partition.partition_ref_id,
-                },
-                partition,
-            );
+        // Track which partitions saw new data this call so we can decide whether
+        // to fire pipelined seals.
+        let mut touched_partitions: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
+        {
+            let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+            for partition in partitions {
+                let partition_idx =
+                    (partition.partition_ref_id & 0xFFFF_FFFF) as usize;
+                if !partition.file_paths.is_empty() {
+                    touched_partitions.insert(partition_idx);
+                }
+                shuffle_partitions.insert(
+                    FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: partition.partition_ref_id,
+                    },
+                    partition,
+                );
+            }
+        }
+
+        // Env override for pipeline threshold so we can sweep without rebuild.
+        let pipeline_threshold = std::env::var("DAFT_SHUFFLE_PIPELINE_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .or(self.seal_cfg.pipeline_threshold);
+        let Some(threshold) = pipeline_threshold else {
+            return Ok(());
+        };
+        if threshold == 0 {
+            return Ok(());
+        }
+
+        // For each touched partition, count entries with data. If >= threshold
+        // and the partition isn't already being sealed, claim it and spawn a
+        // background seal task.
+        for partition_idx in touched_partitions {
+            let entries_with_data = {
+                let sp = self.shuffle_partitions.lock().await;
+                sp.iter()
+                    .filter(|(k, c)| {
+                        k.shuffle_id == shuffle_id
+                            && ((k.partition_ref_id & 0xFFFF_FFFF) as usize) == partition_idx
+                            && !c.file_paths.is_empty()
+                    })
+                    .count()
+            };
+            if entries_with_data < threshold {
+                continue;
+            }
+
+            // Claim the partition for sealing.
+            let claimed = {
+                let mut states = self.sealing_partitions.lock().await;
+                let entry = states.entry((shuffle_id, partition_idx)).or_insert(false);
+                if *entry {
+                    false
+                } else {
+                    *entry = true;
+                    true
+                }
+            };
+            if !claimed {
+                continue;
+            }
+
+            let server = self.clone();
+            let handle = tokio::spawn(async move {
+                let r = server.seal_partition_internal(shuffle_id, partition_idx).await;
+                let mut states = server.sealing_partitions.lock().await;
+                states.insert((shuffle_id, partition_idx), false);
+                r
+            });
+            let mut inflight = self.inflight_seals.lock().await;
+            inflight.entry(shuffle_id).or_default().push(handle);
+        }
+        Ok(())
+    }
+
+    /// Coalesce a single partition's currently-resident entries. Snapshots the
+    /// cache under the lock, runs the configured merge (byte-level or arrow),
+    /// then atomically swaps the updated entries in. Entries arriving for the
+    /// same partition during the work are ignored by this pass; a subsequent
+    /// trigger picks them up (which is why pipelined-seal can re-merge a
+    /// partition multiple times as new map tasks register).
+    async fn seal_partition_internal(
+        &self,
+        shuffle_id: u64,
+        partition_idx: usize,
+    ) -> DaftResult<()> {
+        let entries: Vec<(u64, PartitionCache)> = {
+            let sp = self.shuffle_partitions.lock().await;
+            sp.iter()
+                .filter(|(k, c)| {
+                    k.shuffle_id == shuffle_id
+                        && ((k.partition_ref_id & 0xFFFF_FFFF) as usize) == partition_idx
+                        && !c.file_paths.is_empty()
+                })
+                .map(|(k, c)| (k.partition_ref_id, c.clone()))
+                .collect()
+        };
+        if entries.len() < 2 {
+            return Ok(());
+        }
+
+        let seq = self.coalesce_seq.fetch_add(1, Ordering::Relaxed);
+        let Some(plan) = coalescer::build_plan(
+            shuffle_id,
+            partition_idx,
+            entries.iter().map(|(r, c)| (*r, c)),
+            seq,
+        ) else {
+            return Ok(());
+        };
+
+        // Env override for arrow-merge applies here too — same toggle as
+        // seal_shuffle uses.
+        let mut effective_cfg = self.seal_cfg;
+        if std::env::var("DAFT_SHUFFLE_SEAL_MERGE")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            effective_cfg.merge_batches = true;
+        }
+
+        let outcome = coalescer::execute_plan(plan, effective_cfg).await?;
+
+        {
+            let mut sp = self.shuffle_partitions.lock().await;
+            for (ref_id, new_cache) in outcome.updated_entries {
+                sp.insert(
+                    FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: ref_id,
+                    },
+                    new_cache,
+                );
+            }
+        }
+        for path in outcome.orphaned_sources {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(
+                    target: "daft_shuffles::seal",
+                    path = %path,
+                    error = %e,
+                    "failed to unlink coalesced source"
+                );
+            }
         }
         Ok(())
     }
@@ -280,6 +435,32 @@ impl ShuffleFlightServer {
     /// it ignores entry-count + byte thresholds — every group with >1 entry gets
     /// consolidated. Idempotent: a second call finds nothing to do.
     pub async fn seal_shuffle(&self, shuffle_id: u64) -> DaftResult<()> {
+        // Drain any pipelined seals that registered while map tasks ran. After
+        // this point no further pipelined seals can fire (no more registers in
+        // this shuffle's lifecycle), so the final pass below only needs to
+        // mop up partitions that the pipeline didn't reach.
+        let handles = {
+            let mut inflight = self.inflight_seals.lock().await;
+            inflight.remove(&shuffle_id).unwrap_or_default()
+        };
+        for h in handles {
+            match h.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => tracing::warn!(
+                    target: "daft_shuffles::seal",
+                    shuffle_id = shuffle_id,
+                    error = %e,
+                    "pipelined seal: per-partition task failed"
+                ),
+                Err(e) => tracing::warn!(
+                    target: "daft_shuffles::seal",
+                    shuffle_id = shuffle_id,
+                    error = %e,
+                    "pipelined seal: per-partition task panicked"
+                ),
+            }
+        }
+
         // Snapshot every entry for this shuffle under the lock, group by
         // partition_idx (low 32 bits of partition_ref_id).
         let by_partition: HashMap<usize, Vec<(u64, PartitionCache)>> = {
@@ -298,11 +479,15 @@ impl ShuffleFlightServer {
             by_partition
         };
 
-        // Only consolidate groups with >1 entry. Single-entry groups are already
-        // in their final form (1 file, no read-side coalescing benefit).
+        // Only consolidate groups with >1 entry *carrying data*. After
+        // pipelined seal, a partition may have many empty entries plus one
+        // merged entry — re-running merge against that produces the same
+        // result, so skip it.
         let groups: Vec<(usize, Vec<(u64, PartitionCache)>)> = by_partition
             .into_iter()
-            .filter(|(_, v)| v.len() > 1)
+            .filter(|(_, v)| {
+                v.iter().filter(|(_, c)| !c.file_paths.is_empty()).count() > 1
+            })
             .collect();
         if groups.is_empty() {
             return Ok(());
@@ -325,11 +510,12 @@ impl ShuffleFlightServer {
         // a permit so total in-flight disk I/O stays bounded.
         let mut handles = Vec::with_capacity(groups.len());
         for (partition_idx, entries) in groups {
+            let seq = self.coalesce_seq.fetch_add(1, Ordering::Relaxed);
             let Some(plan) = coalescer::build_plan(
                 shuffle_id,
                 partition_idx,
                 entries.iter().map(|(r, c)| (*r, c)),
-                0,
+                seq,
             ) else {
                 continue;
             };

@@ -504,7 +504,11 @@ async fn main() -> DaftResult<()> {
     .expect("server bootstrap panicked");
     let server_address = server_handle.shuffle_address();
 
-    // ----- Phase 1: map (partition + accumulate + write) -----
+    // ----- Phase 1: map (partition + accumulate + write + register-per-task) -----
+    //
+    // Each map task registers its partition caches with the Flight server as
+    // soon as it finishes, mirroring what a Flotilla worker does in production.
+    // This is what lets pipelined seal trigger before the map phase is over.
     let phase1 = Instant::now();
     let sem = Arc::new(Semaphore::new(cfg.map_concurrency));
     let mut handles = Vec::with_capacity(cfg.num_inputs);
@@ -516,17 +520,22 @@ async fn main() -> DaftResult<()> {
         let sem_c = sem.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem_c.acquire_owned().await.unwrap();
-            match cfg_c.writer {
+            let result = match cfg_c.writer {
                 Writer::Oneshot => {
                     run_map_task_oneshot(&cfg_c, input_id as u32, schema_c, dirs_c).await
                 }
                 Writer::Append => {
-                    run_map_task_append(&cfg_c, input_id as u32, schema_c, dirs_c, server_c).await
+                    run_map_task_append(&cfg_c, input_id as u32, schema_c, dirs_c, server_c.clone()).await
                 }
                 Writer::MultiFile => {
                     run_map_task_multi_file(&cfg_c, input_id as u32, schema_c, dirs_c).await
                 }
-            }
+            }?;
+            // Per-task register — lets pipelined seal kick off mid-phase.
+            server_c
+                .register_shuffle_partitions(cfg_c.shuffle_id, result.partition_caches.clone())
+                .await?;
+            DaftResult::Ok(result)
         }));
     }
     let mut map_results = Vec::with_capacity(cfg.num_inputs);
@@ -599,19 +608,15 @@ async fn main() -> DaftResult<()> {
     );
     println!();
 
-    // ----- Phase 2: register -----
+    // ----- Phase 2: register (no-op; map tasks already registered) -----
+    // Map tasks register their caches as they finish (so pipelined seal can
+    // fire mid-phase). This block exists only to keep the phase accounting
+    // and CSV column layout stable.
     let phase2 = Instant::now();
-    let mut all_caches: Vec<PartitionCache> =
-        Vec::with_capacity(cfg.num_inputs * cfg.num_outputs);
-    for r in map_results {
-        all_caches.extend(r.partition_caches);
-    }
-    server
-        .register_shuffle_partitions(cfg.shuffle_id, all_caches)
-        .await?;
+    let _ = map_results;
     let phase2_ms = phase2.elapsed().as_secs_f64() * 1000.0;
     println!("--- Phase 2: register ---");
-    println!("wall:                       {:.1} ms", phase2_ms);
+    println!("wall:                       {:.1} ms (registered inline during map)", phase2_ms);
     println!("server addr:                {}", server_address);
     println!();
 
