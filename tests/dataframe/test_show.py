@@ -261,9 +261,10 @@ def test_resolve_show_defaults_respects_explicit_default_values(monkeypatch):
     assert align == "left"
 
 
-def test_resolve_show_defaults_align_defaults_to_auto(monkeypatch):
-    # With no env vars and no explicit argument, align should default to "auto"
-    # so numeric columns are right-aligned in the preview renderer.
+def test_resolve_show_defaults_falls_back_to_left_align(monkeypatch):
+    # With no env vars and no explicit argument, align stays "left" to keep
+    # existing docstring/doctest output stable. Users opt into numeric-right
+    # behavior via DAFT_SHOW_ALIGN=auto or an explicit align="auto" argument.
     for var in ("DAFT_SHOW_FORMAT", "DAFT_SHOW_VERBOSE", "DAFT_SHOW_MAX_WIDTH", "DAFT_SHOW_ALIGN"):
         monkeypatch.delenv(var, raising=False)
 
@@ -271,7 +272,7 @@ def test_resolve_show_defaults_align_defaults_to_auto(monkeypatch):
 
     assert verbose is False
     assert max_width == 30
-    assert align == "auto"
+    assert align == "left"
 
 
 def test_show_with_many_columns():

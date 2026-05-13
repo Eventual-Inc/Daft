@@ -36,7 +36,7 @@ PreviewAlign = Literal[
 
 _SHOW_DEFAULT_VERBOSE = False
 _SHOW_DEFAULT_MAX_WIDTH = 30
-_SHOW_DEFAULT_ALIGN: PreviewAlign = "auto"
+_SHOW_DEFAULT_ALIGN: PreviewAlign = "left"
 
 _SHOW_FORMATS = {"fancy", "plain", "simple", "grid", "markdown", "html"}
 _SHOW_ALIGNS = {"auto", "left", "center", "right"}
