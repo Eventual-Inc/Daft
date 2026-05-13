@@ -182,3 +182,284 @@ class TestAsofJoinForwardMatchCorrectness:
             "v": [1, 2, 3, 4, 5, 6],
             "w": [40, 110, 110, None, None, None],
         }
+
+
+# ---------------------------------------------------------------------------
+# Distributed Execution
+# ---------------------------------------------------------------------------
+
+
+class TestAsofJoinForwardDistributed:
+    """Tests that exercise multi-partition forward carryover paths."""
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_multi_group_correctness(self, make_df, n_partitions, with_default_morsel_size):
+        """Multiple entities spread across partitions all forward-match correctly."""
+        left = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [10, 10, 10, 10, 20, 20, 20, 20],
+                "v": [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            repartition=n_partitions,
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [5, 8, 12, 15, 18, 22, 25, 28],
+                "w": [100, 200, 300, 400, 500, 600, 700, 800],
+            },
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="forward").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
+            "ts": [10, 20, 10, 20, 10, 20, 10, 20],
+            "v": [1, 5, 2, 6, 3, 7, 4, 8],
+            # A@10: smallest right A >= 10 -> A@18=500; A@20: no right A >= 20 -> None
+            # B@10: smallest right B >= 10 -> B@22=600; B@20: smallest right B >= 20 -> B@22=600
+            # C@10: smallest right C >= 10 -> C@12=300; C@20: smallest right C >= 20 -> C@25=700
+            # D@10: smallest right D >= 10 -> D@15=400; D@20: smallest right D >= 20 -> D@28=800
+            "w": [500, None, 600, 600, 300, 700, 400, 800],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_no_by_keys_coalesces(self, make_df, n_partitions, with_default_morsel_size):
+        """Forward asof join without by-keys on multi-partition data coalesces correctly."""
+        left = make_df(
+            {"ts": [5, 10, 15, 20, 25], "v": [1, 2, 3, 4, 5]},
+            repartition=n_partitions,
+        )
+        right = make_df(
+            {"ts": [3, 8, 18, 30], "w": [30, 80, 180, 300]},
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", strategy="forward").sort("ts")
+        assert result.to_pydict() == {
+            "ts": [5, 10, 15, 20, 25],
+            "v": [1, 2, 3, 4, 5],
+            # 5:  smallest right >= 5  -> right@8=80
+            # 10: smallest right >= 10 -> right@18=180
+            # 15: smallest right >= 15 -> right@18=180
+            # 20: smallest right >= 20 -> right@30=300
+            # 25: smallest right >= 25 -> right@30=300
+            "w": [80, 180, 180, 300, 300],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_interleaved_timestamps_across_entities(self, make_df, n_partitions, with_default_morsel_size):
+        """Entities with interleaved timestamps where best match requires correct colocation."""
+        left = make_df(
+            {
+                "entity": ["A", "B", "A", "B", "A", "B"],
+                "ts": [1, 2, 3, 4, 5, 6],
+                "v": [10, 20, 30, 40, 50, 60],
+            },
+            repartition=n_partitions,
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "A", "B"],
+                "ts": [2, 3, 4, 5],
+                "w": [200, 300, 400, 500],
+            },
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="forward").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "A", "B", "B", "B"],
+            "ts": [1, 3, 5, 2, 4, 6],
+            "v": [10, 30, 50, 20, 40, 60],
+            # A@1: smallest right A >= 1 -> A@2=200; A@3: smallest right A >= 3 -> A@4=400
+            # A@5: no right A >= 5 -> None
+            # B@2: smallest right B >= 2 -> B@3=300; B@4: smallest right B >= 4 -> B@5=500
+            # B@6: no right B >= 6 -> None
+            "w": [200, 400, None, 300, 500, None],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_right_carryover_crosses_bucket_boundary(self, make_df, n_partitions, with_default_morsel_size):
+        """Left rows in an early bucket match right rows in a later bucket via forward carryover."""
+        left = make_df(
+            {"ts": [1, 2, 3], "v": [10, 20, 30]},
+            repartition=n_partitions,
+        )
+        right = make_df(
+            {"ts": [100, 200], "w": [1000, 2000]},
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", strategy="forward").sort("ts")
+        assert result.to_pydict() == {
+            "ts": [1, 2, 3],
+            "v": [10, 20, 30],
+            # all left rows are before all right rows; each should match right@100=1000
+            "w": [1000, 1000, 1000],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_last_bucket_gets_no_carryover(self, make_df, n_partitions, with_default_morsel_size):
+        """Left rows in the last bucket with no right row after them get null."""
+        left = make_df(
+            {"ts": [10, 20, 100], "v": [1, 2, 3]},
+            repartition=n_partitions,
+        )
+        right = make_df(
+            {"ts": [15, 25], "w": [150, 250]},
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", strategy="forward").sort("ts")
+        assert result.to_pydict() == {
+            "ts": [10, 20, 100],
+            "v": [1, 2, 3],
+            # ts=10: right@15=150; ts=20: right@25=250; ts=100: no right >= 100 -> None
+            "w": [150, 250, None],
+        }
+
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions",
+        [(4, 2), (2, 4), (8, 2), (2, 8)],
+    )
+    def test_asymmetric_partition_counts(self, make_df, left_partitions, right_partitions, with_default_morsel_size):
+        """Left and right are both hash-partitioned on the by-key with different partition counts."""
+        left = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [10, 10, 10, 10, 20, 20, 20, 20],
+                "v": [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            repartition=left_partitions,
+            repartition_columns=["entity"],
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [5, 8, 12, 15, 18, 22, 25, 28],
+                "w": [100, 200, 300, 400, 500, 600, 700, 800],
+            },
+            repartition=right_partitions,
+            repartition_columns=["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="forward").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
+            "ts": [10, 20, 10, 20, 10, 20, 10, 20],
+            "v": [1, 5, 2, 6, 3, 7, 4, 8],
+            # A@10: right A@18=500; A@20: no right A >= 20 -> None
+            # B@10: right B@22=600; B@20: right B@22=600
+            # C@10: right C@12=300; C@20: right C@25=700
+            # D@10: right D@15=400; D@20: right D@28=800
+            "w": [500, None, 600, 600, 300, 700, 400, 800],
+        }
+
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions,hash_partition_left",
+        [(4, 2, True), (2, 4, True), (4, 2, False), (2, 4, False)],
+    )
+    def test_one_side_not_hash_partitioned(
+        self, make_df, left_partitions, right_partitions, hash_partition_left, with_default_morsel_size
+    ):
+        """One side is hash-partitioned on the by-key; the other has a Random clustering spec."""
+        left = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [10, 10, 10, 10, 20, 20, 20, 20],
+                "v": [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            repartition=left_partitions,
+            repartition_columns=["entity"] if hash_partition_left else [],
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [5, 8, 12, 15, 18, 22, 25, 28],
+                "w": [100, 200, 300, 400, 500, 600, 700, 800],
+            },
+            repartition=right_partitions,
+            repartition_columns=[] if hash_partition_left else ["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="forward").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
+            "ts": [10, 20, 10, 20, 10, 20, 10, 20],
+            "v": [1, 5, 2, 6, 3, 7, 4, 8],
+            "w": [500, None, 600, 600, 300, 700, 400, 800],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_child_join_same_by_keys(self, make_df, n_partitions, with_default_morsel_size):
+        """Forward asof where left input is a join already hashed on the same by-keys."""
+        base_left = make_df(
+            {
+                "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"],
+                "id": [1, 2, 3, 4],
+                "ts": [10, 10, 20, 20],
+            },
+            repartition=n_partitions,
+        )
+        base_right = make_df(
+            {
+                "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"],
+                "id": [1, 2, 3, 4],
+                "label": ["a", "b", "c", "d"],
+            },
+            repartition=n_partitions,
+        )
+        joined_left = base_left.join(base_right, on=["ticker", "id"])
+
+        asof_right = make_df(
+            {
+                "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"],
+                "ts": [5, 8, 15, 18],
+                "w": [50, 80, 150, 180],
+            },
+            repartition=n_partitions,
+        )
+        result = joined_left.join_asof(asof_right, on="ts", by="ticker", strategy="forward").sort(["ticker", "ts"])
+        assert result.to_pydict() == {
+            "ticker": ["AAPL", "AAPL", "GOOG", "GOOG"],
+            "id": [1, 3, 2, 4],
+            "ts": [10, 20, 10, 20],
+            "label": ["a", "c", "b", "d"],
+            # AAPL@10: smallest right AAPL >= 10 -> AAPL@15=150; AAPL@20: no right AAPL >= 20 -> None
+            # GOOG@10: smallest right GOOG >= 10 -> GOOG@18=180; GOOG@20: no right GOOG >= 20 -> None
+            "w": [150, None, 180, None],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_child_join_different_by_keys(self, make_df, n_partitions, with_default_morsel_size):
+        """Forward asof where left input is a join hashed on different keys than the asof by-keys."""
+        base_left = make_df(
+            {
+                "id": [1, 2, 3, 4],
+                "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"],
+                "ts": [10, 10, 20, 20],
+            },
+            repartition=n_partitions,
+        )
+        base_right = make_df(
+            {
+                "id": [1, 2, 3, 4],
+                "label": ["a", "b", "c", "d"],
+            },
+            repartition=n_partitions,
+        )
+        joined_left = base_left.join(base_right, on="id")
+
+        asof_right = make_df(
+            {
+                "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"],
+                "ts": [8, 7, 15, 18],
+                "w": [80, 70, 150, 180],
+            },
+            repartition=n_partitions,
+        )
+        result = joined_left.join_asof(asof_right, on="ts", by="ticker", strategy="forward").sort(["ticker", "ts"])
+        assert result.to_pydict() == {
+            "id": [1, 3, 2, 4],
+            "ticker": ["AAPL", "AAPL", "GOOG", "GOOG"],
+            "ts": [10, 20, 10, 20],
+            "label": ["a", "c", "b", "d"],
+            # AAPL@10: smallest right AAPL >= 10 -> AAPL@15=150; AAPL@20: no right AAPL >= 20 -> None
+            # GOOG@10: smallest right GOOG >= 10 -> GOOG@18=180; GOOG@20: no right GOOG >= 20 -> None
+            "w": [150, None, 180, None],
+        }
