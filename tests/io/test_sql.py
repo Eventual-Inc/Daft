@@ -7,7 +7,7 @@ from sqlalchemy import Column, Float, Integer, MetaData, String, Table, create_e
 
 import daft
 from daft.datatype import DataType
-from daft.sql.sql_connection import SQLConnection, _redact_text, _redact_url
+from daft.sql.sql_connection import SQLConnection, _redact_url
 
 
 @pytest.fixture()
@@ -232,59 +232,6 @@ def test_redact_url_customer_jwt_repro():
     redacted = _redact_url(url)
     assert secret not in redacted
     assert "access_token=***" in redacted
-
-
-@pytest.mark.parametrize(
-    ("text", "must_not_contain"),
-    [
-        # URL query param style
-        ("?access_token=SUPER_SECRET&http_scheme=https", "SUPER_SECRET"),
-        ("trino://alice@host:443?access_token=SUPER_SECRET&auth=jwt", "SUPER_SECRET"),
-        # JDBC ;-separated property style
-        ("jdbc:trino://host:443;user=alice;password=SUPER_SECRET;ssl=true", "SUPER_SECRET"),
-        # name=value within driver error text
-        ("could not connect: password=SUPER_SECRET host=foo", "SUPER_SECRET"),
-        # Colon separator (common in dict-like reprs)
-        ("kwargs: password: SUPER_SECRET, host: foo", "SUPER_SECRET"),
-        # Case-insensitive name match
-        ("?Access_Token=SUPER_SECRET", "SUPER_SECRET"),
-        ("?PASSWORD=SUPER_SECRET", "SUPER_SECRET"),
-        # Variant names
-        ("?api_key=SUPER_SECRET", "SUPER_SECRET"),
-        ("?apikey=SUPER_SECRET", "SUPER_SECRET"),
-        ("?client_secret=SUPER_SECRET", "SUPER_SECRET"),
-        ("?private_key_passphrase=SUPER_SECRET", "SUPER_SECRET"),
-        ("?signature=SUPER_SECRET", "SUPER_SECRET"),
-        ("?aws_access_key_id=SUPER_SECRET", "SUPER_SECRET"),
-    ],
-)
-def test_redact_text_removes_secret(text, must_not_contain):
-    """`_redact_text` redacts sensitive name=value pairs in arbitrary text.
-
-    The defense-in-depth backstop must catch credentials wherever they
-    appear in the wrapped error message — URL query params, JDBC-style
-    `;`-separated property strings, dict-like reprs, etc. — not just in
-    the URL field we explicitly pass through `_redact_url`.
-    """
-    redacted = _redact_text(text)
-    assert must_not_contain not in redacted, f"secret leaked in: {redacted!r}"
-    assert "***" in redacted
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "auth=jwt",  # auth is a scheme, not a secret
-        "host=trino.example.com",
-        "scheme=https",
-        "port=443",
-        "user=alice",
-        "ssl=true",
-        "[SQL: SELECT * FROM t WHERE k = 'v']",  # SQL embedded — must not get clobbered
-    ],
-)
-def test_redact_text_preserves_non_sensitive(text):
-    assert _redact_text(text) == text
 
 
 def test_execute_sql_error_does_not_leak_credentials():

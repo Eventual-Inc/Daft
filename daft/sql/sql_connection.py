@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlparse
 
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 try:
     from sqlalchemy.engine import make_url as _sa_make_url
 except ImportError:
-    _sa_make_url = None  # type: ignore[assignment]
+    _sa_make_url = None
 
 
 # Query-parameter names whose values must be redacted. Substring match,
@@ -50,48 +49,6 @@ _SENSITIVE_PARAM_KEYWORDS = (
 def _is_sensitive_param(name: str) -> bool:
     lower = name.casefold()
     return any(keyword in lower for keyword in _SENSITIVE_PARAM_KEYWORDS)
-
-
-# Spark-style text-level redaction. Catches `name=value` / `name: value`
-# pairs in arbitrary text where the name contains any of the sensitive
-# substrings above. `_redact_url` handles the URL field we control; this
-# is a defense-in-depth layer for the wrapping error message, which
-# interpolates underlying driver exceptions whose text we don't control
-# (e.g. a JDBC driver echoing back `password=...` from a connection
-# property list).
-_REDACT_TEXT_RE = re.compile(
-    r"""
-    (                                       # group 1: prefix (delim + name + key-value separator)
-        (?:^|[?&;,\s\(\[\{])                # leading delimiter
-        [A-Za-z0-9_\-\.]*                   # name prefix chars
-        (?:                                 # name must contain a sensitive substring
-            password | pwd | secret | token | passphrase
-            | api[._]?key | apikey | credential | signature
-            | access[._]?key
-        )
-        [A-Za-z0-9_\-\.]*                   # name suffix chars
-        \s*[=:]\s*                          # key/value separator
-    )
-    [^\s&;,'"\)\]\}<>]+                      # the value: until next delimiter or quote
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-
-def _redact_text(text: str) -> str:
-    """Redact `name=value` pairs in arbitrary text where the name looks sensitive.
-
-    Mirrors Apache Spark's ``spark.redaction.regex`` approach (configurable
-    log-level redaction by key name), tailored for inline use at error
-    construction sites: wrap the constructed message through this helper so
-    credentials that appear anywhere in the text — including the underlying
-    exception's own message — get replaced before the ``RuntimeError`` is
-    raised.
-
-    For an unparsable URL or a known shape, prefer ``_redact_url``; this
-    function is the catch-all for everything else.
-    """
-    return _REDACT_TEXT_RE.sub(r"\1***", text)
 
 
 def _redact_url(url: str) -> str:
@@ -191,7 +148,7 @@ class SQLConnection:
                 url = connection.engine.url.render_as_string(hide_password=True)
             return cls(conn_factory, driver, dialect, url)
         except Exception as e:
-            raise ValueError(_redact_text(f"Unexpected error while calling the connection factory: {e}")) from e
+            raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
 
     def read_schema(self, sql: str, infer_schema_length: int) -> Schema:
         if self._should_use_connectorx():
@@ -284,13 +241,12 @@ class SQLConnection:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            # The connection URL is deliberately omitted from the message:
+            # The connection URL is deliberately omitted from the error message:
             # secrets can appear anywhere in it (userinfo, query params,
-            # driver-specific extras), so stripping the URL is the only
-            # robust mitigation. `_redact_text` wraps the rest of the
-            # message as a defense-in-depth pass over the underlying
-            # exception's text in case a driver echoes back credentials.
-            raise RuntimeError(_redact_text(f"Failed to execute sql: {sql}, error: {e}")) from e
+            # driver-specific extras), so dropping the URL is the only robust
+            # mitigation. The caller knows which connection they passed in,
+            # so the URL is redundant here.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         from sqlalchemy import create_engine, text
@@ -310,6 +266,5 @@ class SQLConnection:
             return pa.Table.from_pydict(pydict, schema=schema)
         except Exception as e:
             # See note in `_execute_sql_query_with_connectorx`: don't echo
-            # back the connection URL — too easy to leak credentials that
-            # live outside the `password` field.
-            raise RuntimeError(_redact_text(f"Failed to execute sql: {sql}, error: {e}")) from e
+            # back the connection URL.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
