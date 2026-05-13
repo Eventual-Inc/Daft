@@ -236,7 +236,7 @@ impl SQLFunction for SQLDatePart {
             "day_of_week" | "dayofweek" | "weekday" => Ok(unary_temporal_expr(DayOfWeek, input)),
             "day_of_month" | "dayofmonth" => Ok(unary_temporal_expr(DayOfMonth, input)),
             "day_of_year" | "dayofyear" => Ok(unary_temporal_expr(DayOfYear, input)),
-            "week_of_year" | "weekofyear" => Ok(unary_temporal_expr(WeekOfYear, input)),
+            "week_of_year" | "weekofyear" | "week" => Ok(unary_temporal_expr(WeekOfYear, input)),
             "date" => Ok(unary_temporal_expr(Date, input)),
             "hour" => Ok(unary_temporal_expr(Hour, input)),
             "minute" => Ok(unary_temporal_expr(Minute, input)),

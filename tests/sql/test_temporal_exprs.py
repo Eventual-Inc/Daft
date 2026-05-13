@@ -215,6 +215,7 @@ def test_temporal_sql_aliases():
         date_diff(daft.col("datetimes").date(), daft.col("datetimes").date()).alias("diff_zero"),
         daft.col("datetimes").year().alias("part_year"),
         daft.col("datetimes").day_of_month().alias("part_dom"),
+        daft.col("datetimes").week_of_year().alias("part_week"),
     ).collect()
 
     actual = daft.sql(
@@ -228,7 +229,8 @@ def test_temporal_sql_aliases():
             dateadd(date(datetimes), 2) AS added,
             datediff(date(datetimes), date(datetimes)) AS diff_zero,
             datepart('year', datetimes) AS part_year,
-            datepart('dayofmonth', datetimes) AS part_dom
+            datepart('dayofmonth', datetimes) AS part_dom,
+            datepart('week', datetimes) AS part_week
         FROM df
         """
     ).collect()

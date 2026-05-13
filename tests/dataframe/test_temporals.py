@@ -882,6 +882,8 @@ def test_temporal_alias_functions() -> None:
         col("dt").year().alias("datepart_year_expected"),
         datepart("dayofmonth", col("dt")).alias("datepart_dom_alias"),
         col("dt").day_of_month().alias("datepart_dom_expected"),
+        datepart("week", col("dt")).alias("datepart_week_alias"),
+        col("dt").week_of_year().alias("datepart_week_expected"),
     ).to_pydict()
 
     assert result["dom_alias"] == result["dom_expected"]
@@ -893,6 +895,7 @@ def test_temporal_alias_functions() -> None:
     assert result["datediff_alias"] == result["datediff_expected"]
     assert result["datepart_year_alias"] == result["datepart_year_expected"]
     assert result["datepart_dom_alias"] == result["datepart_dom_expected"]
+    assert result["datepart_week_alias"] == result["datepart_week_expected"]
 
 
 def test_date_sub() -> None:

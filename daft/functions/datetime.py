@@ -1421,6 +1421,7 @@ def datepart(part: str, expr: Expression) -> Expression:
         "dayofyear": day_of_year,
         "week_of_year": week_of_year,
         "weekofyear": week_of_year,
+        "week": week_of_year,
         "hour": hour,
         "minute": minute,
         "second": second,
