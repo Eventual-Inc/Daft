@@ -181,6 +181,17 @@ pub struct DaftExecutionConfig {
     /// bandwidth is the binding bottleneck; cost is ~0.5-1 s of CPU per actor for
     /// 132 GB of LZ4 encode/decode on a 16-core box.
     pub flight_shuffle_compression: String,
+    /// Seal-time consolidation policy for the Flight backend:
+    /// - `"auto"` (default): fire seal only when `target_num_partitions ≥
+    ///   flight_shuffle_seal_partition_threshold`. Below that, the read-side benefit
+    ///   of consolidation is dominated by the byte-rewrite cost on most storage tiers.
+    /// - `"always"` / `"never"`: force the answer.
+    pub flight_shuffle_seal: String,
+    /// `target_num_partitions` threshold above which `flight_shuffle_seal="auto"`
+    /// fires. Empirically the M-opens-per-partition read pattern is cheap on NVMe
+    /// up through ~a few thousand partitions; the rewrite tax dominates below the
+    /// threshold and the consolidation benefit dominates above.
+    pub flight_shuffle_seal_partition_threshold: usize,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -232,6 +243,8 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_size_threshold_bytes: 25 * 1024 * 1024 * 1024, // 25 GiB
             flight_shuffle_writer: "oneshot".to_string(),
             flight_shuffle_compression: "none".to_string(),
+            flight_shuffle_seal: "auto".to_string(),
+            flight_shuffle_seal_partition_threshold: 4096,
             enable_multi_glob_path_tasks: false,
         }
     }

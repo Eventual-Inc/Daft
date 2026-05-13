@@ -127,6 +127,8 @@ impl PyDaftExecutionConfig {
         flight_shuffle_size_threshold_bytes=None,
         flight_shuffle_writer=None,
         flight_shuffle_compression=None,
+        flight_shuffle_seal=None,
+        flight_shuffle_seal_partition_threshold=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -169,6 +171,8 @@ impl PyDaftExecutionConfig {
         flight_shuffle_size_threshold_bytes: Option<usize>,
         flight_shuffle_writer: Option<&str>,
         flight_shuffle_compression: Option<&str>,
+        flight_shuffle_seal: Option<&str>,
+        flight_shuffle_seal_partition_threshold: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -329,6 +333,19 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_writer = flight_shuffle_writer.to_string();
+        }
+
+        if let Some(flight_shuffle_seal) = flight_shuffle_seal {
+            if !matches!(flight_shuffle_seal, "auto" | "always" | "never") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_seal must be 'auto', 'always', or 'never'",
+                ));
+            }
+            config.flight_shuffle_seal = flight_shuffle_seal.to_string();
+        }
+
+        if let Some(flight_shuffle_seal_partition_threshold) = flight_shuffle_seal_partition_threshold {
+            config.flight_shuffle_seal_partition_threshold = flight_shuffle_seal_partition_threshold;
         }
 
         if let Some(flight_shuffle_compression) = flight_shuffle_compression {
@@ -525,6 +542,16 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_compression(&self) -> PyResult<&str> {
         Ok(self.config.flight_shuffle_compression.as_str())
+    }
+
+    #[getter]
+    fn flight_shuffle_seal(&self) -> PyResult<&str> {
+        Ok(self.config.flight_shuffle_seal.as_str())
+    }
+
+    #[getter]
+    fn flight_shuffle_seal_partition_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.flight_shuffle_seal_partition_threshold)
     }
 
     #[getter]

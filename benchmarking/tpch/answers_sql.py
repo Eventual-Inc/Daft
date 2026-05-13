@@ -10,6 +10,7 @@ import sys
 
 import daft
 from daft import col
+import datetime
 from daft.io import IOConfig, S3Config
 
 TABLE_NAMES = [
@@ -23,10 +24,16 @@ TABLE_NAMES = [
     "region",
 ]
 
-daft.set_execution_config(flight_shuffle_dirs=["/opt/ray/spill"])
+daft.set_execution_config(flight_shuffle_dirs=["/tmp/ray/spill"], pre_shuffle_merge="never", flight_shuffle_writer="oneshot", shuffle_algorithm="flight")
+
 
 def lowercase_column_names(df):
     return df.select(*[col(name).alias(name.lower()) for name in df.column_names])
+
+
+def q5(get_df) -> daft.DataFrame:
+    lineitem = get_df("lineitem")
+    return lineitem.repartition(512, "L_ORDERKEY").sample(0.0)
 
 
 def q21(get_df) -> daft.DataFrame:
@@ -69,6 +76,8 @@ def get_answer(q: int, get_df) -> daft.DataFrame:
     if q == 21:
         # TODO: remove this once we support q21
         return q21(get_df)
+    elif q == 5:
+        return q5(get_df)
     else:
         bindings = {tbl: lowercase_column_names(get_df(tbl)) for tbl in TABLE_NAMES}
 
@@ -88,8 +97,8 @@ def main(parquet_path, q):
         return daft.read_parquet(f"{parquet_path}{name}/*", io_config=io_config)
 
     daft_df = get_answer(q, get_df)
-
-    daft_df.collect()
+    daft_df.explain(True)
+    daft_df.write_parquet("/tmp/stuff")
 
 
 if __name__ == "__main__":

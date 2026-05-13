@@ -10,7 +10,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
@@ -18,7 +18,7 @@ SF_TO_S3_PATH = {
 }
 
 
-def run_benchmark(up_to_query: int = 22):
+def run_benchmark(queries: list[int]):
     results = {}
 
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
@@ -31,7 +31,7 @@ def run_benchmark(up_to_query: int = 22):
     ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
     client = JobSubmissionClient(address=ray_address)
 
-    for q in range(1, up_to_query + 1):
+    for q in queries:
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
         start: float = time.perf_counter()
@@ -40,11 +40,18 @@ def run_benchmark(up_to_query: int = 22):
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
-                "uv": daft_uv_runtime_env(),
+                # "uv": daft_uv_runtime_env(),
                 "env_vars": {
                     "DAFT_PROGRESS_BAR": "0",
-                    "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+                    # "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+                    "DAFT_TRACE": "daft_shuffles=info,daft_local_execution::plan_cache=info",
                 },
+                "py_modules": [
+                    "daft-0.7.11.dev80+g07db3184e-cp310-abi3-manylinux_2_24_aarch64.whl",
+                ],
+                # "pip": [
+                #     "daft",
+                # ],
             },
         )
 
@@ -70,12 +77,13 @@ def main():
     metadata = get_run_metadata()
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
     num_workers = int(os.getenv("RAY_NUM_WORKERS"))
+    queries = os.getenv("TPCH_QUERIES", "1,2,3,4,5").split(",")
 
-    print("Starting warmup run...")
-    run_benchmark(up_to_query=5)
+    # print("Starting warmup run...")
+    # run_benchmark(queries)
 
     print("Warmup done. Running benchmark and collecting results...")
-    results = run_benchmark()
+    results = run_benchmark(queries)
 
     data_dict = {
         **metadata,
@@ -89,7 +97,7 @@ def main():
     print("Results:")
     print(data_dict)
 
-    upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
+    # upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
 
 
 if __name__ == "__main__":

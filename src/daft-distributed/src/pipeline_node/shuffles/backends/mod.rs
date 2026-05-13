@@ -150,18 +150,32 @@ impl ShuffleBackend {
 
     /// Seal-time consolidation: tell each participating worker's Flight server to
     /// rewrite its per-task entry groups into one file per partition. No-op for
-    /// the Ray backend (in-memory ObjectRefs need no rewriting).
+    /// the Ray backend and when the configured policy / partition-count gate
+    /// says skip.
     ///
-    /// Called once per shuffle, between the producer-stage drain and the
-    /// emission of any read task, so consumers only ever see the consolidated
-    /// layout.
+    /// Gating: the rewrite is O(shuffle bytes / disk bandwidth / max_concurrent)
+    /// — for moderate-N shuffles on NVMe the M-opens-per-partition read pattern
+    /// is cheap enough that the rewrite costs more wall-clock than it saves.
+    /// Empirical breakpoint sits in the low thousands of partitions; the
+    /// default threshold is 4096.
     pub(crate) async fn seal(
         &self,
         partition_groups: &[Vec<MaterializedOutput>],
+        seal_policy: &str,
+        seal_partition_threshold: usize,
+        target_num_partitions: usize,
     ) -> DaftResult<()> {
         match &self.backend {
             DistributedShuffleBackend::Ray => Ok(()),
             DistributedShuffleBackend::Flight(cfg) => {
+                let should_seal = match seal_policy {
+                    "always" => true,
+                    "never" => false,
+                    _ => target_num_partitions >= seal_partition_threshold,
+                };
+                if !should_seal {
+                    return Ok(());
+                }
                 flight::seal(cfg.shuffle_id, partition_groups).await
             }
         }

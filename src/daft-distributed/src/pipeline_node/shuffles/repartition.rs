@@ -29,6 +29,8 @@ pub(crate) struct RepartitionNode {
     repartition_spec: RepartitionSpec,
     shuffle_backend: ShuffleBackend,
     num_partitions: usize,
+    seal_policy: String,
+    seal_partition_threshold: usize,
     child: DistributedPipelineNode,
 }
 
@@ -67,6 +69,8 @@ impl RepartitionNode {
             repartition_spec,
             shuffle_backend: ShuffleBackend::new(&context, schema, backend),
             num_partitions,
+            seal_policy: plan_config.config.flight_shuffle_seal.clone(),
+            seal_partition_threshold: plan_config.config.flight_shuffle_seal_partition_threshold,
             child,
         }
     }
@@ -89,8 +93,17 @@ impl RepartitionNode {
 
         // Producer stage has fully drained; ask every participating shuffle
         // server to consolidate its per-task entry groups into one file per
-        // partition before any read task fires. No-op on the Ray backend.
-        self.shuffle_backend.seal(&transposed_outputs).await?;
+        // partition before any read task fires. No-op on the Ray backend, and
+        // gated by partition-count threshold on the Flight backend — see
+        // ShuffleBackend::seal for the trade-off rationale.
+        self.shuffle_backend
+            .seal(
+                &transposed_outputs,
+                &self.seal_policy,
+                self.seal_partition_threshold,
+                self.num_partitions,
+            )
+            .await?;
 
         self.shuffle_backend
             .emit_read_tasks(transposed_outputs, self.as_ref(), result_tx)

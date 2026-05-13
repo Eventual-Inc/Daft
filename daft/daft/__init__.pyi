@@ -2468,6 +2468,8 @@ class PyDaftExecutionConfig:
         flight_shuffle_size_threshold_bytes: int | None = None,
         flight_shuffle_writer: str | None = None,
         flight_shuffle_compression: str | None = None,
+        flight_shuffle_seal: str | None = None,
+        flight_shuffle_seal_partition_threshold: int | None = None,
         enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -2542,6 +2544,10 @@ class PyDaftExecutionConfig:
     def flight_shuffle_writer(self) -> str: ...
     @property
     def flight_shuffle_compression(self) -> str: ...
+    @property
+    def flight_shuffle_seal(self) -> str: ...
+    @property
+    def flight_shuffle_seal_partition_threshold(self) -> int: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
     @property

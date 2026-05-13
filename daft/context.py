@@ -247,6 +247,8 @@ def set_execution_config(
     flight_shuffle_size_threshold_bytes: int | None = None,
     flight_shuffle_writer: str | None = None,
     flight_shuffle_compression: str | None = None,
+    flight_shuffle_seal: str | None = None,
+    flight_shuffle_seal_partition_threshold: int | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -300,6 +302,8 @@ def set_execution_config(
         flight_shuffle_size_threshold_bytes: Per-shuffle estimated-input-bytes threshold for routing the distributed shuffle to the Flight backend instead of Ray-plasma. Used in the "auto" / non-explicit shuffle modes. Above this, Flight is preferred (better at large shuffles that would force plasma to spill); below it, Ray-plasma is preferred (better in-memory). Defaults to 25 GiB.
         flight_shuffle_writer: Flight repartition sink write path. One of "oneshot" (default — one combined file per map task; per-task isolation), "append" (shared per-partition file appended by all map tasks; best read-side throughput, weaker fault isolation), or "multi_file" (one whole-file output per (map_task, partition); same isolation as oneshot with more file handles).
         flight_shuffle_compression: IPC compression for Flight shuffle batches. One of "none" (default), "lz4", or "zstd". Most useful when EBS bandwidth dominates over CPU.
+        flight_shuffle_seal: Seal-time consolidation policy for the Flight backend. One of "auto" (default, fire only when target_num_partitions >= flight_shuffle_seal_partition_threshold), "always", or "never". Seal does a full byte rewrite of the shuffle to collapse per-task entries into one file per partition; helpful at high partition counts where the read-side seek tax compounds, pure overhead at moderate N on NVMe.
+        flight_shuffle_seal_partition_threshold: target_num_partitions threshold above which flight_shuffle_seal="auto" fires. Defaults to 4096.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -346,6 +350,8 @@ def set_execution_config(
             flight_shuffle_size_threshold_bytes=flight_shuffle_size_threshold_bytes,
             flight_shuffle_writer=flight_shuffle_writer,
             flight_shuffle_compression=flight_shuffle_compression,
+            flight_shuffle_seal=flight_shuffle_seal,
+            flight_shuffle_seal_partition_threshold=flight_shuffle_seal_partition_threshold,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
