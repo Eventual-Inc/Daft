@@ -125,7 +125,6 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
         flight_shuffle_size_threshold_bytes=None,
-        flight_shuffle_writer=None,
         flight_shuffle_compression=None,
         flight_shuffle_seal=None,
         flight_shuffle_seal_partition_threshold=None,
@@ -169,7 +168,6 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_size_threshold_bytes: Option<usize>,
-        flight_shuffle_writer: Option<&str>,
         flight_shuffle_compression: Option<&str>,
         flight_shuffle_seal: Option<&str>,
         flight_shuffle_seal_partition_threshold: Option<usize>,
@@ -324,15 +322,6 @@ impl PyDaftExecutionConfig {
 
         if let Some(flight_shuffle_size_threshold_bytes) = flight_shuffle_size_threshold_bytes {
             config.flight_shuffle_size_threshold_bytes = flight_shuffle_size_threshold_bytes;
-        }
-
-        if let Some(flight_shuffle_writer) = flight_shuffle_writer {
-            if !matches!(flight_shuffle_writer, "oneshot" | "append" | "multi_file") {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "flight_shuffle_writer must be 'oneshot', 'append', or 'multi_file'",
-                ));
-            }
-            config.flight_shuffle_writer = flight_shuffle_writer.to_string();
         }
 
         if let Some(flight_shuffle_seal) = flight_shuffle_seal {
@@ -532,11 +521,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_size_threshold_bytes(&self) -> PyResult<usize> {
         Ok(self.config.flight_shuffle_size_threshold_bytes)
-    }
-
-    #[getter]
-    fn flight_shuffle_writer(&self) -> PyResult<&str> {
-        Ok(self.config.flight_shuffle_writer.as_str())
     }
 
     #[getter]

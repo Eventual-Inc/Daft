@@ -164,17 +164,6 @@ pub struct DaftExecutionConfig {
     /// in-memory-resident shuffles. Defaults to 25 GiB of estimated input bytes through
     /// the shuffle stage.
     pub flight_shuffle_size_threshold_bytes: usize,
-    /// Selects the on-disk write path for the Flight repartition sink:
-    /// - `"oneshot"` (default): each map task writes one combined IPC file with N output
-    ///   partitions delimited by byte ranges. Per-task isolation; well-tested fault
-    ///   tolerance.
-    /// - `"append"`: tasks append to a single shared IPC file per `(shuffle_id,
-    ///   partition_idx)`. Best read-side throughput (sequential per-partition reads) but
-    ///   weaker fault isolation — a mid-stream write failure can corrupt the shared file.
-    /// - `"multi_file"`: each map task writes N separate IPC files (one per output
-    ///   partition), each a complete single-batch stream. Read side uses whole-file reads.
-    ///   Same isolation as oneshot but with more file handles.
-    pub flight_shuffle_writer: String,
     /// IPC compression for the Flight repartition sink's on-disk batches:
     /// `"none"` (default), `"lz4"`, or `"zstd"`. Read side decompresses transparently —
     /// the compression marker travels in each batch header. Most useful when EBS
@@ -241,7 +230,6 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_size_threshold_bytes: 25 * 1024 * 1024 * 1024, // 25 GiB
-            flight_shuffle_writer: "oneshot".to_string(),
             flight_shuffle_compression: "none".to_string(),
             flight_shuffle_seal: "auto".to_string(),
             flight_shuffle_seal_partition_threshold: 4096,

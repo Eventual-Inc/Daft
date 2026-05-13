@@ -1642,7 +1642,6 @@ fn physical_plan_to_pipeline(
                         compression.clone(),
                         shuffle_server,
                         shuffle_address,
-                        &cfg.flight_shuffle_writer,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),

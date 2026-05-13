@@ -8,10 +8,8 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    multi_file_writer::write_partitions_multi_file,
     multi_partition_cache::repartition_agg, oneshot_writer::write_partitions_one_shot,
     parse_flight_compression, server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{PartitionCache, partition_ref_id},
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -51,35 +49,6 @@ impl RepartitionAccState {
     }
 }
 
-/// Selects which on-disk write path the Flight backend uses. Mirrors the
-/// `flight_shuffle_writer` execution config: `"oneshot"`, `"append"`, `"multi_file"`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FlightWriterMode {
-    /// One combined IPC file per map task, N partitions delimited by byte ranges.
-    /// Default. Strongest per-task isolation.
-    Oneshot,
-    /// One shared IPC file per (shuffle_id, partition_idx); all map tasks append.
-    /// Best read-side sequential throughput; weaker fault isolation.
-    Append,
-    /// One IPC file per (map_task, partition_idx); each file is a complete stream.
-    /// Whole-file reads on the server side. Per-task isolation; more file handles.
-    MultiFile,
-}
-
-impl FlightWriterMode {
-    pub(crate) fn from_config(s: &str) -> DaftResult<Self> {
-        match s {
-            "oneshot" => Ok(Self::Oneshot),
-            "append" => Ok(Self::Append),
-            "multi_file" => Ok(Self::MultiFile),
-            other => Err(common_error::DaftError::ValueError(format!(
-                "flight_shuffle_writer must be 'oneshot', 'append', or 'multi_file' (got {})",
-                other
-            ))),
-        }
-    }
-}
-
 // TODO: unify shuffle backends in all local operations
 enum RepartitionBackend {
     Ray,
@@ -89,7 +58,6 @@ enum RepartitionBackend {
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
         schema: SchemaRef,
-        writer_mode: FlightWriterMode,
         compression: Option<arrow_ipc::CompressionType>,
     },
 }
@@ -128,7 +96,6 @@ impl RepartitionSink {
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
-        writer_mode: &str,
     ) -> DaftResult<Self> {
         Ok(Self {
             backend: RepartitionBackend::Flight {
@@ -137,7 +104,6 @@ impl RepartitionSink {
                 local_server,
                 shuffle_address,
                 schema,
-                writer_mode: FlightWriterMode::from_config(writer_mode)?,
                 compression: parse_flight_compression(compression.as_deref())?,
             },
             repartition_spec,
@@ -268,7 +234,6 @@ impl BlockingSink for RepartitionSink {
                 local_server,
                 shuffle_address,
                 schema,
-                writer_mode,
                 compression,
             } => {
                 let shuffle_id = *shuffle_id;
@@ -276,7 +241,6 @@ impl BlockingSink for RepartitionSink {
                 let local_server = local_server.clone();
                 let shuffle_address = shuffle_address.clone();
                 let schema = schema.clone();
-                let writer_mode = *writer_mode;
                 let compression = *compression;
                 spawner
                     .spawn(
@@ -284,42 +248,15 @@ impl BlockingSink for RepartitionSink {
                             use std::sync::atomic::Ordering;
                             use std::time::Instant;
                             let t_close = Instant::now();
-                            let partition_caches = match writer_mode {
-                                FlightWriterMode::Oneshot => {
-                                    write_partitions_one_shot(
-                                        input_id,
-                                        shuffle_id,
-                                        &shuffle_dirs,
-                                        schema.clone(),
-                                        compression,
-                                        per_partition,
-                                    )
-                                    .await?
-                                }
-                                FlightWriterMode::Append => {
-                                    write_per_partition_append(
-                                        input_id,
-                                        shuffle_id,
-                                        &shuffle_dirs,
-                                        &schema,
-                                        &local_server,
-                                        compression,
-                                        per_partition,
-                                    )
-                                    .await?
-                                }
-                                FlightWriterMode::MultiFile => {
-                                    write_partitions_multi_file(
-                                        input_id,
-                                        shuffle_id,
-                                        &shuffle_dirs,
-                                        schema.clone(),
-                                        compression,
-                                        per_partition,
-                                    )
-                                    .await?
-                                }
-                            };
+                            let partition_caches = write_partitions_one_shot(
+                                input_id,
+                                shuffle_id,
+                                &shuffle_dirs,
+                                schema.clone(),
+                                compression,
+                                per_partition,
+                            )
+                            .await?;
                             repartition_agg::FINALIZE_CLOSE_US.fetch_add(
                                 t_close.elapsed().as_micros() as u64,
                                 Ordering::Relaxed,
@@ -407,98 +344,3 @@ fn flatten_per_partition(
     (per_partition, input_id)
 }
 
-/// Concat each output partition's `Vec<MicroPartition>` in parallel, then append each
-/// non-empty partition's IPC message to the per-`(shuffle_id, partition_idx)` shared
-/// file managed by `local_server`. Returns one `PartitionCache` per output partition
-/// pointing at the shared file with the byte range this map task occupies.
-async fn write_per_partition_append(
-    input_id: InputId,
-    shuffle_id: u64,
-    shuffle_dirs: &[String],
-    schema: &SchemaRef,
-    local_server: &Arc<ShuffleFlightServer>,
-    compression: Option<arrow_ipc::CompressionType>,
-    partitions_per_output: Vec<Vec<MicroPartition>>,
-) -> DaftResult<Vec<PartitionCache>> {
-    let num_partitions = partitions_per_output.len();
-
-    // Phase 1 (parallel): concat each output partition's MicroPartitions into a single
-    // arrow batch, no I/O. Empty partitions stay as None.
-    let mut concat_futs = Vec::with_capacity(num_partitions);
-    for parts in partitions_per_output {
-        concat_futs.push(tokio::spawn(async move { concat_one_partition(parts) }));
-    }
-    let concated_results = futures::future::join_all(concat_futs).await;
-    let mut concated_per_partition: Vec<Option<(usize, usize, arrow_array::RecordBatch)>> =
-        Vec::with_capacity(num_partitions);
-    for jr in concated_results {
-        let inner = jr.map_err(|e| common_error::DaftError::InternalError(e.to_string()))?;
-        concated_per_partition.push(inner?);
-    }
-
-    // Phase 2 (per-partition): get/create the shared writer for this partition's file
-    // and append our IPC message. The writer's mutex serializes concurrent map tasks
-    // writing to the same file; concat work has already happened.
-    let mut caches = Vec::with_capacity(num_partitions);
-    for (partition_idx, slot) in concated_per_partition.into_iter().enumerate() {
-        let ref_id = partition_ref_id(input_id, partition_idx);
-        let (num_rows, size_bytes, byte_ranges, file_paths, bytes_per_file) = match slot {
-            Some((rows, bytes, arrow_batch)) => {
-                let writer = local_server
-                    .get_or_create_partition_writer(
-                        shuffle_id,
-                        partition_idx,
-                        shuffle_dirs,
-                        schema,
-                        compression,
-                    )
-                    .await?;
-                let (before, after) = writer.write_batch(&arrow_batch).await?;
-                (
-                    rows,
-                    bytes,
-                    Some(vec![(before, after)]),
-                    vec![writer.file_path.clone()],
-                    vec![(after - before) as usize],
-                )
-            }
-            None => (0, 0, Some(Vec::new()), Vec::new(), Vec::new()),
-        };
-        caches.push(PartitionCache {
-            partition_ref_id: ref_id,
-            schema: schema.clone(),
-            bytes_per_file,
-            file_paths,
-            num_rows,
-            size_bytes,
-            byte_ranges,
-        });
-    }
-    Ok(caches)
-}
-
-/// Concat one output partition's MicroPartitions into a single arrow RecordBatch.
-/// Returns `Some((num_rows, size_bytes, batch))` if non-empty, else `None`. Identical
-/// to the helper inside `oneshot_writer.rs` — duplicated to keep this experiment
-/// self-contained.
-fn concat_one_partition(
-    parts: Vec<MicroPartition>,
-) -> DaftResult<Option<(usize, usize, arrow_array::RecordBatch)>> {
-    if parts.is_empty() {
-        return Ok(None);
-    }
-    let total_rows: usize = parts.iter().map(|p| p.len()).sum();
-    if total_rows == 0 {
-        return Ok(None);
-    }
-    let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
-    let combined = MicroPartition::concat(parts)?;
-    let concated = combined.concat_or_get()?;
-    match concated {
-        Some(rb) => {
-            let arrow_batch: arrow_array::RecordBatch = rb.try_into()?;
-            Ok(Some((total_rows, size_bytes, arrow_batch)))
-        }
-        None => Ok(None),
-    }
-}

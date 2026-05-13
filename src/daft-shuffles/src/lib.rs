@@ -1,16 +1,14 @@
 pub mod client;
 pub mod coalescer;
-pub mod multi_file_writer;
 pub mod multi_partition_cache;
 pub mod oneshot_writer;
-pub mod partition_file_writer;
 pub mod server;
 pub mod shuffle_cache;
 
 use common_error::{DaftError, DaftResult};
 
 /// Parse a Flight-shuffle compression config string (`"none"` | `"lz4"` | `"zstd"`)
-/// into the arrow-ipc `CompressionType`. Centralized so all three writers stay in sync.
+/// into the arrow-ipc `CompressionType`.
 pub fn parse_flight_compression(s: Option<&str>) -> DaftResult<Option<arrow_ipc::CompressionType>> {
     match s {
         None | Some("none") | Some("") => Ok(None),

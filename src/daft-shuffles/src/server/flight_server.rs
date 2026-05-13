@@ -26,7 +26,6 @@ use tonic::{Request, Response, Status, transport::Server};
 use super::stream::FlightDataStreamReader;
 use crate::{
     coalescer::{self, SealConfig},
-    partition_file_writer::PartitionFileWriter,
     shuffle_cache::PartitionCache,
 };
 
@@ -300,11 +299,6 @@ const fn parse_usize(s: &str) -> usize {
 #[derive(Clone)]
 pub struct ShuffleFlightServer {
     shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
-    /// One `PartitionFileWriter` per `(shuffle_id, partition_idx)`. Map tasks call
-    /// `get_or_create_partition_writer` and `write_batch` to append their contribution
-    /// for the partition; all map tasks for the same partition write into the same
-    /// file. Created lazily on first contribution, dropped when this server is.
-    partition_writers: Arc<Mutex<HashMap<(u64, usize), Arc<PartitionFileWriter>>>>,
     /// Tunables for `seal_shuffle`. Single shared config — there is no per-shuffle
     /// state to track because seal is single-shot per shuffle.
     seal_cfg: SealConfig,
@@ -326,38 +320,9 @@ impl ShuffleFlightServer {
     pub fn with_seal_config(seal_cfg: SealConfig) -> Self {
         Self {
             shuffle_partitions: Arc::new(Mutex::new(HashMap::new())),
-            partition_writers: Arc::new(Mutex::new(HashMap::new())),
             seal_cfg,
             coalesce_seq: Arc::new(AtomicU64::new(1)),
         }
-    }
-
-    /// Get (or create on first call) the shared file writer for one output partition
-    /// of one shuffle. All concurrent map tasks for the same `(shuffle_id, partition_idx)`
-    /// hand back the same `Arc`. `compression` is honored only on the first-create call —
-    /// subsequent calls for the same partition reuse the existing writer regardless.
-    pub async fn get_or_create_partition_writer(
-        &self,
-        shuffle_id: u64,
-        partition_idx: usize,
-        shuffle_dirs: &[String],
-        schema: &SchemaRef,
-        compression: Option<arrow_ipc::CompressionType>,
-    ) -> DaftResult<Arc<PartitionFileWriter>> {
-        let key = (shuffle_id, partition_idx);
-        let mut writers = self.partition_writers.lock().await;
-        if let Some(existing) = writers.get(&key) {
-            return Ok(existing.clone());
-        }
-        let writer = Arc::new(PartitionFileWriter::try_new(
-            shuffle_dirs,
-            shuffle_id,
-            partition_idx,
-            schema,
-            compression,
-        )?);
-        writers.insert(key, writer.clone());
-        Ok(writer)
     }
 
     pub async fn register_shuffle_partitions(

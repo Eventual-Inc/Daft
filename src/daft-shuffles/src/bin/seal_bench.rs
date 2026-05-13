@@ -38,7 +38,6 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use daft_shuffles::{
     client::FlightClientManager,
-    multi_file_writer::write_partitions_multi_file,
     multi_partition_cache::{log_write_agg_summary, write_agg_snapshot},
     oneshot_writer::write_partitions_one_shot,
     parse_flight_compression,
@@ -49,20 +48,6 @@ use daft_shuffles::{
 };
 use futures::StreamExt;
 use tokio::sync::Semaphore;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Writer {
-    /// `oneshot_writer::write_partitions_one_shot` — one combined IPC file per
-    /// map task, N partitions delimited by byte ranges. Default in production.
-    Oneshot,
-    /// `partition_file_writer::PartitionFileWriter` via the server's
-    /// `get_or_create_partition_writer` — all map tasks share one file per
-    /// `(shuffle_id, partition_idx)`. Strongest read-side locality, weakest fault story.
-    Append,
-    /// `multi_file_writer::write_partitions_multi_file` — one complete IPC file
-    /// per `(map_task, partition_idx)`. Strong fault isolation, M*N files.
-    MultiFile,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SealMode {
@@ -82,7 +67,6 @@ struct BenchConfig {
     read_concurrency: usize,
     shuffle_id: u64,
     shuffle_root: PathBuf,
-    writer: Writer,
     seal: SealMode,
     compression: Option<arrow_ipc::CompressionType>,
 }
@@ -99,7 +83,6 @@ fn parse_args() -> BenchConfig {
         .map(|n| n.get())
         .unwrap_or(8);
     let mut chunks_per_input: usize = 8;
-    let mut writer = Writer::Oneshot;
     let mut seal = SealMode::Never;
     let mut compression_str = "none".to_string();
 
@@ -115,11 +98,8 @@ fn parse_args() -> BenchConfig {
             "--read-conc" => read_concurrency = val.parse().unwrap(),
             "--chunks-per-input" => chunks_per_input = val.parse().unwrap(),
             "--writer" => {
-                writer = match val.as_str() {
-                    "oneshot" => Writer::Oneshot,
-                    "append" => Writer::Append,
-                    "multi_file" => Writer::MultiFile,
-                    other => panic!("unknown writer: {other} (expected oneshot|append|multi_file)"),
+                if val != "oneshot" {
+                    panic!("--writer must be 'oneshot' (got {val}); append/multi_file paths were removed");
                 }
             }
             "--seal" => {
@@ -160,7 +140,6 @@ fn parse_args() -> BenchConfig {
         read_concurrency,
         shuffle_id,
         shuffle_root,
-        writer,
         seal,
         compression,
     }
@@ -315,123 +294,6 @@ async fn run_map_task_oneshot(
     })
 }
 
-async fn run_map_task_multi_file(
-    cfg: &BenchConfig,
-    input_id: u32,
-    schema: SchemaRef,
-    shuffle_dirs: Arc<Vec<String>>,
-) -> DaftResult<MapTaskResult> {
-    let (per_partition, partition_time_ms, accumulate_time_ms) =
-        accumulate_per_partition(cfg, input_id, &schema).await?;
-
-    let t2 = Instant::now();
-    let caches = write_partitions_multi_file(
-        input_id,
-        cfg.shuffle_id,
-        &shuffle_dirs,
-        schema,
-        cfg.compression,
-        per_partition,
-    )
-    .await?;
-    let write_time_ms = t2.elapsed().as_secs_f64() * 1000.0;
-
-    Ok(MapTaskResult {
-        partition_caches: caches,
-        partition_time_ms,
-        accumulate_time_ms,
-        write_time_ms,
-    })
-}
-
-/// Append path: concat each partition's MicroPartitions into one RecordBatch, then
-/// call the server's shared `PartitionFileWriter` for that partition. Mirrors
-/// `write_per_partition_append` from `daft-local-execution::sinks::repartition` —
-/// duplicated here to avoid pulling in that crate just for this helper.
-async fn run_map_task_append(
-    cfg: &BenchConfig,
-    input_id: u32,
-    schema: SchemaRef,
-    shuffle_dirs: Arc<Vec<String>>,
-    server: Arc<ShuffleFlightServer>,
-) -> DaftResult<MapTaskResult> {
-    let (per_partition, partition_time_ms, accumulate_time_ms) =
-        accumulate_per_partition(cfg, input_id, &schema).await?;
-
-    let t2 = Instant::now();
-    let mut caches = Vec::with_capacity(cfg.num_outputs);
-    for (partition_idx, parts) in per_partition.into_iter().enumerate() {
-        let ref_id = partition_ref_id(input_id, partition_idx);
-        if parts.is_empty() {
-            caches.push(PartitionCache {
-                partition_ref_id: ref_id,
-                schema: schema.clone(),
-                bytes_per_file: Vec::new(),
-                file_paths: Vec::new(),
-                num_rows: 0,
-                size_bytes: 0,
-                byte_ranges: Some(Vec::new()),
-            });
-            continue;
-        }
-        let total_rows: usize = parts.iter().map(|p| p.len()).sum();
-        if total_rows == 0 {
-            caches.push(PartitionCache {
-                partition_ref_id: ref_id,
-                schema: schema.clone(),
-                bytes_per_file: Vec::new(),
-                file_paths: Vec::new(),
-                num_rows: 0,
-                size_bytes: 0,
-                byte_ranges: Some(Vec::new()),
-            });
-            continue;
-        }
-        let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
-        let combined = MicroPartition::concat(parts)?;
-        let Some(rb) = combined.concat_or_get()? else {
-            caches.push(PartitionCache {
-                partition_ref_id: ref_id,
-                schema: schema.clone(),
-                bytes_per_file: Vec::new(),
-                file_paths: Vec::new(),
-                num_rows: 0,
-                size_bytes: 0,
-                byte_ranges: Some(Vec::new()),
-            });
-            continue;
-        };
-        let arrow_batch: arrow_array::RecordBatch = rb.try_into()?;
-        let writer = server
-            .get_or_create_partition_writer(
-                cfg.shuffle_id,
-                partition_idx,
-                &shuffle_dirs,
-                &schema,
-                cfg.compression,
-            )
-            .await?;
-        let (before, after) = writer.write_batch(&arrow_batch).await?;
-        caches.push(PartitionCache {
-            partition_ref_id: ref_id,
-            schema: schema.clone(),
-            bytes_per_file: vec![(after - before) as usize],
-            file_paths: vec![writer.file_path.clone()],
-            num_rows: total_rows,
-            size_bytes,
-            byte_ranges: Some(vec![(before, after)]),
-        });
-    }
-    let write_time_ms = t2.elapsed().as_secs_f64() * 1000.0;
-
-    Ok(MapTaskResult {
-        partition_caches: caches,
-        partition_time_ms,
-        accumulate_time_ms,
-        write_time_ms,
-    })
-}
-
 fn percentile(sorted: &[f64], p: f64) -> f64 {
     if sorted.is_empty() {
         return 0.0;
@@ -455,14 +317,7 @@ async fn main() -> DaftResult<()> {
     let host_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0);
 
     println!("=== seal_bench ===");
-    println!(
-        "writer:           {}",
-        match cfg.writer {
-            Writer::Oneshot => "oneshot",
-            Writer::Append => "append",
-            Writer::MultiFile => "multi_file",
-        }
-    );
+    println!("writer:           oneshot");
     println!(
         "seal:             {}",
         match cfg.seal {
@@ -523,17 +378,7 @@ async fn main() -> DaftResult<()> {
         let sem_c = sem.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem_c.acquire_owned().await.unwrap();
-            let result = match cfg_c.writer {
-                Writer::Oneshot => {
-                    run_map_task_oneshot(&cfg_c, input_id as u32, schema_c, dirs_c).await
-                }
-                Writer::Append => {
-                    run_map_task_append(&cfg_c, input_id as u32, schema_c, dirs_c, server_c.clone()).await
-                }
-                Writer::MultiFile => {
-                    run_map_task_multi_file(&cfg_c, input_id as u32, schema_c, dirs_c).await
-                }
-            }?;
+            let result = run_map_task_oneshot(&cfg_c, input_id as u32, schema_c, dirs_c).await?;
             // Per-task register — lets pipelined seal kick off mid-phase.
             server_c
                 .register_shuffle_partitions(cfg_c.shuffle_id, result.partition_caches.clone())
@@ -766,11 +611,7 @@ async fn main() -> DaftResult<()> {
     // CSV: writer,seal,compression,M,N,bytes,phase1_ms,phase2_ms,seal_ms,phase3_ms,total_ms,files,disk_mib,read_mib
     println!(
         "CSV: {},{},{},{},{},{},{:.1},{:.1},{:.1},{:.1},{:.1},{},{:.1},{:.1}",
-        match cfg.writer {
-            Writer::Oneshot => "oneshot",
-            Writer::Append => "append",
-            Writer::MultiFile => "multi_file",
-        },
+        "oneshot",
         match cfg.seal {
             SealMode::Never => "never",
             SealMode::Always => "always",
