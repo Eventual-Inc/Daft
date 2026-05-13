@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from daft.dependencies import pa
 from daft.logical.schema import Schema
@@ -16,16 +16,81 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Query-parameter names whose values must be redacted. Substring match,
+# case-insensitive. Covers password / OAuth token / API key / key passphrase
+# styles used by common SQL drivers (Trino JWT auth, Snowflake key auth,
+# Databricks PATs, generic API keys, etc.).
+_SENSITIVE_PARAM_KEYWORDS = (
+    "password",
+    "pwd",
+    "secret",
+    "token",
+    "passphrase",
+    "apikey",
+    "api_key",
+    "credential",
+)
+
+
+def _is_sensitive_param(name: str) -> bool:
+    lower = name.casefold()
+    return any(keyword in lower for keyword in _SENSITIVE_PARAM_KEYWORDS)
+
+
 def _redact_url(url: str) -> str:
+    # Prefer SQLAlchemy's URL parser: it handles unescaped URL-special
+    # characters in passwords (e.g. '#', '/', '?') that urllib.parse silently
+    # mis-parses, dropping the password into the fragment/path/query and
+    # making it look "absent" — which would otherwise cause this function to
+    # return the URL unchanged and leak credentials.
+    try:
+        from sqlalchemy.engine import make_url
+
+        sa_url = make_url(url)
+        sensitive_keys = [k for k in sa_url.query if _is_sensitive_param(k)]
+        if sa_url.password is None and not sensitive_keys:
+            return url
+        if sensitive_keys:
+            new_query = {k: ("***" if _is_sensitive_param(k) else v) for k, v in sa_url.query.items()}
+            sa_url = sa_url.set(query=new_query)
+        # SQLAlchemy percent-encodes '*' to '%2A' in query values; undo that
+        # for the redaction placeholder so the rendered URL stays readable.
+        return sa_url.render_as_string(hide_password=True).replace("%2A%2A%2A", "***")
+    except Exception:
+        pass
+
+    # Fallback for environments without SQLAlchemy (the connectorx-only path).
     try:
         parsed = urlparse(url)
-        if parsed.password is None:
-            return url
-        userinfo = f"{parsed.username}:***" if parsed.username else "***"
-        host = parsed.hostname or ""
-        if parsed.port is not None:
-            host = f"{host}:{parsed.port}"
-        return parsed._replace(netloc=f"{userinfo}@{host}").geturl()
+        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+        any_sensitive_query = any(_is_sensitive_param(k) for k, _ in query_pairs)
+        redacted_query = (
+            urlencode([(k, "***" if _is_sensitive_param(k) else v) for k, v in query_pairs])
+            if any_sensitive_query
+            else parsed.query
+        )
+
+        if parsed.password is not None:
+            userinfo = f"{parsed.username}:***" if parsed.username else "***"
+            host = parsed.hostname or ""
+            if parsed.port is not None:
+                host = f"{host}:{parsed.port}"
+            return parsed._replace(netloc=f"{userinfo}@{host}", query=redacted_query).geturl()
+        if any_sensitive_query:
+            return parsed._replace(query=redacted_query).geturl()
+        # urlparse missed the password — but if there's an "@" before the
+        # path/query/fragment, it's almost certainly userinfo with unescaped
+        # special chars in the password. Over-redact to be safe.
+        if "://" in url:
+            after_scheme = url.split("://", 1)[1]
+            authority = after_scheme
+            for delim in ("/", "?", "#"):
+                idx = authority.find(delim)
+                if idx != -1:
+                    authority = authority[:idx]
+            if "@" in authority:
+                return "<redacted>"
+        return url
     except Exception:
         return "<redacted>"
 

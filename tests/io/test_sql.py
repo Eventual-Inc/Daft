@@ -112,7 +112,8 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
             "trino://alice:***@trino.example.com:443/db?param=1",
         ),
         ("postgresql://user:p%40ss@host:5432/db", "postgresql://user:***@host:5432/db"),
-        ("mysql+pymysql://:secret@host/db", "mysql+pymysql://***@host/db"),
+        # Empty username — SQLAlchemy preserves the ':' delimiter.
+        ("mysql+pymysql://:secret@host/db", "mysql+pymysql://:***@host/db"),
         # No password — should be returned unchanged.
         ("sqlite:///my.db", "sqlite:///my.db"),
         ("mysql://user@host/db", "mysql://user@host/db"),
@@ -121,10 +122,91 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
         # Non-numeric port — parsed.port raises ValueError; must not propagate
         # and must not leak the password.
         ("trino://alice:hunter2@host:badport/db", "<redacted>"),
+        # Unescaped URL-special characters in the password: urllib.parse drops
+        # them into the fragment / path / query and reports password=None, so
+        # the previous implementation returned the URL unchanged — leaking the
+        # password. SQLAlchemy's make_url parses these correctly.
+        ("trino://alice:p#ss@host:443/db", "trino://alice:***@host:443/db"),
+        ("trino://alice:p/ss@host:443/db", "trino://alice:***@host:443/db"),
+        ("trino://alice:p?ss@host:443/db", "trino://alice:***@host:443/db"),
     ],
 )
 def test_redact_url(url, expected):
     assert _redact_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "simple",
+        "p@ss",
+        "p:ss",
+        "p#ss",
+        "p/ss",
+        "p?ss",
+        "p&ss",
+        "!@#$%^&*()",
+        "with space",
+    ],
+)
+def test_redact_url_does_not_leak_for_any_password(password):
+    """Regardless of URL-special chars in the password, redaction must not leak it.
+
+    Covers `#`, `/`, `?`, etc. — characters that previously caused urllib.parse
+    to silently mis-parse the URL and skip redaction.
+    """
+    url = f"trino://alice:{password}@host:443/db"
+    redacted = _redact_url(url)
+    assert password not in redacted, f"password leaked in redacted URL: {redacted!r}"
+
+
+@pytest.mark.parametrize(
+    "param_name",
+    [
+        "access_token",
+        "auth_token",
+        "token",
+        "password",
+        "pwd",
+        "secret",
+        "client_secret",
+        "passphrase",
+        "private_key_passphrase",
+        "apikey",
+        "api_key",
+        "credentials",
+        # Case-insensitive matching:
+        "Access_Token",
+        "PASSWORD",
+    ],
+)
+def test_redact_url_redacts_sensitive_query_params(param_name):
+    """Sensitive query-parameter values must be redacted, not just userinfo passwords.
+
+    Drivers like Trino (JWT), Snowflake (key auth), Databricks (PAT), and
+    generic API-key based connectors pass credentials as query parameters,
+    so leaving these in error output leaks credentials.
+    """
+    secret = "SUPER_SECRET_VALUE_DO_NOT_LEAK"
+    url = f"trino://alice@host:443?auth=jwt&{param_name}={secret}&http_scheme=https"
+    redacted = _redact_url(url)
+    assert secret not in redacted, f"{param_name} value leaked in: {redacted!r}"
+    # Non-sensitive params should be preserved.
+    assert "auth=jwt" in redacted
+    assert "http_scheme=https" in redacted
+
+
+def test_redact_url_customer_jwt_repro():
+    """Customer-reported leak shape: JWT in `access_token=` query parameter, no userinfo password.
+
+    The previous fix only handled `user:password@host` style URLs and left
+    the access_token in plaintext in the raised RuntimeError.
+    """
+    secret = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.SECRET_PAYLOAD.SIGNATURE"
+    url = f"trino://alice@trino.example.com:443?auth=jwt&access_token={secret}&http_scheme=https"
+    redacted = _redact_url(url)
+    assert secret not in redacted
+    assert "access_token=***" in redacted
 
 
 def test_execute_sql_error_does_not_leak_password():
