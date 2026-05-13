@@ -23,6 +23,31 @@ pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
     ((input_id as u64) << 32) | partition_idx as u64
 }
 
+/// Shared IPC batch chunk target used by both the oneshot writer (emit size)
+/// and the read-side concat path (combine target). Keeping them at the same
+/// value means a write hands the read path bytes already sized to its target —
+/// read-concat never has to split nor combine to "right-size" a payload.
+/// Default 4 MiB; override at process start with `DAFT_SHUFFLE_CHUNK_BYTES`.
+/// Setting to 0 on the read side disables read-concat entirely.
+pub const DEFAULT_CHUNK_TARGET_BYTES: usize = 4 * 1024 * 1024;
+
+pub fn chunk_target_bytes() -> usize {
+    std::env::var("DAFT_SHUFFLE_CHUNK_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_CHUNK_TARGET_BYTES)
+}
+
+/// Read-side variant: distinct from `chunk_target_bytes` only in that an
+/// explicit `0` disables the concat path entirely (returns `None`).
+pub fn read_chunk_target_bytes() -> Option<usize> {
+    match std::env::var("DAFT_SHUFFLE_CHUNK_BYTES") {
+        Ok(v) => v.parse::<usize>().ok().filter(|&n| n > 0),
+        Err(_) => Some(DEFAULT_CHUNK_TARGET_BYTES),
+    }
+}
+
 // Result of a writer task
 struct WriterTaskResult {
     bytes_per_file: Vec<usize>,

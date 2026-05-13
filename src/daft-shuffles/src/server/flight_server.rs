@@ -1012,13 +1012,13 @@ impl FlightService for ShuffleFlightServer {
         // Read-side concat: server reads M source batches, concats arrow-level
         // into chunks of `chunk_target_bytes`, emits fewer/bigger FlightData
         // items. Eliminates the client's per-message Flight tax at the cost of
-        // one in-memory concat per chunk. Default 4 MiB target (proven 21% win
-        // at N=8192/M=200/8GiB on NVMe; bounded transient memory). Override
-        // via DAFT_SHUFFLE_READ_CONCAT_BYTES; set to 0 to disable.
-        let read_concat: Option<usize> = match std::env::var("DAFT_SHUFFLE_READ_CONCAT_BYTES") {
-            Ok(v) => v.parse::<usize>().ok().filter(|&n| n > 0),
-            Err(_) => Some(4 * 1024 * 1024),
-        };
+        // one in-memory concat per chunk. Shares its target with the oneshot
+        // writer's emit size — by emitting at the same chunk size the read
+        // side targets, the writer hands the server bytes already correctly
+        // sized and read-concat needs neither split nor combine to right-size
+        // a payload. Override via DAFT_SHUFFLE_CHUNK_BYTES; set to 0 to
+        // disable read-concat (the writer's emit chunking is unaffected).
+        let read_concat: Option<usize> = crate::shuffle_cache::read_chunk_target_bytes();
 
         let flight_data_stream: Pin<
             Box<dyn Stream<Item = Result<FlightData, Status>> + Send + 'static>,
