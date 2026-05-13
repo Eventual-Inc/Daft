@@ -126,9 +126,16 @@ impl FlightClientManager {
             }
         }
 
-        let endpoint = Endpoint::from_shared(server_address.to_string()).map_err(|e| {
-            DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
-        })?;
+        // HTTP/2 transport tuning: see comment on
+        // `shuffle_cache::DEFAULT_HTTP2_*` for the why. Bumps the negotiated
+        // frame size + window sizes so big chunks flow per round-trip instead
+        // of ping-ponging through ~16 KiB frames and ~64 KiB windows.
+        let endpoint = Endpoint::from_shared(server_address.to_string())
+            .map_err(|e| {
+                DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
+            })?
+            .initial_stream_window_size(Some(crate::shuffle_cache::http2_stream_window()))
+            .initial_connection_window_size(Some(crate::shuffle_cache::http2_conn_window()));
         let channel = endpoint.connect().await.map_err(|e| {
             DaftError::External(format!("Failed to connect to endpoint: {:?}", e).into())
         })?;

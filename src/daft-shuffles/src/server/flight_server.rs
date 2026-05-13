@@ -1306,7 +1306,16 @@ pub fn start_server_loop(
             .with_keepalive(None);
 
         let flight_server = server;
+        // HTTP/2 transport tuning: matches the client side
+        // (`crate::client::FlightClientManager::get_or_connect`). Larger
+        // negotiated frame size + window sizes collapse the per-batch
+        // wakeup count on the receiver — see comment on
+        // `shuffle_cache::DEFAULT_HTTP2_*` for the diagnostic that motivated
+        // these.
         Server::builder()
+            .max_frame_size(Some(crate::shuffle_cache::http2_max_frame_size()))
+            .initial_stream_window_size(Some(crate::shuffle_cache::http2_stream_window()))
+            .initial_connection_window_size(Some(crate::shuffle_cache::http2_conn_window()))
             .add_service(FlightServiceServer::from_arc(flight_server))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_rx.await;

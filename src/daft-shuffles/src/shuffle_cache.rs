@@ -50,6 +50,52 @@ pub fn read_chunk_target_bytes() -> Option<usize> {
     }
 }
 
+// HTTP/2 transport tunables for the Flight client/server. The distributed-Q5
+// profile showed ~71 Pending wakeups per delivered batch on the client side
+// and >90% of inter-poll time blocked after Pending — a textbook gRPC framing
+// + window-update churn pattern. Raising the negotiated frame size + window
+// sizes lets bigger chunks of data flow per HTTP/2 SETTINGS roundtrip and per
+// WINDOW_UPDATE, collapsing the wakeup count toward 1 per IPC batch.
+//
+// HTTP/2 spec defaults: frame size 16 KiB, initial window size 64 KiB. We
+// default to much larger values; both client and server must agree, so the
+// same env vars are read on both sides.
+
+/// Max frame size the server advertises in its SETTINGS frame. Client respects
+/// this when sending; server may also send up to this. HTTP/2 spec allows
+/// 2^14..=2^24-1. Default 1 MiB.
+pub const DEFAULT_HTTP2_MAX_FRAME_SIZE: u32 = 1 * 1024 * 1024;
+/// Initial window size per HTTP/2 stream. Larger = more bytes can be in flight
+/// per stream before a WINDOW_UPDATE round-trip. Default 8 MiB.
+pub const DEFAULT_HTTP2_STREAM_WINDOW: u32 = 8 * 1024 * 1024;
+/// Initial window size for the HTTP/2 connection (across all streams).
+/// Default 64 MiB.
+pub const DEFAULT_HTTP2_CONN_WINDOW: u32 = 64 * 1024 * 1024;
+
+pub fn http2_max_frame_size() -> u32 {
+    std::env::var("DAFT_SHUFFLE_HTTP2_MAX_FRAME_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&n| (16 * 1024..=(1 << 24) - 1).contains(&n))
+        .unwrap_or(DEFAULT_HTTP2_MAX_FRAME_SIZE)
+}
+
+pub fn http2_stream_window() -> u32 {
+    std::env::var("DAFT_SHUFFLE_HTTP2_STREAM_WINDOW")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&n| n >= 64 * 1024)
+        .unwrap_or(DEFAULT_HTTP2_STREAM_WINDOW)
+}
+
+pub fn http2_conn_window() -> u32 {
+    std::env::var("DAFT_SHUFFLE_HTTP2_CONN_WINDOW")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&n| n >= 64 * 1024)
+        .unwrap_or(DEFAULT_HTTP2_CONN_WINDOW)
+}
+
 // Result of a writer task
 struct WriterTaskResult {
     bytes_per_file: Vec<usize>,
