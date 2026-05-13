@@ -1,5 +1,6 @@
 import { AnimatedFish, Naruto } from "@/components/icons";
-import { OperatorStatus, Stat } from "./types";
+import { OperatorInfo, OperatorStatus, Stat, TaskStore } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 
 export const ROWS_IN_STAT_KEY = "rows.in";
 export const ROWS_OUT_STAT_KEY = "rows.out";
@@ -44,6 +45,41 @@ export const formatBytes = (bytes: number): string => {
   }
 };
 
+/**
+ * Resolves the status to display for an operator, taking Flotilla task-level
+ * failures into account. A "Finished" operator is never overridden — retried
+ * tasks leave a non-zero failed_count even after the operator succeeds.
+ */
+export function getEffectiveStatus(
+  operator: OperatorInfo | undefined,
+  nodeId: number,
+  taskStore: TaskStore | undefined,
+  queryStatus: QueryStatusName = "Executing",
+): OperatorStatus {
+  if (!operator) return "Pending";
+
+  if (taskStore) {
+    const group = taskStore.groups.find((g) => g.node_ids.includes(nodeId));
+    if (group) {
+      // On a successful query, failed_count may be non-zero from Flotilla task
+      // retries that ultimately succeeded — don't override the Finished status.
+      if (group.failed_count > 0 && queryStatus !== "Finished") return "Failed";
+
+      // When Daft terminates the query externally (Failed/Dead), tasks that
+      // were still running never recorded an outcome — treat them as failed.
+      if (group.running_count > 0 && (queryStatus === "Failed" || queryStatus === "Dead")) return "Failed";
+
+      // Tasks cancelled as part of a user-initiated cancellation → gray.
+      if (group.cancelled_count > 0 && queryStatus === "Canceled") return "Canceled";
+    }
+  }
+
+  // Marked Finished by the backend but never actually started → never ran
+  if (operator.status === "Finished" && !operator.start_sec) return "Pending";
+
+  return operator.status;
+}
+
 export const getStatusIcon = (status: OperatorStatus, isTerminal = false) => {
   switch (status) {
     case "Finished":
@@ -58,6 +94,14 @@ export const getStatusIcon = (status: OperatorStatus, isTerminal = false) => {
           </div>
         </div>
       );
+    case "Canceled":
+      return (
+        <div className="w-5 h-5 flex items-center justify-center">
+          <div className="w-4 h-4 bg-zinc-600 rounded-full flex items-center justify-center">
+            <span className="text-zinc-300 text-[10px] font-bold">−</span>
+          </div>
+        </div>
+      );
     case "Pending":
     default:
       return (
@@ -67,28 +111,22 @@ export const getStatusIcon = (status: OperatorStatus, isTerminal = false) => {
 };
 
 export const getStatusText = (status: OperatorStatus) => {
-  if (status === "Finished") {
-    return "Finished";
-  } else if (status === "Executing") {
-    return "Running";
-  } else if (status === "Failed") {
-    return "Failed";
-  } else {
-    return "Pending";
+  switch (status) {
+    case "Finished":  return "Finished";
+    case "Executing": return "Running";
+    case "Failed":    return "Failed";
+    case "Canceled":  return "Canceled";
+    default:          return "Pending";
   }
 };
 
 export const getStatusColor = (status: OperatorStatus) => {
   switch (status) {
-    case "Finished":
-      return "text-green-500";
-    case "Executing":
-      return "text-(--daft-accent)";
-    case "Failed":
-      return "text-red-500";
-    case "Pending":
-    default:
-      return "text-zinc-400";
+    case "Finished":  return "text-green-500";
+    case "Executing": return "text-(--daft-accent)";
+    case "Failed":    return "text-red-500";
+    case "Canceled":  return "text-zinc-400";
+    default:          return "text-zinc-400";
   }
 };
 
@@ -130,14 +168,10 @@ export const formatDuration = (seconds: number): string => {
 
 export const getStatusBorderColor = (status: OperatorStatus) => {
   switch (status) {
-    case "Finished":
-      return "border-green-600";
-    case "Executing":
-      return "border-orange-500";
-    case "Failed":
-      return "border-red-600";
-    case "Pending":
-    default:
-      return "border-zinc-600";
+    case "Finished":  return "border-green-600";
+    case "Executing": return "border-orange-500";
+    case "Failed":    return "border-red-600";
+    case "Canceled":  return "border-zinc-600";
+    default:          return "border-zinc-600";
   }
 };

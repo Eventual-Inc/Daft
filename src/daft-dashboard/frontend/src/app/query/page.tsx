@@ -197,11 +197,6 @@ function QueryPageInner() {
     query.state.status === "Optimizing" ||
     query.state.status === "Setup" ||
     query.state.status === "Executing";
-  const queryIsTerminal =
-    query.state.status === "Finished" ||
-    query.state.status === "Failed" ||
-    query.state.status === "Canceled" ||
-    query.state.status === "Dead";
   const last_heartbeat_sec = isActive || query.state.status === "Dead"
     ? query.last_heartbeat_sec
     : null;
@@ -328,7 +323,7 @@ function QueryPageInner() {
                       onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
                       tasksOpen={isFlotilla && tasksOpen}
                       onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
-                      queryIsTerminal={queryIsTerminal}
+                      queryStatus={query.state.status}
                     />
                   </div>
                   {isFlotilla && tasksOpen && queryId && (

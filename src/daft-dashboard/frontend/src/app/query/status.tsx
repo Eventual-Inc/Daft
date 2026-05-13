@@ -89,7 +89,7 @@ const STATUS_CONFIG: Record<QueryStatusName, { icon: ReactNode; label: string; t
   Setup:      { icon: <LoaderCircle size={15} strokeWidth={3} className="text-magenta-500 animate-spin" />,label: "Setting Up Runner",  textColor: "text-magenta-500" },
   Executing:  { icon: <AnimatedFish />,                                                                     label: "Running",            textColor: "text-(--daft-accent)" },
   Finalizing: { icon: <LoaderCircle size={15} strokeWidth={3} className="text-blue-500 animate-spin" />,   label: "Finalizing",         textColor: "text-blue-500" },
-  Finished:   { icon: <Naruto />,                                                                           label: "Finished",           textColor: "text-green-500" },
+  Finished:   { icon: <Naruto animated={false} />,                                                          label: "Finished",           textColor: "text-green-500" },
   Failed:     { icon: <CircleX size={15} strokeWidth={3} className="text-red-500" />,                      label: "Failed",             textColor: "text-red-500" },
   Canceled:   { icon: <Ban size={15} strokeWidth={3} className="text-zinc-500" />,                         label: "Canceled",           textColor: "text-zinc-400" },
   Dead:       { icon: <Skull size={15} strokeWidth={3} className="text-zinc-500" />,                       label: "Dead",               textColor: "text-zinc-400" },

@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { ExecutingState, OperatorInfo } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 import {
   getStatusIcon,
   getStatusText,
   getStatusColor,
+  getEffectiveStatus,
   formatStatValue,
   formatBytes,
   formatDuration,
@@ -33,11 +35,12 @@ function OperatorDuration({ operator }: { operator: OperatorInfo }) {
 
 export default function ProgressTable({
   exec_state,
-  queryIsTerminal,
+  queryStatus,
 }: {
   exec_state: ExecutingState;
-  queryIsTerminal: boolean;
+  queryStatus: QueryStatusName;
 }) {
+  const isTerminal = queryStatus === "Finished" || queryStatus === "Failed" || queryStatus === "Canceled" || queryStatus === "Dead";
   return (
     <div className="overflow-auto h-full px-6 py-4">
       <div className="min-w-[1130px]">
@@ -78,6 +81,12 @@ export default function ProgressTable({
           {Object.entries(exec_state.exec_info.operators)
             .sort(([a], [b]) => parseInt(a) - parseInt(b))
             .map(([operatorId, operator]) => {
+              const effectiveStatus = getEffectiveStatus(
+                operator,
+                operator.node_info.id,
+                exec_state.exec_info.task_store,
+                queryStatus,
+              );
               const name = operator.node_info.name;
               const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
               const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
@@ -108,14 +117,14 @@ export default function ProgressTable({
                   className="grid grid-cols-[50px_60px_100px_200px_120px_120px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
                 >
                   <div className="px-3 py-4 flex items-center justify-end border-r border-zinc-700 h-full">
-                    {getStatusIcon(operator.status, queryIsTerminal)}
+                    {getStatusIcon(effectiveStatus, isTerminal)}
                   </div>
                   <div className="px-3 py-4 text-center text-sm text-zinc-400 font-mono border-r border-zinc-700 h-full flex items-center justify-center">
                     {operatorId}
                   </div>
                   <div className="pr-3 py-4 text-right text-sm border-r border-zinc-700 h-full flex items-center justify-end">
-                    <span className={getStatusColor(operator.status)}>
-                      {getStatusText(operator.status)}
+                    <span className={getStatusColor(effectiveStatus)}>
+                      {getStatusText(effectiveStatus)}
                     </span>
                   </div>
                   <div

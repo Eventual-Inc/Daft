@@ -3,9 +3,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, OperatorStatus, PhysicalPlanNode } from "./types";
+import { ExecutingState, OperatorInfo, OperatorStatus, PhysicalPlanNode, TaskStore } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 import {
   getStatusIcon,
+  getEffectiveStatus,
   formatStatValue,
   formatDuration,
   statNumericValue,
@@ -18,8 +20,7 @@ import {
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
 import EdgeLabel from "./edge-label";
-import { getHeatmapStyle, FINISHED_STYLE, FAILED_STYLE } from "./tree-colors";
-import { TaskStore } from "./types";
+import { getHeatmapStyle, FINISHED_STYLE, FAILED_STYLE, CANCELED_STYLE } from "./tree-colors";
 
 function getCpuSec(operator?: OperatorInfo): number {
   if (!operator) return 0;
@@ -111,26 +112,6 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
   return formatDuration(Math.max(0, end - operator.start_sec));
 }
 
-function getEffectiveStatus(
-  operator: OperatorInfo | undefined,
-  nodeId: number,
-  taskStore: TaskStore | undefined,
-): OperatorStatus {
-  if (!operator) return "Pending";
-
-  if (taskStore) {
-    const hasFailed = taskStore.groups.some(
-      (g) => g.node_ids.includes(nodeId) && g.failed_count > 0,
-    );
-    if (hasFailed) return "Failed";
-  }
-
-  // Marked Finished by the backend but never actually started → never ran
-  if (operator.status === "Finished" && !operator.start_sec) return "Pending";
-
-  return operator.status;
-}
-
 function PhysicalNodeCard({
   node,
   operator,
@@ -138,7 +119,7 @@ function PhysicalNodeCard({
   effectiveStatus,
   isHighlighted,
   isHovered,
-  queryIsTerminal,
+  queryStatus,
   onViewTasks,
 }: {
   node: PhysicalPlanNode;
@@ -149,18 +130,18 @@ function PhysicalNodeCard({
   isHighlighted: boolean;
   /** Transient hover preview — set when the user hovers a task row in the sidebar. */
   isHovered: boolean;
-  queryIsTerminal: boolean;
+  queryStatus: QueryStatusName;
   /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
   onViewTasks?: (nodeId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isTerminal = queryStatus === "Finished" || queryStatus === "Failed" || queryStatus === "Canceled" || queryStatus === "Dead";
   const wallClock = useWallClockDuration(operator);
   const cardStyle: React.CSSProperties =
-    effectiveStatus === "Failed"
-      ? FAILED_STYLE
-      : effectiveStatus === "Finished"
-        ? FINISHED_STYLE
-        : getHeatmapStyle(intensity);
+    effectiveStatus === "Failed"   ? FAILED_STYLE :
+    effectiveStatus === "Finished" ? FINISHED_STYLE :
+    effectiveStatus === "Canceled" ? CANCELED_STYLE :
+    getHeatmapStyle(intensity);
 
   // Scroll into view only when the *sticky* (click-driven) highlight becomes
   // active — scrubbing the sidebar via hover shouldn't jump the plan around.
@@ -212,7 +193,7 @@ function PhysicalNodeCard({
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
-        {getStatusIcon(effectiveStatus, queryIsTerminal)}
+        {getStatusIcon(effectiveStatus, isTerminal)}
         <span
           className={`${main.className} text-zinc-100 text-sm font-bold tracking-wide truncate`}
         >
@@ -301,7 +282,7 @@ export default function PhysicalPlanTree({
   onViewTasks,
   tasksOpen,
   onOpenTasks,
-  queryIsTerminal,
+  queryStatus,
 }: {
   exec_state: ExecutingState;
   /** Sticky highlight — driven by the URL/node filter (click-to-filter). */
@@ -313,7 +294,7 @@ export default function PhysicalPlanTree({
   tasksOpen?: boolean;
   /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
   onOpenTasks?: () => void;
-  queryIsTerminal: boolean;
+  queryStatus: QueryStatusName;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -430,7 +411,7 @@ export default function PhysicalPlanTree({
                   node.type,
                   maxCpuSec,
                 );
-                const effectiveStatus = getEffectiveStatus(op, node.id, taskStore);
+                const effectiveStatus = getEffectiveStatus(op, node.id, taskStore, queryStatus);
                 return (
                   <PhysicalNodeCard
                     node={node}
@@ -439,7 +420,7 @@ export default function PhysicalPlanTree({
                     effectiveStatus={effectiveStatus}
                     isHighlighted={highlightedNodeId === node.id}
                     isHovered={hoveredNodeIds?.has(node.id) ?? false}
-                    queryIsTerminal={queryIsTerminal}
+                    queryStatus={queryStatus}
                     onViewTasks={onViewTasks}
                   />
                 );
@@ -454,7 +435,7 @@ export default function PhysicalPlanTree({
             {JSON.stringify(plan, null, 2)}
           </pre>
         ) : (
-          <ProgressTable exec_state={exec_state} queryIsTerminal={queryIsTerminal} />
+          <ProgressTable exec_state={exec_state} queryStatus={queryStatus} />
         )}
       </div>
     </div>
