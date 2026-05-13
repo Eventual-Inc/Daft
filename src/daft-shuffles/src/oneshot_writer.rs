@@ -106,13 +106,13 @@ pub async fn write_partitions_one_shot(
             let file_path = format!("{}/map_{}.arrow", shuffle_dir, input_id);
             let file = File::create(&file_path)?;
             let counting = CountingFile::new(file);
-            let arrow_schema = schema_for_write.to_arrow()?;
+            let arrow_schema = Arc::new(schema_for_write.to_arrow()?);
             let write_options = arrow_ipc::writer::IpcWriteOptions::default()
                 .try_with_compression(compression)
                 .map_err(|e| DaftError::InternalError(format!("IPC compression init failed: {}", e)))?;
             let mut writer = arrow_ipc::writer::StreamWriter::try_new_with_options(
                 counting,
-                &arrow_schema,
+                arrow_schema.as_ref(),
                 write_options,
             )
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
@@ -133,7 +133,7 @@ pub async fn write_partitions_one_shot(
             for idx in 0..num_partitions {
                 let parts = std::mem::take(&mut partitions_per_output[idx]);
                 let t_s = Instant::now();
-                let slot = concat_one_partition(parts, chunk_target)?;
+                let slot = concat_one_partition(parts, chunk_target, &arrow_schema)?;
                 write_agg::SPAWN_TOTAL_US
                     .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
                 let ref_id = partition_ref_id(input_id, idx);
@@ -215,6 +215,7 @@ pub async fn write_partitions_one_shot(
 fn concat_one_partition(
     parts: Vec<MicroPartition>,
     chunk_target_bytes: usize,
+    arrow_schema: &Arc<arrow_schema::Schema>,
 ) -> DaftResult<Option<(usize, usize, Vec<arrow_array::RecordBatch>)>> {
     // Fast-path: no inputs at all (worker never received data). Avoid `MicroPartition::concat`,
     // which errors on empty input.
@@ -242,12 +243,12 @@ fn concat_one_partition(
         pending.push(rb);
         pending_bytes += rb.size_bytes();
         if pending_bytes >= chunk_target_bytes {
-            flush_pending(&mut pending, &mut arrow_batches)?;
+            flush_pending(&mut pending, &mut arrow_batches, arrow_schema)?;
             pending_bytes = 0;
         }
     }
     if !pending.is_empty() {
-        flush_pending(&mut pending, &mut arrow_batches)?;
+        flush_pending(&mut pending, &mut arrow_batches, arrow_schema)?;
     }
     write_agg::TRY_INTO_US
         .fetch_add(t_t.elapsed().as_micros() as u64, Ordering::Relaxed);
@@ -256,15 +257,30 @@ fn concat_one_partition(
     Ok(Some((total_rows, size_bytes, arrow_batches)))
 }
 
+/// Build one `arrow_array::RecordBatch` from `pending` using the pre-computed
+/// `arrow_schema`. Avoids the per-call `Schema::to_arrow` rebuild that `RecordBatch::try_into`
+/// would otherwise pay — that rebuild was N·schema_fields allocations per partition and showed
+/// up in `try_into_us` at ~44 µs per non-empty partition. Direct `RecordBatch::try_new` with
+/// the cached schema also skips the validation/dtype-match path on the shared schema.
 fn flush_pending(
     pending: &mut Vec<&RecordBatch>,
     out: &mut Vec<arrow_array::RecordBatch>,
+    arrow_schema: &Arc<arrow_schema::Schema>,
 ) -> DaftResult<()> {
-    let arrow_batch: arrow_array::RecordBatch = if pending.len() == 1 {
-        pending[0].clone().try_into()?
+    let daft_batch_owned;
+    let daft_batch: &RecordBatch = if pending.len() == 1 {
+        pending[0]
     } else {
-        RecordBatch::concat(pending.as_slice())?.try_into()?
+        daft_batch_owned = RecordBatch::concat(pending.as_slice())?;
+        &daft_batch_owned
     };
+    let columns = daft_batch
+        .columns()
+        .iter()
+        .map(|c| c.as_materialized_series().to_arrow())
+        .collect::<DaftResult<Vec<_>>>()?;
+    let arrow_batch = arrow_array::RecordBatch::try_new(arrow_schema.clone(), columns)
+        .map_err(DaftError::ArrowRsError)?;
     out.push(arrow_batch);
     pending.clear();
     Ok(())
