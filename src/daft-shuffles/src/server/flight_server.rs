@@ -134,15 +134,47 @@ pub mod read_agg {
 
     // Client-side per-message breakdown. Captures whatever the framework + IPC
     // decode + cross-thread handoff costs us downstream of the server emit.
-    /// Time spent in `FlightRecordBatchStreamToDaftRecordBatchStream::poll_next`
-    /// between yielding one RecordBatch and yielding the next (i.e. wait +
-    /// gRPC decode + arrow IPC parse). One sample per delivered batch.
+    /// Coarse: wall time between two consecutive `Poll::Ready(batch)` yields
+    /// from `FlightRecordBatchStreamToDaftRecordBatchStream::poll_next`. This
+    /// is the metric the original distributed profile attributed the 23 ms /
+    /// 15 ms inter-poll gap to. Kept for back-compat; the four POLL_* buckets
+    /// below decompose where that time actually goes.
     pub static CLIENT_BATCH_DELIVERY_US: AtomicU64 = AtomicU64::new(0);
     /// Time in the per-column arrow→daft Series conversion + RecordBatch
     /// construction, per delivered batch.
     pub static CLIENT_CONVERT_US: AtomicU64 = AtomicU64::new(0);
     /// Number of RecordBatches the client successfully decoded + converted.
     pub static CLIENT_BATCHES_RECEIVED: AtomicU64 = AtomicU64::new(0);
+
+    // Decomposition of `CLIENT_BATCH_DELIVERY_US` into 4 buckets, by whether
+    // we're measuring time inside `poll_next` (CPU we do) vs between
+    // `poll_next` calls (runtime/network/consumer wait), and split by what
+    // the previous poll exit returned (Ready batch → consumer drained next;
+    // Pending → runtime parked waiting for IO).
+    //
+    // Per batch delivered, summing these buckets across the polls that
+    // produced + preceded that batch reconstructs the inter-yield gap.
+    /// CPU inside `poll_next` calls that returned `Poll::Ready(batch)`. This
+    /// is the synchronous Flight IPC decode work that completed a batch.
+    pub static CLIENT_POLL_INSIDE_READY_US: AtomicU64 = AtomicU64::new(0);
+    /// CPU inside `poll_next` calls that returned `Poll::Pending`. These are
+    /// polls that did partial decode work but didn't yet have enough bytes to
+    /// produce a batch — the cost of state-machine churn on incomplete data.
+    pub static CLIENT_POLL_INSIDE_PENDING_US: AtomicU64 = AtomicU64::new(0);
+    /// Wall time between a `Pending` exit and the next `poll_next` entry —
+    /// the consumer is parked, the runtime is waiting on something
+    /// (gRPC network IO, decoder readiness, or a wakeup from the
+    /// FlightRecordBatchStream task). Proxy for "blocked on network/IO."
+    pub static CLIENT_GAP_AFTER_PENDING_US: AtomicU64 = AtomicU64::new(0);
+    /// Wall time between a `Ready(batch)` yield and the next `poll_next` entry
+    /// — the consumer is processing the batch we just yielded. Proxy for
+    /// "blocked on downstream drain."
+    pub static CLIENT_GAP_AFTER_READY_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of `poll_next` calls that returned `Poll::Ready(batch)`.
+    /// Should equal `CLIENT_BATCHES_RECEIVED`.
+    pub static CLIENT_POLL_READY_COUNT: AtomicU64 = AtomicU64::new(0);
+    /// Number of `poll_next` calls that returned `Poll::Pending`.
+    pub static CLIENT_POLL_PENDING_COUNT: AtomicU64 = AtomicU64::new(0);
 
     // Per-bucket attribution for the *read-concat* path
     // (`concat_specs_into_flight_datas_sync`). These break the current
@@ -191,6 +223,12 @@ pub struct ReadAggSnapshot {
     pub client_batch_delivery_us: u64,
     pub client_convert_us: u64,
     pub client_batches_received: u64,
+    pub client_poll_inside_ready_us: u64,
+    pub client_poll_inside_pending_us: u64,
+    pub client_gap_after_pending_us: u64,
+    pub client_gap_after_ready_us: u64,
+    pub client_poll_ready_count: u64,
+    pub client_poll_pending_count: u64,
     pub concat_opens: u64,
     pub concat_open_us: u64,
     pub concat_seek_us: u64,
@@ -220,6 +258,13 @@ pub fn read_agg_snapshot() -> ReadAggSnapshot {
         client_batch_delivery_us: read_agg::CLIENT_BATCH_DELIVERY_US.load(Ordering::Relaxed),
         client_convert_us: read_agg::CLIENT_CONVERT_US.load(Ordering::Relaxed),
         client_batches_received: read_agg::CLIENT_BATCHES_RECEIVED.load(Ordering::Relaxed),
+        client_poll_inside_ready_us: read_agg::CLIENT_POLL_INSIDE_READY_US.load(Ordering::Relaxed),
+        client_poll_inside_pending_us: read_agg::CLIENT_POLL_INSIDE_PENDING_US
+            .load(Ordering::Relaxed),
+        client_gap_after_pending_us: read_agg::CLIENT_GAP_AFTER_PENDING_US.load(Ordering::Relaxed),
+        client_gap_after_ready_us: read_agg::CLIENT_GAP_AFTER_READY_US.load(Ordering::Relaxed),
+        client_poll_ready_count: read_agg::CLIENT_POLL_READY_COUNT.load(Ordering::Relaxed),
+        client_poll_pending_count: read_agg::CLIENT_POLL_PENDING_COUNT.load(Ordering::Relaxed),
         concat_opens: read_agg::CONCAT_OPENS.load(Ordering::Relaxed),
         concat_open_us: read_agg::CONCAT_OPEN_US.load(Ordering::Relaxed),
         concat_seek_us: read_agg::CONCAT_SEEK_US.load(Ordering::Relaxed),
@@ -263,6 +308,16 @@ pub fn log_read_agg_summary(label: &str) {
         client_convert_ms = s.client_convert_us / 1000,
         per_msg_client_delivery_us = s.client_batch_delivery_us / cn,
         per_msg_client_convert_us = s.client_convert_us / cn,
+        client_poll_inside_ready_ms = s.client_poll_inside_ready_us / 1000,
+        client_poll_inside_pending_ms = s.client_poll_inside_pending_us / 1000,
+        client_gap_after_pending_ms = s.client_gap_after_pending_us / 1000,
+        client_gap_after_ready_ms = s.client_gap_after_ready_us / 1000,
+        client_poll_ready_count = s.client_poll_ready_count,
+        client_poll_pending_count = s.client_poll_pending_count,
+        per_batch_poll_inside_ready_us = s.client_poll_inside_ready_us / cn,
+        per_batch_poll_inside_pending_us = s.client_poll_inside_pending_us / cn,
+        per_batch_gap_after_pending_us = s.client_gap_after_pending_us / cn,
+        per_batch_gap_after_ready_us = s.client_gap_after_ready_us / cn,
         local_responses = s.local_responses,
         local_specs_opened = s.local_specs_opened,
         local_bytes_mib = format_args!("{:.1}", s.local_bytes as f64 / mb),

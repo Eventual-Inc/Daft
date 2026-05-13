@@ -88,6 +88,15 @@ impl ShuffleFlightClient {
     }
 }
 
+/// What the previous `poll_next` exit produced — used to attribute the gap
+/// between successive polls to either "waiting on gRPC/runtime" (after
+/// Pending) or "downstream consumer drain" (after Ready).
+#[derive(Clone, Copy)]
+enum LastExitKind {
+    Pending,
+    Ready,
+}
+
 pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     stream: FlightRecordBatchStream,
     done: bool,
@@ -95,8 +104,13 @@ pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     fields: Vec<FieldRef>,
     /// When the previous Ready(batch) was yielded. The gap from here to the
     /// next Ready(batch) covers: client-side gRPC wait + Flight IPC decode
-    /// (inside `stream.next()`). One sample per delivered batch.
+    /// (inside `stream.next()`). One sample per delivered batch — kept as the
+    /// coarse "delivery" metric for back-compat with prior log readers.
     last_yield: Option<Instant>,
+    /// When the previous `poll_next` returned, and what it returned. Used to
+    /// attribute the between-polls gap to network-wait (after Pending) vs
+    /// consumer-drain (after Ready).
+    last_exit: Option<(Instant, LastExitKind)>,
 }
 
 impl FlightRecordBatchStreamToDaftRecordBatchStream {
@@ -111,6 +125,7 @@ impl FlightRecordBatchStreamToDaftRecordBatchStream {
                 .map(|f| Arc::new(f.clone()))
                 .collect(),
             last_yield: None,
+            last_exit: None,
         }
     }
 }
@@ -120,17 +135,49 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
+        let t_enter = Instant::now();
+
+        // Attribute the gap from the previous poll's exit to this entry. After
+        // a Pending exit, this is network/runtime wait. After a Ready exit, it's
+        // downstream consumer drain time.
+        if let Some((last_exit_at, kind)) = this.last_exit.take() {
+            let gap_us = t_enter.duration_since(last_exit_at).as_micros() as u64;
+            match kind {
+                LastExitKind::Pending => {
+                    read_agg::CLIENT_GAP_AFTER_PENDING_US
+                        .fetch_add(gap_us, Ordering::Relaxed);
+                }
+                LastExitKind::Ready => {
+                    read_agg::CLIENT_GAP_AFTER_READY_US
+                        .fetch_add(gap_us, Ordering::Relaxed);
+                }
+            }
+        }
 
         if this.done {
             return Poll::Ready(None);
         }
 
         let batch = this.stream.next().poll_unpin(cx);
-        match batch {
+        let inside_us = t_enter.elapsed().as_micros() as u64;
+
+        let exit_kind = match &batch {
+            Poll::Pending => {
+                read_agg::CLIENT_POLL_INSIDE_PENDING_US
+                    .fetch_add(inside_us, Ordering::Relaxed);
+                read_agg::CLIENT_POLL_PENDING_COUNT.fetch_add(1, Ordering::Relaxed);
+                LastExitKind::Pending
+            }
+            Poll::Ready(_) => {
+                read_agg::CLIENT_POLL_INSIDE_READY_US
+                    .fetch_add(inside_us, Ordering::Relaxed);
+                read_agg::CLIENT_POLL_READY_COUNT.fetch_add(1, Ordering::Relaxed);
+                LastExitKind::Ready
+            }
+        };
+
+        let result = match batch {
             Poll::Ready(Some(Ok(batch))) => {
-                // Time-to-next-batch on the client side (includes the gRPC
-                // wait + Flight IPC decode that arrow-flight does inside
-                // `stream.next()`).
                 if let Some(prev) = this.last_yield.take() {
                     read_agg::CLIENT_BATCH_DELIVERY_US
                         .fetch_add(prev.elapsed().as_micros() as u64, Ordering::Relaxed);
@@ -158,6 +205,9 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
-        }
+        };
+
+        this.last_exit = Some((Instant::now(), exit_kind));
+        result
     }
 }
