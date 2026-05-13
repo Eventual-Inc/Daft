@@ -727,28 +727,33 @@ fn read_spec_sync(
 ) -> DaftResult<Vec<RecordBatch>> {
     use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
 
-    use std::os::unix::fs::FileExt;
-
     let mut batches = Vec::new();
     match spec {
-        FileReadSpec::Whole { path, slot } => {
-            let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+        FileReadSpec::Whole { path, slot: _ } => {
+            // Per-spec File::open + sequential read. Sharing one FD across reducers
+            // via `slot_or_open` defeats the kernel's per-FD readahead heuristic on
+            // big shuffles whose working set exceeds page cache. With each spec
+            // getting its own FD and `seek + take` (sequential reads, not pread),
+            // the kernel sees a clean linear access pattern and ramps readahead
+            // aggressively. Measured 6% reduce-side throughput regression on big
+            // shuffles attributed to the FD-cache + pread combo.
+            let file = std::fs::File::open(&path)?;
             let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
             read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
-            let reader = StdBufReader::with_capacity(64 * 1024, (&*file).try_clone()?);
+            let reader = StdBufReader::with_capacity(64 * 1024, file);
             let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
             decode_batches_into(stream_reader, fields, schema, &mut batches)?;
         }
-        FileReadSpec::Ranges { path, slot, ranges } => {
-            let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+        FileReadSpec::Ranges { path, slot: _, ranges } => {
+            let mut file = std::fs::File::open(&path)?;
             let mut body_bytes_acc: u64 = 0;
             for (start, end) in ranges {
+                file.seek(std::io::SeekFrom::Start(start))?;
                 let body_bytes = end - start;
                 body_bytes_acc += body_bytes;
-                let mut body = vec![0u8; body_bytes as usize];
-                file.read_exact_at(&mut body, start)?;
+                let take = (&mut file).take(body_bytes);
                 let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                let with_body = Read::chain(schema_prefix, Cursor::new(body));
+                let with_body = Read::chain(schema_prefix, take);
                 let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                 let reader = StdBufReader::with_capacity(64 * 1024, chained);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
@@ -795,8 +800,7 @@ fn concat_specs_into_flight_datas_sync(
     schema_header_bytes: &[u8],
     chunk_target_bytes: usize,
 ) -> DaftResult<Vec<FlightData>> {
-    use std::io::{BufReader as StdBufReader, Cursor, Read};
-    use std::os::unix::fs::FileExt;
+    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
 
     let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
     let mut pending_bytes: usize = 0;
@@ -842,20 +846,16 @@ fn concat_specs_into_flight_datas_sync(
 
     for spec in specs {
         match spec {
-            FileReadSpec::Whole { path, slot } => {
+            FileReadSpec::Whole { path, slot: _ } => {
                 let t_o = Instant::now();
-                let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+                let file = std::fs::File::open(&path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
                 read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
                 let t_si = Instant::now();
-                // Whole-file reads use Read+Seek; dup the FD so concurrent whole-file
-                // readers don't share seek state. Only the legacy multi_file path
-                // produces Whole specs; on the hot oneshot path this branch is unused.
-                let owned = file.try_clone()?;
-                let reader = StdBufReader::with_capacity(64 * 1024, owned);
+                let reader = StdBufReader::with_capacity(64 * 1024, file);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
                 read_agg::CONCAT_STREAM_INIT_US
                     .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
@@ -885,9 +885,12 @@ fn concat_specs_into_flight_datas_sync(
                     }
                 }
             }
-            FileReadSpec::Ranges { path, slot, ranges } => {
+            FileReadSpec::Ranges { path, slot: _, ranges } => {
                 let t_o = Instant::now();
-                let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+                // Per-spec File::open + seek+take rather than a cached FD + pread:
+                // sharing one FD across reducers defeats per-FD readahead and
+                // showed up as ~6% reduce-side throughput drop on big shuffles.
+                let mut file = std::fs::File::open(&path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
@@ -895,13 +898,13 @@ fn concat_specs_into_flight_datas_sync(
                 for (start, end) in ranges {
                     let body_bytes = end - start;
                     body_bytes_acc += body_bytes;
-                    let mut body = vec![0u8; body_bytes as usize];
                     let t_sk = Instant::now();
-                    file.read_exact_at(&mut body, start)?;
+                    file.seek(std::io::SeekFrom::Start(start))?;
                     read_agg::CONCAT_SEEK_US
                         .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    let take = (&mut file).take(body_bytes);
                     let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                    let with_body = Read::chain(schema_prefix, Cursor::new(body));
+                    let with_body = Read::chain(schema_prefix, take);
                     let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                     let t_si = Instant::now();
                     let reader = StdBufReader::with_capacity(64 * 1024, chained);
