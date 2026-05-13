@@ -70,10 +70,11 @@ pub async fn write_partitions_one_shot(
     let num_partitions = partitions_per_output.len();
 
     // Concat + IPC encode + disk write all run on a single spawn_blocking thread.
-    // Previously we fanned out per-partition `tokio::spawn` calls for the concat phase,
-    // but at N=8192 partitions per map task that was 1.6M task allocations whose
-    // scheduling overhead exceeded the actual concat work — and outer map-task
-    // parallelism already saturates cores.
+    // Previously we fanned out per-partition `tokio::spawn` calls for the concat
+    // phase, but at N=8192 partitions per map task that was 1.6M task allocations
+    // whose scheduling overhead exceeded the actual concat work — and the M×N×data
+    // sweep (see benchmarking/SHUFFLE_BENCH_FINDINGS.md) confirmed serial inline
+    // is a strict improvement across all shapes including map_conc=1.
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
     let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
     let schema_for_write = schema.clone();
@@ -132,7 +133,8 @@ pub async fn write_partitions_one_shot(
                 let mut slots_in_group: Vec<Option<(usize, usize)>> =
                     Vec::with_capacity(g_end - p);
                 for idx_in_group in 0..(g_end - p) {
-                    let parts = std::mem::take(&mut partitions_per_output[p + idx_in_group]);
+                    let parts =
+                        std::mem::take(&mut partitions_per_output[p + idx_in_group]);
                     let t_s = Instant::now();
                     let slot = concat_one_partition(parts)?;
                     write_agg::SPAWN_TOTAL_US
