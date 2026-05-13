@@ -150,6 +150,104 @@ pub mod agg {
     pub static FLUSH_GE_4M: AtomicU64 = AtomicU64::new(0);
 }
 
+/// Per-map-task counters for the *oneshot* writer (`write_partitions_one_shot`).
+/// Goal: attribute the ~3.8 s/task writer step into buckets — `tokio::spawn`
+/// scheduling, `MicroPartition::concat`, `concat_or_get`, IPC encode + disk
+/// write, and the wall time the writer thread is blocked on its join_all.
+pub mod write_agg {
+    use std::sync::atomic::AtomicU64;
+    /// Number of `concat_one_partition` futures spawned (= num_partitions × num_map_tasks).
+    pub static SPAWN_TASKS: AtomicU64 = AtomicU64::new(0);
+    /// Subset of SPAWN_TASKS that produced a non-empty batch.
+    pub static SPAWN_TASKS_NONEMPTY: AtomicU64 = AtomicU64::new(0);
+    /// Sum across tasks of wall time spent *inside* `concat_one_partition` (the
+    /// spawned future). Divided by SPAWN_TASKS gives mean per-task service time.
+    pub static SPAWN_TOTAL_US: AtomicU64 = AtomicU64::new(0);
+    /// Wall time spent inside `futures::future::join_all` over the spawned futures
+    /// (per map task). Sum across map tasks; compare against `SPAWN_TOTAL_US /
+    /// parallelism` to size scheduler overhead.
+    pub static JOIN_WALL_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `MicroPartition::concat(parts)`.
+    pub static MP_CONCAT_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `combined.concat_or_get()`.
+    pub static MP_CONCAT_OR_GET_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside the `RecordBatch -> arrow_array::RecordBatch` conversion (`try_into`).
+    pub static TRY_INTO_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `arrow_select::concat::concat_batches` (write-side coalesce merge).
+    /// With K=1 this collapses to a passthrough on a single-element slice.
+    pub static CONCAT_BATCHES_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `writer.write(&arrow_batch)` (IPC encode + disk write).
+    pub static IPC_WRITE_US: AtomicU64 = AtomicU64::new(0);
+    /// Bytes the IPC writer pushed to disk (post-encode, including IPC framing).
+    pub static FILE_WRITE_BYTES: AtomicU64 = AtomicU64::new(0);
+    /// Wall time inside the `spawn_blocking` block (file create + write loop + finish).
+    pub static BLOCKING_WALL_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of `write_partitions_one_shot` invocations completed.
+    pub static ONESHOT_CALLS: AtomicU64 = AtomicU64::new(0);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WriteAggSnapshot {
+    pub oneshot_calls: u64,
+    pub spawn_tasks: u64,
+    pub spawn_tasks_nonempty: u64,
+    pub spawn_total_us: u64,
+    pub join_wall_us: u64,
+    pub mp_concat_us: u64,
+    pub mp_concat_or_get_us: u64,
+    pub try_into_us: u64,
+    pub concat_batches_us: u64,
+    pub ipc_write_us: u64,
+    pub file_write_bytes: u64,
+    pub blocking_wall_us: u64,
+}
+
+pub fn write_agg_snapshot() -> WriteAggSnapshot {
+    WriteAggSnapshot {
+        oneshot_calls: write_agg::ONESHOT_CALLS.load(Ordering::Relaxed),
+        spawn_tasks: write_agg::SPAWN_TASKS.load(Ordering::Relaxed),
+        spawn_tasks_nonempty: write_agg::SPAWN_TASKS_NONEMPTY.load(Ordering::Relaxed),
+        spawn_total_us: write_agg::SPAWN_TOTAL_US.load(Ordering::Relaxed),
+        join_wall_us: write_agg::JOIN_WALL_US.load(Ordering::Relaxed),
+        mp_concat_us: write_agg::MP_CONCAT_US.load(Ordering::Relaxed),
+        mp_concat_or_get_us: write_agg::MP_CONCAT_OR_GET_US.load(Ordering::Relaxed),
+        try_into_us: write_agg::TRY_INTO_US.load(Ordering::Relaxed),
+        concat_batches_us: write_agg::CONCAT_BATCHES_US.load(Ordering::Relaxed),
+        ipc_write_us: write_agg::IPC_WRITE_US.load(Ordering::Relaxed),
+        file_write_bytes: write_agg::FILE_WRITE_BYTES.load(Ordering::Relaxed),
+        blocking_wall_us: write_agg::BLOCKING_WALL_US.load(Ordering::Relaxed),
+    }
+}
+
+pub fn log_write_agg_summary(label: &str) {
+    let s = write_agg_snapshot();
+    let mb = 1024.0 * 1024.0;
+    let n = s.spawn_tasks.max(1);
+    let nz = s.spawn_tasks_nonempty.max(1);
+    tracing::info!(
+        target: "daft_shuffles::write_agg",
+        label = label,
+        oneshot_calls = s.oneshot_calls,
+        spawn_tasks = s.spawn_tasks,
+        spawn_tasks_nonempty = s.spawn_tasks_nonempty,
+        spawn_total_ms = s.spawn_total_us / 1000,
+        join_wall_ms = s.join_wall_us / 1000,
+        mp_concat_ms = s.mp_concat_us / 1000,
+        mp_concat_or_get_ms = s.mp_concat_or_get_us / 1000,
+        try_into_ms = s.try_into_us / 1000,
+        concat_batches_ms = s.concat_batches_us / 1000,
+        ipc_write_ms = s.ipc_write_us / 1000,
+        blocking_wall_ms = s.blocking_wall_us / 1000,
+        per_task_spawn_us = s.spawn_total_us / n,
+        per_nonempty_mp_concat_us = s.mp_concat_us / nz,
+        per_nonempty_mp_concat_or_get_us = s.mp_concat_or_get_us / nz,
+        per_nonempty_try_into_us = s.try_into_us / nz,
+        per_nonempty_ipc_write_us = s.ipc_write_us / nz,
+        file_write_mib = format_args!("{:.1}", s.file_write_bytes as f64 / mb),
+        "shuffle write agg summary",
+    );
+}
+
 /// Aggregates that live on the RepartitionSink side (pre-cache). Tracks where time
 /// goes between "BlockingSink::sink got called" and "push hit the writer task".
 pub mod repartition_agg {

@@ -39,6 +39,7 @@ use daft_schema::schema::SchemaRef;
 use daft_shuffles::{
     client::FlightClientManager,
     multi_file_writer::write_partitions_multi_file,
+    multi_partition_cache::{log_write_agg_summary, write_agg_snapshot},
     oneshot_writer::write_partitions_one_shot,
     parse_flight_compression,
     server::flight_server::{
@@ -597,6 +598,59 @@ async fn main() -> DaftResult<()> {
     );
     println!();
 
+    // Write-path attribution. Only meaningful for the oneshot writer; the append
+    // writer accumulates its counters in `agg` (CONCAT_US / ENCODE_WRITE_US).
+    {
+        let w = write_agg_snapshot();
+        if w.oneshot_calls > 0 {
+            let n = w.spawn_tasks.max(1);
+            let nz = w.spawn_tasks_nonempty.max(1);
+            println!("--- Write path attribution (oneshot) ---");
+            println!("oneshot calls (= map tasks):  {}", w.oneshot_calls);
+            println!(
+                "spawn tasks (total / nonempty): {} / {}",
+                w.spawn_tasks, w.spawn_tasks_nonempty
+            );
+            println!(
+                "join_wall / spawn_total / blocking_wall totals (ms): {:>7.1} / {:>7.1} / {:>7.1}",
+                w.join_wall_us as f64 / 1000.0,
+                w.spawn_total_us as f64 / 1000.0,
+                w.blocking_wall_us as f64 / 1000.0,
+            );
+            println!(
+                "  per-task: spawn_total {:>5} us  (mean per-future service time)",
+                w.spawn_total_us / n,
+            );
+            println!(
+                "mp_concat / mp_concat_or_get / try_into totals (ms): {:>7.1} / {:>7.1} / {:>7.1}",
+                w.mp_concat_us as f64 / 1000.0,
+                w.mp_concat_or_get_us as f64 / 1000.0,
+                w.try_into_us as f64 / 1000.0,
+            );
+            println!(
+                "  per nonempty task (us):                              {:>5} / {:>5} / {:>5}",
+                w.mp_concat_us / nz,
+                w.mp_concat_or_get_us / nz,
+                w.try_into_us / nz,
+            );
+            println!(
+                "concat_batches / ipc_write totals (ms):              {:>7.1} / {:>7.1}",
+                w.concat_batches_us as f64 / 1000.0,
+                w.ipc_write_us as f64 / 1000.0,
+            );
+            println!(
+                "  per nonempty task (us):                              {:>5} / {:>5}",
+                w.concat_batches_us / nz,
+                w.ipc_write_us / nz,
+            );
+            println!(
+                "file_write_bytes: {:.1} MiB",
+                w.file_write_bytes as f64 / (1024.0 * 1024.0)
+            );
+            println!();
+        }
+    }
+
     println!("--- File stats (pre-seal) ---");
     println!("partition caches total:     {}", cfg.num_inputs * cfg.num_outputs);
     println!("intermediate files total:   {}", total_files);
@@ -745,6 +799,7 @@ async fn main() -> DaftResult<()> {
     );
 
     log_read_agg_summary("seal_bench end");
+    log_write_agg_summary("seal_bench end");
 
     // Plain-print attribution so we see it without DAFT_TRACE=info.
     let s = read_agg_snapshot();
