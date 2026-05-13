@@ -263,7 +263,24 @@ impl Source for ShuffleReadSource {
         _stats_provider: StatsProvider,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
+        // The forward_partition_stream tasks (one per Flight fetch, up to
+        // num_parallel_tasks concurrent) all send through this channel.
+        // With capacity=1 a slow downstream consumer stalls EVERY forward
+        // task on `sender.send().await`, which suspends their host stream
+        // — `select_all` then stops being polled, all underlying Flight
+        // streams sit Pending, and the read_agg `gap_after_pending` bucket
+        // balloons.
+        //
+        // Default capacity 64 batches lets the producer pipeline run
+        // ~4 batches ahead per forward task before blocking. Tunable via
+        // `DAFT_SHUFFLE_READ_CHANNEL_CAPACITY`. Peak memory ceiling is
+        // capacity × avg_batch_size (~4 MiB target) = ~256 MiB.
+        let capacity = std::env::var("DAFT_SHUFFLE_READ_CHANNEL_CAPACITY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(64);
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(capacity);
         let processor_task = self.spawn_flight_shuffle_processor(output_sender);
 
         let result_stream = output_receiver.into_stream().map(Ok);
