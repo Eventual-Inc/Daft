@@ -44,12 +44,12 @@ export const formatBytes = (bytes: number): string => {
   }
 };
 
-export const getStatusIcon = (status: OperatorStatus) => {
+export const getStatusIcon = (status: OperatorStatus, isTerminal = false) => {
   switch (status) {
     case "Finished":
-      return <Naruto />;
+      return <Naruto animated={!isTerminal} />;
     case "Executing":
-      return <AnimatedFish />;
+      return <AnimatedFish animated={!isTerminal} />;
     case "Failed":
       return (
         <div className="w-5 h-5 flex items-center justify-center">
@@ -61,7 +61,7 @@ export const getStatusIcon = (status: OperatorStatus) => {
     case "Pending":
     default:
       return (
-        <div className="w-5 h-5 shrink-0 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+        <div className={`w-5 h-5 shrink-0 border-2 border-zinc-400 border-t-transparent rounded-full ${isTerminal ? "" : "animate-spin"}`}></div>
       );
   }
 };

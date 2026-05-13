@@ -33,11 +33,13 @@ function OperatorDuration({ operator }: { operator: OperatorInfo }) {
 
 export default function ProgressTable({
   exec_state,
+  queryIsTerminal,
 }: {
   exec_state: ExecutingState;
+  queryIsTerminal: boolean;
 }) {
   return (
-    <div className="overflow-auto h-full">
+    <div className="overflow-auto h-full px-6 py-4">
       <div className="min-w-[1130px]">
         {/* Table Headers */}
         <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
@@ -106,7 +108,7 @@ export default function ProgressTable({
                   className="grid grid-cols-[50px_60px_100px_200px_120px_120px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
                 >
                   <div className="px-3 py-4 flex items-center justify-end border-r border-zinc-700 h-full">
-                    {getStatusIcon(operator.status)}
+                    {getStatusIcon(operator.status, queryIsTerminal)}
                   </div>
                   <div className="px-3 py-4 text-center text-sm text-zinc-400 font-mono border-r border-zinc-700 h-full flex items-center justify-center">
                     {operatorId}

@@ -62,6 +62,13 @@ export const FINISHED_STYLE: HeatmapStyle = {
   borderWidth: "2px",
 };
 
+/** Discrete style for an operator with failed tasks. */
+export const FAILED_STYLE: HeatmapStyle = {
+  backgroundColor: "rgb(28, 16, 16)",
+  borderColor: "rgb(220, 38, 38)",
+  borderWidth: "2px",
+};
+
 /**
  * Thresholds at which an edge's bytes-out / bytes-in ratio is considered
  * meaningful enough to badge. Shared with EdgeLabel so both files agree on

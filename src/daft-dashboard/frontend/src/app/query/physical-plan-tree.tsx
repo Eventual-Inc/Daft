@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import { ExecutingState, OperatorInfo, OperatorStatus, PhysicalPlanNode } from "./types";
 import {
   getStatusIcon,
   formatStatValue,
@@ -18,7 +18,8 @@ import {
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
 import EdgeLabel from "./edge-label";
-import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
+import { getHeatmapStyle, FINISHED_STYLE, FAILED_STYLE } from "./tree-colors";
+import { TaskStore } from "./types";
 
 function getCpuSec(operator?: OperatorInfo): number {
   if (!operator) return 0;
@@ -110,29 +111,56 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
   return formatDuration(Math.max(0, end - operator.start_sec));
 }
 
+function getEffectiveStatus(
+  operator: OperatorInfo | undefined,
+  nodeId: number,
+  taskStore: TaskStore | undefined,
+): OperatorStatus {
+  if (!operator) return "Pending";
+
+  if (taskStore) {
+    const hasFailed = taskStore.groups.some(
+      (g) => g.node_ids.includes(nodeId) && g.failed_count > 0,
+    );
+    if (hasFailed) return "Failed";
+  }
+
+  // Marked Finished by the backend but never actually started → never ran
+  if (operator.status === "Finished" && !operator.start_sec) return "Pending";
+
+  return operator.status;
+}
+
 function PhysicalNodeCard({
   node,
   operator,
   intensity,
+  effectiveStatus,
   isHighlighted,
   isHovered,
+  queryIsTerminal,
   onViewTasks,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
+  effectiveStatus: OperatorStatus;
   /** Sticky highlight — typically set by the URL/node filter from the Tasks sidebar. */
   isHighlighted: boolean;
   /** Transient hover preview — set when the user hovers a task row in the sidebar. */
   isHovered: boolean;
+  queryIsTerminal: boolean;
   /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
   onViewTasks?: (nodeId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const status = operator?.status ?? "Pending";
   const wallClock = useWallClockDuration(operator);
   const cardStyle: React.CSSProperties =
-    status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
+    effectiveStatus === "Failed"
+      ? FAILED_STYLE
+      : effectiveStatus === "Finished"
+        ? FINISHED_STYLE
+        : getHeatmapStyle(intensity);
 
   // Scroll into view only when the *sticky* (click-driven) highlight becomes
   // active — scrubbing the sidebar via hover shouldn't jump the plan around.
@@ -184,7 +212,7 @@ function PhysicalNodeCard({
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
-        {getStatusIcon(status)}
+        {getStatusIcon(effectiveStatus, queryIsTerminal)}
         <span
           className={`${main.className} text-zinc-100 text-sm font-bold tracking-wide truncate`}
         >
@@ -273,6 +301,7 @@ export default function PhysicalPlanTree({
   onViewTasks,
   tasksOpen,
   onOpenTasks,
+  queryIsTerminal,
 }: {
   exec_state: ExecutingState;
   /** Sticky highlight — driven by the URL/node filter (click-to-filter). */
@@ -284,6 +313,7 @@ export default function PhysicalPlanTree({
   tasksOpen?: boolean;
   /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
   onOpenTasks?: () => void;
+  queryIsTerminal: boolean;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -298,6 +328,7 @@ export default function PhysicalPlanTree({
   }
 
   const operators = exec_state.exec_info.operators;
+  const taskStore = exec_state.exec_info.task_store;
   const maxCpuSec = Math.max(
     0.001,
     ...Object.values(operators).map(getCpuSec),
@@ -335,9 +366,9 @@ export default function PhysicalPlanTree({
   );
 
   return (
-    <div className="bg-zinc-900 h-full flex flex-col">
+    <div className="h-full flex flex-col">
       {/* View toggle */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-zinc-800">
+      <div className="flex items-center gap-2 px-6 pt-3 pb-2 border-b border-zinc-800">
         {plan && (
           <button
             onClick={() => setViewMode("tree")}
@@ -399,13 +430,16 @@ export default function PhysicalPlanTree({
                   node.type,
                   maxCpuSec,
                 );
+                const effectiveStatus = getEffectiveStatus(op, node.id, taskStore);
                 return (
                   <PhysicalNodeCard
                     node={node}
                     operator={op}
                     intensity={intensity}
+                    effectiveStatus={effectiveStatus}
                     isHighlighted={highlightedNodeId === node.id}
                     isHovered={hoveredNodeIds?.has(node.id) ?? false}
+                    queryIsTerminal={queryIsTerminal}
                     onViewTasks={onViewTasks}
                   />
                 );
@@ -420,7 +454,7 @@ export default function PhysicalPlanTree({
             {JSON.stringify(plan, null, 2)}
           </pre>
         ) : (
-          <ProgressTable exec_state={exec_state} />
+          <ProgressTable exec_state={exec_state} queryIsTerminal={queryIsTerminal} />
         )}
       </div>
     </div>

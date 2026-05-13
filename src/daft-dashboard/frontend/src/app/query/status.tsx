@@ -112,20 +112,19 @@ export function Status({
 
   return (
     <div className="flex flex-col gap-y-1.5">
-      <div className="flex items-center gap-x-2 whitespace-nowrap">
+      <div className="flex items-center gap-x-2">
         {icon}
         <span className={`${main.className} ${textColor} font-bold text-base`}>
           {label}
         </span>
-        <span className="text-zinc-600">·</span>
-        {end_sec != null ? (
-          <span className={`${main.className} text-sm font-mono text-zinc-400`}>
-            {toHumanReadableDuration(end_sec - start_sec)}
-          </span>
-        ) : (
-          <Timer start_sec={start_sec} />
-        )}
       </div>
+      {end_sec != null ? (
+        <span className={`${main.className} text-sm font-mono text-zinc-400`}>
+          {toHumanReadableDuration(end_sec - start_sec)}
+        </span>
+      ) : (
+        <Timer start_sec={start_sec} />
+      )}
       {last_heartbeat_sec && <LastHeartbeat last_heartbeat_sec={last_heartbeat_sec} />}
       {status === "Failed" && errorMessage && (
         <ErrorModal message={errorMessage} />
