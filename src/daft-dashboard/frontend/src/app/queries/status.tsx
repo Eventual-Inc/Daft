@@ -14,9 +14,7 @@ import {
   PlanningStatus,
   ExecutingStatus,
   FinishedStatus,
-  FailedStatus,
   CanceledStatus,
-  DeadStatus
 } from "@/hooks/use-queries";
 import { AnimatedFish, Naruto } from "@/components/icons";
 
@@ -160,12 +158,11 @@ const Canceled = ({ state }: { state: CanceledStatus }) => (
   />
 );
 
-const Failed = ({ state }: { state: FailedStatus }) => (
+const Failed = () => (
   <StatusBadgeInner
     icon={<CircleX size={16} strokeWidth={3} className="text-red-500" />}
     label="Failed"
     textColor="text-red-500"
-    tooltipText={state.message}
   />
 );
 
@@ -227,7 +224,7 @@ export default function Status({ state, showDuration = true }: StatusBadgeProps)
     case "Finished":
       return <Finished state={state} showDuration={showDuration} />;
     case "Failed":
-      return <Failed state={state} />;
+      return <Failed />;
     case "Canceled":
       return <Canceled state={state} />;
     case "Dead":

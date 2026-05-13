@@ -703,8 +703,9 @@ mod tests {
         struct MockAgg;
 
         #[typetag::serde(name = "MockAgg")]
+        #[allow(clippy::unnecessary_literal_bound)]
         impl AggFn for MockAgg {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 "mock_agg"
             }
             fn return_dtype(&self, _: &[DataType]) -> DaftResult<DataType> {

@@ -383,11 +383,37 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 });
                 final_stage(final_col);
             }
-            AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
+            AggExpr::AggFnMap { handle, inputs } => {
+                let partial_col = first_stage!(AggExpr::AggFnMap {
+                    handle: handle.clone(),
+                    inputs: inputs.clone(),
+                });
+                let combined_col = second_stage!(AggExpr::AggFnCombine {
+                    handle: handle.clone(),
+                    partial: partial_col,
+                });
+                final_stage(combined_col);
+            }
+            AggExpr::AggFnCombine { .. } => {
                 return Err(common_error::DaftError::InternalError(
-                    "AggFnMap / AggFnReduce must not appear in the top-level aggregation list"
-                        .to_string(),
+                    "AggFnCombine must not appear in the top-level aggregation list".to_string(),
                 ));
+            }
+            AggExpr::AggFnReduce {
+                handle,
+                partial,
+                return_field,
+            } => {
+                let combine_col = first_stage!(AggExpr::AggFnCombine {
+                    handle: handle.clone(),
+                    partial: partial.clone(),
+                });
+                let final_col = second_stage!(AggExpr::AggFnReduce {
+                    handle: handle.clone(),
+                    partial: combine_col,
+                    return_field: return_field.clone(),
+                });
+                final_stage(final_col);
             }
             // Only necessary for Flotilla
             AggExpr::ApproxSketch(expr, sketch_type) => {

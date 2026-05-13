@@ -268,7 +268,7 @@ def test_s3_fileset_partitioned_data(
         glob_pattern = f"{gvfs_root}/**/*.parquet"
 
         # Read all partitions
-        read_df = daft.read_parquet(glob_pattern, io_config=gravitino_io_config)
+        read_df = daft.read_parquet(glob_pattern, io_config=gravitino_io_config, hive_partitioning=True)
         result = read_df.sort("id").to_pydict()
 
         assert len(result["id"]) == 6

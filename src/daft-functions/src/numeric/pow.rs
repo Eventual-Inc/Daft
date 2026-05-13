@@ -42,6 +42,7 @@ impl ScalarUDF for Pow {
         let input = inputs.required(0)?;
         let field = input.to_field(schema)?;
         let dtype = match field.dtype {
+            DataType::Float16 => DataType::Float16,
             DataType::Float32 => DataType::Float32,
             dt if dt.is_numeric() => DataType::Float64,
             _ => {

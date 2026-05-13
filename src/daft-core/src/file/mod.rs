@@ -39,6 +39,15 @@ impl DaftMediaType for MediaTypeAudio {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct MediaTypeImage;
+
+impl DaftMediaType for MediaTypeImage {
+    fn get_type() -> MediaType {
+        MediaType::Image
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FileType<T>
 where
@@ -50,6 +59,7 @@ where
 pub type UnknownFileType = FileType<MediaTypeUnknown>;
 pub type VideoFileType = FileType<MediaTypeVideo>;
 pub type AudioFileType = FileType<MediaTypeAudio>;
+pub type ImageFileType = FileType<MediaTypeImage>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FileReference {

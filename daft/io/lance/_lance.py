@@ -9,6 +9,7 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
+from daft.io._checkpoint import attach_checkpoint
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
@@ -18,6 +19,7 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointConfig
     from daft.dependencies import pa
 
     try:
@@ -44,6 +46,7 @@ def read_lance(
     metadata_cache_size_bytes: int | None = None,
     fragment_group_size: int | None = None,
     include_fragment_id: bool | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table or Lance REST service.
 
@@ -98,6 +101,9 @@ def read_lance(
         include_fragment_id : Optional, bool
             Whether to display fragment_id.
             if you have the behavior of 'merge_columns_df' or 'write_lance(mode = 'merge')', the `include_fragment_id` must be set to True
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
@@ -167,6 +173,7 @@ def read_lance(
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
 
 

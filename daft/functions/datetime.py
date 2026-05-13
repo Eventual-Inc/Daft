@@ -1435,6 +1435,61 @@ def datepart(part: str, expr: Expression) -> Expression:
     return extractors[normalized](expr)
 
 
+def add_months(expr: Expression, months: Expression) -> Expression:
+    """Adds a number of months to a date or timestamp.
+
+    Mirrors Spark's ``add_months``: when the start day exceeds the number of days in
+    the resulting month, the result is clamped to the last day of that month. The
+    return type is always Date, even when the input is a Timestamp (the time-of-day
+    component is dropped before the shift).
+
+    Args:
+        expr: A Date or Timestamp expression.
+        months: An integer expression for the number of months to add (may be negative).
+
+    Returns:
+        Expression: a Date expression shifted by the given number of months.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import add_months
+        >>> df = daft.from_pydict({"d": ["2023-01-31", "2024-01-31"], "n": [1, 1]})
+        >>> df = df.with_column("d", df["d"].cast(daft.DataType.date()))
+        >>> df = df.with_column("result", add_months(df["d"], df["n"]))
+        >>> df.schema()["result"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("add_months", expr, months)
+
+
+def months_between(end: Expression, start: Expression) -> Expression:
+    """Returns the number of months between two dates or timestamps.
+
+    Mirrors Spark's ``months_between``: returns an integer when both inputs share the
+    same day-of-month or are both the last day of their respective months; otherwise
+    returns ``months_diff + (day1 - day2 + (time1 - time2)/86400) / 31`` rounded to
+    eight decimal places.
+
+    Args:
+        end: The end Date or Timestamp expression.
+        start: The start Date or Timestamp expression.
+
+    Returns:
+        Expression: a Float64 expression with the number of months (end - start).
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import months_between
+        >>> df = daft.from_pydict({"a": ["1997-02-28"], "b": ["1996-10-30"]})
+        >>> df = df.with_column("a", df["a"].cast(daft.DataType.date()))
+        >>> df = df.with_column("b", df["b"].cast(daft.DataType.date()))
+        >>> df = df.with_column("diff", months_between(df["a"], df["b"]))
+        >>> df.schema()["diff"].dtype == daft.DataType.float64()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("months_between", end, start)
+
+
 def date_from_unix_date(expr: Expression) -> Expression:
     """Converts days since Unix epoch (1970-01-01) to a date.
 

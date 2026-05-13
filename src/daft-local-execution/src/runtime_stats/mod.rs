@@ -5,7 +5,7 @@ mod values;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
@@ -19,7 +19,8 @@ use daft_context::{
         event_header,
         events::{
             Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
-            OperatorStartEvent, ProcessStatsEvent, StatsEvent,
+            OperatorStartEvent, ProcessStatsEvent, StatsEvent, TaskStatsSnapshot,
+            TaskStatsUpdateEvent,
         },
     },
 };
@@ -48,6 +49,16 @@ fn should_enable_process_monitor() -> bool {
         matches!(val.trim().to_lowercase().as_str(), "1" | "true")
     } else {
         false // Disabled by default; enable with DAFT_PROCESS_MONITOR_ENABLED=true
+    }
+}
+
+/// Mirrors `daft_distributed::statistics::task_lifecycle::task_events_enabled`.
+/// Duplicated here to avoid pulling daft-distributed into daft-local-execution.
+fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false
     }
 }
 
@@ -120,30 +131,48 @@ impl RuntimeStatsManagerHandle {
     /// plans do not retain metrics for completed inputs indefinitely.
     #[allow(dead_code)]
     pub async fn take_input_snapshot(&self, input_id: InputId) -> DaftResult<ExecutionStats> {
-        if let Some(stats) = self
-            .finished_snapshots
-            .lock()
-            .expect("finished_snapshots lock poisoned")
-            .as_mut()
-            .and_then(|snapshots| snapshots.remove(&input_id))
-        {
+        if let Some(stats) = self.take_finished_snapshot(input_id) {
             return Ok(stats);
         }
 
         let (tx, rx) = oneshot::channel();
-        self.tx
+        if self
+            .tx
             .send(StatsManagerMessage::TakeInputSnapshot(input_id, tx))
-            .map_err(|_| {
+            .is_err()
+        {
+            // Manager already shut down its receiver. The shutdown path publishes
+            // `finished_snapshots` before exiting, so check there.
+            return self.take_finished_snapshot(input_id).ok_or_else(|| {
                 common_error::DaftError::InternalError(
                     "RuntimeStatsManager was already finished; cannot take input snapshot"
                         .to_string(),
                 )
-            })?;
-        rx.await.map_err(|_| {
-            common_error::DaftError::InternalError(
-                "RuntimeStatsManager task ended before responding to snapshot request".to_string(),
-            )
-        })
+            });
+        }
+        match rx.await {
+            Ok(stats) => Ok(stats),
+            Err(_) => {
+                // The manager dropped the responder before answering — typically
+                // because it broke out of its event loop (and stopped reading
+                // node_rx) right when our request was queued. Fall back to the
+                // finalized snapshots, which the manager publishes before exit.
+                self.take_finished_snapshot(input_id).ok_or_else(|| {
+                    common_error::DaftError::InternalError(
+                        "RuntimeStatsManager task ended before responding to snapshot request"
+                            .to_string(),
+                    )
+                })
+            }
+        }
+    }
+
+    fn take_finished_snapshot(&self, input_id: InputId) -> Option<ExecutionStats> {
+        self.finished_snapshots
+            .lock()
+            .expect("finished_snapshots lock poisoned")
+            .as_mut()
+            .and_then(|snapshots| snapshots.remove(&input_id))
     }
 }
 
@@ -166,6 +195,73 @@ impl std::fmt::Debug for RuntimeStatsManager {
 }
 
 impl RuntimeStatsManager {
+    /// Apply a single channel message to the manager's mutable state. Used both
+    /// from the main `select!` branch and from the post-finish drain so late
+    /// `RegisterRuntimeStats` / `TakeInputSnapshot` messages aren't lost when
+    /// `finish_rx` wins the race against a still-queued `node_rx` message.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_message(
+        msg: StatsManagerMessage,
+        input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        active_nodes: &mut HashSet<NodeID>,
+        query_id: &QueryID,
+        query_plan: &serde_json::Value,
+        progress_bar: Option<&dyn ProgressBar>,
+        subscribers: &[Arc<dyn Subscriber>],
+        operators: &HashMap<NodeID, Arc<OperatorMeta>>,
+        node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+    ) {
+        match msg {
+            StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
+                if is_initialize && active_nodes.insert(node_id) {
+                    if let Some(progress_bar) = progress_bar {
+                        progress_bar.initialize_node(node_id);
+                    }
+
+                    let Some(operator_meta) = operators.get(&node_id) else {
+                        log::warn!(
+                            "Unknown node_id {node_id} in operators during on_start, skipping subscriber notification"
+                        );
+                        return;
+                    };
+
+                    let event = Event::OperatorStart(OperatorStartEvent {
+                        header: event_header(query_id.clone()),
+                        operator: operator_meta.clone(),
+                    });
+                    dispatch_event(subscribers, &event, "notify operator start");
+                } else if !is_initialize && active_nodes.remove(&node_id) {
+                    Self::flush_and_finalize_node(
+                        query_id,
+                        node_id,
+                        input_stats,
+                        progress_bar,
+                        subscribers,
+                        "finalize node",
+                        operators,
+                    );
+                }
+            }
+            StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
+                input_stats.insert((node_id, input_id), stats);
+            }
+            StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
+                let mut result = Vec::new();
+                for (&(node_id, iid), stats) in input_stats.iter() {
+                    if iid == input_id
+                        && let Some(node_info) = node_info_map.get(&node_id)
+                    {
+                        result.push((node_info.clone(), stats.flush()));
+                    }
+                }
+                let _ = respond_tx.send(
+                    ExecutionStats::new(query_id.clone(), result)
+                        .with_query_plan(query_plan.clone()),
+                );
+            }
+        }
+    }
+
     fn flush_and_finalize_node(
         query_id: &QueryID,
         node_id: NodeID,
@@ -259,6 +355,7 @@ impl RuntimeStatsManager {
             throttle_interval,
             enable_process_monitor,
             operator_meta_map,
+            is_flotilla_worker,
         ))
     }
 
@@ -274,6 +371,7 @@ impl RuntimeStatsManager {
         throttle_interval: Duration,
         enable_process_monitor: bool,
         operators: HashMap<NodeID, Arc<OperatorMeta>>,
+        is_flotilla_worker: bool,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<StatsManagerMessage>();
         let node_tx = Arc::new(node_tx);
@@ -291,6 +389,13 @@ impl RuntimeStatsManager {
         };
 
         let finished_snapshots_for_task = finished_snapshots.clone();
+        let task_events_enabled_now = task_events_enabled();
+        // TaskStatsUpdate is emitted on a separate (slower) cadence than the
+        // 200ms ProcessStats / Event::Stats tick. Per-task amplification means
+        // each tick produces one event per active task per worker; at 5Hz with
+        // num_cpus tasks per worker that saturated the dashboard's POST queue.
+        // 1Hz is plenty for human progress observation.
+        let task_stats_min_interval = Duration::from_secs(1);
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_info_map.len());
@@ -298,58 +403,44 @@ impl RuntimeStatsManager {
             let mut input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> = HashMap::new();
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
+            let mut last_task_stats_emit: Option<Instant> = None;
 
             loop {
                 tokio::select! {
                     biased;
                     Some(msg) = node_rx.recv() => {
-                        match msg {
-                            StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
-                                if is_initialize && active_nodes.insert(node_id) {
-                                    if let Some(progress_bar) = &progress_bar {
-                                        progress_bar.initialize_node(node_id);
-                                    }
-
-                                    let Some(operator_meta) = operators.get(&node_id) else {
-                                        log::warn!("Unknown node_id {node_id} in operators during on_start, skipping subscriber notification");
-                                        continue;
-                                    };
-
-                                    let event = Event::OperatorStart(OperatorStartEvent {
-                                        header: event_header(query_id.clone()),
-                                        operator: operator_meta.clone(),
-                                    });
-                                    dispatch_event(&subscribers, &event, "notify operator start");
-                                } else if !is_initialize && active_nodes.remove(&node_id) {
-                                    Self::flush_and_finalize_node(
-                                        &query_id,
-                                        node_id,
-                                        &input_stats,
-                                        progress_bar.as_deref(),
-                                    &subscribers,
-                                    "finalize node",
-                                    &operators,
-                                    );
-                                }
-                            }
-                            StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
-                                input_stats.insert((node_id, input_id), stats);
-                            }
-                            StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
-                                let mut result = Vec::new();
-                                for (&(node_id, iid), stats) in &input_stats {
-                                    if iid == input_id
-                                        && let Some(node_info) = node_info_map.get(&node_id)
-                                    {
-                                        result.push((node_info.clone(), stats.flush()));
-                                    }
-                                }
-                                let _ = respond_tx.send(ExecutionStats::new(query_id.clone(), result).with_query_plan(query_plan.clone()));
-                            }
-                        }
+                        Self::handle_message(
+                            msg,
+                            &mut input_stats,
+                            &mut active_nodes,
+                            &query_id,
+                            &query_plan,
+                            progress_bar.as_deref(),
+                            &subscribers,
+                            &operators,
+                            &node_info_map,
+                        );
                     }
 
                     _ = &mut finish_rx => {
+                        // Drain any messages queued before the finish signal but not yet
+                        // processed. Without this, a `RegisterRuntimeStats` send that
+                        // races with `finish_tx.send` can be lost when `select!` picks the
+                        // finish branch, leaving `input_stats` missing entries and
+                        // `take_input_snapshot` returning empty stats.
+                        while let Ok(msg) = node_rx.try_recv() {
+                            Self::handle_message(
+                                msg,
+                                &mut input_stats,
+                                &mut active_nodes,
+                                &query_id,
+                                &query_plan,
+                                progress_bar.as_deref(),
+                                &subscribers,
+                                &operators,
+                                &node_info_map,
+                            );
+                        }
                         // Queries that terminate early (e.g. LIMIT) may still have active upstream nodes.
                         // Flush and finalize those nodes so subscribers and progress bars end in a consistent state.
                         for node_id in active_nodes.drain() {
@@ -363,6 +454,35 @@ impl RuntimeStatsManager {
                                 &operators,
                             );
                         }
+                        // Publish finalized snapshots BEFORE exiting the select loop so a
+                        // `take_input_snapshot` call that races with manager shutdown finds
+                        // the data via `finished_snapshots` rather than a closed channel.
+                        // (Setting it post-loop leaves a window between break and assignment
+                        // during which channel sends silently queue but are never read.)
+                        let mut snapshots_by_input: HashMap<InputId, Vec<(Arc<NodeInfo>, StatSnapshot)>> =
+                            HashMap::new();
+                        for ((node_id, input_id), stats) in &input_stats {
+                            if let Some(node_info) = node_info_map.get(node_id) {
+                                snapshots_by_input
+                                    .entry(*input_id)
+                                    .or_default()
+                                    .push((node_info.clone(), stats.flush()));
+                            }
+                        }
+                        let finished = snapshots_by_input
+                            .into_iter()
+                            .map(|(input_id, mut nodes)| {
+                                nodes.sort_by_key(|(node_info, _)| node_info.id);
+                                (
+                                    input_id,
+                                    ExecutionStats::new(query_id.clone(), nodes)
+                                        .with_query_plan(query_plan.clone()),
+                                )
+                            })
+                            .collect();
+                        *finished_snapshots_for_task
+                            .lock()
+                            .expect("finished_snapshots lock poisoned") = Some(finished);
                         break;
                     }
 
@@ -380,22 +500,42 @@ impl RuntimeStatsManager {
                             continue;
                         }
 
-                        for node_id in &active_nodes {
-                            if let Some(snapshot) = aggregate_node_stats(&input_stats, *node_id) {
-                                if let Some(progress_bar) = &progress_bar {
-                                    progress_bar.handle_event(*node_id, &snapshot);
-                                }
-                                snapshot_container.push((*node_id, snapshot.to_stats()));
+                        if is_flotilla_worker {
+                            // One batched TaskStatsUpdate per worker per
+                            // task_stats_min_interval, gated on the same env
+                            // var as task submit/end events.
+                            let now = Instant::now();
+                            let due = match last_task_stats_emit {
+                                Some(prev) => now.duration_since(prev) >= task_stats_min_interval,
+                                None => true,
+                            };
+                            if task_events_enabled_now && due {
+                                emit_per_task_stats_updates(
+                                    &query_id,
+                                    &input_stats,
+                                    &node_info_map,
+                                    &subscribers,
+                                );
+                                last_task_stats_emit = Some(now);
                             }
-                        }
+                        } else {
+                            for node_id in &active_nodes {
+                                if let Some(snapshot) = aggregate_node_stats(&input_stats, *node_id) {
+                                    if let Some(progress_bar) = &progress_bar {
+                                        progress_bar.handle_event(*node_id, &snapshot);
+                                    }
+                                    snapshot_container.push((*node_id, snapshot.to_stats()));
+                                }
+                            }
 
-                        if !snapshot_container.is_empty() {
-                            let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
-                            let event = Event::Stats(StatsEvent {
-                                header: event_header(query_id.clone()),
-                                stats: snapshot_container.clone(),
-                            });
-                            dispatch_event(&subscribers, &event, "notify runtime stats");
+                            if !snapshot_container.is_empty() {
+                                let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
+                                let event = Event::Stats(StatsEvent {
+                                    header: event_header(query_id.clone()),
+                                    stats: snapshot_container.clone(),
+                                });
+                                dispatch_event(&subscribers, &event, "notify runtime stats");
+                            }
                         }
                     }
                 }
@@ -406,36 +546,6 @@ impl RuntimeStatsManager {
             {
                 log::warn!("Failed to finish progress bar: {}", e);
             }
-
-            let mut snapshots_by_input: HashMap<InputId, Vec<(Arc<NodeInfo>, StatSnapshot)>> =
-                HashMap::new();
-
-            for ((node_id, input_id), stats) in input_stats {
-                if let Some(node_info) = node_info_map.get(&node_id) {
-                    snapshots_by_input
-                        .entry(input_id)
-                        .or_default()
-                        .push((node_info.clone(), stats.flush()));
-                }
-            }
-
-            let finished = snapshots_by_input
-                .into_iter()
-                .map(|(input_id, mut nodes)| {
-                    nodes.sort_by_key(|(node_info, _)| node_info.id);
-                    (
-                        input_id,
-                        ExecutionStats::new(query_id.clone(), nodes)
-                            .with_query_plan(query_plan.clone()),
-                    )
-                })
-                .collect();
-
-            // Publish finalized snapshots before exiting so callers can retrieve per-input
-            // metrics after the stats manager task has shut down.
-            *finished_snapshots_for_task
-                .lock()
-                .expect("finished_snapshots lock poisoned") = Some(finished);
 
             let exec_end_event = Event::ExecEnd(ExecEndEvent {
                 header: event_header(query_id.clone()),
@@ -475,6 +585,70 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
             log::error!("Failed to {}: {}", err_context, e);
         }
     }
+}
+
+/// Emit a single batched `TaskStatsUpdate` containing scalar totals for every
+/// active task on this worker. Scalars are summed across the local pipeline
+/// nodes that contributed to each task — we don't carry per-node breakdown
+/// because the local NodeID doesn't cleanly map to either a distributed plan
+/// node id or a stable within-task position (see `TaskStatsUpdateEvent`'s
+/// docstring). One event per worker per tick replaces the previous
+/// one-per-active-task pattern, which was producing N×ticks events per second
+/// and saturating the dashboard's POST queue on multi-CPU workers.
+fn emit_per_task_stats_updates(
+    query_id: &QueryID,
+    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+    subscribers: &[Arc<dyn Subscriber>],
+) {
+    // Iterate over every (node, input) pair, including nodes whose
+    // `active_nodes` membership has dropped. Once a blocking operator
+    // (e.g. Scan, Aggregate) deactivates, its `RuntimeStats` is still in
+    // `input_stats` and still holds the cumulative cpu_us it accumulated.
+    // Skipping those would make a task's reported cpu_us non-monotonic
+    // (going down as upstream operators finish).
+    // Per-task running totals. `TaskExternalIo::accumulate` does the
+    // is_task_root / is_task_leaf filtering plus source-leaf fallback so the
+    // logic stays in lockstep with `on_task_end` in the dashboard subscriber.
+    let mut by_input: HashMap<InputId, common_metrics::task_io::TaskExternalIo> = HashMap::new();
+    let default_node_info = NodeInfo::default();
+    for (&(node_id, input_id), stats) in input_stats {
+        let snapshot = stats.snapshot();
+        let node_info = node_info_map
+            .get(&node_id)
+            .map(Arc::as_ref)
+            .unwrap_or(&default_node_info);
+        by_input
+            .entry(input_id)
+            .or_default()
+            .accumulate(node_info, &snapshot);
+    }
+    let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
+        .into_iter()
+        .map(|(input_id, io)| {
+            (
+                input_id,
+                TaskStatsSnapshot {
+                    task_id: input_id,
+                    cpu_us: io.cpu_us,
+                    rows_in: io.rows_in,
+                    rows_out: io.rows_out,
+                    bytes_in: io.bytes_in,
+                    bytes_out: io.bytes_out,
+                },
+            )
+        })
+        .collect();
+
+    if by_input.is_empty() {
+        return;
+    }
+
+    let event = Event::TaskStatsUpdate(TaskStatsUpdateEvent {
+        header: event_header(query_id.clone()),
+        tasks: Arc::new(by_input.into_values().collect()),
+    });
+    dispatch_event(subscribers, &event, "notify task stats update");
 }
 
 /// Aggregate stats for a given node_id across all input_ids.
@@ -528,6 +702,7 @@ mod tests {
             throttle_interval,
             enable_process_monitor,
             HashMap::from([(0, Arc::new(OperatorMeta::from(&NodeInfo::default())))]),
+            false,
         );
         // Register stats via the handle (mimics what nodes do in start())
         stats_manager
