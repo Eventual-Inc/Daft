@@ -18,7 +18,7 @@ use std::{
     fs::File,
     io::{self, Write},
     path::Path,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::Ordering,
     time::Instant,
 };
 
@@ -609,7 +609,6 @@ impl MultiPartitionShuffleCache {
                 num_rows,
                 size_bytes,
                 byte_ranges,
-                row_ranges: None,
             });
         }
 

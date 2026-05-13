@@ -121,7 +121,6 @@ pub async fn write_partitions_multi_file(
                     // None signals whole-file reads on the server side (FileReadSpec::Whole)
                     // — distinct from `Some(Vec::new())` which means "empty range list".
                     byte_ranges: None,
-                    row_ranges: None,
                 });
             }
             Ok((caches, total))

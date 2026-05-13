@@ -78,26 +78,12 @@ struct FlightPartitionKey {
 /// One `FileReadSpec` corresponds to exactly one `open()` syscall on the read side —
 /// `Ranges` may carry multiple byte ranges within the same file (combined-file shuffle),
 /// which are all served from a single open.
-/// One byte range to read from a file, optionally with a row slice that the
-/// reader should apply to the decoded batch. The row slice is set when the
-/// writer coalesced K adjacent output partitions into one IPC batch — each
-/// partition's `PartitionCache` then points at the shared batch's byte range
-/// but with a different row interval.
-#[derive(Debug, Clone)]
-struct ByteRangeSpec {
-    byte_range: (u64, u64),
-    /// `None` = use the whole decoded batch. `Some((s, e))` = slice rows [s, e).
-    row_range: Option<(u64, u64)>,
-}
-
 enum FileReadSpec {
     /// Read the whole IPC stream file. Used by the legacy per-partition cache.
     Whole { path: String },
-    /// Read multiple byte ranges from a single file, in file order. The legacy
-    /// non-concat read path treats each range as a contiguous run of IPC batch
-    /// messages and streams them raw. The read-side concat path additionally
-    /// honors the per-range `row_range` slice (used by write-side coalescing).
-    Ranges { path: String, ranges: Vec<ByteRangeSpec> },
+    /// Read multiple `(start, end)` byte ranges from a single file, in file order.
+    /// Each range is a contiguous run of IPC batch messages.
+    Ranges { path: String, ranges: Vec<(u64, u64)> },
 }
 
 /// Process-wide aggregate counters for shuffle read throughput diagnostics.
@@ -557,7 +543,7 @@ impl ShuffleFlightServer {
         // even when multiple partition_refs in this request share the same combined-file map
         // task output (the common case in the combined-file shuffle design).
         let mut whole_specs = Vec::new();
-        let mut ranges_by_path: HashMap<String, Vec<ByteRangeSpec>> = HashMap::new();
+        let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
         let mut first_seen: HashMap<String, usize> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
@@ -570,21 +556,17 @@ impl ShuffleFlightServer {
             };
             match &cache.byte_ranges {
                 Some(ranges) => {
-                    let row_ranges_opt = cache.row_ranges.as_ref();
-                    for (i, (path, (start, end))) in
-                        cache.file_paths.iter().zip(ranges.iter()).enumerate()
+                    for (path, (start, end)) in
+                        cache.file_paths.iter().zip(ranges.iter())
                     {
                         if !first_seen.contains_key(path) {
                             first_seen.insert(path.clone(), order.len());
                             order.push(path.clone());
                         }
-                        let row_range = row_ranges_opt.and_then(|rs| rs.get(i)).copied();
-                        ranges_by_path.entry(path.clone()).or_default().push(
-                            ByteRangeSpec {
-                                byte_range: (*start, *end),
-                                row_range,
-                            },
-                        );
+                        ranges_by_path
+                            .entry(path.clone())
+                            .or_default()
+                            .push((*start, *end));
                     }
                 }
                 None => {
@@ -599,7 +581,7 @@ impl ShuffleFlightServer {
         for path in order {
             let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
             // Sort by start so sequential reads are forward seeks (kind to readahead).
-            ranges.sort_unstable_by_key(|r| r.byte_range.0);
+            ranges.sort_unstable_by_key(|r| r.0);
             specs.push(FileReadSpec::Ranges { path, ranges });
         }
 
@@ -734,8 +716,7 @@ fn read_spec_sync(
             // Skipping the open for ranges 2..N is where the wall-clock saving comes from.
             let mut file = std::fs::File::open(&path)?;
             let mut body_bytes_acc: u64 = 0;
-            for spec in ranges {
-                let (start, end) = spec.byte_range;
+            for (start, end) in ranges {
                 file.seek(std::io::SeekFrom::Start(start))?;
                 let body_bytes = end - start;
                 body_bytes_acc += body_bytes;
@@ -747,18 +728,6 @@ fn read_spec_sync(
                 let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                 let reader = StdBufReader::with_capacity(64 * 1024, chained);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                // Row-range slicing in the local (non-concat) read path is not
-                // supported yet — the legacy read API hands back full batches
-                // and slicing here would require restructuring downstream.
-                // Write-coalesce K>1 should only be used with the read-side
-                // concat path enabled (DAFT_SHUFFLE_READ_CONCAT_BYTES>0).
-                if spec.row_range.is_some() {
-                    return Err(DaftError::InternalError(
-                        "row_range slicing in local read path is not implemented; \
-                         enable DAFT_SHUFFLE_READ_CONCAT_BYTES with write-coalesce K>1"
-                            .into(),
-                    ));
-                }
                 decode_batches_into(stream_reader, fields, schema, &mut batches)?;
             }
             read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
@@ -888,81 +857,55 @@ fn concat_specs_into_flight_datas_sync(
                 }
             }
             FileReadSpec::Ranges { path, ranges } => {
-                // We may see multiple ByteRangeSpecs whose byte_range is the
-                // same physical batch (write-side coalescing groups K logical
-                // partitions into one batch, and a single do_get may pull
-                // multiple of them). Decode each unique batch once, then apply
-                // each spec's row_range slice. Adjacent identical byte_ranges
-                // after sort are deduped into one decode.
+                // One open serves all ranges. Each range is a contiguous run of
+                // IPC batch messages; we wrap them in (schema_header | range_bytes
+                // | EOS) so the StreamReader sees a complete IPC stream.
                 let t_o = Instant::now();
                 let mut file = std::fs::File::open(&path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let mut body_bytes_acc: u64 = 0;
-                let mut last_byte_range: Option<(u64, u64)> = None;
-                let mut decoded_for_last: Vec<arrow_array::RecordBatch> = Vec::new();
-                for spec in ranges {
-                    let (start, end) = spec.byte_range;
-                    // Reuse the previously decoded batches if this spec hits
-                    // the same byte range (we sorted by byte_range earlier).
-                    let needs_decode = last_byte_range != Some((start, end));
-                    if needs_decode {
-                        decoded_for_last.clear();
-                        let t_sk = Instant::now();
-                        file.seek(std::io::SeekFrom::Start(start))?;
-                        read_agg::CONCAT_SEEK_US
-                            .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
-                        let body_bytes = end - start;
-                        body_bytes_acc += body_bytes;
-                        let take = (&mut file).take(body_bytes);
-                        let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                        let with_body = Read::chain(schema_prefix, take);
-                        let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
-                        let t_si = Instant::now();
-                        let reader = StdBufReader::with_capacity(64 * 1024, chained);
-                        let stream_reader =
-                            arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                        read_agg::CONCAT_STREAM_INIT_US
-                            .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
-                        let mut stream_reader = stream_reader;
-                        loop {
-                            let t_d = Instant::now();
-                            let next = stream_reader.next();
-                            read_agg::CONCAT_DECODE_US
-                                .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
-                            match next {
-                                Some(b) => {
-                                    decoded_for_last.push(b?);
-                                    read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                for (start, end) in ranges {
+                    let t_sk = Instant::now();
+                    file.seek(std::io::SeekFrom::Start(start))?;
+                    read_agg::CONCAT_SEEK_US
+                        .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    let body_bytes = end - start;
+                    body_bytes_acc += body_bytes;
+                    let take = (&mut file).take(body_bytes);
+                    let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
+                    let with_body = Read::chain(schema_prefix, take);
+                    let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+                    let t_si = Instant::now();
+                    let reader = StdBufReader::with_capacity(64 * 1024, chained);
+                    let stream_reader =
+                        arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+                    read_agg::CONCAT_STREAM_INIT_US
+                        .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    let mut stream_reader = stream_reader;
+                    loop {
+                        let t_d = Instant::now();
+                        let next = stream_reader.next();
+                        read_agg::CONCAT_DECODE_US
+                            .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                        match next {
+                            Some(b) => {
+                                let batch = b?;
+                                read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                                pending_bytes += estimate_batch_size(&batch);
+                                pending.push(batch);
+                                if pending_bytes >= chunk_target_bytes {
+                                    flush(
+                                        &mut pending,
+                                        &mut pending_bytes,
+                                        &mut flight_datas,
+                                        &mut dict_tracker,
+                                        &mut compression_ctx,
+                                    )?;
                                 }
-                                None => break,
                             }
-                        }
-                        last_byte_range = Some((start, end));
-                    }
-                    // Emit (or row-slice and emit) each decoded batch.
-                    for batch in &decoded_for_last {
-                        let to_push = match spec.row_range {
-                            Some((rs, re)) => {
-                                let row_count = (re - rs) as usize;
-                                if row_count == 0 {
-                                    continue;
-                                }
-                                batch.slice(rs as usize, row_count)
-                            }
-                            None => batch.clone(),
-                        };
-                        pending_bytes += estimate_batch_size(&to_push);
-                        pending.push(to_push);
-                        if pending_bytes >= chunk_target_bytes {
-                            flush(
-                                &mut pending,
-                                &mut pending_bytes,
-                                &mut flight_datas,
-                                &mut dict_tracker,
-                                &mut compression_ctx,
-                            )?;
+                            None => break,
                         }
                     }
                 }
@@ -1259,24 +1202,10 @@ async fn open_spec_as_flight_stream(
             // for the duration of one range's stream. The borrow is released when the
             // inner stream is dropped at end of the iteration body, allowing the next
             // seek + take.
-            //
-            // This legacy path ships raw IPC bytes without decoding, so it can't
-            // apply per-spec `row_range` slicing. Write-side coalescing should
-            // be paired with the read-side concat path which decodes and slices.
-            for r in &ranges {
-                if r.row_range.is_some() {
-                    return Err(DaftError::InternalError(
-                        "row_range slicing in raw gRPC read path is not implemented; \
-                         set DAFT_SHUFFLE_READ_CONCAT_BYTES to use the concat path"
-                            .into(),
-                    ));
-                }
-            }
             let file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
             let stream = async_stream::try_stream! {
                 let mut file = file;
-                for spec in ranges {
-                    let (start, end) = spec.byte_range;
+                for (start, end) in ranges {
                     file.seek(SeekFrom::Start(start)).await.map_err(DaftError::IoError)?;
                     let limited = (&mut file).take(end - start);
                     let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));

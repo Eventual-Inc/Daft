@@ -256,7 +256,6 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
                 num_rows: cache.num_rows,
                 size_bytes: cache.size_bytes,
                 byte_ranges: Some(new_byte_ranges),
-                row_ranges: None,
             },
         ));
     }
@@ -411,7 +410,6 @@ fn execute_plan_sync_merge(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
                 num_rows: rows,
                 size_bytes: size,
                 byte_ranges: Some(ranges),
-                row_ranges: None,
             },
         ));
     }
