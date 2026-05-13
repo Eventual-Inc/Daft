@@ -20,7 +20,7 @@ def test_extension_native_runner(hello_extension_path: str):
 
         df = daft.from_pydict({{"name": ["John", "Paul"]}})
         result = df.select(daft.get_function("greet", daft.col("name"))).to_pydict()
-        assert result["greet"] == ["Hello, John!", "Hello, Paul!"], result
+        assert result["name"] == ["Hello, John!", "Hello, Paul!"], result
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -36,7 +36,7 @@ def test_extension_ray_runner(hello_extension_path: str):
 
         df = daft.from_pydict({{"name": ["John", "Paul"]}})
         result = df.select(daft.get_function("greet", daft.col("name"))).to_pydict()
-        assert result["greet"] == ["Hello, John!", "Hello, Paul!"], result
+        assert result["name"] == ["Hello, John!", "Hello, Paul!"], result
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
