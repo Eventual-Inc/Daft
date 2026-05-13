@@ -53,9 +53,30 @@ Grouping K adjacent partitions into one IPC batch on write:
 
 Code remains in tree (`DAFT_SHUFFLE_WRITE_COALESCE_K`) but should be ignored / reverted.
 
-### Where the read time actually goes (instrumented)
+### Where the read time actually goes (instrumented; with read-side concat)
 
-Per-message attribution at N=8192 cold-read, no concat (20.5 s total read):
+Read time at N=8192/M=200/8 GiB NVMe cold-read with read-concat is 4.8 s (16 reducer goroutines, ÷16 for per-reducer wall):
+
+| Bucket | Total wall | Per reducer | Per unit |
+|---|---|---|---|
+| **decode** (`StreamReader::next` per source batch) | **30.9 s** | **1.93 s** | 18 us / src batch |
+| stream_init (`StreamReader::try_new` — re-parses schema header per range) | 4.1 s | 254 ms | 2.5 us / init |
+| open (`File::open` syscall) | 2.0 s | 126 ms | 1 us / open |
+| merge (`concat_batches` per output chunk) | 1.3 s | 79 ms | 153 us / chunk |
+| encode (`IpcDataGenerator::encode` per output chunk) | 0.45 s | 28 ms | 54 us / chunk |
+| seek | 0.005 s | <1 ms | — |
+
+Source-batch volume: **1.6 M source batches read**, output: 8192 chunks. Every batch is unique (K=1 write side), so a decode cache wouldn't help.
+
+Bench-driven inefficiency: the bench issues **8192 separate `do_get` calls** (one per output partition) and each one opens all 200 map files → 1.6M opens. Within a single `do_get` we already group by file, but cross-`do_get` we re-open. This explains the 1.6M open count; opens themselves are cheap (1 us) so the actual cost is small, but `stream_init` (4 s) is the per-range schema re-parse and *that* could be cut by sharing a `StreamReader` across ranges of the same file.
+
+**The bottleneck is the per-source-batch IPC decode at 18 us × 1.6 M = 30 s.** Each ~5 KB IPC batch pays flatbuffer-parse + array-construction fixed cost. Two angles to attack:
+1. Write fewer, larger IPC batches per file (K-coalesce on write side) — but the prior K-sweep showed read amplification offsets the gain when K-grouped partitions are shared across separate `do_get`s. Combine K-coalesce with reducer-side `do_get` batching (request K output partitions in one call) to capture the savings.
+2. Skip the per-range schema re-parse (`stream_init`) — open file once, seek, use a lower-level arrow decode API with the schema we already have. Saves 4 s.
+
+### Prior read attribution (no concat — for historical reference)
+
+At N=8192 cold-read, no concat (20.5 s total read):
 
 | Bucket | Wall-equivalent | % |
 |---|---|---|
@@ -67,8 +88,6 @@ Per-message attribution at N=8192 cold-read, no concat (20.5 s total read):
 | Client arrow→daft Series convert | 0.11 s | 0.5% |
 
 (Server-side counters accumulate across 16 concurrent reducers; ÷16 for per-reducer wall.)
-
-**The bottleneck is per-FlightData fixed cost on the client (~189 μs/batch)**, dominated by whatever runs inside `arrow_flight::decode::FlightRecordBatchStream::next()`. Body bytes read is essentially free at NVMe sequential speed.
 
 ### Where the write time actually goes (post-spawn-removal, instrumented 2026-05-13)
 
@@ -109,12 +128,13 @@ Latest commit: `2a3ea4734` (push fresh before starting work)
 ### Instrumentation already in place (read side)
 
 In `src/daft-shuffles/src/server/flight_server.rs::read_agg`:
-- `FLIGHTDATAS_EMITTED`, `MSG_HEADER_READ_US`, `MSG_BODY_READ_US`, `SEND_GAP_US` (server)
+- `FLIGHTDATAS_EMITTED`, `MSG_HEADER_READ_US`, `MSG_BODY_READ_US`, `SEND_GAP_US` (server, no-concat path)
 - `CLIENT_BATCH_DELIVERY_US`, `CLIENT_CONVERT_US`, `CLIENT_BATCHES_RECEIVED` (client)
-- `OPEN_US`, `SPECS_OPENED`, `BYTES_SHIPPED`, `HANDLER_US` (existing)
+- `OPEN_US`, `SPECS_OPENED`, `BYTES_SHIPPED`, `HANDLER_US` (existing; `OPEN_US` wraps the whole `concat_specs_into_flight_datas_sync` spawn_blocking when read-concat is on — see CONCAT_* below for the real breakdown)
+- `CONCAT_OPENS`, `CONCAT_OPEN_US`, `CONCAT_SEEK_US`, `CONCAT_STREAM_INIT_US`, `CONCAT_DECODE_US`, `CONCAT_SOURCE_BATCHES`, `CONCAT_MERGE_US`, `CONCAT_ENCODE_US`, `CONCAT_OUT_CHUNKS` (read-concat path attribution; added 2026-05-13)
 - `LOCAL_*` (existing local path)
 
-Bench prints a `--- Read path attribution ---` block before exiting.
+Bench prints `--- Read path attribution ---` plus a `--- Read-concat path attribution ---` block when read-concat is enabled.
 
 ### Instrumentation already in place (write side, oneshot)
 
@@ -180,13 +200,12 @@ After the writer fix, Phase 1 is 22.6 s with this breakdown:
 
 `partition_by_hash` is now the long pole on the map side. Per-map-task cost varies 5× between p50 and p99. Worth instrumenting *inside* partition_by_hash to see whether it's hash-eval, scatter, or downstream MicroPartition construction; and whether the tail is data skew or scheduler contention.
 
-### 2. Read-side floor analysis at the new totals
+### 2. Reduce per-source-batch IPC decode cost on the read side
 
-Total wall is now 27.5 s = map 22.6 s + read 4.8 s. Read time is dominated by server `OPEN_US = 38.7 s` (accumulated across 16 reducers; ÷16 ≈ 2.4 s per reducer). At N=8192 files * 200 ranges each = 1.6 M opens, ~24 us per open. Either:
-- Cache open file descriptors across reducer reads (one file holds N partitions' worth; if a reducer's 200 ranges all hit the same combined file, we could open once).
-- Use positional pread instead of seek+read after open, avoiding re-open.
+After splitting `OPEN_US` into real buckets (see "Where the read time actually goes"), the read-side wall is dominated by **decode** (1.93 s/reducer, 18 us × 1.6M source batches), not opens (1 us/open) and not network. Two complementary angles:
 
-Note the reducer side does 200 opens × 8192/(16 reducers) ≈ 102 400 opens — same file repeatedly. **Almost certainly the win.**
+- **Skip the per-range schema re-parse.** Currently each ranged spec inside `concat_specs_into_flight_datas_sync` builds a fresh `StreamReader::try_new(chain(schema_header, body))`, which re-parses the schema flatbuffer. That's the entire `stream_init` line (254 ms/reducer). Use `arrow_ipc::reader::read_record_batch` (or hold one `StreamReader` open across all ranges of the same file and seek directly) so the per-range overhead drops.
+- **Coalesce write-side batches AND coalesce read-side `do_get` calls in concert.** Prior K-sweep showed K-coalesce regresses read time because partitions inside a K-group are fetched by different `do_get`s (=> the shared batch is re-decoded N times). If the bench / production caller batched K output partitions into a single `do_get`, the per-batch decode work would amortize K-fold over the source-batch count. The seal_bench reducer currently does one `do_get` per output partition.
 
 ### 3. Cheaper `concat_or_get` for shuffle-shaped input
 

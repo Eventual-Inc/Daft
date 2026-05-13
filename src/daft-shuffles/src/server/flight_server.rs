@@ -150,6 +150,34 @@ pub mod read_agg {
     pub static CLIENT_CONVERT_US: AtomicU64 = AtomicU64::new(0);
     /// Number of RecordBatches the client successfully decoded + converted.
     pub static CLIENT_BATCHES_RECEIVED: AtomicU64 = AtomicU64::new(0);
+
+    // Per-bucket attribution for the *read-concat* path
+    // (`concat_specs_into_flight_datas_sync`). These break the current
+    // catch-all `OPEN_US` (which wraps the whole spawn_blocking call) into
+    // its true components.
+    /// Number of `std::fs::File::open` calls in the read-concat path.
+    pub static CONCAT_OPENS: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `File::open` syscalls (read-concat path).
+    pub static CONCAT_OPEN_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `file.seek(SeekFrom::Start(start))` (read-concat path,
+    /// ranged specs only).
+    pub static CONCAT_SEEK_US: AtomicU64 = AtomicU64::new(0);
+    /// Time spent constructing the chained reader + `StreamReader::try_new`
+    /// (parses the schema header) per ranged spec.
+    pub static CONCAT_STREAM_INIT_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside the per-batch `arrow_ipc::reader::StreamReader::next()`
+    /// loop — pulls bytes from the file + flatbuffer parse + arrow decode.
+    pub static CONCAT_DECODE_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of source RecordBatches read from disk in the read-concat path.
+    pub static CONCAT_SOURCE_BATCHES: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `arrow_select::concat::concat_batches` per output chunk.
+    pub static CONCAT_MERGE_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `IpcDataGenerator::encode` + FlightData construction per
+    /// output chunk.
+    pub static CONCAT_ENCODE_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of output FlightData chunks emitted by the read-concat path
+    /// (= number of `flush()` calls that wrote a batch).
+    pub static CONCAT_OUT_CHUNKS: AtomicU64 = AtomicU64::new(0);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -170,6 +198,15 @@ pub struct ReadAggSnapshot {
     pub client_batch_delivery_us: u64,
     pub client_convert_us: u64,
     pub client_batches_received: u64,
+    pub concat_opens: u64,
+    pub concat_open_us: u64,
+    pub concat_seek_us: u64,
+    pub concat_stream_init_us: u64,
+    pub concat_decode_us: u64,
+    pub concat_source_batches: u64,
+    pub concat_merge_us: u64,
+    pub concat_encode_us: u64,
+    pub concat_out_chunks: u64,
 }
 
 pub fn read_agg_snapshot() -> ReadAggSnapshot {
@@ -190,6 +227,15 @@ pub fn read_agg_snapshot() -> ReadAggSnapshot {
         client_batch_delivery_us: read_agg::CLIENT_BATCH_DELIVERY_US.load(Ordering::Relaxed),
         client_convert_us: read_agg::CLIENT_CONVERT_US.load(Ordering::Relaxed),
         client_batches_received: read_agg::CLIENT_BATCHES_RECEIVED.load(Ordering::Relaxed),
+        concat_opens: read_agg::CONCAT_OPENS.load(Ordering::Relaxed),
+        concat_open_us: read_agg::CONCAT_OPEN_US.load(Ordering::Relaxed),
+        concat_seek_us: read_agg::CONCAT_SEEK_US.load(Ordering::Relaxed),
+        concat_stream_init_us: read_agg::CONCAT_STREAM_INIT_US.load(Ordering::Relaxed),
+        concat_decode_us: read_agg::CONCAT_DECODE_US.load(Ordering::Relaxed),
+        concat_source_batches: read_agg::CONCAT_SOURCE_BATCHES.load(Ordering::Relaxed),
+        concat_merge_us: read_agg::CONCAT_MERGE_US.load(Ordering::Relaxed),
+        concat_encode_us: read_agg::CONCAT_ENCODE_US.load(Ordering::Relaxed),
+        concat_out_chunks: read_agg::CONCAT_OUT_CHUNKS.load(Ordering::Relaxed),
     }
 }
 
@@ -229,6 +275,15 @@ pub fn log_read_agg_summary(label: &str) {
         local_bytes_mib = format_args!("{:.1}", s.local_bytes as f64 / mb),
         local_open_ms = s.local_open_us / 1000,
         local_frac = format_args!("{:.2}", local_frac),
+        concat_opens = s.concat_opens,
+        concat_open_ms = s.concat_open_us / 1000,
+        concat_seek_ms = s.concat_seek_us / 1000,
+        concat_stream_init_ms = s.concat_stream_init_us / 1000,
+        concat_decode_ms = s.concat_decode_us / 1000,
+        concat_source_batches = s.concat_source_batches,
+        concat_merge_ms = s.concat_merge_us / 1000,
+        concat_encode_ms = s.concat_encode_us / 1000,
+        concat_out_chunks = s.concat_out_chunks,
         "shuffle read agg summary",
     );
 }
@@ -944,8 +999,12 @@ fn concat_specs_into_flight_datas_sync(
         if pending.is_empty() {
             return Ok(());
         }
+        let t_m = Instant::now();
         let merged = arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
             .map_err(|e| DaftError::InternalError(format!("read-side concat: {}", e)))?;
+        read_agg::CONCAT_MERGE_US
+            .fetch_add(t_m.elapsed().as_micros() as u64, Ordering::Relaxed);
+        let t_e = Instant::now();
         let (dicts, batch) = data_gen
             .encode(&merged, dict_tracker, &opts, compression_ctx)
             .map_err(|e| DaftError::InternalError(format!("read-side encode: {}", e)))?;
@@ -953,6 +1012,9 @@ fn concat_specs_into_flight_datas_sync(
             flight_datas.push(d.into());
         }
         flight_datas.push(batch.into());
+        read_agg::CONCAT_ENCODE_US
+            .fetch_add(t_e.elapsed().as_micros() as u64, Ordering::Relaxed);
+        read_agg::CONCAT_OUT_CHUNKS.fetch_add(1, Ordering::Relaxed);
         pending.clear();
         *pending_bytes = 0;
         Ok(())
@@ -961,23 +1023,41 @@ fn concat_specs_into_flight_datas_sync(
     for spec in specs {
         match spec {
             FileReadSpec::Whole { path } => {
+                let t_o = Instant::now();
                 let file = std::fs::File::open(&path)?;
+                read_agg::CONCAT_OPEN_US
+                    .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
+                read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
                 read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
+                let t_si = Instant::now();
                 let reader = StdBufReader::with_capacity(64 * 1024, file);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                for batch in stream_reader {
-                    let batch = batch?;
-                    pending_bytes += estimate_batch_size(&batch);
-                    pending.push(batch);
-                    if pending_bytes >= chunk_target_bytes {
-                        flush(
-                            &mut pending,
-                            &mut pending_bytes,
-                            &mut flight_datas,
-                            &mut dict_tracker,
-                            &mut compression_ctx,
-                        )?;
+                read_agg::CONCAT_STREAM_INIT_US
+                    .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
+                let mut stream_reader = stream_reader;
+                loop {
+                    let t_d = Instant::now();
+                    let next = stream_reader.next();
+                    read_agg::CONCAT_DECODE_US
+                        .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    match next {
+                        Some(b) => {
+                            let batch = b?;
+                            read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                            pending_bytes += estimate_batch_size(&batch);
+                            pending.push(batch);
+                            if pending_bytes >= chunk_target_bytes {
+                                flush(
+                                    &mut pending,
+                                    &mut pending_bytes,
+                                    &mut flight_datas,
+                                    &mut dict_tracker,
+                                    &mut compression_ctx,
+                                )?;
+                            }
+                        }
+                        None => break,
                     }
                 }
             }
@@ -988,7 +1068,11 @@ fn concat_specs_into_flight_datas_sync(
                 // multiple of them). Decode each unique batch once, then apply
                 // each spec's row_range slice. Adjacent identical byte_ranges
                 // after sort are deduped into one decode.
+                let t_o = Instant::now();
                 let mut file = std::fs::File::open(&path)?;
+                read_agg::CONCAT_OPEN_US
+                    .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
+                read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let mut body_bytes_acc: u64 = 0;
                 let mut last_byte_range: Option<(u64, u64)> = None;
                 let mut decoded_for_last: Vec<arrow_array::RecordBatch> = Vec::new();
@@ -999,18 +1083,35 @@ fn concat_specs_into_flight_datas_sync(
                     let needs_decode = last_byte_range != Some((start, end));
                     if needs_decode {
                         decoded_for_last.clear();
+                        let t_sk = Instant::now();
                         file.seek(std::io::SeekFrom::Start(start))?;
+                        read_agg::CONCAT_SEEK_US
+                            .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
                         let body_bytes = end - start;
                         body_bytes_acc += body_bytes;
                         let take = (&mut file).take(body_bytes);
                         let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
                         let with_body = Read::chain(schema_prefix, take);
                         let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+                        let t_si = Instant::now();
                         let reader = StdBufReader::with_capacity(64 * 1024, chained);
                         let stream_reader =
                             arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                        for batch in stream_reader {
-                            decoded_for_last.push(batch?);
+                        read_agg::CONCAT_STREAM_INIT_US
+                            .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
+                        let mut stream_reader = stream_reader;
+                        loop {
+                            let t_d = Instant::now();
+                            let next = stream_reader.next();
+                            read_agg::CONCAT_DECODE_US
+                                .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                            match next {
+                                Some(b) => {
+                                    decoded_for_last.push(b?);
+                                    read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                                }
+                                None => break,
+                            }
                         }
                         last_byte_range = Some((start, end));
                     }

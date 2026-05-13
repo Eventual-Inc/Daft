@@ -833,6 +833,38 @@ async fn main() -> DaftResult<()> {
         s.client_batch_delivery_us / cn,
         s.client_convert_us / cn,
     );
+    if s.concat_opens > 0 || s.concat_out_chunks > 0 {
+        let cb = s.concat_source_batches.max(1);
+        let oc = s.concat_out_chunks.max(1);
+        let opens = s.concat_opens.max(1);
+        println!("--- Read-concat path attribution (server-side, summed across reducers) ---");
+        println!(
+            "opens / source_batches / out_chunks: {} / {} / {}",
+            s.concat_opens, s.concat_source_batches, s.concat_out_chunks,
+        );
+        println!(
+            "open / seek / stream_init / decode totals (ms): {:>6.1} / {:>6.1} / {:>6.1} / {:>6.1}",
+            s.concat_open_us as f64 / 1000.0,
+            s.concat_seek_us as f64 / 1000.0,
+            s.concat_stream_init_us as f64 / 1000.0,
+            s.concat_decode_us as f64 / 1000.0,
+        );
+        println!(
+            "  per open / per src batch decode (us):         {:>6} / {:>6}",
+            s.concat_open_us / opens,
+            s.concat_decode_us / cb,
+        );
+        println!(
+            "merge / encode totals (ms):                    {:>6.1} / {:>6.1}",
+            s.concat_merge_us as f64 / 1000.0,
+            s.concat_encode_us as f64 / 1000.0,
+        );
+        println!(
+            "  per out chunk merge / encode (us):            {:>6} / {:>6}",
+            s.concat_merge_us / oc,
+            s.concat_encode_us / oc,
+        );
+    }
     println!();
 
     drop(server_handle);
