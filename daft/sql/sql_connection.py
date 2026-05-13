@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import urlparse
 
 from daft.dependencies import pa
 from daft.logical.schema import Schema
@@ -16,103 +16,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# SQLAlchemy is an optional dependency (the connectorx-only code path doesn't
-# require it). Try to import `make_url` once at module load so `_redact_url`
-# — which runs on every error message and is meant to be cheap — can take
-# the SA branch without a per-call import lookup. The actual sqlalchemy.engine
-# imports used inside class methods stay inline (they only fire when the SA
-# code path is actually taken).
-try:
-    from sqlalchemy.engine import make_url as _sa_make_url
-except ImportError:
-    _sa_make_url = None
-
-
-# Query-parameter names whose values must be redacted. Substring match,
-# case-insensitive. Covers password / OAuth token / API key / key passphrase
-# styles used by common SQL drivers (Trino JWT auth, Snowflake key auth,
-# Databricks PATs, generic API keys, etc.).
-_SENSITIVE_PARAM_KEYWORDS = (
-    "password",
-    "pwd",
-    "secret",
-    "token",
-    "passphrase",
-    "apikey",
-    "api_key",
-    "credential",
-    "signature",
-    "access_key",
-)
-
-
-def _is_sensitive_param(name: str) -> bool:
-    lower = name.casefold()
-    return any(keyword in lower for keyword in _SENSITIVE_PARAM_KEYWORDS)
-
-
-def _redact_url(url: str) -> str:
-    # Prefer SQLAlchemy's URL parser: it handles unescaped URL-special
-    # characters in passwords (e.g. '#', '/', '?') that urllib.parse silently
-    # mis-parses, dropping the password into the fragment/path/query and
-    # making it look "absent" — which would otherwise cause this function to
-    # return the URL unchanged and leak credentials.
-    if _sa_make_url is not None:
-        try:
-            sa_url = _sa_make_url(url)
-            sensitive_keys = [k for k in sa_url.query if _is_sensitive_param(k)]
-            if sa_url.password is None and not sensitive_keys:
-                return url
-            if sensitive_keys:
-                new_query = {k: ("***" if _is_sensitive_param(k) else v) for k, v in sa_url.query.items()}
-                sa_url = sa_url.set(query=new_query)
-            # SQLAlchemy percent-encodes '*' to '%2A' in query values; undo
-            # that for the redaction placeholder so the rendered URL stays
-            # readable in error output.
-            return sa_url.render_as_string(hide_password=True).replace("%2A%2A%2A", "***")
-        except Exception:
-            pass
-
-    # Fallback for environments without SQLAlchemy (the connectorx-only path).
-    try:
-        parsed = urlparse(url)
-        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-        any_sensitive_query = any(_is_sensitive_param(k) for k, _ in query_pairs)
-        redacted_query = (
-            urlencode([(k, "***" if _is_sensitive_param(k) else v) for k, v in query_pairs])
-            if any_sensitive_query
-            else parsed.query
-        )
-
-        if parsed.password is not None:
-            userinfo = f"{parsed.username}:***" if parsed.username else "***"
-            host = parsed.hostname or ""
-            if parsed.port is not None:
-                host = f"{host}:{parsed.port}"
-            return (
-                parsed._replace(netloc=f"{userinfo}@{host}", query=redacted_query).geturl().replace("%2A%2A%2A", "***")
-            )
-        if any_sensitive_query:
-            return parsed._replace(query=redacted_query).geturl().replace("%2A%2A%2A", "***")
-        # If urlparse couldn't extract a username but the URL has "@" in the
-        # path-prefix region (before the first "/"), the userinfo almost
-        # certainly contains unescaped URL-special chars in the password
-        # (e.g. "trino://alice:p#ss@host/db" — urlparse stops the netloc at
-        # "#", losing the password). Over-redact to be safe. We deliberately
-        # gate on `username is None` so legitimate no-password URLs like
-        # "mysql://user@host/db" (which urlparse handles fine) pass through
-        # unchanged.
-        if "://" in url and parsed.username is None:
-            after_scheme = url.split("://", 1)[1]
-            path_start = after_scheme.find("/")
-            authority_prefix = after_scheme if path_start == -1 else after_scheme[:path_start]
-            if "@" in authority_prefix:
-                return "<redacted>"
-        return url
-    except Exception:
-        return "<redacted>"
-
-
 class SQLConnection:
     def __init__(self, conn: str | Callable[[], Connection], driver: str, dialect: str, url: str) -> None:
         self.conn = conn
@@ -121,8 +24,10 @@ class SQLConnection:
         self.url = url
 
     def __repr__(self) -> str:
-        conn = _redact_url(self.conn) if isinstance(self.conn, str) else self.conn
-        return f"SQLConnection(conn={conn})"
+        # Deliberately omit the URL: secrets can appear anywhere in a
+        # connection string (userinfo, query params, driver extras), so
+        # the safest mitigation is to not echo it at all.
+        return f"SQLConnection(dialect={self.dialect!r}, driver={self.driver!r})"
 
     @classmethod
     def from_url(cls, url: str) -> SQLConnection:
