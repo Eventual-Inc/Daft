@@ -370,6 +370,7 @@ async fn run_map_task_append(
                 num_rows: 0,
                 size_bytes: 0,
                 byte_ranges: Some(Vec::new()),
+                row_ranges: None,
             });
             continue;
         }
@@ -383,6 +384,7 @@ async fn run_map_task_append(
                 num_rows: 0,
                 size_bytes: 0,
                 byte_ranges: Some(Vec::new()),
+                row_ranges: None,
             });
             continue;
         }
@@ -397,6 +399,7 @@ async fn run_map_task_append(
                 num_rows: 0,
                 size_bytes: 0,
                 byte_ranges: Some(Vec::new()),
+                row_ranges: None,
             });
             continue;
         };
@@ -419,6 +422,7 @@ async fn run_map_task_append(
             num_rows: total_rows,
             size_bytes,
             byte_ranges: Some(vec![(before, after)]),
+            row_ranges: None,
         });
     }
     let write_time_ms = t2.elapsed().as_secs_f64() * 1000.0;
