@@ -1,7 +1,8 @@
 use std::{
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
     task::{Context, Poll},
+    time::Instant,
 };
 
 use arrow_flight::{Ticket, client::FlightClient, decode::FlightRecordBatchStream};
@@ -11,6 +12,8 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
+
+use crate::server::flight_server::read_agg;
 
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
@@ -90,6 +93,10 @@ pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     done: bool,
     schema: SchemaRef,
     fields: Vec<FieldRef>,
+    /// When the previous Ready(batch) was yielded. The gap from here to the
+    /// next Ready(batch) covers: client-side gRPC wait + Flight IPC decode
+    /// (inside `stream.next()`). One sample per delivered batch.
+    last_yield: Option<Instant>,
 }
 
 impl FlightRecordBatchStreamToDaftRecordBatchStream {
@@ -103,6 +110,7 @@ impl FlightRecordBatchStreamToDaftRecordBatchStream {
                 .iter()
                 .map(|f| Arc::new(f.clone()))
                 .collect(),
+            last_yield: None,
         }
     }
 }
@@ -120,6 +128,14 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
         let batch = this.stream.next().poll_unpin(cx);
         match batch {
             Poll::Ready(Some(Ok(batch))) => {
+                // Time-to-next-batch on the client side (includes the gRPC
+                // wait + Flight IPC decode that arrow-flight does inside
+                // `stream.next()`).
+                if let Some(prev) = this.last_yield.take() {
+                    read_agg::CLIENT_BATCH_DELIVERY_US
+                        .fetch_add(prev.elapsed().as_micros() as u64, Ordering::Relaxed);
+                }
+                let t_conv = Instant::now();
                 let columns = this
                     .fields
                     .iter()
@@ -128,6 +144,10 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
                     .collect::<DaftResult<Vec<_>>>()?;
                 let rb =
                     RecordBatch::new_with_size(this.schema.clone(), columns, batch.num_rows())?;
+                read_agg::CLIENT_CONVERT_US
+                    .fetch_add(t_conv.elapsed().as_micros() as u64, Ordering::Relaxed);
+                read_agg::CLIENT_BATCHES_RECEIVED.fetch_add(1, Ordering::Relaxed);
+                this.last_yield = Some(Instant::now());
                 Poll::Ready(Some(Ok(rb)))
             }
             Poll::Ready(Some(Err(e))) => {

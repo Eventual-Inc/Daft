@@ -104,6 +104,20 @@ pub mod read_agg {
     /// Total wall time spent opening files / seeking before streaming bytes (gRPC path).
     pub static OPEN_US: AtomicU64 = AtomicU64::new(0);
 
+    // Fine-grained per-message breakdown (server side, gRPC path). Lets us
+    // attribute total read time across disk reads vs framework overhead.
+    /// Number of `FlightData` items emitted by `process_next` (1 per IPC batch).
+    pub static FLIGHTDATAS_EMITTED: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `process_next` reading the per-message meta_len + header
+    /// (4-byte length prefix + up to 64 KiB flatbuffer Message).
+    pub static MSG_HEADER_READ_US: AtomicU64 = AtomicU64::new(0);
+    /// Time inside `process_next` reading the message body buffer (the bulk data).
+    pub static MSG_BODY_READ_US: AtomicU64 = AtomicU64::new(0);
+    /// Time *between* yielding one FlightData and being polled for the next.
+    /// Represents the gRPC encode/frame/network/backpressure cost the framework
+    /// adds on top of our per-message work.
+    pub static SEND_GAP_US: AtomicU64 = AtomicU64::new(0);
+
     // Local-path counters. The local path bypasses gRPC entirely; we measure it
     // separately so the local/remote split is visible in production.
     /// Number of `get_partition_local` calls served in-process.
@@ -114,6 +128,18 @@ pub mod read_agg {
     pub static LOCAL_BYTES: AtomicU64 = AtomicU64::new(0);
     /// Total wall time spent opening files / seeking on the local path.
     pub static LOCAL_OPEN_US: AtomicU64 = AtomicU64::new(0);
+
+    // Client-side per-message breakdown. Captures whatever the framework + IPC
+    // decode + cross-thread handoff costs us downstream of the server emit.
+    /// Time spent in `FlightRecordBatchStreamToDaftRecordBatchStream::poll_next`
+    /// between yielding one RecordBatch and yielding the next (i.e. wait +
+    /// gRPC decode + arrow IPC parse). One sample per delivered batch.
+    pub static CLIENT_BATCH_DELIVERY_US: AtomicU64 = AtomicU64::new(0);
+    /// Time in the per-column arrow→daft Series conversion + RecordBatch
+    /// construction, per delivered batch.
+    pub static CLIENT_CONVERT_US: AtomicU64 = AtomicU64::new(0);
+    /// Number of RecordBatches the client successfully decoded + converted.
+    pub static CLIENT_BATCHES_RECEIVED: AtomicU64 = AtomicU64::new(0);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,10 +149,17 @@ pub struct ReadAggSnapshot {
     pub bytes_shipped: u64,
     pub handler_us: u64,
     pub open_us: u64,
+    pub flightdatas_emitted: u64,
+    pub msg_header_read_us: u64,
+    pub msg_body_read_us: u64,
+    pub send_gap_us: u64,
     pub local_responses: u64,
     pub local_specs_opened: u64,
     pub local_bytes: u64,
     pub local_open_us: u64,
+    pub client_batch_delivery_us: u64,
+    pub client_convert_us: u64,
+    pub client_batches_received: u64,
 }
 
 pub fn read_agg_snapshot() -> ReadAggSnapshot {
@@ -136,10 +169,17 @@ pub fn read_agg_snapshot() -> ReadAggSnapshot {
         bytes_shipped: read_agg::BYTES_SHIPPED.load(Ordering::Relaxed),
         handler_us: read_agg::HANDLER_US.load(Ordering::Relaxed),
         open_us: read_agg::OPEN_US.load(Ordering::Relaxed),
+        flightdatas_emitted: read_agg::FLIGHTDATAS_EMITTED.load(Ordering::Relaxed),
+        msg_header_read_us: read_agg::MSG_HEADER_READ_US.load(Ordering::Relaxed),
+        msg_body_read_us: read_agg::MSG_BODY_READ_US.load(Ordering::Relaxed),
+        send_gap_us: read_agg::SEND_GAP_US.load(Ordering::Relaxed),
         local_responses: read_agg::LOCAL_RESPONSES.load(Ordering::Relaxed),
         local_specs_opened: read_agg::LOCAL_SPECS_OPENED.load(Ordering::Relaxed),
         local_bytes: read_agg::LOCAL_BYTES.load(Ordering::Relaxed),
         local_open_us: read_agg::LOCAL_OPEN_US.load(Ordering::Relaxed),
+        client_batch_delivery_us: read_agg::CLIENT_BATCH_DELIVERY_US.load(Ordering::Relaxed),
+        client_convert_us: read_agg::CLIENT_CONVERT_US.load(Ordering::Relaxed),
+        client_batches_received: read_agg::CLIENT_BATCHES_RECEIVED.load(Ordering::Relaxed),
     }
 }
 
@@ -152,6 +192,8 @@ pub fn log_read_agg_summary(label: &str) {
     } else {
         s.local_bytes as f64 / total_bytes as f64
     };
+    let n = s.flightdatas_emitted.max(1);
+    let cn = s.client_batches_received.max(1);
     tracing::info!(
         target: "daft_shuffles::read_agg",
         label = label,
@@ -160,6 +202,18 @@ pub fn log_read_agg_summary(label: &str) {
         bytes_shipped_mib = format_args!("{:.1}", s.bytes_shipped as f64 / mb),
         handler_ms = s.handler_us / 1000,
         open_ms = s.open_us / 1000,
+        flightdatas = s.flightdatas_emitted,
+        header_read_ms = s.msg_header_read_us / 1000,
+        body_read_ms = s.msg_body_read_us / 1000,
+        send_gap_ms = s.send_gap_us / 1000,
+        per_msg_header_us = s.msg_header_read_us / n,
+        per_msg_body_us = s.msg_body_read_us / n,
+        per_msg_send_gap_us = s.send_gap_us / n,
+        client_batches = s.client_batches_received,
+        client_delivery_ms = s.client_batch_delivery_us / 1000,
+        client_convert_ms = s.client_convert_us / 1000,
+        per_msg_client_delivery_us = s.client_batch_delivery_us / cn,
+        per_msg_client_convert_us = s.client_convert_us / cn,
         local_responses = s.local_responses,
         local_specs_opened = s.local_specs_opened,
         local_bytes_mib = format_args!("{:.1}", s.local_bytes as f64 / mb),

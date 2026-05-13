@@ -41,7 +41,9 @@ use daft_shuffles::{
     multi_file_writer::write_partitions_multi_file,
     oneshot_writer::write_partitions_one_shot,
     parse_flight_compression,
-    server::flight_server::{ShuffleFlightServer, log_read_agg_summary, start_server_loop},
+    server::flight_server::{
+        ShuffleFlightServer, log_read_agg_summary, read_agg_snapshot, start_server_loop,
+    },
     shuffle_cache::{PartitionCache, partition_ref_id},
 };
 use futures::StreamExt;
@@ -739,6 +741,40 @@ async fn main() -> DaftResult<()> {
     );
 
     log_read_agg_summary("seal_bench end");
+
+    // Plain-print attribution so we see it without DAFT_TRACE=info.
+    let s = read_agg_snapshot();
+    let n = s.flightdatas_emitted.max(1);
+    let cn = s.client_batches_received.max(1);
+    let mb = 1024.0 * 1024.0;
+    println!("--- Read path attribution (per FlightData / RecordBatch) ---");
+    println!("server flightdatas emitted:   {}", s.flightdatas_emitted);
+    println!(
+        "server  open / header / body / send-gap totals:  {:>6.1} / {:>6.1} / {:>6.1} / {:>6.1} ms",
+        s.open_us as f64 / 1000.0,
+        s.msg_header_read_us as f64 / 1000.0,
+        s.msg_body_read_us as f64 / 1000.0,
+        s.send_gap_us as f64 / 1000.0,
+    );
+    println!(
+        "server  per-msg header / body / send-gap:        {:>6} / {:>6} / {:>6} us",
+        s.msg_header_read_us / n,
+        s.msg_body_read_us / n,
+        s.send_gap_us / n,
+    );
+    println!("server  bytes shipped: {:.1} MiB", s.bytes_shipped as f64 / mb);
+    println!("client  batches received:     {}", s.client_batches_received);
+    println!(
+        "client  delivery / convert totals:               {:>6.1} / {:>6.1} ms",
+        s.client_batch_delivery_us as f64 / 1000.0,
+        s.client_convert_us as f64 / 1000.0,
+    );
+    println!(
+        "client  per-batch delivery / convert:            {:>6} / {:>6} us",
+        s.client_batch_delivery_us / cn,
+        s.client_convert_us / cn,
+    );
+    println!();
 
     drop(server_handle);
     let _ = std::fs::remove_dir_all(&cfg.shuffle_root);

@@ -1,14 +1,24 @@
-use std::io::{ErrorKind, SeekFrom};
+use std::{
+    io::{ErrorKind, SeekFrom},
+    sync::atomic::Ordering,
+    time::Instant,
+};
 
 use arrow_flight::FlightData;
 use common_error::{DaftError, DaftResult};
 use futures::Stream;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
+use super::flight_server::read_agg;
+
 /// Reading state maintenance
 struct ReadState<R> {
     // The reader to read from
     reader: R,
+    /// When the previous FlightData was yielded. Used to attribute time spent
+    /// outside `process_next` (gRPC encode + send + backpressure) to a counter
+    /// separate from the disk-read time inside `process_next`.
+    last_yield: Option<Instant>,
 }
 
 /// State machine for stream processing
@@ -34,7 +44,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin> FlightDataStreamReader<R> {
         // Skip stream metadata in the file since we don't need it when sending data over flight
         skip_stream_metadata(&mut reader).await?;
         Ok(Self {
-            state: Some(ReadState { reader }),
+            state: Some(ReadState { reader, last_yield: None }),
         })
     }
 }
@@ -45,7 +55,7 @@ impl<R: AsyncRead + Unpin> FlightDataStreamReader<R> {
     /// has already been seeked to a batch boundary.
     pub fn from_skipped(reader: R) -> Self {
         Self {
-            state: Some(ReadState { reader }),
+            state: Some(ReadState { reader, last_yield: None }),
         }
     }
 
@@ -80,6 +90,16 @@ pub async fn skip_stream_metadata<R: AsyncRead + AsyncSeek + Unpin>(
 
 /// Process next IPC message into FlightData
 async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
+    // Time since last yield = framework overhead between two consecutive
+    // FlightData emissions (gRPC encode/send/backpressure). First call (no
+    // previous yield) is not counted.
+    if let Some(prev) = state.last_yield.take() {
+        read_agg::SEND_GAP_US
+            .fetch_add(prev.elapsed().as_micros() as u64, Ordering::Relaxed);
+    }
+
+    // Phase A: meta_len + header read.
+    let t_header = Instant::now();
     let mut meta_len = match state.reader.read_i32_le().await {
         Ok(meta_len) => meta_len,
         Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -113,16 +133,24 @@ async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResu
         .bodyLength()
         .try_into()
         .map_err(|_| DaftError::InternalError("Unexpected negative integer".to_string()))?;
+    read_agg::MSG_HEADER_READ_US
+        .fetch_add(t_header.elapsed().as_micros() as u64, Ordering::Relaxed);
 
-    // Read message body
+    // Phase B: body read.
+    let t_body = Instant::now();
     let mut data_buffer = vec![0; body_length];
     state.reader.read_exact(&mut data_buffer).await?;
+    read_agg::MSG_BODY_READ_US
+        .fetch_add(t_body.elapsed().as_micros() as u64, Ordering::Relaxed);
 
     let flight_data = FlightData {
         data_header: message_buffer.into(),
         data_body: data_buffer.into(),
         ..Default::default()
     };
+
+    read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+    state.last_yield = Some(Instant::now());
 
     Ok(StreamState::Ready((state, flight_data)))
 }
