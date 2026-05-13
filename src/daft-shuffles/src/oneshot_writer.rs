@@ -69,33 +69,11 @@ pub async fn write_partitions_one_shot(
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
 
-    // Parallel concat: each output partition becomes Option<arrow_array::RecordBatch>
-    // (None when the partition has no rows). Same pattern as the ray finalize path.
-    let mut concat_futs = Vec::with_capacity(num_partitions);
-    for parts in partitions_per_output {
-        concat_futs.push(tokio::spawn(async move {
-            let t = Instant::now();
-            let r = concat_one_partition(parts);
-            write_agg::SPAWN_TOTAL_US
-                .fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
-            r
-        }));
-    }
-    write_agg::SPAWN_TASKS.fetch_add(num_partitions as u64, Ordering::Relaxed);
-    let t_join = Instant::now();
-    let concated = futures::future::join_all(concat_futs).await;
-    write_agg::JOIN_WALL_US
-        .fetch_add(t_join.elapsed().as_micros() as u64, Ordering::Relaxed);
-    let mut concated_per_partition: Vec<Option<(usize, usize, arrow_array::RecordBatch)>> =
-        Vec::with_capacity(num_partitions);
-    for jr in concated {
-        let inner = jr.map_err(|e| DaftError::InternalError(e.to_string()))?;
-        concated_per_partition.push(inner?);
-    }
-
-    // Sequential write on spawn_blocking. Concat + IPC encode happen on the same thread
-    // as the write, which is fine because we're I/O bound here and the concat work is
-    // already done.
+    // Concat + IPC encode + disk write all run on a single spawn_blocking thread.
+    // Previously we fanned out per-partition `tokio::spawn` calls for the concat phase,
+    // but at N=8192 partitions per map task that was 1.6M task allocations whose
+    // scheduling overhead exceeded the actual concat work — and outer map-task
+    // parallelism already saturates cores.
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
     let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
     let schema_for_write = schema.clone();
@@ -114,6 +92,8 @@ pub async fn write_partitions_one_shot(
     let (caches, total_file_bytes) = get_io_runtime(true)
         .spawn_blocking(move || -> DaftResult<(Vec<PartitionCache>, u64)> {
             let t_block = Instant::now();
+            let mut partitions_per_output = partitions_per_output;
+            write_agg::SPAWN_TASKS.fetch_add(num_partitions as u64, Ordering::Relaxed);
             if !Path::new(&shuffle_dir).exists() {
                 std::fs::create_dir_all(&shuffle_dir)?;
             }
@@ -152,7 +132,11 @@ pub async fn write_partitions_one_shot(
                 let mut slots_in_group: Vec<Option<(usize, usize)>> =
                     Vec::with_capacity(g_end - p);
                 for idx_in_group in 0..(g_end - p) {
-                    let slot = concated_per_partition[p + idx_in_group].take();
+                    let parts = std::mem::take(&mut partitions_per_output[p + idx_in_group]);
+                    let t_s = Instant::now();
+                    let slot = concat_one_partition(parts)?;
+                    write_agg::SPAWN_TOTAL_US
+                        .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
                     match slot {
                         Some((rows, bytes, arrow_batch)) => {
                             slots_in_group.push(Some((rows, bytes)));

@@ -4,6 +4,22 @@ Hardware: AWS i8g.4xlarge (16 vCPU Graviton, 32 GiB RAM, 3.4 TiB local NVMe inst
 
 ## What we proved
 
+### Dropping the per-partition `tokio::spawn` is the biggest win
+
+`write_partitions_one_shot` previously fanned out 1.6 M `tokio::spawn` futures per shuffle (N=8192 partitions × M=200 map tasks) for parallel `concat_one_partition`, then `join_all`'d before writing. Removing this and doing the concat serially inside the existing `spawn_blocking` cut total wall **69.5 s → 27.5 s (60% reduction)** on the same workload. Writer step p50: 3925 ms → 913 ms. Outer map_conc=16 already saturates cores, so the inner fan-out bought nothing.
+
+Surprisingly, removing the spawn also made the actual work faster — per-future inner timers all dropped:
+
+| | spawn-fanout | serial inline | speedup |
+|---|---|---|---|
+| per-future mean service time | 494 us | 73 us | 6.7× |
+| mp_concat | 23 us | 3 us | 7.7× |
+| mp_concat_or_get | 195 us | 21 us | 9.3× |
+| try_into | 16 us | 4 us | 4× |
+| ipc_write (already spawn_blocking) | 35 us | 33 us | 1.06× |
+
+The work-side speedup is most likely cross-thread cache contention being eliminated — 1.6 M tasks running on 16 cores were thrashing the cache and shared allocators. Serial on one thread per map task lets the small ~5 KB batches stay hot.
+
 ### Read-side server-side concat is the win
 
 `DAFT_SHUFFLE_READ_CONCAT_BYTES=4194304` (4 MiB target chunks). Server reads M source batches per partition, concats arrow-level into chunks crossing the target size, emits as fewer/bigger `FlightData`. **86 s → 68 s total wall at N=8192/M=200/8 GiB on NVMe (21% faster)**. Preserves per-map-task file isolation (FT). No rewrite phase. Memory transient bounded.
@@ -14,7 +30,8 @@ Hardware: AWS i8g.4xlarge (16 vCPU Graviton, 32 GiB RAM, 3.4 TiB local NVMe inst
 |---|---|---|
 | no-op (baseline) | 86 s | map 65 + read 21 |
 | arrow-merge seal | 84 s | map 65 + seal 15 + read 4 |
-| **read-side concat** | **68 s** | map 65 + read 5 |
+| read-side concat | 68 s | map 65 + read 5 |
+| **read-concat + spawn-removed** | **27.5 s** | map 23 + read 5 |
 
 Same per-Flight-message savings, but seal pays in disk I/O (rewrite phase scales with data size) while concat pays in RAM bandwidth (transient memcpy). At 100 GiB and 1 TB scales seal would balloon to minutes/hours; concat stays bounded.
 
@@ -53,29 +70,25 @@ Per-message attribution at N=8192 cold-read, no concat (20.5 s total read):
 
 **The bottleneck is per-FlightData fixed cost on the client (~189 μs/batch)**, dominated by whatever runs inside `arrow_flight::decode::FlightRecordBatchStream::next()`. Body bytes read is essentially free at NVMe sequential speed.
 
-### Where the write time actually goes (instrumented 2026-05-13)
+### Where the write time actually goes (post-spawn-removal, instrumented 2026-05-13)
 
-Per map task at N=8192/M=200/8 GiB on NVMe with read-concat, oneshot/never (counter source: `write_agg` module, totals / 200 map tasks):
+Per map task at N=8192/M=200/8 GiB on NVMe with read-concat, oneshot/never, **after** dropping the per-partition tokio::spawn (counter source: `write_agg`, totals / 200 map tasks):
 
 | Bucket | per task | per nonempty future | notes |
 |---|---|---|---|
-| join_wall (writer thread blocked on join_all) | **2960 ms** | — | wall observed by the writer |
-| spawn_total (sum of per-future service time) | 4055 ms | 494 us | total CPU inside `concat_one_partition` |
-| blocking_wall (file create + write loop + finish) | 503 ms | — | the spawn_blocking section |
-| `MicroPartition::concat` | 189 ms | 23 us | metadata-only, cheap |
-| `concat_or_get` (RecordBatch::concat of ~8 batches/part) | **1605 ms** | **195 us** | **biggest single bucket** |
-| `try_into` (daft RB → arrow RB) | 132 ms | 16 us | |
-| `concat_batches` (write-side K-merge) | 19 ms | 2 us | K=1 passthrough |
-| `ipc_write` (encode + disk write of merged batch) | 293 ms | 35 us | inside spawn_blocking |
+| blocking_wall (file create + concat loop + ipc write + finish) | **939 ms** | — | total wall of the writer's spawn_blocking |
+| spawn_total (sum of `concat_one_partition` calls) | 605 ms | 73 us | CPU inside concat (no longer spawned, name retained) |
+| `MicroPartition::concat` | 25 ms | 3 us | |
+| `concat_or_get` (RecordBatch::concat of ~8 batches/part) | 173 ms | 21 us | |
+| `try_into` (daft RB → arrow RB) | 38 ms | 4 us | |
+| `concat_batches` (write-side K-merge) | 0.1 ms | 0 us | K=1 passthrough |
+| `ipc_write` (encode + disk write of merged batch) | 272 ms | 33 us | |
 
-Total per map task wall = join_wall + blocking_wall ≈ **3.46 s** (matches the original 3.8 s/task figure).
+Total per map task wall = blocking_wall ≈ **940 ms** (was 3.46 s under spawn-fanout). join_wall is now 0 since we no longer await spawned futures.
 
-Inner timers cover 234 us per future; mean per-future service time is 494 us. **The gap (~260 us / future) is overhead inside the spawned future but outside the timed inner work** — chiefly tokio::spawn task setup/poll, the `parts.iter().sum::<len>()` and `size_bytes()` passes, and atomic adds. At 1.6 M spawned futures per shuffle, that gap accounts for ~525 s of total CPU (~3.3 s/task).
+What's left in blocking_wall but unattributed: file create + cache push allocations + `writer.finish()` ≈ 940 − 605 − 272 ≈ 60 ms/task. Negligible.
 
-**Confirmed root causes:**
-1. **`concat_or_get` dominates inside the future.** 195 us × 8192 = 1.6 s of CPU per task. Each output partition for one map task is `Vec<MicroPartition>` of length ~8 (one per input chunk) → `RecordBatch::concat` on 8 small batches of 5 cols × 5 KB.
-2. **tokio::spawn overhead matches or exceeds the timed work.** ~260 us / future of untimed in-future overhead × 1.6 M spawned futures swamps the actual concat work.
-3. **IPC encode is not the bottleneck.** 35 us / batch × 8192 = 287 ms/task — confirms the K-sweep result that batch count isn't the lever.
+**Remaining writer-side cost is essentially the bare CPU work:** 605 ms of concat + 272 ms of IPC write per task. ~880 ms of useful work / 940 ms wall = 94% efficient.
 
 ## Code state on branch `colin/fun`
 
@@ -158,26 +171,30 @@ Swap `TMPDIR=/mnt/ebs/tmp` for EBS, swap `--bytes` to scale, swap `--writer` for
 
 ## Next steps (in priority order)
 
-### 1. Drop the per-partition `tokio::spawn`
+### 1. Phase 1 is now partition_by_hash-dominated
 
-**Strongest signal from the instrumentation.** With 8192 partitions of ~5 KB and 8 chunks each, each spawned future does ~234 us of inner work but costs ~260 us of in-future overhead on top — i.e. the scheduling itself outweighs the work being scheduled.
+After the writer fix, Phase 1 is 22.6 s with this breakdown:
+- partition_by_hash p50/p99: **626 / 3253 ms** ← biggest, long tail
+- writer (now concat+IPC inline) p50/p99: 913 / 1680 ms
+- accumulate p50/p99: 5.5 / 51.9 ms
 
-Replace `for parts in partitions_per_output { tokio::spawn(...) } + join_all` in `write_partitions_one_shot` with one of:
-- **A single `spawn_blocking` that loops serially** over all N partitions doing `concat_one_partition`. With map_conc=16 we already saturate 16 cores at the *outer* layer, so the inner fan-out is buying nothing.
-- **A bounded `rayon::par_iter`** over partitions if we want CPU parallelism within a map task. But this only helps if other map tasks aren't already keeping cores busy.
+`partition_by_hash` is now the long pole on the map side. Per-map-task cost varies 5× between p50 and p99. Worth instrumenting *inside* partition_by_hash to see whether it's hash-eval, scatter, or downstream MicroPartition construction; and whether the tail is data skew or scheduler contention.
 
-Expected upside: cut the 2.96 s/task join_wall to ~spawn_total / 16 (current inner work) ≈ 250 ms/task → writer step drops from 3.46 s to ~750 ms, total wall from 68 s to ~50 s.
+### 2. Read-side floor analysis at the new totals
 
-### 2. Cheaper `concat_or_get` for shuffle-shaped input
+Total wall is now 27.5 s = map 22.6 s + read 4.8 s. Read time is dominated by server `OPEN_US = 38.7 s` (accumulated across 16 reducers; ÷16 ≈ 2.4 s per reducer). At N=8192 files * 200 ranges each = 1.6 M opens, ~24 us per open. Either:
+- Cache open file descriptors across reducer reads (one file holds N partitions' worth; if a reducer's 200 ranges all hit the same combined file, we could open once).
+- Use positional pread instead of seek+read after open, avoiding re-open.
 
-195 us × 8192 = 1.6 s/task spent in `RecordBatch::concat` of ~8 tiny batches per partition. Two angles:
-- **Concat at the MicroPartition level lazily.** Today `MicroPartition::concat` produces an MP with chunks vec = concat-of-chunks, then `concat_or_get` discovers >1 chunks and runs `RecordBatch::concat`. The IPC writer only needs *some* arrow RecordBatch — could we emit each input chunk as its own batch and let read-side concat amortize? **Probably no** — that pushes batch count from 1 per partition to 8 per partition, multiplying per-FlightData fixed cost (the read-side bottleneck).
-- **Skip the `MicroPartition::concat` round-trip when `parts.len() == 1`.** Common case in production. Save ~23 us/partition. Marginal.
-- **Pre-concat at sink time** rather than at finalize. If the RepartitionSink already holds a single MP per partition by the time finalize runs, this entire path becomes a no-op. Worth checking what the sink looks like in production.
+Note the reducer side does 200 opens × 8192/(16 reducers) ≈ 102 400 opens — same file repeatedly. **Almost certainly the win.**
 
-### 3. Eliminate the inner `try_into` arrow→arrow conversion
+### 3. Cheaper `concat_or_get` for shuffle-shaped input
 
-`daft_recordbatch::RecordBatch::try_into::<arrow_array::RecordBatch>()` costs 16 us/partition = 132 ms/task. If `concat_or_get` returns a daft RB and the IPC writer needs an arrow RB, can the writer take the daft RB directly (or just borrow the underlying Arrow arrays)? Probably small but cheap to fix.
+Now 21 us/future × 8192 = 173 ms/task. Less urgent than (1)/(2) but still ~18% of writer-side wall. Skip `MicroPartition::concat` when `parts.len() == 1` (common case in production); pre-concat at sink time if feasible.
+
+### 4. Eliminate the inner `try_into` arrow→arrow conversion
+
+`daft_recordbatch::RecordBatch::try_into::<arrow_array::RecordBatch>()` is 4 us/partition = 38 ms/task. Cheap to fix if the IPC writer can borrow the daft RB's Arrow arrays directly.
 
 ### 4. Confirm read-side concat on EBS
 
@@ -230,7 +247,9 @@ If we keep `row_ranges`, consider whether it has any other use case (e.g., row-l
 - Don't change M (number of map tasks) — that's planner/scheduler scope, off-limits for this work.
 
 ### Datapoints to beat
-The headline data point we want to improve is:
-- **N=8192, M=200, 8 GiB, NVMe, cold-read, oneshot/never + read-side concat = 68 s total** (map 63 / read 5).
-- Map dominates. Cutting writer step by 2× would put us at ~50 s.
-- 4 s floor for pure read+write of 8 GiB at NVMe ~2 GB/s.
+- **N=8192, M=200, 8 GiB, NVMe, cold-read, oneshot/never + read-side concat + spawn-removed = 27.5 s total** (map 22.6 / read 4.8). Map throughput 362 MiB/s in-mem.
+- Prior baselines for reference:
+  - Initial (no concat, no spawn-removed): 86 s
+  - After read-side concat: 68 s
+  - After spawn-removed: **27.5 s**
+- 4 s floor for pure read+write of 8 GiB at NVMe ~2 GB/s. We're ~7× above floor.
