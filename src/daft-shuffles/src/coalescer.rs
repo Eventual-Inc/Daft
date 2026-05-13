@@ -59,12 +59,6 @@ pub struct SealConfig {
     /// per-partition batches over Flight to 1. Costs CPU during seal, saves
     /// per-batch overhead during read.
     pub merge_batches: bool,
-    /// When set, register_shuffle_partitions triggers a per-partition seal
-    /// the moment that partition has at least this many entries with data.
-    /// Lets the seal cost overlap with map-phase wall time instead of running
-    /// as one big phase between register and reduce. Requires `merge_batches`
-    /// to be meaningful — byte-level seal preserves batch count.
-    pub pipeline_threshold: Option<usize>,
 }
 
 impl Default for SealConfig {
@@ -72,7 +66,6 @@ impl Default for SealConfig {
         Self {
             max_concurrent: 2,
             merge_batches: false,
-            pipeline_threshold: None,
         }
     }
 }
