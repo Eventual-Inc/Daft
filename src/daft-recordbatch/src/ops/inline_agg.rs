@@ -1026,15 +1026,12 @@ fn symbolize_string_col(col: &Series) -> DaftResult<Option<Vec<u32>>> {
 /// over `Series`.
 ///
 /// Returns `None` when the group-by shape doesn't match (column count
-/// other than 2, or either column is not Utf8/Binary), so callers can
-/// fall back to the generic / symbolized paths.
-///
-/// Unlike `agg_symbolized_path`, this path doesn't apply the
-/// `MIN_AVG_STRING_BYTES_PER_ROW` gate: the cost here is one symbolize
-/// pass plus a tight `u64`-keyed loop, not a symbolized RecordBatch
-/// rebuild fed through the generic comparator-closure hash path, so
-/// the heuristic that protects short-key shapes from regression doesn't
-/// apply.
+/// other than 2, either column is not Utf8/Binary, or average string
+/// bytes per row falls below `MIN_AVG_STRING_BYTES_PER_ROW`). Short-
+/// string shapes like TPC-H Q1's CHAR(1) `l_returnflag` /
+/// `l_linestatus` fall through to the existing generic hash path on
+/// raw strings — the symbolize pass costs more than the saved
+/// per-row hash/compare work for very short keys.
 fn agg_packed_u64_path(
     groupby_physical: &RecordBatch,
     accumulators: &mut [AggAccumulator],
@@ -1043,6 +1040,32 @@ fn agg_packed_u64_path(
         return Ok(None);
     }
     let cols = groupby_physical.as_materialized_series();
+    let num_rows = groupby_physical.len();
+
+    // Tally string bytes across both Utf8/Binary cols; bail if either
+    // column is non-string or the avg bytes per row falls below the
+    // symbolize threshold.
+    let mut total_string_bytes: usize = 0;
+    for col in &cols {
+        let bytes = match col.data_type() {
+            DataType::Utf8 => {
+                let arrow_arr = col.utf8()?.as_arrow()?;
+                let offsets = arrow_arr.offsets();
+                offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0)
+            }
+            DataType::Binary => {
+                let arrow_arr = col.binary()?.as_arrow()?;
+                let offsets = arrow_arr.offsets();
+                offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0)
+            }
+            _ => return Ok(None),
+        };
+        total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
+    }
+    if total_string_bytes < num_rows.saturating_mul(MIN_AVG_STRING_BYTES_PER_ROW) {
+        return Ok(None);
+    }
+
     let Some(syms0) = symbolize_string_col(cols[0])? else {
         return Ok(None);
     };
@@ -1050,7 +1073,6 @@ fn agg_packed_u64_path(
         return Ok(None);
     };
 
-    let num_rows = groupby_physical.len();
     let initial_capacity = std::cmp::min(num_rows, 1024).max(1);
 
     let mut group_map = FnvHashMap::<u64, u32>::with_capacity_and_hasher(
@@ -2277,8 +2299,10 @@ mod tests {
     }
 
     /// Short-string two-column groupby (CHAR(1)-style keys, TPC-H Q1 shape).
-    /// Routed to the packed-u64 path (which has no byte-threshold gate, so
-    /// symbolization always runs); the result must still match the fallback.
+    /// Falls below both `agg_packed_u64_path` and `agg_symbolized_path` gates
+    /// (avg bytes per row < `MIN_AVG_STRING_BYTES_PER_ROW`), so dispatch lands
+    /// on the generic hash path on raw strings; the result must still match
+    /// the fallback.
     #[test]
     fn test_inline_multi_col_short_strings_matches_fallback() {
         let key1 = Series::from_arrow(
@@ -2537,10 +2561,10 @@ mod tests {
         assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
     }
 
-    /// CHAR(1)-style short keys (TPC-H Q1 shape): packed-u64 path applies
-    /// unconditionally for two-string-column shapes. Verifies short-string
-    /// correctness even though the original symbolized-path gate would have
-    /// skipped this shape.
+    /// CHAR(1)-style short keys (TPC-H Q1 shape) with Float64 vals and
+    /// Count(Valid). Falls below `agg_packed_u64_path`'s avg-bytes gate so
+    /// dispatch lands on the generic hash path; verifies correctness on the
+    /// gate's short-string skip branch.
     #[test]
     fn test_inline_packed_u64_short_strings_matches_fallback() {
         let key1 = Series::from_arrow(
