@@ -31,19 +31,6 @@ use crate::{
     pipeline::NodeName,
 };
 
-#[derive(Clone, Copy)]
-pub enum LocalAsofStrategyDirectional {
-    Backward,
-    Forward,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub enum LocalAsofStrategy {
-    Directional(LocalAsofStrategyDirectional),
-    Nearest,
-}
-
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
 // (the most-recent right event at or before the left event).
 //
@@ -233,26 +220,26 @@ impl AsofJoinFinalizedBuildState {
         bucket: &[u64],
         on_key_cmp: &DynPartialComparator,
         right_idx: usize,
-        dir: LocalAsofStrategyDirectional,
+        dir: AsofJoinStrategy,
     ) -> Option<usize> {
         let mut lo = 0usize;
         let mut hi = bucket.len();
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
             match dir {
-                LocalAsofStrategyDirectional::Backward => match on_key_cmp(mid, right_idx) {
+                AsofJoinStrategy::Backward => match on_key_cmp(mid, right_idx) {
                     Some(Ordering::Less) => lo = mid + 1,
                     _ => hi = mid,
                 },
-                LocalAsofStrategyDirectional::Forward => match on_key_cmp(mid, right_idx) {
+                AsofJoinStrategy::Forward => match on_key_cmp(mid, right_idx) {
                     Some(Ordering::Greater) => hi = mid,
                     _ => lo = mid + 1,
                 },
             }
         }
         match dir {
-            LocalAsofStrategyDirectional::Backward => bucket.get(lo).map(|&idx| idx as usize),
-            LocalAsofStrategyDirectional::Forward => lo
+            AsofJoinStrategy::Backward => bucket.get(lo).map(|&idx| idx as usize),
+            AsofJoinStrategy::Forward => lo
                 .checked_sub(1)
                 .and_then(|i| bucket.get(i))
                 .map(|&idx| idx as usize),
@@ -269,13 +256,13 @@ pub(crate) struct AsofJoinProbeState {
 }
 
 impl AsofJoinProbeState {
-    fn probe_batch_directional(
+    fn probe_batch(
         &mut self,
         right_rb: &RecordBatch,
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
         right_cols_to_keep: &HashSet<String>,
-        dir: LocalAsofStrategyDirectional,
+        dir: AsofJoinStrategy,
     ) -> DaftResult<()> {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
@@ -356,7 +343,7 @@ impl AsofJoinProbeState {
                 continue;
             };
 
-            update_best_directional_match(
+            update_best_match(
                 &mut self.best_match[matched_left_idx],
                 &right_on_key_arrs,
                 rb_idx,
@@ -370,17 +357,17 @@ impl AsofJoinProbeState {
     }
 }
 
-fn update_best_directional_match(
+fn update_best_match(
     slot: &mut Option<(u32, u32)>,
     on_key_arrs: &[Arc<dyn Array>],
     candidate_rb_idx: usize,
     candidate_right_idx: usize,
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
-    dir: LocalAsofStrategyDirectional,
+    dir: AsofJoinStrategy,
 ) -> DaftResult<()> {
     let preferred_ordering = match dir {
-        LocalAsofStrategyDirectional::Backward => Ordering::Greater,
-        LocalAsofStrategyDirectional::Forward => Ordering::Less,
+        AsofJoinStrategy::Backward => Ordering::Greater,
+        AsofJoinStrategy::Forward => Ordering::Less,
     };
     let is_better = match *slot {
         None => true,
@@ -399,19 +386,6 @@ fn update_best_directional_match(
         *slot = Some((candidate_rb_idx as u32, candidate_right_idx as u32));
     }
     Ok(())
-}
-
-#[allow(dead_code)]
-fn update_nearest_match(
-    _slot: &mut Option<(u32, u32)>,
-    _on_key_arrs: &[Arc<dyn Array>],
-    _candidate_rb_idx: usize,
-    _candidate_right_idx: usize,
-    _left_on_key_arr: &dyn Array,
-    _left_row_idx: usize,
-    _cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
-) -> DaftResult<()> {
-    unimplemented!("Nearest asof join is not yet implemented")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -516,12 +490,12 @@ fn build_join_output(
     ))
 }
 
-async fn finalize_directional(
+async fn finalize(
     states: Vec<AsofJoinProbeState>,
     build_state: Arc<AsofJoinFinalizedBuildState>,
     join_schema: SchemaRef,
     pruned_right_schema: SchemaRef,
-    dir: LocalAsofStrategyDirectional,
+    dir: AsofJoinStrategy,
 ) -> DaftResult<Option<MicroPartition>> {
     // Each state's best_match stores a local_rb_idx scoped to that state's
     // right_rbs_and_on_keys list. global_rb_offsets[k] converts state k's local_rb_idx
@@ -572,7 +546,7 @@ async fn finalize_directional(
                         let candidate_global_rb_idx =
                             global_rb_offsets[state_idx] + candidate_local_rb_idx as usize;
 
-                        update_best_directional_match(
+                        update_best_match(
                             curr_best_match,
                             &global_right_on_key_arrs,
                             candidate_global_rb_idx,
@@ -597,10 +571,10 @@ async fn finalize_directional(
     }
 
     match dir {
-        LocalAsofStrategyDirectional::Backward => {
+        AsofJoinStrategy::Backward => {
             forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
         }
-        LocalAsofStrategyDirectional::Forward => {
+        AsofJoinStrategy::Forward => {
             backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
         }
     }
@@ -613,15 +587,6 @@ async fn finalize_directional(
     )?))
 }
 
-async fn finalize_nearest(
-    _states: Vec<AsofJoinProbeState>,
-    _build_state: Arc<AsofJoinFinalizedBuildState>,
-    _join_schema: SchemaRef,
-    _pruned_right_schema: SchemaRef,
-) -> DaftResult<Option<MicroPartition>> {
-    unimplemented!("Nearest asof join is not yet implemented")
-}
-
 pub struct AsofJoinOperator {
     left_by: Vec<BoundExpr>,
     right_by: Vec<BoundExpr>,
@@ -630,7 +595,7 @@ pub struct AsofJoinOperator {
     left_schema: SchemaRef,
     join_schema: SchemaRef,
     right_cols_to_keep: HashSet<String>,
-    strategy: LocalAsofStrategy,
+    strategy: AsofJoinStrategy,
 }
 
 impl AsofJoinOperator {
@@ -643,14 +608,6 @@ impl AsofJoinOperator {
         left_schema: SchemaRef,
         join_schema: SchemaRef,
     ) -> DaftResult<Self> {
-        let local_strategy = match strategy {
-            AsofJoinStrategy::Backward => {
-                LocalAsofStrategy::Directional(LocalAsofStrategyDirectional::Backward)
-            }
-            AsofJoinStrategy::Forward => {
-                LocalAsofStrategy::Directional(LocalAsofStrategyDirectional::Forward)
-            }
-        };
         let right_cols_to_keep = join_schema
             .fields()
             .iter()
@@ -665,7 +622,7 @@ impl AsofJoinOperator {
             left_schema,
             join_schema,
             right_cols_to_keep,
-            strategy: local_strategy,
+            strategy,
         })
     }
 }
@@ -737,20 +694,14 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        match strategy {
-                            LocalAsofStrategy::Directional(dir) => {
-                                state.probe_batch_directional(
-                                    right_rb,
-                                    &right_on,
-                                    &right_by,
-                                    &right_cols_to_keep,
-                                    dir,
-                                )?;
-                            }
-                            LocalAsofStrategy::Nearest => {
-                                unimplemented!("Nearest asof join is not yet implemented")
-                            }
-                        }
+                        let dir = strategy;
+                        state.probe_batch(
+                            right_rb,
+                            &right_on,
+                            &right_by,
+                            &right_cols_to_keep,
+                            dir,
+                        )?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
@@ -791,22 +742,8 @@ impl JoinOperator for AsofJoinOperator {
                         )));
                     }
 
-                    match strategy {
-                        LocalAsofStrategy::Directional(dir) => {
-                            finalize_directional(
-                                states,
-                                build_state,
-                                join_schema,
-                                pruned_right_schema,
-                                dir,
-                            )
-                            .await
-                        }
-                        LocalAsofStrategy::Nearest => {
-                            finalize_nearest(states, build_state, join_schema, pruned_right_schema)
-                                .await
-                        }
-                    }
+                    let dir = strategy;
+                    finalize(states, build_state, join_schema, pruned_right_schema, dir).await
                 },
                 Span::current(),
             )
