@@ -310,6 +310,17 @@ impl ShuffleFlightServer {
 
         let permits = Arc::new(tokio::sync::Semaphore::new(self.seal_cfg.max_concurrent));
 
+        // Env override for the arrow-merge variant — lets bench A/B without a
+        // server restart-with-different-config dance.
+        let mut effective_cfg = self.seal_cfg;
+        if std::env::var("DAFT_SHUFFLE_SEAL_MERGE")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            effective_cfg.merge_batches = true;
+        }
+
         // Fan out plan-build + execute_plan across partitions. Each task pulls
         // a permit so total in-flight disk I/O stays bounded.
         let mut handles = Vec::with_capacity(groups.len());
@@ -325,7 +336,7 @@ impl ShuffleFlightServer {
             let permits = permits.clone();
             handles.push(tokio::spawn(async move {
                 let _permit = permits.acquire_owned().await.ok();
-                coalescer::execute_plan(plan).await
+                coalescer::execute_plan(plan, effective_cfg).await
             }));
         }
 
