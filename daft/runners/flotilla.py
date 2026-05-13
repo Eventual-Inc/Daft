@@ -421,11 +421,12 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             # not in public Ray docs but stable and relied on by Ray's own autoscaler/GCS code.
             is_head = node["Resources"].get("node:__internal_head__", 0) == 1
             ext_env = _extension_runtime_env()
-            runtime_env: dict[str, object] = {}
-            if worker_env_vars:
-                runtime_env["env_vars"] = dict(worker_env_vars)
+            runtime_env_vars: dict[str, str] = dict(worker_env_vars) if worker_env_vars else {}
             if ext_env and "env_vars" in ext_env:
-                runtime_env.setdefault("env_vars", {}).update(ext_env["env_vars"])
+                runtime_env_vars.update(ext_env["env_vars"])
+            runtime_env: dict[str, object] = {}
+            if runtime_env_vars:
+                runtime_env["env_vars"] = runtime_env_vars
             swordfish_options: dict[str, object] = {
                 "scheduling_strategy": ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],

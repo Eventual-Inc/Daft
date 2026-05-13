@@ -1,6 +1,8 @@
 use std::{
+    collections::HashMap,
     ffi::{CStr, c_char},
-    sync::Arc,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -47,9 +49,34 @@ impl Drop for Inner {
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
 
+/// Process-global registry of loaded extension aggregate functions.
+///
+/// Populated during `Session::load_and_init_extension`, consulted by
+/// `AggregateFunctionHandle::deserialize` to re-attach the FFI vtable on
+/// processes where the plan was deserialized (e.g. Ray workers).
+static AGGREGATE_FUNCTION_REGISTRY: OnceLock<
+    Mutex<HashMap<(PathBuf, String), AggregateFunctionHandle>>,
+> = OnceLock::new();
+
+/// Register an aggregate handle in the process-global registry. Idempotent.
+pub fn register_aggregate_function(path: PathBuf, name: String, handle: AggregateFunctionHandle) {
+    let mut reg = AGGREGATE_FUNCTION_REGISTRY
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("AGGREGATE_FUNCTION_REGISTRY lock poisoned");
+    reg.insert((path, name), handle);
+}
+
+/// Look up a registered aggregate function by module path and function name.
+pub fn lookup_aggregate_function(path: &Path, name: &str) -> Option<AggregateFunctionHandle> {
+    let reg = AGGREGATE_FUNCTION_REGISTRY.get()?.lock().ok()?;
+    reg.get(&(path.to_path_buf(), name.to_string())).cloned()
+}
+
 #[derive(Clone)]
 pub struct AggregateFunctionHandle {
     name: String,
+    module_path: PathBuf,
     inner: Option<Arc<Inner>>,
 }
 
@@ -60,8 +87,10 @@ impl AggregateFunctionHandle {
             .to_str()
             .expect("FFI aggregate function name must be valid UTF-8")
             .to_owned();
+        let module_path = module.path().to_path_buf();
         Self {
             name,
+            module_path,
             inner: Some(Arc::new(Inner { ffi, module })),
         }
     }
@@ -309,8 +338,9 @@ impl AggFn for AggregateFunctionHandle {
 impl Serialize for AggregateFunctionHandle {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("AggregateFunctionHandle", 1)?;
+        let mut s = serializer.serialize_struct("AggregateFunctionHandle", 2)?;
         s.serialize_field("name", &self.name)?;
+        s.serialize_field("module_path", &Some(&self.module_path))?;
         s.end()
     }
 }
@@ -320,10 +350,20 @@ impl<'de> Deserialize<'de> for AggregateFunctionHandle {
         #[derive(Deserialize)]
         struct Helper {
             name: String,
+            #[serde(default)]
+            module_path: Option<PathBuf>,
         }
         let h = Helper::deserialize(deserializer)?;
+
+        if let Some(path) = &h.module_path
+            && let Some(existing) = lookup_aggregate_function(path, &h.name)
+        {
+            return Ok(existing);
+        }
+
         Ok(Self {
             name: h.name,
+            module_path: h.module_path.unwrap_or_default(),
             inner: None,
         })
     }
@@ -333,7 +373,11 @@ pub fn into_aggregate_fn_handle(
     ffi: FFI_AggregateFunction,
     module: Arc<ModuleHandle>,
 ) -> AggFnHandle {
-    AggFnHandle::new(Arc::new(AggregateFunctionHandle::new(ffi, module)))
+    let path = module.path().to_path_buf();
+    let handle = AggregateFunctionHandle::new(ffi, module);
+    let name = handle.name.clone();
+    register_aggregate_function(path, name, handle.clone());
+    AggFnHandle::new(Arc::new(handle))
 }
 
 #[cfg(test)]
@@ -547,7 +591,10 @@ mod tests {
             init: mock_init,
             free_string: mock_free_string,
         };
-        Arc::new(ModuleHandle::new(module))
+        Arc::new(ModuleHandle::new(
+            module,
+            std::path::PathBuf::from("/mock/mock_agg_module"),
+        ))
     }
 
     fn make_mock_agg_handle() -> (FFI_AggregateFunction, Arc<ModuleHandle>) {
@@ -644,9 +691,19 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_roundtrip() {
-        let (ffi, module) = make_mock_agg_handle();
-        let handle = AggregateFunctionHandle::new(ffi, module);
+    fn test_serde_roundtrip_no_module_loaded() {
+        use daft_ext::abi::FFI_Module;
+        let unregistered_module = Arc::new(ModuleHandle::new(
+            FFI_Module {
+                daft_abi_version: daft_ext::abi::DAFT_ABI_VERSION,
+                name: c"mock_agg_module".as_ptr(),
+                init: mock_init,
+                free_string: mock_free_string,
+            },
+            std::path::PathBuf::from("/mock/test_serde_roundtrip_no_module_loaded/mock_agg_module"),
+        ));
+        let (ffi, _module) = make_mock_agg_handle();
+        let handle = AggregateFunctionHandle::new(ffi, unregistered_module);
 
         let json = serde_json::to_string(&handle).unwrap();
         assert!(json.contains("test_sum"));
@@ -655,12 +712,36 @@ mod tests {
         assert_eq!(AggFn::name(&deser), "test_sum");
         assert!(deser.inner.is_none());
 
-        // Calling on a deserialized (unloaded) handle should error
         let err = deser.return_dtype(&[DataType::Int32]).unwrap_err();
         assert!(
             err.to_string().contains("not loaded"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn test_serde_roundtrip_with_module_loaded() {
+        let (ffi, module) = make_mock_agg_handle();
+        let path = std::path::PathBuf::from(
+            "/mock/test_serde_roundtrip_with_module_loaded/mock_agg_module",
+        );
+        let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path.clone()));
+        let live_handle = AggregateFunctionHandle::new(ffi, module);
+        register_aggregate_function(path.clone(), "test_sum".to_string(), live_handle.clone());
+
+        let json = serde_json::to_string(&live_handle).unwrap();
+        assert!(json.contains("test_sum"));
+        assert!(json.contains(path.to_str().unwrap()));
+
+        let deser: AggregateFunctionHandle = serde_json::from_str(&json).unwrap();
+        assert_eq!(AggFn::name(&deser), "test_sum");
+        assert!(
+            deser.inner.is_some(),
+            "expected inner to be re-attached from AGGREGATE_FUNCTION_REGISTRY"
+        );
+
+        let dt = deser.return_dtype(&[DataType::Int32]).unwrap();
+        assert_eq!(dt, DataType::Int32);
     }
 
     #[test]

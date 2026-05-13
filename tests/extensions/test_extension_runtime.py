@@ -40,3 +40,21 @@ def test_extension_ray_runner(hello_extension_path: str):
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_extension_ray_runner_aggregate(hello_extension_path: str):
+    """Aggregate extension functions also work on Ray workers after deserialization."""
+    script = textwrap.dedent(f"""
+        import ray, daft
+        ray.init(num_cpus=2, ignore_reinit_error=True, log_to_driver=True)
+        daft.load_extension({hello_extension_path!r})
+        daft.set_runner_ray(noop_if_initialized=True)
+
+        df = daft.from_pydict({{"name": ["Alice", "Bob", "Carol"]}})
+        result = df.agg(
+            daft.get_aggregate_function("string_count", daft.col("name"))
+        ).to_pydict()
+        assert result["name"] == [3], result
+    """)
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
