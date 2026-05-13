@@ -99,7 +99,7 @@ pub async fn write_partitions_one_shot(
         .spawn_blocking(move || -> DaftResult<(Vec<PartitionCache>, u64)> {
             let t_block = Instant::now();
             let mut partitions_per_output = partitions_per_output;
-            write_agg::SPAWN_TASKS.fetch_add(num_partitions as u64, Ordering::Relaxed);
+            write_agg::PARTITIONS_TOUCHED.fetch_add(num_partitions as u64, Ordering::Relaxed);
             if !Path::new(&shuffle_dir).exists() {
                 std::fs::create_dir_all(&shuffle_dir)?;
             }
@@ -134,7 +134,7 @@ pub async fn write_partitions_one_shot(
                 let parts = std::mem::take(&mut partitions_per_output[idx]);
                 let t_s = Instant::now();
                 let slot = concat_one_partition(parts, chunk_target, &arrow_schema)?;
-                write_agg::SPAWN_TOTAL_US
+                write_agg::CONCAT_ONE_PARTITION_US
                     .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
                 let ref_id = partition_ref_id(input_id, idx);
                 match slot {
@@ -252,7 +252,7 @@ fn concat_one_partition(
     }
     write_agg::TRY_INTO_US
         .fetch_add(t_t.elapsed().as_micros() as u64, Ordering::Relaxed);
-    write_agg::SPAWN_TASKS_NONEMPTY.fetch_add(1, Ordering::Relaxed);
+    write_agg::PARTITIONS_NONEMPTY.fetch_add(1, Ordering::Relaxed);
     agg::INPUT_BYTES.fetch_add(size_bytes as u64, Ordering::Relaxed);
     Ok(Some((total_rows, size_bytes, arrow_batches)))
 }

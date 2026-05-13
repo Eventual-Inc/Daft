@@ -156,17 +156,16 @@ pub mod agg {
 /// write, and the wall time the writer thread is blocked on its join_all.
 pub mod write_agg {
     use std::sync::atomic::AtomicU64;
-    /// Number of `concat_one_partition` futures spawned (= num_partitions × num_map_tasks).
-    pub static SPAWN_TASKS: AtomicU64 = AtomicU64::new(0);
-    /// Subset of SPAWN_TASKS that produced a non-empty batch.
-    pub static SPAWN_TASKS_NONEMPTY: AtomicU64 = AtomicU64::new(0);
-    /// Sum across tasks of wall time spent *inside* `concat_one_partition` (the
-    /// spawned future). Divided by SPAWN_TASKS gives mean per-task service time.
-    pub static SPAWN_TOTAL_US: AtomicU64 = AtomicU64::new(0);
-    /// Wall time spent inside `futures::future::join_all` over the spawned futures
-    /// (per map task). Sum across map tasks; compare against `SPAWN_TOTAL_US /
-    /// parallelism` to size scheduler overhead.
-    pub static JOIN_WALL_US: AtomicU64 = AtomicU64::new(0);
+    /// Total number of output-partition slots visited across all map tasks
+    /// (= num_partitions × num_map_tasks). Each map task's spawn_blocking
+    /// loops through all partitions serially; this counts loop iterations,
+    /// not spawn_blocking calls.
+    pub static PARTITIONS_TOUCHED: AtomicU64 = AtomicU64::new(0);
+    /// Subset of PARTITIONS_TOUCHED that had ≥1 row to write.
+    pub static PARTITIONS_NONEMPTY: AtomicU64 = AtomicU64::new(0);
+    /// Sum across partitions of wall time spent inside `concat_one_partition`.
+    /// Divided by PARTITIONS_TOUCHED gives mean per-partition service time.
+    pub static CONCAT_ONE_PARTITION_US: AtomicU64 = AtomicU64::new(0);
     /// Time inside `MicroPartition::concat(parts)`.
     pub static MP_CONCAT_US: AtomicU64 = AtomicU64::new(0);
     /// Time inside `combined.concat_or_get()`.
@@ -189,10 +188,9 @@ pub mod write_agg {
 #[derive(Debug, Clone, Copy)]
 pub struct WriteAggSnapshot {
     pub oneshot_calls: u64,
-    pub spawn_tasks: u64,
-    pub spawn_tasks_nonempty: u64,
-    pub spawn_total_us: u64,
-    pub join_wall_us: u64,
+    pub partitions_touched: u64,
+    pub partitions_nonempty: u64,
+    pub concat_one_partition_us: u64,
     pub mp_concat_us: u64,
     pub mp_concat_or_get_us: u64,
     pub try_into_us: u64,
@@ -205,10 +203,9 @@ pub struct WriteAggSnapshot {
 pub fn write_agg_snapshot() -> WriteAggSnapshot {
     WriteAggSnapshot {
         oneshot_calls: write_agg::ONESHOT_CALLS.load(Ordering::Relaxed),
-        spawn_tasks: write_agg::SPAWN_TASKS.load(Ordering::Relaxed),
-        spawn_tasks_nonempty: write_agg::SPAWN_TASKS_NONEMPTY.load(Ordering::Relaxed),
-        spawn_total_us: write_agg::SPAWN_TOTAL_US.load(Ordering::Relaxed),
-        join_wall_us: write_agg::JOIN_WALL_US.load(Ordering::Relaxed),
+        partitions_touched: write_agg::PARTITIONS_TOUCHED.load(Ordering::Relaxed),
+        partitions_nonempty: write_agg::PARTITIONS_NONEMPTY.load(Ordering::Relaxed),
+        concat_one_partition_us: write_agg::CONCAT_ONE_PARTITION_US.load(Ordering::Relaxed),
         mp_concat_us: write_agg::MP_CONCAT_US.load(Ordering::Relaxed),
         mp_concat_or_get_us: write_agg::MP_CONCAT_OR_GET_US.load(Ordering::Relaxed),
         try_into_us: write_agg::TRY_INTO_US.load(Ordering::Relaxed),
@@ -222,23 +219,22 @@ pub fn write_agg_snapshot() -> WriteAggSnapshot {
 pub fn log_write_agg_summary(label: &str) {
     let s = write_agg_snapshot();
     let mb = 1024.0 * 1024.0;
-    let n = s.spawn_tasks.max(1);
-    let nz = s.spawn_tasks_nonempty.max(1);
+    let n = s.partitions_touched.max(1);
+    let nz = s.partitions_nonempty.max(1);
     tracing::info!(
         target: "daft_shuffles::write_agg",
         label = label,
         oneshot_calls = s.oneshot_calls,
-        spawn_tasks = s.spawn_tasks,
-        spawn_tasks_nonempty = s.spawn_tasks_nonempty,
-        spawn_total_ms = s.spawn_total_us / 1000,
-        join_wall_ms = s.join_wall_us / 1000,
+        partitions_touched = s.partitions_touched,
+        partitions_nonempty = s.partitions_nonempty,
+        concat_one_partition_ms = s.concat_one_partition_us / 1000,
         mp_concat_ms = s.mp_concat_us / 1000,
         mp_concat_or_get_ms = s.mp_concat_or_get_us / 1000,
         try_into_ms = s.try_into_us / 1000,
         concat_batches_ms = s.concat_batches_us / 1000,
         ipc_write_ms = s.ipc_write_us / 1000,
         blocking_wall_ms = s.blocking_wall_us / 1000,
-        per_task_spawn_us = s.spawn_total_us / n,
+        per_partition_concat_us = s.concat_one_partition_us / n,
         per_nonempty_mp_concat_us = s.mp_concat_us / nz,
         per_nonempty_mp_concat_or_get_us = s.mp_concat_or_get_us / nz,
         per_nonempty_try_into_us = s.try_into_us / nz,

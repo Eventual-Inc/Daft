@@ -444,23 +444,22 @@ async fn main() -> DaftResult<()> {
     {
         let w = write_agg_snapshot();
         if w.oneshot_calls > 0 {
-            let n = w.spawn_tasks.max(1);
-            let nz = w.spawn_tasks_nonempty.max(1);
+            let n = w.partitions_touched.max(1);
+            let nz = w.partitions_nonempty.max(1);
             println!("--- Write path attribution (oneshot) ---");
             println!("oneshot calls (= map tasks):  {}", w.oneshot_calls);
             println!(
-                "spawn tasks (total / nonempty): {} / {}",
-                w.spawn_tasks, w.spawn_tasks_nonempty
+                "partitions (touched / nonempty): {} / {}",
+                w.partitions_touched, w.partitions_nonempty
             );
             println!(
-                "join_wall / spawn_total / blocking_wall totals (ms): {:>7.1} / {:>7.1} / {:>7.1}",
-                w.join_wall_us as f64 / 1000.0,
-                w.spawn_total_us as f64 / 1000.0,
+                "concat_one_partition / blocking_wall totals (ms): {:>7.1} / {:>7.1}",
+                w.concat_one_partition_us as f64 / 1000.0,
                 w.blocking_wall_us as f64 / 1000.0,
             );
             println!(
-                "  per-task: spawn_total {:>5} us  (mean per-future service time)",
-                w.spawn_total_us / n,
+                "  per-partition: concat_one_partition {:>5} us",
+                w.concat_one_partition_us / n,
             );
             println!(
                 "mp_concat / mp_concat_or_get / try_into totals (ms): {:>7.1} / {:>7.1} / {:>7.1}",
