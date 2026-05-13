@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft import col
 
 
 def get_n_partitions():
@@ -137,7 +136,7 @@ class TestAsofJoinForwardMatchCorrectness:
         pydict = result.to_pydict()
         assert pydict["v"] == [1, 2, 3]
         assert pydict["w"][0] is None  # ts=null
-        assert pydict["w"][1] == 20   # ts=2, forward match is right@2=20
+        assert pydict["w"][1] == 20  # ts=2, forward match is right@2=20
         assert pydict["w"][2] is None  # ts=null
 
     def test_null_in_by_key_no_cross_match(self):
