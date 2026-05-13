@@ -876,6 +876,114 @@ fn decode_batches_into<R: std::io::Read>(
     Ok(())
 }
 
+/// Decode every source batch from `specs` directly into arrow `RecordBatch` (no
+/// daft conversion), concat in groups whose accumulated byte size crosses
+/// `chunk_target_bytes`, IPC-encode each group, and return the resulting
+/// `FlightData` items. Runs synchronously inside `spawn_blocking`.
+///
+/// This is the read-side server-side concat path: instead of streaming M tiny
+/// raw FlightDatas per partition (each paying the ~190 μs Flight per-message
+/// tax on the client), we collapse the M batches into one or a few big ones
+/// before the wire. Memory transient = ~chunk_target_bytes per concurrent
+/// `do_get` (one builder accumulator at a time).
+fn concat_specs_into_flight_datas_sync(
+    specs: Vec<FileReadSpec>,
+    arrow_schema: &arrow_schema::Schema,
+    schema_header_bytes: &[u8],
+    chunk_target_bytes: usize,
+) -> DaftResult<Vec<FlightData>> {
+    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
+
+    let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
+    let mut pending_bytes: usize = 0;
+    let mut flight_datas: Vec<FlightData> = Vec::new();
+    let arrow_schema_ref: arrow_schema::SchemaRef = std::sync::Arc::new(arrow_schema.clone());
+    let opts = IpcWriteOptions::default();
+
+    let mut flush = |pending: &mut Vec<arrow_array::RecordBatch>,
+                     pending_bytes: &mut usize,
+                     flight_datas: &mut Vec<FlightData>|
+     -> DaftResult<()> {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let merged = arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
+            .map_err(|e| DaftError::InternalError(format!("read-side concat: {}", e)))?;
+        let (dicts, fd) = arrow_flight::utils::flight_data_from_arrow_batch(&merged, &opts);
+        for d in dicts {
+            flight_datas.push(d);
+        }
+        flight_datas.push(fd);
+        pending.clear();
+        *pending_bytes = 0;
+        Ok(())
+    };
+
+    for spec in specs {
+        match spec {
+            FileReadSpec::Whole { path } => {
+                let file = std::fs::File::open(&path)?;
+                let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
+                read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
+                let reader = StdBufReader::with_capacity(64 * 1024, file);
+                let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+                for batch in stream_reader {
+                    let batch = batch?;
+                    pending_bytes += estimate_batch_size(&batch);
+                    pending.push(batch);
+                    if pending_bytes >= chunk_target_bytes {
+                        flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+                    }
+                }
+            }
+            FileReadSpec::Ranges { path, ranges } => {
+                let mut file = std::fs::File::open(&path)?;
+                let mut body_bytes_acc: u64 = 0;
+                for (start, end) in ranges {
+                    file.seek(std::io::SeekFrom::Start(start))?;
+                    let body_bytes = end - start;
+                    body_bytes_acc += body_bytes;
+                    let take = (&mut file).take(body_bytes);
+                    let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
+                    let with_body = Read::chain(schema_prefix, take);
+                    let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
+                    let reader = StdBufReader::with_capacity(64 * 1024, chained);
+                    let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
+                    for batch in stream_reader {
+                        let batch = batch?;
+                        pending_bytes += estimate_batch_size(&batch);
+                        pending.push(batch);
+                        if pending_bytes >= chunk_target_bytes {
+                            flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+                        }
+                    }
+                }
+                read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
+            }
+        }
+    }
+    flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+    Ok(flight_datas)
+}
+
+/// Cheap per-batch size estimate: sum of buffer lengths across columns. Used
+/// to gate the concat chunker so we don't depend on parsing arrow internals.
+fn estimate_batch_size(batch: &arrow_array::RecordBatch) -> usize {
+    let mut total: usize = 0;
+    for col in batch.columns() {
+        let data = col.to_data();
+        for buf in data.buffers() {
+            total += buf.len();
+        }
+        for child in data.child_data() {
+            for buf in child.buffers() {
+                total += buf.len();
+            }
+        }
+    }
+    total
+}
+
 #[tonic::async_trait]
 impl FlightService for ShuffleFlightServer {
     type HandshakeStream =
@@ -948,24 +1056,62 @@ impl FlightService for ShuffleFlightServer {
         let num_specs = specs.len() as u64;
         read_agg::SPECS_OPENED.fetch_add(num_specs, Ordering::Relaxed);
 
-        let file_stream = futures::stream::iter(specs);
-        let flight_data_stream = file_stream
-            .map(|spec| async move {
-                let t0 = Instant::now();
-                let stream = open_spec_as_flight_stream(spec)
-                    .await
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                read_agg::OPEN_US.fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
-                Ok::<_, Status>(stream.map_err(|e| Status::internal(e.to_string())))
-            })
-            .buffered(READ_PREFETCH)
-            .try_flatten();
-
         let options = IpcWriteOptions::default();
         let arrow_schema = schema
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+
+        // Env-gated read-side concat: server reads M source batches, concats
+        // arrow-level into chunks of `chunk_target_bytes`, emits fewer/bigger
+        // FlightData items. Eliminates the client's per-message Flight tax at
+        // the cost of one in-memory concat per chunk.
+        let read_concat = std::env::var("DAFT_SHUFFLE_READ_CONCAT_BYTES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0);
+
+        let flight_data_stream: Pin<
+            Box<dyn Stream<Item = Result<FlightData, Status>> + Send + 'static>,
+        > = if let Some(chunk_target) = read_concat {
+            let arrow_schema_owned = arrow_schema.clone();
+            let header_bytes = build_schema_header_bytes(&arrow_schema_owned)
+                .map_err(|e| Status::internal(format!("schema header probe: {}", e)))?;
+            let t0 = Instant::now();
+            let flight_datas = get_io_runtime(true)
+                .spawn_blocking(move || {
+                    concat_specs_into_flight_datas_sync(
+                        specs,
+                        &arrow_schema_owned,
+                        &header_bytes,
+                        chunk_target,
+                    )
+                })
+                .await
+                .map_err(|e| Status::internal(format!("read-concat join: {}", e)))?
+                .map_err(|e| Status::internal(format!("read-concat decode: {}", e)))?;
+            read_agg::OPEN_US.fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
+            let n = flight_datas.len() as u64;
+            read_agg::FLIGHTDATAS_EMITTED.fetch_add(n, Ordering::Relaxed);
+            Box::pin(futures::stream::iter(flight_datas.into_iter().map(Ok)))
+        } else {
+            let file_stream = futures::stream::iter(specs);
+            Box::pin(
+                file_stream
+                    .map(|spec| async move {
+                        let t0 = Instant::now();
+                        let stream = open_spec_as_flight_stream(spec)
+                            .await
+                            .map_err(|e| Status::internal(e.to_string()))?;
+                        read_agg::OPEN_US
+                            .fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
+                        Ok::<_, Status>(stream.map_err(|e| Status::internal(e.to_string())))
+                    })
+                    .buffered(READ_PREFETCH)
+                    .try_flatten(),
+            )
+        };
+
         let flight_data =
             futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
