@@ -84,6 +84,12 @@ pub async fn write_partitions_one_shot(
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
 
+    // Concat + IPC encode + disk write all run on a single spawn_blocking thread.
+    // Previously we fanned out per-partition `tokio::spawn` calls for the concat
+    // phase, but at N=8192 partitions per map task that was 1.6M task allocations
+    // whose scheduling overhead exceeded the actual concat work — and the M×N×data
+    // sweep (see benchmarking/SHUFFLE_BENCH_FINDINGS.md) confirmed serial inline
+    // is a strict improvement across all shapes including map_conc=1.
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
     let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
     let schema_for_write = schema.clone();
@@ -111,123 +117,66 @@ pub async fn write_partitions_one_shot(
             )
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 
-            // One `Arc<OnceLock>` per map task; kept for back-compat with the
-            // reader API but unused on the read path since the slot_or_open revert.
+            // Emit one IPC batch per underlying RecordBatch (skipping the big
+            // `RecordBatch::concat` fuse — see `concat_one_partition`). The cache
+            // records one byte range per partition that covers all K IPC messages;
+            // read-side StreamReader iterates them transparently, and the read-side
+            // concat path can now combine them into properly-sized chunks instead
+            // of receiving one giant pre-fused batch.
+            //
+            // One `Arc<OnceLock>` per map task, shared across every emitted cache
+            // for this writer: the file is opened lazily by the first reader and
+            // cached for every subsequent read of any partition in this file.
             let file_slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>> =
                 Arc::new(std::sync::OnceLock::new());
-
-            // Per-partition: list of (chunk_byte_start, chunk_byte_end, row_start_in_chunk,
-            // row_end_in_chunk). A partition can contribute rows to multiple chunks.
-            let mut p_chunks: Vec<Vec<(u64, u64, u64, u64)>> =
-                (0..num_partitions).map(|_| Vec::new()).collect();
-            let mut p_rows: Vec<usize> = vec![0; num_partitions];
-            let mut p_bytes: Vec<usize> = vec![0; num_partitions];
-
-            // Cross-partition pending buffer. When pending_bytes crosses chunk_target,
-            // concat all pending batches and write ONE IPC message. Each entry of
-            // pending_slices says which partition contributed which row range to the
-            // currently-pending concatenation.
-            let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
-            let mut pending_bytes: usize = 0;
-            let mut pending_row_offset: u64 = 0;
-            let mut pending_slices: Vec<(usize, u64, u64)> = Vec::new();
-
-            for pid in 0..num_partitions {
-                let parts = std::mem::take(&mut partitions_per_output[pid]);
+            let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
+            for idx in 0..num_partitions {
+                let parts = std::mem::take(&mut partitions_per_output[idx]);
                 let t_s = Instant::now();
-                if parts.is_empty() {
-                    write_agg::CONCAT_ONE_PARTITION_US
-                        .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    continue;
-                }
-                let total_rows: usize = parts.iter().map(|p| p.len()).sum();
-                if total_rows == 0 {
-                    write_agg::CONCAT_ONE_PARTITION_US
-                        .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    continue;
-                }
-                let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
-                p_rows[pid] = total_rows;
-                p_bytes[pid] = size_bytes;
-
-                let t_c = Instant::now();
-                let combined = MicroPartition::concat(parts)?;
-                write_agg::MP_CONCAT_US
-                    .fetch_add(t_c.elapsed().as_micros() as u64, Ordering::Relaxed);
-                let rbs = combined.record_batches();
-                if rbs.is_empty() {
-                    write_agg::CONCAT_ONE_PARTITION_US
-                        .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    continue;
-                }
-
-                // Within-partition adaptive accumulator: combine sibling RBs up to
-                // chunk_target before converting to arrow. Mirrors the old
-                // `concat_one_partition` behavior; output is a sequence of arrow
-                // batches each <= chunk_target.
-                let t_t = Instant::now();
-                let mut per_partition_arrow: Vec<arrow_array::RecordBatch> = Vec::new();
-                let mut wp_pending: Vec<&RecordBatch> = Vec::new();
-                let mut wp_bytes: usize = 0;
-                for rb in rbs {
-                    wp_pending.push(rb);
-                    wp_bytes += rb.size_bytes();
-                    if wp_bytes >= chunk_target {
-                        flush_pending(&mut wp_pending, &mut per_partition_arrow, &arrow_schema)?;
-                        wp_bytes = 0;
-                    }
-                }
-                if !wp_pending.is_empty() {
-                    flush_pending(&mut wp_pending, &mut per_partition_arrow, &arrow_schema)?;
-                }
-                write_agg::TRY_INTO_US
-                    .fetch_add(t_t.elapsed().as_micros() as u64, Ordering::Relaxed);
-                write_agg::PARTITIONS_NONEMPTY.fetch_add(1, Ordering::Relaxed);
-                agg::INPUT_BYTES.fetch_add(size_bytes as u64, Ordering::Relaxed);
-
-                // Feed each per-partition arrow batch into the cross-partition
-                // pending. Flush BEFORE adding when pending is already at or past
-                // target so chunks stay close to the target size (vs growing
-                // unbounded if many tiny tail batches arrive).
-                for ab in per_partition_arrow {
-                    if pending_bytes >= chunk_target && !pending.is_empty() {
-                        cross_flush(
-                            &mut writer,
-                            &arrow_schema,
-                            &mut pending,
-                            &mut pending_bytes,
-                            &mut pending_row_offset,
-                            &mut pending_slices,
-                            &mut p_chunks,
-                        )?;
-                    }
-                    let nrows = ab.num_rows() as u64;
-                    let bsize = crate::server::flight_server::estimate_batch_size(&ab);
-                    let row_start = pending_row_offset;
-                    let row_end = row_start + nrows;
-                    pending.push(ab);
-                    match pending_slices.last_mut() {
-                        Some(entry) if entry.0 == pid => entry.2 = row_end,
-                        _ => pending_slices.push((pid, row_start, row_end)),
-                    }
-                    pending_row_offset = row_end;
-                    pending_bytes += bsize;
-                }
+                let slot = concat_one_partition(parts, chunk_target, &arrow_schema)?;
                 write_agg::CONCAT_ONE_PARTITION_US
                     .fetch_add(t_s.elapsed().as_micros() as u64, Ordering::Relaxed);
-            }
-
-            // Final cross-partition flush for whatever's left.
-            if !pending.is_empty() {
-                cross_flush(
-                    &mut writer,
-                    &arrow_schema,
-                    &mut pending,
-                    &mut pending_bytes,
-                    &mut pending_row_offset,
-                    &mut pending_slices,
-                    &mut p_chunks,
-                )?;
+                let ref_id = partition_ref_id(input_id, idx);
+                match slot {
+                    None => {
+                        caches.push(PartitionCache {
+                            partition_ref_id: ref_id,
+                            schema: schema_for_write.clone(),
+                            bytes_per_file: Vec::new(),
+                            file_paths: Vec::new(),
+                            file_slots: Vec::new(),
+                            num_rows: 0,
+                            size_bytes: 0,
+                            byte_ranges: Some(Vec::new()),
+                        });
+                    }
+                    Some((rows, bytes, arrow_batches)) => {
+                        let t_w = Instant::now();
+                        let offset_before = writer.get_ref().bytes_written;
+                        for batch in &arrow_batches {
+                            writer.write(batch).map_err(|e| {
+                                DaftError::InternalError(format!("IPC write failed: {}", e))
+                            })?;
+                        }
+                        let offset_after = writer.get_ref().bytes_written;
+                        write_agg::IPC_WRITE_US
+                            .fetch_add(t_w.elapsed().as_micros() as u64, Ordering::Relaxed);
+                        write_agg::FILE_WRITE_BYTES
+                            .fetch_add(offset_after - offset_before, Ordering::Relaxed);
+                        record_flush_size(offset_after - offset_before);
+                        let batch_len = (offset_after - offset_before) as usize;
+                        caches.push(PartitionCache {
+                            partition_ref_id: ref_id,
+                            schema: schema_for_write.clone(),
+                            bytes_per_file: vec![batch_len],
+                            file_paths: vec![file_path.clone()],
+                            file_slots: vec![file_slot.clone()],
+                            num_rows: rows,
+                            size_bytes: bytes,
+                            byte_ranges: Some(vec![(offset_before, offset_after)]),
+                        });
+                    }
+                }
             }
 
             writer.finish().map_err(|e| {
@@ -240,50 +189,6 @@ pub async fn write_partitions_one_shot(
                 DaftError::InternalError(format!("IPC writer flush failed: {}", e))
             })?;
             let total = writer.get_ref().bytes_written;
-
-            // Build PartitionCaches. Each non-empty partition gets one entry per
-            // chunk it contributed to; entries share the file path and slot.
-            let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
-            for pid in 0..num_partitions {
-                let ref_id = partition_ref_id(input_id, pid);
-                let chunks = std::mem::take(&mut p_chunks[pid]);
-                if chunks.is_empty() {
-                    caches.push(PartitionCache {
-                        partition_ref_id: ref_id,
-                        schema: schema_for_write.clone(),
-                        bytes_per_file: Vec::new(),
-                        file_paths: Vec::new(),
-                        file_slots: Vec::new(),
-                        num_rows: 0,
-                        size_bytes: 0,
-                        byte_ranges: Some(Vec::new()),
-                        row_ranges: Some(Vec::new()),
-                    });
-                } else {
-                    let n = chunks.len();
-                    let file_paths = vec![file_path.clone(); n];
-                    let file_slots = vec![file_slot.clone(); n];
-                    let mut bytes_per_file = Vec::with_capacity(n);
-                    let mut byte_ranges = Vec::with_capacity(n);
-                    let mut row_ranges = Vec::with_capacity(n);
-                    for (start, end, rs, re) in chunks {
-                        bytes_per_file.push((end - start) as usize);
-                        byte_ranges.push((start, end));
-                        row_ranges.push((rs, re));
-                    }
-                    caches.push(PartitionCache {
-                        partition_ref_id: ref_id,
-                        schema: schema_for_write.clone(),
-                        bytes_per_file,
-                        file_paths,
-                        file_slots,
-                        num_rows: p_rows[pid],
-                        size_bytes: p_bytes[pid],
-                        byte_ranges: Some(byte_ranges),
-                        row_ranges: Some(row_ranges),
-                    });
-                }
-            }
             write_agg::BLOCKING_WALL_US
                 .fetch_add(t_block.elapsed().as_micros() as u64, Ordering::Relaxed);
             Ok((caches, total))
@@ -297,50 +202,66 @@ pub async fn write_partitions_one_shot(
     Ok(caches)
 }
 
-/// Concat pending arrow batches into one big batch, IPC-write as a single
-/// message, and record (byte_range, row_range) for each partition that
-/// contributed. Clears `pending`, `pending_slices`, and resets offsets.
-fn cross_flush(
-    writer: &mut arrow_ipc::writer::StreamWriter<CountingFile>,
+/// Gather one output partition's MicroPartitions and split them into a sequence
+/// of arrow `RecordBatch`es each ~`chunk_target_bytes` in size.
+///
+/// Algorithm mirrors the server-side read-concat path: walk the underlying
+/// `RecordBatch`es, accumulate into a pending buffer, flush a fused chunk
+/// once pending ≥ target. Single-RB pending vectors skip the fuse entirely
+/// (pass-through). This adapts naturally to partition size:
+///   - low-N / big per-RB: each RB is already ≥ target → emit as-is, zero fuse work
+///   - high-N / tiny per-RB: everything stays under target → fuse once at end
+///   - middle: combine small siblings up to target
+fn concat_one_partition(
+    parts: Vec<MicroPartition>,
+    chunk_target_bytes: usize,
     arrow_schema: &Arc<arrow_schema::Schema>,
-    pending: &mut Vec<arrow_array::RecordBatch>,
-    pending_bytes: &mut usize,
-    pending_row_offset: &mut u64,
-    pending_slices: &mut Vec<(usize, u64, u64)>,
-    p_chunks: &mut [Vec<(u64, u64, u64, u64)>],
-) -> DaftResult<()> {
-    if pending.is_empty() {
-        return Ok(());
+) -> DaftResult<Option<(usize, usize, Vec<arrow_array::RecordBatch>)>> {
+    // Fast-path: no inputs at all (worker never received data). Avoid `MicroPartition::concat`,
+    // which errors on empty input.
+    if parts.is_empty() {
+        return Ok(None);
     }
-    let merged = if pending.len() == 1 {
-        // Single-batch fast path: no concat allocation.
-        pending.pop().unwrap()
-    } else {
-        let to_concat = std::mem::take(pending);
-        arrow_select::concat::concat_batches(arrow_schema, to_concat.iter())
-            .map_err(DaftError::ArrowRsError)?
-    };
-    let t_w = Instant::now();
-    let offset_before = writer.get_ref().bytes_written;
-    writer
-        .write(&merged)
-        .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
-    let offset_after = writer.get_ref().bytes_written;
-    write_agg::IPC_WRITE_US.fetch_add(t_w.elapsed().as_micros() as u64, Ordering::Relaxed);
-    write_agg::FILE_WRITE_BYTES.fetch_add(offset_after - offset_before, Ordering::Relaxed);
-    record_flush_size(offset_after - offset_before);
-    for (pid, rs, re) in pending_slices.drain(..) {
-        p_chunks[pid].push((offset_before, offset_after, rs, re));
+    let total_rows: usize = parts.iter().map(|p| p.len()).sum();
+    if total_rows == 0 {
+        return Ok(None);
     }
-    pending.clear();
-    *pending_bytes = 0;
-    *pending_row_offset = 0;
-    Ok(())
+    let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
+    let t_c = Instant::now();
+    let combined = MicroPartition::concat(parts)?;
+    write_agg::MP_CONCAT_US
+        .fetch_add(t_c.elapsed().as_micros() as u64, Ordering::Relaxed);
+    let rbs = combined.record_batches();
+    if rbs.is_empty() {
+        return Ok(None);
+    }
+    let t_t = Instant::now();
+    let mut arrow_batches: Vec<arrow_array::RecordBatch> = Vec::new();
+    let mut pending: Vec<&RecordBatch> = Vec::new();
+    let mut pending_bytes: usize = 0;
+    for rb in rbs {
+        pending.push(rb);
+        pending_bytes += rb.size_bytes();
+        if pending_bytes >= chunk_target_bytes {
+            flush_pending(&mut pending, &mut arrow_batches, arrow_schema)?;
+            pending_bytes = 0;
+        }
+    }
+    if !pending.is_empty() {
+        flush_pending(&mut pending, &mut arrow_batches, arrow_schema)?;
+    }
+    write_agg::TRY_INTO_US
+        .fetch_add(t_t.elapsed().as_micros() as u64, Ordering::Relaxed);
+    write_agg::PARTITIONS_NONEMPTY.fetch_add(1, Ordering::Relaxed);
+    agg::INPUT_BYTES.fetch_add(size_bytes as u64, Ordering::Relaxed);
+    Ok(Some((total_rows, size_bytes, arrow_batches)))
 }
 
-/// Build one `arrow_array::RecordBatch` from `pending` daft batches using the
-/// pre-computed `arrow_schema`. Used within a partition to fuse small sibling
-/// RBs up to chunk_target before they hit the cross-partition accumulator.
+/// Build one `arrow_array::RecordBatch` from `pending` using the pre-computed
+/// `arrow_schema`. Avoids the per-call `Schema::to_arrow` rebuild that `RecordBatch::try_into`
+/// would otherwise pay — that rebuild was N·schema_fields allocations per partition and showed
+/// up in `try_into_us` at ~44 µs per non-empty partition. Direct `RecordBatch::try_new` with
+/// the cached schema also skips the validation/dtype-match path on the shared schema.
 fn flush_pending(
     pending: &mut Vec<&RecordBatch>,
     out: &mut Vec<arrow_array::RecordBatch>,

@@ -31,15 +31,16 @@ use dashmap::{DashMap, mapref::entry::Entry};
 pub type CacheKey = (String, u64, u64);
 pub type CachedBatches = Vec<RecordBatch>;
 
-/// Returns `DAFT_SHUFFLE_DECODE_CACHE_BYTES` env var or 2 GiB default.
-/// With write-side coalescing, multiple partitions share one IPC message —
-/// reducers fan in on the same byte range, so the cache eliminates duplicate
-/// decode of shared chunks. Set to 0 to disable.
+/// Returns `DAFT_SHUFFLE_DECODE_CACHE_BYTES` env var. Defaults to **0 (disabled)**:
+/// today each shuffle partition is read by exactly one consumer, so byte ranges
+/// don't repeat and the cache has 0% hit rate (measured). It becomes useful once
+/// we coalesce multiple partitions into a shared IPC message and N reducers fan
+/// in on the same chunk — at that point set this to e.g. 2 GiB.
 fn configured_max_bytes() -> usize {
     std::env::var("DAFT_SHUFFLE_DECODE_CACHE_BYTES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2 * 1024 * 1024 * 1024)
+        .unwrap_or(0)
 }
 
 pub struct DecodeCache {
