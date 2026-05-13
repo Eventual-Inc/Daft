@@ -85,10 +85,11 @@ enum FileReadSpec {
         slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
     },
     /// Read multiple `(start, end)` byte ranges from a single file, in file order.
-    /// Each range is a contiguous run of IPC batch messages.
+    /// Each range is a contiguous run of IPC batch messages. Backed by the
+    /// process-global mmap cache (see `shuffle_cache::mmap_for_path`), so no
+    /// per-spec file handle is needed.
     Ranges {
         path: String,
-        slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
         ranges: Vec<(u64, u64)>,
     },
 }
@@ -558,12 +559,9 @@ impl ShuffleFlightServer {
             .clone();
 
         // Group ranged reads by file path so each physical file is read from a single
-        // FD across this response (and across other responses too — the `Arc<OnceLock>`
-        // slot is shared via the PartitionCache).
+        // mmap'd region (cached process-wide via `shuffle_cache::mmap_for_path`).
         let mut whole_specs = Vec::new();
         let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
-        let mut slot_by_path: HashMap<String, Arc<std::sync::OnceLock<Arc<std::fs::File>>>> =
-            HashMap::new();
         let mut first_seen: HashMap<String, usize> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
@@ -576,16 +574,12 @@ impl ShuffleFlightServer {
             };
             match &cache.byte_ranges {
                 Some(ranges) => {
-                    for ((path, slot), (start, end)) in cache
-                        .file_paths
-                        .iter()
-                        .zip(cache.file_slots.iter())
-                        .zip(ranges.iter())
+                    for (path, (start, end)) in
+                        cache.file_paths.iter().zip(ranges.iter())
                     {
                         if !first_seen.contains_key(path) {
                             first_seen.insert(path.clone(), order.len());
                             order.push(path.clone());
-                            slot_by_path.insert(path.clone(), slot.clone());
                         }
                         ranges_by_path
                             .entry(path.clone())
@@ -611,8 +605,7 @@ impl ShuffleFlightServer {
             let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
             // Sort by start so sequential reads are forward seeks (kind to readahead).
             ranges.sort_unstable_by_key(|r| r.0);
-            let slot = slot_by_path.remove(&path).expect("slot_by_path must contain path");
-            specs.push(FileReadSpec::Ranges { path, slot, ranges });
+            specs.push(FileReadSpec::Ranges { path, ranges });
         }
 
         Some((specs, schema))
@@ -725,9 +718,7 @@ fn read_spec_sync(
     fields: &[FieldRef],
     schema: &SchemaRef,
 ) -> DaftResult<Vec<RecordBatch>> {
-    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
-
-    use std::os::unix::fs::FileExt;
+    use std::io::{BufReader as StdBufReader, Cursor, Read};
 
     let mut batches = Vec::new();
     match spec {
@@ -739,16 +730,18 @@ fn read_spec_sync(
             let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
             decode_batches_into(stream_reader, fields, schema, &mut batches)?;
         }
-        FileReadSpec::Ranges { path, slot, ranges } => {
-            let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+        FileReadSpec::Ranges { path, ranges } => {
+            let mmap = crate::shuffle_cache::mmap_for_path(&path)?;
             let mut body_bytes_acc: u64 = 0;
             for (start, end) in ranges {
                 let body_bytes = end - start;
                 body_bytes_acc += body_bytes;
-                let mut body = vec![0u8; body_bytes as usize];
-                file.read_exact_at(&mut body, start)?;
-                let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                let with_body = Read::chain(schema_prefix, Cursor::new(body));
+                // Zero-copy slice into the mmap; the Cursor wraps a &[u8] so the
+                // StreamReader memcpys come from page-cache pages instead of from
+                // a freshly-allocated heap buffer.
+                let body_slice = &mmap[start as usize..end as usize];
+                let schema_prefix = Cursor::new(schema_header_bytes);
+                let with_body = Read::chain(schema_prefix, Cursor::new(body_slice));
                 let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                 let reader = StdBufReader::with_capacity(64 * 1024, chained);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
@@ -796,7 +789,6 @@ fn concat_specs_into_flight_datas_sync(
     chunk_target_bytes: usize,
 ) -> DaftResult<Vec<FlightData>> {
     use std::io::{BufReader as StdBufReader, Cursor, Read};
-    use std::os::unix::fs::FileExt;
 
     let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
     let mut pending_bytes: usize = 0;
@@ -885,9 +877,9 @@ fn concat_specs_into_flight_datas_sync(
                     }
                 }
             }
-            FileReadSpec::Ranges { path, slot, ranges } => {
+            FileReadSpec::Ranges { path, ranges } => {
                 let t_o = Instant::now();
-                let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
+                let mmap = crate::shuffle_cache::mmap_for_path(&path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
@@ -895,13 +887,17 @@ fn concat_specs_into_flight_datas_sync(
                 for (start, end) in ranges {
                     let body_bytes = end - start;
                     body_bytes_acc += body_bytes;
-                    let mut body = vec![0u8; body_bytes as usize];
                     let t_sk = Instant::now();
-                    file.read_exact_at(&mut body, start)?;
+                    // Slice the mmap instead of allocating a Vec and pread-ing
+                    // body bytes into it. The previous path burned ~14 s in
+                    // `concat_seek_us` mostly on the heap alloc + kernel→user
+                    // memcpy. With mmap, the StreamReader's internal BufReader
+                    // memcpys directly out of page-cache pages.
+                    let body_slice = &mmap[start as usize..end as usize];
                     read_agg::CONCAT_SEEK_US
                         .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                    let with_body = Read::chain(schema_prefix, Cursor::new(body));
+                    let schema_prefix = Cursor::new(schema_header_bytes);
+                    let with_body = Read::chain(schema_prefix, Cursor::new(body_slice));
                     let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                     let t_si = Instant::now();
                     let reader = StdBufReader::with_capacity(64 * 1024, chained);
@@ -1225,7 +1221,7 @@ async fn open_spec_as_flight_stream(
             let reader = FlightDataStreamReader::try_new(BufReader::new(file)).await?;
             Ok(Box::pin(reader.into_stream()))
         }
-        FileReadSpec::Ranges { path, slot: _, ranges } => {
+        FileReadSpec::Ranges { path, ranges } => {
             // One file open serves all ranges. We hold ownership of `file` across the
             // outer for-loop; each iteration borrows it mutably via `(&mut file).take(n)`
             // for the duration of one range's stream. The borrow is released when the

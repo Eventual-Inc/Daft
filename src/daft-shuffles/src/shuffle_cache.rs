@@ -292,6 +292,36 @@ pub fn slot_or_open(
     }
 }
 
+/// Process-global mmap cache, keyed on file path. Used by the Flight read path
+/// to replace per-range `vec![0u8; n] + read_exact_at` with a zero-allocation
+/// slice into a shared `memmap2::Mmap`. The cache holds `Arc<Mmap>` so reads
+/// can clone-and-slice without retaining the `DashMap` shard lock.
+///
+/// Entries are inserted lazily on first read. We do not evict on plan finish
+/// today — readers across plans of the same shuffle would re-mmap otherwise,
+/// and the per-Mmap kernel cost is one VMA + a few inode references. Cleanup
+/// happens implicitly when shuffle dirs are deleted (mmap regions keep the
+/// underlying inode alive but the address space is reclaimed at process exit).
+static MMAP_CACHE: std::sync::LazyLock<dashmap::DashMap<String, Arc<memmap2::Mmap>>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+
+pub fn mmap_for_path(path: &str) -> std::io::Result<Arc<memmap2::Mmap>> {
+    if let Some(m) = MMAP_CACHE.get(path) {
+        return Ok(m.clone());
+    }
+    let file = std::fs::File::open(path)?;
+    // SAFETY: shuffle files are written once by `write_partitions_one_shot`
+    // and then immutable for the rest of their lifetime. The writer closes
+    // the file before the PartitionCache is exposed to readers, so there is
+    // no concurrent mutation aliasing the mmap.
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+    let arc = Arc::new(mmap);
+    // entry().or_insert resolves races: one of the parallel first-readers wins
+    // and the others get the winner's Arc.
+    let entry = MMAP_CACHE.entry(path.to_string()).or_insert(arc);
+    Ok(entry.value().clone())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
