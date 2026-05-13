@@ -634,6 +634,17 @@ async fn main() -> DaftResult<()> {
         0.0
     };
 
+    // Optional cold-read: drop page cache + sync to force reads to hit disk.
+    // Requires root (process must run under sudo). Used when measuring slow
+    // shuffle backends (EBS, S3-fuse) where the page cache would otherwise
+    // mask the I/O cost.
+    if std::env::var("DAFT_SHUFFLE_BENCH_COLD_READ").is_ok() {
+        let _ = std::process::Command::new("sync").status();
+        if let Err(e) = std::fs::write("/proc/sys/vm/drop_caches", b"3\n") {
+            eprintln!("warning: cold-read drop_caches failed: {} (run under sudo)", e);
+        }
+    }
+
     // ----- Phase 3: reduce -----
     let bytes_read = Arc::new(AtomicU64::new(0));
     let batches_read = Arc::new(AtomicUsize::new(0));
