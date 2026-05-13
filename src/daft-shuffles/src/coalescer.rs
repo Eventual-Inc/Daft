@@ -149,6 +149,10 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
 
     let mut updated_entries: Vec<(u64, PartitionCache)> = Vec::with_capacity(entries.len());
     let mut orphaned_sources: Vec<String> = Vec::new();
+    // One shared slot for `out_path` — every updated entry references the same
+    // newly-created coalesced file, so they should all open it via one cache.
+    let out_slot: std::sync::Arc<std::sync::OnceLock<std::sync::Arc<std::fs::File>>> =
+        std::sync::Arc::new(std::sync::OnceLock::new());
 
     for (ref_id, cache) in entries {
         // For whole-file entries (multi_file), the body bytes (pure batch
@@ -230,6 +234,7 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
             orphaned_sources.extend(cache.file_paths.iter().cloned());
         }
 
+        let new_file_slots = new_file_paths.iter().map(|_| out_slot.clone()).collect();
         updated_entries.push((
             ref_id,
             PartitionCache {
@@ -237,6 +242,7 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
                 schema: cache.schema.clone(),
                 bytes_per_file: new_bytes_per_file,
                 file_paths: new_file_paths,
+                file_slots: new_file_slots,
                 num_rows: cache.num_rows,
                 size_bytes: cache.size_bytes,
                 byte_ranges: Some(new_byte_ranges),

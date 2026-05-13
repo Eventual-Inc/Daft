@@ -579,6 +579,10 @@ impl MultiPartitionShuffleCache {
             total_file_bytes,
         } = result;
 
+        // One shared `Arc<OnceLock>` for the combined file — every partition
+        // emitted by this cache references the same `file_path`.
+        let file_slot: std::sync::Arc<std::sync::OnceLock<std::sync::Arc<std::fs::File>>> =
+            std::sync::Arc::new(std::sync::OnceLock::new());
         let mut caches = Vec::with_capacity(self.num_partitions);
         for partition_idx in 0..self.num_partitions {
             let ranges = ranges_per_partition
@@ -588,11 +592,12 @@ impl MultiPartitionShuffleCache {
             let num_rows = rows_per_partition.get(partition_idx).copied().unwrap_or(0);
             let size_bytes = bytes_per_partition.get(partition_idx).copied().unwrap_or(0);
 
-            let (file_paths, byte_ranges) = if ranges.is_empty() {
-                (Vec::new(), Some(Vec::new()))
+            let (file_paths, file_slots, byte_ranges) = if ranges.is_empty() {
+                (Vec::new(), Vec::new(), Some(Vec::new()))
             } else {
                 let paths = vec![file_path.clone(); ranges.len()];
-                (paths, Some(ranges))
+                let slots = vec![file_slot.clone(); ranges.len()];
+                (paths, slots, Some(ranges))
             };
 
             // bytes_per_file is informational; populate with range lengths.
@@ -606,6 +611,7 @@ impl MultiPartitionShuffleCache {
                 schema: self.schema.clone(),
                 bytes_per_file,
                 file_paths,
+                file_slots,
                 num_rows,
                 size_bytes,
                 byte_ranges,

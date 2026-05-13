@@ -74,15 +74,23 @@ struct FlightPartitionKey {
 }
 
 /// How the Flight server should read one file's contribution to a partition response.
-/// One `FileReadSpec` corresponds to exactly one `open()` syscall on the read side —
-/// `Ranges` may carry multiple byte ranges within the same file (combined-file shuffle),
-/// which are all served from a single open.
+/// One `FileReadSpec` corresponds to exactly one `open()` syscall (the first time;
+/// subsequent reads hit the `OnceLock` slot lock-free). `Ranges` carries multiple
+/// byte ranges within the same file (combined-file shuffle), all served from one
+/// cached FD.
 enum FileReadSpec {
     /// Read the whole IPC stream file. Used by the legacy per-partition cache.
-    Whole { path: String },
+    Whole {
+        path: String,
+        slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
+    },
     /// Read multiple `(start, end)` byte ranges from a single file, in file order.
     /// Each range is a contiguous run of IPC batch messages.
-    Ranges { path: String, ranges: Vec<(u64, u64)> },
+    Ranges {
+        path: String,
+        slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
+        ranges: Vec<(u64, u64)>,
+    },
 }
 
 /// Process-wide aggregate counters for shuffle read throughput diagnostics.
@@ -494,11 +502,13 @@ impl ShuffleFlightServer {
             .schema
             .clone();
 
-        // Group ranged reads by file path so each physical file is opened once per response,
-        // even when multiple partition_refs in this request share the same combined-file map
-        // task output (the common case in the combined-file shuffle design).
+        // Group ranged reads by file path so each physical file is read from a single
+        // FD across this response (and across other responses too — the `Arc<OnceLock>`
+        // slot is shared via the PartitionCache).
         let mut whole_specs = Vec::new();
         let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+        let mut slot_by_path: HashMap<String, Arc<std::sync::OnceLock<Arc<std::fs::File>>>> =
+            HashMap::new();
         let mut first_seen: HashMap<String, usize> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
@@ -511,12 +521,16 @@ impl ShuffleFlightServer {
             };
             match &cache.byte_ranges {
                 Some(ranges) => {
-                    for (path, (start, end)) in
-                        cache.file_paths.iter().zip(ranges.iter())
+                    for ((path, slot), (start, end)) in cache
+                        .file_paths
+                        .iter()
+                        .zip(cache.file_slots.iter())
+                        .zip(ranges.iter())
                     {
                         if !first_seen.contains_key(path) {
                             first_seen.insert(path.clone(), order.len());
                             order.push(path.clone());
+                            slot_by_path.insert(path.clone(), slot.clone());
                         }
                         ranges_by_path
                             .entry(path.clone())
@@ -525,8 +539,13 @@ impl ShuffleFlightServer {
                     }
                 }
                 None => {
-                    for path in &cache.file_paths {
-                        whole_specs.push(FileReadSpec::Whole { path: path.clone() });
+                    for (path, slot) in
+                        cache.file_paths.iter().zip(cache.file_slots.iter())
+                    {
+                        whole_specs.push(FileReadSpec::Whole {
+                            path: path.clone(),
+                            slot: slot.clone(),
+                        });
                     }
                 }
             }
@@ -537,7 +556,8 @@ impl ShuffleFlightServer {
             let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
             // Sort by start so sequential reads are forward seeks (kind to readahead).
             ranges.sort_unstable_by_key(|r| r.0);
-            specs.push(FileReadSpec::Ranges { path, ranges });
+            let slot = slot_by_path.remove(&path).expect("slot_by_path must contain path");
+            specs.push(FileReadSpec::Ranges { path, slot, ranges });
         }
 
         Some((specs, schema))
@@ -652,34 +672,28 @@ fn read_spec_sync(
 ) -> DaftResult<Vec<RecordBatch>> {
     use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
 
+    use std::os::unix::fs::FileExt;
+
     let mut batches = Vec::new();
     match spec {
-        FileReadSpec::Whole { path } => {
-            let file = std::fs::File::open(&path)?;
+        FileReadSpec::Whole { path, slot } => {
+            let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
             let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
             read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
-            // 64 KiB buf; small enough to stay cache-friendly, large enough to amortize
-            // syscalls on the typical 1-4 MiB per-batch flushes.
-            let reader = StdBufReader::with_capacity(64 * 1024, file);
+            let reader = StdBufReader::with_capacity(64 * 1024, (&*file).try_clone()?);
             let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
             decode_batches_into(stream_reader, fields, schema, &mut batches)?;
         }
-        FileReadSpec::Ranges { path, ranges } => {
-            // Single open serves all ranges. The IPC stream format has no concept of
-            // gaps inside a stream, so we decode each range as its own mini-stream
-            // (schema header prefix → range bytes → EOS) and concat the batches.
-            // Skipping the open for ranges 2..N is where the wall-clock saving comes from.
-            let mut file = std::fs::File::open(&path)?;
+        FileReadSpec::Ranges { path, slot, ranges } => {
+            let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
             let mut body_bytes_acc: u64 = 0;
             for (start, end) in ranges {
-                file.seek(std::io::SeekFrom::Start(start))?;
                 let body_bytes = end - start;
                 body_bytes_acc += body_bytes;
-                let take = (&mut file).take(body_bytes);
-                // Disambiguate to `std::io::Read::chain` because this file also imports
-                // `tokio::io::AsyncReadExt`, which provides its own (async) `chain`.
+                let mut body = vec![0u8; body_bytes as usize];
+                file.read_exact_at(&mut body, start)?;
                 let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                let with_body = Read::chain(schema_prefix, take);
+                let with_body = Read::chain(schema_prefix, Cursor::new(body));
                 let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                 let reader = StdBufReader::with_capacity(64 * 1024, chained);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
@@ -726,7 +740,8 @@ fn concat_specs_into_flight_datas_sync(
     schema_header_bytes: &[u8],
     chunk_target_bytes: usize,
 ) -> DaftResult<Vec<FlightData>> {
-    use std::io::{BufReader as StdBufReader, Cursor, Read, Seek};
+    use std::io::{BufReader as StdBufReader, Cursor, Read};
+    use std::os::unix::fs::FileExt;
 
     let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
     let mut pending_bytes: usize = 0;
@@ -772,16 +787,20 @@ fn concat_specs_into_flight_datas_sync(
 
     for spec in specs {
         match spec {
-            FileReadSpec::Whole { path } => {
+            FileReadSpec::Whole { path, slot } => {
                 let t_o = Instant::now();
-                let file = std::fs::File::open(&path)?;
+                let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
                 read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
                 let t_si = Instant::now();
-                let reader = StdBufReader::with_capacity(64 * 1024, file);
+                // Whole-file reads use Read+Seek; dup the FD so concurrent whole-file
+                // readers don't share seek state. Only the legacy multi_file path
+                // produces Whole specs; on the hot oneshot path this branch is unused.
+                let owned = file.try_clone()?;
+                let reader = StdBufReader::with_capacity(64 * 1024, owned);
                 let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
                 read_agg::CONCAT_STREAM_INIT_US
                     .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
@@ -811,26 +830,23 @@ fn concat_specs_into_flight_datas_sync(
                     }
                 }
             }
-            FileReadSpec::Ranges { path, ranges } => {
-                // One open serves all ranges. Each range is a contiguous run of
-                // IPC batch messages; we wrap them in (schema_header | range_bytes
-                // | EOS) so the StreamReader sees a complete IPC stream.
+            FileReadSpec::Ranges { path, slot, ranges } => {
                 let t_o = Instant::now();
-                let mut file = std::fs::File::open(&path)?;
+                let file = crate::shuffle_cache::slot_or_open(&slot, &path)?;
                 read_agg::CONCAT_OPEN_US
                     .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
                 read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
                 let mut body_bytes_acc: u64 = 0;
                 for (start, end) in ranges {
-                    let t_sk = Instant::now();
-                    file.seek(std::io::SeekFrom::Start(start))?;
-                    read_agg::CONCAT_SEEK_US
-                        .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
                     let body_bytes = end - start;
                     body_bytes_acc += body_bytes;
-                    let take = (&mut file).take(body_bytes);
+                    let mut body = vec![0u8; body_bytes as usize];
+                    let t_sk = Instant::now();
+                    file.read_exact_at(&mut body, start)?;
+                    read_agg::CONCAT_SEEK_US
+                        .fetch_add(t_sk.elapsed().as_micros() as u64, Ordering::Relaxed);
                     let schema_prefix = Cursor::new(schema_header_bytes.to_vec());
-                    let with_body = Read::chain(schema_prefix, take);
+                    let with_body = Read::chain(schema_prefix, Cursor::new(body));
                     let chained = Read::chain(with_body, Cursor::new(IPC_EOS_BYTES));
                     let t_si = Instant::now();
                     let reader = StdBufReader::with_capacity(64 * 1024, chained);
@@ -1146,12 +1162,15 @@ async fn open_spec_as_flight_stream(
     spec: FileReadSpec,
 ) -> DaftResult<BoxStream<'static, DaftResult<FlightData>>> {
     match spec {
-        FileReadSpec::Whole { path } => {
+        FileReadSpec::Whole { path, slot: _ } => {
+            // Raw gRPC path (no read-concat): the OnceLock cache is bypassed
+            // here in favour of tokio::fs's async open; this branch is rarely
+            // exercised in production where read-concat is enabled by default.
             let file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
             let reader = FlightDataStreamReader::try_new(BufReader::new(file)).await?;
             Ok(Box::pin(reader.into_stream()))
         }
-        FileReadSpec::Ranges { path, ranges } => {
+        FileReadSpec::Ranges { path, slot: _, ranges } => {
             // One file open serves all ranges. We hold ownership of `file` across the
             // outer for-loop; each iteration borrows it mutably via `(&mut file).take(n)`
             // for the duration of one range's stream. The borrow is released when the

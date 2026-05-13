@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
@@ -169,15 +171,22 @@ impl InProgressShuffleCache {
         let writer_result = close_result.unwrap();
 
         match writer_result {
-            Some(result) => Ok(PartitionCache {
-                partition_ref_id: self.partition_ref_id,
-                schema: self.schema.clone(),
-                bytes_per_file: result.bytes_per_file,
-                file_paths: result.file_paths,
-                num_rows: result.total_rows_written,
-                size_bytes: result.total_bytes_written,
-                byte_ranges: None,
-            }),
+            Some(result) => {
+                let n = result.file_paths.len();
+                let file_slots = (0..n)
+                    .map(|_| Arc::new(std::sync::OnceLock::new()))
+                    .collect();
+                Ok(PartitionCache {
+                    partition_ref_id: self.partition_ref_id,
+                    schema: self.schema.clone(),
+                    bytes_per_file: result.bytes_per_file,
+                    file_paths: result.file_paths,
+                    file_slots,
+                    num_rows: result.total_rows_written,
+                    size_bytes: result.total_bytes_written,
+                    byte_ranges: None,
+                })
+            }
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
             )),
@@ -252,11 +261,35 @@ pub struct PartitionCache {
     pub schema: SchemaRef,
     pub bytes_per_file: Vec<usize>,
     pub file_paths: Vec<String>,
+    /// Lock-free file-handle cache. One slot per `file_paths` entry. The
+    /// writer constructs one `Arc<OnceLock>` per file it produces and clones
+    /// it across every PartitionCache that references that file — so all
+    /// partitions emitted by a single map task share the same slot. The
+    /// first reader lazily opens the file via `OnceLock::get_or_init`;
+    /// subsequent readers do an atomic load + `Arc::clone`. No global lock.
+    pub file_slots: Vec<Arc<std::sync::OnceLock<Arc<std::fs::File>>>>,
     pub num_rows: usize,
     pub size_bytes: usize,
     /// If present, byte_ranges[i] is the (start, end) range to read within file_paths[i].
     /// Used when a single physical file serves multiple output partitions (combined-file shuffle).
     pub byte_ranges: Option<Vec<(u64, u64)>>,
+}
+
+/// Lazy open of a file slot. Races between concurrent first-readers are
+/// resolved by `OnceLock::set` — losers drop their freshly-opened file
+/// handle and use the winner's.
+pub fn slot_or_open(
+    slot: &std::sync::OnceLock<Arc<std::fs::File>>,
+    path: &str,
+) -> std::io::Result<Arc<std::fs::File>> {
+    if let Some(f) = slot.get() {
+        return Ok(f.clone());
+    }
+    let mine = Arc::new(std::fs::File::open(path)?);
+    match slot.set(mine.clone()) {
+        Ok(()) => Ok(mine),
+        Err(_other_already_won) => Ok(slot.get().expect("set ran or another did").clone()),
+    }
 }
 
 #[cfg(test)]

@@ -15,9 +15,9 @@
 
 use std::{
     fs::File,
-    io::{self, Write},
+    io::{self, BufWriter, Write},
     path::Path,
-    sync::atomic::Ordering,
+    sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
@@ -32,14 +32,28 @@ use crate::{
     shuffle_cache::{PartitionCache, chunk_target_bytes, partition_ref_id},
 };
 
+/// 1 MiB BufWriter capacity — amortizes syscall cost across multiple
+/// small IPC writes per stripe. `StreamWriter::write` issues several
+/// `write` calls per batch (continuation marker, metadata flatbuffer,
+/// padding, then each column buffer); at sub-256-KiB stripes these
+/// were going straight to the kernel as separate syscalls.
+const FILE_BUF_BYTES: usize = 1024 * 1024;
+
 struct CountingFile {
-    inner: File,
+    inner: BufWriter<File>,
     bytes_written: u64,
 }
 
 impl CountingFile {
     fn new(inner: File) -> Self {
-        Self { inner, bytes_written: 0 }
+        Self {
+            inner: BufWriter::with_capacity(FILE_BUF_BYTES, inner),
+            bytes_written: 0,
+        }
+    }
+
+    fn into_inner(self) -> io::Result<File> {
+        self.inner.into_inner().map_err(io::Error::from)
     }
 }
 
@@ -109,6 +123,12 @@ pub async fn write_partitions_one_shot(
             // read-side StreamReader iterates them transparently, and the read-side
             // concat path can now combine them into properly-sized chunks instead
             // of receiving one giant pre-fused batch.
+            //
+            // One `Arc<OnceLock>` per map task, shared across every emitted cache
+            // for this writer: the file is opened lazily by the first reader and
+            // cached for every subsequent read of any partition in this file.
+            let file_slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>> =
+                Arc::new(std::sync::OnceLock::new());
             let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
             for idx in 0..num_partitions {
                 let parts = std::mem::take(&mut partitions_per_output[idx]);
@@ -124,6 +144,7 @@ pub async fn write_partitions_one_shot(
                             schema: schema_for_write.clone(),
                             bytes_per_file: Vec::new(),
                             file_paths: Vec::new(),
+                            file_slots: Vec::new(),
                             num_rows: 0,
                             size_bytes: 0,
                             byte_ranges: Some(Vec::new()),
@@ -149,6 +170,7 @@ pub async fn write_partitions_one_shot(
                             schema: schema_for_write.clone(),
                             bytes_per_file: vec![batch_len],
                             file_paths: vec![file_path.clone()],
+                            file_slots: vec![file_slot.clone()],
                             num_rows: rows,
                             size_bytes: bytes,
                             byte_ranges: Some(vec![(offset_before, offset_after)]),
@@ -159,6 +181,12 @@ pub async fn write_partitions_one_shot(
 
             writer.finish().map_err(|e| {
                 DaftError::InternalError(format!("IPC writer finish failed: {}", e))
+            })?;
+            // `finish` writes the EOS marker through the BufWriter but does not
+            // flush. Force-flush to surface errors here rather than swallowing
+            // them via BufWriter::drop.
+            writer.flush().map_err(|e| {
+                DaftError::InternalError(format!("IPC writer flush failed: {}", e))
             })?;
             let total = writer.get_ref().bytes_written;
             write_agg::BLOCKING_WALL_US
