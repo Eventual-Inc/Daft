@@ -246,6 +246,9 @@ fn execute_plan_sync(plan: CoalescePlan) -> DaftResult<CoalesceOutcome> {
                 num_rows: cache.num_rows,
                 size_bytes: cache.size_bytes,
                 byte_ranges: Some(new_byte_ranges),
+                // Seal-time coalescer rewrites paths within partitions but does not
+                // merge partitions into shared IPC messages, so no row slicing needed.
+                row_ranges: None,
             },
         ));
     }

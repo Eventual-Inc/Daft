@@ -701,6 +701,7 @@ impl MultiPartitionShuffleCache {
                 num_rows,
                 size_bytes,
                 byte_ranges,
+                row_ranges: None,
             });
         }
 

@@ -84,13 +84,27 @@ enum FileReadSpec {
         path: String,
         slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
     },
-    /// Read multiple `(start, end)` byte ranges from a single file, in file order.
-    /// Each range is a contiguous run of IPC batch messages.
+    /// Read multiple byte ranges from a single file, in file order. Each range
+    /// is one IPC message (or contiguous run of messages, legacy layout). When
+    /// `row_slices` is non-empty for a range, the decoded batch is sliced to
+    /// each (row_start, row_end) and one sliced batch is emitted per entry —
+    /// this is how reads recover individual partitions from a coalesced IPC
+    /// message that holds multiple partitions' rows concatenated.
     Ranges {
         path: String,
         slot: Arc<std::sync::OnceLock<Arc<std::fs::File>>>,
-        ranges: Vec<(u64, u64)>,
+        ranges: Vec<RangeSpec>,
     },
+}
+
+#[derive(Debug, Clone)]
+struct RangeSpec {
+    start: u64,
+    end: u64,
+    /// Empty = emit decoded batches as-is (legacy non-coalesced layout).
+    /// Non-empty = for each (row_start, row_end), slice the decoded batch and
+    /// emit one sliced batch. Sorted by row_start to keep partition order.
+    row_slices: Vec<(u64, u64)>,
 }
 
 /// Process-wide aggregate counters for shuffle read throughput diagnostics.
@@ -557,11 +571,19 @@ impl ShuffleFlightServer {
             .schema
             .clone();
 
-        // Group ranged reads by file path so each physical file is read from a single
-        // FD across this response (and across other responses too — the `Arc<OnceLock>`
-        // slot is shared via the PartitionCache).
+        // Group ranged reads by file path so each physical file is read from a
+        // single FD across this response. Within a path, dedupe by (start, end):
+        // when the writer coalesces multiple partitions into a single IPC message,
+        // each partition contributes a `(byte_range, row_range)` referencing the
+        // shared range. Deduping here means we decode the shared range once and
+        // emit one sliced batch per row_range.
         let mut whole_specs = Vec::new();
-        let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+        // (path) -> (start, end) -> Vec<row_range>. A range with empty row_ranges
+        // is non-coalesced: emit the decoded batches without slicing.
+        let mut ranges_by_path: HashMap<
+            String,
+            HashMap<(u64, u64), Vec<(u64, u64)>>,
+        > = HashMap::new();
         let mut slot_by_path: HashMap<String, Arc<std::sync::OnceLock<Arc<std::fs::File>>>> =
             HashMap::new();
         let mut first_seen: HashMap<String, usize> = HashMap::new();
@@ -575,22 +597,27 @@ impl ShuffleFlightServer {
                 continue;
             };
             match &cache.byte_ranges {
-                Some(ranges) => {
-                    for ((path, slot), (start, end)) in cache
+                Some(byte_ranges) => {
+                    let row_ranges = cache.row_ranges.as_deref();
+                    for (i, ((path, slot), (start, end))) in cache
                         .file_paths
                         .iter()
                         .zip(cache.file_slots.iter())
-                        .zip(ranges.iter())
+                        .zip(byte_ranges.iter())
+                        .enumerate()
                     {
                         if !first_seen.contains_key(path) {
                             first_seen.insert(path.clone(), order.len());
                             order.push(path.clone());
                             slot_by_path.insert(path.clone(), slot.clone());
                         }
-                        ranges_by_path
-                            .entry(path.clone())
-                            .or_default()
-                            .push((*start, *end));
+                        let by_range = ranges_by_path.entry(path.clone()).or_default();
+                        let slot_vec = by_range.entry((*start, *end)).or_default();
+                        if let Some(rr) = row_ranges {
+                            slot_vec.push(rr[i]);
+                        }
+                        // If row_ranges is None for the cache, slot_vec stays empty,
+                        // marking this byte range as "emit whole, no slicing".
                     }
                 }
                 None => {
@@ -608,9 +635,20 @@ impl ShuffleFlightServer {
 
         let mut specs = whole_specs;
         for path in order {
-            let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
-            // Sort by start so sequential reads are forward seeks (kind to readahead).
-            ranges.sort_unstable_by_key(|r| r.0);
+            let by_range = ranges_by_path.remove(&path).unwrap_or_default();
+            // Sort range keys by start so sequential reads are forward seeks
+            // (kind to per-FD readahead).
+            let mut keys: Vec<(u64, u64)> = by_range.keys().copied().collect();
+            keys.sort_unstable_by_key(|r| r.0);
+            let ranges: Vec<RangeSpec> = keys
+                .into_iter()
+                .map(|(start, end)| {
+                    let mut row_slices = by_range.get(&(start, end)).cloned().unwrap_or_default();
+                    // Sort slices by row_start to keep partition order stable.
+                    row_slices.sort_unstable_by_key(|r| r.0);
+                    RangeSpec { start, end, row_slices }
+                })
+                .collect();
             let slot = slot_by_path.remove(&path).expect("slot_by_path must contain path");
             specs.push(FileReadSpec::Ranges { path, slot, ranges });
         }
@@ -749,7 +787,7 @@ fn read_spec_sync(
             // gives the kernel a sequential per-FD access pattern (readahead).
             let mut file: Option<std::fs::File> = None;
             let mut body_bytes_acc: u64 = 0;
-            for (start, end) in ranges {
+            for RangeSpec { start, end, row_slices } in ranges {
                 body_bytes_acc += end - start;
                 let key = (path.clone(), start, end);
                 let arrow_batches = match crate::decode_cache::global().get(&key) {
@@ -770,7 +808,25 @@ fn read_spec_sync(
                         arc
                     }
                 };
-                arrow_batches_to_daft_into(&arrow_batches, fields, schema, &mut batches)?;
+                if row_slices.is_empty() {
+                    // Legacy non-coalesced layout: emit all decoded batches as-is.
+                    arrow_batches_to_daft_into(&arrow_batches, fields, schema, &mut batches)?;
+                } else {
+                    // Coalesced layout: the byte range is one big IPC message whose
+                    // rows are concatenated across partitions. Slice for each
+                    // partition's row range. Decoded batches collapse to a single
+                    // RecordBatch in coalesced output, but handle the >1 case for
+                    // robustness.
+                    debug_assert_eq!(arrow_batches.len(), 1, "coalesced chunks emit 1 IPC msg");
+                    for (row_start, row_end) in row_slices {
+                        let len = (row_end - row_start) as usize;
+                        let offset = row_start as usize;
+                        for ab in arrow_batches.iter() {
+                            let sliced = ab.slice(offset, len);
+                            arrow_batches_to_daft_into(&[sliced], fields, schema, &mut batches)?;
+                        }
+                    }
+                }
             }
             read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
         }
@@ -927,12 +983,10 @@ fn concat_specs_into_flight_datas_sync(
                 }
             }
             FileReadSpec::Ranges { path, slot: _, ranges } => {
-                // Lazy per-spec File::open; only on first cache miss. All cache
-                // hits → zero file syscalls. seek+take rather than pread so the
-                // kernel sees a sequential per-FD access pattern (readahead).
+                // Lazy per-spec File::open; only on first cache miss.
                 let mut file: Option<std::fs::File> = None;
                 let mut body_bytes_acc: u64 = 0;
-                for (start, end) in ranges {
+                for RangeSpec { start, end, row_slices } in ranges {
                     body_bytes_acc += end - start;
                     let key = (path.clone(), start, end);
                     let arrow_batches = match crate::decode_cache::global().get(&key) {
@@ -966,18 +1020,44 @@ fn concat_specs_into_flight_datas_sync(
                             arc
                         }
                     };
-                    for batch in arrow_batches.iter() {
-                        read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
-                        pending_bytes += estimate_batch_size(batch);
-                        pending.push(batch.clone());
-                        if pending_bytes >= chunk_target_bytes {
-                            flush(
-                                &mut pending,
-                                &mut pending_bytes,
-                                &mut flight_datas,
-                                &mut dict_tracker,
-                                &mut compression_ctx,
-                            )?;
+                    if row_slices.is_empty() {
+                        // Non-coalesced layout: feed all decoded batches into the
+                        // pending merge buffer as-is.
+                        for batch in arrow_batches.iter() {
+                            read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                            pending_bytes += estimate_batch_size(batch);
+                            pending.push(batch.clone());
+                            if pending_bytes >= chunk_target_bytes {
+                                flush(
+                                    &mut pending,
+                                    &mut pending_bytes,
+                                    &mut flight_datas,
+                                    &mut dict_tracker,
+                                    &mut compression_ctx,
+                                )?;
+                            }
+                        }
+                    } else {
+                        // Coalesced layout: slice once per (row_start, row_end).
+                        debug_assert_eq!(arrow_batches.len(), 1, "coalesced chunks emit 1 IPC msg");
+                        for (row_start, row_end) in row_slices {
+                            let len = (row_end - row_start) as usize;
+                            let offset = row_start as usize;
+                            for ab in arrow_batches.iter() {
+                                let sliced = ab.slice(offset, len);
+                                read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                                pending_bytes += estimate_batch_size(&sliced);
+                                pending.push(sliced);
+                                if pending_bytes >= chunk_target_bytes {
+                                    flush(
+                                        &mut pending,
+                                        &mut pending_bytes,
+                                        &mut flight_datas,
+                                        &mut dict_tracker,
+                                        &mut compression_ctx,
+                                    )?;
+                                }
+                            }
                         }
                     }
                 }
@@ -997,7 +1077,7 @@ fn concat_specs_into_flight_datas_sync(
 
 /// Cheap per-batch size estimate: sum of buffer lengths across columns. Used
 /// to gate the concat chunker so we don't depend on parsing arrow internals.
-fn estimate_batch_size(batch: &arrow_array::RecordBatch) -> usize {
+pub fn estimate_batch_size(batch: &arrow_array::RecordBatch) -> usize {
     let mut total: usize = 0;
     for col in batch.columns() {
         let data = col.to_data();
@@ -1272,6 +1352,21 @@ async fn open_spec_as_flight_stream(
             Ok(Box::pin(reader.into_stream()))
         }
         FileReadSpec::Ranges { path, slot: _, ranges } => {
+            // Raw passthrough path: streams file bytes directly as FlightData
+            // without decode. This is incompatible with the write-side coalescing
+            // layout, where a single IPC message holds rows from multiple
+            // partitions and the reducer needs row-slicing to recover its share.
+            // Coalescing is unconditional on the write side now, so this branch
+            // is unreachable in normal operation (it would require explicitly
+            // setting `DAFT_SHUFFLE_CHUNK_BYTES=0` AND the cache containing
+            // legacy non-coalesced data).
+            if ranges.iter().any(|r| !r.row_slices.is_empty()) {
+                return Err(DaftError::InternalError(
+                    "Raw flight passthrough cannot serve coalesced shuffle data; \
+                     unset DAFT_SHUFFLE_CHUNK_BYTES=0 to use the decode+concat path"
+                        .to_string(),
+                ));
+            }
             // One file open serves all ranges. We hold ownership of `file` across the
             // outer for-loop; each iteration borrows it mutably via `(&mut file).take(n)`
             // for the duration of one range's stream. The borrow is released when the
@@ -1280,7 +1375,7 @@ async fn open_spec_as_flight_stream(
             let file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
             let stream = async_stream::try_stream! {
                 let mut file = file;
-                for (start, end) in ranges {
+                for RangeSpec { start, end, .. } in ranges {
                     file.seek(SeekFrom::Start(start)).await.map_err(DaftError::IoError)?;
                     let limited = (&mut file).take(end - start);
                     let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));

@@ -231,6 +231,7 @@ impl InProgressShuffleCache {
                     num_rows: result.total_rows_written,
                     size_bytes: result.total_bytes_written,
                     byte_ranges: None,
+                    row_ranges: None,
                 })
             }
             None => Err(DaftError::InternalError(
@@ -319,6 +320,12 @@ pub struct PartitionCache {
     /// If present, byte_ranges[i] is the (start, end) range to read within file_paths[i].
     /// Used when a single physical file serves multiple output partitions (combined-file shuffle).
     pub byte_ranges: Option<Vec<(u64, u64)>>,
+    /// If present, row_ranges[i] is the (row_start, row_end_exclusive) slice to take from
+    /// the decoded batch at byte_ranges[i]. Used when the writer coalesces multiple
+    /// partitions into a single IPC message — readers decode the message once and slice
+    /// it to recover this partition's rows. `None` means "use the decoded batch whole"
+    /// (legacy non-coalesced layout, one IPC message per partition).
+    pub row_ranges: Option<Vec<(u64, u64)>>,
 }
 
 /// Lazy open of a file slot. Races between concurrent first-readers are
