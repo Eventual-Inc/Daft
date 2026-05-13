@@ -6,7 +6,7 @@
 /// Each test prints timing results to stderr.
 #[cfg(test)]
 mod bench {
-    use std::time::Instant;
+    use std::{sync::Arc, time::Instant};
 
     use daft_core::{count_mode::CountMode, datatypes::*, prelude::*, series::IntoSeries};
     use daft_dsl::{
@@ -213,8 +213,6 @@ mod bench {
         num_distinct1: usize,
         num_distinct2: usize,
     ) -> (RecordBatch, Vec<BoundExpr>, Schema) {
-        use std::sync::Arc;
-
         let keys1: Vec<String> = (0..num_rows)
             .map(|i| format!("alpha_long_string_value_{:08}", i % num_distinct1))
             .collect();
@@ -254,7 +252,8 @@ mod bench {
     }
 
     fn run_two_string_bench(num_rows: usize, num_distinct1: usize, num_distinct2: usize) {
-        let (rb, group_by, schema) = make_two_long_string_batch(num_rows, num_distinct1, num_distinct2);
+        let (rb, group_by, schema) =
+            make_two_long_string_batch(num_rows, num_distinct1, num_distinct2);
         let groups = num_distinct1 * num_distinct2;
 
         let count_agg = vec![

@@ -1182,14 +1182,10 @@ impl RecordBatch {
                 Some(indices) => indices,
                 None => agg_generic_hash_path(&groupby_physical, &mut accumulators)?,
             }
-        } else if let Some(indices) =
-            agg_packed_u64_path(&groupby_physical, &mut accumulators)?
-        {
+        } else if let Some(indices) = agg_packed_u64_path(&groupby_physical, &mut accumulators)? {
             // Two Utf8/Binary cols: symbolize + pack into u64 → typed FNV map.
             indices
-        } else if let Some(indices) =
-            agg_symbolized_path(&groupby_physical, &mut accumulators)?
-        {
+        } else if let Some(indices) = agg_symbolized_path(&groupby_physical, &mut accumulators)? {
             // Mixed shape with long string keys: symbolize → generic hash path.
             indices
         } else {
@@ -2226,9 +2222,9 @@ mod tests {
         assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
     }
 
-    /// Multi-column groupby with two long-string keys (well above the
-    /// avg-bytes-per-row gate) and count/sum/min/max aggs. Exercises the
-    /// active symbolized path.
+    /// Multi-column groupby with two long-string keys and count/sum/min/max
+    /// aggs. Routed to the packed-u64 path (two Utf8 cols → symbolize + pack);
+    /// the result must still match the fallback.
     #[test]
     fn test_inline_multi_col_long_strings_matches_fallback() {
         let key1 = Series::from_arrow(
@@ -2280,10 +2276,9 @@ mod tests {
         assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
     }
 
-    /// Short-string multi-column groupby (CHAR(1)-style keys) — symbolization
-    /// should be skipped under the avg-bytes-per-row gate. Mirrors the shape
-    /// of TPC-H Q1 to guard against the perf regression that motivated the
-    /// gating heuristic.
+    /// Short-string two-column groupby (CHAR(1)-style keys, TPC-H Q1 shape).
+    /// Routed to the packed-u64 path (which has no byte-threshold gate, so
+    /// symbolization always runs); the result must still match the fallback.
     #[test]
     fn test_inline_multi_col_short_strings_matches_fallback() {
         let key1 = Series::from_arrow(
@@ -2595,8 +2590,11 @@ mod tests {
             BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
         ];
         let bound_agg = vec![
-            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::Valid), &schema)
-                .unwrap(),
+            BoundAggExpr::try_new(
+                AggExpr::Count(resolved_col("val"), CountMode::Valid),
+                &schema,
+            )
+            .unwrap(),
             BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
         ];
         let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
