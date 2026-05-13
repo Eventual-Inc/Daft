@@ -36,7 +36,7 @@ PreviewAlign = Literal[
 
 _SHOW_DEFAULT_VERBOSE = False
 _SHOW_DEFAULT_MAX_WIDTH = 30
-_SHOW_DEFAULT_ALIGN: PreviewAlign = "left"
+_SHOW_DEFAULT_ALIGN: PreviewAlign = "auto"
 
 _SHOW_FORMATS = {"fancy", "plain", "simple", "grid", "markdown", "html"}
 _SHOW_ALIGNS = {"auto", "left", "center", "right"}
@@ -104,7 +104,7 @@ def resolve_show_defaults(
     Supported env vars:
     - DAFT_SHOW_FORMAT: fancy|plain|simple|grid|markdown|html
     - DAFT_SHOW_VERBOSE: 1/0, true/false, yes/no, on/off
-    - DAFT_SHOW_MAX_WIDTH: positive integer, or none/null/off
+    - DAFT_SHOW_MAX_WIDTH: positive integer, or none/null
     - DAFT_SHOW_ALIGN: auto|left|center|right
     """
     if format is None:

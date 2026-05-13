@@ -261,6 +261,19 @@ def test_resolve_show_defaults_respects_explicit_default_values(monkeypatch):
     assert align == "left"
 
 
+def test_resolve_show_defaults_align_defaults_to_auto(monkeypatch):
+    # With no env vars and no explicit argument, align should default to "auto"
+    # so numeric columns are right-aligned in the preview renderer.
+    for var in ("DAFT_SHOW_FORMAT", "DAFT_SHOW_VERBOSE", "DAFT_SHOW_MAX_WIDTH", "DAFT_SHOW_ALIGN"):
+        monkeypatch.delenv(var, raising=False)
+
+    _, verbose, max_width, align = resolve_show_defaults(None, None, None, None)
+
+    assert verbose is False
+    assert max_width == 30
+    assert align == "auto"
+
+
 def test_show_with_many_columns():
     df = daft.from_pylist(
         [
