@@ -899,21 +899,31 @@ fn concat_specs_into_flight_datas_sync(
     let mut flight_datas: Vec<FlightData> = Vec::new();
     let arrow_schema_ref: arrow_schema::SchemaRef = std::sync::Arc::new(arrow_schema.clone());
     let opts = IpcWriteOptions::default();
+    // The data generator is the lowest-level encoder; `batches_to_flight_data`
+    // would prepend a schema FlightData per call, which we don't want — schema
+    // is already sent once at the start of the do_get response.
+    let data_gen = arrow_ipc::writer::IpcDataGenerator::default();
+    let mut dict_tracker = arrow_ipc::writer::DictionaryTracker::new(false);
+    let mut compression_ctx = arrow_ipc::writer::CompressionContext::default();
 
     let mut flush = |pending: &mut Vec<arrow_array::RecordBatch>,
                      pending_bytes: &mut usize,
-                     flight_datas: &mut Vec<FlightData>|
+                     flight_datas: &mut Vec<FlightData>,
+                     dict_tracker: &mut arrow_ipc::writer::DictionaryTracker,
+                     compression_ctx: &mut arrow_ipc::writer::CompressionContext|
      -> DaftResult<()> {
         if pending.is_empty() {
             return Ok(());
         }
         let merged = arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
             .map_err(|e| DaftError::InternalError(format!("read-side concat: {}", e)))?;
-        let (dicts, fd) = arrow_flight::utils::flight_data_from_arrow_batch(&merged, &opts);
+        let (dicts, batch) = data_gen
+            .encode(&merged, dict_tracker, &opts, compression_ctx)
+            .map_err(|e| DaftError::InternalError(format!("read-side encode: {}", e)))?;
         for d in dicts {
-            flight_datas.push(d);
+            flight_datas.push(d.into());
         }
-        flight_datas.push(fd);
+        flight_datas.push(batch.into());
         pending.clear();
         *pending_bytes = 0;
         Ok(())
@@ -932,7 +942,13 @@ fn concat_specs_into_flight_datas_sync(
                     pending_bytes += estimate_batch_size(&batch);
                     pending.push(batch);
                     if pending_bytes >= chunk_target_bytes {
-                        flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+                        flush(
+                            &mut pending,
+                            &mut pending_bytes,
+                            &mut flight_datas,
+                            &mut dict_tracker,
+                            &mut compression_ctx,
+                        )?;
                     }
                 }
             }
@@ -962,7 +978,13 @@ fn concat_specs_into_flight_datas_sync(
             }
         }
     }
-    flush(&mut pending, &mut pending_bytes, &mut flight_datas)?;
+    flush(
+        &mut pending,
+        &mut pending_bytes,
+        &mut flight_datas,
+        &mut dict_tracker,
+        &mut compression_ctx,
+    )?;
     Ok(flight_datas)
 }
 
