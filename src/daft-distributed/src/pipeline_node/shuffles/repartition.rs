@@ -31,6 +31,17 @@ pub(crate) struct RepartitionNode {
     num_partitions: usize,
     seal_policy: String,
     seal_partition_threshold: usize,
+    /// True when this node is running the new Flight server-side repartition
+    /// path: map tasks emit `ShuffleWrite` instead of `RepartitionWrite`, and
+    /// the orchestrator skips its explicit seal call (the Flight server flushes
+    /// residuals lazily on the first read).
+    use_server_side_repartition: bool,
+    /// Per-task speculative-buffer threshold passed into the `ShuffleWrite`
+    /// local op. Ignored on the legacy path.
+    mode_switch_threshold_bytes: usize,
+    /// Server-side raw accumulator threshold, passed through to the flight
+    /// server via `register_shuffle_spec`. Ignored on the legacy path.
+    server_repartition_threshold_bytes: usize,
     child: DistributedPipelineNode,
 }
 
@@ -63,6 +74,12 @@ impl RepartitionNode {
                 .into(),
         );
 
+        let use_server_side_repartition = matches!(&backend, DistributedShuffleBackend::Flight(_))
+            && plan_config.config.flight_shuffle_server_side_repartition
+            && matches!(
+                &repartition_spec,
+                RepartitionSpec::Hash(_) | RepartitionSpec::Random(_)
+            );
         Self {
             config,
             context: context.clone(),
@@ -71,6 +88,13 @@ impl RepartitionNode {
             num_partitions,
             seal_policy: plan_config.config.flight_shuffle_seal.clone(),
             seal_partition_threshold: plan_config.config.flight_shuffle_seal_partition_threshold,
+            use_server_side_repartition,
+            mode_switch_threshold_bytes: plan_config
+                .config
+                .flight_shuffle_mode_switch_threshold_bytes,
+            server_repartition_threshold_bytes: plan_config
+                .config
+                .flight_shuffle_server_repartition_threshold_bytes,
             child,
         }
     }
@@ -91,19 +115,22 @@ impl RepartitionNode {
         let transposed_outputs =
             transpose_materialized_outputs_from_stream(outputs, self.num_partitions).await?;
 
-        // Producer stage has fully drained; ask every participating shuffle
-        // server to consolidate its per-task entry groups into one file per
-        // partition before any read task fires. No-op on the Ray backend, and
-        // gated by partition-count threshold on the Flight backend — see
-        // ShuffleBackend::seal for the trade-off rationale.
-        self.shuffle_backend
-            .seal(
-                &transposed_outputs,
-                &self.seal_policy,
-                self.seal_partition_threshold,
-                self.num_partitions,
-            )
-            .await?;
+        if !self.use_server_side_repartition {
+            // Legacy path: ask every participating shuffle server to consolidate
+            // its per-task entry groups into one file per partition before any
+            // read task fires. No-op on the Ray backend; gated by partition-count
+            // threshold on the Flight backend.
+            self.shuffle_backend
+                .seal(
+                    &transposed_outputs,
+                    &self.seal_policy,
+                    self.seal_partition_threshold,
+                    self.num_partitions,
+                )
+                .await?;
+        }
+        // New path (use_server_side_repartition=true): no explicit seal. The
+        // Flight server flushes any residual raw entries on the first read.
 
         self.shuffle_backend
             .emit_read_tasks(transposed_outputs, self.as_ref(), result_tx)
@@ -137,17 +164,52 @@ impl PipelineNodeImpl for RepartitionNode {
         let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
         let num_partitions = self.num_partitions;
         let repartition_spec = self.repartition_spec.clone();
+        let use_server_side = self.use_server_side_repartition;
+        let mode_switch_threshold = self.mode_switch_threshold_bytes;
+        let server_repartition_threshold = self.server_repartition_threshold_bytes;
         let local_shuffle_write_node =
             input_node.pipeline_instruction(self.clone(), move |input| {
-                LocalPhysicalPlan::repartition_write(
-                    input,
-                    num_partitions,
-                    schema.clone(),
-                    local_shuffle_backend.clone(),
-                    repartition_spec.clone(),
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                )
+                if use_server_side {
+                    // Pull the Flight config out of the local-plan backend enum;
+                    // use_server_side_repartition is only set when backend is
+                    // Flight (see RepartitionNode::new), so this match is exhaustive
+                    // in practice and panics here would be a planner bug.
+                    let (shuffle_id, shuffle_dirs, compression) = match &local_shuffle_backend {
+                        daft_local_plan::ShuffleBackend::Flight {
+                            shuffle_id,
+                            shuffle_dirs,
+                            compression,
+                        } => (*shuffle_id, shuffle_dirs.clone(), compression.clone()),
+                        daft_local_plan::ShuffleBackend::Ray => {
+                            panic!(
+                                "use_server_side_repartition is only valid for the Flight backend"
+                            )
+                        }
+                    };
+                    LocalPhysicalPlan::shuffle_write(
+                        input,
+                        num_partitions,
+                        schema.clone(),
+                        shuffle_id,
+                        shuffle_dirs,
+                        compression,
+                        repartition_spec.clone(),
+                        mode_switch_threshold,
+                        server_repartition_threshold,
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                } else {
+                    LocalPhysicalPlan::repartition_write(
+                        input,
+                        num_partitions,
+                        schema.clone(),
+                        local_shuffle_backend.clone(),
+                        repartition_spec.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                }
             });
 
         let (result_tx, result_rx) = create_channel(1);

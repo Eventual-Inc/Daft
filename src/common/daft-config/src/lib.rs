@@ -181,6 +181,20 @@ pub struct DaftExecutionConfig {
     /// up through ~a few thousand partitions; the rewrite tax dominates below the
     /// threshold and the consolidation benefit dominates above.
     pub flight_shuffle_seal_partition_threshold: usize,
+    /// When true, the Flight shuffle path uses server-side repartition: map tasks
+    /// pick mode per-task (big → partition + mega-file on worker; small → raw IPC),
+    /// the server accumulates raw entries across tasks and runs the partition kernel
+    /// once on each ~1 GiB batch. PreShuffleMerge is skipped for Flight + Hash/Random
+    /// when this is on. Range partitioning stays on the legacy path.
+    pub flight_shuffle_server_side_repartition: bool,
+    /// Per-task speculative-buffer cap before a Flight map task commits to the
+    /// "big" mode (partition on worker, write mega-file). Below this, the task
+    /// writes raw IPC and lets the server batch it. Only consulted when
+    /// `flight_shuffle_server_side_repartition` is true.
+    pub flight_shuffle_mode_switch_threshold_bytes: usize,
+    /// Server-side raw accumulator threshold: once cumulative raw bytes for a
+    /// shuffle cross this, the server spawns a background repartition pass.
+    pub flight_shuffle_server_repartition_threshold_bytes: usize,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -233,6 +247,9 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_compression: "none".to_string(),
             flight_shuffle_seal: "auto".to_string(),
             flight_shuffle_seal_partition_threshold: 4096,
+            flight_shuffle_server_side_repartition: false,
+            flight_shuffle_mode_switch_threshold_bytes: 256 * 1024 * 1024, // 256 MiB
+            flight_shuffle_server_repartition_threshold_bytes: 1024 * 1024 * 1024, // 1 GiB
             enable_multi_glob_path_tasks: false,
         }
     }

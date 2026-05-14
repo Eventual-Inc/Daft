@@ -20,7 +20,7 @@ use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
     GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
     LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite,
-    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, Sort,
+    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, ShuffleWrite, Sort,
     SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
     WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
@@ -59,6 +59,7 @@ use crate::{
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
+        shuffle_write::ShuffleWriteSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1657,6 +1658,47 @@ fn physical_plan_to_pipeline(
                     .boxed()
                 }
             }
+        }
+        LocalPhysicalPlan::ShuffleWrite(ShuffleWrite {
+            input,
+            num_partitions,
+            schema,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            repartition_spec,
+            mode_switch_threshold_bytes,
+            server_repartition_threshold_bytes,
+            stats_state,
+            context,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let (shuffle_server, shuffle_address) = ctx
+                .shuffle_server()
+                .expect("Flight shuffle server must be initialized for ShuffleWrite plans");
+            let shuffle_write_sink = ShuffleWriteSink::try_new(
+                *num_partitions,
+                schema.clone(),
+                *shuffle_id,
+                repartition_spec.clone(),
+                shuffle_dirs.clone(),
+                compression.clone(),
+                shuffle_server,
+                shuffle_address,
+                *mode_switch_threshold_bytes,
+                *server_repartition_threshold_bytes,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            BlockingSinkNode::new(
+                Arc::new(shuffle_write_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::GatherWrite(GatherWrite {
             input,

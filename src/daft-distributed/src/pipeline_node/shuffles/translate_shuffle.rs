@@ -95,8 +95,23 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        let use_pre_shuffle_merge =
-            self.should_use_pre_shuffle_merge(&child, num_partitions, input_size_hint)?;
+        // Skip PreShuffleMerge for the new Flight server-side repartition path:
+        // small-mode map tasks defer partitioning to the server, which already
+        // does the per-worker consolidation that PreShuffleMerge provided.
+        // Range stays on the legacy path (where PreShuffleMerge still helps).
+        let use_pre_shuffle_merge = if matches!(&backend, DistributedShuffleBackend::Flight(_))
+            && self
+                .plan_config
+                .config
+                .flight_shuffle_server_side_repartition
+            && matches!(
+                &repartition_spec,
+                RepartitionSpec::Hash(_) | RepartitionSpec::Random(_)
+            ) {
+            false
+        } else {
+            self.should_use_pre_shuffle_merge(&child, num_partitions, input_size_hint)?
+        };
 
         let child_node = if use_pre_shuffle_merge {
             // Create merge node first
