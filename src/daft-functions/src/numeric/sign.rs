@@ -32,6 +32,7 @@ impl ScalarUDF for Sign {
             DataType::Int16 => Ok(input.i16().unwrap().sign()?.into_series()),
             DataType::Int32 => Ok(input.i32().unwrap().sign()?.into_series()),
             DataType::Int64 => Ok(input.i64().unwrap().sign()?.into_series()),
+            DataType::Float16 => Ok(input.f16().unwrap().sign()?.into_series()),
             DataType::Float32 => Ok(input.f32().unwrap().sign()?.into_series()),
             DataType::Float64 => Ok(input.f64().unwrap().sign()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
@@ -103,6 +104,7 @@ impl ScalarUDF for Negate {
             DataType::Int16 => Ok(input.i16().unwrap().negate()?.into_series()),
             DataType::Int32 => Ok(input.i32().unwrap().negate()?.into_series()),
             DataType::Int64 => Ok(input.i64().unwrap().negate()?.into_series()),
+            DataType::Float16 => Ok(input.f16().unwrap().negate()?.into_series()),
             DataType::Float32 => Ok(input.f32().unwrap().negate()?.into_series()),
             DataType::Float64 => Ok(input.f64().unwrap().negate()?.into_series()),
             dt => Err(DaftError::TypeError(format!(

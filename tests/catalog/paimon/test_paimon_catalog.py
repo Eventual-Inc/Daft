@@ -175,6 +175,33 @@ def test_catalog_drop_table_not_supported(paimon_catalog):
         daft_catalog.drop_table("test_db.test_table")
 
 
+def test_catalog_create_table(tmp_path):
+    inner = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
+    inner.create_database("mydb", ignore_if_exists=True)
+    daft_catalog = Catalog.from_paimon(inner)
+
+    schema = daft.from_pydict({"id": [1, 2], "name": ["a", "b"]}).schema()
+    table = daft_catalog.create_table("mydb.new_table", schema)
+    assert table.name == "new_table"
+    assert daft_catalog.has_table("mydb.new_table")
+
+
+def test_catalog_create_table_with_partitions(tmp_path):
+    from daft.io.partitioning import PartitionField
+
+    inner = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
+    inner.create_database("mydb", ignore_if_exists=True)
+    daft_catalog = Catalog.from_paimon(inner)
+
+    df = daft.from_pydict({"id": [1], "name": ["a"], "dt": ["2024-01-01"]})
+    schema = df.schema()
+    dt_field = schema["dt"]
+    partition_fields = [PartitionField.create(dt_field)]
+    table = daft_catalog.create_table("mydb.part_table", schema, partition_fields=partition_fields)
+    assert table.name == "part_table"
+    assert table.partition_keys == ["dt"]
+
+
 # ---------------------------------------------------------------------------
 # PaimonCatalog — read / write through catalog API
 # ---------------------------------------------------------------------------
@@ -202,32 +229,6 @@ def test_catalog_write_table_append(paimon_catalog):
     assert result["id"] == [1, 2, 3, 4, 5]
 
 
-def test_catalog_create_table(tmp_path):
-    inner = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
-    inner.create_database("mydb", ignore_if_exists=True)
-    daft_catalog = Catalog.from_paimon(inner)
-
-    schema = daft.from_pydict({"id": [1, 2], "name": ["a", "b"]}).schema()
-    table = daft_catalog.create_table("mydb.new_table", schema)
-    assert table.name == "new_table"
-    assert daft_catalog.has_table("mydb.new_table")
-
-
-def test_catalog_create_table_with_partitions(tmp_path):
-    from daft.io.partitioning import PartitionField
-
-    inner = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
-    inner.create_database("mydb", ignore_if_exists=True)
-    daft_catalog = Catalog.from_paimon(inner)
-
-    df = daft.from_pydict({"id": [1], "name": ["a"], "dt": ["2024-01-01"]})
-    schema = df.schema()
-    dt_field = schema["dt"]
-    partition_fields = [PartitionField.create(dt_field)]
-    table = daft_catalog.create_table("mydb.part_table", schema, partition_fields=partition_fields)
-    assert table.name == "part_table"
-
-
 # ---------------------------------------------------------------------------
 # Table.from_paimon — direct table wrapping
 # ---------------------------------------------------------------------------
@@ -247,16 +248,8 @@ def test_table_from_paimon_invalid_type():
 
 
 # ---------------------------------------------------------------------------
-# PaimonTable — schema / read / write
+# PaimonTable — read / write
 # ---------------------------------------------------------------------------
-
-
-def test_table_schema(paimon_catalog):
-    daft_catalog, _, _ = paimon_catalog
-    table = daft_catalog.get_table("test_db.test_table")
-    schema = table.schema()
-    field_names = set(schema.column_names())
-    assert {"id", "name", "dt"} <= field_names
 
 
 def test_table_read(paimon_catalog):
@@ -303,7 +296,90 @@ def test_table_write_dispatch(paimon_catalog):
 
 
 # ---------------------------------------------------------------------------
-# Session / SQL integration
+# PaimonTable — properties
+# ---------------------------------------------------------------------------
+
+
+class TestPaimonTableProperties:
+    """Tests for PaimonTable properties."""
+
+    @pytest.fixture
+    def pk_catalog(self, tmp_path):
+        """Create a catalog with primary key table for testing properties."""
+        inner = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
+        inner.create_database("test_db", ignore_if_exists=True)
+
+        # Create primary key table
+        schema = pypaimon.Schema.from_pyarrow_schema(
+            pa.schema(
+                [
+                    pa.field("id", pa.int64()),
+                    pa.field("name", pa.string()),
+                    pa.field("value", pa.int64()),
+                ]
+            ),
+            primary_keys=["id"],
+            options={"bucket": "2"},
+        )
+        inner.create_table("test_db.pk_table", schema, ignore_if_exists=True)
+
+        # Create partitioned primary key table
+        schema2 = pypaimon.Schema.from_pyarrow_schema(
+            pa.schema(
+                [
+                    pa.field("id", pa.int64()),
+                    pa.field("name", pa.string()),
+                    pa.field("dt", pa.string()),
+                ]
+            ),
+            partition_keys=["dt"],
+            primary_keys=["id"],
+            options={"bucket": "1"},
+        )
+        inner.create_table("test_db.partitioned_pk", schema2, ignore_if_exists=True)
+
+        return Catalog.from_paimon(inner)
+
+    def test_append_only_table_properties(self, paimon_catalog):
+        daft_catalog, _, _ = paimon_catalog
+        table = daft_catalog.get_table("test_db.test_table")
+
+        # Verify append-only table properties
+        assert table.is_primary_key_table is False
+        assert table.primary_keys == []
+        assert table.partition_keys == ["dt"]
+
+    def test_primary_key_table_properties(self, pk_catalog):
+        table = pk_catalog.get_table("test_db.pk_table")
+
+        # Verify primary key table properties
+        assert table.is_primary_key_table is True
+        assert table.primary_keys == ["id"]
+        assert table.partition_keys == []
+        assert table.bucket_count == 2
+        assert table.table_options.get("bucket") == "2"
+
+    def test_partitioned_primary_key_table_properties(self, pk_catalog):
+        table = pk_catalog.get_table("test_db.partitioned_pk")
+
+        # Verify partitioned primary key table properties
+        assert table.is_primary_key_table is True
+        assert table.primary_keys == ["id"]
+        assert table.partition_keys == ["dt"]
+        assert table.bucket_count == 1
+
+    def test_table_schema(self, paimon_catalog):
+        daft_catalog, _, _ = paimon_catalog
+        table = daft_catalog.get_table("test_db.test_table")
+        schema = table.schema()
+
+        assert "id" in schema.column_names()
+        assert "name" in schema.column_names()
+        assert "dt" in schema.column_names()
+
+
+# ---------------------------------------------------------------------------
+# Session integration
 # ---------------------------------------------------------------------------
 
 

@@ -47,7 +47,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
-pub use ops::{build_left_to_right_map, get_column_by_name, get_columns_by_name};
+pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]
@@ -116,6 +116,17 @@ fn unpack_struct_state(struct_series: &Series) -> DaftResult<Vec<Series>> {
 
 fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResult<Series> {
     Ok(StructArray::new(struct_field, state_series, None).into_series())
+}
+
+fn empty_agg_struct(struct_field: &Field) -> Series {
+    let DataType::Struct(fields) = &struct_field.dtype else {
+        unreachable!("empty_agg_struct called with non-Struct field");
+    };
+    let children: Vec<Series> = fields
+        .iter()
+        .map(|f| Series::empty(&f.name, &f.dtype))
+        .collect();
+    StructArray::new(struct_field.clone(), children, None).into_series()
 }
 
 fn dispatch_per_group(
@@ -697,35 +708,6 @@ impl RecordBatch {
         }
     }
 
-    /// Like [`eval_agg_expression`] but stops before `call_agg_finalize` for
-    /// [`AggExpr::AggFnReduce`], keeping the Struct column type.  Output schema
-    /// matches stage-1 (`AggFnMap`) output — valid input for a subsequent full `agg()`.
-    pub(crate) fn eval_agg_expression_combine_only(
-        &self,
-        agg_expr: &BoundAggExpr,
-        groups: Option<&GroupIndices>,
-    ) -> DaftResult<Series> {
-        if let AggExpr::AggFnReduce {
-            handle, partial, ..
-        } = agg_expr.as_ref()
-        {
-            let struct_series = self.eval_agg_child(partial)?;
-            let struct_field = struct_series.field().clone();
-            let state_series = unpack_struct_state(&struct_series)?;
-            let field_names: Vec<String> =
-                state_series.iter().map(|s| s.name().to_string()).collect();
-            let merged = dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
-            let merged: Vec<Series> = merged
-                .into_iter()
-                .zip(field_names.iter())
-                .map(|(s, n)| s.rename(n))
-                .collect();
-            pack_struct_state(struct_field, merged)
-        } else {
-            self.eval_agg_expression(agg_expr, groups)
-        }
-    }
-
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,
@@ -821,6 +803,11 @@ impl RecordBatch {
                     .join(", ");
                 let expected_name = format!("{}({})", handle.name(), inputs_str);
                 let state_fields = handle.state_fields(&input_fields)?;
+                let struct_field =
+                    Field::new(expected_name, DataType::Struct(state_fields.clone()));
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
                 let state_series =
                     dispatch_per_group(evaled_inputs, groups, |g| handle.call_agg_block(g))?;
                 let state_series: Vec<Series> = state_series
@@ -828,8 +815,25 @@ impl RecordBatch {
                     .zip(state_fields.iter())
                     .map(|(s, f)| s.rename(&f.name))
                     .collect();
-                let struct_field = Field::new(expected_name, DataType::Struct(state_fields));
                 Ok(StructArray::new(struct_field, state_series, None).into_series())
+            }
+            AggExpr::AggFnCombine { handle, partial } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                let struct_field = struct_series.field().clone();
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                pack_struct_state(struct_field, merged)
             }
             AggExpr::AggFnReduce {
                 handle,
@@ -837,6 +841,9 @@ impl RecordBatch {
                 return_field,
             } => {
                 let struct_series = self.eval_agg_child(partial)?;
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(Series::empty(&return_field.name, &return_field.dtype));
+                }
                 let state_series = unpack_struct_state(&struct_series)?;
                 let field_names: Vec<String> =
                     state_series.iter().map(|s| s.name().to_string()).collect();
@@ -1153,6 +1160,12 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
+                }
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
@@ -1463,6 +1476,12 @@ impl RecordBatch {
                         &BoundExpr::new_unchecked(expr.clone()),
                         metrics,
                     )?);
+                }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
                 }
                 #[cfg(feature = "python")]
                 {

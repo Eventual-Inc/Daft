@@ -5,6 +5,23 @@ from __future__ import annotations
 from daft.expressions import Expression
 
 
+def hamming_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Hamming distance (number of differing bits) between two hash fingerprints.
+
+    Counts the number of differing bits (popcount of XOR).
+    Supports integer inputs (e.g., UInt64 from simhash) and FixedSizeBinary
+    inputs (e.g., from image_hash).
+
+    Args:
+        left (Integer or FixedSizeBinary Expression): The left fingerprint.
+        right (Integer or FixedSizeBinary Expression): The right fingerprint (must match left's type).
+
+    Returns:
+        Expression (UInt32 Expression): Number of differing bits.
+    """
+    return Expression._call_builtin_scalar_fn("hamming_distance", left, right)
+
+
 def cosine_similarity(left: Expression, right: Expression) -> Expression:
     """Compute the cosine similarity between two embeddings.
 

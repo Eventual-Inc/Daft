@@ -17,8 +17,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -42,7 +42,7 @@ use crate::{
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self, Limit, Offset, SetQuantifier, UnionStrategy,
+        self, Limit, Offset, SetQuantifier, UnionStrategy, get_right_cols_to_drop,
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
@@ -1284,14 +1284,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn with_checkpoint(
         &self,
-        store_config: common_checkpoint_config::python::PyCheckpointStoreConfig,
-        key_column: String,
+        config: common_checkpoint_config::python::PyCheckpointConfig,
     ) -> PyResult<Self> {
-        let config = common_checkpoint_config::CheckpointConfig {
-            store: store_config.config,
-            key_column,
-        };
-        Ok(self.builder.with_checkpoint(config)?.into())
+        Ok(self.builder.with_checkpoint(config.config)?.into())
     }
 
     pub fn with_planning_config(

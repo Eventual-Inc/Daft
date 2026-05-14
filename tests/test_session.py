@@ -95,6 +95,38 @@ def test_attach_table():
         sess.attach_table(view1, alias="tbl1")
 
 
+def test_attach_view():
+    sess = Session()
+    view = daft.from_pydict({"x": [1, 2, 3]})
+
+    sess.attach_view(view, alias="my_view")
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [6]}
+
+    with pytest.raises(Exception, match="already exists"):
+        sess.attach_view(view, alias="my_view")
+
+
+def test_create_temp_view_replaces_existing():
+    sess = Session()
+
+    sess.create_temp_view("my_view", daft.from_pydict({"x": [1, 2]}))
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [3]}
+
+    sess.create_temp_view("my_view", daft.from_pydict({"x": [10, 20]}))
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [30]}
+
+
+def test_attach_accepts_dataframe_with_alias():
+    sess = Session()
+    view = daft.from_pydict({"x": [1, 2, 3]})
+
+    sess.attach(view, alias="my_view")
+    assert sess.sql("SELECT COUNT(*) AS ct FROM my_view").to_pydict() == {"ct": [3]}
+
+    with pytest.raises(ValueError, match="Cannot attach a DataFrame without an alias"):
+        sess.attach(view)
+
+
 def test_detach_table():
     sess = Session()
     #

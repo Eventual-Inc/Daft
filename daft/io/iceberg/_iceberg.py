@@ -7,10 +7,13 @@ from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.io._checkpoint import attach_checkpoint
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
+
+    from daft.checkpoint import CheckpointConfig
 
 
 def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
@@ -57,6 +60,7 @@ def read_iceberg(
     table: Union[str, "PyIcebergTable"],
     snapshot_id: int | None = None,
     io_config: IOConfig | None = None,
+    checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
@@ -66,6 +70,9 @@ def read_iceberg(
             created using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
@@ -111,4 +118,5 @@ def read_iceberg(
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)

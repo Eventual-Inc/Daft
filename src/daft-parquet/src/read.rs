@@ -146,8 +146,7 @@ async fn read_parquet_single(
     let (source_type, fixed_uri) = parse_url(uri)?;
     let table = if matches!(source_type, SourceType::File) {
         let (send, recv) = tokio::sync::oneshot::channel();
-        let path = fixed_uri
-            .strip_prefix("file://")
+        let path = daft_io::strip_file_uri_to_path(&fixed_uri)
             .unwrap_or(&fixed_uri)
             .to_string();
         let columns_owned: Option<Vec<String>> = columns_ref
@@ -221,8 +220,7 @@ async fn stream_parquet_single(
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
     let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
         if matches!(source_type, SourceType::File) {
-            let path = fixed_uri
-                .strip_prefix("file://")
+            let path = daft_io::strip_file_uri_to_path(&fixed_uri)
                 .unwrap_or(&fixed_uri)
                 .to_string();
             crate::arrowrs_reader::local_parquet_stream_arrowrs(

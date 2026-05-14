@@ -149,14 +149,6 @@ pub struct ProcessStats {
     pub metrics: HashMap<String, MetricValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ResultProduced {
-    pub query_id: String,
-    pub timestamp: f64,
-    #[serde(alias = "rows")]
-    pub num_rows: u64,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
@@ -171,5 +163,4 @@ pub enum Event {
     OperatorEnded(OperatorEnded),
     Stats(Stats),
     ProcessStats(ProcessStats),
-    ResultProduced(ResultProduced),
 }

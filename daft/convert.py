@@ -2,15 +2,23 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Protocol, Union, runtime_checkable
 
 from daft.api_annotations import PublicAPI
+from daft.dependencies import pa
+
+
+@runtime_checkable
+class ArrowStreamExportable(Protocol):
+    """Protocol for objects implementing the Arrow PyCapsule Interface (``__arrow_c_stream__``)."""
+
+    def __arrow_c_stream__(self, requested_schema: Any = None) -> Any: ...
+
 
 if TYPE_CHECKING:
     import dask
     import numpy as np
     import pandas as pd
-    import pyarrow as pa
     from ray.data.dataset import Dataset as RayDataset
 
     from daft.dataframe import DataFrame
@@ -84,15 +92,20 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
 
 @PublicAPI
 def from_arrow(
-    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]],
+    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"], ArrowStreamExportable],
 ) -> "DataFrame":
-    """Creates a DataFrame from a pyarrow Table.
+    """Creates a DataFrame from Arrow data.
+
+    Accepts pyarrow Tables, lists/iterables of pyarrow Tables, or any object
+    implementing the `Arrow PyCapsule Interface <https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface>`
+    (i.e. has an ``__arrow_c_stream__`` method). This includes pyarrow RecordBatchReaders,
+    pandas DataFrames (2.2+), nanoarrow arrays, and other Arrow-compatible libraries.
 
     Args:
-        data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
+        data: Arrow data to convert into a Daft DataFrame.
 
     Returns:
-        DataFrame: DataFrame created from the provided pyarrow Table.
+        DataFrame: DataFrame created from the provided Arrow data.
 
     Examples:
         >>> import pyarrow as pa
@@ -115,6 +128,11 @@ def from_arrow(
         (Showing first 3 of 3 rows)
     """
     from daft import DataFrame
+
+    # pa.Table implements __arrow_c_stream__ but we prefer the pyarrow-aware path
+    # because it handles types the Rust FFI stream cannot (e.g. extension types, Decimal256).
+    if not isinstance(data, pa.Table) and isinstance(data, ArrowStreamExportable):
+        return DataFrame._from_arrow_stream(data)
 
     return DataFrame._from_arrow(data)
 
