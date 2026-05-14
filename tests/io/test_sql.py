@@ -7,7 +7,7 @@ from sqlalchemy import Column, Float, Integer, MetaData, String, Table, create_e
 
 import daft
 from daft.datatype import DataType
-from daft.sql.sql_connection import SQLConnection, _redact_url
+from daft.sql.sql_connection import SQLConnection
 
 
 @pytest.fixture()
@@ -104,45 +104,41 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
 
 
 @pytest.mark.parametrize(
-    ("url", "expected"),
+    ("url", "secret"),
     [
-        ("trino://alice:hunter2@trino.example.com:443", "trino://alice:***@trino.example.com:443"),
+        # userinfo password
+        ("postgresql+psycopg2://alice:super-secret-pw@127.0.0.1:1/nope", "super-secret-pw"),
+        # query-param token (Trino JWT shape, the customer-reported leak)
         (
-            "trino://alice:hunter2@trino.example.com:443/db?param=1",
-            "trino://alice:***@trino.example.com:443/db?param=1",
+            "trino://alice@127.0.0.1:1?auth=jwt&access_token=SUPER_SECRET_TOKEN&http_scheme=https",
+            "SUPER_SECRET_TOKEN",
         ),
-        ("postgresql://user:p%40ss@host:5432/db", "postgresql://user:***@host:5432/db"),
-        ("mysql+pymysql://:secret@host/db", "mysql+pymysql://***@host/db"),
-        # No password — should be returned unchanged.
-        ("sqlite:///my.db", "sqlite:///my.db"),
-        ("mysql://user@host/db", "mysql://user@host/db"),
-        ("trino://host:443", "trino://host:443"),
-        ("not a url", "not a url"),
-        # Non-numeric port — parsed.port raises ValueError; must not propagate
-        # and must not leak the password.
-        ("trino://alice:hunter2@host:badport/db", "<redacted>"),
+        # password with URL-special chars
+        ("postgresql+psycopg2://alice:p#ss@127.0.0.1:1/nope", "p#ss"),
     ],
 )
-def test_redact_url(url, expected):
-    assert _redact_url(url) == expected
+def test_execute_sql_error_does_not_leak_credentials(url, secret):
+    """The raised RuntimeError must not echo any part of the connection URL.
 
-
-def test_execute_sql_error_does_not_leak_password():
-    """Connection failures must not include the password in the raised error."""
+    Secrets can appear anywhere in a URL (userinfo, query params, driver
+    extras), so the URL is omitted from the error message entirely rather
+    than relying on field-specific redaction.
+    """
     pytest.importorskip("psycopg2")
-    password = "super-secret-pw"
-    url = f"postgresql+psycopg2://alice:{password}@127.0.0.1:1/nope"
     conn = SQLConnection.from_url(url)
-
     with pytest.raises(RuntimeError) as exc_info:
         conn.execute_sql_query("SELECT 1")
-
-    message = str(exc_info.value)
-    assert password not in message
-    assert "alice:***@127.0.0.1:1" in message
+    assert secret not in str(exc_info.value)
 
 
-def test_repr_does_not_leak_password():
-    password = "super-secret-pw"
-    conn = SQLConnection.from_url(f"postgresql://alice:{password}@host:5432/db")
-    assert password not in repr(conn)
+def test_repr_does_not_leak_url():
+    """SQLConnection.__repr__ must not echo the connection URL.
+
+    Same reasoning as the error-message path. Show only dialect/driver.
+    """
+    secret = "super-secret-token-do-not-leak"
+    conn = SQLConnection.from_url(f"trino://alice@trino.example.com:443?access_token={secret}")
+    r = repr(conn)
+    assert secret not in r
+    assert "trino.example.com" not in r
+    assert "alice" not in r

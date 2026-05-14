@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    AsofJoinStrategy,
     CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
@@ -3603,7 +3604,7 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
-        strategy: Literal["backward"] = "backward",
+        strategy: Literal["backward", "forward"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
@@ -3617,7 +3618,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
-            strategy: Match strategy. Currently only ``"backward"`` is supported.
+            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
@@ -3688,12 +3689,14 @@ class DataFrame:
                         f"{len(left_by_exprs)} and {len(right_by_exprs)}"
                     )
 
+        asof_strategy = AsofJoinStrategy.from_asof_join_strategy_str(strategy)
         builder = self._builder.join_asof(
             other._builder,
             left_by=left_by_exprs,
             right_by=right_by_exprs,
             left_on=left_on_expr,
             right_on=right_on_expr,
+            strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
         )
