@@ -290,7 +290,7 @@ df_transcript = (
     # Unpack Results
     .select("path", daft.col("result").unnest())
     .explode("segments")
-    .select("path", "info", "transcript", daft.unnest(daft.col("segments")))
+    .select("path", "info", "transcript", daft.functions.unnest(daft.col("segments")))
 )
 
 df_transcript.show(3, format="fancy", max_width=40)
