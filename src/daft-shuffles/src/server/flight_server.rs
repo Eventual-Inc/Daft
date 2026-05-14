@@ -11,7 +11,7 @@ use arrow_flight::{
 };
 use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeTask, get_compute_runtime, get_io_runtime};
+use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
@@ -1324,192 +1324,194 @@ fn arrow_batches_to_daft_into(
     Ok(())
 }
 
-/// Decode every source batch from `specs` directly into arrow `RecordBatch` (no
-/// daft conversion), concat in groups whose accumulated byte size crosses
-/// `chunk_target_bytes`, IPC-encode each group, and **stream the resulting
-/// `FlightData` items via `tx`** as they're produced.
+/// Build a `Stream<Item = Result<FlightData, Status>>` that decodes source
+/// `specs` into arrow `RecordBatch` (no daft conversion), concats them in
+/// groups whose accumulated byte size crosses `chunk_target_bytes`, IPC-encodes
+/// each group, and yields the resulting `FlightData` items.
 ///
-/// Runs as an **async task on the compute runtime** (not on the IO runtime's
-/// blocking pool where the gRPC server lives). Yields cooperatively at each
-/// chunk send so concurrent reads share the compute pool fairly. File IO and
-/// IPC decode/encode are synchronous between awaits — accepted because each
-/// flush is bounded by `chunk_target_bytes` (4 MiB default), so a worker
-/// holds the thread for at most one chunk's worth of work before yielding.
+/// Runs **inline on whichever IO runtime worker polls the stream** — no
+/// `spawn_blocking`, no `spawn`, no channel. The work has natural yield points
+/// at each chunk's yield, so concurrent do_get handlers share the IO runtime's
+/// worker threads via cooperative scheduling. File IO is sync inline; on warm
+/// page cache the per-batch cost is sub-millisecond. Each `yield` is a true
+/// yield point — the runtime can schedule other handlers between chunks.
 ///
-/// Streaming is critical for read TTFB: previously the function built a
-/// `Vec<FlightData>` and returned the whole thing at the end, which meant a
-/// large partition's client saw `Poll::Pending` for the entire decode+encode
-/// duration before the first byte hit the wire. Streaming each chunk through
-/// the channel lets `do_get` yield to the client as soon as the first chunk
-/// is ready — measured 13-18× TTFB reduction on the local read bench.
-///
-/// Returns early with `Ok(())` if `tx.send` fails (client dropped).
-async fn concat_specs_into_flight_datas_streaming(
+/// Streaming TTFB win is preserved: the first chunk reaches the client as soon
+/// as one chunk's worth of decode+encode is done. Measured 13-18× TTFB
+/// reduction on the local read bench versus the prior vec-buffered approach.
+fn concat_specs_into_flight_data_stream(
     specs: Vec<FileReadSpec>,
     arrow_schema_ref: arrow_schema::SchemaRef,
     schema_header_bytes: Arc<Vec<u8>>,
     chunk_target_bytes: usize,
-    tx: tokio::sync::mpsc::Sender<Result<FlightData, Status>>,
-) -> DaftResult<()> {
-    use std::io::BufReader as StdBufReader;
+) -> impl Stream<Item = Result<FlightData, Status>> + Send + 'static {
+    async_stream::try_stream! {
+        use std::io::BufReader as StdBufReader;
 
-    let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
-    let mut pending_bytes: usize = 0;
-    let opts = IpcWriteOptions::default();
-    // The data generator is the lowest-level encoder; `batches_to_flight_data`
-    // would prepend a schema FlightData per call, which we don't want — schema
-    // is already sent once at the start of the do_get response.
-    let data_gen = arrow_ipc::writer::IpcDataGenerator::default();
-    let mut dict_tracker = arrow_ipc::writer::DictionaryTracker::new(false);
-    let mut compression_ctx = arrow_ipc::writer::CompressionContext::default();
+        let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
+        let mut pending_bytes: usize = 0;
+        let opts = IpcWriteOptions::default();
+        // The data generator is the lowest-level encoder; `batches_to_flight_data`
+        // would prepend a schema FlightData per call, which we don't want — the
+        // schema is already sent once at the start of the do_get response.
+        let data_gen = arrow_ipc::writer::IpcDataGenerator::default();
+        let mut dict_tracker = arrow_ipc::writer::DictionaryTracker::new(false);
+        let mut compression_ctx = arrow_ipc::writer::CompressionContext::default();
 
-    // Inline-flush helper: concat + encode + send. Returns Ok(true) to continue,
-    // Ok(false) if the receiver dropped, or Err on concat/encode failure. Async
-    // because the send is awaitable (we're on the compute runtime, not blocking).
-    macro_rules! flush_pending {
-        () => {{
-            if pending.is_empty() {
-                Ok::<bool, DaftError>(true)
-            } else {
-                let t_m = Instant::now();
-                let merged_res =
-                    arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
-                        .map_err(|e| DaftError::InternalError(format!("read-side concat: {}", e)));
-                read_agg::CONCAT_MERGE_US
-                    .fetch_add(t_m.elapsed().as_micros() as u64, Ordering::Relaxed);
-                match merged_res {
-                    Err(e) => Err(e),
-                    Ok(merged) => {
-                        let t_e = Instant::now();
-                        let encode_res = data_gen
-                            .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
-                            .map_err(|e| {
-                                DaftError::InternalError(format!("read-side encode: {}", e))
-                            });
-                        read_agg::CONCAT_ENCODE_US
-                            .fetch_add(t_e.elapsed().as_micros() as u64, Ordering::Relaxed);
-                        read_agg::CONCAT_OUT_CHUNKS.fetch_add(1, Ordering::Relaxed);
-                        match encode_res {
-                            Err(e) => Err(e),
-                            Ok((dicts, batch)) => {
-                                let mut keep_going = true;
+        for spec in specs {
+            match spec {
+                FileReadSpec::Whole { path, slot: _ } => {
+                    let t_o = Instant::now();
+                    let file = std::fs::File::open(&path)
+                        .map_err(|e| Status::internal(format!("file open: {}", e)))?;
+                    read_agg::CONCAT_OPEN_US
+                        .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
+                    let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
+                    read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
+                    let t_si = Instant::now();
+                    let reader = StdBufReader::with_capacity(64 * 1024, file);
+                    let mut stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)
+                        .map_err(|e| Status::internal(format!("ipc init: {}", e)))?;
+                    read_agg::CONCAT_STREAM_INIT_US
+                        .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    loop {
+                        let t_d = Instant::now();
+                        let next = stream_reader.next();
+                        read_agg::CONCAT_DECODE_US
+                            .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                        match next {
+                            Some(b) => {
+                                let batch = b
+                                    .map_err(|e| Status::internal(format!("ipc decode: {}", e)))?;
+                                read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                                pending_bytes += estimate_batch_size(&batch);
+                                pending.push(batch);
+                                if pending_bytes >= chunk_target_bytes {
+                                    let t_m = Instant::now();
+                                    let merged = arrow_select::concat::concat_batches(
+                                        &arrow_schema_ref, pending.iter(),
+                                    )
+                                    .map_err(|e| Status::internal(format!("concat: {}", e)))?;
+                                    read_agg::CONCAT_MERGE_US
+                                        .fetch_add(t_m.elapsed().as_micros() as u64, Ordering::Relaxed);
+                                    let t_e = Instant::now();
+                                    let (dicts, batch) = data_gen
+                                        .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
+                                        .map_err(|e| Status::internal(format!("encode: {}", e)))?;
+                                    read_agg::CONCAT_ENCODE_US
+                                        .fetch_add(t_e.elapsed().as_micros() as u64, Ordering::Relaxed);
+                                    read_agg::CONCAT_OUT_CHUNKS.fetch_add(1, Ordering::Relaxed);
+                                    for d in dicts {
+                                        read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+                                        yield d.into();
+                                    }
+                                    read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+                                    yield batch.into();
+                                    pending.clear();
+                                    pending_bytes = 0;
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+                FileReadSpec::Ranges { path, slot: _, ranges } => {
+                    // Lazy per-spec File::open; only on first cache miss. All cache
+                    // hits → zero file syscalls. seek+take rather than pread so the
+                    // kernel sees a sequential per-FD access pattern (readahead).
+                    let mut file: Option<std::fs::File> = None;
+                    let mut body_bytes_acc: u64 = 0;
+                    for (start, end) in ranges {
+                        body_bytes_acc += end - start;
+                        let key = (path.clone(), start, end);
+                        let arrow_batches = match crate::decode_cache::global().get(&key) {
+                            Some(cached) => cached,
+                            None => {
+                                let f = match file.as_mut() {
+                                    Some(f) => f,
+                                    None => {
+                                        let t_o = Instant::now();
+                                        file = Some(std::fs::File::open(&path).map_err(|e| {
+                                            Status::internal(format!("file open: {}", e))
+                                        })?);
+                                        read_agg::CONCAT_OPEN_US.fetch_add(
+                                            t_o.elapsed().as_micros() as u64,
+                                            Ordering::Relaxed,
+                                        );
+                                        read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
+                                        file.as_mut().unwrap()
+                                    }
+                                };
+                                let t_d = Instant::now();
+                                let decoded = decode_range_to_arrow_batches(
+                                    f, start, end, &schema_header_bytes,
+                                )
+                                .map_err(|e| Status::internal(format!("range decode: {}", e)))?;
+                                read_agg::CONCAT_DECODE_US
+                                    .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
+                                let bytes = crate::decode_cache::estimate_batches_bytes(&decoded);
+                                let arc = Arc::new(decoded);
+                                crate::decode_cache::global().put(key, arc.clone(), bytes);
+                                arc
+                            }
+                        };
+                        for batch in arrow_batches.iter() {
+                            read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
+                            pending_bytes += estimate_batch_size(batch);
+                            pending.push(batch.clone());
+                            if pending_bytes >= chunk_target_bytes {
+                                let t_m = Instant::now();
+                                let merged = arrow_select::concat::concat_batches(
+                                    &arrow_schema_ref, pending.iter(),
+                                )
+                                .map_err(|e| Status::internal(format!("concat: {}", e)))?;
+                                read_agg::CONCAT_MERGE_US
+                                    .fetch_add(t_m.elapsed().as_micros() as u64, Ordering::Relaxed);
+                                let t_e = Instant::now();
+                                let (dicts, batch) = data_gen
+                                    .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
+                                    .map_err(|e| Status::internal(format!("encode: {}", e)))?;
+                                read_agg::CONCAT_ENCODE_US
+                                    .fetch_add(t_e.elapsed().as_micros() as u64, Ordering::Relaxed);
+                                read_agg::CONCAT_OUT_CHUNKS.fetch_add(1, Ordering::Relaxed);
                                 for d in dicts {
-                                    if tx.send(Ok(d.into())).await.is_err() {
-                                        keep_going = false;
-                                        break;
-                                    }
-                                    read_agg::FLIGHTDATAS_EMITTED
-                                        .fetch_add(1, Ordering::Relaxed);
+                                    read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+                                    yield d.into();
                                 }
-                                if keep_going {
-                                    if tx.send(Ok(batch.into())).await.is_err() {
-                                        keep_going = false;
-                                    } else {
-                                        read_agg::FLIGHTDATAS_EMITTED
-                                            .fetch_add(1, Ordering::Relaxed);
-                                    }
-                                }
+                                read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+                                yield batch.into();
                                 pending.clear();
                                 pending_bytes = 0;
-                                Ok(keep_going)
                             }
                         }
                     }
+                    read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
                 }
-            }
-        }};
-    }
-
-    for spec in specs {
-        match spec {
-            FileReadSpec::Whole { path, slot: _ } => {
-                let t_o = Instant::now();
-                let file = std::fs::File::open(&path)?;
-                read_agg::CONCAT_OPEN_US
-                    .fetch_add(t_o.elapsed().as_micros() as u64, Ordering::Relaxed);
-                read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
-                let body_bytes = file.metadata().map(|m| m.len()).unwrap_or(0);
-                read_agg::LOCAL_BYTES.fetch_add(body_bytes, Ordering::Relaxed);
-                let t_si = Instant::now();
-                let reader = StdBufReader::with_capacity(64 * 1024, file);
-                let stream_reader = arrow_ipc::reader::StreamReader::try_new(reader, None)?;
-                read_agg::CONCAT_STREAM_INIT_US
-                    .fetch_add(t_si.elapsed().as_micros() as u64, Ordering::Relaxed);
-                let mut stream_reader = stream_reader;
-                loop {
-                    let t_d = Instant::now();
-                    let next = stream_reader.next();
-                    read_agg::CONCAT_DECODE_US
-                        .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
-                    match next {
-                        Some(b) => {
-                            let batch = b?;
-                            read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
-                            pending_bytes += estimate_batch_size(&batch);
-                            pending.push(batch);
-                            if pending_bytes >= chunk_target_bytes && !flush_pending!()? {
-                                return Ok(());
-                            }
-                        }
-                        None => break,
-                    }
-                }
-            }
-            FileReadSpec::Ranges { path, slot: _, ranges } => {
-                // Lazy per-spec File::open; only on first cache miss. All cache
-                // hits → zero file syscalls. seek+take rather than pread so the
-                // kernel sees a sequential per-FD access pattern (readahead).
-                let mut file: Option<std::fs::File> = None;
-                let mut body_bytes_acc: u64 = 0;
-                for (start, end) in ranges {
-                    body_bytes_acc += end - start;
-                    let key = (path.clone(), start, end);
-                    let arrow_batches = match crate::decode_cache::global().get(&key) {
-                        Some(cached) => cached,
-                        None => {
-                            let f = match file.as_mut() {
-                                Some(f) => f,
-                                None => {
-                                    let t_o = Instant::now();
-                                    file = Some(std::fs::File::open(&path)?);
-                                    read_agg::CONCAT_OPEN_US.fetch_add(
-                                        t_o.elapsed().as_micros() as u64,
-                                        Ordering::Relaxed,
-                                    );
-                                    read_agg::CONCAT_OPENS.fetch_add(1, Ordering::Relaxed);
-                                    file.as_mut().unwrap()
-                                }
-                            };
-                            let t_d = Instant::now();
-                            let decoded = decode_range_to_arrow_batches(
-                                f,
-                                start,
-                                end,
-                                &schema_header_bytes,
-                            )?;
-                            read_agg::CONCAT_DECODE_US
-                                .fetch_add(t_d.elapsed().as_micros() as u64, Ordering::Relaxed);
-                            let bytes = crate::decode_cache::estimate_batches_bytes(&decoded);
-                            let arc = Arc::new(decoded);
-                            crate::decode_cache::global().put(key, arc.clone(), bytes);
-                            arc
-                        }
-                    };
-                    for batch in arrow_batches.iter() {
-                        read_agg::CONCAT_SOURCE_BATCHES.fetch_add(1, Ordering::Relaxed);
-                        pending_bytes += estimate_batch_size(batch);
-                        pending.push(batch.clone());
-                        if pending_bytes >= chunk_target_bytes && !flush_pending!()? {
-                            return Ok(());
-                        }
-                    }
-                }
-                read_agg::LOCAL_BYTES.fetch_add(body_bytes_acc, Ordering::Relaxed);
             }
         }
+        // Final flush of any leftover pending batches.
+        if !pending.is_empty() {
+            let t_m = Instant::now();
+            let merged = arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
+                .map_err(|e| Status::internal(format!("concat: {}", e)))?;
+            read_agg::CONCAT_MERGE_US
+                .fetch_add(t_m.elapsed().as_micros() as u64, Ordering::Relaxed);
+            let t_e = Instant::now();
+            let (dicts, batch) = data_gen
+                .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
+                .map_err(|e| Status::internal(format!("encode: {}", e)))?;
+            read_agg::CONCAT_ENCODE_US
+                .fetch_add(t_e.elapsed().as_micros() as u64, Ordering::Relaxed);
+            read_agg::CONCAT_OUT_CHUNKS.fetch_add(1, Ordering::Relaxed);
+            for d in dicts {
+                read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+                yield d.into();
+            }
+            read_agg::FLIGHTDATAS_EMITTED.fetch_add(1, Ordering::Relaxed);
+            yield batch.into();
+        }
     }
-    let _ = flush_pending!()?;
-    Ok(())
 }
 
 /// Cheap per-batch size estimate: sum of buffer lengths across columns. Used
@@ -1631,45 +1633,26 @@ impl FlightService for ShuffleFlightServer {
             let arrow_schema_owned = arrow_schema.clone();
             let header_bytes = build_schema_header_bytes(&arrow_schema_owned)
                 .map_err(|e| Status::internal(format!("schema header probe: {}", e)))?;
-            // Streaming read-concat: spawn the decode+encode loop on the IO
-            // runtime's blocking pool and pipe each `FlightData` it produces
-            // through an mpsc channel. The do_get response stream pulls from
-            // the channel, so the first chunk reaches the client as soon as
-            // it's encoded — TTFB scales with one chunk's cost, not the whole
-            // response's. Channel depth bounds in-flight memory.
-            let (tx, rx) = tokio::sync::mpsc::channel::<Result<FlightData, Status>>(READ_PREFETCH);
-            let t0 = Instant::now();
-            // Route the decode/concat/encode work to the COMPUTE runtime
-            // (sized to num_cpus), not the IO runtime's blocking pool where
-            // the gRPC server lives. Concurrent reads share compute-pool
-            // workers, queueing past num_cpus rather than oversubscribing.
-            // Spawn via the tokio Handle directly so dropping the JoinHandle
-            // doesn't cancel the task (common_runtime::Runtime::spawn returns
-            // a `RuntimeTask` that cancels on drop — we want fire-and-forget).
+            // Inline streaming via async_stream: the producer logic runs as
+            // part of the response stream's poll, on whichever IO runtime
+            // worker tonic dispatched the do_get to. No separate task, no
+            // channel — the runtime's cooperative scheduler interleaves
+            // concurrent readers naturally at each `yield`. Avoids both the
+            // IO blocking pool oversubscription (`spawn_blocking` route) and
+            // the compute pool starvation (compute runtime route) we saw at
+            // production-scale concurrency.
             let arrow_schema_ref: arrow_schema::SchemaRef =
                 std::sync::Arc::new(arrow_schema_owned);
             let header_bytes_arc = Arc::new(header_bytes);
-            let tx_for_err = tx.clone();
-            get_compute_runtime().runtime.handle().spawn(async move {
-                let result = concat_specs_into_flight_datas_streaming(
-                    specs,
-                    arrow_schema_ref,
-                    header_bytes_arc,
-                    chunk_target,
-                    tx,
-                )
-                .await;
-                if let Err(e) = result {
-                    let _ = tx_for_err
-                        .send(Err(Status::internal(format!(
-                            "read-concat decode: {}",
-                            e
-                        ))))
-                        .await;
-                }
-            });
+            let t0 = Instant::now();
+            let stream = concat_specs_into_flight_data_stream(
+                specs,
+                arrow_schema_ref,
+                header_bytes_arc,
+                chunk_target,
+            );
             read_agg::OPEN_US.fetch_add(t0.elapsed().as_micros() as u64, Ordering::Relaxed);
-            Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx))
+            Box::pin(stream)
         } else {
             let file_stream = futures::stream::iter(specs);
             Box::pin(
