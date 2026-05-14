@@ -3378,7 +3378,6 @@ dependencies = [
  "dashmap",
  "futures",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
  "tracing-subscriber",
