@@ -2,7 +2,7 @@ use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_logical_plan::ops::AsofJoin;
+use daft_logical_plan::{AsofJoinStrategy, ops::AsofJoin};
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
@@ -19,6 +19,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_left_partitions = left.config().clustering_spec.num_partitions();
@@ -35,6 +36,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_by,
                 left_on,
                 right_on,
+                strategy,
                 num_partitions,
                 left,
                 right,
@@ -81,6 +83,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             right_by,
             left_on,
             right_on,
+            asof_join.strategy,
             asof_join.output_schema.clone(),
         )
     }
