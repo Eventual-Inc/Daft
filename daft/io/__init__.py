@@ -36,7 +36,7 @@ from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io.lance._lance import read_lance
 
