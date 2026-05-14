@@ -1345,9 +1345,9 @@ fn physical_plan_to_pipeline(
             right_by,
             left_on,
             right_on,
+            schema,
             stats_state,
             context,
-            ..
         }) => {
             let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
             let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
@@ -1358,7 +1358,7 @@ fn physical_plan_to_pipeline(
                 left_on.clone(),
                 right_on.clone(),
                 left.schema().clone(),
-                right.schema().clone(),
+                schema.clone(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: "AsofJoin",

@@ -16,20 +16,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _redact_url(url: str) -> str:
-    try:
-        parsed = urlparse(url)
-        if parsed.password is None:
-            return url
-        userinfo = f"{parsed.username}:***" if parsed.username else "***"
-        host = parsed.hostname or ""
-        if parsed.port is not None:
-            host = f"{host}:{parsed.port}"
-        return parsed._replace(netloc=f"{userinfo}@{host}").geturl()
-    except Exception:
-        return "<redacted>"
-
-
 class SQLConnection:
     def __init__(self, conn: str | Callable[[], Connection], driver: str, dialect: str, url: str) -> None:
         self.conn = conn
@@ -38,8 +24,10 @@ class SQLConnection:
         self.url = url
 
     def __repr__(self) -> str:
-        conn = _redact_url(self.conn) if isinstance(self.conn, str) else self.conn
-        return f"SQLConnection(conn={conn})"
+        # Deliberately omit the URL: secrets can appear anywhere in a
+        # connection string (userinfo, query params, driver extras), so
+        # the safest mitigation is to not echo it at all.
+        return f"SQLConnection(dialect={self.dialect!r}, driver={self.driver!r})"
 
     @classmethod
     def from_url(cls, url: str) -> SQLConnection:
@@ -158,7 +146,12 @@ class SQLConnection:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            raise RuntimeError(f"Failed to execute sql: {sql} with url: {_redact_url(self.conn)}, error: {e}") from e
+            # The connection URL is deliberately omitted from the error message:
+            # secrets can appear anywhere in it (userinfo, query params,
+            # driver-specific extras), so dropping the URL is the only robust
+            # mitigation. The caller knows which connection they passed in,
+            # so the URL is redundant here.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         from sqlalchemy import create_engine, text
@@ -177,5 +170,6 @@ class SQLConnection:
             pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
             return pa.Table.from_pydict(pydict, schema=schema)
         except Exception as e:
-            connection_str = _redact_url(self.conn) if isinstance(self.conn, str) else self.conn.__name__
-            raise RuntimeError(f"Failed to execute sql: {sql} from connection: {connection_str}, error: {e}") from e
+            # See note in `_execute_sql_query_with_connectorx`: don't echo
+            # back the connection URL.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e

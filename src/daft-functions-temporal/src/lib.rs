@@ -19,7 +19,7 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
-use date_arithmetic::{DateAdd, DateDiff, DateSub};
+use date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween};
 use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
 use date_navigation::{LastDay, NextDay};
 use epoch_conversions::{
@@ -129,6 +129,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(DateAdd);
         parent.add_fn(DateSub);
         parent.add_fn(DateDiff);
+        parent.add_fn(AddMonths);
+        parent.add_fn(MonthsBetween);
         parent.add_fn(DateFromUnixDate);
         parent.add_fn(TimestampSeconds);
         parent.add_fn(TimestampMillis);
