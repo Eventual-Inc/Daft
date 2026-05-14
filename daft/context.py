@@ -248,9 +248,6 @@ def set_execution_config(
     flight_shuffle_compression: str | None = None,
     flight_shuffle_seal: str | None = None,
     flight_shuffle_seal_partition_threshold: int | None = None,
-    flight_shuffle_server_side_repartition: bool | None = None,
-    flight_shuffle_mode_switch_threshold_bytes: int | None = None,
-    flight_shuffle_server_repartition_threshold_bytes: int | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -305,9 +302,6 @@ def set_execution_config(
         flight_shuffle_compression: IPC compression for Flight shuffle batches. One of "none" (default), "lz4", or "zstd". Most useful when EBS bandwidth dominates over CPU.
         flight_shuffle_seal: Seal-time consolidation policy for the Flight backend. One of "auto" (default, fire only when target_num_partitions >= flight_shuffle_seal_partition_threshold), "always", or "never". Seal does a full byte rewrite of the shuffle to collapse per-task entries into one file per partition; helpful at high partition counts where the read-side seek tax compounds, pure overhead at moderate N on NVMe.
         flight_shuffle_seal_partition_threshold: target_num_partitions threshold above which flight_shuffle_seal="auto" fires. Defaults to 4096.
-        flight_shuffle_server_side_repartition: When True, the Flight shuffle path moves the partition kernel onto the server. Each map task picks its mode at runtime — big tasks (≥ flight_shuffle_mode_switch_threshold_bytes accumulated) partition on the worker as today; small tasks write raw IPC and let the server batch them at the flight_shuffle_server_repartition_threshold_bytes boundary. PreShuffleMerge is skipped for Flight + Hash/Random when this is on. Defaults to False.
-        flight_shuffle_mode_switch_threshold_bytes: Per-task speculative-buffer cap before a Flight map task switches to "big" mode (partition on worker). Defaults to 256 MiB.
-        flight_shuffle_server_repartition_threshold_bytes: Server-side raw accumulator threshold; cumulative raw bytes ≥ this triggers a background repartition pass. Defaults to 1 GiB.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -355,9 +349,6 @@ def set_execution_config(
             flight_shuffle_compression=flight_shuffle_compression,
             flight_shuffle_seal=flight_shuffle_seal,
             flight_shuffle_seal_partition_threshold=flight_shuffle_seal_partition_threshold,
-            flight_shuffle_server_side_repartition=flight_shuffle_server_side_repartition,
-            flight_shuffle_mode_switch_threshold_bytes=flight_shuffle_mode_switch_threshold_bytes,
-            flight_shuffle_server_repartition_threshold_bytes=flight_shuffle_server_repartition_threshold_bytes,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 

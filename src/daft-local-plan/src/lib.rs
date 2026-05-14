@@ -13,7 +13,6 @@ pub use plan::{
     IntoBatches, IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project,
     RepartitionWrite, Sample, SamplingMethod, ShuffleBackend, ShuffleRead, ShuffleReadBackend,
-    ShuffleWrite,
     Sort, SortMergeJoin, StageCheckpointKeys, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,

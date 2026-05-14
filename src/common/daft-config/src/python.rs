@@ -128,9 +128,6 @@ impl PyDaftExecutionConfig {
         flight_shuffle_compression=None,
         flight_shuffle_seal=None,
         flight_shuffle_seal_partition_threshold=None,
-        flight_shuffle_server_side_repartition=None,
-        flight_shuffle_mode_switch_threshold_bytes=None,
-        flight_shuffle_server_repartition_threshold_bytes=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -174,9 +171,6 @@ impl PyDaftExecutionConfig {
         flight_shuffle_compression: Option<&str>,
         flight_shuffle_seal: Option<&str>,
         flight_shuffle_seal_partition_threshold: Option<usize>,
-        flight_shuffle_server_side_repartition: Option<bool>,
-        flight_shuffle_mode_switch_threshold_bytes: Option<usize>,
-        flight_shuffle_server_repartition_threshold_bytes: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -341,25 +335,6 @@ impl PyDaftExecutionConfig {
 
         if let Some(flight_shuffle_seal_partition_threshold) = flight_shuffle_seal_partition_threshold {
             config.flight_shuffle_seal_partition_threshold = flight_shuffle_seal_partition_threshold;
-        }
-
-        if let Some(flight_shuffle_server_side_repartition) = flight_shuffle_server_side_repartition
-        {
-            config.flight_shuffle_server_side_repartition = flight_shuffle_server_side_repartition;
-        }
-
-        if let Some(flight_shuffle_mode_switch_threshold_bytes) =
-            flight_shuffle_mode_switch_threshold_bytes
-        {
-            config.flight_shuffle_mode_switch_threshold_bytes =
-                flight_shuffle_mode_switch_threshold_bytes;
-        }
-
-        if let Some(flight_shuffle_server_repartition_threshold_bytes) =
-            flight_shuffle_server_repartition_threshold_bytes
-        {
-            config.flight_shuffle_server_repartition_threshold_bytes =
-                flight_shuffle_server_repartition_threshold_bytes;
         }
 
         if let Some(flight_shuffle_compression) = flight_shuffle_compression {
@@ -561,21 +536,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_seal_partition_threshold(&self) -> PyResult<usize> {
         Ok(self.config.flight_shuffle_seal_partition_threshold)
-    }
-
-    #[getter]
-    fn flight_shuffle_server_side_repartition(&self) -> PyResult<bool> {
-        Ok(self.config.flight_shuffle_server_side_repartition)
-    }
-
-    #[getter]
-    fn flight_shuffle_mode_switch_threshold_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.flight_shuffle_mode_switch_threshold_bytes)
-    }
-
-    #[getter]
-    fn flight_shuffle_server_repartition_threshold_bytes(&self) -> PyResult<usize> {
-        Ok(self.config.flight_shuffle_server_repartition_threshold_bytes)
     }
 
     #[getter]

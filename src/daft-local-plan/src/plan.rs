@@ -122,7 +122,6 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
-    ShuffleWrite(ShuffleWrite),
     GatherWrite(GatherWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
@@ -186,7 +185,6 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
-            | Self::ShuffleWrite(ShuffleWrite { stats_state, .. })
             | Self::GatherWrite(GatherWrite { stats_state, .. })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
@@ -239,7 +237,6 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
-            | Self::ShuffleWrite(ShuffleWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
@@ -289,7 +286,6 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
-            | Self::ShuffleWrite(ShuffleWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
@@ -1117,36 +1113,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn shuffle_write(
-        input: LocalPhysicalPlanRef,
-        num_partitions: usize,
-        schema: SchemaRef,
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-        repartition_spec: RepartitionSpec,
-        mode_switch_threshold_bytes: usize,
-        server_repartition_threshold_bytes: usize,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::ShuffleWrite(ShuffleWrite {
-            input,
-            num_partitions,
-            schema,
-            shuffle_id,
-            shuffle_dirs,
-            compression,
-            repartition_spec,
-            mode_switch_threshold_bytes,
-            server_repartition_threshold_bytes,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
     pub fn gather_write(
         input: LocalPhysicalPlanRef,
         schema: SchemaRef,
@@ -1226,7 +1192,6 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
-            Self::ShuffleWrite(ShuffleWrite { schema, .. }) => schema,
             Self::GatherWrite(GatherWrite { schema, .. }) => schema,
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
@@ -1312,7 +1277,6 @@ impl LocalPhysicalPlan {
             }
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
-            Self::ShuffleWrite(ShuffleWrite { input, .. }) => vec![input.clone()],
             Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
@@ -1794,30 +1758,6 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     backend.clone(),
                     repartition_spec.clone(),
-                    StatsState::NotMaterialized,
-                    context.clone(),
-                ),
-                Self::ShuffleWrite(ShuffleWrite {
-                    num_partitions,
-                    schema,
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
-                    repartition_spec,
-                    mode_switch_threshold_bytes,
-                    server_repartition_threshold_bytes,
-                    context,
-                    ..
-                }) => Self::shuffle_write(
-                    new_child.clone(),
-                    *num_partitions,
-                    schema.clone(),
-                    *shuffle_id,
-                    shuffle_dirs.clone(),
-                    compression.clone(),
-                    repartition_spec.clone(),
-                    *mode_switch_threshold_bytes,
-                    *server_repartition_threshold_bytes,
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2449,32 +2389,6 @@ pub struct RepartitionWrite {
     pub schema: SchemaRef,
     pub backend: ShuffleBackend,
     pub repartition_spec: RepartitionSpec,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-/// Write input to disk without applying the partition kernel on the worker.
-///
-/// Used by the Flight backend when `flight_shuffle_server_side_repartition` is on.
-/// The sink decides at runtime whether to partition on the worker (big-mode,
-/// today's `RepartitionWrite` behavior) or write raw IPC chunks and let the
-/// Flight server run the partition kernel once on each ~1 GiB raw batch
-/// (small-mode). `repartition_spec` and `num_partitions` ride along so the
-/// server-side path can pick them up after the worker registers a raw entry.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShuffleWrite {
-    pub input: LocalPhysicalPlanRef,
-    pub num_partitions: usize,
-    pub schema: SchemaRef,
-    pub shuffle_id: u64,
-    pub shuffle_dirs: Vec<String>,
-    pub compression: Option<String>,
-    pub repartition_spec: RepartitionSpec,
-    pub mode_switch_threshold_bytes: usize,
-    /// Server-side raw accumulator threshold; cumulative raw bytes ≥ this
-    /// triggers a background repartition pass on the Flight server. Carried
-    /// here so the worker can ship it to the server via `register_shuffle_spec`.
-    pub server_repartition_threshold_bytes: usize,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }

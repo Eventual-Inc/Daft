@@ -3371,7 +3371,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
- "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
  "daft-schema",
