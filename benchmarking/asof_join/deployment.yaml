@@ -55,7 +55,7 @@ setup_commands:
 - sudo dnf install -y python3.11 python3.11-pip tmux
 - sudo ln -sf /usr/bin/python3.11 /usr/bin/python
 - python -m pip install --upgrade pip
-- python -m pip install 'ray[default]' 'daft[ray,aws]'
+- python -m pip install 'ray[default]' 'daft[ray,aws]' memray
 
 head_setup_commands: []
 
