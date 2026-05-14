@@ -992,7 +992,8 @@ def test_bin_bad_input() -> None:
         pytest.param("  FF  ", 16, 10, "255", id="whitespace_trim"),
         pytest.param("FFFFFFFFFFFFFFFF", 16, 10, "18446744073709551615", id="u64_max"),
         pytest.param("18446744073709551616", 10, 16, None, id="u64_overflow"),
-        pytest.param("-9223372036854775808", 10, 16, None, id="i64_min_unsigned_overflow"),
+        pytest.param("-9223372036854775808", 10, 16, "8000000000000000", id="i64_min_two_complement"),
+        pytest.param("-9223372036854775809", 10, 16, None, id="below_i64_min_returns_null"),
         pytest.param("-9223372036854775808", 10, -16, "-8000000000000000", id="i64_min_signed"),
         pytest.param(None, 16, 10, None, id="null_input"),
     ],
@@ -1019,6 +1020,18 @@ def test_conv_unsigned_int_input() -> None:
     table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
     result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
     assert result.get_column_by_name("r").to_pylist() == ["0", "8000000000000000", "FFFFFFFFFFFFFFFF"]
+
+
+def test_conv_negative_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -255, -(2**63)], type=pa.int64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [
+        "FFFFFFFFFFFFFFFF",
+        "FFFFFFFFFFFFFF01",
+        "8000000000000000",
+    ]
 
 
 @pytest.mark.parametrize(

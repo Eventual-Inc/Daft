@@ -60,7 +60,8 @@ impl ScalarUDF for Conv {
          Negative `to_base` returns a signed result; positive `to_base` \
          interprets negative inputs as 64-bit two's complement. Trailing \
          invalid characters are silently truncated. Returns NULL on \
-         out-of-range bases or on u64 overflow."
+         out-of-range bases, on u64 overflow during parsing, or when \
+         a negated magnitude exceeds 2^63."
     }
 }
 
@@ -82,8 +83,8 @@ fn conv_impl(num: Series, from_base: i64, to_base: i64) -> DaftResult<Series> {
     Ok(result.into_series())
 }
 
-/// Returns NULL on u64 overflow (Spark non-ANSI saturates to u64::MAX; ANSI throws).
-/// Daft uses NULL for arithmetic edge cases throughout.
+/// Returns NULL on u64 overflow during parsing or when a negated magnitude
+/// exceeds 2^63 (cannot be represented as a 64-bit two's-complement value).
 fn convert_one(s: &str, from_base: i64, to_base: i64) -> Option<String> {
     let s = s.trim();
     if s.is_empty() {
@@ -102,8 +103,8 @@ fn convert_one(s: &str, from_base: i64, to_base: i64) -> Option<String> {
 
     // Spark NumberConverter sign rules (mathExpressions.scala L167-191).
     let (output_v, prefix_minus) = if negative && to_base > 0 {
-        if (v as i64) < 0 {
-            return None; // |v| > i64::MAX, -v doesn't fit
+        if v > i64::MIN.unsigned_abs() {
+            return None;
         }
         (v.wrapping_neg(), false)
     } else if to_base < 0 && (v as i64) < 0 {

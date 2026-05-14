@@ -300,7 +300,8 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     (``conv("-1", 10, 16) == "FFFFFFFFFFFFFFFF"``); negative ``to_base`` returns
     a signed result (``conv("-1", 10, -16) == "-1"``). Trailing invalid characters
     are silently truncated (``conv("11abc", 10, 16) == "B"``). Returns NULL on
-    out-of-range bases or u64 overflow.
+    out-of-range bases, on u64 overflow during parsing, or when a negated
+    magnitude exceeds 2^63.
     """
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
 
