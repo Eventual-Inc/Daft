@@ -3611,7 +3611,7 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
-        strategy: Literal["backward", "forward"] = "backward",
+        strategy: Literal["backward", "forward", "nearest"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
@@ -3625,7 +3625,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
-            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp.
+            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; ties prefer the earlier value.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).

@@ -239,6 +239,8 @@ impl AsofJoinNode {
                     }
                 }
             }
+            // TODO: nearest distributed requires bidirectional carryover; not yet implemented.
+            AsofJoinStrategy::Nearest => {}
         }
 
         let left_partition_groups =
@@ -268,6 +270,8 @@ impl AsofJoinNode {
                     per_partition_carryover_outputs[i + 1].clone()
                 }
             }
+            // TODO: nearest distributed requires bidirectional carryover; not yet implemented.
+            AsofJoinStrategy::Nearest => None,
         };
 
         for (i, (left_group, right_group)) in left_partition_groups
