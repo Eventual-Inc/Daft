@@ -360,6 +360,73 @@ pub fn build_partial_compare_with_nulls(
     }))
 }
 
+
+/// Returns true if `a_arr[a_idx]` is nearer to `pivot_arr[pivot_idx]` than `b_arr[b_idx]`.
+pub type DynNearestComparator =
+    Box<dyn Fn(&dyn Array, usize, &dyn Array, usize, &dyn Array, usize) -> bool + Send + Sync>;
+
+/// Uses Arrow's native sub and compare kernels to determine which of two values is nearest to a pivot.
+pub fn build_nearest_comparator() -> DynNearestComparator {
+    Box::new(
+        |a_arr: &dyn Array,
+         a_idx: usize,
+         b_arr: &dyn Array,
+         b_idx: usize,
+         pivot_arr: &dyn Array,
+         pivot_idx: usize| {
+            if !a_arr.is_valid(a_idx) {
+                return false;
+            }
+            if !b_arr.is_valid(b_idx) {
+                return true;
+            }
+            if !pivot_arr.is_valid(pivot_idx) {
+                return false;
+            }
+
+            let a = a_arr.slice(a_idx, 1);
+            let b = b_arr.slice(b_idx, 1);
+            let p = pivot_arr.slice(pivot_idx, 1);
+
+            let sort_opts = SortOptions::new(false, false);
+
+            // Compute |a - pivot| and |b - pivot| by always subtracting smaller from larger.
+            let a_dist = {
+                let cmp = make_daft_comparator(a.as_ref(), p.as_ref(), sort_opts)
+                    .expect("make_comparator failed for a vs pivot");
+                if cmp(0, 0).is_ge() {
+                    arrow::compute::kernels::numeric::sub(&a, &p)
+                } else {
+                    arrow::compute::kernels::numeric::sub(&p, &a)
+                }
+                .expect("sub failed for a distance")
+            };
+            let b_dist = {
+                let cmp = make_daft_comparator(b.as_ref(), p.as_ref(), sort_opts)
+                    .expect("make_comparator failed for b vs pivot");
+                if cmp(0, 0).is_ge() {
+                    arrow::compute::kernels::numeric::sub(&b, &p)
+                } else {
+                    arrow::compute::kernels::numeric::sub(&p, &b)
+                }
+                .expect("sub failed for b distance")
+            };
+
+            let dist_cmp = make_daft_comparator(a_dist.as_ref(), b_dist.as_ref(), sort_opts)
+                .expect("make_comparator failed for distance comparison");
+            match dist_cmp(0, 0) {
+                Ordering::Less => true,
+                Ordering::Greater => false,
+                // Tie: prefer larger value (forward/later).
+                Ordering::Equal => make_daft_comparator(a.as_ref(), b.as_ref(), sort_opts)
+                    .expect("make_comparator failed for tie-breaking")
+                    (0, 0)
+                    .is_gt(),
+            }
+        },
+    )
+}
+
 pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
     key_arrays: &Vec<&dyn Array>,
