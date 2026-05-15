@@ -48,6 +48,8 @@ pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
 #[cfg(feature = "python")]
+use pyo3::prelude::*;
+#[cfg(feature = "python")]
 pub use sink::make_data_sink_writer_factory;
 
 pub const RETURN_PATHS_COLUMN_NAME: &str = "path";
@@ -261,15 +263,37 @@ pub fn make_catalog_writer_factory(
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());
 
-    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        cfg.parquet_target_filesize,
-        cfg.parquet_inflation_factor,
-    );
-    let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        min(
-            cfg.parquet_target_row_group_size,
+    // Honor Iceberg-spec table-level write properties:
+    // https://iceberg.apache.org/docs/latest/configuration/#write-properties
+    let (target_file_size, target_row_group_size) = match catalog_info {
+        daft_logical_plan::CatalogType::Iceberg(info) => Python::attach(|py| {
+            let props = info.iceberg_properties.bind(py);
+            let read = |key: &str, default: usize| {
+                props
+                    .get_item(key)
+                    .ok()
+                    .and_then(|v| v.extract::<String>().ok())
+                    .and_then(|s| s.parse::<usize>().ok().filter(|&v| v > 0))
+                    .unwrap_or(default)
+            };
+            (
+                read("write.target-file-size-bytes", cfg.parquet_target_filesize),
+                read(
+                    "write.parquet.row-group-size-bytes",
+                    cfg.parquet_target_row_group_size,
+                ),
+            )
+        }),
+        _ => (
             cfg.parquet_target_filesize,
+            cfg.parquet_target_row_group_size,
         ),
+    };
+
+    let file_size_calculator =
+        TargetInMemorySizeBytesCalculator::new(target_file_size, cfg.parquet_inflation_factor);
+    let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        min(target_row_group_size, target_file_size),
         cfg.parquet_inflation_factor,
     );
     let row_group_writer_factory = TargetBatchWriterFactory::new(

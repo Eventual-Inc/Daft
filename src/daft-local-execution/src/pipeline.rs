@@ -1392,6 +1392,7 @@ fn physical_plan_to_pipeline(
             left_on,
             right_on,
             schema,
+            strategy,
             stats_state,
             context,
         }) => {
@@ -1403,6 +1404,7 @@ fn physical_plan_to_pipeline(
                 right_by.clone(),
                 left_on.clone(),
                 right_on.clone(),
+                *strategy,
                 left.schema().clone(),
                 schema.clone(),
             )
