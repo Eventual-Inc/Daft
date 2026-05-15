@@ -31,6 +31,7 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
+        * [LeRobot v3](datasets/lerobot.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
