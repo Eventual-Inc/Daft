@@ -197,17 +197,61 @@ class RaySwordfishActor:
             )
             metas = []
             is_flight_shuffle = False
+            target_bytes = exec_cfg.flotilla_output_target_bytes
+            buf: list[MicroPartition] = []
+            buf_bytes = 0
+
+            def flush_buf() -> MicroPartition | None:
+                nonlocal buf, buf_bytes
+                if not buf:
+                    return None
+                merged = buf[0] if len(buf) == 1 else MicroPartition.concat(buf)
+                buf = []
+                buf_bytes = 0
+                return merged
+
             async for partition in result_handle:
                 if isinstance(partition, FlightPartitionRef):
+                    # Flush buffered MicroPartitions first to preserve emission order.
+                    flushed = flush_buf()
+                    if flushed is not None:
+                        metas.append(PartitionMetadata.from_table(flushed))
+                        yield flushed
                     is_flight_shuffle = True
                     metas.append(PartitionMetadata.from_flight_partition_ref(partition))
                     yield partition
                 elif isinstance(partition, PyMicroPartition):
                     mp = MicroPartition._from_pymicropartition(partition)
-                    metas.append(PartitionMetadata.from_table(mp))
-                    yield mp
+                    if target_bytes <= 0:
+                        metas.append(PartitionMetadata.from_table(mp))
+                        yield mp
+                        continue
+                    sb = mp.size_bytes()
+                    if sb is None:
+                        # Unknown size: don't risk unbounded buffering — flush whatever we have,
+                        # then emit this partition standalone.
+                        flushed = flush_buf()
+                        if flushed is not None:
+                            metas.append(PartitionMetadata.from_table(flushed))
+                            yield flushed
+                        metas.append(PartitionMetadata.from_table(mp))
+                        yield mp
+                        continue
+                    buf.append(mp)
+                    buf_bytes += sb
+                    if buf_bytes >= target_bytes:
+                        flushed = flush_buf()
+                        assert flushed is not None
+                        metas.append(PartitionMetadata.from_table(flushed))
+                        yield flushed
                 else:
                     break
+
+            # End-of-stream flush.
+            flushed = flush_buf()
+            if flushed is not None:
+                metas.append(PartitionMetadata.from_table(flushed))
+                yield flushed
 
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(

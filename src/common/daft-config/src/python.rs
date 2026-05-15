@@ -129,6 +129,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_seal=None,
         flight_shuffle_seal_partition_threshold=None,
         enable_multi_glob_path_tasks=None,
+        flotilla_output_target_bytes=None,
     ))]
     fn with_config_values(
         &self,
@@ -172,6 +173,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_seal: Option<&str>,
         flight_shuffle_seal_partition_threshold: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
+        flotilla_output_target_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -348,6 +350,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
             config.enable_multi_glob_path_tasks = enable_multi_glob_path_tasks;
+        }
+
+        if let Some(flotilla_output_target_bytes) = flotilla_output_target_bytes {
+            config.flotilla_output_target_bytes = flotilla_output_target_bytes;
         }
 
         Ok(Self {
@@ -541,6 +547,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
+    }
+
+    #[getter]
+    fn flotilla_output_target_bytes(&self) -> PyResult<usize> {
+        Ok(self.config.flotilla_output_target_bytes)
     }
 }
 

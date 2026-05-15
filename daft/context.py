@@ -249,6 +249,7 @@ def set_execution_config(
     flight_shuffle_seal: str | None = None,
     flight_shuffle_seal_partition_threshold: int | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
+    flotilla_output_target_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -303,6 +304,7 @@ def set_execution_config(
         flight_shuffle_seal: Seal-time consolidation policy for the Flight backend. One of "auto" (default, fire only when target_num_partitions >= flight_shuffle_seal_partition_threshold), "always", or "never". Seal does a full byte rewrite of the shuffle to collapse per-task entries into one file per partition; helpful at high partition counts where the read-side seek tax compounds, pure overhead at moderate N on NVMe.
         flight_shuffle_seal_partition_threshold: target_num_partitions threshold above which flight_shuffle_seal="auto" fires. Defaults to 4096.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
+        flotilla_output_target_bytes: Target byte size for coalescing output MicroPartitions emitted from a flotilla worker back to the driver. Many small output partitions become many Ray ObjectRefs, whose metadata pins memory on the head node — at high partition counts this OOMs the head. The worker buffers partitions until their combined in-memory size reaches this threshold, then concatenates and yields once. FlightPartitionRef outputs (already references) are not coalesced. Set to 0 to disable coalescing and preserve fully-streaming output. Defaults to 64 MiB.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -350,6 +352,7 @@ def set_execution_config(
             flight_shuffle_seal=flight_shuffle_seal,
             flight_shuffle_seal_partition_threshold=flight_shuffle_seal_partition_threshold,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
+            flotilla_output_target_bytes=flotilla_output_target_bytes,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
