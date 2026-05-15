@@ -64,7 +64,16 @@ class LimitCounterActor:
         self.remaining_take -= take
 
         prev_skip, prev_take = self.task_claims.get(task_id, (0, 0))
-        self.task_claims[task_id] = (prev_skip + skip, prev_take + take)
+        new_skip = prev_skip + skip
+        new_take = prev_take + take
+        # Only retain claims that consumed budget. Tasks past the limit always
+        # accumulate (0, 0), and rewinding (0, 0) on retry is a no-op — there's
+        # no reason to keep their entries. Drops the HashMap from O(partitions)
+        # to O(boundary tasks).
+        if new_skip == 0 and new_take == 0:
+            self.task_claims.pop(task_id, None)
+        else:
+            self.task_claims[task_id] = (new_skip, new_take)
 
         done = self.remaining_take == 0
         return (skip, take, done)
