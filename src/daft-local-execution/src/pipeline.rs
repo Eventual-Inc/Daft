@@ -72,7 +72,8 @@ use crate::{
         shuffle_read::ShuffleReadSource, source::SourceNode,
     },
     streaming_sink::{
-        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode,
+        distributed_limit::DistributedLimitSink, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
@@ -867,6 +868,35 @@ fn physical_plan_to_pipeline(
         }) => {
             let (offset, limit) = (*offset, *limit);
             let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            StreamingSinkNode::new(
+                Arc::new(sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DistributedLimit(daft_local_plan::DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            stats_state,
+            context,
+            ..
+        }) => {
+            // task_id is stamped into BuilderContext by SwordfishTaskBuilder::build(), so the
+            // actor sees the same identity across retries of the same SwordfishTask.
+            let task_id = ctx
+                .context
+                .get("task_id")
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            let sink =
+                DistributedLimitSink::new(actor_object.0.clone(), task_id, *limit, *offset);
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
