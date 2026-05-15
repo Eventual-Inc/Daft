@@ -153,12 +153,8 @@ pub struct DaftExecutionConfig {
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_multi_glob_path_tasks: bool,
-    /// Target byte size for coalescing output `MicroPartition`s yielded from a flotilla worker
-    /// back to the driver. Small output partitions become small Ray ObjectRefs that
-    /// pin metadata on the head node — many of them OOM the head node. The worker buffers
-    /// partitions until their combined `size_bytes()` reaches this threshold, then concats
-    /// and yields once. `FlightPartitionRef` outputs are not coalesced (they're already
-    /// references). Set to 0 to disable coalescing and preserve fully-streaming output.
+    /// Target byte size for coalescing small output `MicroPartition`s from a flotilla worker,
+    /// reducing head-node memory pressure from Ray ObjectRef metadata. Set to 0 to disable.
     /// Defaults to 64 MiB.
     pub flotilla_output_target_bytes: usize,
 }
