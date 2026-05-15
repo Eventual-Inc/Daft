@@ -153,6 +153,14 @@ pub struct DaftExecutionConfig {
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
     pub enable_multi_glob_path_tasks: bool,
+    /// Target byte size for coalescing output `MicroPartition`s yielded from a flotilla worker
+    /// back to the driver. Small output partitions become small Ray ObjectRefs that
+    /// pin metadata on the head node — many of them OOM the head node. The worker buffers
+    /// partitions until their combined `size_bytes()` reaches this threshold, then concats
+    /// and yields once. `FlightPartitionRef` outputs are not coalesced (they're already
+    /// references). Set to 0 to disable coalescing and preserve fully-streaming output.
+    /// Defaults to 64 MiB.
+    pub flotilla_output_target_bytes: usize,
 }
 
 #[cfg(not(debug_assertions))]
@@ -200,6 +208,7 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             enable_multi_glob_path_tasks: false,
+            flotilla_output_target_bytes: 64 * 1024 * 1024, // 64 MiB
         }
     }
 }
@@ -216,6 +225,8 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_FLOTILLA_OUTPUT_TARGET_BYTES: &'static str =
+        "DAFT_FLOTILLA_OUTPUT_TARGET_BYTES";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -286,6 +297,13 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
         {
             cfg.text_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_FLOTILLA_OUTPUT_TARGET_BYTES,
+            cfg.flotilla_output_target_bytes,
+        ) {
+            cfg.flotilla_output_target_bytes = val;
         }
 
         cfg

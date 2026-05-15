@@ -244,6 +244,7 @@ def set_execution_config(
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
+    flotilla_output_target_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -293,6 +294,7 @@ def set_execution_config(
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
+        flotilla_output_target_bytes: Target byte size for coalescing output MicroPartitions emitted from a flotilla worker back to the driver. Many small output partitions become many Ray ObjectRefs, whose metadata pins memory on the head node — at high partition counts this OOMs the head. The worker buffers partitions until their combined in-memory size reaches this threshold, then concatenates and yields once. FlightPartitionRef outputs (already references) are not coalesced. Set to 0 to disable coalescing and preserve fully-streaming output. Defaults to 64 MiB.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -335,6 +337,7 @@ def set_execution_config(
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
+            flotilla_output_target_bytes=flotilla_output_target_bytes,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
