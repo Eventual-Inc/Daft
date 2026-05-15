@@ -91,9 +91,10 @@ def generate_scale(scale: str) -> None:
     """Generate left and right tables for a given scale, partitioned into multiple files."""
     cfg = SCALES[scale]
 
+    n_files_right = _n_files(cfg["right_rows"])
     for side, n_rows, seed_offset in [
         ("right", cfg["right_rows"], 0),
-        ("left", cfg["left_rows"], 1),
+        ("left", cfg["left_rows"], n_files_right),
     ]:
         n_files = _n_files(n_rows)
         base_rows = n_rows // n_files
