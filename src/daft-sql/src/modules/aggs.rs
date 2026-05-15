@@ -16,6 +16,9 @@ use crate::{
 };
 
 pub struct SQLModuleAggs;
+pub struct SQLStringJoin {
+    pub distinct: bool,
+}
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
@@ -41,6 +44,39 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("var", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var_samp", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var_pop", AggExpr::Var(nil, 0));
+        parent.add_fn("string_join", SQLStringJoin { distinct: false });
+        parent.add_fn("string_join_distinct", SQLStringJoin { distinct: true });
+    }
+}
+
+impl SQLFunction for SQLStringJoin {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        ensure!(
+            (1..=2).contains(&inputs.len()),
+            "string_join takes one or two arguments: string_join(input, delimiter)"
+        );
+
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let delimiter = if inputs.len() == 2 {
+            let delim_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+            Some(String::from_expr(&delim_expr)?)
+        } else {
+            None
+        };
+
+        Ok(input.string_join(delimiter, self.distinct))
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        if self.distinct {
+            "Concatenate distinct, non-null strings using an optional delimiter".to_string()
+        } else {
+            "Concatenate non-null strings using an optional delimiter".to_string()
+        }
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "delimiter"]
     }
 }
 
@@ -71,6 +107,10 @@ impl SQLFunction for AggExpr {
             Self::Var(_, _) => static_docs::VAR_DOCSTRING.to_string(),
             Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
             Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
+            Self::StringJoin(_, _, _) => {
+                "Concatenate strings with optional delimiter and optional DISTINCT semantics"
+                    .to_string()
+            }
             e => unimplemented!("Need to implement docstrings for {e}"),
         }
     }
@@ -89,6 +129,7 @@ impl SQLFunction for AggExpr {
             | Self::Var(_, _)
             | Self::BoolAnd(_)
             | Self::BoolOr(_) => &["input"],
+            Self::StringJoin(_, _, _) => &["input", "delimiter"],
             Self::Percentile(_, _) => &["input", "percentage"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
@@ -233,6 +274,7 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
         AggExpr::List(_) => unsupported_sql_err!("list"),
         AggExpr::Concat(_, _) => unsupported_sql_err!("concat"),
+        AggExpr::StringJoin(_, _, _) => unsupported_sql_err!("string_join"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
         AggExpr::Set(_) => unsupported_sql_err!("set"),
         AggExpr::Skew(_) => unsupported_sql_err!("skew"),

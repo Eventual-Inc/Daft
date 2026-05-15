@@ -666,6 +666,14 @@ fn replace_column_with_semantic_id_aggexpr(
                 |_| AggExpr::Concat(child.clone(), delimiter.clone()),
             )
         }
+        AggExpr::StringJoin(ref child, ref delimiter, distinct) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| {
+                    AggExpr::StringJoin(transformed_child, delimiter.clone(), distinct)
+                },
+                |_| AggExpr::StringJoin(child.clone(), delimiter.clone(), distinct),
+            )
+        }
         AggExpr::Skew(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Skew, |_| e)

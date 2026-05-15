@@ -1,6 +1,7 @@
 use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
+use std::collections::HashSet;
 
 use crate::{
     array::{
@@ -441,6 +442,51 @@ impl Series {
             }
             (other, _) => Err(DaftError::TypeError(format!(
                 "concat aggregation is only valid for List or Utf8, got {other}"
+            ))),
+        }
+    }
+
+    pub fn string_join(
+        &self,
+        groups: Option<&GroupIndices>,
+        delimiter: Option<&str>,
+        distinct: bool,
+    ) -> DaftResult<Self> {
+        if !distinct {
+            return self.agg_concat(groups, delimiter);
+        }
+
+        match self.data_type() {
+            DataType::Utf8 => {
+                let downcasted = self.downcast::<Utf8Array>()?;
+                let delimiter = delimiter.unwrap_or("");
+                let result: Utf8Array = match groups {
+                    Some(groups) => groups
+                        .iter()
+                        .map(|group| {
+                            let mut seen: HashSet<&str> = HashSet::new();
+                            let values: Vec<&str> = group
+                                .iter()
+                                .filter_map(|&idx| downcasted.get(idx as usize))
+                                .filter(|v| seen.insert(*v))
+                                .collect();
+                            Some(values.join(delimiter))
+                        })
+                        .collect(),
+                    None => {
+                        let mut seen: HashSet<&str> = HashSet::new();
+                        let values: Vec<&str> = downcasted
+                            .into_iter()
+                            .flatten()
+                            .filter(|v| seen.insert(*v))
+                            .collect();
+                        std::iter::once(Some(values.join(delimiter))).collect()
+                    }
+                };
+                Ok(result.rename(downcasted.name()).into_series())
+            }
+            other => Err(DaftError::TypeError(format!(
+                "string_join aggregation is only valid for Utf8, got {other}"
             ))),
         }
     }

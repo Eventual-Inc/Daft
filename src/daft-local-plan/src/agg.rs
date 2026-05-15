@@ -7,7 +7,7 @@ use daft_dsl::{
     lit, null_lit,
 };
 use daft_functions::numeric::sqrt;
-use daft_functions_list::{count_distinct, distinct};
+use daft_functions_list::{count_distinct, distinct, join as list_join};
 use indexmap::IndexSet;
 
 pub fn populate_aggregation_stages_bound(
@@ -298,6 +298,23 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_concat_col =
                     second_stage!(AggExpr::Concat(concat_col, delimiter.clone()));
                 final_stage(global_concat_col);
+            }
+            AggExpr::StringJoin(expr, delimiter, distinct_values) => {
+                if *distinct_values {
+                    let set_col = first_stage!(AggExpr::Set(expr.clone()));
+                    let concat_col = second_stage!(AggExpr::Concat(set_col, None));
+                    let delimiter_expr = lit(delimiter.clone().unwrap_or_default());
+                    final_stage(list_join(distinct(concat_col), delimiter_expr));
+                } else {
+                    let concat_col =
+                        first_stage!(AggExpr::StringJoin(expr.clone(), delimiter.clone(), false));
+                    let global_concat_col = second_stage!(AggExpr::StringJoin(
+                        concat_col,
+                        delimiter.clone(),
+                        false,
+                    ));
+                    final_stage(global_concat_col);
+                }
             }
             AggExpr::Skew(expr) => {
                 // See https://github.com/duckdb/duckdb/blob/93fda3591f4298414fa362c59219c09e03f718ab/extension/core_functions/aggregate/distributive/skew.cpp#L16

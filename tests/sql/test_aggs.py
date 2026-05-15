@@ -124,6 +124,36 @@ def test_percentile_and_median_sql():
     assert actual_groupby == expected_groupby
 
 
+def test_string_join_sql():
+    df = daft.from_pydict(
+        {
+            "uniqnum": [1, 1, 1, 2, 2, 2, 3],
+            "source": ["b", "a", "b", "x", None, "x", None],
+        }
+    )
+
+    actual = daft.sql(
+        """
+    SELECT
+        uniqnum,
+        count(distinct source) as source_count,
+        string_join(source, ';') as source_sum,
+        string_join(distinct source, ';') as source_sum_distinct
+    FROM df
+    GROUP BY uniqnum
+    ORDER BY uniqnum
+    """,
+        df=df,
+    ).to_pydict()
+
+    assert actual == {
+        "uniqnum": [1, 2, 3],
+        "source_count": [2, 1, 0],
+        "source_sum": ["b;a;b", "x;x", None],
+        "source_sum_distinct": ["b;a", "x", ""],
+    }
+
+
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [

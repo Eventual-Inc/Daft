@@ -781,6 +781,9 @@ impl RecordBatch {
             AggExpr::Concat(expr, delimiter) => self
                 .eval_agg_child(expr)?
                 .agg_concat(groups, delimiter.as_deref()),
+            AggExpr::StringJoin(expr, delimiter, distinct) => self
+                .eval_agg_child(expr)?
+                .string_join(groups, delimiter.as_deref(), *distinct),
             AggExpr::Skew(expr) => self.eval_agg_child(expr)?.skew(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),

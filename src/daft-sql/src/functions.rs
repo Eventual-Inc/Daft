@@ -537,9 +537,22 @@ impl SQLPlanner<'_> {
                                 ))
                             })?;
                     }
+                    ("string_join", DuplicateTreatment::Distinct) => {
+                        fn_match = get_func_from_sqlfunctions_registry("string_join_distinct")
+                            .ok_or_else(|| {
+                                PlannerError::unsupported_sql(format!(
+                                    "Function `{}` not found",
+                                    fn_name
+                                ))
+                            })?;
+                    }
                     ("count", DuplicateTreatment::All) => (),
+                    ("string_join", DuplicateTreatment::All) => (),
                     (name, DuplicateTreatment::Distinct) => {
-                        unsupported_sql_err!("DISTINCT is only supported on COUNT, not on {}", name)
+                        unsupported_sql_err!(
+                            "DISTINCT is only supported on COUNT and STRING_JOIN, not on {}",
+                            name
+                        )
                     }
                     (_, DuplicateTreatment::All) => (),
                 }
