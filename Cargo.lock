@@ -3089,6 +3089,7 @@ dependencies = [
  "smallvec",
  "snafu",
  "sysinfo",
+ "tempfile",
  "tikv-jemalloc-ctl",
  "tokio",
  "tokio-stream",

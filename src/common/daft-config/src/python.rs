@@ -125,6 +125,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         flight_shuffle_partition_threshold=None,
         enable_multi_glob_path_tasks=None,
+        hash_join_spill_threshold_bytes=None,
     ))]
     fn with_config_values(
         &self,
@@ -164,6 +165,7 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_partition_threshold: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
+        hash_join_spill_threshold_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -312,6 +314,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
             config.enable_multi_glob_path_tasks = enable_multi_glob_path_tasks;
+        }
+
+        if let Some(hash_join_spill_threshold_bytes) = hash_join_spill_threshold_bytes {
+            config.hash_join_spill_threshold_bytes = Some(hash_join_spill_threshold_bytes);
         }
 
         Ok(Self {
@@ -480,6 +486,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
+    }
+
+    #[getter]
+    fn hash_join_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.hash_join_spill_threshold_bytes)
     }
 }
 

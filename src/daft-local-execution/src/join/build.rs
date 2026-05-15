@@ -164,9 +164,17 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
 
     fn try_finalize(&self, per_input: PerBuildInput<Op>, input_id: InputId) {
         let state = per_input.state.expect("must be idle when finalizing");
-        if let Ok(finalized) = self.op.finalize_build(state) {
-            self.build_state_bridge
-                .send_finalized_build_state(input_id, finalized);
+        match self.op.finalize_build(state) {
+            Ok(finalized) => {
+                self.build_state_bridge
+                    .send_finalized_build_state(input_id, finalized);
+            }
+            Err(e) => {
+                tracing::error!("finalize_build failed: {e}");
+                // Log the error; the build state bridge will never be fulfilled,
+                // causing the probe side to wait indefinitely. This is a pre-existing
+                // limitation of the error-handling architecture.
+            }
         }
     }
 

@@ -244,6 +244,7 @@ def set_execution_config(
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
+    hash_join_spill_threshold_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -335,6 +336,7 @@ def set_execution_config(
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
+            hash_join_spill_threshold_bytes=hash_join_spill_threshold_bytes,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

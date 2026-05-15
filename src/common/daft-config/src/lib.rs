@@ -154,6 +154,9 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_partition_threshold: usize,
     pub enable_multi_glob_path_tasks: bool,
+    /// If set, hash join build side partitions that exceed this many bytes will be spilled to
+    /// `flight_shuffle_dirs`. Enables grace-hash-join spill-to-disk. Default `None` (disabled).
+    pub hash_join_spill_threshold_bytes: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -202,6 +205,7 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_partition_threshold: 500,
             enable_multi_glob_path_tasks: false,
+            hash_join_spill_threshold_bytes: None,
         }
     }
 }
@@ -218,6 +222,7 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD: &'static str = "DAFT_HASH_JOIN_SPILL_THRESHOLD";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -288,6 +293,16 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
         {
             cfg.text_inflation_factor = val;
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.hash_join_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!(
+                    "Invalid DAFT_HASH_JOIN_SPILL_THRESHOLD value: {val}, ignoring"
+                );
+            }
         }
 
         cfg
