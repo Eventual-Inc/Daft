@@ -72,6 +72,8 @@ from .datetime import (
     date_add,
     date_sub,
     date_diff,
+    add_months,
+    months_between,
     date_from_unix_date,
     timestamp_seconds,
     timestamp_millis,
@@ -149,6 +151,7 @@ from .misc import (
     coalesce,
     get,
     map_get,
+    map_keys,
     slice,
     when,
 )
@@ -273,6 +276,7 @@ from .window import (
 
 __all__ = [
     "abs",
+    "add_months",
     "any_value",
     "approx_count_distinct",
     "approx_percentiles",
@@ -427,6 +431,7 @@ __all__ = [
     "make_timestamp",
     "make_timestamp_ltz",
     "map_get",
+    "map_keys",
     "max",
     "mean",
     "median",
@@ -437,6 +442,7 @@ __all__ = [
     "minute",
     "monotonically_increasing_id",
     "month",
+    "months_between",
     "nanosecond",
     "negate",
     "next_day",

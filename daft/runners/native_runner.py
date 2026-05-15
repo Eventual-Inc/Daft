@@ -161,10 +161,6 @@ class NativeRunner(Runner[MicroPartition]):
         try:
             while True:
                 result = next(results_gen)
-                try:
-                    ctx._notify_result_out(query_id, result.partition())
-                except Exception as e:
-                    logger.warning("Failed to send result out notification: %s", e)
                 yield result
         except GeneratorExit:
             # Generator was abandoned (e.g., .show() breaking out early after collecting

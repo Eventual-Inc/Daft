@@ -61,7 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
+from daft.checkpoint import CheckpointConfig, CheckpointStore, IdempotentCommit, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -71,6 +71,8 @@ from daft.context import (
     with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
+    set_event_log_config,
+    event_log_ctx,
 )
 from daft.convert import (
     from_arrow,
@@ -93,11 +95,13 @@ from daft.session import (
     attach_provider,
     attach_function,
     attach_table,
+    attach_view,
     create_namespace,
     create_namespace_if_not_exists,
     create_table,
     create_table_if_not_exists,
     create_temp_table,
+    create_temp_view,
     current_catalog,
     current_model,
     current_namespace,
@@ -130,7 +134,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method, metrics
+from daft.udf import udf, udaf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
@@ -166,7 +170,7 @@ from daft import datasets
 from daft import functions
 
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io import read_lance
 
@@ -187,6 +191,7 @@ __all__ = [
     "Expression",
     "File",
     "IOConfig",
+    "IdempotentCommit",
     "Identifier",
     "ImageFile",
     "ImageFormat",
@@ -209,6 +214,7 @@ __all__ = [
     "attach_provider",
     "attach_subscriber",
     "attach_table",
+    "attach_view",
     "cls",
     "col",
     "context",
@@ -217,6 +223,7 @@ __all__ = [
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
+    "create_temp_view",
     "current_catalog",
     "current_model",
     "current_namespace",
@@ -295,6 +302,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "udaf",
     "udf",
     "with_subscriber",
     "write_table",

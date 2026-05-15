@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    AsofJoinStrategy,
     CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
@@ -67,10 +68,10 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from daft.catalog.__unity._client import UnityCatalogTable
-    from daft.checkpoint import CheckpointStore
+    from daft.checkpoint import CheckpointStore, IdempotentCommit
+    from daft.convert import ArrowStreamExportable
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
-    from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
 
 from daft.schema import Schema
@@ -748,6 +749,12 @@ class DataFrame:
         return cls._from_micropartitions(*parts)
 
     @classmethod
+    def _from_arrow_stream(cls, data: "ArrowStreamExportable") -> "DataFrame":
+        """Creates a DataFrame from an object implementing the Arrow PyCapsule Interface (``__arrow_c_stream__``)."""
+        mp = MicroPartition.from_arrow_stream(data)
+        return cls._from_micropartitions(mp)
+
+    @classmethod
     def _from_pandas(cls, data: Union["pandas.DataFrame", list["pandas.DataFrame"]]) -> "DataFrame":
         """Creates a Daft DataFrame from a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__."""
         if not isinstance(data, list):
@@ -1214,7 +1221,7 @@ class DataFrame:
         mode: str = "append",
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
-        checkpoint: "CheckpointStore | None" = None,
+        checkpoint: "IdempotentCommit | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1224,8 +1231,8 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
-            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.checkpoint-`` are reserved when ``checkpoint`` is provided.
-            checkpoint (CheckpointStore, optional): Checkpoint store to make the write idempotent across process restarts. Only ``mode='append'`` is supported. Requires the Ray runner.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.idempotence-`` are reserved.
+            checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the snapshot summary is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate snapshot. Only ``mode='append'`` is supported. Requires the Ray runner.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -1233,13 +1240,25 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called.
 
-            When ``checkpoint`` is provided and ``write_iceberg`` raises *after* the
-            catalog commit landed (e.g. a transient failure during the
-            post-commit ``mark_committed`` bookkeeping), the user data is
-            already durable in Iceberg. The next call to ``write_iceberg`` with
-            the same ``checkpoint`` will detect the snapshot via its markers,
-            finish the bookkeeping, and exit cleanly without producing a
-            duplicate snapshot.
+            When ``checkpoint`` is provided and ``write_iceberg`` raises
+            *after* the catalog commit landed (e.g. a transient failure during
+            the post-commit ``mark_committed`` bookkeeping), the user data is
+            already durable in Iceberg. The next call with the same
+            ``IdempotentCommit`` (same idempotence key) will detect the
+            snapshot via its marker, finish the bookkeeping, and exit cleanly
+            without producing a duplicate snapshot.
+
+            Idempotence-key contract — read carefully:
+
+            - **Same key + different inputs → silent no-op (data loss).** The
+              destination already has a snapshot tagged with the key, so
+              nothing new is written.
+            - **Different key + same retry → duplicate snapshot.** The
+              destination won't recognize the prior attempt and will commit
+              again. Idempotence is broken.
+
+            The orchestrator pattern (run-id supplied from upstream DAG context)
+            avoids both naturally.
 
         Examples:
             >>> import pyiceberg
@@ -1278,11 +1297,11 @@ class DataFrame:
         if checkpoint is not None and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("write_iceberg with checkpoint=... requires pyiceberg>=0.7.0")
 
-        if checkpoint is not None and snapshot_properties:
+        if snapshot_properties:
             for key in snapshot_properties:
-                if key.startswith("daft.checkpoint-"):
+                if key.startswith("daft.idempotence-"):
                     raise ValueError(
-                        f"snapshot_properties keys with prefix 'daft.checkpoint-' are reserved; got: {key!r}"
+                        f"snapshot_properties keys with prefix 'daft.idempotence-' are reserved; got: {key!r}"
                     )
 
         io_config = (
@@ -1322,7 +1341,7 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-            for field in partitioning.keys():
+            for field in partitioning:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
@@ -1332,7 +1351,7 @@ class DataFrame:
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-            for field in partitioning.keys():
+            for field in partitioning:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
@@ -1409,18 +1428,34 @@ class DataFrame:
         table: "pyiceberg.table.Table",
         io_config: IOConfig,
         snapshot_properties: dict[str, str] | None,
-        checkpoint: "CheckpointStore",
+        checkpoint: "IdempotentCommit",
     ) -> "DataFrame":
-        """Idempotent Iceberg commit driven by the checkpoint store.
+        """Idempotent Iceberg commit identified by ``checkpoint.idempotence_key``.
 
-        Files come from `checkpoint.get_checkpointed_files()` (the store is the source
-        of truth — no re-execution after a crash). The snapshot summary carries
-        `daft.checkpoint-store` and `daft.checkpoint-query` markers so a restart can
-        recognize previously-committed work and skip it.
+        Each call produces exactly one Iceberg snapshot per logical commit,
+        tagged in the snapshot summary as ``daft.idempotence-key=<key>``.
+        Retries with the same key are recognized by walking the snapshot
+        history.
 
-        Concurrency assumption: at most one Python process per checkpoint path at a
-        time. The retry loop is defensive against transient `CommitFailedException`,
-        not multi-writer safety.
+        Flow:
+
+        1. Walk Iceberg snapshot history for ``daft.idempotence-key == our key``.
+           Found → previous attempt's commit already landed; mark all
+           ``Checkpointed`` entries → ``Committed`` and bail. **No pipeline run.**
+        2. Not found → run the pipeline. Source filter anti-joins
+           ``Committed ∪ Checkpointed`` keys, so previously-staged work is
+           not reprocessed; SCKO + sink populate the store as new
+           ``Checkpointed`` entries.
+        3. Pull files from ``get_checkpointed_files()`` and commit them in
+           one transaction tagged with ``daft.idempotence-key``. After
+           commit, ``mark_committed`` the entries.
+
+        Files always come from the checkpoint store, never from
+        ``write_df.collect()`` output — the store is the source of truth.
+
+        Concurrency assumption: at most one Python process per logical commit.
+        The retry loop is defensive against transient ``CommitFailedException``,
+        not against concurrent writers.
         """
         import pyarrow as pa
         import pyiceberg
@@ -1429,18 +1464,16 @@ class DataFrame:
 
         from daft import from_pydict
 
+        store = checkpoint.store
+        idempotence_key = checkpoint.idempotence_key
+
         builder = self._builder.write_iceberg(table, io_config)
         write_df = DataFrame(builder)
 
-        pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
-        if not pending:
-            # Fresh run: execute the pipeline. SCKO + sink populate the store.
-            write_df.collect()
-            pending = [c for c in checkpoint.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+        full_props = dict(snapshot_properties or {})
+        full_props["daft.idempotence-key"] = idempotence_key
 
-        if not pending:
-            # Source filter dropped everything (everything already committed in a
-            # prior run). Nothing to commit; return an empty result.
+        def _empty_result() -> "DataFrame":
             empty = from_pydict(
                 {
                     "operation": pa.array([], type=pa.string()),
@@ -1452,20 +1485,32 @@ class DataFrame:
             empty._metadata = write_df._metadata
             return empty
 
-        # Single-query-id invariant: all pending entries share the run that staged them.
-        our_query_id = pending[0].query_id
-        if not our_query_id or any(c.query_id != our_query_id for c in pending):
-            offending = sorted({c.query_id for c in pending})
-            raise RuntimeError(
-                "Checkpoint store contains pending entries with mismatched or empty query_ids; "
-                f"single-query-id invariant violated (query_ids: {offending}). Possible causes: "
-                "concurrent writers against the same path; the store was reused across "
-                "different destinations (one store per destination — see CheckpointStore docs); "
-                "or pre-feature legacy entries left behind in the store (empty query_id). "
-                "Resolve by using a fresh checkpoint path or clearing the store."
-            )
-        our_ids = [c.id for c in pending]
-        store_path = checkpoint.path
+        def _snapshot_with_our_key_exists() -> bool:
+            for snap in reversed(table.metadata.snapshots):
+                summary = snap.summary
+                if summary is not None and summary.get("daft.idempotence-key") == idempotence_key:
+                    return True
+            return False
+
+        def _pending_ids() -> list[str]:
+            return [c.id for c in store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+
+        # ── 1. Check-first: did a previous attempt already land?
+        table.refresh()
+        if _snapshot_with_our_key_exists():
+            pending_ids = _pending_ids()
+            if pending_ids:
+                store.mark_committed(pending_ids)
+            return _empty_result()
+
+        # ── 2. Run the pipeline. Source filter anti-joins already-Checkpointed
+        #       keys, so this only stages work that hasn't been staged before.
+        write_df.collect()
+
+        # ── 3. Commit-from-store.
+        pending_ids = _pending_ids()
+        if not pending_ids:
+            return _empty_result()
 
         # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
         # is an Arrow IPC stream of a MicroPartition produced by the iceberg
@@ -1473,11 +1518,8 @@ class DataFrame:
         # `BlockingSinkNode::encode_file_metadata`). The MicroPartition has a
         # python-typed `data_file` column whose cells are pickled
         # `pyiceberg.DataFile` instances; the IPC roundtrip preserves them.
-        # If pyiceberg ever changes `DataFile` to be unpicklable the decode
-        # surfaces deep inside MicroPartition with a confusing error — wrap so
-        # the caller sees a clear message naming the contract.
         data_files: list[Any] = []
-        for fm in checkpoint.get_checkpointed_files():
+        for fm in store.get_checkpointed_files():
             try:
                 mp = MicroPartition.from_ipc_stream(fm.data)
                 data_files.extend(mp.to_pydict()["data_file"])
@@ -1489,28 +1531,6 @@ class DataFrame:
                     "Did pyiceberg change the DataFile shape, or is the store from a different "
                     f"writer version? Underlying error: {e}"
                 ) from e
-
-        # Pending entries exist but carry no data files. Happens when the source
-        # filter drops every input row (e.g. re-run after a fully-committed call)
-        # — the sink still seals an empty Checkpointed entry. There is nothing
-        # to commit; mark the empty entries Committed so they don't persist as
-        # pending forever, and return an empty result.
-        if not data_files:
-            checkpoint.mark_committed(our_ids)
-            empty = from_pydict(
-                {
-                    "operation": pa.array([], type=pa.string()),
-                    "rows": pa.array([], type=pa.int64()),
-                    "file_size": pa.array([], type=pa.int64()),
-                    "file_name": pa.array([], type=pa.string()),
-                }
-            )
-            empty._metadata = write_df._metadata
-            return empty
-
-        full_props = dict(snapshot_properties or {})
-        full_props["daft.checkpoint-store"] = store_path
-        full_props["daft.checkpoint-query"] = our_query_id
 
         def _build_result() -> "DataFrame":
             ops: list[str] = []
@@ -1549,17 +1569,12 @@ class DataFrame:
         last_err: Exception | None = None
         for _ in range(max_retries):
             table.refresh()
-            # Recovery check: did a prior attempt (or restart) already land our work?
-            for snap in reversed(table.metadata.snapshots):
-                summary = snap.summary
-                if summary is None:
-                    continue
-                if (
-                    summary.get("daft.checkpoint-store") == store_path
-                    and summary.get("daft.checkpoint-query") == our_query_id
-                ):
-                    checkpoint.mark_committed(our_ids)
-                    return _build_result()
+            # Recheck inside the retry loop — a prior iteration's commit may
+            # have landed despite returning CommitFailedException (rare, but
+            # the post-commit hook can fail in odd ways). Cheap.
+            if _snapshot_with_our_key_exists():
+                store.mark_committed(pending_ids)
+                return _build_result()
 
             try:
                 tx = table.transaction()
@@ -1574,7 +1589,7 @@ class DataFrame:
                     for df_ in data_files:
                         append_files.append_data_file(df_)
                 tx.commit_transaction()
-                checkpoint.mark_committed(our_ids)
+                store.mark_committed(pending_ids)
                 return _build_result()
             except CommitFailedException as e:
                 # Narrow on purpose: only optimistic-concurrency conflicts (the
@@ -1752,9 +1767,8 @@ class DataFrame:
 
                 if not allow_unsafe_rename:
                     warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
-        elif scheme == "file":
-            if allow_unsafe_rename:
-                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
+        elif scheme == "file" and allow_unsafe_rename:
+            storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
@@ -1922,7 +1936,6 @@ class DataFrame:
         uri: str | pathlib.Path,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
-        rest_config: "LanceRestConfig | None" = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -1931,16 +1944,14 @@ class DataFrame:
         """Writes the DataFrame to a Lance table.
 
         Args:
-          uri: The URI of the Lance table to write to. Supports:
-            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
-            - REST URIs: "rest://namespace/table_name" (requires rest_config)
+          uri: The URI of the Lance table to write to. Accepts a local path or an
+            object-store URI like "s3://bucket/path".
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
-          rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
             - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
@@ -2005,32 +2016,19 @@ class DataFrame:
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
-        from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
-        # Parse URI to determine if it's REST-based or file-based
         uri_str = str(uri)
-        uri_type, uri_info = parse_lance_uri(uri_str)
-
-        if uri_type == "rest":
-            # REST-based Lance table
-            if rest_config is None:
-                raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
-
-            # For REST, we handle writes differently
-            return self._write_lance_rest(
-                rest_config=rest_config,
-                namespace=uri_info["namespace"],
-                table_name=uri_info["table_name"],
-                mode=mode,
-                schema=schema,
-                **kwargs,
+        if uri_str.startswith("rest://"):
+            raise ValueError(
+                "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
+                "The previous REST-namespace integration did not match the real "
+                "lance-namespace API and has been removed."
             )
 
-        # File-based Lance table (existing logic)
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
@@ -2129,48 +2127,6 @@ class DataFrame:
                 }
             )
         )
-
-    def _write_lance_rest(
-        self,
-        rest_config: "LanceRestConfig",
-        namespace: str,
-        table_name: str,
-        mode: str,
-        schema: Union[Schema, "pyarrow.Schema"] | None = None,
-        **kwargs: Any,
-    ) -> "DataFrame":
-        """Write DataFrame to Lance table via REST API."""
-        from daft.io.lance.rest_write import write_lance_rest
-        from daft.recordbatch import MicroPartition
-
-        # Collect the DataFrame to get all data
-        collected = self.collect()
-
-        # Convert to MicroPartition - handle case where there are multiple partitions
-        if collected._result:
-            # Get all micropartitions from the result
-            micropartitions = [result.micropartition() for result in collected._result.values()]
-            # Concatenate all micropartitions if there are multiple
-            if len(micropartitions) > 1:
-                mp = MicroPartition.concat(micropartitions)
-            else:
-                mp = micropartitions[0]
-        else:
-            mp = MicroPartition.empty()
-
-        # Write via REST API
-        result_mp = write_lance_rest(
-            mp=mp,
-            rest_config=rest_config,
-            namespace=namespace,
-            table_name=table_name,
-            mode=mode,
-            schema=schema._arrow_schema if schema is not None and hasattr(schema, "_arrow_schema") else None,
-            **kwargs,
-        )
-
-        # Return result as DataFrame
-        return DataFrame._from_micropartitions(result_mp)
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -2772,9 +2728,8 @@ class DataFrame:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         if fraction is None and size is None:
             raise ValueError("Must specify either `fraction` or `size`")
-        if fraction is not None:
-            if fraction < 0.0 or fraction > 1.0:
-                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and (fraction < 0.0 or fraction > 1.0):
+            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
         if size is not None:
             if size < 0:
                 raise ValueError(f"size should be non-negative, but got {size}")
@@ -3649,7 +3604,7 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
-        strategy: Literal["backward"] = "backward",
+        strategy: Literal["backward", "forward"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
@@ -3663,7 +3618,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
-            strategy: Match strategy. Currently only ``"backward"`` is supported.
+            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
@@ -3734,12 +3689,14 @@ class DataFrame:
                         f"{len(left_by_exprs)} and {len(right_by_exprs)}"
                     )
 
+        asof_strategy = AsofJoinStrategy.from_asof_join_strategy_str(strategy)
         builder = self._builder.join_asof(
             other._builder,
             left_by=left_by_exprs,
             right_by=right_by_exprs,
             left_on=left_on_expr,
             right_on=right_on_expr,
+            strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
         )
@@ -5284,12 +5241,10 @@ class DataFrame:
             preview,
             schema,
             format,
-            **{
-                "verbose": verbose,
-                "max_width": max_width,
-                "align": align,
-                "columns": columns,
-            },
+            verbose=verbose,
+            max_width=max_width,
+            align=align,
+            columns=columns,
         )
 
         try:
@@ -5299,14 +5254,14 @@ class DataFrame:
                 try:
                     interactive_html = preview_formatter._generate_interactive_html()
                     display(HTML(interactive_html), clear=True)
-                    return None
+                    return
                 except Exception:
                     pass
 
             display(preview_formatter, clear=True)
         except ImportError:
             print(preview_formatter)
-        return None
+        return
 
     def __len__(self) -> int:
         """Returns the count of rows when dataframe is materialized.
@@ -5419,6 +5374,20 @@ class DataFrame:
 
         arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
+
+    def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
+        """Export as an Arrow C stream (PyCapsule).
+
+        This triggers materialization of the DataFrame.
+        Enables ``pa.table(daft_df)`` and other Arrow PyCapsule consumers.
+        """
+        self.collect()
+        assert self._result is not None
+        mp = self._result._get_merged_micropartition(self.schema())
+        return mp._micropartition.__arrow_c_stream__(requested_schema)
+
+    def __arrow_c_schema__(self) -> Any:
+        return self.schema().to_pyarrow_schema().__arrow_c_schema__()
 
     @DataframePublicAPI
     def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:

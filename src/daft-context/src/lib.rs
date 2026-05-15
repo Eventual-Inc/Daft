@@ -8,10 +8,9 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
+use common_daft_config::{DaftEventLogConfig, DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
-use daft_micropartition::{MicroPartitionRef, partitioning::Partition};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
@@ -21,7 +20,7 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
-        QueryStartEvent, ResultOutEvent, StatsEvent,
+        QueryStartEvent, StatsEvent,
     },
 };
 
@@ -30,6 +29,7 @@ use crate::subscribers::{
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
+    pub event_log: DaftEventLogConfig,
 }
 
 impl Config {
@@ -37,6 +37,7 @@ impl Config {
         Self {
             execution: Arc::new(DaftExecutionConfig::from_env()),
             planning: Arc::new(DaftPlanningConfig::from_env()),
+            event_log: DaftEventLogConfig::from_env(),
         }
     }
 }
@@ -107,8 +108,17 @@ impl DaftContext {
         self.with_state_mut(|state| state.config.planning = config);
     }
 
+    /// set the event log config
+    pub fn set_event_log_config(&self, config: DaftEventLogConfig) {
+        self.with_state_mut(|state| state.config.event_log = config);
+    }
+
     pub fn io_config(&self) -> IOConfig {
         self.with_state(|state| state.config.planning.default_io_config.clone())
+    }
+
+    pub fn event_log_config(&self) -> DaftEventLogConfig {
+        self.with_state(|state| state.config.event_log.clone())
     }
 
     pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {
@@ -163,19 +173,6 @@ impl DaftContext {
         if let Err(e) = self.dispatch_event(&event, "notify query end") {
             log::error!("Failed to dispatch query end event: {}", e);
         }
-    }
-
-    pub fn notify_result_out(
-        &self,
-        query_id: QueryID,
-        result: MicroPartitionRef,
-    ) -> DaftResult<()> {
-        let event = Event::ResultOut(ResultOutEvent {
-            header: event_header(query_id),
-            num_rows: (result.num_rows() as u64),
-            data: Some(result),
-        });
-        self.dispatch_event(&event, "notify result out")
     }
 
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
