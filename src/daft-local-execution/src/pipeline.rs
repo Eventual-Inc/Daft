@@ -888,13 +888,14 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            // task_id is stamped into BuilderContext by SwordfishTaskBuilder::build(), so the
-            // actor sees the same identity across retries of the same SwordfishTask.
+            // task_id is stamped into BuilderContext by SwordfishTaskBuilder::build(). It is
+            // the actor's identity key for retry-rewind, so a missing/malformed entry
+            // silently corrupts the global limit budget. Panic instead of falling back.
             let task_id = ctx
                 .context
                 .get("task_id")
                 .cloned()
-                .unwrap_or_else(|| "unknown".to_string());
+                .expect("DistributedLimit requires task_id in BuilderContext.context");
             let sink =
                 DistributedLimitSink::new(actor_object.0.clone(), task_id, *limit, *offset);
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
