@@ -2415,6 +2415,7 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
+    def has_partitioned_output(self) -> bool: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""

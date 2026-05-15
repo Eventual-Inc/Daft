@@ -56,6 +56,16 @@ impl PyLocalPhysicalPlan {
             dict.into(),
         ))
     }
+
+    /// True iff the top-level node emits one `MicroPartition` per output partition in slot order
+    /// (i.e. `RepartitionWrite` or `GatherWrite`). Downstream consumers rely on the count and
+    /// ordering, so outputs of such plans must not be coalesced or reordered.
+    fn has_partitioned_output(&self) -> bool {
+        matches!(
+            self.plan.as_ref(),
+            crate::LocalPhysicalPlan::RepartitionWrite(_) | crate::LocalPhysicalPlan::GatherWrite(_)
+        )
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);

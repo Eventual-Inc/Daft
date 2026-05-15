@@ -197,7 +197,10 @@ class RaySwordfishActor:
             )
             metas = []
             is_flight_shuffle = False
-            target_bytes = exec_cfg.flotilla_output_target_bytes
+            # Coalesce small outputs to reduce head-node ObjectRef pressure. Skip when the plan
+            # emits a fixed output per partition slot (RepartitionWrite/GatherWrite) — downstream
+            # transpose code depends on the exact count and order.
+            target_bytes = 0 if plan.has_partitioned_output() else exec_cfg.flotilla_output_target_bytes
             buf: list[MicroPartition] = []
             buf_bytes = 0
 
