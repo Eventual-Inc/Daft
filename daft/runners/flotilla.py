@@ -226,7 +226,9 @@ class RaySwordfishActor:
                     yield mp
                     continue
                 buf.append(mp)
-                buf_bytes += mp.size_bytes() or 0
+                # An unknown size collapses to target_bytes so we flush immediately rather than
+                # buffering unboundedly when size metadata is missing.
+                buf_bytes += mp.size_bytes() or target_bytes
                 if buf_bytes >= target_bytes:
                     yield flush()
 

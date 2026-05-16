@@ -221,8 +221,7 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
-    const ENV_DAFT_FLOTILLA_OUTPUT_TARGET_BYTES: &'static str =
-        "DAFT_FLOTILLA_OUTPUT_TARGET_BYTES";
+    const ENV_DAFT_FLOTILLA_OUTPUT_TARGET_BYTES: &'static str = "DAFT_FLOTILLA_OUTPUT_TARGET_BYTES";
 
     #[must_use]
     pub fn from_env() -> Self {

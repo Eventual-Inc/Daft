@@ -3,7 +3,18 @@ from __future__ import annotations
 import gzip
 import os
 
+import pytest
+
 import daft
+
+
+@pytest.fixture(autouse=True)
+def _disable_flotilla_output_coalescing():
+    # These tests assert that `_chunk_size` controls the partition layout visible through
+    # iter_partitions(). Flotilla's default output coalescing would merge the chunks back
+    # into one MicroPartition, masking that signal.
+    with daft.execution_config_ctx(flotilla_output_target_bytes=0):
+        yield
 
 
 def _write_fixed_width_jsonl(path: str, *, rows: int, line_bytes: int, id_width: int) -> None:
