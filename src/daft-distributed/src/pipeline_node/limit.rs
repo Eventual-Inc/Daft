@@ -36,10 +36,8 @@ impl LimitActor {
                 let (limit, offset) = (*limit, *offset);
                 let actor: Py<PyAny> =
                     common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
-                        let module = py.import(pyo3::intern!(
-                            py,
-                            "daft.execution.ray_distributed_limit"
-                        ))?;
+                        let module =
+                            py.import(pyo3::intern!(py, "daft.execution.ray_distributed_limit"))?;
                         let coroutine = module.call_method1(
                             pyo3::intern!(py, "start_limit_counter_actor"),
                             (limit as i64, offset as i64, timeout as i64),
