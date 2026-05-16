@@ -115,17 +115,21 @@ impl LimitNode {
         .await?;
 
         // All forwarded tasks share `parent_cancel` as their cancel-token
-        // parent. When the global limit is hit we cancel it, which propagates
-        // to every in-flight `SubmittedTask` and short-circuits anything still
-        // queued in the unbounded scheduler.
+        // parent. We only cancel on the *limit-hit* exit path — for downstream
+        // batching nodes (e.g. `IntoPartitionsNode`) that submit lazily after
+        // the LimitNode's stream closes, cancelling on the natural-exhaustion
+        // path would also drop their pending builders via the scheduler's
+        // is_cancelled filter and silently return zero rows.
         let parent_cancel = CancellationToken::new();
         let mut running_tasks = JoinSet::new();
         let mut input_exhausted = false;
+        let mut limit_hit = false;
         loop {
             tokio::select! {
                 biased;
                 Some(_) = running_tasks.join_next(), if !running_tasks.is_empty() => {
                     if limit_counter_actor_is_done(&actor).await? {
+                        limit_hit = true;
                         break;
                     }
                 }
@@ -160,7 +164,9 @@ impl LimitNode {
             }
         }
         drop(result_tx);
-        parent_cancel.cancel();
+        if limit_hit {
+            parent_cancel.cancel();
+        }
         teardown_limit_counter_actor(&actor);
         Ok(())
     }
