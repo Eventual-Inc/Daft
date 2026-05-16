@@ -118,21 +118,17 @@ impl LimitNode {
         let mut running_tasks = JoinSet::new();
         let mut completed_ids: HashSet<TaskID> = HashSet::new();
         let mut contributors: Option<HashSet<TaskID>> = None;
-        let mut contributors_fut = Box::pin(await_limit_completion(&actor));
+        let mut limit_completed = Box::pin(await_limit_completion(&actor));
         let mut input_exhausted = false;
-        loop {
-            // Break once every contributing input_id has materialized; for
-            // limit==0 or limits never hit, fall through to natural exhaustion.
-            let done = match &contributors {
-                Some(c) if !c.is_empty() => c.is_subset(&completed_ids),
-                _ => input_exhausted && running_tasks.is_empty(),
-            };
-            if done {
-                break;
-            }
+        // Break once every contributing input_id has materialized; for
+        // limit==0 or limits never hit, fall through to natural exhaustion.
+        while match &contributors {
+            Some(c) if !c.is_empty() => !c.is_subset(&completed_ids),
+            _ => !input_exhausted || !running_tasks.is_empty(),
+        } {
             tokio::select! {
                 biased;
-                res = &mut contributors_fut, if contributors.is_none() => {
+                res = &mut limit_completed, if contributors.is_none() => {
                     contributors = Some(
                         res?
                             .into_iter()
@@ -154,19 +150,20 @@ impl LimitNode {
                     let offset = self.offset;
                     let node_id = self.node_id();
                     let actor_for_plan = actor.clone();
-                    let builder = builder
+                    let (builder, notify_token) = builder
                         .map_plan(self.as_ref(), move |input| {
                             LocalPhysicalPlan::distributed_limit(
                                 input,
-                                actor_for_plan.clone(),
+                                actor_for_plan,
                                 limit,
                                 offset,
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(node_id as usize)),
                             )
                         })
-                        .with_cancel_token(parent_cancel.child_token());
-                    let (builder, notify_token) = builder.add_notify_token();
+                        .with_cancel_token(parent_cancel.child_token())
+                        .add_notify_token();
+
                     running_tasks.spawn(notify_token);
                     if result_tx.send(builder).await.is_err() {
                         input_exhausted = true;
@@ -175,7 +172,7 @@ impl LimitNode {
                 else => break,
             }
         }
-        drop(result_tx);
+
         parent_cancel.cancel();
         teardown_limit_counter_actor(&actor);
         Ok(())
