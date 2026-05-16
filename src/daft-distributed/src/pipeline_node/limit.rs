@@ -73,7 +73,6 @@ pub(crate) struct LimitNode {
     limit: u64,
     offset: Option<u64>,
     child: DistributedPipelineNode,
-    actor_ready_timeout: usize,
 }
 
 impl LimitNode {
@@ -106,7 +105,6 @@ impl LimitNode {
             limit: limit as u64,
             offset: offset.map(|o| o as u64),
             child,
-            actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         }
     }
 
@@ -137,7 +135,9 @@ impl LimitNode {
             // task must get its own pipeline.
             let mut seq: u32 = 0;
             while let Some(builder) = input_task_stream.next().await {
-                let actor = limit_actor.get_or_start(self.actor_ready_timeout).await?;
+                let actor = limit_actor
+                    .get_or_start(self.config.execution_config.actor_udf_ready_timeout)
+                    .await?;
                 let modified_builder = self
                     .append_distributed_limit_to_builder(builder, actor)
                     .extend_fingerprint(seq);
@@ -168,10 +168,8 @@ impl LimitNode {
     ) -> SwordfishTaskBuilder {
         let limit = self.limit;
         let offset = self.offset;
-        let schema = self.config.schema.clone();
         let node_id = self.node_id();
         builder.map_plan(self.as_ref(), move |input| {
-            let _ = schema;
             LocalPhysicalPlan::distributed_limit(
                 input,
                 actor.clone(),
