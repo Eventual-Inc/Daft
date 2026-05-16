@@ -102,9 +102,6 @@ class LimitCounterHandle:
     async def claim(self, task_id: str, num_rows: int) -> tuple[int, int, bool]:
         return await self.actor.claim.remote(task_id, num_rows)
 
-    async def is_done(self) -> bool:
-        return await self.actor.is_done.remote()
-
     def teardown(self) -> None:
         ray.kill(self.actor)
 
@@ -115,14 +112,12 @@ async def start_limit_counter_actor(
     timeout: int,
 ) -> LimitCounterHandle:
     """Spawn the `LimitCounterActor` and wait for it to be ready."""
-    actor = LimitCounterActor.options(
-        scheduling_strategy="DEFAULT",
-    ).remote(limit, offset)
-
-    ready_future = asyncio.wrap_future(actor.__ray_ready__.remote().future())
-    ready, _ = await asyncio.wait([ready_future], return_when=asyncio.ALL_COMPLETED, timeout=timeout)
-    if not ready:
-        raise RuntimeError(f"LimitCounterActor failed to start within {timeout} seconds")
-    await asyncio.gather(*ready)
-
+    actor = LimitCounterActor.options(scheduling_strategy="DEFAULT").remote(limit, offset)
+    try:
+        await asyncio.wait_for(
+            asyncio.wrap_future(actor.__ray_ready__.remote().future()),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"LimitCounterActor failed to start within {timeout} seconds") from None
     return LimitCounterHandle(actor)

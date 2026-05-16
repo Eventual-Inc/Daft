@@ -13,23 +13,16 @@ use super::base::{
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
-pub(crate) struct DistributedLimitSinkState {
-    actor: Arc<Py<PyAny>>,
-    /// Shared across every `PerInputState` for this sink. Ensures `start_task`
-    /// is called exactly once per sink instance, even if the streaming-sink
-    /// machinery creates multiple states (e.g., one per `InputId`). Calling
-    /// `start_task` more than once with the same `task_id` would rewind prior
-    /// claims and corrupt the global budget.
-    started: Arc<OnceCell<()>>,
-}
-
 pub struct DistributedLimitSink {
     actor: Arc<Py<PyAny>>,
     task_id: String,
     limit: u64,
     offset: Option<u64>,
-    /// One per sink. All `DistributedLimitSinkState`s clone this `Arc` so that
-    /// `start_task` is only ever called once on the actor for this task.
+    /// Guards the single `start_task` call to the actor. The streaming-sink
+    /// framework may invoke `make_state` more than once per sink, but
+    /// `start_task` must run exactly once per `task_id` — a second call
+    /// would rewind the prior claims as if this were a retry and corrupt
+    /// the global budget.
     started: Arc<OnceCell<()>>,
 }
 
@@ -46,25 +39,26 @@ impl DistributedLimitSink {
 }
 
 impl StreamingSink for DistributedLimitSink {
-    type State = DistributedLimitSinkState;
+    type State = ();
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
 
     #[instrument(skip_all, name = "DistributedLimitSink::sink")]
     fn execute(
         &self,
         input: MicroPartition,
-        state: DistributedLimitSinkState,
+        _state: (),
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
+        let actor = self.actor.clone();
         let task_id = self.task_id.clone();
+        let started = self.started.clone();
         spawner
             .spawn(
                 async move {
-                    let started_actor = state.actor.clone();
+                    let started_actor = actor.clone();
                     let started_tid = task_id.clone();
-                    state
-                        .started
+                    started
                         .get_or_try_init(|| async move {
                             common_runtime::python::execute_python_coroutine_noreturn(move |py| {
                                 let coroutine = started_actor.call_method1(
@@ -79,14 +73,15 @@ impl StreamingSink for DistributedLimitSink {
                         .await?;
 
                     let num_rows = input.len();
-                    let actor = state.actor.clone();
-                    let tid = task_id.clone();
                     let (skip, take, done) = common_runtime::python::execute_python_coroutine::<
                         _,
                         (i64, i64, bool),
                     >(move |py| {
-                        let coroutine =
-                            actor.call_method1(py, pyo3::intern!(py, "claim"), (tid, num_rows))?;
+                        let coroutine = actor.call_method1(
+                            py,
+                            pyo3::intern!(py, "claim"),
+                            (task_id, num_rows),
+                        )?;
                         Ok(coroutine.into_bound(py))
                     })
                     .await?;
@@ -101,14 +96,12 @@ impl StreamingSink for DistributedLimitSink {
                         input.slice(skip, skip + take)?
                     };
 
-                    if done {
-                        Ok((state, StreamingSinkOutput::Finished(Some(output.into()))))
+                    let signal = if done {
+                        StreamingSinkOutput::Finished(Some(output.into()))
                     } else {
-                        Ok((
-                            state,
-                            StreamingSinkOutput::NeedMoreInput(Some(output.into())),
-                        ))
-                    }
+                        StreamingSinkOutput::NeedMoreInput(Some(output.into()))
+                    };
+                    Ok(((), signal))
                 },
                 Span::current(),
             )
@@ -142,10 +135,7 @@ impl StreamingSink for DistributedLimitSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(DistributedLimitSinkState {
-            actor: self.actor.clone(),
-            started: self.started.clone(),
-        })
+        Ok(())
     }
 
     fn max_concurrency(&self) -> usize {
