@@ -4,7 +4,8 @@ use std::{
     sync::Arc,
 };
 
-use arrow_array::Array;
+use arrow::compute::SortOptions;
+use arrow_array::{Array, Float64Array as ArrowFloat64Array, UInt64Array as ArrowUInt64Array};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -13,7 +14,9 @@ use daft_core::{
         GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
     },
     join::AsofJoinStrategy,
-    kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
+    kernels::search_sorted::{
+        DynPartialComparator, build_partial_compare_with_nulls, make_daft_comparator,
+    },
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -30,6 +33,84 @@ use crate::{
     },
     pipeline::NodeName,
 };
+
+/// Returns true if `a_arr[a_idx]` is nearer to `pivot_arr[pivot_idx]` than `b_arr[b_idx]`.
+fn nearest_cmp(
+    a_arr: &dyn Array,
+    a_idx: usize,
+    b_arr: &dyn Array,
+    b_idx: usize,
+    pivot_arr: &dyn Array,
+    pivot_idx: usize,
+) -> bool {
+    if !a_arr.is_valid(a_idx) {
+        return false;
+    }
+    if !b_arr.is_valid(b_idx) {
+        return true;
+    }
+    if !pivot_arr.is_valid(pivot_idx) {
+        return false;
+    }
+
+    let a = a_arr.slice(a_idx, 1);
+    let b = b_arr.slice(b_idx, 1);
+    let p = pivot_arr.slice(pivot_idx, 1);
+
+    let sort_opts = SortOptions::new(false, false);
+
+    // Compute |a - pivot| and |b - pivot| by always subtracting smaller from larger.
+    let a_dist = {
+        let cmp = make_daft_comparator(a.as_ref(), p.as_ref(), sort_opts)
+            .expect("make_comparator failed for a vs pivot");
+        if cmp(0, 0).is_ge() {
+            arrow::compute::kernels::numeric::sub(&a, &p)
+        } else {
+            arrow::compute::kernels::numeric::sub(&p, &a)
+        }
+        .expect("sub failed for a distance")
+    };
+    let b_dist = {
+        let cmp = make_daft_comparator(b.as_ref(), p.as_ref(), sort_opts)
+            .expect("make_comparator failed for b vs pivot");
+        if cmp(0, 0).is_ge() {
+            arrow::compute::kernels::numeric::sub(&b, &p)
+        } else {
+            arrow::compute::kernels::numeric::sub(&p, &b)
+        }
+        .expect("sub failed for b distance")
+    };
+
+    let dist_cmp = make_daft_comparator(a_dist.as_ref(), b_dist.as_ref(), sort_opts)
+        .expect("make_comparator failed for distance comparison");
+    match dist_cmp(0, 0) {
+        Ordering::Less => true,
+        Ordering::Greater => false,
+        // Tie: prefer larger value (forward/later).
+        Ordering::Equal => make_daft_comparator(a.as_ref(), b.as_ref(), sort_opts)
+            .expect("make_comparator failed for tie-breaking")(0, 0)
+        .is_gt(),
+    }
+}
+
+/// Captures the arrays upfront; each call only passes `(a_idx, b_idx, pivot_idx)`.
+type DynPartialNearestComparator = Box<dyn Fn(usize, usize, usize) -> bool + Send + Sync>;
+
+fn build_partial_nearest_comparator(
+    sorted_arr: Arc<dyn Array>,
+    pivot_arr: Arc<dyn Array>,
+) -> DynPartialNearestComparator {
+    Box::new(move |a_idx: usize, b_idx: usize, pivot_idx: usize| {
+        nearest_cmp(
+            sorted_arr.as_ref(),
+            a_idx,
+            sorted_arr.as_ref(),
+            b_idx,
+            pivot_arr.as_ref(),
+            pivot_idx,
+        )
+    })
+}
 
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
 // (the most-recent right event at or before the left event).
@@ -235,6 +316,7 @@ impl AsofJoinFinalizedBuildState {
                     Some(Ordering::Greater) => hi = mid,
                     _ => lo = mid + 1,
                 },
+                AsofJoinStrategy::Nearest => unreachable!("use search_bucket_nearest for Nearest"),
             }
         }
         match dir {
@@ -243,6 +325,45 @@ impl AsofJoinFinalizedBuildState {
                 .checked_sub(1)
                 .and_then(|i| bucket.get(i))
                 .map(|&idx| idx as usize),
+            AsofJoinStrategy::Nearest => unreachable!("use search_bucket_nearest for Nearest"),
+        }
+    }
+
+    /// binary-searches for both the floor (last left <= right) and ceiling (first left >= right),
+    /// returns the nearest left row to `right_idx` (floor or ceil).
+    fn search_bucket_nearest(
+        &self,
+        bucket: &[u64],
+        on_key_cmp: &DynPartialComparator,
+        right_idx: usize,
+        nearest_cmp: &DynPartialNearestComparator,
+    ) -> Option<usize> {
+        if bucket.is_empty() {
+            return None;
+        }
+        let mut lo = 0usize;
+        let mut hi = bucket.len();
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            match on_key_cmp(mid, right_idx) {
+                Some(Ordering::Less) => lo = mid + 1,
+                _ => hi = mid,
+            }
+        }
+        let ceil_pos = if lo < bucket.len() { Some(lo) } else { None };
+        let floor_pos = lo.checked_sub(1);
+
+        match (floor_pos, ceil_pos) {
+            (None, Some(cp)) => Some(cp),
+            (Some(fp), None) => Some(fp),
+            (Some(fp), Some(cp)) => {
+                if nearest_cmp(cp, fp, right_idx) {
+                    Some(cp)
+                } else {
+                    Some(fp)
+                }
+            }
+            (None, None) => None,
         }
     }
 }
@@ -272,7 +393,6 @@ impl AsofJoinProbeState {
             prune_right_batch(right_rb, right_cols_to_keep),
             right_on_arr.clone(),
         ));
-
         // Build one comparator per by_key group: compares that group's sorted left on_key array
         // against the current right batch's on_key array, used for binary search in search_bucket.
         let grouped_on_key_cmps: Vec<DynPartialComparator> = build_state
@@ -286,13 +406,6 @@ impl AsofJoinProbeState {
                 )
             })
             .collect::<DaftResult<_>>()?;
-
-        // this way update_best_match can compare same-rb candidates without rebuilding it.
-        let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
-        cmp_cache.insert(
-            (rb_idx, rb_idx),
-            build_partial_compare_with_nulls(right_on_arr.as_ref(), right_on_arr.as_ref(), false)?,
-        );
 
         // Passed to find_left_group() to hash and equality-match the right row's by_key against left groups.
         let by_key_hashes_and_comparator: Option<(_, _)> =
@@ -325,34 +438,84 @@ impl AsofJoinProbeState {
             .map(|(_, on_key_arr)| on_key_arr.clone())
             .collect();
 
-        for right_idx in 0..right_rb.len() {
-            if !right_on_arr.is_valid(right_idx) {
-                continue;
+        if dir == AsofJoinStrategy::Nearest {
+            let grouped_nearest_cmps: Vec<DynPartialNearestComparator> = build_state
+                .grouped_sorted_materialized_on_keys
+                .iter()
+                .map(|sorted_key_arr| {
+                    build_partial_nearest_comparator(sorted_key_arr.clone(), right_on_arr.clone())
+                })
+                .collect();
+            for right_idx in 0..right_rb.len() {
+                if !right_on_arr.is_valid(right_idx) {
+                    continue;
+                }
+                let Some(group_idx) =
+                    build_state.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
+                else {
+                    continue;
+                };
+                let sorted_on_key_arr = &build_state.grouped_sorted_materialized_on_keys[group_idx];
+                let bucket = &build_state.grouped_sorted_indices[group_idx];
+                let Some(matched_left_bucket_idx) = build_state.search_bucket_nearest(
+                    bucket,
+                    &grouped_on_key_cmps[group_idx],
+                    right_idx,
+                    &grouped_nearest_cmps[group_idx],
+                ) else {
+                    continue;
+                };
+                update_nearest_match(
+                    &mut self.best_match[bucket[matched_left_bucket_idx] as usize],
+                    &right_on_key_arrs,
+                    MatchCandidate {
+                        rb_idx,
+                        row_idx: right_idx,
+                    },
+                    sorted_on_key_arr.as_ref(),
+                    matched_left_bucket_idx,
+                )?;
             }
+        } else {
+            let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
+            cmp_cache.insert(
+                (rb_idx, rb_idx),
+                build_partial_compare_with_nulls(
+                    right_on_arr.as_ref(),
+                    right_on_arr.as_ref(),
+                    false,
+                )?,
+            );
 
-            let Some(group_idx) =
-                build_state.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
-            else {
-                continue;
-            };
-
-            let bucket = &build_state.grouped_sorted_indices[group_idx];
-            let Some(matched_left_idx) =
-                build_state.search_bucket(bucket, &grouped_on_key_cmps[group_idx], right_idx, dir)
-            else {
-                continue;
-            };
-
-            update_best_match(
-                &mut self.best_match[matched_left_idx],
-                &right_on_key_arrs,
-                MatchCandidate {
-                    rb_idx,
-                    row_idx: right_idx,
-                },
-                &mut cmp_cache,
-                dir,
-            )?;
+            for right_idx in 0..right_rb.len() {
+                if !right_on_arr.is_valid(right_idx) {
+                    continue;
+                }
+                let Some(group_idx) =
+                    build_state.find_left_group(right_idx, by_key_hashes_and_comparator_ref)
+                else {
+                    continue;
+                };
+                let bucket = &build_state.grouped_sorted_indices[group_idx];
+                let Some(matched_left_idx) = build_state.search_bucket(
+                    bucket,
+                    &grouped_on_key_cmps[group_idx],
+                    right_idx,
+                    dir,
+                ) else {
+                    continue;
+                };
+                update_best_match(
+                    &mut self.best_match[matched_left_idx],
+                    &right_on_key_arrs,
+                    MatchCandidate {
+                        rb_idx,
+                        row_idx: right_idx,
+                    },
+                    &mut cmp_cache,
+                    dir,
+                )?;
+            }
         }
 
         Ok(())
@@ -375,6 +538,7 @@ fn update_best_match(
     let preferred_ordering = match dir {
         AsofJoinStrategy::Backward => Ordering::Greater,
         AsofJoinStrategy::Forward => Ordering::Less,
+        AsofJoinStrategy::Nearest => unreachable!("use update_nearest_match for Nearest"),
     };
     let is_better = match *slot {
         None => true,
@@ -390,6 +554,30 @@ fn update_best_match(
         )?,
     };
     if is_better {
+        *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
+    }
+    Ok(())
+}
+
+fn update_nearest_match(
+    slot: &mut Option<(u32, u32)>,
+    on_key_arrs: &[Arc<dyn Array>],
+    candidate: MatchCandidate,
+    left_on_arr: &dyn Array,
+    left_on_idx: usize,
+) -> DaftResult<()> {
+    let nearer = match *slot {
+        None => true,
+        Some((existing_rb_idx, existing_right_idx)) => nearest_cmp(
+            on_key_arrs[candidate.rb_idx].as_ref(),
+            candidate.row_idx,
+            on_key_arrs[existing_rb_idx as usize].as_ref(),
+            existing_right_idx as usize,
+            left_on_arr,
+            left_on_idx,
+        ),
+    };
+    if nearer {
         *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
     }
     Ok(())
@@ -434,6 +622,117 @@ fn backward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices:
                 global_best[curr_left_idx] = global_best[next_left_idx];
             }
         }
+    }
+}
+
+/// For left rows that received no direct probe assignment, fill from both directions and keep
+/// whichever candidate is closer to the left row's on_key. Ties prefer the forward-filled
+/// (earlier/floor) match, consistent with pandas bdiff <= fdiff behaviour.
+fn nearest_fill(
+    global_best: &mut Vec<Option<(u32, u32)>>,
+    grouped_sorted_indices: &GroupIndices,
+    left_on_arr: &dyn Array,
+    global_right_on_key_arrs: &[Arc<dyn Array>],
+) {
+    let mut fwd = global_best.clone();
+    forward_fill(&mut fwd, grouped_sorted_indices);
+    let mut bwd = global_best.clone();
+    backward_fill(&mut bwd, grouped_sorted_indices);
+
+    // Resolve uncontested rows immediately (only one direction has a candidate).
+    for i in 0..global_best.len() {
+        if global_best[i].is_some() {
+            continue;
+        }
+        global_best[i] = match (fwd[i], bwd[i]) {
+            (Some(_), None) => fwd[i],
+            (None, Some(_)) => bwd[i],
+            _ => continue, // both None or both Some — latter handled below
+        };
+    }
+
+    // Contested rows: both a forward and a backward candidate exist.
+    let contested: Vec<usize> = (0..global_best.len())
+        .filter(|&i| global_best[i].is_none() && fwd[i].is_some() && bwd[i].is_some())
+        .collect();
+
+    if contested.is_empty() {
+        return;
+    }
+
+    // Offset table so (rb_idx, row_idx) maps to a global index into the concatenated right array.
+    let mut rb_starts = vec![0usize; global_right_on_key_arrs.len() + 1];
+    for (i, arr) in global_right_on_key_arrs.iter().enumerate() {
+        rb_starts[i + 1] = rb_starts[i] + arr.len();
+    }
+
+    let right_refs: Vec<&dyn Array> = global_right_on_key_arrs
+        .iter()
+        .map(|a| a.as_ref())
+        .collect();
+    let right_concat = arrow::compute::concat(&right_refs).expect("nearest_fill: concat failed");
+
+    let left_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| i as u64));
+    let fwd_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| {
+        let (rb, row) = fwd[i].unwrap();
+        (rb_starts[rb as usize] + row as usize) as u64
+    }));
+    let bwd_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| {
+        let (rb, row) = bwd[i].unwrap();
+        (rb_starts[rb as usize] + row as usize) as u64
+    }));
+
+    let left_vals =
+        arrow::compute::take(left_on_arr, &left_indices, None).expect("nearest_fill: take failed");
+    let fwd_vals = arrow::compute::take(right_concat.as_ref(), &fwd_indices, None)
+        .expect("nearest_fill: take failed");
+    let bwd_vals = arrow::compute::take(right_concat.as_ref(), &bwd_indices, None)
+        .expect("nearest_fill: take failed");
+
+    // Cast to Float64 for uniform subtraction across all numeric types.
+    let f64_dt = arrow::datatypes::DataType::Float64;
+    let left_f64 = arrow::compute::cast(&left_vals, &f64_dt).expect("nearest_fill: cast failed");
+    let fwd_f64 = arrow::compute::cast(&fwd_vals, &f64_dt).expect("nearest_fill: cast failed");
+    let bwd_f64 = arrow::compute::cast(&bwd_vals, &f64_dt).expect("nearest_fill: cast failed");
+
+    // Vectorized distance: sub then scalar abs on the typed result.
+    let fwd_sub = arrow::compute::kernels::numeric::sub(&fwd_f64, &left_f64)
+        .expect("nearest_fill: sub failed");
+    let bwd_sub = arrow::compute::kernels::numeric::sub(&bwd_f64, &left_f64)
+        .expect("nearest_fill: sub failed");
+
+    let fwd_sub_f64 = fwd_sub
+        .as_any()
+        .downcast_ref::<ArrowFloat64Array>()
+        .unwrap();
+    let bwd_sub_f64 = bwd_sub
+        .as_any()
+        .downcast_ref::<ArrowFloat64Array>()
+        .unwrap();
+    let fwd_vals_f64 = fwd_f64
+        .as_any()
+        .downcast_ref::<ArrowFloat64Array>()
+        .unwrap();
+    let bwd_vals_f64 = bwd_f64
+        .as_any()
+        .downcast_ref::<ArrowFloat64Array>()
+        .unwrap();
+
+    for (k, &i) in contested.iter().enumerate() {
+        let fwd_dist = fwd_sub_f64.value(k).abs();
+        let bwd_dist = bwd_sub_f64.value(k).abs();
+        global_best[i] = if fwd_dist < bwd_dist {
+            fwd[i]
+        } else if bwd_dist < fwd_dist {
+            bwd[i]
+        } else {
+            // Tie: prefer the larger right on_key value (forward/later), mirroring nearest_cmp.
+            if fwd_vals_f64.value(k) > bwd_vals_f64.value(k) {
+                fwd[i]
+            } else {
+                bwd[i]
+            }
+        };
     }
 }
 
@@ -600,13 +899,12 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        let dir = strategy;
                         state.probe_batch(
                             right_rb,
                             &right_on,
                             &right_by,
                             &right_cols_to_keep,
-                            dir,
+                            strategy,
                         )?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
@@ -623,6 +921,7 @@ impl JoinOperator for AsofJoinOperator {
     ) -> ProbeFinalizeResult {
         let join_schema = self.join_schema.clone();
         let strategy = self.strategy;
+        let left_on = self.left_on.clone();
         let left_field_names: HashSet<&str> = self.left_schema.field_names().collect();
         let pruned_right_schema: SchemaRef = Arc::new(Schema::new(
             self.join_schema
@@ -681,6 +980,7 @@ impl JoinOperator for AsofJoinOperator {
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
                             let state_best_matches = state_best_matches.clone();
+                            let left_on_arr = left_on_arr.clone();
 
                             get_compute_runtime().spawn(async move {
                                 let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> =
@@ -699,17 +999,28 @@ impl JoinOperator for AsofJoinOperator {
                                         };
                                         let candidate_global_rb_idx = global_rb_offsets[state_idx]
                                             + candidate_local_rb_idx as usize;
+                                        let candidate = MatchCandidate {
+                                            rb_idx: candidate_global_rb_idx,
+                                            row_idx: candidate_right_idx as usize,
+                                        };
 
-                                        update_best_match(
-                                            curr_best_match,
-                                            &global_right_on_key_arrs,
-                                            MatchCandidate {
-                                                rb_idx: candidate_global_rb_idx,
-                                                row_idx: candidate_right_idx as usize,
-                                            },
-                                            &mut cmp_cache,
-                                            strategy,
-                                        )?;
+                                        if let Some(arr) = &left_on_arr {
+                                            update_nearest_match(
+                                                curr_best_match,
+                                                &global_right_on_key_arrs,
+                                                candidate,
+                                                arr.as_ref(),
+                                                global_left_idx,
+                                            )?;
+                                        } else {
+                                            update_best_match(
+                                                curr_best_match,
+                                                &global_right_on_key_arrs,
+                                                candidate,
+                                                &mut cmp_cache,
+                                                strategy,
+                                            )?;
+                                        }
                                     }
                                 }
                                 DaftResult::Ok(chunk)
@@ -732,6 +1043,16 @@ impl JoinOperator for AsofJoinOperator {
                         }
                         AsofJoinStrategy::Forward => {
                             backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                        }
+                        AsofJoinStrategy::Nearest => {
+                            nearest_fill(
+                                &mut global_best,
+                                &build_state.grouped_sorted_indices,
+                                left_on_arr
+                                    .as_deref()
+                                    .expect("left_on_arr required for Nearest fill"),
+                                &global_right_on_key_arrs,
+                            );
                         }
                     }
 

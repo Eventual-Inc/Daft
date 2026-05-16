@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, iter::zip, sync::Arc};
+use std::{cmp::Ordering, iter::zip};
 
 use arrow::{
     array::{
@@ -303,7 +303,7 @@ where
 ///
 /// For float types, builds a zero-allocation comparator using `cmp_float`.
 /// For all other types, delegates to arrow-rs `make_comparator`.
-pub(crate) fn make_daft_comparator(
+pub fn make_daft_comparator(
     left: &dyn Array,
     right: &dyn Array,
     sort_options: SortOptions,
@@ -360,83 +360,6 @@ pub fn build_partial_compare_with_nulls(
     }))
 }
 
-/// Returns true if `a_arr[a_idx]` is nearer to `pivot_arr[pivot_idx]` than `b_arr[b_idx]`.
-pub fn nearest_cmp(
-    a_arr: &dyn Array,
-    a_idx: usize,
-    b_arr: &dyn Array,
-    b_idx: usize,
-    pivot_arr: &dyn Array,
-    pivot_idx: usize,
-) -> bool {
-    if !a_arr.is_valid(a_idx) {
-        return false;
-    }
-    if !b_arr.is_valid(b_idx) {
-        return true;
-    }
-    if !pivot_arr.is_valid(pivot_idx) {
-        return false;
-    }
-
-    let a = a_arr.slice(a_idx, 1);
-    let b = b_arr.slice(b_idx, 1);
-    let p = pivot_arr.slice(pivot_idx, 1);
-
-    let sort_opts = SortOptions::new(false, false);
-
-    // Compute |a - pivot| and |b - pivot| by always subtracting smaller from larger.
-    let a_dist = {
-        let cmp = make_daft_comparator(a.as_ref(), p.as_ref(), sort_opts)
-            .expect("make_comparator failed for a vs pivot");
-        if cmp(0, 0).is_ge() {
-            arrow::compute::kernels::numeric::sub(&a, &p)
-        } else {
-            arrow::compute::kernels::numeric::sub(&p, &a)
-        }
-        .expect("sub failed for a distance")
-    };
-    let b_dist = {
-        let cmp = make_daft_comparator(b.as_ref(), p.as_ref(), sort_opts)
-            .expect("make_comparator failed for b vs pivot");
-        if cmp(0, 0).is_ge() {
-            arrow::compute::kernels::numeric::sub(&b, &p)
-        } else {
-            arrow::compute::kernels::numeric::sub(&p, &b)
-        }
-        .expect("sub failed for b distance")
-    };
-
-    let dist_cmp = make_daft_comparator(a_dist.as_ref(), b_dist.as_ref(), sort_opts)
-        .expect("make_comparator failed for distance comparison");
-    match dist_cmp(0, 0) {
-        Ordering::Less => true,
-        Ordering::Greater => false,
-        // Tie: prefer larger value (forward/later).
-        Ordering::Equal => make_daft_comparator(a.as_ref(), b.as_ref(), sort_opts)
-            .expect("make_comparator failed for tie-breaking")(0, 0)
-        .is_gt(),
-    }
-}
-
-/// Captures the arrays upfront; each call only passes `(a_idx, b_idx, pivot_idx)`.
-pub type DynPartialNearestComparator = Box<dyn Fn(usize, usize, usize) -> bool + Send + Sync>;
-
-pub fn build_partial_nearest_comparator(
-    sorted_arr: Arc<dyn Array>,
-    pivot_arr: Arc<dyn Array>,
-) -> DynPartialNearestComparator {
-    Box::new(move |a_idx: usize, b_idx: usize, pivot_idx: usize| {
-        nearest_cmp(
-            sorted_arr.as_ref(),
-            a_idx,
-            sorted_arr.as_ref(),
-            b_idx,
-            pivot_arr.as_ref(),
-            pivot_idx,
-        )
-    })
-}
 
 pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
