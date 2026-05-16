@@ -20,51 +20,32 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-/// Lazily-initialized handle to the Ray `LimitCounterActor`.
 #[cfg(feature = "python")]
-#[derive(Debug)]
-enum LimitActor {
-    Uninitialized { limit: u64, offset: u64 },
-    Initialized(PyObjectWrapper),
+async fn start_limit_counter_actor(
+    limit: u64,
+    offset: u64,
+    timeout: usize,
+) -> DaftResult<PyObjectWrapper> {
+    let actor: Py<PyAny> =
+        common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
+            let module = py.import(pyo3::intern!(py, "daft.execution.ray_distributed_limit"))?;
+            let coroutine = module.call_method1(
+                pyo3::intern!(py, "start_limit_counter_actor"),
+                (limit as i64, offset as i64, timeout as i64),
+            )?;
+            Ok(coroutine)
+        })
+        .await?;
+    Ok(PyObjectWrapper(Arc::new(actor)))
 }
 
 #[cfg(feature = "python")]
-impl LimitActor {
-    async fn get_or_start(&mut self, timeout: usize) -> DaftResult<PyObjectWrapper> {
-        match self {
-            Self::Uninitialized { limit, offset } => {
-                let (limit, offset) = (*limit, *offset);
-                let actor: Py<PyAny> =
-                    common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
-                        let module =
-                            py.import(pyo3::intern!(py, "daft.execution.ray_distributed_limit"))?;
-                        let coroutine = module.call_method1(
-                            pyo3::intern!(py, "start_limit_counter_actor"),
-                            (limit as i64, offset as i64, timeout as i64),
-                        )?;
-                        Ok(coroutine)
-                    })
-                    .await?;
-                let wrapper = PyObjectWrapper(Arc::new(actor));
-                *self = Self::Initialized(wrapper.clone());
-                Ok(wrapper)
-            }
-            Self::Initialized(wrapper) => Ok(wrapper.clone()),
+fn teardown_limit_counter_actor(actor: &PyObjectWrapper) {
+    Python::attach(|py| {
+        if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
+            tracing::warn!("Error tearing down limit counter actor: {:?}", e);
         }
-    }
-
-    fn teardown(&mut self) {
-        if let Self::Initialized(wrapper) = self {
-            Python::attach(|py| {
-                if let Err(e) = wrapper
-                    .0
-                    .call_method1(py, pyo3::intern!(py, "teardown"), ())
-                {
-                    tracing::warn!("Error tearing down limit counter actor: {:?}", e);
-                }
-            });
-        }
-    }
+    });
 }
 
 pub(crate) struct LimitNode {
@@ -114,54 +95,47 @@ impl LimitNode {
         mut input_task_stream: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let mut limit_actor = LimitActor::Uninitialized {
-            limit: self.limit,
-            offset: self.offset.unwrap_or(0),
-        };
+        let actor = start_limit_counter_actor(
+            self.limit,
+            self.offset.unwrap_or(0),
+            self.config.execution_config.actor_udf_ready_timeout,
+        )
+        .await?;
 
+        // Drop `result_tx` once forwarding is done. Downstream nodes that batch
+        // their input (e.g. `IntoPartitionsNode`) only submit once the input
+        // stream closes; holding `result_tx` open while waiting for forwarded
+        // tasks would deadlock the drain below.
         let mut running_tasks = JoinSet::new();
-        {
-            // Scope `result_tx` so it gets dropped as soon as forwarding is done.
-            // Downstream nodes that batch their input (e.g. `IntoPartitionsNode`)
-            // wait for the input stream to close before submitting any task; if
-            // we hold `result_tx` open while waiting for forwarded tasks to
-            // complete, the forwarded task never gets submitted and we deadlock.
-            let result_tx = result_tx;
+        let mut seq: u32 = 0;
+        while let Some(builder) = input_task_stream.next().await {
             // Stamp each forwarded builder with a unique fingerprint suffix.
-            // The worker caches local pipelines by `plan_fingerprint`; if all
-            // tasks share a fingerprint, they share one pipeline — and our
-            // streaming sink's state becomes Finished after the first task
-            // hits the limit, killing the pipeline for subsequent tasks. Each
-            // task must get its own pipeline.
-            let mut seq: u32 = 0;
-            while let Some(builder) = input_task_stream.next().await {
-                let actor = limit_actor
-                    .get_or_start(self.config.execution_config.actor_udf_ready_timeout)
-                    .await?;
-                let modified_builder = self
-                    .append_distributed_limit_to_builder(builder, actor)
-                    .extend_fingerprint(seq);
-                seq = seq.wrapping_add(1);
-                let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-                running_tasks.spawn(notify_token);
-                if result_tx.send(builder_with_token).await.is_err() {
-                    break;
-                }
+            // Workers cache local pipelines by `plan_fingerprint`; sharing one
+            // pipeline across tasks lets the streaming sink hit `Finished`
+            // once and kill the pipeline for everyone after it.
+            let modified_builder = self
+                .wrap_with_distributed_limit(builder, actor.clone())
+                .extend_fingerprint(seq);
+            seq = seq.wrapping_add(1);
+            let (builder_with_token, notify_token) = modified_builder.add_notify_token();
+            running_tasks.spawn(notify_token);
+            if result_tx.send(builder_with_token).await.is_err() {
+                break;
             }
-            // result_tx dropped here at end-of-scope.
         }
-        // Drain all forwarded tasks' notify channels before tearing down the
-        // actor. Don't break on a `RecvError` from a notify channel — a
-        // `SubmittedTask` that's dropped without being polled closes the
-        // channel (Err), but the worker may still be making actor calls until
-        // its cancellation propagates. Wait for every channel to drain.
+        drop(result_tx);
+
+        // Wait for every forwarded task's notify channel to drain before
+        // tearing down the actor — workers may still be calling `claim` until
+        // their cancellation propagates, and a `SubmittedTask` dropped without
+        // being polled closes the channel with `Err` rather than `Ok`.
         while running_tasks.join_next().await.is_some() {}
-        limit_actor.teardown();
+        teardown_limit_counter_actor(&actor);
         Ok(())
     }
 
     #[cfg(feature = "python")]
-    fn append_distributed_limit_to_builder(
+    fn wrap_with_distributed_limit(
         self: &Arc<Self>,
         builder: SwordfishTaskBuilder,
         actor: PyObjectWrapper,
