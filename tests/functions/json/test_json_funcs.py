@@ -179,18 +179,33 @@ def test_json_tuple_invalid_and_null():
     )
     df = df.with_column("t", json_tuple(df["col"], "a", "b"))
     df = df.select(
+        df["t"].alias("t"),
         df["t"].get("a").alias("a"),
         df["t"].get("b").alias("b"),
+        df["t"].is_null().alias("row_null"),
     )
     result = df.to_pydict()
     assert result["a"] == [None, None, None, "1"]
     assert result["b"] == [None, None, None, None]
+    # Row-level nullability: NULL / malformed / non-object inputs produce a
+    # NULL struct row, not just child-field NULLs.
+    assert result["row_null"] == [True, True, True, False]
+    assert result["t"][0] is None
+    assert result["t"][1] is None
+    assert result["t"][2] is None
+    assert result["t"][3] == {"a": "1", "b": None}
 
 
 def test_json_tuple_requires_at_least_one_field():
     df = daft.from_pydict({"col": ['{"a": 1}']})
     with pytest.raises(ValueError, match="at least one field name"):
         df.select(json_tuple(df["col"]))
+
+
+def test_json_tuple_rejects_duplicate_field_names():
+    df = daft.from_pydict({"col": ['{"a": 1}']})
+    with pytest.raises(ValueError, match="unique"):
+        df.select(json_tuple(df["col"], "a", "a"))
 
 
 def test_json_tuple_sql():

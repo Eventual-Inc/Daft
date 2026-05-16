@@ -14,6 +14,12 @@ use serde_json::Value;
 ///   * the parsed JSON is not an object.
 ///
 /// Returns an empty list when the JSON object is empty.
+///
+/// **Note on key ordering**: keys are returned in **sorted alphabetical order**,
+/// not in source insertion order. This differs from Spark's `json_object_keys`,
+/// which preserves insertion order. The difference is a consequence of Daft's
+/// underlying `serde_json` configuration (`Value::Object` is backed by a
+/// `BTreeMap`); do not rely on insertion order in user code.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct JsonObjectKeys;
 
@@ -29,8 +35,9 @@ impl ScalarUDF for JsonObjectKeys {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the top-level keys of a JSON object as a list of strings. \
-         Returns NULL when the input is NULL, cannot be parsed, or is not an object."
+        "Returns the top-level keys of a JSON object as a list of strings, in sorted \
+         alphabetical order. Returns NULL when the input is NULL, cannot be parsed, or \
+         is not an object. Note: this differs from Spark, which preserves insertion order."
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

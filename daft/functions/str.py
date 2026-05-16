@@ -134,7 +134,12 @@ def json_object_keys(expr: Expression) -> Expression:
 
     Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
     or the parsed JSON is not an object. Returns an empty list for empty
-    objects. Equivalent to Spark's ``json_object_keys``.
+    objects.
+
+    Note:
+        Keys are returned in **sorted alphabetical order**, not source
+        insertion order. This differs from Spark's ``json_object_keys``,
+        which preserves insertion order.
 
     Args:
         expr: A string expression containing JSON.
@@ -180,8 +185,12 @@ def json_tuple(expr: Expression, *fields: str) -> Expression:
     * Non-string scalar values (numbers, booleans) are stringified without
       surrounding quotes (e.g. ``"1"``, ``"true"``).
     * Nested objects/arrays are returned as their JSON-encoded string form.
-    * Missing keys, malformed JSON, non-object roots, and ``NULL`` inputs
-      all yield ``NULL`` for every field of that row.
+    * Missing keys yield ``NULL`` for that field only; the row itself is
+      still valid as long as the input parses as a JSON object.
+    * Malformed JSON, non-object roots, and ``NULL`` inputs yield a
+      row-level ``NULL`` (``is_null()`` returns ``True``); every child
+      field is also ``NULL``.
+    * Field names must be unique; passing a duplicate raises an error.
 
     Args:
         expr: A string expression containing JSON.

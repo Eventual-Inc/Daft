@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+
+use arrow::buffer::NullBuffer;
 use daft_core::lit::FromLiteral;
 use daft_dsl::functions::prelude::*;
 use serde_json::Value;
@@ -13,8 +16,11 @@ use serde_json::Value;
 ///   * Non-string scalar values (numbers, booleans) are stringified without
 ///     quotes (e.g. `1`, `true`).
 ///   * Nested objects/arrays are returned as their JSON-encoded string.
-///   * Missing keys, malformed JSON, non-object roots and `NULL` inputs all
-///     yield `NULL` for every field of that row.
+///   * Missing keys yield `NULL` for that field only; the row itself is still
+///     valid as long as the input is a parseable JSON object.
+///   * Malformed JSON, non-object roots and `NULL` inputs yield a row-level
+///     `NULL` (`is_null()` returns `True`); every child field is also `NULL`.
+///   * Duplicate field names are rejected at planning time.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct JsonTuple;
 
@@ -25,13 +31,25 @@ struct JsonTupleArgs<T> {
     fields: Vec<T>,
 }
 
+fn check_unique_keys(keys: &[String]) -> DaftResult<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(keys.len());
+    for k in keys {
+        if !seen.insert(k.as_str()) {
+            return Err(common_error::DaftError::ValueError(format!(
+                "json_tuple field names must be unique, but '{k}' was specified more than once"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn extract_keys_from_exprs(fields: &[ExprRef]) -> DaftResult<Vec<String>> {
     if fields.is_empty() {
         return Err(common_error::DaftError::ValueError(
             "json_tuple requires at least one field name".to_string(),
         ));
     }
-    fields
+    let keys: Vec<String> = fields
         .iter()
         .enumerate()
         .map(|(i, e)| {
@@ -48,11 +66,13 @@ fn extract_keys_from_exprs(fields: &[ExprRef]) -> DaftResult<Vec<String>> {
                 ))
             })
         })
-        .collect()
+        .collect::<DaftResult<Vec<_>>>()?;
+    check_unique_keys(&keys)?;
+    Ok(keys)
 }
 
 fn extract_keys_from_series(fields: &[Series]) -> DaftResult<Vec<String>> {
-    fields
+    let keys: Vec<String> = fields
         .iter()
         .enumerate()
         .map(|(i, s)| {
@@ -80,7 +100,9 @@ fn extract_keys_from_series(fields: &[Series]) -> DaftResult<Vec<String>> {
                     ))
                 })
         })
-        .collect()
+        .collect::<DaftResult<Vec<_>>>()?;
+    check_unique_keys(&keys)?;
+    Ok(keys)
 }
 
 /// Convert a JSON value to its Spark-style string representation:
@@ -103,7 +125,9 @@ impl ScalarUDF for JsonTuple {
     fn docstring(&self) -> &'static str {
         "Extracts the values for the given top-level keys from a JSON object string and \
          returns them as a Struct. Equivalent to Spark's json_tuple but returns a struct \
-         (with field names = keys) instead of multiple columns."
+         (with field names = keys) instead of multiple columns. Field names must be \
+         unique. The struct row is NULL when the input is NULL, malformed, or not an \
+         object; missing keys produce field-level NULLs."
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
@@ -138,19 +162,22 @@ impl ScalarUDF for JsonTuple {
         let name = arr.name().to_string();
         let n = arr.len();
 
-        // Per-key column buffers.
+        // Per-key column buffers + per-row validity for the outer struct.
         let mut columns: Vec<Vec<Option<String>>> =
             (0..keys.len()).map(|_| Vec::with_capacity(n)).collect();
+        let mut row_validity: Vec<bool> = Vec::with_capacity(n);
 
         for opt in arr {
             let parsed = opt.and_then(|s| serde_json::from_str::<Value>(s).ok());
             match parsed {
                 Some(Value::Object(map)) => {
+                    row_validity.push(true);
                     for (i, k) in keys.iter().enumerate() {
                         columns[i].push(map.get(k).map(json_value_to_str));
                     }
                 }
                 _ => {
+                    row_validity.push(false);
                     for col in &mut columns {
                         col.push(None);
                     }
@@ -170,7 +197,9 @@ impl ScalarUDF for JsonTuple {
 
         let struct_fields: Vec<Field> = child_series.iter().map(|s| s.field().clone()).collect();
         let struct_field = Field::new(name, DataType::Struct(struct_fields));
-        let struct_arr = daft_core::prelude::StructArray::new(struct_field, child_series, None);
+        let validity = NullBuffer::from_iter(row_validity);
+        let struct_arr =
+            daft_core::prelude::StructArray::new(struct_field, child_series, Some(validity));
         Ok(daft_core::series::IntoSeries::into_series(struct_arr))
     }
 }
