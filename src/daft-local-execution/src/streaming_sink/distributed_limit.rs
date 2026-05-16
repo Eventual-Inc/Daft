@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use pyo3::{Py, PyAny};
-use tokio::sync::OnceCell;
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -22,10 +21,11 @@ pub(crate) struct DistributedLimitSinkState {
     /// SwordfishTask's task_id, so the actor's claim-rewind on retry stays
     /// scoped to the right task.
     task_id: String,
-    /// Fires exactly once per state — guarding the actor's `start_task` call
-    /// so a state's first `execute` rewinds any prior attempt's claims, and
-    /// subsequent `execute`s just claim against the live budget.
-    started: OnceCell<()>,
+    /// Flipped to `true` after the first `execute` calls the actor's
+    /// `start_task` — subsequent `execute`s skip it and just claim. Safe as a
+    /// plain bool because the framework owns the state and hands it to one
+    /// execute at a time.
+    started: bool,
 }
 
 pub struct DistributedLimitSink {
@@ -52,7 +52,7 @@ impl StreamingSink for DistributedLimitSink {
     fn execute(
         &self,
         input: MicroPartition,
-        state: DistributedLimitSinkState,
+        mut state: DistributedLimitSinkState,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
@@ -60,22 +60,20 @@ impl StreamingSink for DistributedLimitSink {
         spawner
             .spawn(
                 async move {
-                    let started_actor = actor.clone();
-                    let started_tid = state.task_id.clone();
-                    state
-                        .started
-                        .get_or_try_init(|| async move {
-                            common_runtime::python::execute_python_coroutine_noreturn(move |py| {
-                                let coroutine = started_actor.call_method1(
-                                    py,
-                                    pyo3::intern!(py, "start_task"),
-                                    (started_tid,),
-                                )?;
-                                Ok(coroutine.into_bound(py))
-                            })
-                            .await
+                    if !state.started {
+                        let started_actor = actor.clone();
+                        let started_tid = state.task_id.clone();
+                        common_runtime::python::execute_python_coroutine_noreturn(move |py| {
+                            let coroutine = started_actor.call_method1(
+                                py,
+                                pyo3::intern!(py, "start_task"),
+                                (started_tid,),
+                            )?;
+                            Ok(coroutine.into_bound(py))
                         })
                         .await?;
+                        state.started = true;
+                    }
 
                     let num_rows = input.len();
                     let tid = state.task_id.clone();
@@ -140,7 +138,7 @@ impl StreamingSink for DistributedLimitSink {
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         Ok(DistributedLimitSinkState {
             task_id: input_id.to_string(),
-            started: OnceCell::new(),
+            started: false,
         })
     }
 
