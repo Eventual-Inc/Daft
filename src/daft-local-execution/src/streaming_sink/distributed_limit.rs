@@ -71,7 +71,7 @@ impl StreamingSink for DistributedLimitSink {
 
                     let num_rows = input.len();
                     let iid = state.input_id.clone();
-                    let (skip, take, done) = common_runtime::python::execute_python_coroutine::<
+                    let (skip, take, _done) = common_runtime::python::execute_python_coroutine::<
                         _,
                         (i64, i64, bool),
                     >(move |py| {
@@ -91,12 +91,16 @@ impl StreamingSink for DistributedLimitSink {
                         input.slice(skip, skip + take)?
                     };
 
-                    let signal = if done {
-                        StreamingSinkOutput::Finished(Some(output.into()))
-                    } else {
-                        StreamingSinkOutput::NeedMoreInput(Some(output.into()))
-                    };
-                    Ok((state, signal))
+                    // Always emit NeedMoreInput, never Finished — Finished
+                    // terminates the entire streaming-sink node (base.rs:326),
+                    // killing the cached pipeline on a flotilla worker and
+                    // taking down other concurrent input_ids that share it.
+                    // The upstream LimitNode handles termination by cancelling
+                    // once every contributing input_id has materialized.
+                    Ok((
+                        state,
+                        StreamingSinkOutput::NeedMoreInput(Some(output.into())),
+                    ))
                 },
                 Span::current(),
             )

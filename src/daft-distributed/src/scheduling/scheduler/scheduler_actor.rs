@@ -300,14 +300,14 @@ impl<T: Task> SchedulerHandle<T> {
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
     cancel_token: CancellationToken,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(
         task: T,
         cancel_token: CancellationToken,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             task,
@@ -336,7 +336,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
     finished: bool,
 }
 
@@ -345,7 +345,7 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             _task_id: task_id,
@@ -369,16 +369,18 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(result)
             }
             // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(Ok(None))
             }

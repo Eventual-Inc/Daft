@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
@@ -18,7 +18,7 @@ use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
-    scheduling::task::SwordfishTaskBuilder,
+    scheduling::task::{SwordfishTaskBuilder, TaskID},
     utils::channel::{Sender, create_channel},
 };
 
@@ -50,11 +50,13 @@ fn teardown_limit_counter_actor(actor: &PyObjectWrapper) {
     });
 }
 
+/// Awaits the actor until the limit is fully claimed, then returns the
+/// `input_ids` of tasks that actually consumed budget (`take > 0`).
 #[cfg(feature = "python")]
-async fn limit_counter_actor_is_done(actor: &PyObjectWrapper) -> DaftResult<bool> {
+async fn wait_for_contributors(actor: &PyObjectWrapper) -> DaftResult<Vec<String>> {
     let actor = actor.0.clone();
-    common_runtime::python::execute_python_coroutine::<_, bool>(move |py| {
-        let coroutine = actor.call_method1(py, pyo3::intern!(py, "is_done"), ())?;
+    common_runtime::python::execute_python_coroutine::<_, Vec<String>>(move |py| {
+        let coroutine = actor.call_method1(py, pyo3::intern!(py, "wait_for_contributors"), ())?;
         Ok(coroutine.into_bound(py))
     })
     .await
@@ -114,23 +116,46 @@ impl LimitNode {
         )
         .await?;
 
-        // All forwarded tasks share `parent_cancel` as their cancel-token
-        // parent. We only cancel on the *limit-hit* exit path — for downstream
-        // batching nodes (e.g. `IntoPartitionsNode`) that submit lazily after
-        // the LimitNode's stream closes, cancelling on the natural-exhaustion
-        // path would also drop their pending builders via the scheduler's
-        // is_cancelled filter and silently return zero rows.
+        // Forwarded tasks share `parent_cancel` as their cancel-token parent.
+        // We can only safely cancel once every input_id that consumed limit
+        // budget has materialized its result; otherwise cancelling kills a
+        // task whose data we still need. The actor reports the set of
+        // contributing input_ids when the limit is fully claimed; we then wait
+        // for those input_ids to appear in `completed_ids` (notify_tokens
+        // carry the `TaskID`, which equals the `input_id` in flotilla mode).
         let parent_cancel = CancellationToken::new();
         let mut running_tasks = JoinSet::new();
+        let mut completed_ids: HashSet<TaskID> = HashSet::new();
+        let mut contributors: Option<HashSet<TaskID>> = None;
+        let mut contributors_fut = Box::pin(wait_for_contributors(&actor));
         let mut input_exhausted = false;
-        let mut limit_hit = false;
         loop {
+            // Exit conditions:
+            // - With a known non-empty contributor set: break as soon as every
+            //   contributor has completed (their results are already in the
+            //   runner, safe to cancel everything else).
+            // - Otherwise (contributors unknown, or limit==0): wait for
+            //   natural exhaustion so downstream nodes always see input.
+            let done = match &contributors {
+                Some(c) if !c.is_empty() => c.is_subset(&completed_ids),
+                _ => input_exhausted && running_tasks.is_empty(),
+            };
+            if done {
+                break;
+            }
             tokio::select! {
                 biased;
-                Some(_) = running_tasks.join_next(), if !running_tasks.is_empty() => {
-                    if limit_counter_actor_is_done(&actor).await? {
-                        limit_hit = true;
-                        break;
+                res = &mut contributors_fut, if contributors.is_none() => {
+                    contributors = Some(
+                        res?
+                            .into_iter()
+                            .filter_map(|s| s.parse::<TaskID>().ok())
+                            .collect(),
+                    );
+                }
+                Some(join_result) = running_tasks.join_next(), if !running_tasks.is_empty() => {
+                    if let Ok(Ok(task_id)) = join_result {
+                        completed_ids.insert(task_id);
                     }
                 }
                 builder_opt = input_task_stream.next(), if !input_exhausted => {
@@ -164,9 +189,7 @@ impl LimitNode {
             }
         }
         drop(result_tx);
-        if limit_hit {
-            parent_cancel.cancel();
-        }
+        parent_cancel.cancel();
         teardown_limit_counter_actor(&actor);
         Ok(())
     }

@@ -327,7 +327,7 @@ pub(crate) struct SwordfishTaskBuilder {
     context: HashMap<String, String>,
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
     cancel_token: Option<CancellationToken>,
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
@@ -466,8 +466,9 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Add a notify token to the builder. Returns the builder and the receiver for the token.
-    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+    /// Add a notify token to the builder. The receiver fires when the task
+    /// completes (or is cancelled) with the assigned `TaskID`.
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<TaskID>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
         self.notify_tokens.push(notify_token);
         (self, notify_rx)
