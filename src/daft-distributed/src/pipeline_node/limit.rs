@@ -107,16 +107,8 @@ impl LimitNode {
         // stream closes; holding `result_tx` open while waiting for forwarded
         // tasks would deadlock the drain below.
         let mut running_tasks = JoinSet::new();
-        let mut seq: u32 = 0;
         while let Some(builder) = input_task_stream.next().await {
-            // Workers cache compiled pipelines by `plan_fingerprint`. We need a
-            // fresh `DistributedLimitSink` per task — the sink has the task's
-            // `task_id` baked in (the actor attributes claims by it) and goes
-            // terminal once the limit is hit. Stamping `seq` defeats the cache.
-            let modified_builder = self
-                .wrap_with_distributed_limit(builder, actor.clone())
-                .extend_fingerprint(seq);
-            seq = seq.wrapping_add(1);
+            let modified_builder = self.wrap_with_distributed_limit(builder, actor.clone());
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
             running_tasks.spawn(notify_token);
             if result_tx.send(builder_with_token).await.is_err() {

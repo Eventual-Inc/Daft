@@ -30,7 +30,7 @@ use super::base::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
 
@@ -372,7 +372,7 @@ impl StreamingSink for AsyncUdfSink {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
             task_set: JoinSet::new(),
