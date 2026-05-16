@@ -16,10 +16,10 @@ class _LimitCounterImpl:
     """Pure-Python state machine for the distributed Limit operator.
 
     Holds `(remaining_skip, remaining_take)` for the whole query and exposes an
-    atomic `claim(task_id, num_rows) -> (skip, take, done)` interface.
+    atomic `claim(input_id, num_rows) -> (skip, take, done)` interface.
 
     Idempotent across SwordfishTask retries: if a task is retried, its prior
-    claims are rewound on the next `start_task(task_id)` call so the new
+    claims are rewound on the next `start_task(input_id)` call so the new
     attempt starts from the same global state the failed one saw.
 
     Wrapped as a Ray actor by `LimitCounterActor` below. Kept as a separate
@@ -30,25 +30,25 @@ class _LimitCounterImpl:
     def __init__(self, limit: int, offset: int) -> None:
         self.remaining_skip = offset
         self.remaining_take = limit
-        # task_id -> (cumulative_skip_claimed, cumulative_take_claimed)
-        self.task_claims: dict[str, tuple[int, int]] = {}
+        # input_id -> (cumulative_skip_claimed, cumulative_take_claimed)
+        self.input_claims: dict[str, tuple[int, int]] = {}
 
-    def start_task(self, task_id: str) -> None:
-        """Rewind any prior claim made by `task_id` (retry semantics).
+    def start_task(self, input_id: str) -> None:
+        """Rewind any prior claim made by `input_id` (retry semantics).
 
-        If a prior attempt of `task_id` consumed budget, refund it to the
+        If a prior attempt of `input_id` consumed budget, refund it to the
         global budget; otherwise this is a no-op. Entries are added to
-        `task_claims` lazily by `claim` only when budget is actually
-        consumed, so `task_claims` stays bounded by the number of boundary
+        `input_claims` lazily by `claim` only when budget is actually
+        consumed, so `input_claims` stays bounded by the number of boundary
         tasks rather than the total tasks the query ever scheduled.
         """
-        prior = self.task_claims.pop(task_id, None)
+        prior = self.input_claims.pop(input_id, None)
         if prior is not None:
             skip, take = prior
             self.remaining_skip += skip
             self.remaining_take += take
 
-    def claim(self, task_id: str, num_rows: int) -> tuple[int, int, bool]:
+    def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
         """Atomically claim up to `num_rows` rows of the global budget for this task.
 
         Returns `(skip, take, done)`:
@@ -72,8 +72,8 @@ class _LimitCounterImpl:
         self.remaining_take -= take
 
         if skip > 0 or take > 0:
-            prev_skip, prev_take = self.task_claims.get(task_id, (0, 0))
-            self.task_claims[task_id] = (prev_skip + skip, prev_take + take)
+            prev_skip, prev_take = self.input_claims.get(input_id, (0, 0))
+            self.input_claims[input_id] = (prev_skip + skip, prev_take + take)
 
         done = self.remaining_take == 0
         return (skip, take, done)
@@ -96,11 +96,11 @@ class LimitCounterHandle:
     def __init__(self, actor_ref: RayActorHandle) -> None:
         self.actor = actor_ref
 
-    async def start_task(self, task_id: str) -> None:
-        await self.actor.start_task.remote(task_id)
+    async def start_task(self, input_id: str) -> None:
+        await self.actor.start_task.remote(input_id)
 
-    async def claim(self, task_id: str, num_rows: int) -> tuple[int, int, bool]:
-        return await self.actor.claim.remote(task_id, num_rows)
+    async def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
+        return await self.actor.claim.remote(input_id, num_rows)
 
     async def is_done(self) -> bool:
         return await self.actor.is_done.remote()

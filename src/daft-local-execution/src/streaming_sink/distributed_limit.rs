@@ -16,8 +16,8 @@ use crate::{
 };
 
 pub(crate) struct DistributedLimitSinkState {
-    /// Actor task_id; sourced from `InputId` (== SwordfishTask task_id in flotilla).
-    task_id: String,
+    /// Actor bookkeeping key; sourced from `InputId` (== SwordfishTask task_id in flotilla).
+    input_id: String,
     /// Guards the one-time `start_task` call per state.
     started: bool,
 }
@@ -56,12 +56,12 @@ impl StreamingSink for DistributedLimitSink {
                 async move {
                     if !state.started {
                         let started_actor = actor.clone();
-                        let started_tid = state.task_id.clone();
+                        let started_iid = state.input_id.clone();
                         common_runtime::python::execute_python_coroutine_noreturn(move |py| {
                             let coroutine = started_actor.call_method1(
                                 py,
                                 pyo3::intern!(py, "start_task"),
-                                (started_tid,),
+                                (started_iid,),
                             )?;
                             Ok(coroutine.into_bound(py))
                         })
@@ -70,13 +70,13 @@ impl StreamingSink for DistributedLimitSink {
                     }
 
                     let num_rows = input.len();
-                    let tid = state.task_id.clone();
+                    let iid = state.input_id.clone();
                     let (skip, take, done) = common_runtime::python::execute_python_coroutine::<
                         _,
                         (i64, i64, bool),
                     >(move |py| {
                         let coroutine =
-                            actor.call_method1(py, pyo3::intern!(py, "claim"), (tid, num_rows))?;
+                            actor.call_method1(py, pyo3::intern!(py, "claim"), (iid, num_rows))?;
                         Ok(coroutine.into_bound(py))
                     })
                     .await?;
@@ -131,7 +131,7 @@ impl StreamingSink for DistributedLimitSink {
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         Ok(DistributedLimitSinkState {
-            task_id: input_id.to_string(),
+            input_id: input_id.to_string(),
             started: false,
         })
     }

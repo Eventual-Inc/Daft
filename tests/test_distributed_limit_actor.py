@@ -46,7 +46,7 @@ def test_start_task_rewinds_prior_claim():
     assert actor.claim("t1", 60) == (0, 60, False)
     assert actor.remaining_take == 40
 
-    # Simulate retry: same task_id calls start_task again.
+    # Simulate retry: same input_id calls start_task again.
     actor.start_task("t1")
     assert actor.remaining_take == 100, "budget should be restored after rewind"
     # The retry can now claim up to the full limit again.
@@ -79,7 +79,7 @@ def test_start_task_rewind_isolated_per_task():
     # t1's 30 should be refunded; t2's 40 stays claimed.
     assert actor.remaining_take == 60
     # t2's bookkeeping should be intact.
-    assert actor.task_claims["t2"] == (0, 40)
+    assert actor.input_claims["t2"] == (0, 40)
 
 
 def test_double_start_task_is_idempotent():
@@ -95,7 +95,7 @@ def test_double_start_task_is_idempotent():
 
 
 def test_zero_claim_entries_dropped():
-    """Tasks that never consume budget shouldn't accumulate in task_claims."""
+    """Tasks that never consume budget shouldn't accumulate in input_claims."""
     actor = _LimitCounterImpl(limit=5, offset=0)
     actor.start_task("t1")
     actor.claim("t1", 10)  # claims all 5
@@ -106,10 +106,10 @@ def test_zero_claim_entries_dropped():
         tid = f"past_limit_{i}"
         actor.start_task(tid)
         assert actor.claim(tid, 50) == (0, 0, True)
-        assert tid not in actor.task_claims, "past-limit task should not be retained"
+        assert tid not in actor.input_claims, "past-limit task should not be retained"
 
     # Only the one boundary task remains.
-    assert set(actor.task_claims.keys()) == {"t1"}
+    assert set(actor.input_claims.keys()) == {"t1"}
 
 
 def test_is_done_transitions():
