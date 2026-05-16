@@ -328,6 +328,11 @@ pub(crate) struct SwordfishTaskBuilder {
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
     notify_tokens: Vec<OneshotSender<()>>,
+    /// Optional cancel token to bind to the resulting `SubmittedTask`. A
+    /// pipeline node that wants to cancel a group of forwarded tasks together
+    /// derives child tokens from one parent and attaches them here; defaults
+    /// to a fresh independent token at `build()` time.
+    cancel_token: Option<CancellationToken>,
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
     plan_fingerprint: PlanFingerprint,
@@ -352,6 +357,7 @@ impl SwordfishTaskBuilder {
             node_context: None,
             pending_node_ids: vec![node.node_id()],
             notify_tokens: vec![],
+            cancel_token: None,
             plan_fingerprint,
         }
     }
@@ -425,6 +431,7 @@ impl SwordfishTaskBuilder {
             node_context: left.node_context.clone(),
             pending_node_ids,
             notify_tokens: vec![],
+            cancel_token: None,
             plan_fingerprint,
         }
     }
@@ -468,6 +475,15 @@ impl SwordfishTaskBuilder {
         let (notify_token, notify_rx) = create_oneshot_channel();
         self.notify_tokens.push(notify_token);
         (self, notify_rx)
+    }
+
+    /// Bind an externally-supplied cancel token to the resulting `SubmittedTask`.
+    /// Used by pipeline nodes that want to cancel a group of forwarded tasks
+    /// together — derive children from a shared parent and attach them here,
+    /// then cancel the parent when the group should die.
+    pub fn with_cancel_token(mut self, cancel_token: CancellationToken) -> Self {
+        self.cancel_token = Some(cancel_token);
+        self
     }
 
     /// Build the SubmittableTask directly, which can be submitted to the scheduler.
@@ -519,7 +535,7 @@ impl SwordfishTaskBuilder {
             context,
         };
 
-        let cancel_token = CancellationToken::new();
+        let cancel_token = self.cancel_token.unwrap_or_else(CancellationToken::new);
         SubmittableTask::new(task, cancel_token, self.notify_tokens)
     }
 }

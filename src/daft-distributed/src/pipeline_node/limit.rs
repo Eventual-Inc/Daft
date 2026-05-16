@@ -11,6 +11,8 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
+#[cfg(feature = "python")]
+use tokio_util::sync::CancellationToken;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -112,14 +114,16 @@ impl LimitNode {
         )
         .await?;
 
+        // All forwarded tasks share `parent_cancel` as their cancel-token
+        // parent. When the global limit is hit we cancel it, which propagates
+        // to every in-flight `SubmittedTask` and short-circuits anything still
+        // queued in the unbounded scheduler.
+        let parent_cancel = CancellationToken::new();
         let mut running_tasks = JoinSet::new();
         let mut input_exhausted = false;
         loop {
             tokio::select! {
                 biased;
-                // A forwarded task finished: ask the actor whether the limit
-                // is now hit. If so, stop forwarding — in-flight tasks will
-                // short-circuit on their next `claim` and finish naturally.
                 Some(_) = running_tasks.join_next(), if !running_tasks.is_empty() => {
                     if limit_counter_actor_is_done(&actor).await? {
                         break;
@@ -134,16 +138,18 @@ impl LimitNode {
                     let offset = self.offset;
                     let node_id = self.node_id();
                     let actor_for_plan = actor.clone();
-                    let builder = builder.map_plan(self.as_ref(), move |input| {
-                        LocalPhysicalPlan::distributed_limit(
-                            input,
-                            actor_for_plan.clone(),
-                            limit,
-                            offset,
-                            StatsState::NotMaterialized,
-                            LocalNodeContext::new(Some(node_id as usize)),
-                        )
-                    });
+                    let builder = builder
+                        .map_plan(self.as_ref(), move |input| {
+                            LocalPhysicalPlan::distributed_limit(
+                                input,
+                                actor_for_plan.clone(),
+                                limit,
+                                offset,
+                                StatsState::NotMaterialized,
+                                LocalNodeContext::new(Some(node_id as usize)),
+                            )
+                        })
+                        .with_cancel_token(parent_cancel.child_token());
                     let (builder, notify_token) = builder.add_notify_token();
                     running_tasks.spawn(notify_token);
                     if result_tx.send(builder).await.is_err() {
@@ -154,11 +160,12 @@ impl LimitNode {
             }
         }
         drop(result_tx);
+        parent_cancel.cancel();
 
-        // Wait for every forwarded task's notify channel before tearing down
-        // the actor — workers may still be calling `claim` until their
-        // pipelines wind down, and a `SubmittedTask` dropped without being
-        // polled closes the channel with `Err` rather than `Ok`.
+        // Drain notify channels before tearing down the actor — workers may
+        // still be making actor calls until cancellation propagates, and a
+        // `SubmittedTask` dropped without being polled closes the channel
+        // with `Err` rather than `Ok`.
         while running_tasks.join_next().await.is_some() {}
         teardown_limit_counter_actor(&actor);
         Ok(())
