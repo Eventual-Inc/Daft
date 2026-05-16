@@ -527,7 +527,7 @@ impl SwordfishTaskBuilder {
             context,
         };
 
-        let cancel_token = self.cancel_token.unwrap_or_else(CancellationToken::new);
+        let cancel_token = self.cancel_token.unwrap_or_default();
         SubmittableTask::new(task, cancel_token, self.notify_tokens)
     }
 }
