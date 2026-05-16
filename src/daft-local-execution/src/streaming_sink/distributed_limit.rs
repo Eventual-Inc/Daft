@@ -85,11 +85,8 @@ impl StreamingSink for DistributedLimitSink {
                         _,
                         (i64, i64, bool),
                     >(move |py| {
-                        let coroutine = actor.call_method1(
-                            py,
-                            pyo3::intern!(py, "claim"),
-                            (tid, num_rows),
-                        )?;
+                        let coroutine =
+                            actor.call_method1(py, pyo3::intern!(py, "claim"), (tid, num_rows))?;
                         Ok(coroutine.into_bound(py))
                     })
                     .await?;
@@ -105,7 +102,10 @@ impl StreamingSink for DistributedLimitSink {
                     if done {
                         Ok((state, StreamingSinkOutput::Finished(Some(output.into()))))
                     } else {
-                        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output.into()))))
+                        Ok((
+                            state,
+                            StreamingSinkOutput::NeedMoreInput(Some(output.into())),
+                        ))
                     }
                 },
                 Span::current(),
