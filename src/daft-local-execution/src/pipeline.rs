@@ -888,9 +888,6 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             use crate::streaming_sink::distributed_limit::DistributedLimitSink;
-            // The sink reads its actor task_id off `InputId` at `make_state`
-            // time (flotilla invariant: task_id == input_id), so the cached
-            // pipeline can be reused across SwordfishTasks.
             let sink = DistributedLimitSink::new(actor_object.0.clone(), *limit, *offset);
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
