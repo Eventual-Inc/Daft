@@ -90,7 +90,7 @@ impl LimitNode {
     }
 
     #[cfg(feature = "python")]
-    async fn execution_loop_fused(
+    async fn limit_execution_loop(
         self: Arc<Self>,
         mut input_task_stream: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
@@ -109,10 +109,10 @@ impl LimitNode {
         let mut running_tasks = JoinSet::new();
         let mut seq: u32 = 0;
         while let Some(builder) = input_task_stream.next().await {
-            // Stamp each forwarded builder with a unique fingerprint suffix.
-            // Workers cache local pipelines by `plan_fingerprint`; sharing one
-            // pipeline across tasks lets the streaming sink hit `Finished`
-            // once and kill the pipeline for everyone after it.
+            // Workers cache compiled pipelines by `plan_fingerprint`. We need a
+            // fresh `DistributedLimitSink` per task — the sink has the task's
+            // `task_id` baked in (the actor attributes claims by it) and goes
+            // terminal once the limit is hit. Stamping `seq` defeats the cache.
             let modified_builder = self
                 .wrap_with_distributed_limit(builder, actor.clone())
                 .extend_fingerprint(seq);
@@ -185,7 +185,7 @@ impl PipelineNodeImpl for LimitNode {
         #[cfg(feature = "python")]
         {
             let (result_tx, result_rx) = create_channel(1);
-            plan_context.spawn(self.execution_loop_fused(input_stream, result_tx));
+            plan_context.spawn(self.limit_execution_loop(input_stream, result_tx));
             TaskBuilderStream::from(result_rx)
         }
         #[cfg(not(feature = "python"))]
