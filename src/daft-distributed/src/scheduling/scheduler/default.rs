@@ -110,20 +110,24 @@ impl<T: Task> DefaultScheduler<T> {
 }
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
-    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
-        self.pending_tasks
-            .extend(tasks.into_iter().filter(|t| !t.is_cancelled()));
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) -> Vec<PendingTask<T>> {
+        let (cancelled, alive): (Vec<_>, Vec<_>) =
+            tasks.into_iter().partition(|t| t.is_cancelled());
+        self.pending_tasks.extend(alive);
+        cancelled
     }
 
     // TODO: Currently, workers are never given more tasks than they can handle (based on resources)
     // However, this can cause the scheduler to have too many pending tasks, creating a bottleneck in scheduling.
     // Potentially, we should allow workers to maintain a backlog queue of tasks, and automatically run them when they have capacity.
     // Key thing is that this should be profiled and tested.
-    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+    fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>) {
         let mut scheduled = Vec::new();
         let mut unscheduled = Vec::new();
+        let mut cancelled = Vec::new();
         while let Some(task) = self.pending_tasks.pop() {
             if task.is_cancelled() {
+                cancelled.push(task);
                 continue;
             }
             if let Some(worker_id) = self.try_schedule_task(&task) {
@@ -138,7 +142,7 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
             }
         }
         self.pending_tasks.extend(unscheduled);
-        scheduled
+        (scheduled, cancelled)
     }
 
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]) {
@@ -203,7 +207,7 @@ mod tests {
 
         // Enqueue and schedule tasks
         scheduler.enqueue_tasks(initial_tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // All tasks should be scheduled because there is enough capacity
         assert_eq!(result.len(), 3);
@@ -246,7 +250,7 @@ mod tests {
 
         // Enqueue and schedule tasks
         scheduler.enqueue_tasks(initial_tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // All tasks should be scheduled because there is enough capacity
         assert_eq!(result.len(), 3);
@@ -287,7 +291,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // 2 tasks should be scheduled
         assert_eq!(result.len(), 2);
@@ -312,7 +316,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only 2 tasks should be scheduled, because worker 3 has 2 slots available
         assert_eq!(result.len(), 2);
@@ -344,7 +348,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let scheduled_tasks = scheduler.schedule_tasks();
+        let (scheduled_tasks, _) = scheduler.schedule_tasks();
 
         // 3 tasks should be scheduled, 1 for each worker
         assert_eq!(scheduled_tasks.len(), 3);
@@ -367,7 +371,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let scheduled_tasks = scheduler.schedule_tasks();
+        let (scheduled_tasks, _) = scheduler.schedule_tasks();
 
         // worker 1 should not be available, worker 2 should have 1 slot available, worker 3 should have 2 slots available
         assert_eq!(scheduled_tasks.len(), 2);
@@ -401,7 +405,7 @@ mod tests {
             .collect();
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only 2 tasks should be scheduled (one per worker)
         assert_eq!(result.len(), 2);
@@ -413,7 +417,7 @@ mod tests {
         scheduler.enqueue_tasks(vec![high_priority_task]);
 
         // The high-priority task should not be scheduled because worker1 is full
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 99);
 
@@ -424,7 +428,7 @@ mod tests {
         scheduler.update_worker_state(&[new_worker_snapshot]);
 
         // The high-priority task should now be scheduled to the new worker
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 98);
         assert_eq!(result[0].worker_id, worker_3);
@@ -472,7 +476,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 3);
         assert_eq!(scheduler.num_pending_tasks(), 0);
@@ -541,7 +545,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 3);
         assert_eq!(scheduler.num_pending_tasks(), 0);
@@ -566,7 +570,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
@@ -594,7 +598,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only 2 tasks should be scheduled (1 per worker)
         assert_eq!(result.len(), 2);
@@ -619,7 +623,7 @@ mod tests {
         let tasks = vec![create_spread_task(Some(1))];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
@@ -647,7 +651,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only 1 task should be scheduled (worker capacity is 1)
         assert_eq!(result.len(), 1);
@@ -726,7 +730,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // All tasks should be scheduled
         assert_eq!(result.len(), 3);
