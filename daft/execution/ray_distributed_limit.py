@@ -114,8 +114,20 @@ async def start_limit_counter_actor(
     offset: int,
     timeout: int,
 ) -> LimitCounterHandle:
-    """Spawn the `LimitCounterActor` and wait for it to be ready."""
-    actor = LimitCounterActor.options(scheduling_strategy="DEFAULT").remote(limit, offset)
+    """Spawn the `LimitCounterActor` and wait for it to be ready.
+
+    Pin to the current node so the actor lives next to `RemoteFlotillaRunner`
+    (which is itself pinned to the head node). All `claim`/`done` calls
+    originate from inside the runner, so co-locating avoids a cross-node hop
+    per RPC.
+    """
+    node_id = ray.get_runtime_context().get_node_id()
+    actor = LimitCounterActor.options(
+        scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+            node_id=node_id,
+            soft=False,
+        ),
+    ).remote(limit, offset)
     try:
         await asyncio.wait_for(
             asyncio.wrap_future(actor.__ray_ready__.remote().future()),
