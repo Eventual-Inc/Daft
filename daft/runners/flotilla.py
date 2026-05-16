@@ -197,60 +197,31 @@ class RaySwordfishActor:
             )
             metas = []
             is_flight_shuffle = False
-            # Coalesce small outputs to reduce head-node ObjectRef pressure. Skip when the plan
-            # emits a fixed output per partition slot (RepartitionWrite/GatherWrite) — downstream
-            # transpose code depends on the exact count and order.
-            target_bytes = 0 if plan.has_partitioned_output() else exec_cfg.flotilla_output_target_bytes
+            # Coalesce small MicroPartition outputs into one merged partition per task to reduce
+            # head-node ObjectRef pressure. Skip when the plan emits a fixed output per partition
+            # slot (RepartitionWrite/GatherWrite) — downstream transpose depends on count and order.
+            should_coalesce = exec_cfg.flotilla_output_target_bytes > 0 and not plan.has_partitioned_output()
             buf: list[MicroPartition] = []
-            buf_bytes = 0
-
-            def take_flushed() -> MicroPartition | None:
-                nonlocal buf, buf_bytes
-                if not buf:
-                    return None
-                merged = MicroPartition.concat(buf)
-                metas.append(PartitionMetadata(num_rows=len(merged), size_bytes=buf_bytes, boundaries=None))
-                buf = []
-                buf_bytes = 0
-                return merged
 
             async for partition in result_handle:
                 if isinstance(partition, FlightPartitionRef):
-                    # Flush buffered MicroPartitions first to preserve emission order.
-                    flushed = take_flushed()
-                    if flushed is not None:
-                        yield flushed
                     is_flight_shuffle = True
                     metas.append(PartitionMetadata.from_flight_partition_ref(partition))
                     yield partition
                 elif isinstance(partition, PyMicroPartition):
                     mp = MicroPartition._from_pymicropartition(partition)
-                    if target_bytes <= 0:
+                    if should_coalesce:
+                        buf.append(mp)
+                    else:
                         metas.append(PartitionMetadata.from_table(mp))
                         yield mp
-                        continue
-                    sb = mp.size_bytes()
-                    if sb is None:
-                        # Unknown size: don't risk unbounded buffering — flush whatever we have,
-                        # then emit this partition standalone.
-                        flushed = take_flushed()
-                        if flushed is not None:
-                            yield flushed
-                        metas.append(PartitionMetadata.from_table(mp))
-                        yield mp
-                        continue
-                    buf.append(mp)
-                    buf_bytes += sb
-                    if buf_bytes >= target_bytes:
-                        flushed = take_flushed()
-                        if flushed is not None:
-                            yield flushed
                 else:
                     break
 
-            flushed = take_flushed()
-            if flushed is not None:
-                yield flushed
+            if buf:
+                merged = MicroPartition.concat(buf)
+                metas.append(PartitionMetadata.from_table(merged))
+                yield merged
 
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(
