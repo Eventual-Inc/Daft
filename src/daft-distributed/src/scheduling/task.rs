@@ -328,10 +328,6 @@ pub(crate) struct SwordfishTaskBuilder {
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
     notify_tokens: Vec<OneshotSender<()>>,
-    /// Optional cancel token to bind to the resulting `SubmittedTask`. A
-    /// pipeline node that wants to cancel a group of forwarded tasks together
-    /// derives child tokens from one parent and attaches them here; defaults
-    /// to a fresh independent token at `build()` time.
     cancel_token: Option<CancellationToken>,
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
