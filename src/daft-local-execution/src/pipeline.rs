@@ -72,8 +72,7 @@ use crate::{
         shuffle_read::ShuffleReadSource, source::SourceNode,
     },
     streaming_sink::{
-        async_udf::AsyncUdfSink, base::StreamingSinkNode,
-        distributed_limit::DistributedLimitSink, limit::LimitSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
@@ -888,6 +887,7 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
+            use crate::streaming_sink::distributed_limit::DistributedLimitSink;
             // task_id is stamped into BuilderContext by SwordfishTaskBuilder::build(). It is
             // the actor's identity key for retry-rewind, so a missing/malformed entry
             // silently corrupts the global limit budget. Panic instead of falling back.
@@ -896,8 +896,7 @@ fn physical_plan_to_pipeline(
                 .get("task_id")
                 .cloned()
                 .expect("DistributedLimit requires task_id in BuilderContext.context");
-            let sink =
-                DistributedLimitSink::new(actor_object.0.clone(), task_id, *limit, *offset);
+            let sink = DistributedLimitSink::new(actor_object.0.clone(), task_id, *limit, *offset);
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
