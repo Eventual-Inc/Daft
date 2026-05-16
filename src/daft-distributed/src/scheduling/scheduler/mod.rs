@@ -25,13 +25,9 @@ use tokio_util::sync::CancellationToken;
 
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
-    /// Enqueue tasks for scheduling. Returns any tasks that were rejected
-    /// because their cancel_token was already cancelled — caller is responsible
-    /// for emitting the appropriate terminal events for them.
-    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) -> Vec<PendingTask<T>>;
-    /// Schedule pending tasks for dispatch. Returns `(scheduled, cancelled)` —
-    /// `cancelled` are tasks whose cancel_token fired while pending and were
-    /// dropped without being scheduled. Caller emits their terminal events.
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>);
+    /// Returns `(scheduled, cancelled)`. Cancelled tasks are popped from the
+    /// pending queue without being dispatched; caller emits terminal events.
     fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>);
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;

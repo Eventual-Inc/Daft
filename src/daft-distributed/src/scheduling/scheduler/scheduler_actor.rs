@@ -90,25 +90,10 @@ where
                 })?;
             }
 
-            let cancelled = self.scheduler.enqueue_tasks(enqueueable_tasks);
-            self.emit_cancelled_events(cancelled)?;
+            self.scheduler.enqueue_tasks(enqueueable_tasks);
         } else if !self.input_exhausted {
             tracing::info!(target: SCHEDULER_LOG_TARGET, "Task input stream exhausted");
             self.input_exhausted = true;
-        }
-        Ok(())
-    }
-
-    /// Emit a `Cancelled` `TaskEvent` for each task the scheduler rejected
-    /// (either at enqueue time because the cancel_token was already cancelled,
-    /// or while pending because the token fired before dispatch). Dropping
-    /// the `PendingTask` here closes its result_tx and unblocks the awaiter
-    /// with `Ok(None)`.
-    fn emit_cancelled_events(&self, cancelled: Vec<PendingTask<W::Task>>) -> DaftResult<()> {
-        for task in &cancelled {
-            self.statistics_manager.handle_event(TaskEvent::Cancelled {
-                context: task.task_context(),
-            })?;
         }
         Ok(())
     }
@@ -138,7 +123,11 @@ where
 
             // 2: Get all tasks that are ready to be scheduled
             let (scheduled_tasks, cancelled_tasks) = self.scheduler.schedule_tasks();
-            self.emit_cancelled_events(cancelled_tasks)?;
+            for task in &cancelled_tasks {
+                self.statistics_manager.handle_event(TaskEvent::Cancelled {
+                    context: task.task_context(),
+                })?;
+            }
             // 3: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
@@ -180,8 +169,7 @@ where
                 }
                 SelectOutcome::CompletedTasks(failed_tasks) => {
                     if !failed_tasks.is_empty() {
-                        let cancelled = self.scheduler.enqueue_tasks(failed_tasks);
-                        self.emit_cancelled_events(cancelled)?;
+                        self.scheduler.enqueue_tasks(failed_tasks);
                     }
                 }
                 SelectOutcome::Tick => {
@@ -585,10 +573,7 @@ mod tests {
         let submittable_task = SubmittableTask::task_only(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         drop(submitted_task);
-        // Either the task was dispatched and the worker invoked
-        // `cancel_callback` (firing the notifier), or the scheduler filtered
-        // the task before dispatch (dropping the notifier). Both are valid
-        // cancellation paths.
+        // Notifier may not fire if the scheduler filtered the task before dispatch.
         let _ = cancel_receiver.await;
 
         test_context.cleanup().await?;
@@ -659,9 +644,7 @@ mod tests {
         {
             if let Some(cancel_receiver) = maybe_cancel_receiver {
                 drop(submitted_task);
-                // See `test_scheduler_actor_cancelled_task`: the scheduler may
-                // filter cancelled tasks before they reach a worker, so the
-                // `cancel_callback`-driven notifier might never fire.
+                // Notifier may not fire if scheduler-side filtering kicked in.
                 let _ = cancel_receiver.await;
             } else {
                 let result = submitted_task.await?;

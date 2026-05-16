@@ -91,12 +91,6 @@ impl StreamingSink for DistributedLimitSink {
                         input.slice(skip, skip + take)?
                     };
 
-                    // Always emit NeedMoreInput, never Finished — Finished
-                    // terminates the entire streaming-sink node (base.rs:326),
-                    // killing the cached pipeline on a flotilla worker and
-                    // taking down other concurrent input_ids that share it.
-                    // The upstream LimitNode handles termination by cancelling
-                    // once every contributing input_id has materialized.
                     Ok((
                         state,
                         StreamingSinkOutput::NeedMoreInput(Some(output.into())),

@@ -110,11 +110,8 @@ impl<T: Task> DefaultScheduler<T> {
 }
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
-    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) -> Vec<PendingTask<T>> {
-        let (cancelled, alive): (Vec<_>, Vec<_>) =
-            tasks.into_iter().partition(|t| t.is_cancelled());
-        self.pending_tasks.extend(alive);
-        cancelled
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
+        self.pending_tasks.extend(tasks);
     }
 
     // TODO: Currently, workers are never given more tasks than they can handle (based on resources)

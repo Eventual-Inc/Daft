@@ -92,11 +92,8 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         }
     }
 
-    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) -> Vec<PendingTask<T>> {
-        let (cancelled, alive): (Vec<_>, Vec<_>) =
-            tasks.into_iter().partition(|t| t.is_cancelled());
-        self.pending_tasks.extend(alive);
-        cancelled
+    fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
+        self.pending_tasks.extend(tasks);
     }
 
     fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>) {

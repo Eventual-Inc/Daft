@@ -82,15 +82,11 @@ class _LimitCounterImpl:
         return self.remaining_take == 0
 
     def contributors(self) -> list[str]:
-        """Return input_ids that have actually consumed limit budget (`take > 0`)."""
+        """input_ids that consumed budget (`take > 0`)."""
         return [iid for iid, (_skip, take) in self.input_claims.items() if take > 0]
 
-    async def wait_for_contributors(self) -> list[str]:
-        """Block until the limit is fully claimed, then return the contributors.
-
-        Polls internally on a short asyncio sleep — the actor's own state, not
-        a cross-node RPC. The LimitNode awaits this once over a single Ray RPC.
-        """
+    async def await_limit_completion(self) -> list[str]:
+        """Resolves once the limit is fully claimed; returns the contributors."""
         while not self.is_done():
             await asyncio.sleep(0.01)
         return self.contributors()
@@ -116,8 +112,8 @@ class LimitCounterHandle:
     async def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
         return await self.actor.claim.remote(input_id, num_rows)
 
-    async def wait_for_contributors(self) -> list[str]:
-        return await self.actor.wait_for_contributors.remote()
+    async def await_limit_completion(self) -> list[str]:
+        return await self.actor.await_limit_completion.remote()
 
     def teardown(self) -> None:
         ray.kill(self.actor)

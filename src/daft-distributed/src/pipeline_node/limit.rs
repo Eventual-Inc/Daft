@@ -50,13 +50,11 @@ fn teardown_limit_counter_actor(actor: &PyObjectWrapper) {
     });
 }
 
-/// Awaits the actor until the limit is fully claimed, then returns the
-/// `input_ids` of tasks that actually consumed budget (`take > 0`).
 #[cfg(feature = "python")]
-async fn wait_for_contributors(actor: &PyObjectWrapper) -> DaftResult<Vec<String>> {
+async fn await_limit_completion(actor: &PyObjectWrapper) -> DaftResult<Vec<String>> {
     let actor = actor.0.clone();
     common_runtime::python::execute_python_coroutine::<_, Vec<String>>(move |py| {
-        let coroutine = actor.call_method1(py, pyo3::intern!(py, "wait_for_contributors"), ())?;
+        let coroutine = actor.call_method1(py, pyo3::intern!(py, "await_limit_completion"), ())?;
         Ok(coroutine.into_bound(py))
     })
     .await
@@ -116,26 +114,15 @@ impl LimitNode {
         )
         .await?;
 
-        // Forwarded tasks share `parent_cancel` as their cancel-token parent.
-        // We can only safely cancel once every input_id that consumed limit
-        // budget has materialized its result; otherwise cancelling kills a
-        // task whose data we still need. The actor reports the set of
-        // contributing input_ids when the limit is fully claimed; we then wait
-        // for those input_ids to appear in `completed_ids` (notify_tokens
-        // carry the `TaskID`, which equals the `input_id` in flotilla mode).
         let parent_cancel = CancellationToken::new();
         let mut running_tasks = JoinSet::new();
         let mut completed_ids: HashSet<TaskID> = HashSet::new();
         let mut contributors: Option<HashSet<TaskID>> = None;
-        let mut contributors_fut = Box::pin(wait_for_contributors(&actor));
+        let mut contributors_fut = Box::pin(await_limit_completion(&actor));
         let mut input_exhausted = false;
         loop {
-            // Exit conditions:
-            // - With a known non-empty contributor set: break as soon as every
-            //   contributor has completed (their results are already in the
-            //   runner, safe to cancel everything else).
-            // - Otherwise (contributors unknown, or limit==0): wait for
-            //   natural exhaustion so downstream nodes always see input.
+            // Break once every contributing input_id has materialized; for
+            // limit==0 or limits never hit, fall through to natural exhaustion.
             let done = match &contributors {
                 Some(c) if !c.is_empty() => c.is_subset(&completed_ids),
                 _ => input_exhausted && running_tasks.is_empty(),
