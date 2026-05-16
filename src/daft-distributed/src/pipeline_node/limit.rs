@@ -48,6 +48,16 @@ fn teardown_limit_counter_actor(actor: &PyObjectWrapper) {
     });
 }
 
+#[cfg(feature = "python")]
+async fn limit_counter_actor_is_done(actor: &PyObjectWrapper) -> DaftResult<bool> {
+    let actor = actor.0.clone();
+    common_runtime::python::execute_python_coroutine::<_, bool>(move |py| {
+        let coroutine = actor.call_method1(py, pyo3::intern!(py, "is_done"), ())?;
+        Ok(coroutine.into_bound(py))
+    })
+    .await
+}
+
 pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -102,49 +112,56 @@ impl LimitNode {
         )
         .await?;
 
-        // Drop `result_tx` once forwarding is done. Downstream nodes that batch
-        // their input (e.g. `IntoPartitionsNode`) only submit once the input
-        // stream closes; holding `result_tx` open while waiting for forwarded
-        // tasks would deadlock the drain below.
         let mut running_tasks = JoinSet::new();
-        while let Some(builder) = input_task_stream.next().await {
-            let modified_builder = self.wrap_with_distributed_limit(builder, actor.clone());
-            let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-            running_tasks.spawn(notify_token);
-            if result_tx.send(builder_with_token).await.is_err() {
-                break;
+        let mut input_exhausted = false;
+        loop {
+            tokio::select! {
+                biased;
+                // A forwarded task finished: ask the actor whether the limit
+                // is now hit. If so, stop forwarding — in-flight tasks will
+                // short-circuit on their next `claim` and finish naturally.
+                Some(_) = running_tasks.join_next(), if !running_tasks.is_empty() => {
+                    if limit_counter_actor_is_done(&actor).await? {
+                        break;
+                    }
+                }
+                builder_opt = input_task_stream.next(), if !input_exhausted => {
+                    let Some(builder) = builder_opt else {
+                        input_exhausted = true;
+                        continue;
+                    };
+                    let limit = self.limit;
+                    let offset = self.offset;
+                    let node_id = self.node_id();
+                    let actor_for_plan = actor.clone();
+                    let builder = builder.map_plan(self.as_ref(), move |input| {
+                        LocalPhysicalPlan::distributed_limit(
+                            input,
+                            actor_for_plan.clone(),
+                            limit,
+                            offset,
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(node_id as usize)),
+                        )
+                    });
+                    let (builder, notify_token) = builder.add_notify_token();
+                    running_tasks.spawn(notify_token);
+                    if result_tx.send(builder).await.is_err() {
+                        input_exhausted = true;
+                    }
+                }
+                else => break,
             }
         }
         drop(result_tx);
 
-        // Wait for every forwarded task's notify channel to drain before
-        // tearing down the actor — workers may still be calling `claim` until
-        // their cancellation propagates, and a `SubmittedTask` dropped without
-        // being polled closes the channel with `Err` rather than `Ok`.
+        // Wait for every forwarded task's notify channel before tearing down
+        // the actor — workers may still be calling `claim` until their
+        // pipelines wind down, and a `SubmittedTask` dropped without being
+        // polled closes the channel with `Err` rather than `Ok`.
         while running_tasks.join_next().await.is_some() {}
         teardown_limit_counter_actor(&actor);
         Ok(())
-    }
-
-    #[cfg(feature = "python")]
-    fn wrap_with_distributed_limit(
-        self: &Arc<Self>,
-        builder: SwordfishTaskBuilder,
-        actor: PyObjectWrapper,
-    ) -> SwordfishTaskBuilder {
-        let limit = self.limit;
-        let offset = self.offset;
-        let node_id = self.node_id();
-        builder.map_plan(self.as_ref(), move |input| {
-            LocalPhysicalPlan::distributed_limit(
-                input,
-                actor.clone(),
-                limit,
-                offset,
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        })
     }
 }
 

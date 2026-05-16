@@ -102,6 +102,9 @@ class LimitCounterHandle:
     async def claim(self, task_id: str, num_rows: int) -> tuple[int, int, bool]:
         return await self.actor.claim.remote(task_id, num_rows)
 
+    async def is_done(self) -> bool:
+        return await self.actor.is_done.remote()
+
     def teardown(self) -> None:
         ray.kill(self.actor)
 
