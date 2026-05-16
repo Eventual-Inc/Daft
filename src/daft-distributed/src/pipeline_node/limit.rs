@@ -60,7 +60,7 @@ impl LimitActor {
                     .0
                     .call_method1(py, pyo3::intern!(py, "teardown"), ())
                 {
-                    eprintln!("Error tearing down limit counter actor: {:?}", e);
+                    tracing::warn!("Error tearing down limit counter actor: {:?}", e);
                 }
             });
         }

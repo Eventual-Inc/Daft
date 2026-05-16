@@ -91,6 +91,8 @@ impl StreamingSink for DistributedLimitSink {
                     })
                     .await?;
 
+                    debug_assert!(skip >= 0, "actor returned negative skip: {skip}");
+                    debug_assert!(take >= 0, "actor returned negative take: {take}");
                     let skip = skip as usize;
                     let take = take as usize;
                     let output = if take == 0 {

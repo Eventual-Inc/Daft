@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 try:
     import ray
 except ImportError:
-    raise
+    raise ImportError("Ray is required for the distributed limit operator. Install it with: pip install ray") from None
 
 
 class _LimitCounterImpl:
