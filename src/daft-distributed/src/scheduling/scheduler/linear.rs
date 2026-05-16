@@ -93,7 +93,8 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
     }
 
     fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
-        self.pending_tasks.extend(tasks);
+        self.pending_tasks
+            .extend(tasks.into_iter().filter(|t| !t.is_cancelled()));
     }
 
     fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>> {
@@ -113,6 +114,9 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
         // Process all tasks in the queue
         while let Some(task) = self.pending_tasks.pop() {
+            if task.is_cancelled() {
+                continue;
+            }
             if let Some(worker_id) = self.try_schedule_task(&task) {
                 self.worker_snapshots
                     .get_mut(&worker_id)

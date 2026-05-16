@@ -34,7 +34,10 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 fn pending_tasks_in_priority_order<T: Task>(
     pending_tasks: &BinaryHeap<PendingTask<T>>,
 ) -> Vec<&PendingTask<T>> {
-    let mut ordered_tasks = pending_tasks.iter().collect::<Vec<_>>();
+    let mut ordered_tasks = pending_tasks
+        .iter()
+        .filter(|t| !t.is_cancelled())
+        .collect::<Vec<_>>();
     // Match the order that repeated BinaryHeap::pop() calls would produce.
     ordered_tasks.sort_unstable_by(|a, b| b.cmp(a));
     ordered_tasks
@@ -65,6 +68,10 @@ impl<T: Task> PendingTask<T> {
 
     pub fn task_context(&self) -> TaskContext {
         self.task.task_context()
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
     }
 
     pub fn into_inner(

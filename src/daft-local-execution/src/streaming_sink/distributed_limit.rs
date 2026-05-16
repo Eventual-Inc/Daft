@@ -16,15 +16,9 @@ use crate::{
 };
 
 pub(crate) struct DistributedLimitSinkState {
-    /// Used as the actor's per-task bookkeeping key. Sourced from the `InputId`
-    /// the framework hands to `make_state`; in flotilla mode this matches the
-    /// SwordfishTask's task_id, so the actor's claim-rewind on retry stays
-    /// scoped to the right task.
+    /// Actor task_id; sourced from `InputId` (== SwordfishTask task_id in flotilla).
     task_id: String,
-    /// Flipped to `true` after the first `execute` calls the actor's
-    /// `start_task` — subsequent `execute`s skip it and just claim. Safe as a
-    /// plain bool because the framework owns the state and hands it to one
-    /// execute at a time.
+    /// Guards the one-time `start_task` call per state.
     started: bool,
 }
 

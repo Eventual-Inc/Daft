@@ -473,10 +473,6 @@ impl SwordfishTaskBuilder {
         (self, notify_rx)
     }
 
-    /// Bind an externally-supplied cancel token to the resulting `SubmittedTask`.
-    /// Used by pipeline nodes that want to cancel a group of forwarded tasks
-    /// together — derive children from a shared parent and attach them here,
-    /// then cancel the parent when the group should die.
     pub fn with_cancel_token(mut self, cancel_token: CancellationToken) -> Self {
         self.cancel_token = Some(cancel_token);
         self

@@ -111,7 +111,8 @@ impl<T: Task> DefaultScheduler<T> {
 
 impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
     fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>) {
-        self.pending_tasks.extend(tasks);
+        self.pending_tasks
+            .extend(tasks.into_iter().filter(|t| !t.is_cancelled()));
     }
 
     // TODO: Currently, workers are never given more tasks than they can handle (based on resources)
@@ -122,6 +123,9 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
         let mut scheduled = Vec::new();
         let mut unscheduled = Vec::new();
         while let Some(task) = self.pending_tasks.pop() {
+            if task.is_cancelled() {
+                continue;
+            }
             if let Some(worker_id) = self.try_schedule_task(&task) {
                 self.worker_snapshots
                     .get_mut(&worker_id)
