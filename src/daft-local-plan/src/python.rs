@@ -57,11 +57,12 @@ impl PyLocalPhysicalPlan {
         ))
     }
 
-    /// True iff the top-level node emits MicroPartitions whose count and order are part of the
-    /// plan's contract — either because each output maps to a partition slot (repartitions,
-    /// `IntoPartitions`, `IntoBatches`) or because each output is a semantically distinct record
-    /// (per-file write metadata, IDs encoding the partition index). Outputs of such plans must
-    /// not be coalesced.
+    /// True iff a single task amplifies one input into multiple output MicroPartitions whose
+    /// count is part of the plan's contract — repartitions, `IntoPartitions`, and `IntoBatches`.
+    /// Coalescing such outputs collapses the slot/batch count and breaks every downstream
+    /// operator that reasons about partition layout. Other operators (writes, IDs that encode a
+    /// partition index, etc.) are safe because their per-task output rows are preserved by
+    /// `concat`.
     fn has_partitioned_output(&self) -> bool {
         matches!(
             self.plan.as_ref(),
@@ -69,12 +70,6 @@ impl PyLocalPhysicalPlan {
                 | crate::LocalPhysicalPlan::GatherWrite(_)
                 | crate::LocalPhysicalPlan::IntoPartitions(_)
                 | crate::LocalPhysicalPlan::IntoBatches(_)
-                | crate::LocalPhysicalPlan::MonotonicallyIncreasingId(_)
-                | crate::LocalPhysicalPlan::PhysicalWrite(_)
-                | crate::LocalPhysicalPlan::CommitWrite(_)
-                | crate::LocalPhysicalPlan::CatalogWrite(_)
-                | crate::LocalPhysicalPlan::LanceWrite(_)
-                | crate::LocalPhysicalPlan::DataSink(_)
         )
     }
 }
