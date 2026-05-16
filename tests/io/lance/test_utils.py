@@ -75,7 +75,7 @@ def test_distribute_fragments_balanced_handles_fragments_without_count_rows() ->
         def __init__(self, fragment_id: int) -> None:
             self.fragment_id = fragment_id
 
-        def count_rows(self) -> int:  # pragma: no cover - exercised via except
+        def count_rows(self) -> int:
             raise RuntimeError("size unavailable")
 
     fragments = [_BrokenFragment(i) for i in range(4)]
