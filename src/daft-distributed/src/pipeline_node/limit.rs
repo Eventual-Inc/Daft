@@ -161,12 +161,6 @@ impl LimitNode {
         }
         drop(result_tx);
         parent_cancel.cancel();
-
-        // Drain notify channels before tearing down the actor — workers may
-        // still be making actor calls until cancellation propagates, and a
-        // `SubmittedTask` dropped without being polled closes the channel
-        // with `Err` rather than `Ok`.
-        while running_tasks.join_next().await.is_some() {}
         teardown_limit_counter_actor(&actor);
         Ok(())
     }
