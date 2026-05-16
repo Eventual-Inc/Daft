@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
@@ -21,6 +23,34 @@ fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64) -> String {
 
 pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
     ((input_id as u64) << 32) | partition_idx as u64
+}
+
+/// Shared IPC batch chunk target.
+///
+/// Used by both the oneshot writer (emit size) and the read-side concat path
+/// (combine target). Keeping them at the same value means a write hands the
+/// read path bytes already sized to its target — read-concat never has to
+/// split nor combine to "right-size" a payload.
+///
+/// Default 4 MiB; override at process start with `DAFT_SHUFFLE_CHUNK_BYTES`.
+/// Setting to 0 on the read side disables read-concat entirely.
+pub const DEFAULT_CHUNK_TARGET_BYTES: usize = 4 * 1024 * 1024;
+
+pub fn chunk_target_bytes() -> usize {
+    std::env::var("DAFT_SHUFFLE_CHUNK_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_CHUNK_TARGET_BYTES)
+}
+
+/// Read-side variant: distinct from `chunk_target_bytes` only in that an
+/// explicit `0` disables the concat path entirely (returns `None`).
+pub fn read_chunk_target_bytes() -> Option<usize> {
+    match std::env::var("DAFT_SHUFFLE_CHUNK_BYTES") {
+        Ok(v) => v.parse::<usize>().ok().filter(|&n| n > 0),
+        Err(_) => Some(DEFAULT_CHUNK_TARGET_BYTES),
+    }
 }
 
 // Result of a writer task
@@ -144,14 +174,22 @@ impl InProgressShuffleCache {
         let writer_result = close_result.unwrap();
 
         match writer_result {
-            Some(result) => Ok(PartitionCache {
-                partition_ref_id: self.partition_ref_id,
-                schema: self.schema.clone(),
-                bytes_per_file: result.bytes_per_file,
-                file_paths: result.file_paths,
-                num_rows: result.total_rows_written,
-                size_bytes: result.total_bytes_written,
-            }),
+            Some(result) => {
+                let n = result.file_paths.len();
+                let file_slots = (0..n)
+                    .map(|_| Arc::new(std::sync::OnceLock::new()))
+                    .collect();
+                Ok(PartitionCache {
+                    partition_ref_id: self.partition_ref_id,
+                    schema: self.schema.clone(),
+                    bytes_per_file: result.bytes_per_file,
+                    file_paths: result.file_paths,
+                    file_slots,
+                    num_rows: result.total_rows_written,
+                    size_bytes: result.total_bytes_written,
+                    byte_ranges: None,
+                })
+            }
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
             )),
@@ -226,8 +264,18 @@ pub struct PartitionCache {
     pub schema: SchemaRef,
     pub bytes_per_file: Vec<usize>,
     pub file_paths: Vec<String>,
+    /// Lock-free file-handle cache. One slot per `file_paths` entry. The
+    /// writer constructs one `Arc<OnceLock>` per file it produces and clones
+    /// it across every PartitionCache that references that file — so all
+    /// partitions emitted by a single map task share the same slot. The
+    /// first reader lazily opens the file via `OnceLock::get_or_init`;
+    /// subsequent readers do an atomic load + `Arc::clone`. No global lock.
+    pub file_slots: Vec<Arc<std::sync::OnceLock<Arc<std::fs::File>>>>,
     pub num_rows: usize,
     pub size_bytes: usize,
+    /// If present, byte_ranges[i] is the (start, end) range to read within file_paths[i].
+    /// Used when a single physical file serves multiple output partitions (combined-file shuffle).
+    pub byte_ranges: Option<Vec<(u64, u64)>>,
 }
 
 #[cfg(test)]
