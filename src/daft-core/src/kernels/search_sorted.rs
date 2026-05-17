@@ -303,7 +303,7 @@ where
 ///
 /// For float types, builds a zero-allocation comparator using `cmp_float`.
 /// For all other types, delegates to arrow-rs `make_comparator`.
-pub fn make_daft_comparator(
+pub(crate) fn make_daft_comparator(
     left: &dyn Array,
     right: &dyn Array,
     sort_options: SortOptions,
