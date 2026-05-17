@@ -55,11 +55,36 @@ class PaimonDataSink(DataSink[list[Any]]):
             ]
         )
 
+    def _align_batch_to_target_schema(self, batch: pa.RecordBatch) -> pa.RecordBatch:
+        target_names = self._target_schema.names
+        input_names = batch.schema.names
+
+        if len(set(input_names)) != len(input_names):
+            raise ValueError(f"Cannot write to Paimon with duplicate input field names: {input_names}")
+
+        if len(set(target_names)) != len(target_names):
+            raise ValueError(f"Cannot write to Paimon with duplicate target field names: {target_names}")
+
+        missing = [name for name in target_names if name not in input_names]
+        extra = [name for name in input_names if name not in target_names]
+        if missing or extra:
+            details = []
+            if missing:
+                details.append(f"missing fields: {missing}")
+            if extra:
+                details.append(f"extra fields: {extra}")
+            raise ValueError(f"Paimon write schema mismatch: {'; '.join(details)}")
+
+        if input_names != target_names:
+            batch = batch.select(target_names)
+
+        if batch.schema != self._target_schema:
+            batch = batch.cast(self._target_schema)
+
+        return batch
+
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[Any]]]:
         table_write = self._write_builder.new_write()
-
-        # Lazily compute which fields need type casting on the first batch.
-        cast_fields: list[tuple[int, pa.DataType]] | None = None
 
         total_rows = 0
         total_bytes = 0
@@ -67,17 +92,7 @@ class PaimonDataSink(DataSink[list[Any]]):
             for mp in micropartitions:
                 for rb in mp.get_record_batches():
                     batch = rb.to_arrow_record_batch()
-                    if cast_fields is None:
-                        cast_fields = [
-                            (i, field.type)
-                            for i, field in enumerate(self._target_schema)
-                            if batch.column(i).type != field.type
-                        ]
-                    if cast_fields:
-                        arrays = list(batch.columns)
-                        for i, target_type in cast_fields:
-                            arrays[i] = arrays[i].cast(target_type)
-                        batch = pa.RecordBatch.from_arrays(arrays, schema=self._target_schema)
+                    batch = self._align_batch_to_target_schema(batch)
                     table_write.write_arrow_batch(batch)
                     total_rows += batch.num_rows
                     total_bytes += batch.nbytes
