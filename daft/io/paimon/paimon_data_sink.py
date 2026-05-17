@@ -55,25 +55,26 @@ class PaimonDataSink(DataSink[list[Any]]):
             ]
         )
 
-    def _align_batch_to_target_schema(self, batch: pa.RecordBatch) -> pa.RecordBatch:
+    def _align_batch_to_target_schema(self, batch: pa.RecordBatch, *, validate_schema: bool = True) -> pa.RecordBatch:
         target_names = self._target_schema.names
         input_names = batch.schema.names
 
-        if len(set(input_names)) != len(input_names):
-            raise ValueError(f"Cannot write to Paimon with duplicate input field names: {input_names}")
+        if validate_schema:
+            if len(set(input_names)) != len(input_names):
+                raise ValueError(f"Cannot write to Paimon with duplicate input field names: {input_names}")
 
-        if len(set(target_names)) != len(target_names):
-            raise ValueError(f"Cannot write to Paimon with duplicate target field names: {target_names}")
+            if len(set(target_names)) != len(target_names):
+                raise ValueError(f"Cannot write to Paimon with duplicate target field names: {target_names}")
 
-        missing = [name for name in target_names if name not in input_names]
-        extra = [name for name in input_names if name not in target_names]
-        if missing or extra:
-            details = []
-            if missing:
-                details.append(f"missing fields: {missing}")
-            if extra:
-                details.append(f"extra fields: {extra}")
-            raise ValueError(f"Paimon write schema mismatch: {'; '.join(details)}")
+            missing = [name for name in target_names if name not in input_names]
+            extra = [name for name in input_names if name not in target_names]
+            if missing or extra:
+                details = []
+                if missing:
+                    details.append(f"missing fields: {missing}")
+                if extra:
+                    details.append(f"extra fields: {extra}")
+                raise ValueError(f"Paimon write schema mismatch: {'; '.join(details)}")
 
         if input_names != target_names:
             batch = batch.select(target_names)
@@ -88,11 +89,16 @@ class PaimonDataSink(DataSink[list[Any]]):
 
         total_rows = 0
         total_bytes = 0
+        validated_schema: pa.Schema | None = None
         try:
             for mp in micropartitions:
                 for rb in mp.get_record_batches():
                     batch = rb.to_arrow_record_batch()
-                    batch = self._align_batch_to_target_schema(batch)
+                    validate_schema = batch.schema != validated_schema
+                    input_schema = batch.schema
+                    batch = self._align_batch_to_target_schema(batch, validate_schema=validate_schema)
+                    if validate_schema:
+                        validated_schema = input_schema
                     table_write.write_arrow_batch(batch)
                     total_rows += batch.num_rows
                     total_bytes += batch.nbytes

@@ -136,6 +136,14 @@ def test_write_paimon_aligns_columns_by_name(local_paimon_catalog):
         "dt": ["101", "202"],
     }
 
+    read_builder = table.new_read_builder()
+    table_scan = read_builder.new_scan()
+    table_read = read_builder.new_read()
+    splits = table_scan.plan().splits()
+    arrow_table = table_read.to_arrow(splits)
+    native_rows = sorted(zip(arrow_table.column("id").to_pylist(), arrow_table.column("dt").to_pylist()))
+    assert native_rows == [(1, "101"), (2, "202")]
+
 
 # ---------------------------------------------------------------------------
 # Overwrite
