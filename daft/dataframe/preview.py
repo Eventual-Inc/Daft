@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast, get_args
 
 if TYPE_CHECKING:
     from daft.logical.schema import Schema
@@ -38,8 +38,8 @@ _SHOW_DEFAULT_VERBOSE = False
 _SHOW_DEFAULT_MAX_WIDTH = 30
 _SHOW_DEFAULT_ALIGN: PreviewAlign = "left"
 
-_SHOW_FORMATS = {"fancy", "plain", "simple", "grid", "markdown", "html"}
-_SHOW_ALIGNS = {"auto", "left", "center", "right"}
+_SHOW_FORMATS = set(get_args(PreviewFormat))
+_SHOW_ALIGNS = set(get_args(PreviewAlign))
 _SHOW_TRUTHY = {"1", "true", "yes", "on"}
 _SHOW_FALSY = {"0", "false", "no", "off"}
 _SHOW_NONE = {"none", "null"}
