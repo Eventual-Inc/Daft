@@ -60,7 +60,7 @@ impl ExponentialBackoff {
             }
 
             let jitter = rand::rng()
-                .random_range(0..((1 << attempts) * self.jitter_ms))
+                .random_range(0..(1u64.saturating_shl(attempts as u32) * self.jitter_ms))
                 .min(self.max_backoff_ms);
 
             tokio::time::sleep(Duration::from_millis(jitter)).await;
