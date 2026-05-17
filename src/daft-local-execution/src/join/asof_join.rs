@@ -1022,21 +1022,28 @@ impl JoinOperator for AsofJoinOperator {
                         )));
                     }
 
-                    match strategy {
-                        LocalAsofStrategy::Directional(dir) => {
-                            finalize_directional(
-                                states,
-                                build_state,
-                                join_schema,
-                                pruned_right_schema,
-                                dir,
-                            )
-                            .await
+                    let left_on_arr: Option<Arc<dyn Array>> =
+                        if matches!(strategy, AsofJoinStrategy::Nearest) {
+                            Some(build_state.left_rb.eval_expression(&left_on)?.to_arrow()?)
+                        } else {
+                            None
+                        };
+
+                    let mut global_rb_offsets: Vec<usize> = Vec::with_capacity(states.len());
+                    let mut global_right_on_key_arrs: Vec<Arc<dyn Array>> = Vec::new();
+                    let mut state_best_matches: Vec<Vec<Option<(u32, u32)>>> =
+                        Vec::with_capacity(states.len());
+                    let mut global_right_rbs: Vec<RecordBatch> = Vec::new();
+                    let mut rb_count = 0;
+
+                    for state in states {
+                        global_rb_offsets.push(rb_count);
+                        rb_count += state.right_rbs_and_on_keys.len();
+                        for (rb, on_key_arr) in state.right_rbs_and_on_keys {
+                            global_right_on_key_arrs.push(on_key_arr);
+                            global_right_rbs.push(rb);
                         }
-                        LocalAsofStrategy::Nearest => {
-                            finalize_nearest(states, build_state, join_schema, pruned_right_schema)
-                                .await
-                        }
+                        state_best_matches.push(state.best_match);
                     }
 
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
