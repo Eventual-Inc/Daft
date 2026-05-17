@@ -360,7 +360,6 @@ pub fn build_partial_compare_with_nulls(
     }))
 }
 
-
 pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
     key_arrays: &Vec<&dyn Array>,

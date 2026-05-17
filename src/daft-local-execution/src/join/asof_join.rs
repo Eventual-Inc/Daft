@@ -4,8 +4,8 @@ use std::{
     sync::Arc,
 };
 
-use arrow::compute::SortOptions;
-use arrow_array::{Array, Float64Array as ArrowFloat64Array, UInt64Array as ArrowUInt64Array};
+use arrow::datatypes::DataType;
+use arrow_array::{Array, PrimitiveArray, types::*};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -14,9 +14,7 @@ use daft_core::{
         GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
     },
     join::AsofJoinStrategy,
-    kernels::search_sorted::{
-        DynPartialComparator, build_partial_compare_with_nulls, make_daft_comparator,
-    },
+    kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls, cmp_float},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -34,8 +32,34 @@ use crate::{
     pipeline::NodeName,
 };
 
-/// Returns true if `a_arr[a_idx]` is nearer to `pivot_arr[pivot_idx]` than `b_arr[b_idx]`.
-fn nearest_cmp(
+macro_rules! is_nearer_int {
+    ($a:expr, $b:expr, $pv:expr) => {
+        match ($a).abs_diff($pv).cmp(&($b).abs_diff($pv)) {
+            Ordering::Less => true,
+            Ordering::Greater => false,
+            Ordering::Equal => $a > $b,
+        }
+    };
+}
+
+macro_rules! is_nearer_float {
+    ($a:expr, $b:expr, $pv:expr) => {{
+        let ad = ($a - $pv).abs();
+        let bd = ($b - $pv).abs();
+        match cmp_float(&ad, &bd) {
+            Ordering::Less => true,
+            Ordering::Greater => false,
+            Ordering::Equal => cmp_float(&$a, &$b).is_gt(),
+        }
+    }};
+}
+
+/// Returns `true` if `a_arr[a_idx]` is strictly closer to `pivot_arr[pivot_idx]` than
+/// `b_arr[b_idx]` is.  Type dispatch runs on every call;
+///
+/// Null semantics: null `a` → false; null `b` → true; null pivot → false.
+/// Supported types: Numeric + Temporal types via their underlying integer repr.
+fn is_nearer(
     a_arr: &dyn Array,
     a_idx: usize,
     b_arr: &dyn Array,
@@ -53,63 +77,183 @@ fn nearest_cmp(
         return false;
     }
 
-    let a = a_arr.slice(a_idx, 1);
-    let b = b_arr.slice(b_idx, 1);
-    let p = pivot_arr.slice(pivot_idx, 1);
+    /// Extract a typed scalar from a `&dyn Array` at index `$i`.
+    macro_rules! extract_scalar {
+        ($arr:expr, $T:ty, $i:expr) => {
+            $arr.as_any()
+                .downcast_ref::<PrimitiveArray<$T>>()
+                .unwrap()
+                .value($i)
+        };
+    }
 
-    let sort_opts = SortOptions::new(false, false);
+    /// Extract three scalars of type `$T` and delegate to `is_nearer_int!`.
+    macro_rules! extract_and_cmp_int {
+        ($T:ty) => {{
+            let a = extract_scalar!(a_arr, $T, a_idx);
+            let b = extract_scalar!(b_arr, $T, b_idx);
+            let p = extract_scalar!(pivot_arr, $T, pivot_idx);
+            is_nearer_int!(a, b, p)
+        }};
+    }
 
-    // Compute |a - pivot| and |b - pivot| by always subtracting smaller from larger.
-    let a_dist = {
-        let cmp = make_daft_comparator(a.as_ref(), p.as_ref(), sort_opts)
-            .expect("make_comparator failed for a vs pivot");
-        if cmp(0, 0).is_ge() {
-            arrow::compute::kernels::numeric::sub(&a, &p)
-        } else {
-            arrow::compute::kernels::numeric::sub(&p, &a)
+    /// Extract three scalars of type `$T` and delegate to `is_nearer_float!`.
+    macro_rules! extract_and_cmp_float {
+        ($T:ty) => {{
+            let a = extract_scalar!(a_arr, $T, a_idx);
+            let b = extract_scalar!(b_arr, $T, b_idx);
+            let p = extract_scalar!(pivot_arr, $T, pivot_idx);
+            is_nearer_float!(a, b, p)
+        }};
+    }
+
+    match a_arr.data_type() {
+        DataType::Int8 => extract_and_cmp_int!(Int8Type),
+        DataType::Int16 => extract_and_cmp_int!(Int16Type),
+        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => extract_and_cmp_int!(Int32Type),
+        DataType::Int64
+        | DataType::Date64
+        | DataType::Timestamp(_, _)
+        | DataType::Time64(_)
+        | DataType::Duration(_) => extract_and_cmp_int!(Int64Type),
+        DataType::UInt8 => extract_and_cmp_int!(UInt8Type),
+        DataType::UInt16 => extract_and_cmp_int!(UInt16Type),
+        DataType::UInt32 => extract_and_cmp_int!(UInt32Type),
+        DataType::UInt64 => extract_and_cmp_int!(UInt64Type),
+        DataType::Decimal128(_, _) => extract_and_cmp_int!(Decimal128Type),
+        DataType::Float16 => {
+            // Promote to f32; f16 has no Sub in std.
+            let a = extract_scalar!(a_arr, Float16Type, a_idx).to_f32();
+            let b = extract_scalar!(b_arr, Float16Type, b_idx).to_f32();
+            let p = extract_scalar!(pivot_arr, Float16Type, pivot_idx).to_f32();
+            is_nearer_float!(a, b, p)
         }
-        .expect("sub failed for a distance")
-    };
-    let b_dist = {
-        let cmp = make_daft_comparator(b.as_ref(), p.as_ref(), sort_opts)
-            .expect("make_comparator failed for b vs pivot");
-        if cmp(0, 0).is_ge() {
-            arrow::compute::kernels::numeric::sub(&b, &p)
-        } else {
-            arrow::compute::kernels::numeric::sub(&p, &b)
-        }
-        .expect("sub failed for b distance")
-    };
-
-    let dist_cmp = make_daft_comparator(a_dist.as_ref(), b_dist.as_ref(), sort_opts)
-        .expect("make_comparator failed for distance comparison");
-    match dist_cmp(0, 0) {
-        Ordering::Less => true,
-        Ordering::Greater => false,
-        // Tie: prefer larger value (forward/later).
-        Ordering::Equal => make_daft_comparator(a.as_ref(), b.as_ref(), sort_opts)
-            .expect("make_comparator failed for tie-breaking")(0, 0)
-        .is_gt(),
+        DataType::Float32 => extract_and_cmp_float!(Float32Type),
+        DataType::Float64 => extract_and_cmp_float!(Float64Type),
+        t => panic!("nearest join: unsupported on-key type {t:?}"),
     }
 }
 
 /// Captures the arrays upfront; each call only passes `(a_idx, b_idx, pivot_idx)`.
 type DynPartialNearestComparator = Box<dyn Fn(usize, usize, usize) -> bool + Send + Sync>;
 
+/// Returns a closure that answers "is sorted position `a_idx` nearer to right row `pivot_idx`
+/// than sorted position `b_idx`?" for the fixed `sorted_arr` / `pivot_arr` pair.
 fn build_partial_nearest_comparator(
     sorted_arr: Arc<dyn Array>,
     pivot_arr: Arc<dyn Array>,
 ) -> DynPartialNearestComparator {
-    Box::new(move |a_idx: usize, b_idx: usize, pivot_idx: usize| {
-        nearest_cmp(
-            sorted_arr.as_ref(),
-            a_idx,
-            sorted_arr.as_ref(),
-            b_idx,
-            pivot_arr.as_ref(),
-            pivot_idx,
-        )
-    })
+    /// Downcast both arrays to `PrimitiveArray<$T>` once, then build a closure that
+    /// extracts values and delegates to `is_nearer_int!`.
+    macro_rules! build_nearer_closure_int {
+        ($T:ty) => {{
+            let s = sorted_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$T>>()
+                .unwrap()
+                .clone();
+            let p = pivot_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$T>>()
+                .unwrap()
+                .clone();
+            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
+                if !s.is_valid(a_idx) {
+                    return false;
+                }
+                if !s.is_valid(b_idx) {
+                    return true;
+                }
+                if !p.is_valid(p_idx) {
+                    return false;
+                }
+                let a = s.value(a_idx);
+                let b = s.value(b_idx);
+                let pv = p.value(p_idx);
+                is_nearer_int!(a, b, pv)
+            }) as DynPartialNearestComparator
+        }};
+    }
+
+    /// Downcast both arrays to `PrimitiveArray<$T>` once, then build a closure that
+    /// extracts values and delegates to `is_nearer_float!`.
+    macro_rules! build_nearer_closure_float {
+        ($T:ty) => {{
+            let s = sorted_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$T>>()
+                .unwrap()
+                .clone();
+            let p = pivot_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$T>>()
+                .unwrap()
+                .clone();
+            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
+                if !s.is_valid(a_idx) {
+                    return false;
+                }
+                if !s.is_valid(b_idx) {
+                    return true;
+                }
+                if !p.is_valid(p_idx) {
+                    return false;
+                }
+                let a = s.value(a_idx);
+                let b = s.value(b_idx);
+                let pv = p.value(p_idx);
+                is_nearer_float!(a, b, pv)
+            }) as DynPartialNearestComparator
+        }};
+    }
+
+    match sorted_arr.data_type() {
+        DataType::Int8 => build_nearer_closure_int!(Int8Type),
+        DataType::Int16 => build_nearer_closure_int!(Int16Type),
+        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => {
+            build_nearer_closure_int!(Int32Type)
+        }
+        DataType::Int64
+        | DataType::Date64
+        | DataType::Timestamp(_, _)
+        | DataType::Time64(_)
+        | DataType::Duration(_) => build_nearer_closure_int!(Int64Type),
+        DataType::UInt8 => build_nearer_closure_int!(UInt8Type),
+        DataType::UInt16 => build_nearer_closure_int!(UInt16Type),
+        DataType::UInt32 => build_nearer_closure_int!(UInt32Type),
+        DataType::UInt64 => build_nearer_closure_int!(UInt64Type),
+        DataType::Decimal128(_, _) => build_nearer_closure_int!(Decimal128Type),
+        DataType::Float16 => {
+            let s = sorted_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<Float16Type>>()
+                .unwrap()
+                .clone();
+            let p = pivot_arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<Float16Type>>()
+                .unwrap()
+                .clone();
+            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
+                if !s.is_valid(a_idx) {
+                    return false;
+                }
+                if !s.is_valid(b_idx) {
+                    return true;
+                }
+                if !p.is_valid(p_idx) {
+                    return false;
+                }
+                let a = s.value(a_idx).to_f32();
+                let b = s.value(b_idx).to_f32();
+                let pv = p.value(p_idx).to_f32();
+                is_nearer_float!(a, b, pv)
+            })
+        }
+        DataType::Float32 => build_nearer_closure_float!(Float32Type),
+        DataType::Float64 => build_nearer_closure_float!(Float64Type),
+        t => panic!("nearest join: unsupported on-key type {t:?}"),
+    }
 }
 
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
@@ -568,7 +712,7 @@ fn update_nearest_match(
 ) -> DaftResult<()> {
     let nearer = match *slot {
         None => true,
-        Some((existing_rb_idx, existing_right_idx)) => nearest_cmp(
+        Some((existing_rb_idx, existing_right_idx)) => is_nearer(
             on_key_arrs[candidate.rb_idx].as_ref(),
             candidate.row_idx,
             on_key_arrs[existing_rb_idx as usize].as_ref(),
@@ -626,8 +770,8 @@ fn backward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices:
 }
 
 /// For left rows that received no direct probe assignment, fill from both directions and keep
-/// whichever candidate is closer to the left row's on_key. Ties prefer the forward-filled
-/// (earlier/floor) match, consistent with pandas bdiff <= fdiff behaviour.
+/// whichever candidate is closer to the left row's on_key. Ties prefer the larger (forward)
+/// right value, matching the `is_nearer` tie-break convention.
 fn nearest_fill(
     global_best: &mut Vec<Option<(u32, u32)>>,
     grouped_sorted_indices: &GroupIndices,
@@ -639,98 +783,29 @@ fn nearest_fill(
     let mut bwd = global_best.clone();
     backward_fill(&mut bwd, grouped_sorted_indices);
 
-    // Resolve uncontested rows immediately (only one direction has a candidate).
     for i in 0..global_best.len() {
         if global_best[i].is_some() {
             continue;
         }
         global_best[i] = match (fwd[i], bwd[i]) {
+            (None, None) => continue,
             (Some(_), None) => fwd[i],
             (None, Some(_)) => bwd[i],
-            _ => continue, // both None or both Some — latter handled below
-        };
-    }
-
-    // Contested rows: both a forward and a backward candidate exist.
-    let contested: Vec<usize> = (0..global_best.len())
-        .filter(|&i| global_best[i].is_none() && fwd[i].is_some() && bwd[i].is_some())
-        .collect();
-
-    if contested.is_empty() {
-        return;
-    }
-
-    // Offset table so (rb_idx, row_idx) maps to a global index into the concatenated right array.
-    let mut rb_starts = vec![0usize; global_right_on_key_arrs.len() + 1];
-    for (i, arr) in global_right_on_key_arrs.iter().enumerate() {
-        rb_starts[i + 1] = rb_starts[i] + arr.len();
-    }
-
-    let right_refs: Vec<&dyn Array> = global_right_on_key_arrs
-        .iter()
-        .map(|a| a.as_ref())
-        .collect();
-    let right_concat = arrow::compute::concat(&right_refs).expect("nearest_fill: concat failed");
-
-    let left_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| i as u64));
-    let fwd_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| {
-        let (rb, row) = fwd[i].unwrap();
-        (rb_starts[rb as usize] + row as usize) as u64
-    }));
-    let bwd_indices = ArrowUInt64Array::from_iter_values(contested.iter().map(|&i| {
-        let (rb, row) = bwd[i].unwrap();
-        (rb_starts[rb as usize] + row as usize) as u64
-    }));
-
-    let left_vals =
-        arrow::compute::take(left_on_arr, &left_indices, None).expect("nearest_fill: take failed");
-    let fwd_vals = arrow::compute::take(right_concat.as_ref(), &fwd_indices, None)
-        .expect("nearest_fill: take failed");
-    let bwd_vals = arrow::compute::take(right_concat.as_ref(), &bwd_indices, None)
-        .expect("nearest_fill: take failed");
-
-    // Cast to Float64 for uniform subtraction across all numeric types.
-    let f64_dt = arrow::datatypes::DataType::Float64;
-    let left_f64 = arrow::compute::cast(&left_vals, &f64_dt).expect("nearest_fill: cast failed");
-    let fwd_f64 = arrow::compute::cast(&fwd_vals, &f64_dt).expect("nearest_fill: cast failed");
-    let bwd_f64 = arrow::compute::cast(&bwd_vals, &f64_dt).expect("nearest_fill: cast failed");
-
-    // Vectorized distance: sub then scalar abs on the typed result.
-    let fwd_sub = arrow::compute::kernels::numeric::sub(&fwd_f64, &left_f64)
-        .expect("nearest_fill: sub failed");
-    let bwd_sub = arrow::compute::kernels::numeric::sub(&bwd_f64, &left_f64)
-        .expect("nearest_fill: sub failed");
-
-    let fwd_sub_f64 = fwd_sub
-        .as_any()
-        .downcast_ref::<ArrowFloat64Array>()
-        .unwrap();
-    let bwd_sub_f64 = bwd_sub
-        .as_any()
-        .downcast_ref::<ArrowFloat64Array>()
-        .unwrap();
-    let fwd_vals_f64 = fwd_f64
-        .as_any()
-        .downcast_ref::<ArrowFloat64Array>()
-        .unwrap();
-    let bwd_vals_f64 = bwd_f64
-        .as_any()
-        .downcast_ref::<ArrowFloat64Array>()
-        .unwrap();
-
-    for (k, &i) in contested.iter().enumerate() {
-        let fwd_dist = fwd_sub_f64.value(k).abs();
-        let bwd_dist = bwd_sub_f64.value(k).abs();
-        global_best[i] = if fwd_dist < bwd_dist {
-            fwd[i]
-        } else if bwd_dist < fwd_dist {
-            bwd[i]
-        } else {
-            // Tie: prefer the larger right on_key value (forward/later), mirroring nearest_cmp.
-            if fwd_vals_f64.value(k) > bwd_vals_f64.value(k) {
-                fwd[i]
-            } else {
-                bwd[i]
+            (Some((fwd_rb, fwd_row)), Some((bwd_rb, bwd_row))) => {
+                let fwd_arr = global_right_on_key_arrs[fwd_rb as usize].as_ref();
+                let bwd_arr = global_right_on_key_arrs[bwd_rb as usize].as_ref();
+                if is_nearer(
+                    fwd_arr,
+                    fwd_row as usize,
+                    bwd_arr,
+                    bwd_row as usize,
+                    left_on_arr,
+                    i,
+                ) {
+                    fwd[i]
+                } else {
+                    bwd[i]
+                }
             }
         };
     }
