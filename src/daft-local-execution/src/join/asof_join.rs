@@ -56,8 +56,6 @@ macro_rules! is_nearer_float {
 
 /// Returns `true` if `a_arr[a_idx]` is strictly closer to `pivot_arr[pivot_idx]` than
 /// `b_arr[b_idx]` is.  Type dispatch runs on every call;
-///
-/// Null semantics: null `a` → false; null `b` → true; null pivot → false.
 /// Supported types: Numeric + Temporal types via their underlying integer repr.
 fn is_nearer(
     a_arr: &dyn Array,
@@ -67,14 +65,8 @@ fn is_nearer(
     pivot_arr: &dyn Array,
     pivot_idx: usize,
 ) -> bool {
-    if !a_arr.is_valid(a_idx) {
-        return false;
-    }
-    if !b_arr.is_valid(b_idx) {
-        return true;
-    }
-    if !pivot_arr.is_valid(pivot_idx) {
-        return false;
+    if !a_arr.is_valid(a_idx) || !b_arr.is_valid(b_idx) || !pivot_arr.is_valid(pivot_idx) {
+        unreachable!("null keys must be filtered before calling is_nearer");
     }
 
     /// Extract a typed scalar from a `&dyn Array` at index `$i`.
@@ -87,7 +79,6 @@ fn is_nearer(
         };
     }
 
-    /// Extract three scalars of type `$T` and delegate to `is_nearer_int!`.
     macro_rules! extract_and_cmp_int {
         ($T:ty) => {{
             let a = extract_scalar!(a_arr, $T, a_idx);
@@ -97,7 +88,6 @@ fn is_nearer(
         }};
     }
 
-    /// Extract three scalars of type `$T` and delegate to `is_nearer_float!`.
     macro_rules! extract_and_cmp_float {
         ($T:ty) => {{
             let a = extract_scalar!(a_arr, $T, a_idx);
@@ -143,8 +133,6 @@ fn build_partial_nearest_comparator(
     sorted_arr: Arc<dyn Array>,
     pivot_arr: Arc<dyn Array>,
 ) -> DynPartialNearestComparator {
-    /// Downcast both arrays to `PrimitiveArray<$T>` once, then build a closure that
-    /// extracts values and delegates to `is_nearer_int!`.
     macro_rules! build_nearer_closure_int {
         ($T:ty) => {{
             let s = sorted_arr
@@ -158,14 +146,8 @@ fn build_partial_nearest_comparator(
                 .unwrap()
                 .clone();
             Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) {
-                    return false;
-                }
-                if !s.is_valid(b_idx) {
-                    return true;
-                }
-                if !p.is_valid(p_idx) {
-                    return false;
+                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
+                    unreachable!("null keys must be filtered before calling nearest comparator");
                 }
                 let a = s.value(a_idx);
                 let b = s.value(b_idx);
@@ -175,8 +157,6 @@ fn build_partial_nearest_comparator(
         }};
     }
 
-    /// Downcast both arrays to `PrimitiveArray<$T>` once, then build a closure that
-    /// extracts values and delegates to `is_nearer_float!`.
     macro_rules! build_nearer_closure_float {
         ($T:ty) => {{
             let s = sorted_arr
@@ -190,14 +170,8 @@ fn build_partial_nearest_comparator(
                 .unwrap()
                 .clone();
             Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) {
-                    return false;
-                }
-                if !s.is_valid(b_idx) {
-                    return true;
-                }
-                if !p.is_valid(p_idx) {
-                    return false;
+                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
+                    unreachable!("null keys must be filtered before calling nearest comparator");
                 }
                 let a = s.value(a_idx);
                 let b = s.value(b_idx);
@@ -235,14 +209,8 @@ fn build_partial_nearest_comparator(
                 .unwrap()
                 .clone();
             Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) {
-                    return false;
-                }
-                if !s.is_valid(b_idx) {
-                    return true;
-                }
-                if !p.is_valid(p_idx) {
-                    return false;
+                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
+                    unreachable!("null keys must be filtered before calling nearest comparator");
                 }
                 let a = s.value(a_idx).to_f32();
                 let b = s.value(b_idx).to_f32();
@@ -475,6 +443,12 @@ impl AsofJoinFinalizedBuildState {
 
     /// binary-searches for both the floor (last left <= right) and ceiling (first left >= right),
     /// returns the nearest left row to `right_idx` (floor or ceil).
+    ///
+    /// Example: left bucket on_keys = [1, 3, 7, 9], right on_key = 5
+    ///   binary search → lo = 2 (first index where left[lo] >= 5, i.e. left[2] = 7)
+    ///   ceil_pos  = Some(2) → value 7, distance |7 − 5| = 2
+    ///   floor_pos = Some(1) → value 3, distance |5 − 3| = 2
+    ///   nearest_cmp breaks the tie (implementation-defined); returns one of {1, 2}
     fn search_bucket_nearest(
         &self,
         bucket: &[u64],
@@ -1086,22 +1060,27 @@ impl JoinOperator for AsofJoinOperator {
                                             row_idx: candidate_right_idx as usize,
                                         };
 
-                                        if let Some(arr) = &left_on_arr {
-                                            update_nearest_match(
-                                                curr_best_match,
-                                                &global_right_on_key_arrs,
-                                                candidate,
-                                                arr.as_ref(),
-                                                global_left_idx,
-                                            )?;
-                                        } else {
-                                            update_best_match(
-                                                curr_best_match,
-                                                &global_right_on_key_arrs,
-                                                candidate,
-                                                &mut cmp_cache,
-                                                strategy,
-                                            )?;
+                                        match strategy {
+                                            AsofJoinStrategy::Nearest => {
+                                                update_nearest_match(
+                                                    curr_best_match,
+                                                    &global_right_on_key_arrs,
+                                                    candidate,
+                                                    left_on_arr
+                                                        .as_deref()
+                                                        .expect("left_on_arr required for Nearest"),
+                                                    global_left_idx,
+                                                )?;
+                                            }
+                                            _ => {
+                                                update_best_match(
+                                                    curr_best_match,
+                                                    &global_right_on_key_arrs,
+                                                    candidate,
+                                                    &mut cmp_cache,
+                                                    strategy,
+                                                )?;
+                                            }
                                         }
                                     }
                                 }
