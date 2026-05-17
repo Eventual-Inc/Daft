@@ -40,9 +40,8 @@ impl<R: AsyncRead + AsyncSeek + Unpin> FlightDataStreamReader<R> {
 }
 
 impl<R: AsyncRead + Unpin> FlightDataStreamReader<R> {
-    /// Construct from a reader that has already been positioned past the IPC stream metadata
-    /// (schema header). Used for ranged reads where the reader is a `Take<File>` and the file
-    /// has already been seeked to a batch boundary.
+    /// Construct from a reader already positioned past the IPC schema header. Used for
+    /// ranged reads where the file has been seeked to a batch boundary.
     pub fn from_skipped(reader: R) -> Self {
         Self {
             state: Some(ReadState { reader }),

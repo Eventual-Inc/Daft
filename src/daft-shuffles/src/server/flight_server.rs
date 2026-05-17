@@ -69,41 +69,18 @@ struct FlightPartitionKey {
     partition_ref_id: u64,
 }
 
-/// How the Flight server should read one file's contribution to a partition response.
-/// `Ranges` carries multiple byte ranges within the same file (combined-file shuffle).
+/// How to read one file's contribution to a Flight response.
 enum FileReadSpec {
-    /// Read the whole IPC stream file. Used by the legacy per-partition cache.
+    /// Read the entire IPC stream file (per-partition cache).
     Whole { path: String },
-    /// Read multiple `(start, end)` byte ranges from a single file, in file order.
-    /// Each range is a contiguous run of IPC batch messages.
+    /// Read one or more `(start, end)` ranges from a single file (combined-file shuffle).
     Ranges {
         path: String,
         ranges: Vec<(u64, u64)>,
     },
 }
 
-/// How many files inside a single Flight response to open / prefetch concurrently.
-/// Bench note (2026-05-11, macOS APFS, 500x500 / 1 GiB): a sweep of K=1,2,4,8,16,32 found K=1
-/// (serial) is best and K>=4 actively regresses (4.0s -> 5.1s). The bottleneck on this hardware
-/// is somewhere downstream of file open — likely client-side IPC decode or gRPC framing.
-/// Override via DAFT_SHUFFLE_READ_PREFETCH at compile time if a production profile shows
-/// open serialization is the bottleneck (e.g. on slow network FS or EBS).
-const READ_PREFETCH: usize = match option_env!("DAFT_SHUFFLE_READ_PREFETCH") {
-    Some(s) => parse_usize(s),
-    None => 1,
-};
-
-const fn parse_usize(s: &str) -> usize {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    let mut n: usize = 0;
-    while i < bytes.len() {
-        let d = (bytes[i] - b'0') as usize;
-        n = n * 10 + d;
-        i += 1;
-    }
-    n
-}
+const READ_PREFETCH: usize = 1;
 
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
@@ -151,11 +128,9 @@ impl ShuffleFlightServer {
             .schema
             .clone();
 
-        // Group ranged reads by file path so each physical file is read from a single
-        // FD across this response.
-        let mut whole_specs = Vec::new();
+        // Group ranged reads by file path so each physical file is read from a single FD.
+        let mut specs: Vec<FileReadSpec> = Vec::new();
         let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
-        let mut first_seen: HashMap<String, usize> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
         for partition_ref_id in partition_ref_ids {
@@ -168,28 +143,24 @@ impl ShuffleFlightServer {
             match &cache.byte_ranges {
                 Some(ranges) => {
                     for (path, (start, end)) in cache.file_paths.iter().zip(ranges.iter()) {
-                        if !first_seen.contains_key(path) {
-                            first_seen.insert(path.clone(), order.len());
+                        let entry = ranges_by_path.entry(path.clone()).or_insert_with(|| {
                             order.push(path.clone());
-                        }
-                        ranges_by_path
-                            .entry(path.clone())
-                            .or_default()
-                            .push((*start, *end));
+                            Vec::new()
+                        });
+                        entry.push((*start, *end));
                     }
                 }
                 None => {
                     for path in &cache.file_paths {
-                        whole_specs.push(FileReadSpec::Whole { path: path.clone() });
+                        specs.push(FileReadSpec::Whole { path: path.clone() });
                     }
                 }
             }
         }
 
-        let mut specs = whole_specs;
         for path in order {
             let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
-            // Sort by start so sequential reads are forward seeks (kind to readahead).
+            // Sort by start so sequential reads stay forward-going (kind to readahead).
             ranges.sort_unstable_by_key(|r| r.0);
             specs.push(FileReadSpec::Ranges { path, ranges });
         }
@@ -245,30 +216,23 @@ impl ShuffleFlightServer {
     }
 }
 
-/// Build the IPC bytes that represent a schema-only stream header. Produced by writing
-/// an empty `StreamWriter` and dropping it without calling `finish()` (which would emit
-/// the EOS marker). Used as a prefix when feeding ranged file reads into `StreamReader`.
+/// Bytes of a schema-only IPC stream: `StreamWriter::try_new_with_options` writes the
+/// schema message and we drop without `finish()` so no EOS is appended. Used as a prefix
+/// when feeding ranged file reads into `StreamReader`.
 fn build_schema_header_bytes(arrow_schema: &arrow_schema::Schema) -> DaftResult<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::with_capacity(512);
     let opts = IpcWriteOptions::default();
     let _writer =
         arrow_ipc::writer::StreamWriter::try_new_with_options(&mut buf, arrow_schema, opts)?;
-    // Drop without finish; `try_new_with_options` already wrote the schema message,
-    // and we want only those bytes — no batches, no EOS.
     Ok(buf)
 }
 
-/// IPC EOS marker: continuation marker (0xFFFFFFFF as i32 LE) + meta_len 0.
-/// Appended after ranged reads so `StreamReader` stops cleanly at the end of our range
-/// instead of seeing torn metadata bytes from the next batch in the underlying file.
+/// IPC EOS marker: continuation marker (0xFFFFFFFF, i32 LE) + meta_len 0. Appended so
+/// `StreamReader` stops at the end of our range instead of reading the next batch's bytes.
 const IPC_EOS_BYTES: [u8; 8] = [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00];
 
-/// Read `[start, end)` from `file`, prepend the schema header + append the EOS
-/// marker so a `StreamReader` parses it cleanly, and return the decoded arrow
-/// batches.
-///
-/// Uses `seek+take` (not pread) so the kernel sees a sequential per-FD access
-/// pattern and ramps readahead.
+/// Decode `[start, end)` from `file`. `seek+take` (not pread) keeps the per-FD access
+/// pattern sequential so the kernel ramps readahead.
 fn decode_range_to_arrow_batches(
     file: &mut std::fs::File,
     start: u64,
@@ -289,16 +253,9 @@ fn decode_range_to_arrow_batches(
         .map_err(DaftError::ArrowRsError)
 }
 
-/// Build a `Stream<Item = Result<FlightData, Status>>` that decodes source
-/// `specs` into arrow `RecordBatch` (no daft conversion), concats them in
-/// groups whose accumulated byte size crosses `chunk_target_bytes`, IPC-encodes
-/// each group, and yields the resulting `FlightData` items.
-///
-/// Runs inline on whichever IO runtime worker polls the stream — no
-/// `spawn_blocking`, no `spawn`, no channel. The work has natural yield points
-/// at each chunk's yield, so concurrent do_get handlers share the IO runtime's
-/// worker threads via cooperative scheduling. File IO is sync inline; on warm
-/// page cache the per-batch cost is sub-millisecond.
+/// Decode `specs` into arrow batches, concat them into groups ≥ `chunk_target_bytes`,
+/// IPC-encode each group, and yield `FlightData` items. Uses `IpcDataGenerator` directly
+/// since the schema is already sent at the start of the do_get response.
 fn concat_specs_into_flight_data_stream(
     specs: Vec<FileReadSpec>,
     arrow_schema_ref: arrow_schema::SchemaRef,
@@ -311,9 +268,6 @@ fn concat_specs_into_flight_data_stream(
         let mut pending: Vec<arrow_array::RecordBatch> = Vec::new();
         let mut pending_bytes: usize = 0;
         let opts = IpcWriteOptions::default();
-        // The data generator is the lowest-level encoder; `batches_to_flight_data`
-        // would prepend a schema FlightData per call, which we don't want — the
-        // schema is already sent once at the start of the do_get response.
         let data_gen = arrow_ipc::writer::IpcDataGenerator::default();
         let mut dict_tracker = arrow_ipc::writer::DictionaryTracker::new(false);
         let mut compression_ctx = arrow_ipc::writer::CompressionContext::default();
@@ -332,80 +286,73 @@ fn concat_specs_into_flight_data_stream(
                         pending_bytes += estimate_batch_size(&batch);
                         pending.push(batch);
                         if pending_bytes >= chunk_target_bytes {
-                            let merged = arrow_select::concat::concat_batches(
-                                &arrow_schema_ref, pending.iter(),
-                            )
-                            .map_err(|e| Status::internal(format!("concat: {}", e)))?;
-                            let (dicts, batch) = data_gen
-                                .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
-                                .map_err(|e| Status::internal(format!("encode: {}", e)))?;
-                            for d in dicts {
-                                yield d.into();
+                            for d in flush_pending(
+                                &mut pending, &mut pending_bytes, &arrow_schema_ref,
+                                &data_gen, &mut dict_tracker, &opts, &mut compression_ctx,
+                            )? {
+                                yield d;
                             }
-                            yield batch.into();
-                            pending.clear();
-                            pending_bytes = 0;
                         }
                     }
                 }
                 FileReadSpec::Ranges { path, ranges } => {
-                    // Lazy per-spec File::open; seek+take rather than pread so the
-                    // kernel sees a sequential per-FD access pattern (readahead).
-                    let mut file: Option<std::fs::File> = None;
+                    let mut file = std::fs::File::open(&path)
+                        .map_err(|e| Status::internal(format!("file open: {}", e)))?;
                     for (start, end) in ranges {
-                        let f = match file.as_mut() {
-                            Some(f) => f,
-                            None => {
-                                file = Some(std::fs::File::open(&path).map_err(|e| {
-                                    Status::internal(format!("file open: {}", e))
-                                })?);
-                                file.as_mut().unwrap()
-                            }
-                        };
                         let decoded = decode_range_to_arrow_batches(
-                            f, start, end, &schema_header_bytes,
+                            &mut file, start, end, &schema_header_bytes,
                         )
                         .map_err(|e| Status::internal(format!("range decode: {}", e)))?;
                         for batch in decoded {
                             pending_bytes += estimate_batch_size(&batch);
                             pending.push(batch);
                             if pending_bytes >= chunk_target_bytes {
-                                let merged = arrow_select::concat::concat_batches(
-                                    &arrow_schema_ref, pending.iter(),
-                                )
-                                .map_err(|e| Status::internal(format!("concat: {}", e)))?;
-                                let (dicts, batch) = data_gen
-                                    .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
-                                    .map_err(|e| Status::internal(format!("encode: {}", e)))?;
-                                for d in dicts {
-                                    yield d.into();
+                                for d in flush_pending(
+                                    &mut pending, &mut pending_bytes, &arrow_schema_ref,
+                                    &data_gen, &mut dict_tracker, &opts, &mut compression_ctx,
+                                )? {
+                                    yield d;
                                 }
-                                yield batch.into();
-                                pending.clear();
-                                pending_bytes = 0;
                             }
                         }
                     }
                 }
             }
         }
-        // Final flush of any leftover pending batches.
         if !pending.is_empty() {
-            let merged = arrow_select::concat::concat_batches(&arrow_schema_ref, pending.iter())
-                .map_err(|e| Status::internal(format!("concat: {}", e)))?;
-            let (dicts, batch) = data_gen
-                .encode(&merged, &mut dict_tracker, &opts, &mut compression_ctx)
-                .map_err(|e| Status::internal(format!("encode: {}", e)))?;
-            for d in dicts {
-                yield d.into();
+            for d in flush_pending(
+                &mut pending, &mut pending_bytes, &arrow_schema_ref,
+                &data_gen, &mut dict_tracker, &opts, &mut compression_ctx,
+            )? {
+                yield d;
             }
-            yield batch.into();
         }
     }
 }
 
-/// Cheap per-batch size estimate: sum of buffer lengths across columns. Used
-/// to gate the concat chunker so we don't depend on parsing arrow internals.
+/// Concat `pending` into one batch, IPC-encode it, and return the resulting FlightData
+/// (any dictionary messages followed by the batch). Clears `pending` and `pending_bytes`.
+fn flush_pending(
+    pending: &mut Vec<arrow_array::RecordBatch>,
+    pending_bytes: &mut usize,
+    arrow_schema_ref: &arrow_schema::SchemaRef,
+    data_gen: &arrow_ipc::writer::IpcDataGenerator,
+    dict_tracker: &mut arrow_ipc::writer::DictionaryTracker,
+    opts: &IpcWriteOptions,
+    compression_ctx: &mut arrow_ipc::writer::CompressionContext,
+) -> Result<Vec<FlightData>, Status> {
+    let merged = arrow_select::concat::concat_batches(arrow_schema_ref, pending.iter())
+        .map_err(|e| Status::internal(format!("concat: {}", e)))?;
+    let (dicts, batch) = data_gen
+        .encode(&merged, dict_tracker, opts, compression_ctx)
+        .map_err(|e| Status::internal(format!("encode: {}", e)))?;
+    pending.clear();
+    *pending_bytes = 0;
+    let mut out: Vec<FlightData> = dicts.into_iter().map(Into::into).collect();
+    out.push(batch.into());
+    Ok(out)
+}
+
 fn estimate_batch_size(batch: &arrow_array::RecordBatch) -> usize {
     let mut total: usize = 0;
     for col in batch.columns() {
@@ -495,15 +442,8 @@ impl FlightService for ShuffleFlightServer {
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
 
-        // Read-side concat: server reads M source batches, concats arrow-level
-        // into chunks of `chunk_target_bytes`, emits fewer/bigger FlightData
-        // items. Eliminates the client's per-message Flight tax at the cost of
-        // one in-memory concat per chunk. Shares its target with the oneshot
-        // writer's emit size — by emitting at the same chunk size the read
-        // side targets, the writer hands the server bytes already correctly
-        // sized and read-concat needs neither split nor combine to right-size
-        // a payload. Override via DAFT_SHUFFLE_CHUNK_BYTES; set to 0 to
-        // disable read-concat (the writer's emit chunking is unaffected).
+        // Read-side concat coalesces small source batches into ≥ chunk_target_bytes per
+        // FlightData, avoiding the client's per-message Flight tax. `None` disables it.
         let read_concat: Option<usize> = crate::shuffle_cache::read_chunk_target_bytes();
 
         let flight_data_stream: Pin<
@@ -582,9 +522,6 @@ async fn open_spec_as_flight_stream(
             Ok(Box::pin(reader.into_stream()))
         }
         FileReadSpec::Ranges { path, ranges } => {
-            // One file open serves all ranges. We hold ownership of `file` across the
-            // outer for-loop; each iteration borrows it mutably via `(&mut file).take(n)`
-            // for the duration of one range's stream.
             let file = tokio::fs::File::open(&path)
                 .await
                 .map_err(DaftError::IoError)?;
@@ -594,8 +531,6 @@ async fn open_spec_as_flight_stream(
                     file.seek(SeekFrom::Start(start)).await.map_err(DaftError::IoError)?;
                     let limited = (&mut file).take(end - start);
                     let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));
-                    // The unfold-backed stream is !Unpin; pin it on the heap so we can
-                    // call .next().await on it.
                     let mut inner = Box::pin(reader.into_stream());
                     while let Some(item) = inner.next().await {
                         yield item?;

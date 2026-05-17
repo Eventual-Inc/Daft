@@ -22,30 +22,14 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
-/// Buffer threshold before flushing a partition pass. Chosen empirically via
-/// `repartition_bench`: 4 MiB consistently wins across (small/medium/large) × (small/medium/large
-/// partition count) sweeps. Larger thresholds regress on big morsels because the resulting
-/// permutation+take output exceeds L2 cache; smaller thresholds give back the per-flush fixed
-/// overhead we are trying to amortise.
 const REPARTITION_BUFFER_THRESHOLD_BYTES: usize = 4 * 1024 * 1024;
 
-/// Per-(worker, input) accumulator. One `Vec<MicroPartition>` per output partition.
-/// Used identically by both backends — the only difference is what `finalize` does
-/// with the accumulated data.
-///
-/// Morsels are buffered until they cross [`REPARTITION_BUFFER_THRESHOLD_BYTES`], at which point
-/// they are fused into a single RecordBatch and partitioned once. This amortises the per-call
-/// hash/rem/permutation overheads and (more importantly) shrinks the number of small batches the
-/// finalize concat has to fuse.
+/// Per-(worker, input) accumulator. Morsels are buffered until they cross
+/// `REPARTITION_BUFFER_THRESHOLD_BYTES`, then fused and partitioned in one pass.
 pub(crate) struct RepartitionAccState {
-    /// `per_partition[i]` holds all inputs from this worker destined for output partition `i`.
     per_partition: Vec<Vec<MicroPartition>>,
-    /// Pending morsels staged for the next partition pass.
     buffered: Vec<MicroPartition>,
-    /// Cumulative in-memory size of `buffered`, used to decide when to flush.
     buffered_bytes: usize,
-    /// Propagated from `make_state` so the flight finalize path can name the output file.
-    /// All worker states for a single `BlockingSink::finalize` call share the same input_id.
     input_id: InputId,
 }
 
@@ -58,20 +42,9 @@ impl RepartitionAccState {
             input_id,
         }
     }
-
-    fn push_parts(&mut self, parts: Vec<MicroPartition>) {
-        debug_assert_eq!(parts.len(), self.per_partition.len());
-        for (acc, part) in self.per_partition.iter_mut().zip(parts) {
-            acc.push(part);
-        }
-    }
 }
 
-/// Fuse buffered morsels into a single RecordBatch, partition once, and push into
-/// `state.per_partition`. No-op if the buffer is empty.
-///
-/// `bound_keys` is the pre-bound key-column projection for `Hash` repartitions, cached on
-/// the sink so we don't pay `BoundExpr::bind_all` on every flush.
+/// Fuse buffered morsels, partition once, and append to `state.per_partition`.
 fn flush_buffer(
     state: &mut RepartitionAccState,
     repartition_spec: &RepartitionSpec,
@@ -81,26 +54,14 @@ fn flush_buffer(
     if state.buffered.is_empty() {
         return Ok(());
     }
-    // mem::take preserves the underlying capacity for reuse on the next round.
     let buffered = std::mem::take(&mut state.buffered);
     state.buffered_bytes = 0;
 
-    // Skip the intermediate MicroPartition::concat: collect RecordBatch refs directly
-    // (Arc::clones, no data move) and concat once into a single batch. RecordBatch::concat
-    // has a single-input fast path (clone-only) for the case where every buffered MP held a
-    // single chunk and the buffer had one MP.
+    let schema = buffered[0].schema();
     let mut all_chunks: Vec<RecordBatch> = Vec::new();
-    let mut schema: Option<SchemaRef> = None;
-    for mp in buffered {
-        if schema.is_none() {
-            schema = Some(mp.schema());
-        }
+    for mp in &buffered {
         all_chunks.extend(mp.record_batches().iter().cloned());
     }
-    let schema = match schema {
-        Some(s) => s,
-        None => return Ok(()),
-    };
     if all_chunks.is_empty() {
         return Ok(());
     }
@@ -109,7 +70,6 @@ fn flush_buffer(
 
     let partitioned = match repartition_spec {
         RepartitionSpec::Hash(config) => {
-            // Cache the bind once per sink lifetime — schema is invariant across flushes.
             let bound = bound_keys.get_or_init(|| {
                 Arc::new(
                     BoundExpr::bind_all(&config.by, &schema)
@@ -125,7 +85,10 @@ fn flush_buffer(
             fused.partition_by_range(&config.by, &config.boundaries, &config.descending)?
         }
     };
-    state.push_parts(partitioned);
+    debug_assert_eq!(partitioned.len(), state.per_partition.len());
+    for (acc, part) in state.per_partition.iter_mut().zip(partitioned) {
+        acc.push(part);
+    }
     Ok(())
 }
 
@@ -155,14 +118,8 @@ pub struct RepartitionSink {
     backend: RepartitionBackend,
     repartition_spec: RepartitionSpec,
     num_partitions: usize,
-    /// Lazily-bound key projection for `Hash` repartitions. Initialised on the first
-    /// `flush_buffer` call and shared across all worker states for this sink.
-    /// Wrapped in `Arc` so the per-morsel `sink()` async closure can cheaply own a reference.
     bound_keys: Arc<OnceLock<Arc<Vec<BoundExpr>>>>,
-    /// Cached estimate of bytes-per-row, used to skip the (non-free) `size_bytes()` walk on
-    /// every `sink()` call. Initialised from the first morsel; thereafter we approximate
-    /// buffer size as `morsel.len() * bytes_per_row`. The threshold is loose (4 MiB) so a
-    /// rough estimate is fine.
+    /// Bytes-per-row estimate so we can skip the per-morsel `size_bytes()` walk.
     bytes_per_row: OnceLock<f64>,
 }
 
@@ -204,17 +161,13 @@ impl RepartitionSink {
         })
     }
 
-    /// Cheap byte-size estimate for a morsel. Calls `size_bytes()` once (on first morsel
-    /// across the sink) to seed `bytes_per_row`, then uses `len * cached_ratio` thereafter.
-    /// The flush threshold is intentionally loose (4 MiB), so a ±2× estimate is fine.
     fn estimate_size_bytes(&self, input: &MicroPartition) -> usize {
         if let Some(&bpr) = self.bytes_per_row.get() {
             return (input.len() as f64 * bpr).round() as usize;
         }
         let observed = input.size_bytes();
         if !input.is_empty() {
-            let bpr = observed as f64 / input.len() as f64;
-            let _ = self.bytes_per_row.set(bpr);
+            let _ = self.bytes_per_row.set(observed as f64 / input.len() as f64);
         }
         observed
     }
@@ -263,60 +216,51 @@ impl BlockingSink for RepartitionSink {
         let repartition_spec = self.repartition_spec.clone();
         let bound_keys = self.bound_keys.clone();
 
-        // Flush any buffered morsels in each worker state before flattening.
-        let flush_result = states.iter_mut().try_for_each(|s| {
-            flush_buffer(s, &repartition_spec, &bound_keys, num_partitions)?;
-            Ok::<(), common_error::DaftError>(())
-        });
+        let flush_result = states
+            .iter_mut()
+            .try_for_each(|s| flush_buffer(s, &repartition_spec, &bound_keys, num_partitions));
         if let Err(e) = flush_result {
             return spawner.spawn(async move { Err(e) }, Span::current()).into();
         }
 
-        // Flatten worker states into per-output-partition Vec<MicroPartition>. All states
-        // for a single BlockingSink::finalize call share the same input_id (the sink
-        // framework calls finalize once per input_id with all that input's worker states).
         let (per_partition, input_id) = flatten_per_partition(states, num_partitions);
 
         match &self.backend {
-            RepartitionBackend::Ray => {
-                spawner
-                    .spawn(
-                        async move {
-                            let mut outputs = Vec::with_capacity(num_partitions);
-                            for data in per_partition {
-                                let fut = tokio::spawn(async move {
-                                    if data.is_empty() {
-                                        // No input was ever sunk for this partition — emit
-                                        // empty rather than failing inside MicroPartition::concat.
-                                        return Ok(MicroPartition::empty(None));
-                                    }
-                                    let together = MicroPartition::concat(data)?;
-                                    let schema = together.schema();
-                                    let concated = together.concat_or_get()?;
-                                    let mp = MicroPartition::new_loaded(
-                                        schema,
-                                        Arc::new(if let Some(t) = concated {
-                                            vec![t]
-                                        } else {
-                                            vec![]
-                                        }),
-                                        None,
-                                    );
-                                    Ok::<_, common_error::DaftError>(mp)
-                                });
-                                outputs.push(fut);
-                            }
-                            let partitions = futures::future::try_join_all(outputs)
-                                .await
-                                .unwrap()
-                                .into_iter()
-                                .collect::<DaftResult<Vec<_>>>()?;
-                            Ok(BlockingSinkOutput::Partitions(partitions))
-                        },
-                        Span::current(),
-                    )
-                    .into()
-            }
+            RepartitionBackend::Ray => spawner
+                .spawn(
+                    async move {
+                        let mut outputs = Vec::with_capacity(num_partitions);
+                        for data in per_partition {
+                            let fut = tokio::spawn(async move {
+                                if data.is_empty() {
+                                    return Ok(MicroPartition::empty(None));
+                                }
+                                let together = MicroPartition::concat(data)?;
+                                let schema = together.schema();
+                                let concated = together.concat_or_get()?;
+                                let mp = MicroPartition::new_loaded(
+                                    schema,
+                                    Arc::new(if let Some(t) = concated {
+                                        vec![t]
+                                    } else {
+                                        vec![]
+                                    }),
+                                    None,
+                                );
+                                Ok::<_, DaftError>(mp)
+                            });
+                            outputs.push(fut);
+                        }
+                        let partitions = futures::future::try_join_all(outputs)
+                            .await
+                            .unwrap()
+                            .into_iter()
+                            .collect::<DaftResult<Vec<_>>>()?;
+                        Ok(BlockingSinkOutput::Partitions(partitions))
+                    },
+                    Span::current(),
+                )
+                .into(),
             RepartitionBackend::Flight {
                 shuffle_id,
                 shuffle_dirs,
@@ -338,7 +282,7 @@ impl BlockingSink for RepartitionSink {
                                 input_id,
                                 shuffle_id,
                                 &shuffle_dirs,
-                                schema.clone(),
+                                schema,
                                 compression,
                                 per_partition,
                             )
@@ -399,9 +343,6 @@ impl BlockingSink for RepartitionSink {
     }
 }
 
-/// Move per-worker per-partition accumulators into a single `Vec<Vec<MicroPartition>>`
-/// indexed by output-partition id. Returns the input_id (assumed identical across states,
-/// since `BlockingSink::finalize` is called once per input_id).
 fn flatten_per_partition(
     states: Vec<RepartitionAccState>,
     num_partitions: usize,
@@ -410,10 +351,7 @@ fn flatten_per_partition(
         .first()
         .map(|s| s.input_id)
         .expect("RepartitionSink::finalize called with no states");
-    debug_assert!(
-        states.iter().all(|s| s.input_id == input_id),
-        "All worker states in a single finalize call must share the same input_id",
-    );
+    debug_assert!(states.iter().all(|s| s.input_id == input_id));
 
     let mut per_partition: Vec<Vec<MicroPartition>> =
         (0..num_partitions).map(|_| Vec::new()).collect();
@@ -425,16 +363,13 @@ fn flatten_per_partition(
     (per_partition, input_id)
 }
 
-/// Minimal compression parser. Flight IPC compression isn't wired through Python in
-/// this PR (no user-visible knob); the value here is always `None` in practice,
-/// passed through from the unused `compression` field on `FlightShuffleBackendConfig`.
-/// We accept `None` / `"none"` / `""` and error on anything else so a stray value
-/// surfaces loudly instead of silently disabling compression.
 fn parse_compression(s: Option<&str>) -> DaftResult<Option<arrow_ipc::CompressionType>> {
     match s {
-        None | Some("none") | Some("") => Ok(None),
+        None | Some("") | Some("none") => Ok(None),
+        Some("lz4") => Ok(Some(arrow_ipc::CompressionType::LZ4_FRAME)),
+        Some("zstd") => Ok(Some(arrow_ipc::CompressionType::ZSTD)),
         Some(other) => Err(DaftError::ValueError(format!(
-            "Flight shuffle compression not supported in this build (got {})",
+            "Unsupported compression for shuffle IPC writer: {}, only lz4 and zstd are supported",
             other
         ))),
     }
