@@ -946,135 +946,84 @@ fn agg_symbolized_path(
         return Ok(None);
     }
 
-    // Replace Utf8/Binary columns with symbolized UInt32 columns.
-    // Non-string columns are kept as-is.
-    let mut replaced_cols: Vec<Series> = Vec::with_capacity(cols.len());
-    for col in cols {
-        match col.data_type() {
+    // Symbolize each Utf8/Binary col into a dense u32 ID vector; non-string
+    // cols hold `None` so the slot is positionally aligned with `cols`.
+    let mut symbols: Vec<Option<Vec<u32>>> = Vec::with_capacity(cols.len());
+    for col in &cols {
+        let syms = match col.data_type() {
             DataType::Utf8 => {
-                let utf8_arr = col.utf8()?;
-                let arrow_arr = utf8_arr.as_arrow()?;
+                let arrow_arr = col.utf8()?.as_arrow()?;
                 let nulls = col.nulls();
                 let null_count = nulls.map_or(0, |nb| nb.null_count());
                 let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
-                let syms =
-                    symbolize_column(col.len(), null_count, |i| arrow_arr.value(i), is_null)?;
-                replaced_cols.push(UInt32Array::from_vec(col.name(), syms).into_series());
+                Some(symbolize_column(
+                    col.len(),
+                    null_count,
+                    |i| arrow_arr.value(i),
+                    is_null,
+                )?)
             }
             DataType::Binary => {
-                let bin_arr = col.binary()?;
-                let arrow_arr = bin_arr.as_arrow()?;
+                let arrow_arr = col.binary()?.as_arrow()?;
                 let nulls = col.nulls();
                 let null_count = nulls.map_or(0, |nb| nb.null_count());
                 let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
-                let syms =
-                    symbolize_column(col.len(), null_count, |i| arrow_arr.value(i), is_null)?;
-                replaced_cols.push(UInt32Array::from_vec(col.name(), syms).into_series());
+                Some(symbolize_column(
+                    col.len(),
+                    null_count,
+                    |i| arrow_arr.value(i),
+                    is_null,
+                )?)
             }
-            _ => replaced_cols.push(col.clone()),
-        }
+            _ => None,
+        };
+        symbols.push(syms);
     }
 
-    // Run the generic hash path on the symbolized columns.
+    // Fast path: exactly two string cols → pack the two u32 symbol IDs into
+    // a single u64 key and group with a typed `FnvHashMap<u64, u32>`, so the
+    // hot loop is just integer hashing and equality. This skips the
+    // per-row comparator closure and `IndexHash` dispatch that the generic
+    // hash path retains even on u32 cols.
+    if cols.len() == 2 && symbols[0].is_some() && symbols[1].is_some() {
+        let syms0 = symbols[0].as_ref().unwrap();
+        let syms1 = symbols[1].as_ref().unwrap();
+        return Ok(Some(agg_packed_u64_inner(
+            syms0,
+            syms1,
+            num_rows,
+            accumulators,
+        )?));
+    }
+
+    // Mixed shape (string + non-string, or 3+ cols): rebuild a RecordBatch
+    // with symbolized columns and run the generic hash path on it.
+    let replaced_cols: Vec<Series> = cols
+        .into_iter()
+        .zip(symbols)
+        .map(|(col, syms_opt)| match syms_opt {
+            Some(syms) => UInt32Array::from_vec(col.name(), syms).into_series(),
+            None => col.clone(),
+        })
+        .collect();
     let symbolized_rb = RecordBatch::from_nonempty_columns(replaced_cols)?;
     let indices = agg_generic_hash_path(&symbolized_rb, accumulators)?;
     Ok(Some(indices))
 }
 
-// ---------------------------------------------------------------------------
-// Two-column packed-u64 path (Utf8/Binary × Utf8/Binary)
-// ---------------------------------------------------------------------------
-
-/// Symbolize a Utf8 or Binary column into dense u32 IDs.
-/// Returns None if the column is neither Utf8 nor Binary.
-fn symbolize_string_col(col: &Series) -> DaftResult<Option<Vec<u32>>> {
-    match col.data_type() {
-        DataType::Utf8 => {
-            let arrow_arr = col.utf8()?.as_arrow()?;
-            let nulls = col.nulls();
-            let null_count = nulls.map_or(0, |nb| nb.null_count());
-            let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
-            Ok(Some(symbolize_column(
-                col.len(),
-                null_count,
-                |i| arrow_arr.value(i),
-                is_null,
-            )?))
-        }
-        DataType::Binary => {
-            let arrow_arr = col.binary()?.as_arrow()?;
-            let nulls = col.nulls();
-            let null_count = nulls.map_or(0, |nb| nb.null_count());
-            let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
-            Ok(Some(symbolize_column(
-                col.len(),
-                null_count,
-                |i| arrow_arr.value(i),
-                is_null,
-            )?))
-        }
-        _ => Ok(None),
-    }
-}
-
-/// Optimized grouping for exactly two Utf8/Binary group-by columns.
-///
-/// Symbolizes each string column into a dense u32, then packs the two
-/// symbol IDs into a single u64 key. Grouping runs against a typed
-/// `FnvHashMap<u64, u32>` so the hot loop is just integer hashing and
-/// equality — no per-row comparator closure or dynamic-typed dispatch
-/// over `Series`.
-///
-/// Returns `None` when the group-by shape doesn't match (column count
-/// other than 2, either column is not Utf8/Binary, or average string
-/// bytes per row falls below `MIN_AVG_STRING_BYTES_PER_ROW`). Short-
-/// string shapes like TPC-H Q1's CHAR(1) `l_returnflag` /
-/// `l_linestatus` fall through to the existing generic hash path on
-/// raw strings — the symbolize pass costs more than the saved
-/// per-row hash/compare work for very short keys.
-fn agg_packed_u64_path(
-    groupby_physical: &RecordBatch,
+/// Group two pre-symbolized u32 columns by packing each `(sym0, sym1)` pair
+/// into a u64 key and probing a typed `FnvHashMap<u64, u32>`. The two symbol
+/// spaces sit in disjoint 32-bit halves so distinct `(sym0, sym1)` pairs
+/// always yield distinct packed keys. Null-equals-null is preserved by
+/// `symbolize_column` reserving symbol ID 0 for null in each column that
+/// contains nulls — both-null rows share a unique packed key.
+fn agg_packed_u64_inner(
+    syms0: &[u32],
+    syms1: &[u32],
+    num_rows: usize,
     accumulators: &mut [AggAccumulator],
-) -> DaftResult<Option<Vec<u64>>> {
-    if groupby_physical.num_columns() != 2 {
-        return Ok(None);
-    }
-    let cols = groupby_physical.as_materialized_series();
-    let num_rows = groupby_physical.len();
-
-    // Tally string bytes across both Utf8/Binary cols; bail if either
-    // column is non-string or the avg bytes per row falls below the
-    // symbolize threshold.
-    let mut total_string_bytes: usize = 0;
-    for col in &cols {
-        let bytes = match col.data_type() {
-            DataType::Utf8 => {
-                let arrow_arr = col.utf8()?.as_arrow()?;
-                let offsets = arrow_arr.offsets();
-                offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0)
-            }
-            DataType::Binary => {
-                let arrow_arr = col.binary()?.as_arrow()?;
-                let offsets = arrow_arr.offsets();
-                offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0)
-            }
-            _ => return Ok(None),
-        };
-        total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
-    }
-    if total_string_bytes < num_rows.saturating_mul(MIN_AVG_STRING_BYTES_PER_ROW) {
-        return Ok(None);
-    }
-
-    let Some(syms0) = symbolize_string_col(cols[0])? else {
-        return Ok(None);
-    };
-    let Some(syms1) = symbolize_string_col(cols[1])? else {
-        return Ok(None);
-    };
-
+) -> DaftResult<Vec<u64>> {
     let initial_capacity = std::cmp::min(num_rows, 1024).max(1);
-
     let mut group_map = FnvHashMap::<u64, u32>::with_capacity_and_hasher(
         initial_capacity,
         BuildHasherDefault::default(),
@@ -1085,14 +1034,6 @@ fn agg_packed_u64_path(
     let mut group_sizes: Vec<u64> = Vec::with_capacity(initial_capacity);
 
     for row_idx in 0..num_rows {
-        // Pack the two u32 symbol IDs into a single u64 key. The two symbol
-        // spaces sit in disjoint bit halves, so distinct (sym0, sym1) pairs
-        // always yield distinct packed keys and grouping semantics are
-        // preserved. Null-equals-null also holds: when a column has nulls,
-        // `symbolize_column` reserves ID 0 for null so both-null rows share
-        // a unique key; when a column is non-nullable, ID 0 may be a real
-        // value, but the disjoint-bit-halves property still prevents any
-        // cross-column collisions.
         let packed = ((syms0[row_idx] as u64) << 32) | (syms1[row_idx] as u64);
         let gid = match group_map.entry(packed) {
             Vacant(e) => {
@@ -1122,7 +1063,7 @@ fn agg_packed_u64_path(
         group_sizes,
     };
     accumulate(accumulators, &result);
-    Ok(Some(result.groupkey_indices))
+    Ok(result.groupkey_indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,14 +1145,12 @@ impl RecordBatch {
                 Some(indices) => indices,
                 None => agg_generic_hash_path(&groupby_physical, &mut accumulators)?,
             }
-        } else if let Some(indices) = agg_packed_u64_path(&groupby_physical, &mut accumulators)? {
-            // Two Utf8/Binary cols: symbolize + pack into u64 → typed FNV map.
-            indices
-        } else if let Some(indices) = agg_symbolized_path(&groupby_physical, &mut accumulators)? {
-            // Mixed shape with long string keys: symbolize → generic hash path.
-            indices
         } else {
-            agg_generic_hash_path(&groupby_physical, &mut accumulators)?
+            // Try symbolized path when string/binary columns are present.
+            match agg_symbolized_path(&groupby_physical, &mut accumulators)? {
+                Some(indices) => indices,
+                None => agg_generic_hash_path(&groupby_physical, &mut accumulators)?,
+            }
         };
 
         // 4. Construct output: group keys + aggregated columns.
@@ -2245,7 +2184,8 @@ mod tests {
     }
 
     /// Multi-column groupby with two long-string keys and count/sum/min/max
-    /// aggs. Routed to the packed-u64 path (two Utf8 cols → symbolize + pack);
+    /// aggs. Above the avg-bytes gate, so `agg_symbolized_path` activates
+    /// and (since both cols are strings) takes the packed-u64 fast path;
     /// the result must still match the fallback.
     #[test]
     fn test_inline_multi_col_long_strings_matches_fallback() {
@@ -2299,10 +2239,9 @@ mod tests {
     }
 
     /// Short-string two-column groupby (CHAR(1)-style keys, TPC-H Q1 shape).
-    /// Falls below both `agg_packed_u64_path` and `agg_symbolized_path` gates
-    /// (avg bytes per row < `MIN_AVG_STRING_BYTES_PER_ROW`), so dispatch lands
-    /// on the generic hash path on raw strings; the result must still match
-    /// the fallback.
+    /// Falls below `agg_symbolized_path`'s `MIN_AVG_STRING_BYTES_PER_ROW`
+    /// gate, so dispatch lands on the generic hash path on raw strings; the
+    /// result must still match the fallback.
     #[test]
     fn test_inline_multi_col_short_strings_matches_fallback() {
         let key1 = Series::from_arrow(
@@ -2562,7 +2501,7 @@ mod tests {
     }
 
     /// CHAR(1)-style short keys (TPC-H Q1 shape) with Float64 vals and
-    /// Count(Valid). Falls below `agg_packed_u64_path`'s avg-bytes gate so
+    /// Count(Valid). Falls below `agg_symbolized_path`'s avg-bytes gate so
     /// dispatch lands on the generic hash path; verifies correctness on the
     /// gate's short-string skip branch.
     #[test]
