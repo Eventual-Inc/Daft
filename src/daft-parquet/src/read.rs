@@ -254,7 +254,7 @@ async fn read_parquet_into_arrow(
 
     let data_fut = read_parquet(uri, io_client.clone(), io_stats.clone(), opts);
     let metadata_fut =
-        crate::metadata::fetch_parquet_metadata(uri, None, io_client, io_stats, None, None);
+        crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
     let (rb, parquet_metadata) =
         futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
     let num_rows_read = rb.len();
@@ -458,7 +458,7 @@ pub async fn read_parquet_schema_and_metadata(
     schema_inference_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<(Schema, DaftParquetMetadata)> {
-    let metadata = crate::metadata::fetch_parquet_metadata(
+    let metadata = crate::metadata::read_parquet_metadata(
         uri,
         None,
         io_client,
@@ -478,7 +478,7 @@ pub async fn read_parquet_metadata(
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<DaftParquetMetadata> {
-    let metadata = crate::metadata::fetch_parquet_metadata(
+    let metadata = crate::metadata::read_parquet_metadata(
         uri,
         None,
         io_client,

@@ -428,7 +428,7 @@ pub(super) async fn fetch_remote_chunk_source(
     field_id_mapping: Option<&BTreeMap<i32, Field>>,
 ) -> DaftResult<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
     let (parquet_metadata_res, file_size_res) = futures::future::join(
-        crate::metadata::fetch_parquet_metadata(
+        crate::metadata::read_parquet_metadata(
             uri,
             None,
             io_client.clone(),
