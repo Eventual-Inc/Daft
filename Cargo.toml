@@ -31,6 +31,7 @@ daft-file = {path = "src/daft-file", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
+daft-functions-variant = {path = "src/daft-functions-variant", default-features = false}
 daft-functions-list = {path = "src/daft-functions-list", default-features = false}
 daft-functions-serde = {path = "src/daft-functions-serde", default-features = false}
 daft-functions-temporal = {path = "src/daft-functions-temporal", default-features = false}
@@ -91,6 +92,7 @@ python = [
   "daft-file/python",
   "daft-functions-binary/python",
   "daft-functions-json/python",
+  "daft-functions-variant/python",
   "daft-functions-list/python",
   "daft-functions-utf8/python",
   "daft-functions/python",
@@ -209,6 +211,7 @@ members = [
   "src/daft-functions",
   "src/daft-functions-binary",
   "src/daft-functions-json",
+  "src/daft-functions-variant",
   "src/daft-functions-list",
   "src/daft-functions-uri",
   "src/daft-functions-tokenize",
@@ -292,6 +295,7 @@ daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
 daft-functions-json = {path = "src/daft-functions-json"}
+daft-functions-variant = {path = "src/daft-functions-variant"}
 daft-functions-list = {path = "src/daft-functions-list"}
 daft-functions-temporal = {path = "src/daft-functions-temporal"}
 daft-functions-tokenize = {path = "src/daft-functions-tokenize"}

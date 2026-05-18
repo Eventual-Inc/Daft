@@ -1,0 +1,28 @@
+[dependencies]
+arrow-array = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+parquet-variant = {workspace = true}
+parquet-variant-json = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+typetag = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-variant"
+edition.workspace = true
+version.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]

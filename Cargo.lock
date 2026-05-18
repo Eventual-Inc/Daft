@@ -2318,6 +2318,7 @@ dependencies = [
  "daft-functions-tokenize",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-functions-variant",
  "daft-geo",
  "daft-hash",
  "daft-image",
@@ -2862,6 +2863,21 @@ dependencies = [
  "serde",
  "typetag",
  "unicode-normalization",
+]
+
+[[package]]
+name = "daft-functions-variant"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-array 58.3.0",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "parquet-variant",
+ "parquet-variant-json",
+ "serde",
+ "serde_json",
+ "typetag",
 ]
 
 [[package]]
