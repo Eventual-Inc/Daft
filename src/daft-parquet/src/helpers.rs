@@ -18,22 +18,17 @@ use parquet::{
 
 use crate::statistics::row_group_metadata_to_table_stats;
 
-/// Column names a predicate references, or `None` if not pushable (no cols
-/// referenced, or any col is missing from the file schema).
+/// Returns column names referenced by `predicate`, or `None` if the predicate
+/// is not pushable (no columns, or any column is missing from `daft_schema`).
 pub fn predicate_pushable_cols(
     predicate: &ExprRef,
     daft_schema: &Schema,
 ) -> Option<HashSet<String>> {
-    let filter_columns: Vec<String> = get_required_columns(predicate);
-    if filter_columns.is_empty() {
+    let cols: Vec<String> = get_required_columns(predicate);
+    if cols.is_empty() || cols.iter().any(|c| daft_schema.get_field(c).is_err()) {
         return None;
     }
-    for col in &filter_columns {
-        if daft_schema.get_field(col).is_err() {
-            return None;
-        }
-    }
-    Some(filter_columns.into_iter().collect())
+    Some(cols.into_iter().collect())
 }
 
 /// Substitute null for any column reference not present in `schema` (Iceberg

@@ -5,22 +5,74 @@ use arrow::{
     datatypes::{Field as ArrowField, Schema as ArrowSchema},
 };
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{RuntimeTask, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use parquet::{arrow::arrow_reader::RowSelection, file::metadata::ParquetMetaData};
+use tokio::sync::mpsc;
 
 use super::{
-    chunk_source::ChunkSource,
+    chunk_source::{ChunkSource, OffsetBytes},
     field_reader::{decode_one_streaming, leaves_for_top_fields},
     util::{parquet_err, project_to_schema, truncate_mask_to_n_trues},
 };
 use crate::helpers::substitute_missing_cols;
 
-/// Standard per-RG path: pre-filter the phase-1 predicate arrays once, then
-/// spawn one streaming decoder per data column and zip chunks into batches.
+type ColRx = mpsc::Receiver<DaftResult<ArrayRef>>;
+type ColHandle = RuntimeTask<DaftResult<()>>;
+
+fn err_stream<T: Send + 'static>(e: common_error::DaftError) -> BoxStream<'static, DaftResult<T>> {
+    futures::stream::once(async move { Err(e) }).boxed()
+}
+
+fn schema_from_indices(arrow_schema: &ArrowSchema, indices: &[usize]) -> Arc<ArrowSchema> {
+    let fields: Vec<Arc<ArrowField>> = indices
+        .iter()
+        .map(|&i| Arc::new(arrow_schema.field(i).clone()))
+        .collect();
+    Arc::new(ArrowSchema::new(fields))
+}
+
+fn spawn_col_decoders(
+    col_indices: &[usize],
+    rg_chunks: &Arc<std::collections::HashMap<usize, OffsetBytes>>,
+    metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<ArrowSchema>,
+    selection: Option<&RowSelection>,
+    rg_idx: usize,
+    chunk_size: usize,
+) -> (Vec<ColRx>, Vec<ColHandle>) {
+    let compute = get_compute_runtime();
+    let mut rxs = Vec::with_capacity(col_indices.len());
+    let mut handles = Vec::with_capacity(col_indices.len());
+    for &col_idx in col_indices {
+        let (tx, rx) = mpsc::channel::<DaftResult<ArrayRef>>(1);
+        let chunks = rg_chunks.clone();
+        let metadata = metadata.clone();
+        let arrow_field = arrow_schema.field(col_idx).clone();
+        let sel = selection.cloned();
+        let h = compute.spawn(async move {
+            decode_one_streaming(
+                chunks,
+                metadata,
+                rg_idx,
+                col_idx,
+                arrow_field,
+                sel,
+                chunk_size,
+                tx,
+            )
+            .await;
+            DaftResult::Ok(())
+        });
+        handles.push(h);
+        rxs.push(rx);
+    }
+    (rxs, handles)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process_rg_streaming(
     rg_pos: usize,
@@ -39,25 +91,17 @@ pub(super) async fn process_rg_streaming(
     predicate_for_fallback: Option<ExprRef>,
     predicate_pushed: bool,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
-    // Await this RG's pre-spawned coalesced fetch. Later RGs continue in the
-    // background — overlaps remote I/O with decode.
     let data_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, data_col_indices.as_ref()).into();
-    // Final read for this RG → evict from RemoteChunkSource so the cached
-    // `Arc<RgBytesMap>` is dropped; the slices held by `OffsetBytes` here keep
-    // the underlying buffer alive only until the decoders finish.
+    // Final read for this RG → evict so the cached `Arc<RgBytesMap>` is dropped.
     let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves, true).await {
         Ok(c) => Arc::new(c),
-        Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
+        Err(e) => return err_stream(e),
     };
-    // Pre-filter pred arrays once; sliced per-chunk for zero-copy assembly.
-    // Mask length always equals pred-array length (both derived from the same
-    // RG row count post-base-selection), so a filter error here is a true
-    // invariant violation — panic rather than silently return mis-aligned rows.
-    let filtered_pred: Vec<ArrayRef> = pred_col_indices
-        .iter()
-        .enumerate()
-        .map(|(pp, _)| {
+    // Pred mask length must equal pred-array length within an RG (both derived from
+    // the same row count post-base-selection) — filter failure is an invariant break.
+    let filtered_pred: Vec<ArrayRef> = (0..pred_col_indices.len())
+        .map(|pp| {
             let arr = pred_arrays[pp][rg_pos].clone();
             match &pred_masks[rg_pos] {
                 Some(mask) => arrow::compute::filter(&arr, mask)
@@ -76,56 +120,29 @@ pub(super) async fn process_rg_streaming(
     };
 
     if total_rows_for_rg == 0 {
-        // Empty RG → empty stream. Emitting a 0-row schema-bearing batch
-        // would make streaming writers (e.g. iceberg) land an empty snapshot.
-        // The bulk path preserves schema via `read_parquet`.
+        // Empty stream (not 0-row schema-bearing) — streaming writers would otherwise
+        // land an empty snapshot. The bulk path preserves schema via `read_parquet`.
         return futures::stream::empty().boxed();
     }
     let _ = return_daft_schema;
 
-    let compute = get_compute_runtime();
-    let mut col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>> =
-        Vec::with_capacity(data_col_indices.len());
-    let mut col_handles: Vec<_> = Vec::with_capacity(data_col_indices.len());
-    for &col_idx in data_col_indices.iter() {
-        let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<ArrayRef>>(1);
-        let chunks = rg_chunks.clone();
-        let metadata = metadata.clone();
-        let arrow_field = arrow_schema.field(col_idx).clone();
-        let sel = selection.clone();
-        let h = compute.spawn(async move {
-            decode_one_streaming(
-                chunks,
-                metadata,
-                rg_idx,
-                col_idx,
-                arrow_field,
-                sel,
-                chunk_size,
-                tx,
-            )
-            .await;
-            DaftResult::Ok(())
-        });
-        col_handles.push(h);
-        col_receivers.push(rx);
-    }
+    let (col_receivers, _col_handles) = spawn_col_decoders(
+        &data_col_indices,
+        &rg_chunks,
+        &metadata,
+        &arrow_schema,
+        selection.as_ref(),
+        rg_idx,
+        chunk_size,
+    );
 
-    struct ZipState {
-        col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>>,
-        _col_handles: Vec<common_runtime::RuntimeTask<DaftResult<()>>>,
-        rows_so_far: usize,
-        total_rows_for_rg: usize,
-        filtered_pred: Vec<ArrayRef>,
-    }
-
-    let state = ZipState {
+    let state = (
         col_receivers,
-        _col_handles: col_handles,
-        rows_so_far: 0,
+        _col_handles,
+        0usize,
         total_rows_for_rg,
         filtered_pred,
-    };
+    );
 
     futures::stream::unfold(state, move |mut state| {
         let arrow_schema = arrow_schema.clone();
@@ -135,11 +152,10 @@ pub(super) async fn process_rg_streaming(
         let return_daft_schema = return_daft_schema.clone();
         let predicate_for_fallback = predicate_for_fallback.clone();
         async move {
-            // With data cols: recv one chunk per col. Without: emit pred slices directly.
             let chunk_rows: usize;
             let data_chunks: Vec<ArrayRef> = if !data_col_indices.is_empty() {
-                let mut got = Vec::with_capacity(state.col_receivers.len());
-                for r in &mut state.col_receivers {
+                let mut got = Vec::with_capacity(state.0.len());
+                for r in &mut state.0 {
                     match r.recv().await {
                         Some(Ok(a)) => got.push(a),
                         Some(Err(e)) => return Some((Err(e), state)),
@@ -152,7 +168,7 @@ pub(super) async fn process_rg_streaming(
                 chunk_rows = got[0].len();
                 got
             } else {
-                let remaining = state.total_rows_for_rg.saturating_sub(state.rows_so_far);
+                let remaining = state.3.saturating_sub(state.2);
                 if remaining == 0 {
                     return None;
                 }
@@ -160,14 +176,12 @@ pub(super) async fn process_rg_streaming(
                 Vec::new()
             };
 
-            // Assemble output cols from pred slices and/or data chunks.
             let mut fields = Vec::with_capacity(read_col_indices.len());
             let mut arrays: Vec<ArrayRef> = Vec::with_capacity(read_col_indices.len());
             for &col_idx in read_col_indices.iter() {
                 fields.push(Arc::new(arrow_schema.field(col_idx).clone()));
                 if let Some(pp) = pred_col_indices.iter().position(|&i| i == col_idx) {
-                    let sliced = state.filtered_pred[pp].slice(state.rows_so_far, chunk_rows);
-                    arrays.push(sliced);
+                    arrays.push(state.4[pp].slice(state.2, chunk_rows));
                 } else {
                     let dp = data_col_indices
                         .iter()
@@ -177,33 +191,22 @@ pub(super) async fn process_rg_streaming(
                 }
             }
 
-            let schema_a = Arc::new(ArrowSchema::new(fields));
-            let arrow_batch = match ArrowRecordBatch::try_new(schema_a, arrays) {
-                Ok(b) => b,
-                Err(e) => return Some((Err(parquet_err(e)), state)),
-            };
-            let mut daft_batch = match RecordBatch::try_from(&arrow_batch) {
+            let batch_res = ArrowRecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), arrays)
+                .map_err(parquet_err)
+                .and_then(|b| RecordBatch::try_from(&b));
+            let mut daft_batch = match batch_res {
                 Ok(b) => b,
                 Err(e) => return Some((Err(e), state)),
             };
 
-            // Predicate fallback when not pushed: eval per chunk.
             if let Some(ref pred) = predicate_for_fallback
                 && !predicate_pushed
             {
-                let pred = match substitute_missing_cols(pred, &daft_batch.schema) {
-                    Ok(p) => p,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                let bound = match BoundExpr::try_new(pred, &daft_batch.schema) {
-                    Ok(b) => b,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                let mask = match daft_batch.eval_expression(&bound) {
-                    Ok(m) => m,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                daft_batch = match daft_batch.mask_filter(&mask) {
+                let eval = substitute_missing_cols(pred, &daft_batch.schema)
+                    .and_then(|p| BoundExpr::try_new(p, &daft_batch.schema))
+                    .and_then(|bound| daft_batch.eval_expression(&bound))
+                    .and_then(|mask| daft_batch.mask_filter(&mask));
+                daft_batch = match eval {
                     Ok(b) => b,
                     Err(e) => return Some((Err(e), state)),
                 };
@@ -214,17 +217,13 @@ pub(super) async fn process_rg_streaming(
                 Err(e) => return Some((Err(e), state)),
             };
 
-            state.rows_so_far += chunk_rows;
+            state.2 += chunk_rows;
             Some((Ok(projected), state))
         }
     })
     .boxed()
 }
 
-/// Chunked-pred path: used when the projection is fully covered by predicate
-/// columns. Streams pred cols chunk-by-chunk, evaluates per chunk, filters
-/// in-place. Honors a shared remaining-rows counter for cross-RG limit
-/// accounting.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process_rg_chunked_pred(
     rg_idx: usize,
@@ -240,71 +239,38 @@ pub(super) async fn process_rg_chunked_pred(
     return_daft_schema: Arc<Schema>,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
     use std::sync::atomic::Ordering;
-    let compute = get_compute_runtime();
 
     let pred_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, pred_col_indices.as_ref()).into();
-    // Chunked-pred is the sole phase-2 path for this RG (no separate data
-    // read); safe to evict the cached `Arc<RgBytesMap>` here.
+    // Sole phase-2 path for this RG — safe to evict the cached `Arc<RgBytesMap>`.
     let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves, true).await {
         Ok(c) => Arc::new(c),
-        Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
+        Err(e) => return err_stream(e),
     };
 
-    let mut col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>> =
-        Vec::with_capacity(pred_col_indices.len());
-    let mut col_handles: Vec<_> = Vec::with_capacity(pred_col_indices.len());
-    for &col_idx in pred_col_indices.iter() {
-        let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<ArrayRef>>(1);
-        let chunks = rg_chunks.clone();
-        let metadata = metadata.clone();
-        let arrow_field = arrow_schema.field(col_idx).clone();
-        let sel = selection.clone();
-        let h = compute.spawn(async move {
-            decode_one_streaming(
-                chunks,
-                metadata,
-                rg_idx,
-                col_idx,
-                arrow_field,
-                sel,
-                chunk_size,
-                tx,
-            )
-            .await;
-            DaftResult::Ok(())
-        });
-        col_handles.push(h);
-        col_receivers.push(rx);
-    }
+    let (col_receivers, _col_handles) = spawn_col_decoders(
+        &pred_col_indices,
+        &rg_chunks,
+        &metadata,
+        &arrow_schema,
+        selection.as_ref(),
+        rg_idx,
+        chunk_size,
+    );
 
     // Build schemas + bind predicate once per RG (was ~50µs/chunk overhead).
-    let chunk_arrow_schema = {
-        let fields: Vec<Arc<ArrowField>> = pred_col_indices
-            .iter()
-            .map(|&i| Arc::new(arrow_schema.field(i).clone()))
-            .collect();
-        Arc::new(ArrowSchema::new(fields))
-    };
+    let chunk_arrow_schema = schema_from_indices(&arrow_schema, &pred_col_indices);
     let chunk_daft_schema = match Schema::try_from(chunk_arrow_schema.as_ref()) {
         Ok(s) => Arc::new(s),
-        Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
+        Err(e) => return err_stream(e),
     };
-    let bound_pred = match substitute_missing_cols(&predicate, &chunk_daft_schema) {
-        Ok(p) => match BoundExpr::try_new(p, &chunk_daft_schema) {
-            Ok(b) => Arc::new(b),
-            Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
-        },
-        Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
+    let bound_pred = match substitute_missing_cols(&predicate, &chunk_daft_schema)
+        .and_then(|p| BoundExpr::try_new(p, &chunk_daft_schema))
+    {
+        Ok(b) => Arc::new(b),
+        Err(e) => return err_stream(e),
     };
-    let out_arrow_schema = {
-        let fields: Vec<Arc<ArrowField>> = read_col_indices
-            .iter()
-            .map(|&i| Arc::new(arrow_schema.field(i).clone()))
-            .collect();
-        Arc::new(ArrowSchema::new(fields))
-    };
-    // read_col → pred slot mapping for output assembly.
+    let out_arrow_schema = schema_from_indices(&arrow_schema, &read_col_indices);
     let out_to_pred_slot: Arc<[usize]> = read_col_indices
         .iter()
         .map(|&col_idx| {
@@ -316,14 +282,7 @@ pub(super) async fn process_rg_chunked_pred(
         .collect::<Vec<_>>()
         .into();
 
-    struct State {
-        col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>>,
-        _col_handles: Vec<common_runtime::RuntimeTask<DaftResult<()>>>,
-    }
-    let state = State {
-        col_receivers,
-        _col_handles: col_handles,
-    };
+    let state = (col_receivers, _col_handles);
 
     futures::stream::unfold(state, move |mut state| {
         let chunk_arrow_schema = chunk_arrow_schema.clone();
@@ -339,8 +298,8 @@ pub(super) async fn process_rg_chunked_pred(
                     return None;
                 }
 
-                let mut chunks = Vec::with_capacity(state.col_receivers.len());
-                for r in &mut state.col_receivers {
+                let mut chunks = Vec::with_capacity(state.0.len());
+                for r in &mut state.0 {
                     match r.recv().await {
                         Some(Ok(arr)) => chunks.push(arr),
                         Some(Err(e)) => return Some((Err(e), state)),
@@ -351,26 +310,21 @@ pub(super) async fn process_rg_chunked_pred(
                     return None;
                 }
 
-                let arrow_batch =
-                    match ArrowRecordBatch::try_new(chunk_arrow_schema.clone(), chunks.clone()) {
-                        Ok(b) => b,
-                        Err(e) => return Some((Err(parquet_err(e)), state)),
-                    };
-                let daft_batch = match RecordBatch::try_from(&arrow_batch) {
+                let batch_res =
+                    ArrowRecordBatch::try_new(chunk_arrow_schema.clone(), chunks.clone())
+                        .map_err(parquet_err)
+                        .and_then(|b| RecordBatch::try_from(&b));
+                let daft_batch = match batch_res {
                     Ok(b) => b,
                     Err(e) => return Some((Err(e), state)),
                 };
 
-                let mask_series = match daft_batch.eval_expression(&bound_pred) {
-                    Ok(m) => m,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                let bool_arr = match mask_series.bool() {
+                let bool_res = daft_batch.eval_expression(&bound_pred).and_then(|m| {
+                    let b = m.bool()?;
+                    Ok(b.as_arrow()?.clone())
+                });
+                let mut arrow_bool: BooleanArray = match bool_res {
                     Ok(b) => b,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                let mut arrow_bool: BooleanArray = match bool_arr.as_arrow() {
-                    Ok(b) => b.clone(),
                     Err(e) => return Some((Err(e), state)),
                 };
 
@@ -390,30 +344,24 @@ pub(super) async fn process_rg_chunked_pred(
 
                 let mut filtered = Vec::with_capacity(chunks.len());
                 for arr in &chunks {
-                    let f = match arrow::compute::filter(arr, &arrow_bool) {
-                        Ok(f) => f,
+                    match arrow::compute::filter(arr, &arrow_bool) {
+                        Ok(f) => filtered.push(f),
                         Err(e) => return Some((Err(parquet_err(e)), state)),
-                    };
-                    filtered.push(f);
+                    }
                 }
 
                 let arrays: Vec<ArrayRef> = out_to_pred_slot
                     .iter()
                     .map(|&pp| filtered[pp].clone())
                     .collect();
-                let out_batch = match ArrowRecordBatch::try_new(out_arrow_schema.clone(), arrays) {
-                    Ok(b) => b,
-                    Err(e) => return Some((Err(parquet_err(e)), state)),
-                };
-                let daft_out = match RecordBatch::try_from(&out_batch) {
-                    Ok(b) => b,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                let projected = match project_to_schema(daft_out, &return_daft_schema) {
-                    Ok(b) => b,
-                    Err(e) => return Some((Err(e), state)),
-                };
-                return Some((Ok(projected), state));
+                let out_res = ArrowRecordBatch::try_new(out_arrow_schema.clone(), arrays)
+                    .map_err(parquet_err)
+                    .and_then(|b| RecordBatch::try_from(&b))
+                    .and_then(|b| project_to_schema(b, &return_daft_schema));
+                return Some(match out_res {
+                    Ok(p) => (Ok(p), state),
+                    Err(e) => (Err(e), state),
+                });
             }
         }
     })
