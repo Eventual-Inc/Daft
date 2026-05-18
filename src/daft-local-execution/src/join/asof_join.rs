@@ -120,7 +120,7 @@ fn is_nearer(
         }
         DataType::Float32 => extract_and_cmp_float!(Float32Type),
         DataType::Float64 => extract_and_cmp_float!(Float64Type),
-        t => panic!("nearest join: unsupported on-key type {t:?}"),
+        t => unreachable!("nearest join: unsupported on-key type {t:?}"),
     }
 }
 
