@@ -173,6 +173,7 @@ class DataType:
         interval: ClassVar[_CallableSingletonDataType]
         python: ClassVar[_CallableSingletonDataType]
         uuid: ClassVar[_CallableSingletonDataType]
+        variant: ClassVar[_CallableSingletonDataType]
 
     @classmethod
     def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
@@ -1104,6 +1105,10 @@ class DataType:
         """
         return self._dtype.is_uuid()
 
+    def is_variant(self) -> builtins.bool:
+        """Check if this is a Variant type."""
+        return self._dtype.is_variant()
+
     def is_string(self) -> builtins.bool:
         """Check if this is a string type.
 
@@ -1637,6 +1642,7 @@ for _simple_name in (
     "interval",
     "python",
     "uuid",
+    "variant",
 ):
     _DATATYPE_CONSTRUCTOR_SET.add(_simple_name)
     setattr(DataType, _simple_name, _make_simple_singleton(_simple_name))

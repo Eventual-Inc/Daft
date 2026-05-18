@@ -184,6 +184,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn variant() -> PyResult<Self> {
+        Ok(DataType::Variant.into())
+    }
+
+    #[staticmethod]
     pub fn string() -> PyResult<Self> {
         Ok(DataType::Utf8.into())
     }
@@ -480,6 +485,10 @@ impl PyDataType {
 
     pub fn is_uuid(&self) -> bool {
         self.dtype.is_uuid()
+    }
+
+    pub fn is_variant(&self) -> bool {
+        self.dtype.is_variant()
     }
 
     pub fn is_string(&self) -> bool {
