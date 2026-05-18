@@ -22,6 +22,8 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
+// Worst-case buffered memory is `num_workers × num_inputs ×
+// REPARTITION_BUFFER_THRESHOLD_BYTES` — one accumulator per (worker, input).
 const REPARTITION_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024;
 
 /// Per-(worker, input) accumulator. Morsels are buffered until they cross
