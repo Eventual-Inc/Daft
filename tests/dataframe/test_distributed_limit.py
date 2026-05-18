@@ -120,3 +120,66 @@ def test_is_done_transitions():
     assert not actor.is_done()
     actor.claim("t1", 5)
     assert actor.is_done()
+
+
+@pytest.fixture(scope="module")
+def ray_local_single_cpu():
+    """Local Ray with one CPU so flotilla dispatches one SwordfishTask at a time.
+
+    Serial dispatch guarantees that partition 0 is the first to call
+    `claim()` (and thus a limit contributor); when its task crashes, the
+    retry exercises the rewind path deterministically.
+    """
+    if ray.is_initialized():
+        ray.shutdown()
+    ray.init(num_cpus=1, include_dashboard=False)
+    yield
+    ray.shutdown()
+
+
+def test_distributed_limit_retries_after_worker_death(ray_local_single_cpu, tmp_path):
+    """`.limit(N)` must still produce N rows when a SwordfishTask crashes mid-claim.
+
+    Without the rewind in `_LimitCounterImpl.start_task`, the failed attempt's
+    claim stays charged against the global budget while its slice never reaches
+    downstream — the retry then sees a smaller budget and the output undercounts.
+    """
+    import daft
+    from daft import DataType, col, func
+
+    daft.set_runner_ray(noop_if_initialized=True)
+
+    marker = str(tmp_path / "crashed_once")
+
+    @func(return_dtype=DataType.int64())
+    def crash_once_on_zero(v: int) -> int:
+        import os
+
+        if v == 0 and not os.path.exists(marker):
+            with open(marker, "w") as f:
+                f.write("crashed")
+            # Hard-exit the swordfish actor process. Ray surfaces this as
+            # ActorDiedError → RayTaskResult.worker_died() → dispatcher marks
+            # WorkerDied. flotilla's RayWorkerManager.refresh_workers loop
+            # then spawns a fresh actor on this node within ~5s, onto which
+            # the failed task is re-dispatched. The retry's
+            # DistributedLimitSink calls start_task(input_id), which refunds
+            # the crashed attempt's prior claim before claiming again.
+            os._exit(1)
+        return v
+
+    df = daft.range(0, 15, partitions=15).limit(3).select(crash_once_on_zero(col("id")))
+    result = df.to_pydict()
+
+    import os
+
+    assert os.path.exists(marker), "UDF never crashed — retry path not exercised"
+    # Single-CPU serialization makes contributor order deterministic: task 0
+    # retries and finishes first, then tasks 1 and 2 run in sequence. Without
+    # rewind in start_task, the crashed task's row would be missing
+    # (e.g. [1, 2] instead of [0, 1, 2]).
+    assert result["id"] == [0, 1, 2], (
+        f"expected [0, 1, 2] after retry, got {result['id']}. "
+        "If 0 is missing, the limit actor failed to rewind the crashed "
+        "task's claim in start_task."
+    )
