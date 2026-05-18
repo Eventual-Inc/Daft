@@ -3,10 +3,10 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
-mod reader;
 mod helpers;
 pub mod metadata;
 mod metadata_adapter;
+mod reader;
 pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
 #[cfg(feature = "python")]
 pub mod python;
