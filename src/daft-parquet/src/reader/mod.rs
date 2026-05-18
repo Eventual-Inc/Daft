@@ -78,7 +78,7 @@ pub async fn stream_parquet(
     // With a predicate, row-count-based RG pruning is unsafe: rows survive the
     // limit only after filtering, so later RGs may still be needed.
     let prefetch_num_rows = if predicate.is_some() { None } else { num_rows };
-    let (chunk_source, arrow_metadata, effective_row_groups_owned) = open_chunk_source(
+    let (chunk_source, arrow_metadata, effective_row_groups_owned) = Box::pin(open_chunk_source(
         &source,
         columns,
         row_groups,
@@ -86,7 +86,7 @@ pub async fn stream_parquet(
         prefetch_num_rows,
         predicate.as_ref(),
         field_id_mapping.as_deref(),
-    )
+    ))
     .await?;
     let effective_row_groups: Option<&[i64]> = effective_row_groups_owned.as_deref().or(row_groups);
 
@@ -145,7 +145,7 @@ async fn open_chunk_source(
             let prefetch_cols_refs = prefetch_cols_owned
                 .as_ref()
                 .map(|v| v.iter().map(String::as_str).collect::<Vec<_>>());
-            fetch_remote_chunk_source(
+            Box::pin(fetch_remote_chunk_source(
                 uri,
                 io_client.clone(),
                 io_stats.clone(),
@@ -154,7 +154,7 @@ async fn open_chunk_source(
                 start_offset,
                 num_rows,
                 field_id_mapping,
-            )
+            ))
             .await
         }
     }
@@ -792,7 +792,7 @@ pub async fn read_parquet(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<RecordBatch> {
     use futures::TryStreamExt;
-    let (schema, stream) = stream_parquet(
+    let (schema, stream) = Box::pin(stream_parquet(
         source,
         columns,
         start_offset,
@@ -803,7 +803,7 @@ pub async fn read_parquet(
         batch_size,
         field_id_mapping,
         delete_rows,
-    )
+    ))
     .await?;
     let batches: Vec<RecordBatch> = stream.try_collect().await?;
     if batches.is_empty() {

@@ -192,7 +192,7 @@ pub async fn stream_parquet(
     let mut local_path = String::new();
     let source = make_source(uri, &mut local_path, io_client, io_stats)?;
 
-    let (schema, table_stream) = crate::reader::stream_parquet(
+    let (schema, table_stream) = Box::pin(crate::reader::stream_parquet(
         source,
         columns_ref.as_deref(),
         opts.start_offset,
@@ -203,7 +203,7 @@ pub async fn stream_parquet(
         opts.batch_size,
         opts.field_id_mapping,
         opts.delete_rows.as_deref(),
-    )
+    ))
     .await?;
 
     let mut remaining_rows = opts.num_rows.map(|limit| limit as i64);
@@ -235,7 +235,7 @@ pub async fn read_parquet(
     let mut local_path = String::new();
     let source = make_source(uri, &mut local_path, io_client, io_stats)?;
 
-    crate::reader::read_parquet(
+    Box::pin(crate::reader::read_parquet(
         source,
         columns_ref.as_deref(),
         opts.start_offset,
@@ -246,7 +246,7 @@ pub async fn read_parquet(
         opts.batch_size,
         opts.field_id_mapping,
         opts.delete_rows.as_deref(),
-    )
+    ))
     .await
 }
 
@@ -268,7 +268,7 @@ async fn read_parquet_into_arrow(
     let metadata_fut =
         crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
     let (rb, parquet_metadata) =
-        futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
+        Box::pin(futures::future::try_join(data_fut, metadata_fut.err_into())).await?;
     let num_rows_read = rb.len();
 
     let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
@@ -314,7 +314,7 @@ pub fn read_parquet_into_pyarrow(
     file_timeout_ms: Option<i64>,
 ) -> DaftResult<ParquetPyarrowChunk> {
     get_io_runtime(multithreaded_io).block_on_current_thread(async {
-        let fut = read_parquet_into_arrow(uri, io_client, io_stats, opts);
+        let fut = Box::pin(read_parquet_into_arrow(uri, io_client, io_stats, opts));
         match file_timeout_ms {
             Some(timeout) => tokio::time::timeout(Duration::from_millis(timeout as u64), fut)
                 .await
@@ -340,9 +340,9 @@ pub async fn read_parquet_bulk(
         let single_opts = single_opts_for(&opts, i);
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();
-        tokio::task::spawn(
-            async move { read_parquet(&uri, io_client, io_stats, single_opts).await },
-        )
+        tokio::task::spawn(async move {
+            Box::pin(read_parquet(&uri, io_client, io_stats, single_opts)).await
+        })
     }));
 
     let mut remaining_rows = opts.num_rows.map(|x| x as i64);
@@ -395,7 +395,13 @@ pub fn read_parquet_into_pyarrow_bulk(
                 tokio::task::spawn(async move {
                     Ok((
                         i,
-                        read_parquet_into_arrow(&uri, io_client, io_stats, single_opts).await?,
+                        Box::pin(read_parquet_into_arrow(
+                            &uri,
+                            io_client,
+                            io_stats,
+                            single_opts,
+                        ))
+                        .await?,
                     ))
                 })
             }))

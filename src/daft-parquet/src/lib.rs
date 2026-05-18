@@ -1,5 +1,3 @@
-#![allow(clippy::large_futures)]
-
 use common_error::DaftError;
 use snafu::Snafu;
 

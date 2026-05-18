@@ -93,7 +93,19 @@ impl ChunkSource {
         leaves: Arc<[usize]>,
     ) -> DaftResult<std::collections::HashMap<usize, OffsetBytes>> {
         match self {
-            Self::Local(s) => s.read_rg_chunks_sync(rg_idx, &leaves),
+            // Local pread is sync; offload to a blocking thread so we don't
+            // park a tokio compute worker on syscalls under heavy concurrency.
+            Self::Local(s) => {
+                let s = s.clone();
+                tokio::task::spawn_blocking(move || s.read_rg_chunks_sync(rg_idx, &leaves))
+                    .await
+                    .map_err(|e| {
+                        common_error::DaftError::ValueError(format!(
+                            "local pread task panicked: {}",
+                            e
+                        ))
+                    })?
+            }
             Self::Remote(s) => s.read_rg_chunks(rg_idx, &leaves).await,
         }
     }
@@ -116,11 +128,18 @@ fn coalesce_ranges(mut leaf_ranges: Vec<LeafRange>, max_gap: u64) -> Vec<RangeGr
     groups
 }
 
+#[derive(Clone)]
 pub(super) struct LocalChunkSource {
     pub(super) file: Arc<std::fs::File>,
     pub(super) file_len: u64,
     pub(super) metadata: Arc<ParquetMetaData>,
 }
+
+#[cfg(not(any(unix, windows)))]
+compile_error!(
+    "LocalChunkSource needs FileExt::read_at (unix) or seek_read (windows); \
+     no implementation for this target."
+);
 
 impl LocalChunkSource {
     const MAX_COALESCE_GAP: u64 = 64 * 1024;
@@ -406,7 +425,7 @@ pub(super) async fn fetch_remote_chunk_source(
     num_rows: Option<usize>,
     field_id_mapping: Option<&BTreeMap<i32, Field>>,
 ) -> DaftResult<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
-    let (parquet_metadata_res, file_size_res) = futures::future::join(
+    let (parquet_metadata_res, file_size_res) = Box::pin(futures::future::join(
         crate::metadata::read_parquet_metadata(
             uri,
             None,
@@ -416,7 +435,7 @@ pub(super) async fn fetch_remote_chunk_source(
             None,
         ),
         io_client.single_url_get_size(uri.to_string(), io_stats.clone()),
-    )
+    ))
     .await;
     let mut parquet_metadata = parquet_metadata_res.map_err(common_error::DaftError::from)?;
     let file_size = file_size_res
@@ -457,15 +476,24 @@ pub(super) async fn fetch_remote_chunk_source(
     // Prune by start_offset + num_rows. Pruned set is returned so the caller
     // passes it as row_groups to the stream — otherwise it tries to decode RGs
     // we never fetched.
+    //
+    // `start_offset` is a file-level row skip, so each candidate RG's position
+    // must be computed against the full file — not against an offset-from-zero
+    // walk over `candidate_rgs`. Precompute file-relative row starts up front.
+    let mut rg_file_start: Vec<usize> = Vec::with_capacity(num_rgs);
+    let mut acc = 0usize;
+    for rg_idx in 0..num_rgs {
+        rg_file_start.push(acc);
+        acc += parquet_metadata.row_group(rg_idx).num_rows() as usize;
+    }
+
     let offset = start_offset.unwrap_or(0);
     let mut active_rg_indices: Vec<usize> = Vec::with_capacity(candidate_rgs.len());
-    let mut cumulative = 0usize;
     let mut rows_remaining: i64 = num_rows.map(|n| n as i64).unwrap_or(i64::MAX);
     for &rg_idx in &candidate_rgs {
         let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-        let rg_start = cumulative;
-        let rg_end = cumulative + rg_rows;
-        cumulative = rg_end;
+        let rg_start = rg_file_start[rg_idx];
+        let rg_end = rg_start + rg_rows;
         if rg_end <= offset {
             continue;
         }
