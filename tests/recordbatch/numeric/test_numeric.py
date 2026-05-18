@@ -973,6 +973,95 @@ def test_bin_bad_input() -> None:
         table.eval_expression_list([bin(col("a"))])
 
 
+@pytest.mark.parametrize(
+    "value, from_base, to_base, expected",
+    [
+        pytest.param("3", 10, 2, "11", id="dec_to_bin"),
+        pytest.param("FF", 16, 10, "255", id="hex_to_dec"),
+        pytest.param("ff", 16, 10, "255", id="case_insensitive"),
+        pytest.param("ZZ", 36, 10, "1295", id="max_base"),
+        pytest.param("-15", 10, 16, "FFFFFFFFFFFFFFF1", id="neg_input_unsigned_out"),
+        pytest.param("-15", 10, -16, "-F", id="neg_input_signed_out"),
+        pytest.param("-1", 10, 16, "FFFFFFFFFFFFFFFF", id="neg_one_twos_complement"),
+        pytest.param("11abc", 10, 16, "B", id="invalid_suffix_truncates"),
+        pytest.param("ZZ", 16, 10, "0", id="all_invalid_chars"),
+        pytest.param("Z", 10, 16, "0", id="leading_invalid"),
+        pytest.param("-", 10, 16, "0", id="lone_minus_unsigned"),
+        pytest.param("-", 10, -16, "-0", id="lone_minus_signed"),
+        pytest.param("", 10, 16, None, id="empty"),
+        pytest.param("  FF  ", 16, 10, "255", id="whitespace_trim"),
+        pytest.param("FFFFFFFFFFFFFFFF", 16, 10, "18446744073709551615", id="u64_max"),
+        pytest.param("18446744073709551616", 10, 16, None, id="u64_overflow"),
+        pytest.param("-9223372036854775808", 10, 16, "8000000000000000", id="i64_min_two_complement"),
+        pytest.param("-9223372036854775809", 10, 16, None, id="below_i64_min_returns_null"),
+        pytest.param("-9223372036854775808", 10, -16, "-8000000000000000", id="i64_min_signed"),
+        pytest.param(None, 16, 10, None, id="null_input"),
+    ],
+)
+def test_conv(value: str | None, from_base: int, to_base: int, expected: str | None) -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([value], type=pa.string())})
+    result = table.eval_expression_list([conv(col("a"), from_base, to_base).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [expected]
+
+
+def test_conv_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([255, 7, 0, None], type=pa.int64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == ["FF", "7", "0", None]
+
+
+def test_conv_unsigned_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == ["0", "8000000000000000", "FFFFFFFFFFFFFFFF"]
+
+
+def test_conv_negative_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -255, -(2**63)], type=pa.int64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [
+        "FFFFFFFFFFFFFFFF",
+        "FFFFFFFFFFFFFF01",
+        "8000000000000000",
+    ]
+
+
+@pytest.mark.parametrize(
+    "from_base, to_base",
+    [
+        pytest.param(1, 10, id="from_too_small"),
+        pytest.param(37, 10, id="from_too_large"),
+        pytest.param(10, 0, id="to_zero"),
+        pytest.param(10, 1, id="to_too_small"),
+        pytest.param(10, 37, id="to_too_large"),
+        pytest.param(10, -37, id="to_too_negative"),
+        pytest.param(-10, 16, id="from_negative"),
+    ],
+)
+def test_conv_invalid_base(from_base: int, to_base: int) -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": ["FF"]})
+    result = table.eval_expression_list([conv(col("a"), from_base, to_base).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [None]
+
+
+def test_conv_bad_dtype() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": [1.0, 2.5]})
+    with pytest.raises(ValueError, match="Expected input to conv to be string or integer"):
+        table.eval_expression_list([conv(col("a"), 10, 16)])
+
+
 def test_hypot() -> None:
     from daft.functions import hypot
 
