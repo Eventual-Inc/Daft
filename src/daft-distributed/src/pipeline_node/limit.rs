@@ -60,6 +60,27 @@ async fn await_limit_completion(actor: &PyObjectWrapper) -> DaftResult<Vec<Strin
     .await
 }
 
+/// Returns true once the limit loop has nothing left to do.
+fn limit_loop_done(
+    contributors: Option<&HashSet<TaskID>>,
+    completed_ids: &HashSet<TaskID>,
+    input_exhausted: bool,
+    running_tasks_empty: bool,
+) -> bool {
+    // Early-stop: the actor reported the limit was hit and at least one task
+    // contributed rows. We're done as soon as every contributor's task has
+    // finished flowing downstream; non-contributors get cancelled afterwards.
+    if let Some(contributors) = contributors
+        && !contributors.is_empty()
+    {
+        return contributors.is_subset(completed_ids);
+    }
+    // Natural drain: limit was never hit (e.g. `limit > total rows`) or hit
+    // with no contributors (e.g. `limit == 0`). Done when input is exhausted
+    // and no forwarded tasks are still running.
+    input_exhausted && running_tasks_empty
+}
+
 pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -120,12 +141,12 @@ impl LimitNode {
         let mut contributors: Option<HashSet<TaskID>> = None;
         let mut limit_completed = Box::pin(await_limit_completion(&actor));
         let mut input_exhausted = false;
-        // Break once every contributing input_id has materialized; for
-        // limit==0 or limits never hit, fall through to natural exhaustion.
-        while match &contributors {
-            Some(c) if !c.is_empty() => !c.is_subset(&completed_ids),
-            _ => !input_exhausted || !running_tasks.is_empty(),
-        } {
+        while !limit_loop_done(
+            contributors.as_ref(),
+            &completed_ids,
+            input_exhausted,
+            running_tasks.is_empty(),
+        ) {
             tokio::select! {
                 biased;
                 res = &mut limit_completed, if contributors.is_none() => {
