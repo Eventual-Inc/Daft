@@ -14,6 +14,7 @@ import pytest
 ray = pytest.importorskip("ray")
 
 from daft.execution.ray_distributed_limit import _LimitCounterImpl
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_claim_basic():
@@ -122,36 +123,22 @@ def test_is_done_transitions():
     assert actor.is_done()
 
 
-@pytest.fixture(scope="module")
-def ray_local_single_cpu():
-    """Local Ray with one CPU so flotilla dispatches one SwordfishTask at a time.
-
-    Serial dispatch guarantees that partition 0 is the first to call
-    `claim()` (and thus a limit contributor); when its task crashes, the
-    retry exercises the rewind path deterministically.
-    """
-    if ray.is_initialized():
-        ray.shutdown()
-    ray.init(num_cpus=1, include_dashboard=False)
-    yield
-    ray.shutdown()
-
-
-def test_distributed_limit_retries_after_worker_death(ray_local_single_cpu, tmp_path):
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_distributed_limit_retries_after_worker_death(tmp_path):
     """`.limit(N)` must still produce N rows when a SwordfishTask crashes mid-claim.
 
     Without the rewind in `_LimitCounterImpl.start_task`, the failed attempt's
     claim stays charged against the global budget while its slice never reaches
     downstream — the retry then sees a smaller budget and the output undercounts.
     """
+    import os
+
     import daft
     from daft import DataType, col, func
 
-    daft.set_runner_ray(noop_if_initialized=True)
-
     marker = str(tmp_path / "crashed_once")
 
-    @func(return_dtype=DataType.int64())
+    @func(return_dtype=DataType.int64(), cpus=os.cpu_count())
     def crash_once_on_zero(v: int) -> int:
         import os
 
