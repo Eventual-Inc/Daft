@@ -15,9 +15,8 @@ except ImportError:
 class _LimitCounterImpl:
     """`(skip, take, done)` state machine for the distributed Limit operator.
 
-    `start_task` rewinds prior claims so a retried SwordfishTask starts from
-    the same global state the failed attempt saw. Kept as a plain class so
-    unit tests can exercise it without standing up a Ray cluster.
+    Kept as a plain class so unit tests can exercise it without standing up
+    a Ray cluster; `LimitCounterActor` below wraps it in `ray.remote`.
     """
 
     def __init__(self, limit: int, offset: int) -> None:
@@ -27,6 +26,11 @@ class _LimitCounterImpl:
         self.input_claims: dict[str, tuple[int, int]] = {}
 
     def start_task(self, input_id: str) -> None:
+        # Called by a worker once when it begins processing `input_id`. If
+        # we've seen this input_id before, it means a prior SwordfishTask
+        # attempt crashed mid-claim and is now being retried — refund its
+        # partial claims so the retry's claims don't double-count against
+        # the global limit. No-op on the common (non-retry) path.
         prior = self.input_claims.pop(input_id, None)
         if prior is not None:
             skip, take = prior
@@ -91,6 +95,10 @@ async def start_limit_counter_actor(limit: int, offset: int, timeout: int) -> Li
             soft=False,
         ),
     ).remote(limit, offset)
+    # Block until the actor's constructor has finished before returning the
+    # handle. `__ray_ready__` is Ray's actor-init sentinel; `wrap_future`
+    # adapts its concurrent.futures.Future into an asyncio future so we can
+    # apply `wait_for` and surface a clean timeout if scheduling stalls.
     try:
         await asyncio.wait_for(
             asyncio.wrap_future(actor.__ray_ready__.remote().future()),
