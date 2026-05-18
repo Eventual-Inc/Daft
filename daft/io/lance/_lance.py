@@ -3,7 +3,9 @@ from __future__ import annotations
 import warnings
 from typing import Any
 
-from daft_lance._lance import read_lance
+from daft.lazy_import import LazyImport
+
+_daft_lance = LazyImport("daft_lance._lance")
 
 __all__ = [
     "compact_files",
@@ -14,6 +16,16 @@ __all__ = [
 ]
 
 
+def read_lance(*args: Any, **kwargs: Any) -> Any:
+    warnings.warn(
+        "daft.read_lance is deprecated and will be removed in a future release. "
+        "Please use daft_lance.read_lance from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return _daft_lance.read_lance(*args, **kwargs)
+
+
 def merge_columns(*args: Any, **kwargs: Any) -> Any:
     warnings.warn(
         "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
@@ -21,9 +33,7 @@ def merge_columns(*args: Any, **kwargs: Any) -> Any:
         category=DeprecationWarning,
         stacklevel=2,
     )
-    from daft_lance._lance import merge_columns as _impl
-
-    return _impl(*args, **kwargs)
+    return _daft_lance.merge_columns(*args, **kwargs)
 
 
 def merge_columns_df(*args: Any, **kwargs: Any) -> Any:
@@ -33,9 +43,7 @@ def merge_columns_df(*args: Any, **kwargs: Any) -> Any:
         category=DeprecationWarning,
         stacklevel=2,
     )
-    from daft_lance._lance import merge_columns_df as _impl
-
-    return _impl(*args, **kwargs)
+    return _daft_lance.merge_columns_df(*args, **kwargs)
 
 
 def create_scalar_index(*args: Any, **kwargs: Any) -> Any:
@@ -45,9 +53,7 @@ def create_scalar_index(*args: Any, **kwargs: Any) -> Any:
         category=DeprecationWarning,
         stacklevel=2,
     )
-    from daft_lance._lance import create_scalar_index as _impl
-
-    return _impl(*args, **kwargs)
+    return _daft_lance.create_scalar_index(*args, **kwargs)
 
 
 def compact_files(*args: Any, **kwargs: Any) -> Any:
@@ -57,6 +63,4 @@ def compact_files(*args: Any, **kwargs: Any) -> Any:
         category=DeprecationWarning,
         stacklevel=2,
     )
-    from daft_lance._lance import compact_files as _impl
-
-    return _impl(*args, **kwargs)
+    return _daft_lance.compact_files(*args, **kwargs)
