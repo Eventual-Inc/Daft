@@ -481,7 +481,7 @@ async fn fetch_parquet_footer_bytes(
 /// Read parquet metadata using arrow-rs deserialization.
 ///
 /// Returns `Arc<parquet::file::metadata::ParquetMetaData>`.
-pub(crate) async fn read_parquet_metadata(
+pub(crate) async fn fetch_parquet_metadata(
     uri: &str,
     file_size: Option<usize>,
     io_client: Arc<IOClient>,
@@ -532,7 +532,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_io::{IOClient, IOConfig};
 
-    use super::read_parquet_metadata;
+    use super::fetch_parquet_metadata;
     use crate::Error;
 
     #[tokio::test]
@@ -546,37 +546,37 @@ mod tests {
 
         // Read metadata with actual file size.
         let metadata =
-            read_parquet_metadata(file, Some(size), io_client.clone(), None, None, None).await?;
+            fetch_parquet_metadata(file, Some(size), io_client.clone(), None, None, None).await?;
         assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Read metadata without a file size.
         let metadata =
-            read_parquet_metadata(file, None, io_client.clone(), None, None, None).await?;
+            fetch_parquet_metadata(file, None, io_client.clone(), None, None, None).await?;
         assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length but without a file size.
         let metadata =
-            read_parquet_metadata(file, None, io_client.clone(), None, None, Some(500)).await?;
+            fetch_parquet_metadata(file, None, io_client.clone(), None, None, Some(500)).await?;
         assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length and a file size.
         let metadata =
-            read_parquet_metadata(file, Some(size), io_client.clone(), None, None, Some(500))
+            fetch_parquet_metadata(file, Some(size), io_client.clone(), None, None, Some(500))
                 .await?;
         assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size less than 8 bytes.
         let metadata =
-            read_parquet_metadata(file, None, io_client.clone(), None, None, Some(5)).await?;
+            fetch_parquet_metadata(file, None, io_client.clone(), None, None, Some(5)).await?;
         assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Test with invalid file size, assume file size is 10 bytes.
         let result =
-            read_parquet_metadata(file, Some(10), io_client.clone(), None, None, None).await;
+            fetch_parquet_metadata(file, Some(10), io_client.clone(), None, None, None).await;
         assert!(matches!(result, Err(Error::FileTooSmall { .. })));
 
         // Test with invalid footer size, assume file size is 1260 bytes.
-        let result = read_parquet_metadata(file, Some(1260), io_client, None, None, None).await;
+        let result = fetch_parquet_metadata(file, Some(1260), io_client, None, None, None).await;
         assert!(matches!(result, Err(Error::InvalidParquetFile { .. })));
 
         Ok(())

@@ -28,9 +28,9 @@ use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
 use field_reader::{decode_one, leaves_for_top_fields};
-use futures::{StreamExt, stream::BoxStream};
+use futures::{Stream, StreamExt, stream::BoxStream};
 use parquet::{
-    arrow::arrow_reader::{ArrowReaderMetadata, RowSelection},
+    arrow::arrow_reader::{ArrowReaderMetadata, RowSelection, RowSelector},
     file::metadata::ParquetMetaData,
 };
 use rg_processor::{process_rg_chunked_pred, process_rg_streaming};
@@ -46,7 +46,6 @@ use crate::{
         apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
     },
     read::{ParquetSchemaInferenceOptions, StringEncoding},
-    schema_inference::arrow_schema_to_daft_schema,
 };
 
 pub enum ParquetSource<'a> {
@@ -69,9 +68,10 @@ impl ParquetSource<'_> {
     }
 }
 
-/// Streaming entry point. Returns the projection schema alongside the stream so
-/// the bulk variant can preserve schema when the stream produces zero batches
-/// (per-RG processors emit `stream::empty()` for 0-row RGs).
+const DEFAULT_BATCH_SIZE: usize = 128 * 1024;
+const MANY_RG_THRESHOLD: usize = 4;
+
+/// Streaming entry point. Opens the chunk source, then forwards to the planner.
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
     source: ParquetSource<'_>,
@@ -85,64 +85,20 @@ pub async fn stream_parquet(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let (chunk_source, arrow_metadata, effective_row_groups_owned): (
-        ChunkSource,
-        ArrowReaderMetadata,
-        Option<Vec<i64>>,
-    ) = match &source {
-        ParquetSource::Local { path } => {
-            let (file, file_len, arrow_metadata) = open_local_file(path).await?;
-            let cs = ChunkSource::Local(LocalChunkSource {
-                file,
-                file_len,
-                metadata: arrow_metadata.metadata().clone(),
-            });
-            (cs, arrow_metadata, None)
-        }
-        ParquetSource::Url {
-            uri,
-            io_client,
-            io_stats,
-        } => {
-            // Prefetch projection ∪ predicate cols.
-            let prefetch_cols_owned: Option<Vec<String>> = columns.map(|cols| {
-                let mut acc: Vec<String> = cols.iter().map(|s| (*s).to_string()).collect();
-                if let Some(ref pred) = predicate {
-                    for c in get_required_columns(pred) {
-                        if !acc.contains(&c) {
-                            acc.push(c);
-                        }
-                    }
-                }
-                acc
-            });
-            let prefetch_cols_refs: Option<Vec<&str>> = prefetch_cols_owned
-                .as_ref()
-                .map(|v| v.iter().map(|s| s.as_str()).collect());
-            let (cs, arrow_metadata, override_rgs) = fetch_remote_chunk_source(
-                uri,
-                io_client.clone(),
-                io_stats.clone(),
-                prefetch_cols_refs.as_deref(),
-                row_groups,
-                start_offset,
-                num_rows,
-                field_id_mapping.as_deref(),
-            )
-            .await?;
-            (cs, arrow_metadata, override_rgs)
-        }
-    };
+    let (chunk_source, arrow_metadata, effective_row_groups_owned) = open_chunk_source(
+        &source,
+        columns,
+        row_groups,
+        start_offset,
+        num_rows,
+        predicate.as_ref(),
+        field_id_mapping.as_deref(),
+    )
+    .await?;
+    let effective_row_groups: Option<&[i64]> = effective_row_groups_owned.as_deref().or(row_groups);
 
-    // Remote prefetch already pruned by limit/offset; pass that set down.
-    let effective_row_groups: Option<&[i64]> = match &effective_row_groups_owned {
-        Some(rgs) => Some(rgs.as_slice()),
-        None => row_groups,
-    };
-
-    let chunk_source = Arc::new(chunk_source);
     stream_parquet_from_source(
-        chunk_source,
+        Arc::new(chunk_source),
         arrow_metadata,
         source.label(),
         columns,
@@ -156,6 +112,62 @@ pub async fn stream_parquet(
         delete_rows,
     )
     .await
+}
+
+/// Open the chunk source for a parquet URI. Remote sources prefetch projection ∪
+/// predicate cols and pre-prune row groups by offset/limit; the pre-pruned set
+/// (if any) is returned so the planner uses the same set the prefetcher fetched.
+async fn open_chunk_source(
+    source: &ParquetSource<'_>,
+    columns: Option<&[&str]>,
+    row_groups: Option<&[i64]>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    predicate: Option<&ExprRef>,
+    field_id_mapping: Option<&BTreeMap<i32, Field>>,
+) -> DaftResult<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
+    match source {
+        ParquetSource::Local { path } => {
+            let (file, file_len, arrow_metadata) = open_local_file(path).await?;
+            let cs = ChunkSource::Local(LocalChunkSource {
+                file,
+                file_len,
+                metadata: arrow_metadata.metadata().clone(),
+            });
+            Ok((cs, arrow_metadata, None))
+        }
+        ParquetSource::Url {
+            uri,
+            io_client,
+            io_stats,
+        } => {
+            let prefetch_cols_owned: Option<Vec<String>> = columns.map(|cols| {
+                let mut acc: Vec<String> = cols.iter().map(|s| (*s).to_string()).collect();
+                if let Some(pred) = predicate {
+                    for c in get_required_columns(pred) {
+                        if !acc.contains(&c) {
+                            acc.push(c);
+                        }
+                    }
+                }
+                acc
+            });
+            let prefetch_cols_refs: Option<Vec<&str>> = prefetch_cols_owned
+                .as_ref()
+                .map(|v| v.iter().map(String::as_str).collect());
+            fetch_remote_chunk_source(
+                uri,
+                io_client.clone(),
+                io_stats.clone(),
+                prefetch_cols_refs.as_deref(),
+                row_groups,
+                start_offset,
+                num_rows,
+                field_id_mapping,
+            )
+            .await
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -173,212 +185,216 @@ async fn stream_parquet_from_source(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    const DEFAULT_BATCH_SIZE: usize = 128 * 1024;
-    let chunk_size: usize = batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
+    let chunk_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
+    let prepared = prepare_metadata(
+        arrow_metadata,
+        field_id_mapping.as_ref(),
+        schema_infer_options,
+    )?;
+    let plan = resolve_column_plan(&prepared, columns, predicate.as_ref())?;
 
-    let mut parquet_metadata: Arc<ParquetMetaData> = arrow_metadata.metadata().clone();
-    if let Some(ref mapping) = field_id_mapping {
+    let rg_indices = prune_row_groups(
+        &prepared.parquet_metadata,
+        row_groups,
+        predicate.as_ref(),
+        &plan.read_daft_schema,
+        path,
+    )?;
+    if rg_indices.is_empty() {
+        return Ok(empty_stream(plan.return_daft_schema));
+    }
+    if plan.read_col_indices.is_empty() {
+        return count_only_stream(
+            &prepared.parquet_metadata,
+            &rg_indices,
+            num_rows,
+            plan.return_daft_schema,
+        );
+    }
+
+    let layout = build_rg_layout(&prepared.parquet_metadata, &rg_indices);
+    let base_selections = build_base_selections(
+        &rg_indices,
+        &layout,
+        start_offset.unwrap_or(0),
+        delete_rows,
+        num_rows,
+        predicate.is_none(),
+    );
+    let no_pred_active = count_active_rgs(&base_selections);
+
+    let is_chunked_pred = plan.predicate_pushed
+        && plan.data_col_indices.is_empty()
+        && (num_rows.is_some() || rg_indices.len() <= MANY_RG_THRESHOLD);
+
+    let phase1 = if plan.predicate_pushed && !is_chunked_pred {
+        phase1_predicate_decode(
+            chunk_source.clone(),
+            prepared.parquet_metadata.clone(),
+            prepared.arrow_schema.clone(),
+            &rg_indices,
+            &plan.pred_col_indices,
+            &base_selections,
+            !plan.data_col_indices.is_empty(),
+            predicate.clone().unwrap(),
+            num_rows,
+        )
+        .await?
+    } else {
+        Phase1Output {
+            final_selections: base_selections,
+            pred_arrays: Vec::new(),
+            pred_masks: Vec::new(),
+            active_rg_count: no_pred_active,
+        }
+    };
+
+    let stream = build_rg_stream(
+        chunk_source,
+        prepared.parquet_metadata,
+        prepared.arrow_schema,
+        rg_indices.into(),
+        Arc::new(plan.clone()),
+        phase1.final_selections.into(),
+        Arc::new(phase1.pred_arrays),
+        Arc::new(phase1.pred_masks),
+        phase1.active_rg_count,
+        chunk_size,
+        is_chunked_pred,
+        predicate,
+        num_rows,
+    );
+
+    Ok((
+        plan.return_daft_schema,
+        apply_cross_rg_limit(stream, num_rows),
+    ))
+}
+
+// ───── metadata + schema preparation ─────────────────────────────────────────
+
+struct PreparedMetadata {
+    parquet_metadata: Arc<ParquetMetaData>,
+    arrow_schema: Arc<ArrowSchema>,
+    daft_schema: Schema,
+}
+
+fn prepare_metadata(
+    arrow_metadata: ArrowReaderMetadata,
+    field_id_mapping: Option<&Arc<BTreeMap<i32, Field>>>,
+    opts: ParquetSchemaInferenceOptions,
+) -> DaftResult<PreparedMetadata> {
+    let mut parquet_metadata = arrow_metadata.metadata().clone();
+    if let Some(mapping) = field_id_mapping {
         parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
     }
-    // Strip UTF8 logical type so BYTE_ARRAY decodes as Binary (no validation).
-    let raw_encoding = schema_infer_options.string_encoding == StringEncoding::Raw;
+    let raw_encoding = opts.string_encoding == StringEncoding::Raw;
     if raw_encoding {
         parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
     }
-
-    let arrow_schema_raw = crate::schema_inference::infer_schema_from_parquet_metadata_arrowrs(
+    let arrow_schema = crate::schema_inference::infer_schema_from_parquet_metadata_arrowrs(
         &parquet_metadata,
-        Some(schema_infer_options.coerce_int96_timestamp_unit),
+        Some(opts.coerce_int96_timestamp_unit),
         raw_encoding,
     )
     .map_err(parquet_err)?;
-    let arrow_schema = Arc::new(arrow_schema_raw);
-    let daft_schema = arrow_schema_to_daft_schema(&arrow_schema)?;
+    let arrow_schema = Arc::new(arrow_schema);
+    let daft_schema = Schema::try_from(arrow_schema.as_ref())?;
+    Ok(PreparedMetadata {
+        parquet_metadata,
+        arrow_schema,
+        daft_schema,
+    })
+}
 
-    // Read cols = projection ∪ predicate cols; return cols = projection.
+// ───── projection / predicate column plan ────────────────────────────────────
+
+#[derive(Clone)]
+struct ColumnPlan {
+    /// Indices into `arrow_schema.fields()` for projection ∪ pred cols.
+    read_col_indices: Vec<usize>,
+    /// Subset of `read_col_indices` referenced by the predicate (empty if not pushed).
+    pred_col_indices: Vec<usize>,
+    /// `read_col_indices − pred_col_indices` — cols decoded under the refined RowSelection.
+    data_col_indices: Vec<usize>,
+    /// True if the predicate is fully pushable into the row-group decoder.
+    predicate_pushed: bool,
+    /// Schema returned to the caller (projection only).
+    return_daft_schema: Arc<Schema>,
+    /// Schema used for RG-statistics pruning (projection ∪ pred cols).
+    read_daft_schema: Schema,
+}
+
+fn resolve_column_plan(
+    prepared: &PreparedMetadata,
+    columns: Option<&[&str]>,
+    predicate: Option<&ExprRef>,
+) -> DaftResult<ColumnPlan> {
+    let daft_schema = &prepared.daft_schema;
     let user_col_set: Option<HashSet<&str>> = columns.map(|c| c.iter().copied().collect());
-    let mut read_col_names: HashSet<String> = user_col_set
-        .as_ref()
-        .map(|s| s.iter().map(|s| (*s).to_string()).collect())
-        .unwrap_or_else(|| daft_schema.field_names().map(|s| s.to_string()).collect());
 
-    let (row_filter_pred_cols, predicate_pushed): (Option<HashSet<String>>, bool) =
-        match predicate.as_ref() {
-            Some(pred) => match predicate_pushable_cols(pred, &daft_schema) {
-                Some(cols) => (Some(cols), true),
-                None => {
-                    // Predicate not pushable; still read its cols for fallback eval.
-                    let mut extra = HashSet::new();
-                    for c in get_required_columns(pred) {
-                        if daft_schema.get_field(&c).is_ok() {
-                            extra.insert(c);
-                        }
+    let mut read_col_names: HashSet<String> = match &user_col_set {
+        Some(s) => s.iter().map(|s| (*s).to_string()).collect(),
+        None => daft_schema.field_names().map(str::to_string).collect(),
+    };
+
+    let (pred_cols, predicate_pushed) = match predicate {
+        Some(pred) => match predicate_pushable_cols(pred, daft_schema) {
+            Some(cols) => (Some(cols), true),
+            None => {
+                // Not pushable but still read its cols for fallback eval.
+                let mut extra = HashSet::new();
+                for c in get_required_columns(pred) {
+                    if daft_schema.get_field(&c).is_ok() {
+                        extra.insert(c);
                     }
-                    (Some(extra), false)
                 }
-            },
-            None => (None, false),
-        };
+                (Some(extra), false)
+            }
+        },
+        None => (None, false),
+    };
 
-    if let Some(ref filter_cols) = row_filter_pred_cols {
+    if let Some(filter_cols) = &pred_cols {
         for c in filter_cols {
             read_col_names.insert(c.clone());
         }
     }
 
-    let read_daft_schema = project_schema(&daft_schema, &read_col_names);
+    let read_daft_schema = project_schema(daft_schema, &read_col_names);
     let return_daft_schema = match &user_col_set {
-        Some(s) => {
-            let names: HashSet<String> = s.iter().map(|n| (*n).to_string()).collect();
-            project_schema(&daft_schema, &names)
-        }
-        None => daft_schema.clone(),
+        Some(s) => Arc::new(project_schema(
+            daft_schema,
+            &s.iter().map(|n| (*n).to_string()).collect(),
+        )),
+        None => Arc::new(daft_schema.clone()),
     };
-    let return_daft_schema = Arc::new(return_daft_schema);
 
-    let rg_indices_vec = prune_row_groups(
-        &parquet_metadata,
-        row_groups,
-        predicate.as_ref(),
-        &read_daft_schema,
-        path,
-    )?;
-
-    if rg_indices_vec.is_empty() {
-        let schema = return_daft_schema.clone();
-        let s = return_daft_schema.clone();
-        return Ok((
-            schema,
-            futures::stream::once(async move { Ok(RecordBatch::empty(Some(s))) }).boxed(),
-        ));
-    }
-
-    let total_rgs_in_file = parquet_metadata.num_row_groups();
-    let mut rg_global_starts = Vec::with_capacity(total_rgs_in_file);
-    {
-        let mut cumulative = 0usize;
-        for i in 0..total_rgs_in_file {
-            rg_global_starts.push(cumulative);
-            cumulative += parquet_metadata.row_group(i).num_rows() as usize;
-        }
-    }
-    let rg_row_counts: Vec<usize> = rg_indices_vec
-        .iter()
-        .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
-        .collect();
-
-    let read_col_indices: Vec<usize> = arrow_schema
-        .fields()
+    let arrow_fields = prepared.arrow_schema.fields();
+    let read_col_indices: Vec<usize> = arrow_fields
         .iter()
         .enumerate()
         .filter(|(_, f)| read_col_names.contains(f.name()))
         .map(|(i, _)| i)
         .collect();
 
-    // Zero-column read (count-only): emit a row-count batch.
-    if read_col_indices.is_empty() {
-        let total: usize = rg_row_counts.iter().sum();
-        let limited = num_rows.map(|n| n.min(total)).unwrap_or(total);
-        let batch = RecordBatch::new_with_size(return_daft_schema.clone(), Vec::new(), limited)?;
-        return Ok((
-            return_daft_schema,
-            futures::stream::once(async move { Ok(batch) }).boxed(),
-        ));
-    }
-
-    let pred_col_set: HashSet<String> = row_filter_pred_cols
-        .as_ref()
-        .map(|s| s.iter().cloned().collect())
-        .unwrap_or_default();
     let pred_col_indices: Vec<usize> = if predicate_pushed {
-        arrow_schema
-            .fields()
+        let pred_set: HashSet<&str> = pred_cols
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        arrow_fields
             .iter()
             .enumerate()
-            .filter(|(_, f)| pred_col_set.contains(f.name()))
+            .filter(|(_, f)| pred_set.contains(f.name().as_str()))
             .map(|(i, _)| i)
             .collect()
     } else {
         Vec::new()
     };
 
-    // Per-RG base selections: offset + delete_rows + limit (when no predicate).
-    // With a predicate, per-RG row counts aren't known until phase 1 finishes,
-    // so limit is applied there instead.
-    let global_offset = start_offset.unwrap_or(0);
-    let push_limit_into_base = predicate.is_none();
-    let mut limit_remaining: Option<usize> = if push_limit_into_base { num_rows } else { None };
-    let base_selections: Vec<Option<RowSelection>> = rg_indices_vec
-        .iter()
-        .zip(rg_row_counts.iter())
-        .map(|(&rg_idx, &rg_rows)| {
-            let mut sel: Option<RowSelection> = None;
-            // Skip first N rows in this RG if the global offset falls inside it.
-            if global_offset > 0 {
-                let rg_global_start = rg_global_starts[rg_idx];
-                let rg_global_end = rg_global_start + rg_rows;
-                if global_offset >= rg_global_end {
-                    sel = Some(RowSelection::from(vec![
-                        parquet::arrow::arrow_reader::RowSelector::skip(rg_rows),
-                    ]));
-                } else if global_offset > rg_global_start {
-                    let local_off = global_offset - rg_global_start;
-                    sel = combine_selections(
-                        sel,
-                        Some(build_offset_row_selection(local_off, rg_rows)),
-                    );
-                }
-            }
-            if let Some(deletes) = delete_rows
-                && !deletes.is_empty()
-            {
-                let del_sel =
-                    build_single_rg_delete_selection(deletes, rg_global_starts[rg_idx], rg_rows);
-                sel = combine_selections(sel, Some(del_sel));
-            }
-            if let Some(ref mut remaining) = limit_remaining {
-                let contrib = match &sel {
-                    Some(s) => s.row_count(),
-                    None => rg_rows,
-                };
-                if *remaining == 0 {
-                    sel = Some(RowSelection::from(vec![
-                        parquet::arrow::arrow_reader::RowSelector::skip(rg_rows),
-                    ]));
-                } else if contrib > *remaining {
-                    let cap = *remaining;
-                    *remaining = 0;
-                    sel = Some(cap_selection_to(sel.as_ref(), cap, rg_rows));
-                } else {
-                    *remaining -= contrib;
-                }
-            }
-            sel
-        })
-        .collect();
-
-    let num_rgs = rg_indices_vec.len();
-
-    // Drop trailing all-skip RGs (e.g. those after limit was hit) so we don't
-    // spawn decode tasks that skip everything.
-    let no_pred_active_rg_count: usize = {
-        let mut last = 0;
-        for (idx, sel) in base_selections.iter().enumerate() {
-            let contributes = match sel {
-                Some(s) => s.iter().any(|r| !r.skip),
-                None => true,
-            };
-            if contributes {
-                last = idx + 1;
-            }
-        }
-        last
-    };
-
-    // Phase 1: decode pred cols across all RGs, evaluate per RG into a bool
-    // mask, build a refined RowSelection for phase 2. Pred arrays are kept and
-    // reused during assembly so cols in both predicate and projection (e.g.
-    // `where(col > 50)`) are decoded once.
     let data_col_indices: Vec<usize> = if predicate_pushed {
         read_col_indices
             .iter()
@@ -389,199 +405,367 @@ async fn stream_parquet_from_source(
         read_col_indices.clone()
     };
 
-    // Skip bool→RowSelection conversion when the projection is fully pred
-    // cols — the bool mask alone suffices for assembly.
-    let need_phase2_selections = !data_col_indices.is_empty();
+    Ok(ColumnPlan {
+        read_col_indices,
+        pred_col_indices,
+        data_col_indices,
+        predicate_pushed,
+        return_daft_schema,
+        read_daft_schema,
+    })
+}
 
-    // Chunked-pred path (stream pred cols + eval per chunk inside the per-RG
-    // processor) is preferable when:
-    //  - there's a limit (early-stop within an RG); OR
-    //  - there are few RGs (chunked-pred per-RG overhead is small).
-    // For many-RG no-limit cases, the phase-1 path (decode all pred cols in
-    // PARALLEL across RGs, then emit pre-filtered slices) wins because the
-    // RG-sequential nature of chunked-pred adds up.
-    let many_rg_threshold = 4;
-    let is_chunked_pred = predicate_pushed
-        && data_col_indices.is_empty()
-        && (num_rows.is_some() || rg_indices_vec.len() <= many_rg_threshold);
+// ───── row-group layout + per-RG base selections ─────────────────────────────
 
-    // Spawn pred decode for ALL RGs in parallel; await in RG order so the
-    // limit can short-circuit early. Dropped handles abort their tasks.
-    type PredPhase1Out = (
-        Vec<Option<RowSelection>>,
-        Vec<Vec<ArrayRef>>,
-        Vec<Option<BooleanArray>>,
-        usize,
-    );
-    let (final_selections, pred_arrays, pred_masks, active_rg_count): PredPhase1Out =
-        if predicate_pushed && !is_chunked_pred {
-            let compute = get_compute_runtime();
-            let mut pred_rg_handles = Vec::with_capacity(num_rgs);
-            let pred_leaves: Arc<[usize]> =
-                leaves_for_top_fields(&parquet_metadata, &pred_col_indices).into();
-            for rg_pos in 0..num_rgs {
-                let rg_idx = rg_indices_vec[rg_pos];
-                let pred_cols_arc: Arc<[usize]> = pred_col_indices.clone().into();
-                let source_c = chunk_source.clone();
-                let metadata_c = parquet_metadata.clone();
-                let arrow_schema_c = arrow_schema.clone();
-                let selection_c = base_selections[rg_pos].clone();
-                let pred_leaves_c = pred_leaves.clone();
-                let h = compute.spawn(async move {
-                    // Batch-read all pred-col leaves for this RG.
-                    let rg_chunks = Arc::new(
-                        source_c
-                            .read_rg_chunks(rg_idx, pred_leaves_c.clone())
-                            .await?,
-                    );
-                    let compute_inner = get_compute_runtime();
-                    let mut col_handles = Vec::with_capacity(pred_cols_arc.len());
-                    for &col_idx in pred_cols_arc.iter() {
-                        let chunks_i = rg_chunks.clone();
-                        let metadata_i = metadata_c.clone();
-                        let arrow_field = arrow_schema_c.field(col_idx).clone();
-                        let selection_i = selection_c.clone();
-                        col_handles.push(compute_inner.spawn(async move {
-                            decode_one(
-                                chunks_i.as_ref(),
-                                &metadata_i,
-                                rg_idx,
-                                col_idx,
-                                &arrow_field,
-                                selection_i.as_ref(),
-                            )
-                        }));
-                    }
-                    let mut arrays = Vec::with_capacity(col_handles.len());
-                    for ch in col_handles {
-                        arrays.push(ch.await??);
-                    }
-                    DaftResult::Ok(arrays)
-                });
-                pred_rg_handles.push(h);
+struct RgLayout {
+    /// Per-file-RG cumulative row offsets, indexed by original RG index.
+    global_starts: Vec<usize>,
+    /// Per-active-RG row counts, indexed by position in `rg_indices`.
+    row_counts: Vec<usize>,
+}
+
+fn build_rg_layout(metadata: &ParquetMetaData, rg_indices: &[usize]) -> RgLayout {
+    let total = metadata.num_row_groups();
+    let mut global_starts = Vec::with_capacity(total);
+    let mut cumulative = 0usize;
+    for i in 0..total {
+        global_starts.push(cumulative);
+        cumulative += metadata.row_group(i).num_rows() as usize;
+    }
+    let row_counts = rg_indices
+        .iter()
+        .map(|&i| metadata.row_group(i).num_rows() as usize)
+        .collect();
+    RgLayout {
+        global_starts,
+        row_counts,
+    }
+}
+
+fn build_base_selections(
+    rg_indices: &[usize],
+    layout: &RgLayout,
+    start_offset: usize,
+    delete_rows: Option<&[i64]>,
+    num_rows: Option<usize>,
+    push_limit: bool,
+) -> Vec<Option<RowSelection>> {
+    let mut limit_remaining: Option<usize> = if push_limit { num_rows } else { None };
+    rg_indices
+        .iter()
+        .zip(layout.row_counts.iter())
+        .map(|(&rg_idx, &rg_rows)| {
+            let mut sel =
+                build_offset_selection(start_offset, layout.global_starts[rg_idx], rg_rows);
+            if let Some(deletes) = delete_rows
+                && !deletes.is_empty()
+            {
+                sel = combine_selections(
+                    sel,
+                    Some(build_single_rg_delete_selection(
+                        deletes,
+                        layout.global_starts[rg_idx],
+                        rg_rows,
+                    )),
+                );
             }
-
-            let pred_for_eval = predicate.clone().unwrap();
-            let mut remaining = num_rows.unwrap_or(usize::MAX);
-            let mut pred_per_rg: Vec<Vec<ArrayRef>> = Vec::new();
-            let mut masks: Vec<Option<BooleanArray>> = Vec::new();
-            let mut refined: Vec<Option<RowSelection>> = Vec::new();
-
-            for (rg_pos, handle) in pred_rg_handles.into_iter().enumerate() {
-                if remaining == 0 {
-                    drop(handle);
-                    continue;
-                }
-                let arrays = handle.await??;
-
-                let mut fields = Vec::with_capacity(pred_col_indices.len());
-                for &col_idx in &pred_col_indices {
-                    fields.push(Arc::new(arrow_schema.field(col_idx).clone()));
-                }
-                let pred_arrow_schema = Arc::new(ArrowSchema::new(fields));
-                let pred_batch = ArrowRecordBatch::try_new(pred_arrow_schema, arrays.clone())
-                    .map_err(parquet_err)?;
-                let daft_pred = RecordBatch::try_from(&pred_batch)?;
-
-                let pred_for_rg = substitute_missing_cols(&pred_for_eval, &daft_pred.schema)?;
-                let bound = BoundExpr::try_new(pred_for_rg, &daft_pred.schema)?;
-                let mask_series = daft_pred.eval_expression(&bound)?;
-                let bool_arr = mask_series.bool()?;
-                let mut arrow_bool: BooleanArray = bool_arr.as_arrow()?.clone();
-
-                let true_count = arrow_bool.true_count();
-                if true_count > remaining {
-                    arrow_bool = truncate_mask_to_n_trues(&arrow_bool, remaining);
-                    remaining = 0;
-                } else {
-                    remaining -= true_count;
-                }
-
-                if need_phase2_selections {
-                    let mut pred_sel = bool_array_to_row_selection(&arrow_bool);
-                    let final_sel = match &base_selections[rg_pos] {
-                        Some(base) => refine_selection(base, &pred_sel),
-                        None => std::mem::take(&mut pred_sel),
-                    };
-                    refined.push(Some(final_sel));
-                } else {
-                    refined.push(None);
-                }
-                masks.push(Some(arrow_bool));
-                pred_per_rg.push(arrays);
+            if let Some(remaining) = limit_remaining.as_mut() {
+                sel = apply_limit_to_selection(sel, remaining, rg_rows);
             }
+            sel
+        })
+        .collect()
+}
 
-            let active = pred_per_rg.len();
-            // Transpose [rg][col] → [col][rg].
-            let mut pred_arrays: Vec<Vec<ArrayRef>> = (0..pred_col_indices.len())
-                .map(|_| Vec::with_capacity(active))
-                .collect();
-            for arrays in pred_per_rg {
-                for (col_pos, arr) in arrays.into_iter().enumerate() {
-                    pred_arrays[col_pos].push(arr);
-                }
-            }
+fn build_offset_selection(
+    global_offset: usize,
+    rg_global_start: usize,
+    rg_rows: usize,
+) -> Option<RowSelection> {
+    if global_offset == 0 {
+        return None;
+    }
+    let rg_end = rg_global_start + rg_rows;
+    if global_offset >= rg_end {
+        Some(RowSelection::from(vec![RowSelector::skip(rg_rows)]))
+    } else if global_offset > rg_global_start {
+        Some(build_offset_row_selection(
+            global_offset - rg_global_start,
+            rg_rows,
+        ))
+    } else {
+        None
+    }
+}
 
-            (refined, pred_arrays, masks, active)
-        } else {
-            (
-                base_selections.clone(),
-                Vec::new(),
-                Vec::new(),
-                no_pred_active_rg_count,
+fn apply_limit_to_selection(
+    sel: Option<RowSelection>,
+    remaining: &mut usize,
+    rg_rows: usize,
+) -> Option<RowSelection> {
+    let contrib = sel.as_ref().map(|s| s.row_count()).unwrap_or(rg_rows);
+    if *remaining == 0 {
+        Some(RowSelection::from(vec![RowSelector::skip(rg_rows)]))
+    } else if contrib > *remaining {
+        let cap = *remaining;
+        *remaining = 0;
+        Some(cap_selection_to(sel.as_ref(), cap, rg_rows))
+    } else {
+        *remaining -= contrib;
+        sel
+    }
+}
+
+/// Number of leading RGs that contribute at least one row (drops trailing
+/// all-skip RGs from the active set when the limit was already exhausted).
+fn count_active_rgs(base_selections: &[Option<RowSelection>]) -> usize {
+    let mut last = 0;
+    for (idx, sel) in base_selections.iter().enumerate() {
+        let contributes = sel.as_ref().is_none_or(|s| s.iter().any(|r| !r.skip));
+        if contributes {
+            last = idx + 1;
+        }
+    }
+    last
+}
+
+// ───── phase-1 predicate decode ──────────────────────────────────────────────
+
+struct Phase1Output {
+    /// Per-RG final selection: refined (pred mask intersected with base) or `None`
+    /// when the projection is entirely pred cols (the mask alone drives assembly).
+    final_selections: Vec<Option<RowSelection>>,
+    /// Decoded predicate columns, transposed `[col][rg]` for cheap per-col slicing
+    /// during phase-2 assembly.
+    pred_arrays: Vec<Vec<ArrayRef>>,
+    /// Per-RG boolean mask from predicate evaluation.
+    pred_masks: Vec<Option<BooleanArray>>,
+    /// Number of RGs that contributed rows (after applying the limit).
+    active_rg_count: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn phase1_predicate_decode(
+    chunk_source: Arc<ChunkSource>,
+    metadata: Arc<ParquetMetaData>,
+    arrow_schema: Arc<ArrowSchema>,
+    rg_indices: &[usize],
+    pred_col_indices: &[usize],
+    base_selections: &[Option<RowSelection>],
+    need_phase2_selections: bool,
+    predicate: ExprRef,
+    num_rows: Option<usize>,
+) -> DaftResult<Phase1Output> {
+    let compute = get_compute_runtime();
+    let pred_leaves: Arc<[usize]> = leaves_for_top_fields(&metadata, pred_col_indices).into();
+    let pred_cols_arc: Arc<[usize]> = pred_col_indices.to_vec().into();
+
+    // Spawn pred decode for ALL RGs in parallel; dropped handles abort their tasks.
+    let mut handles = Vec::with_capacity(rg_indices.len());
+    for (rg_pos, &rg_idx) in rg_indices.iter().enumerate() {
+        let source = chunk_source.clone();
+        let metadata = metadata.clone();
+        let arrow_schema = arrow_schema.clone();
+        let pred_cols = pred_cols_arc.clone();
+        let pred_leaves = pred_leaves.clone();
+        let selection = base_selections[rg_pos].clone();
+        handles.push(compute.spawn(async move {
+            decode_pred_cols_for_rg(
+                source,
+                metadata,
+                arrow_schema,
+                rg_idx,
+                pred_cols,
+                pred_leaves,
+                selection,
             )
-        };
+            .await
+        }));
+    }
 
-    // Per-RG sub-streams flattened in order; peak memory bounded to
-    // chunk_size × num_cols + filtered pred arrays for the active RG.
-    let return_schema_for_stream = return_daft_schema.clone();
-    let arrow_schema_for_stream = arrow_schema.clone();
-    let predicate_for_fallback = predicate.clone();
-    let read_col_indices_arc: Arc<[usize]> = read_col_indices.clone().into();
-    let pred_col_indices_arc: Arc<[usize]> = pred_col_indices.clone().into();
-    let data_col_indices_arc: Arc<[usize]> = data_col_indices.clone().into();
-    let final_selections_arc: Arc<[Option<RowSelection>]> = final_selections.into();
-    let rg_indices_vec_arc: Arc<[usize]> = rg_indices_vec.clone().into();
-    let pred_arrays_arc = Arc::new(pred_arrays);
-    let pred_masks_arc = Arc::new(pred_masks);
-    let parquet_metadata_for_stream = parquet_metadata.clone();
-    let source_for_stream = chunk_source.clone();
+    // Await in RG order; limit lets us short-circuit early.
+    let mut remaining = num_rows.unwrap_or(usize::MAX);
+    let mut pred_per_rg: Vec<Vec<ArrayRef>> = Vec::new();
+    let mut masks: Vec<Option<BooleanArray>> = Vec::new();
+    let mut refined: Vec<Option<RowSelection>> = Vec::new();
 
+    for (rg_pos, handle) in handles.into_iter().enumerate() {
+        if remaining == 0 {
+            drop(handle);
+            continue;
+        }
+        let arrays = handle.await??;
+        let mask =
+            eval_predicate_on_pred_arrays(&arrow_schema, pred_col_indices, &arrays, &predicate)?;
+
+        let (capped_mask, contributed) = cap_mask_to_remaining(mask, remaining);
+        remaining -= contributed;
+
+        if need_phase2_selections {
+            let pred_sel = bool_array_to_row_selection(&capped_mask);
+            let final_sel = match &base_selections[rg_pos] {
+                Some(base) => refine_selection(base, &pred_sel),
+                None => pred_sel,
+            };
+            refined.push(Some(final_sel));
+        } else {
+            refined.push(None);
+        }
+        masks.push(Some(capped_mask));
+        pred_per_rg.push(arrays);
+    }
+
+    let active = pred_per_rg.len();
+    let pred_arrays = transpose_pred_arrays(pred_per_rg, pred_col_indices.len(), active);
+
+    Ok(Phase1Output {
+        final_selections: refined,
+        pred_arrays,
+        pred_masks: masks,
+        active_rg_count: active,
+    })
+}
+
+/// Batch-read all pred-col leaves for one RG, decode each pred column in parallel.
+async fn decode_pred_cols_for_rg(
+    chunk_source: Arc<ChunkSource>,
+    metadata: Arc<ParquetMetaData>,
+    arrow_schema: Arc<ArrowSchema>,
+    rg_idx: usize,
+    pred_col_indices: Arc<[usize]>,
+    pred_leaves: Arc<[usize]>,
+    selection: Option<RowSelection>,
+) -> DaftResult<Vec<ArrayRef>> {
+    let rg_chunks = Arc::new(chunk_source.read_rg_chunks(rg_idx, pred_leaves).await?);
+    let compute = get_compute_runtime();
+    let mut col_handles = Vec::with_capacity(pred_col_indices.len());
+    for &col_idx in pred_col_indices.iter() {
+        let chunks = rg_chunks.clone();
+        let metadata = metadata.clone();
+        let arrow_field = arrow_schema.field(col_idx).clone();
+        let selection = selection.clone();
+        col_handles.push(compute.spawn(async move {
+            decode_one(
+                chunks.as_ref(),
+                &metadata,
+                rg_idx,
+                col_idx,
+                &arrow_field,
+                selection.as_ref(),
+            )
+        }));
+    }
+    let mut arrays = Vec::with_capacity(col_handles.len());
+    for ch in col_handles {
+        arrays.push(ch.await??);
+    }
+    Ok(arrays)
+}
+
+fn eval_predicate_on_pred_arrays(
+    arrow_schema: &ArrowSchema,
+    pred_col_indices: &[usize],
+    arrays: &[ArrayRef],
+    predicate: &ExprRef,
+) -> DaftResult<BooleanArray> {
+    let fields: Vec<Arc<arrow::datatypes::Field>> = pred_col_indices
+        .iter()
+        .map(|&i| Arc::new(arrow_schema.field(i).clone()))
+        .collect();
+    let pred_arrow_schema = Arc::new(ArrowSchema::new(fields));
+    let pred_batch =
+        ArrowRecordBatch::try_new(pred_arrow_schema, arrays.to_vec()).map_err(parquet_err)?;
+    let daft_pred = RecordBatch::try_from(&pred_batch)?;
+    let pred_for_rg = substitute_missing_cols(predicate, &daft_pred.schema)?;
+    let bound = BoundExpr::try_new(pred_for_rg, &daft_pred.schema)?;
+    let mask_series = daft_pred.eval_expression(&bound)?;
+    Ok(mask_series.bool()?.as_arrow()?.clone())
+}
+
+/// Truncate the mask to at most `remaining` true bits. Returns `(capped_mask,
+/// rows_contributed)`.
+fn cap_mask_to_remaining(mask: BooleanArray, remaining: usize) -> (BooleanArray, usize) {
+    let true_count = mask.true_count();
+    if true_count > remaining {
+        (truncate_mask_to_n_trues(&mask, remaining), remaining)
+    } else {
+        (mask, true_count)
+    }
+}
+
+fn transpose_pred_arrays(
+    pred_per_rg: Vec<Vec<ArrayRef>>,
+    num_pred_cols: usize,
+    active: usize,
+) -> Vec<Vec<ArrayRef>> {
+    let mut out: Vec<Vec<ArrayRef>> = (0..num_pred_cols)
+        .map(|_| Vec::with_capacity(active))
+        .collect();
+    for arrays in pred_per_rg {
+        for (col_pos, arr) in arrays.into_iter().enumerate() {
+            out[col_pos].push(arr);
+        }
+    }
+    out
+}
+
+// ───── per-RG stream dispatch ────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn build_rg_stream(
+    chunk_source: Arc<ChunkSource>,
+    metadata: Arc<ParquetMetaData>,
+    arrow_schema: Arc<ArrowSchema>,
+    rg_indices: Arc<[usize]>,
+    plan: Arc<ColumnPlan>,
+    final_selections: Arc<[Option<RowSelection>]>,
+    pred_arrays: Arc<Vec<Vec<ArrayRef>>>,
+    pred_masks: Arc<Vec<Option<BooleanArray>>>,
+    active_rg_count: usize,
+    chunk_size: usize,
+    is_chunked_pred: bool,
+    predicate: Option<ExprRef>,
+    num_rows: Option<usize>,
+) -> impl Stream<Item = DaftResult<RecordBatch>> + Send + 'static {
     let remaining_atomic = Arc::new(std::sync::atomic::AtomicUsize::new(
         num_rows.unwrap_or(usize::MAX),
     ));
-    let predicate_for_chunked = predicate.clone();
-    let stream = futures::stream::iter(0..active_rg_count)
+    let read_col_arc: Arc<[usize]> = plan.read_col_indices.clone().into();
+    let pred_col_arc: Arc<[usize]> = plan.pred_col_indices.clone().into();
+    let data_col_arc: Arc<[usize]> = plan.data_col_indices.clone().into();
+    let predicate_pushed = plan.predicate_pushed;
+    let return_schema = plan.return_daft_schema.clone();
+
+    futures::stream::iter(0..active_rg_count)
         .then(move |rg_pos| {
-            let source = source_for_stream.clone();
-            let metadata = parquet_metadata_for_stream.clone();
-            let arrow_schema = arrow_schema_for_stream.clone();
-            let read_col_indices = read_col_indices_arc.clone();
-            let pred_col_indices = pred_col_indices_arc.clone();
-            let data_col_indices = data_col_indices_arc.clone();
-            let final_selections = final_selections_arc.clone();
-            let rg_indices_vec = rg_indices_vec_arc.clone();
-            let pred_arrays = pred_arrays_arc.clone();
-            let pred_masks = pred_masks_arc.clone();
-            let return_daft_schema = return_schema_for_stream.clone();
-            let predicate_for_fallback = predicate_for_fallback.clone();
-            let predicate_for_chunked = predicate_for_chunked.clone();
-            let remaining_atomic = remaining_atomic.clone();
+            let source = chunk_source.clone();
+            let metadata = metadata.clone();
+            let arrow_schema = arrow_schema.clone();
+            let read_cols = read_col_arc.clone();
+            let pred_cols = pred_col_arc.clone();
+            let data_cols = data_col_arc.clone();
+            let final_selections = final_selections.clone();
+            let rg_indices = rg_indices.clone();
+            let pred_arrays = pred_arrays.clone();
+            let pred_masks = pred_masks.clone();
+            let return_schema = return_schema.clone();
+            let predicate = predicate.clone();
+            let remaining = remaining_atomic.clone();
             async move {
-                let rg_idx = rg_indices_vec[rg_pos];
+                let rg_idx = rg_indices[rg_pos];
                 if is_chunked_pred {
                     process_rg_chunked_pred(
                         rg_idx,
                         source,
                         metadata,
                         arrow_schema,
-                        pred_col_indices,
-                        read_col_indices,
+                        pred_cols,
+                        read_cols,
                         final_selections[rg_pos].clone(),
-                        predicate_for_chunked.unwrap(),
+                        predicate.unwrap(),
                         chunk_size,
-                        remaining_atomic,
-                        return_daft_schema,
+                        remaining,
+                        return_schema,
                     )
                     .await
                 } else {
@@ -591,56 +775,84 @@ async fn stream_parquet_from_source(
                         source,
                         metadata,
                         arrow_schema,
-                        read_col_indices,
-                        pred_col_indices,
-                        data_col_indices,
+                        read_cols,
+                        pred_cols,
+                        data_cols,
                         final_selections[rg_pos].clone(),
                         pred_arrays,
                         pred_masks,
                         chunk_size,
-                        return_daft_schema,
-                        predicate_for_fallback,
+                        return_schema,
+                        predicate,
                         predicate_pushed,
                     )
                     .await
                 }
             }
         })
-        .flatten();
-
-    // Cross-RG limit: trim the final batch to land on the cap.
-    let limited: BoxStream<'static, DaftResult<RecordBatch>> = if let Some(limit) = num_rows {
-        let mut remaining: usize = limit;
-        let bounded = stream.filter_map(move |res| {
-            let out = match res {
-                Err(e) => Some(Err(e)),
-                Ok(b) if remaining == 0 => {
-                    let _ = b;
-                    None
-                }
-                Ok(b) => {
-                    if b.num_rows() <= remaining {
-                        remaining -= b.num_rows();
-                        Some(Ok(b))
-                    } else {
-                        let take = remaining;
-                        remaining = 0;
-                        Some(b.head(take))
-                    }
-                }
-            };
-            async move { out }
-        });
-        Box::pin(bounded)
-    } else {
-        Box::pin(stream)
-    };
-
-    Ok((return_daft_schema, limited))
+        .flatten()
 }
 
+// ───── early-out streams + cross-RG limit ────────────────────────────────────
+
+fn empty_stream(schema: Arc<Schema>) -> (Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>) {
+    let s = schema.clone();
+    (
+        schema,
+        futures::stream::once(async move { Ok(RecordBatch::empty(Some(s))) }).boxed(),
+    )
+}
+
+fn count_only_stream(
+    metadata: &ParquetMetaData,
+    rg_indices: &[usize],
+    num_rows: Option<usize>,
+    return_schema: Arc<Schema>,
+) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
+    let total: usize = rg_indices
+        .iter()
+        .map(|&i| metadata.row_group(i).num_rows() as usize)
+        .sum();
+    let n = num_rows.map(|n| n.min(total)).unwrap_or(total);
+    let batch = RecordBatch::new_with_size(return_schema.clone(), Vec::new(), n)?;
+    Ok((
+        return_schema,
+        futures::stream::once(async move { Ok(batch) }).boxed(),
+    ))
+}
+
+/// Trim the final batch to land exactly on the row cap.
+fn apply_cross_rg_limit(
+    stream: impl Stream<Item = DaftResult<RecordBatch>> + Send + 'static,
+    limit: Option<usize>,
+) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    let Some(limit) = limit else {
+        return Box::pin(stream);
+    };
+    let mut remaining = limit;
+    let bounded = stream.filter_map(move |res| {
+        let out = match res {
+            Err(e) => Some(Err(e)),
+            Ok(_) if remaining == 0 => None,
+            Ok(b) if b.num_rows() <= remaining => {
+                remaining -= b.num_rows();
+                Some(Ok(b))
+            }
+            Ok(b) => {
+                let take = remaining;
+                remaining = 0;
+                Some(b.head(take))
+            }
+        };
+        async move { out }
+    });
+    Box::pin(bounded)
+}
+
+// ───── bulk variant ──────────────────────────────────────────────────────────
+
 /// Bulk variant: collect the full stream into one concatenated `RecordBatch`.
-/// Returns an empty batch if the stream produced none.
+/// Returns a schema-bearing empty batch if the stream produced none.
 #[allow(clippy::too_many_arguments)]
 pub async fn read_parquet(
     source: ParquetSource<'_>,
@@ -670,7 +882,6 @@ pub async fn read_parquet(
     .await?;
     let batches: Vec<RecordBatch> = stream.try_collect().await?;
     if batches.is_empty() {
-        // Bulk callers expect schema-bearing output even for empty parquet.
         return Ok(RecordBatch::empty(Some(schema)));
     }
     RecordBatch::concat(&batches)

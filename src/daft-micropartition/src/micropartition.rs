@@ -16,7 +16,10 @@ use daft_io::{IOClient, IOConfig, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
     DaftParquetMetadata,
-    read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
+    read::{
+        ParquetBulkReadOptions, ParquetSchemaInferenceOptions, PerFileOptions,
+        read_parquet_bulk_sync, read_parquet_metadata_bulk,
+    },
 };
 use daft_recordbatch::RecordBatch;
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
@@ -457,6 +460,24 @@ fn get_file_column_names<'a>(
     }
 }
 
+fn build_per_file(
+    uris: &[&str],
+    row_groups: Option<&[Option<Vec<i64>>]>,
+    delete_map: Option<&HashMap<String, Vec<i64>>>,
+) -> Vec<PerFileOptions> {
+    if row_groups.is_none() && delete_map.is_none() {
+        return Vec::new();
+    }
+    uris.iter()
+        .enumerate()
+        .map(|(i, uri)| PerFileOptions {
+            row_groups: row_groups.and_then(|rgs| rgs[i].clone()),
+            delete_rows: delete_map.and_then(|m| m.get(*uri).cloned()),
+            metadata: None,
+        })
+        .collect()
+}
+
 fn read_delete_files(
     delete_files: &[&str],
     uris: &[&str],
@@ -466,25 +487,13 @@ fn read_delete_files(
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<HashMap<String, Vec<i64>>> {
-    let columns: Option<&[&str]> = Some(&["file_path", "pos"]);
-
-    let tables = read_parquet_bulk(
-        delete_files,
-        columns,
-        None,
-        None,
-        None,
-        None,
-        io_client,
-        io_stats,
+    let opts = ParquetBulkReadOptions {
+        columns: Some(vec!["file_path".to_string(), "pos".to_string()]),
+        schema_infer: *schema_infer_options,
         num_parallel_tasks,
-        multithreaded_io,
-        schema_infer_options,
-        None,
-        None,
-        None,
-        None,
-    )?;
+        ..Default::default()
+    };
+    let tables = read_parquet_bulk_sync(delete_files, io_client, io_stats, multithreaded_io, opts)?;
 
     let mut delete_map: HashMap<String, Vec<i64>> = uris
         .iter()
@@ -565,23 +574,20 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     });
 
     let file_column_names = get_file_column_names(columns.as_deref(), partition_spec);
-    let all_tables = read_parquet_bulk(
-        uris,
-        file_column_names.as_deref(),
+    let per_file: Vec<PerFileOptions> =
+        build_per_file(uris, row_groups.as_deref(), delete_map.as_ref());
+    let opts = ParquetBulkReadOptions {
+        columns: file_column_names.map(|v| v.into_iter().map(str::to_string).collect()),
         start_offset,
         num_rows,
-        row_groups,
         predicate,
-        io_client,
-        io_stats,
-        num_parallel_tasks,
-        multithreaded_io,
-        schema_infer_options,
+        schema_infer: *schema_infer_options,
         field_id_mapping,
-        None,
-        delete_map,
-        chunk_size,
-    )?;
+        batch_size: chunk_size,
+        num_parallel_tasks,
+        per_file,
+    };
+    let all_tables = read_parquet_bulk_sync(uris, io_client, io_stats, multithreaded_io, opts)?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
     let full_daft_schema = if let Some(catalog_provided_schema) = catalog_provided_schema {

@@ -3211,7 +3211,6 @@ dependencies = [
  "snafu",
  "tango-bench",
  "tokio",
- "tokio-stream",
 ]
 
 [[package]]

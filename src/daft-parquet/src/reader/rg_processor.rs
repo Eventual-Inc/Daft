@@ -279,11 +279,10 @@ pub(super) async fn process_rg_chunked_pred(
             .collect();
         Arc::new(ArrowSchema::new(fields))
     };
-    let chunk_daft_schema =
-        match crate::schema_inference::arrow_schema_to_daft_schema(&chunk_arrow_schema) {
-            Ok(s) => Arc::new(s),
-            Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
-        };
+    let chunk_daft_schema = match Schema::try_from(chunk_arrow_schema.as_ref()) {
+        Ok(s) => Arc::new(s),
+        Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
+    };
     let bound_pred = match substitute_missing_cols(&predicate, &chunk_daft_schema) {
         Ok(p) => match BoundExpr::try_new(p, &chunk_daft_schema) {
             Ok(b) => Arc::new(b),
