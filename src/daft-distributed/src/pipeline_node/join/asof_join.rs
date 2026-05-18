@@ -28,8 +28,10 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const PER_WORKER_CARRYOVER_PHASE: &str = "per_worker_carryover";
-const PER_PARTITION_CARRYOVER_PHASE: &str = "per_partition_carryover";
+const PER_WORKER_CARRYOVER_BACKWARD_PHASE: &str = "per_worker_carryover_backward";
+const PER_PARTITION_CARRYOVER_BACKWARD_PHASE: &str = "per_partition_carryover_backward";
+const PER_WORKER_CARRYOVER_FORWARD_PHASE: &str = "per_worker_carryover_forward";
+const PER_PARTITION_CARRYOVER_FORWARD_PHASE: &str = "per_partition_carryover_forward";
 
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
@@ -224,22 +226,27 @@ impl AsofJoinNode {
                     .await?;
                 (none_vec(), pass)
             }
-            AsofJoinStrategy::Nearest => tokio::try_join!(
-                self.compute_carryover_pass(
-                    right_partitioned_outputs.clone(),
-                    true,
-                    true,
-                    task_id_counter,
-                    scheduler_handle,
-                ),
-                self.compute_carryover_pass(
-                    right_partitioned_outputs.clone(),
-                    false,
-                    false,
-                    task_id_counter,
-                    scheduler_handle,
-                ),
-            )?,
+            AsofJoinStrategy::Nearest => {
+                let backward_pass = self
+                    .compute_carryover_pass(
+                        right_partitioned_outputs.clone(),
+                        true,
+                        true,
+                        task_id_counter,
+                        scheduler_handle,
+                    )
+                    .await?;
+                let forward_pass = self
+                    .compute_carryover_pass(
+                        right_partitioned_outputs.clone(),
+                        false,
+                        false,
+                        task_id_counter,
+                        scheduler_handle,
+                    )
+                    .await?;
+                (backward_pass, forward_pass)
+            }
         };
 
         let left_partition_groups =
@@ -412,15 +419,25 @@ impl AsofJoinNode {
         &self,
         inputs: Vec<MaterializedOutput>,
         descending: bool,
-        phase: &str,
+        is_per_worker: bool,
         strategy: Option<SchedulingStrategy>,
         task_id_counter: &TaskIDCounter,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<SubmittedTask> {
         let composite_keys = self.right_composite_key();
         let node_id = self.node_id();
+        let descending_flag = descending;
         let descending = vec![descending; composite_keys.len()];
         let nulls_first = vec![false; composite_keys.len()];
+
+        // Phase derived from (level, direction) — all four combinations get a unique constant so
+        // backward and forward pass outputs never collide in the Ray partition store.
+        let phase = match (is_per_worker, descending_flag) {
+            (true, true) => PER_WORKER_CARRYOVER_BACKWARD_PHASE,
+            (true, false) => PER_WORKER_CARRYOVER_FORWARD_PHASE,
+            (false, true) => PER_PARTITION_CARRYOVER_BACKWARD_PHASE,
+            (false, false) => PER_PARTITION_CARRYOVER_FORWARD_PHASE,
+        };
 
         let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
             inputs,
@@ -479,7 +496,7 @@ impl AsofJoinNode {
                 let submitted = self.submit_top1_carryover_task(
                     mos_for_bucket,
                     descending,
-                    PER_WORKER_CARRYOVER_PHASE,
+                    true,
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id: worker_id.clone(),
                         soft: false,
@@ -522,7 +539,7 @@ impl AsofJoinNode {
                 self.submit_top1_carryover_task(
                     non_empty,
                     descending,
-                    PER_PARTITION_CARRYOVER_PHASE,
+                    false,
                     None,
                     task_id_counter,
                     scheduler_handle,
