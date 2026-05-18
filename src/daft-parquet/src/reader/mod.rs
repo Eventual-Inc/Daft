@@ -515,8 +515,7 @@ async fn phase1_predicate_decode(
         let pred_leaves = pred_leaves.clone();
         let selection = base_selections[rg_pos].clone();
         handles.push(compute.spawn(async move {
-            // evict_after=false: phase-2 reads data leaves from the same RG.
-            let rg_chunks = Arc::new(source.read_rg_chunks(rg_idx, pred_leaves, false).await?);
+            let rg_chunks = Arc::new(source.read_rg_chunks(rg_idx, pred_leaves).await?);
             let compute = get_compute_runtime();
             let mut col_handles = Vec::with_capacity(pred_cols.len());
             for &col_idx in &pred_cols {

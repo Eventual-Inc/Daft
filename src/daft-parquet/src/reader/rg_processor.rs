@@ -94,7 +94,7 @@ pub(super) async fn process_rg_streaming(
     let data_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, data_col_indices.as_ref()).into();
     // Final read for this RG → evict so the cached `Arc<RgBytesMap>` is dropped.
-    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves, true).await {
+    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves).await {
         Ok(c) => Arc::new(c),
         Err(e) => return err_stream(e),
     };
@@ -243,7 +243,7 @@ pub(super) async fn process_rg_chunked_pred(
     let pred_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, pred_col_indices.as_ref()).into();
     // Sole phase-2 path for this RG — safe to evict the cached `Arc<RgBytesMap>`.
-    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves, true).await {
+    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves).await {
         Ok(c) => Arc::new(c),
         Err(e) => return err_stream(e),
     };
