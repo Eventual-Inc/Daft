@@ -28,22 +28,22 @@ impl Eq for Sample {}
 
 impl Hash for Sample {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash the `input` field.
+        self.plan_id.hash(state);
+        self.node_id.hash(state);
         self.input.hash(state);
-
-        // Hash fraction if present (rounded to 6 decimals to avoid tiny differences)
-        if let Some(fraction) = self.fraction {
-            format!("{:.6}", fraction).hash(state);
-        }
-
-        // Hash size if present
-        if let Some(size) = self.size {
-            size.hash(state);
-        }
-
-        // Hash the rest of the fields.
+        self.fraction.map(canonical_fraction_bits).hash(state);
+        self.size.hash(state);
         self.with_replacement.hash(state);
         self.seed.hash(state);
+        self.stats_state.hash(state);
+    }
+}
+
+fn canonical_fraction_bits(fraction: f64) -> u64 {
+    if fraction == 0.0 {
+        0.0f64.to_bits()
+    } else {
+        fraction.to_bits()
     }
 }
 
@@ -106,5 +106,101 @@ impl Sample {
             res.push(format!("Stats = {}", stats));
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+        sync::Arc,
+    };
+
+    use daft_core::prelude::*;
+    use daft_schema::schema::Schema;
+
+    use super::Sample;
+    use crate::{
+        LogicalPlan,
+        ops::Source,
+        source_info::{InMemoryInfo, SourceInfo},
+        stats::{ApproxStats, PlanStats, StatsState},
+    };
+
+    fn compute_hash<T: Hash>(value: &T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn dummy_input() -> Arc<LogicalPlan> {
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64)]));
+        let info = InMemoryInfo::new(
+            schema.clone(),
+            "sample_hash_test".to_string(),
+            None,
+            1,
+            0,
+            0,
+            None,
+            None,
+        );
+        let source = Source::new(schema, Arc::new(SourceInfo::InMemory(info)));
+        Arc::new(LogicalPlan::Source(source))
+    }
+
+    fn sample_with_fraction(fraction: f64) -> Sample {
+        Sample::new(dummy_input(), Some(fraction), None, false, Some(42))
+    }
+
+    #[test]
+    fn test_hash_preserves_fraction_precision() {
+        let sample_a = sample_with_fraction(0.1234561);
+        let sample_b = sample_with_fraction(0.1234564);
+
+        assert_ne!(sample_a, sample_b);
+        assert_ne!(compute_hash(&sample_a), compute_hash(&sample_b));
+    }
+
+    #[test]
+    fn test_hash_normalizes_signed_zero_fraction() {
+        let sample_a = sample_with_fraction(-0.0);
+        let sample_b = sample_with_fraction(0.0);
+
+        assert_eq!(sample_a, sample_b);
+        assert_eq!(compute_hash(&sample_a), compute_hash(&sample_b));
+    }
+
+    #[test]
+    fn test_hash_includes_plan_identity_fields() {
+        let input = dummy_input();
+        let sample_a = Sample::new(input.clone(), Some(0.5), None, false, Some(42))
+            .with_plan_id(100)
+            .with_node_id(10);
+        let sample_b = Sample::new(input, Some(0.5), None, false, Some(42))
+            .with_plan_id(200)
+            .with_node_id(20);
+
+        assert_ne!(sample_a, sample_b);
+        assert_ne!(compute_hash(&sample_a), compute_hash(&sample_b));
+    }
+
+    #[test]
+    fn test_hash_includes_stats_materialization_state() {
+        let input = dummy_input();
+        let sample_a = Sample::new(input.clone(), Some(0.5), None, false, Some(42));
+        let mut sample_b = Sample::new(input, Some(0.5), None, false, Some(42));
+        sample_b.stats_state = StatsState::Materialized(
+            PlanStats::new(ApproxStats {
+                num_rows: 10,
+                size_bytes: 80,
+                acc_selectivity: 0.5,
+            })
+            .into(),
+        );
+
+        assert_ne!(sample_a, sample_b);
+        assert_ne!(compute_hash(&sample_a), compute_hash(&sample_b));
     }
 }

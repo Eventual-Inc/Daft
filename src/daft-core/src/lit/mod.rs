@@ -123,6 +123,7 @@ impl Eq for Literal {}
 
 impl Hash for Literal {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
         match self {
             Self::Null => 1.hash(state),
             Self::Boolean(bool) => bool.hash(state),
@@ -610,9 +611,20 @@ pub trait FromLiteral: Sized {
 
 #[cfg(test)]
 mod test {
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+    };
+
     use common_error::DaftResult;
 
     use super::{FromLiteral, Literal};
+
+    fn compute_hash<T: Hash>(value: &T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
 
     #[test]
     fn test_roundtrip() -> DaftResult<()> {
@@ -637,5 +649,21 @@ mod test {
         roundtrip("test".to_string())?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_hash_includes_variant_discriminant() {
+        let collision_pairs = [
+            (Literal::Int8(1), Literal::UInt8(1)),
+            (Literal::Int16(1), Literal::UInt16(1)),
+            (Literal::Int32(1), Literal::UInt32(1)),
+            (Literal::Int32(1), Literal::Date(1)),
+            (Literal::Int64(1), Literal::UInt64(1)),
+        ];
+
+        for (left, right) in collision_pairs {
+            assert_ne!(left, right);
+            assert_ne!(compute_hash(&left), compute_hash(&right));
+        }
     }
 }
