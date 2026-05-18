@@ -96,10 +96,6 @@ async fn read_parquet(
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
-    // The parquet reader is RG-sequential by construction (stream::iter + .then),
-    // so `maintain_order` from the scan-task layer is always satisfied.
-    let _ = maintain_order;
-
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
     {
@@ -130,6 +126,7 @@ async fn read_parquet(
             .sources
             .first()
             .and_then(|s| s.get_parquet_metadata().cloned()),
+        maintain_order,
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.

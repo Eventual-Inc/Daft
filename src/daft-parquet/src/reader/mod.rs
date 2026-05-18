@@ -84,6 +84,7 @@ pub async fn stream_parquet(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
+    maintain_order: bool,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     // When a predicate is pushed, the remote prefetcher's row-count-based RG
     // pruning is unsafe — most rows survive the limit only after filtering, so
@@ -114,6 +115,7 @@ pub async fn stream_parquet(
         batch_size,
         field_id_mapping,
         delete_rows,
+        maintain_order,
     )
     .await
 }
@@ -188,6 +190,7 @@ async fn stream_parquet_from_source(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
+    maintain_order: bool,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     let chunk_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
     let prepared = prepare_metadata(
@@ -267,6 +270,7 @@ async fn stream_parquet_from_source(
         is_chunked_pred,
         predicate,
         num_rows,
+        maintain_order,
     );
 
     Ok((
@@ -715,6 +719,16 @@ fn transpose_pred_arrays(
 
 // ───── per-RG stream dispatch ────────────────────────────────────────────────
 
+/// Spawn one decoder driver per active RG onto the compute runtime via a
+/// `JoinSet`. Each driver writes its sub-stream into its own bounded channel.
+/// The output stream merges the channels — in-order via `flatten` (per-RG
+/// receivers drained sequentially) or interleaved via `select_all` when
+/// `maintain_order = false`. Cross-RG concurrency comes from the spawned tasks
+/// filling their bounded channels while we drain the previous one.
+///
+/// Pattern mirrors the v0.7.4 reader's `read_from_ranges_into_table_stream`,
+/// but uses Daft's compute runtime + `JoinSet` instead of bare `tokio::spawn`,
+/// so tasks show up in runtime metrics and cancel together on stream drop.
 #[allow(clippy::too_many_arguments)]
 fn build_rg_stream(
     chunk_source: Arc<ChunkSource>,
@@ -730,7 +744,10 @@ fn build_rg_stream(
     is_chunked_pred: bool,
     predicate: Option<ExprRef>,
     num_rows: Option<usize>,
-) -> impl Stream<Item = DaftResult<RecordBatch>> + Send + 'static {
+    maintain_order: bool,
+) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    use tokio_stream::wrappers::ReceiverStream;
+
     let remaining_atomic = Arc::new(std::sync::atomic::AtomicUsize::new(
         num_rows.unwrap_or(usize::MAX),
     ));
@@ -740,24 +757,32 @@ fn build_rg_stream(
     let predicate_pushed = plan.predicate_pushed;
     let return_schema = plan.return_daft_schema.clone();
 
-    futures::stream::iter(0..active_rg_count)
-        .then(move |rg_pos| {
-            let source = chunk_source.clone();
-            let metadata = metadata.clone();
-            let arrow_schema = arrow_schema.clone();
-            let read_cols = read_col_arc.clone();
-            let pred_cols = pred_col_arc.clone();
-            let data_cols = data_col_arc.clone();
-            let final_selections = final_selections.clone();
-            let rg_indices = rg_indices.clone();
-            let pred_arrays = pred_arrays.clone();
-            let pred_masks = pred_masks.clone();
-            let return_schema = return_schema.clone();
-            let predicate = predicate.clone();
-            let remaining = remaining_atomic.clone();
+    // One bounded channel per RG. Capacity 1 keeps each task running ~one batch
+    // ahead of the consumer — enough for cross-RG overlap, no unbounded memory.
+    let (senders, receivers): (Vec<_>, Vec<_>) = (0..active_rg_count)
+        .map(|_| tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1))
+        .unzip();
+
+    let compute = get_compute_runtime();
+    let mut joinset: tokio::task::JoinSet<DaftResult<()>> = tokio::task::JoinSet::new();
+    for (rg_pos, sender) in senders.into_iter().enumerate() {
+        let source = chunk_source.clone();
+        let metadata = metadata.clone();
+        let arrow_schema = arrow_schema.clone();
+        let read_cols = read_col_arc.clone();
+        let pred_cols = pred_col_arc.clone();
+        let data_cols = data_col_arc.clone();
+        let final_selections = final_selections.clone();
+        let rg_indices = rg_indices.clone();
+        let pred_arrays = pred_arrays.clone();
+        let pred_masks = pred_masks.clone();
+        let return_schema = return_schema.clone();
+        let predicate = predicate.clone();
+        let remaining = remaining_atomic.clone();
+        joinset.spawn_on(
             async move {
                 let rg_idx = rg_indices[rg_pos];
-                if is_chunked_pred {
+                let mut sub_stream = if is_chunked_pred {
                     process_rg_chunked_pred(
                         rg_idx,
                         source,
@@ -791,10 +816,34 @@ fn build_rg_stream(
                         predicate_pushed,
                     )
                     .await
+                };
+                while let Some(item) = sub_stream.next().await {
+                    if sender.send(item).await.is_err() {
+                        break;
+                    }
                 }
-            }
-        })
-        .flatten()
+                DaftResult::Ok(())
+            },
+            compute.runtime.handle(),
+        );
+    }
+
+    // Driver: surface any spawned-task error after the consumer drains the
+    // streams. Held alive by `combine_stream` so it's awaited at end-of-stream.
+    let driver = async move {
+        while let Some(res) = joinset.join_next().await {
+            res.map_err(|e| common_error::DaftError::External(e.into()))??;
+        }
+        DaftResult::Ok(())
+    };
+
+    let inner_streams = receivers.into_iter().map(ReceiverStream::new);
+    let merged: BoxStream<'static, DaftResult<RecordBatch>> = if maintain_order {
+        Box::pin(futures::stream::iter(inner_streams).flatten())
+    } else {
+        Box::pin(futures::stream::select_all(inner_streams))
+    };
+    common_runtime::combine_stream(merged, driver).boxed()
 }
 
 // ───── early-out streams + cross-RG limit ────────────────────────────────────
@@ -869,6 +918,7 @@ pub async fn read_parquet(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
+    maintain_order: bool,
 ) -> DaftResult<RecordBatch> {
     use futures::TryStreamExt;
     let (schema, stream) = stream_parquet(
@@ -882,6 +932,7 @@ pub async fn read_parquet(
         batch_size,
         field_id_mapping,
         delete_rows,
+        maintain_order,
     )
     .await?;
     let batches: Vec<RecordBatch> = stream.try_collect().await?;

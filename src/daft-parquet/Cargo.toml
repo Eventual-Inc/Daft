@@ -20,6 +20,7 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
