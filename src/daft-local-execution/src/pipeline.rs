@@ -1616,17 +1616,25 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                ShuffleBackend::Ray => BlockingSinkNode::new(
-                    Arc::new(RepartitionSink::new_ray(
+                ShuffleBackend::Ray => {
+                    let repartition_sink = RepartitionSink::new_ray(
+                        schema.clone(),
                         repartition_spec.clone(),
                         *num_partitions,
-                    )),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+
+                    BlockingSinkNode::new(
+                        Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
                 ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,
