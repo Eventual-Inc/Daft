@@ -22,7 +22,7 @@ use tonic::{Request, Response, Status, transport::Server};
 use super::stream::FlightDataStreamReader;
 use crate::{
     client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    shuffle_cache::PartitionCache,
+    shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache},
 };
 
 struct ParsedTicket {
@@ -79,8 +79,6 @@ enum FileReadSpec {
         ranges: Vec<(u64, u64)>,
     },
 }
-
-const READ_PREFETCH: usize = 1;
 
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
@@ -442,38 +440,20 @@ impl FlightService for ShuffleFlightServer {
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
 
-        // Read-side concat coalesces small source batches into ≥ chunk_target_bytes per
-        // FlightData, avoiding the client's per-message Flight tax. `None` disables it.
-        let read_concat: Option<usize> = crate::shuffle_cache::read_chunk_target_bytes();
-
+        // Read-side concat coalesces small source batches into ≥ CHUNK_TARGET_BYTES per
+        // FlightData, avoiding the client's per-message Flight tax.
+        let header_bytes = build_schema_header_bytes(&arrow_schema)
+            .map_err(|e| Status::internal(format!("schema header probe: {}", e)))?;
+        let arrow_schema_ref: arrow_schema::SchemaRef = Arc::new(arrow_schema);
+        let header_bytes_arc = Arc::new(header_bytes);
         let flight_data_stream: Pin<
             Box<dyn Stream<Item = Result<FlightData, Status>> + Send + 'static>,
-        > = if let Some(chunk_target) = read_concat {
-            let header_bytes = build_schema_header_bytes(&arrow_schema)
-                .map_err(|e| Status::internal(format!("schema header probe: {}", e)))?;
-            let arrow_schema_ref: arrow_schema::SchemaRef = Arc::new(arrow_schema);
-            let header_bytes_arc = Arc::new(header_bytes);
-            let stream = concat_specs_into_flight_data_stream(
-                specs,
-                arrow_schema_ref,
-                header_bytes_arc,
-                chunk_target,
-            );
-            Box::pin(stream)
-        } else {
-            let file_stream = futures::stream::iter(specs);
-            Box::pin(
-                file_stream
-                    .map(|spec| async move {
-                        let stream = open_spec_as_flight_stream(spec)
-                            .await
-                            .map_err(|e| Status::internal(e.to_string()))?;
-                        Ok::<_, Status>(stream.map_err(|e| Status::internal(e.to_string())))
-                    })
-                    .buffered(READ_PREFETCH)
-                    .try_flatten(),
-            )
-        };
+        > = Box::pin(concat_specs_into_flight_data_stream(
+            specs,
+            arrow_schema_ref,
+            header_bytes_arc,
+            CHUNK_TARGET_BYTES,
+        ));
 
         let flight_data =
             futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);

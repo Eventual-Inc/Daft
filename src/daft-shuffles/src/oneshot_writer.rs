@@ -8,7 +8,6 @@
 use std::{
     fs::File,
     io::{self, BufWriter, Write},
-    path::Path,
     sync::Arc,
 };
 
@@ -18,7 +17,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 
-use crate::shuffle_cache::{PartitionCache, chunk_target_bytes, partition_ref_id};
+use crate::shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache, partition_ref_id};
 
 const FILE_BUF_BYTES: usize = 1024 * 1024;
 
@@ -60,14 +59,11 @@ pub async fn write_partitions_one_shot(
     let num_partitions = partitions_per_output.len();
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
     let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
-    let chunk_target = chunk_target_bytes();
 
     get_io_runtime(true)
         .spawn_blocking(move || -> DaftResult<Vec<PartitionCache>> {
             let mut partitions_per_output = partitions_per_output;
-            if !Path::new(&shuffle_dir).exists() {
-                std::fs::create_dir_all(&shuffle_dir)?;
-            }
+            std::fs::create_dir_all(&shuffle_dir)?;
             let file_path = format!("{}/map_{}.arrow", shuffle_dir, input_id);
             let file = File::create(&file_path)?;
             let counting = CountingFile::new(file);
@@ -92,7 +88,7 @@ pub async fn write_partitions_one_shot(
                 let ref_id = partition_ref_id(input_id, idx);
                 match concat_one_partition(
                     parts,
-                    chunk_target,
+                    CHUNK_TARGET_BYTES,
                     &arrow_schema,
                     &mut arrow_batches_buf,
                 )? {
