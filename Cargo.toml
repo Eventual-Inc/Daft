@@ -242,17 +242,17 @@ exclude = [
 ]
 
 [workspace.dependencies]
-arrow = "57.1.0"
+arrow = "58.3.0"
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
-arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
-arrow-buffer = "57.1.0"
-arrow-csv = "57.1.0"
-arrow-data = "57.1.0"
-arrow-flight = "57.1.0"
-arrow-ipc = "57.1.0"
-arrow-json = "57.1.0"
-arrow-row = "57.1.0"
-arrow-schema = "57.1.0"
+arrow-array = {version = "58.3.0", features = ["chrono-tz"]}
+arrow-buffer = "58.3.0"
+arrow-csv = "58.3.0"
+arrow-data = "58.3.0"
+arrow-flight = "58.3.0"
+arrow-ipc = "58.3.0"
+arrow-json = "58.3.0"
+arrow-row = "58.3.0"
+arrow-schema = "58.3.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -333,7 +333,10 @@ opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.5"
-parquet = "57.1.0"
+parquet = {version = "58.3.0", features = ["variant_experimental"]}
+parquet-variant = "58.3.0"
+parquet-variant-compute = "58.3.0"
+parquet-variant-json = "58.3.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
