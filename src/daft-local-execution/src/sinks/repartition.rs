@@ -22,7 +22,7 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
-const REPARTITION_BUFFER_THRESHOLD_BYTES: usize = 64 * 1024 * 1024;
+const REPARTITION_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024;
 
 /// Per-(worker, input) accumulator. Morsels are buffered until they cross
 /// `REPARTITION_BUFFER_THRESHOLD_BYTES`, then fused and partitioned in one pass.
