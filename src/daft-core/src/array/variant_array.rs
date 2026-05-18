@@ -8,11 +8,11 @@ use crate::{
 pub type VariantArray = LogicalArray<VariantType>;
 
 impl VariantArray {
-    pub fn metadata(&self) -> &Series {
+    pub fn values(&self) -> &Series {
         &self.physical.children[0]
     }
 
-    pub fn values(&self) -> &Series {
+    pub fn metadata(&self) -> &Series {
         &self.physical.children[1]
     }
 

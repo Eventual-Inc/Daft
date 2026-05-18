@@ -425,8 +425,8 @@ impl DataType {
                 },
             ]),
             Variant => Struct(vec![
-                Field::new("metadata", Binary),
                 Field::new("value", Binary),
+                Field::new("metadata", Binary),
             ]),
             Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![

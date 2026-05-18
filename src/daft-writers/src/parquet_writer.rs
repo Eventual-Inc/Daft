@@ -29,6 +29,8 @@ use crate::{
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
+const VARIANT_EXTENSION_NAME: &str = "arrow.parquet.variant";
+
 /// Construct writer properties for the native Parquet writer
 fn native_parquet_writer_properties(arrow_schema: &arrow_schema::Schema) -> WriterProperties {
     let mut props = WriterProperties::builder()
@@ -37,6 +39,66 @@ fn native_parquet_writer_properties(arrow_schema: &arrow_schema::Schema) -> Writ
         .build();
     add_encoded_arrow_schema_to_metadata(arrow_schema, &mut props);
     props
+}
+
+/// Strip the Variant extension metadata from fields so that ArrowSchemaConverter
+/// does not emit LogicalType::Variant in the parquet schema. Spark 4.0's parquet-mr
+/// library does not recognize LogicalType::Variant and will crash reading such files.
+/// The Variant type is still preserved in the ARROW:schema footer metadata for
+/// Daft-to-Daft roundtrips.
+fn strip_variant_extension_for_parquet(schema: &arrow_schema::Schema) -> arrow_schema::Schema {
+    let new_fields: Vec<arrow_schema::Field> = schema
+        .fields()
+        .iter()
+        .map(|f| strip_variant_field(f.as_ref()))
+        .collect();
+    arrow_schema::Schema::new_with_metadata(new_fields, schema.metadata().clone())
+}
+
+fn strip_variant_field(field: &arrow_schema::Field) -> arrow_schema::Field {
+    let is_variant = field
+        .metadata()
+        .get("ARROW:extension:name")
+        .is_some_and(|name| name == VARIANT_EXTENSION_NAME);
+
+    let new_field = match field.data_type() {
+        arrow_schema::DataType::Struct(fields) => {
+            let new_fields: Vec<arrow_schema::Field> = fields
+                .iter()
+                .map(|f| strip_variant_field(f.as_ref()))
+                .collect();
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(arrow_schema::DataType::Struct(new_fields.into()))
+        }
+        arrow_schema::DataType::List(inner) => {
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(arrow_schema::DataType::List(
+                    strip_variant_field(inner.as_ref()).into(),
+                ))
+        }
+        arrow_schema::DataType::LargeList(inner) => {
+            field
+                .as_ref()
+                .clone()
+                .with_data_type(arrow_schema::DataType::LargeList(
+                    strip_variant_field(inner.as_ref()).into(),
+                ))
+        }
+        _ => field.as_ref().clone(),
+    };
+
+    if is_variant {
+        let mut metadata = new_field.metadata().clone();
+        metadata.remove("ARROW:extension:name");
+        metadata.remove("ARROW:extension:metadata");
+        new_field.with_metadata(metadata)
+    } else {
+        new_field
+    }
 }
 
 /// Helper function that checks if we support native writes given the file format, path, and schema.
@@ -54,9 +116,10 @@ pub(crate) fn native_parquet_writer_supported(
     };
 
     let writer_properties = native_parquet_writer_properties(&arrow_schema);
+    let parquet_arrow_schema = strip_variant_extension_for_parquet(&arrow_schema);
     Ok(ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
-        .convert(&arrow_schema)
+        .convert(&parquet_arrow_schema)
         .is_ok())
 }
 
@@ -82,9 +145,10 @@ pub(crate) fn create_native_parquet_writer(
     let arrow_schema = Arc::new(schema.to_arrow()?.into());
     let writer_properties = native_parquet_writer_properties(&arrow_schema);
 
+    let parquet_arrow_schema = strip_variant_extension_for_parquet(&arrow_schema);
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
-        .convert(&arrow_schema)
+        .convert(&parquet_arrow_schema)
         .expect("By this point `native_writer_supported` should have been called which would have verified that the schema is convertible");
 
     match source_type {

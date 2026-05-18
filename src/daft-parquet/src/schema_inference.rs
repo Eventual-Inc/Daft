@@ -55,6 +55,37 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
         arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
     }
 
+    // Post-process: detect Variant columns from Spark's row metadata.
+    // Spark 4.0 writes variant columns as Struct{value: Binary, metadata: Binary} without
+    // the parquet VARIANT LogicalType. The variant info lives in the Spark row metadata JSON.
+    if let Some(variant_fields) = key_value_metadata
+        .as_ref()
+        .and_then(|kvs| {
+            kvs.iter()
+                .find(|kv| kv.key == "org.apache.spark.sql.parquet.row.metadata")
+        })
+        .and_then(|kv| kv.value.as_deref())
+        .and_then(detect_spark_variant_fields)
+    {
+        let new_fields: Vec<Field> = arrow_schema
+            .fields()
+            .iter()
+            .map(|f| {
+                if variant_fields.contains(f.name()) {
+                    let mut metadata = f.metadata().clone();
+                    metadata.insert(
+                        "ARROW:extension:name".to_string(),
+                        "arrow.parquet.variant".to_string(),
+                    );
+                    f.as_ref().clone().with_metadata(metadata)
+                } else {
+                    f.as_ref().clone()
+                }
+            })
+            .collect();
+        arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
+    }
+
     // Post-process: promote small-offset types to large-offset types.
     // Arrow-rs parquet reader produces Utf8/Binary/List (i32 offsets) by default,
     // but Daft expects LargeUtf8/LargeBinary/LargeList (i64 offsets).
@@ -70,6 +101,22 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
     }
 
     Ok(arrow_schema)
+}
+
+/// Parse Spark's row metadata JSON and return the names of fields with `"type":"variant"`.
+fn detect_spark_variant_fields(metadata_json: &str) -> Option<std::collections::HashSet<String>> {
+    let parsed: serde_json::Value = serde_json::from_str(metadata_json).ok()?;
+    let fields = parsed.get("fields")?.as_array()?;
+    let variant_names: std::collections::HashSet<String> = fields
+        .iter()
+        .filter(|f| f.get("type").and_then(|t| t.as_str()) == Some("variant"))
+        .filter_map(|f| Some(f.get("name")?.as_str()?.to_string()))
+        .collect();
+    if variant_names.is_empty() {
+        None
+    } else {
+        Some(variant_names)
+    }
 }
 
 /// Recursively coerce all `Timestamp(Nanosecond, tz)` fields to `Timestamp(target_unit, tz)`.

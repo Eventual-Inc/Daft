@@ -84,18 +84,18 @@ fn parse_json_impl(input: &Series) -> DaftResult<Series> {
         None
     };
 
-    let metadata_field = Field::new("metadata", DataType::Binary);
     let value_field = Field::new("value", DataType::Binary);
+    let metadata_field = Field::new("metadata", DataType::Binary);
 
-    let metadata_series = Series::from_arrow(metadata_field.clone(), Arc::new(metadata_arrow))?;
     let value_series = Series::from_arrow(value_field.clone(), Arc::new(value_arrow))?;
+    let metadata_series = Series::from_arrow(metadata_field.clone(), Arc::new(metadata_arrow))?;
 
     let struct_arr = StructArray::new(
         Arc::new(Field::new(
             input.name(),
-            DataType::Struct(vec![metadata_field, value_field]),
+            DataType::Struct(vec![value_field, metadata_field]),
         )),
-        vec![metadata_series, value_series],
+        vec![value_series, metadata_series],
         null_buffer,
     );
 

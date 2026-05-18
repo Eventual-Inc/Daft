@@ -3227,6 +3227,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "serde",
+ "serde_json",
  "snafu",
  "tango-bench",
  "tokio",
