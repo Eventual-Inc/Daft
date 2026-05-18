@@ -198,54 +198,50 @@ impl AsofJoinNode {
         )
         .await?;
 
-        // backward_pass[i] = max of bucket i (forward-propagated): used as carryover for bucket i+1.
-        // forward_pass[i]  = min of bucket i (backward-propagated): used as carryover for bucket i-1.
+        // backward_carryovers[i] = max of bucket i (forward-propagated): used as carryover for bucket i+1.
+        // forward_carryovers[i]  = min of bucket i (backward-propagated): used as carryover for bucket i-1.
         let none_vec = || vec![None::<MaterializedOutput>; num_partitions];
-        let (backward_pass, forward_pass) = match self.strategy {
+        let (backward_carryovers, forward_carryovers) = match self.strategy {
             AsofJoinStrategy::Backward => {
-                let pass = self
-                    .compute_carryover_pass(
+                let backward_carryovers = self
+                    .compute_carryovers(
                         right_partitioned_outputs.clone(),
-                        true,
                         true,
                         task_id_counter,
                         scheduler_handle,
                     )
                     .await?;
-                (pass, none_vec())
+                (backward_carryovers, none_vec())
             }
             AsofJoinStrategy::Forward => {
-                let pass = self
-                    .compute_carryover_pass(
+                let forward_carryovers = self
+                    .compute_carryovers(
                         right_partitioned_outputs.clone(),
-                        false,
                         false,
                         task_id_counter,
                         scheduler_handle,
                     )
                     .await?;
-                (none_vec(), pass)
+                (none_vec(), forward_carryovers)
             }
             AsofJoinStrategy::Nearest => {
-                let backward_pass = self
-                    .compute_carryover_pass(
+                let backward_carryovers = self
+                    .compute_carryovers(
                         right_partitioned_outputs.clone(),
-                        true,
                         true,
                         task_id_counter,
                         scheduler_handle,
                     )
                     .await?;
-                let forward_pass = self
-                    .compute_carryover_pass(
+                let forward_carryovers = self
+                    .compute_carryovers(
                         right_partitioned_outputs.clone(),
-                        false,
                         false,
                         task_id_counter,
                         scheduler_handle,
                     )
                     .await?;
-                (backward_pass, forward_pass)
+                (backward_carryovers, forward_carryovers)
             }
         };
 
@@ -270,12 +266,12 @@ impl AsofJoinNode {
                 if i == 0 {
                     None
                 } else {
-                    backward_pass[i - 1].clone()
+                    backward_carryovers[i - 1].clone()
                 },
                 if i == num_partitions - 1 {
                     None
                 } else {
-                    forward_pass[i + 1].clone()
+                    forward_carryovers[i + 1].clone()
                 },
             );
             self.create_and_submit_join_task(left_group, right_group, carryovers, result_tx)
@@ -287,17 +283,18 @@ impl AsofJoinNode {
 
     /// Runs one top_n carryover pass over the right partitioned outputs.
     ///
-    /// `descending=true` picks the per-partition max (backward carryover);
-    /// `descending=false` picks the per-partition min (forward carryover).
-    /// `propagate_forward=true` fills gaps left-to-right; `false` fills right-to-left.
-    async fn compute_carryover_pass(
+    /// `is_strategy_backward=true` runs a backward pass: picks the per-partition max and fills gaps left-to-right.
+    /// `is_strategy_backward=false` runs a forward pass: picks the per-partition min and fills gaps right-to-left.
+    async fn compute_carryovers(
         &self,
         right_partitioned_outputs: Vec<MaterializedOutput>,
-        descending: bool,
-        propagate_forward: bool,
+        is_strategy_backward: bool,
         task_id_counter: &TaskIDCounter,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<Vec<Option<MaterializedOutput>>> {
+        let descending = is_strategy_backward;
+        let propagate_forward = is_strategy_backward;
+
         let per_worker_tasks = self.create_per_worker_carryover_tasks(
             right_partitioned_outputs,
             descending,
