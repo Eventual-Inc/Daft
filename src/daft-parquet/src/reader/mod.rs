@@ -640,7 +640,13 @@ async fn decode_pred_cols_for_rg(
     pred_leaves: Arc<[usize]>,
     selection: Option<RowSelection>,
 ) -> DaftResult<Vec<ArrayRef>> {
-    let rg_chunks = Arc::new(chunk_source.read_rg_chunks(rg_idx, pred_leaves).await?);
+    // Phase-1 predicate decode: phase-2 will read data leaves from the same RG,
+    // so keep the cached `Arc<RgBytesMap>` in place (evict_after = false).
+    let rg_chunks = Arc::new(
+        chunk_source
+            .read_rg_chunks(rg_idx, pred_leaves, false)
+            .await?,
+    );
     let compute = get_compute_runtime();
     let mut col_handles = Vec::with_capacity(pred_col_indices.len());
     for &col_idx in pred_col_indices.iter() {

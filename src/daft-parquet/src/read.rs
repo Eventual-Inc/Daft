@@ -244,13 +244,15 @@ async fn read_parquet_into_arrow(
     io_stats: Option<IOStatsRef>,
     opts: ParquetReadOptions,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    // Predicate not supported on the pyarrow path; drop it before the bulk read.
-    let mut data_opts = opts.clone();
-    data_opts.predicate = None;
-    data_opts.delete_rows = None;
-    data_opts.batch_size = None;
+    // The pyarrow path doesn't support these — callers must not pass them.
+    // Asserting here surfaces accidental misuse loudly, rather than silently
+    // dropping the options and producing wrong results downstream.
+    debug_assert!(
+        opts.predicate.is_none() && opts.delete_rows.is_none() && opts.batch_size.is_none(),
+        "read_parquet_into_arrow: predicate/delete_rows/batch_size not supported on the pyarrow path"
+    );
 
-    let data_fut = read_parquet(uri, io_client.clone(), io_stats.clone(), data_opts);
+    let data_fut = read_parquet(uri, io_client.clone(), io_stats.clone(), opts);
     let metadata_fut =
         crate::metadata::fetch_parquet_metadata(uri, None, io_client, io_stats, None, None);
     let (rb, parquet_metadata) =

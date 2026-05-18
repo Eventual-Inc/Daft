@@ -43,11 +43,17 @@ pub(super) async fn process_rg_streaming(
     // background — overlaps remote I/O with decode.
     let data_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, data_col_indices.as_ref()).into();
-    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves).await {
+    // Final read for this RG → evict from RemoteChunkSource so the cached
+    // `Arc<RgBytesMap>` is dropped; the slices held by `OffsetBytes` here keep
+    // the underlying buffer alive only until the decoders finish.
+    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves, true).await {
         Ok(c) => Arc::new(c),
         Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
     };
     // Pre-filter pred arrays once; sliced per-chunk for zero-copy assembly.
+    // Mask length always equals pred-array length (both derived from the same
+    // RG row count post-base-selection), so a filter error here is a true
+    // invariant violation — panic rather than silently return mis-aligned rows.
     let filtered_pred: Vec<ArrayRef> = pred_col_indices
         .iter()
         .enumerate()
@@ -55,8 +61,7 @@ pub(super) async fn process_rg_streaming(
             let arr = pred_arrays[pp][rg_pos].clone();
             match &pred_masks[rg_pos] {
                 Some(mask) => arrow::compute::filter(&arr, mask)
-                    .map_err(parquet_err)
-                    .unwrap_or_else(|_| arr.clone()),
+                    .expect("pred mask length must equal pred array length within an RG"),
                 None => arr,
             }
         })
@@ -239,7 +244,9 @@ pub(super) async fn process_rg_chunked_pred(
 
     let pred_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, pred_col_indices.as_ref()).into();
-    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves).await {
+    // Chunked-pred is the sole phase-2 path for this RG (no separate data
+    // read); safe to evict the cached `Arc<RgBytesMap>` here.
+    let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves, true).await {
         Ok(c) => Arc::new(c),
         Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
     };

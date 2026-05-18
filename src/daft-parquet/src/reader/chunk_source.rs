@@ -87,14 +87,22 @@ pub(super) enum ChunkSource {
 }
 
 impl ChunkSource {
+    /// Read the column-chunk byte slices for a row-group.
+    ///
+    /// `evict_after`: if true (the final read for this RG), the remote source
+    /// drops its cached `Arc<RgBytesMap>` so the underlying buffers can be freed
+    /// as soon as the returned `OffsetBytes` (and any clones inside the
+    /// decoders) are dropped. Phase-1 predicate reads pass `false`; phase-2
+    /// data reads pass `true`. Local reads ignore the flag (no map to evict).
     pub(super) async fn read_rg_chunks(
         &self,
         rg_idx: usize,
         leaves: Arc<[usize]>,
+        evict_after: bool,
     ) -> DaftResult<std::collections::HashMap<usize, OffsetBytes>> {
         match self {
             Self::Local(s) => s.read_rg_chunks_sync(rg_idx, &leaves),
-            Self::Remote(s) => s.read_rg_chunks(rg_idx, &leaves).await,
+            Self::Remote(s) => s.read_rg_chunks(rg_idx, &leaves, evict_after).await,
         }
     }
 }
@@ -196,7 +204,10 @@ impl LocalChunkSource {
 /// decoders await an assembled `HashMap<leaf, (start, Bytes)>` via a `Shared`
 /// future and never park on per-byte IO.
 pub(super) struct RemoteChunkSource {
-    rg_fetches: std::collections::HashMap<usize, SharedRgFetch>,
+    /// `Mutex` (not `RwLock`) because we always mutate on access — either
+    /// cloning the `Shared` (phase-1) or removing it (phase-2 eviction). Lock
+    /// is held briefly and never across `.await`.
+    rg_fetches: std::sync::Mutex<std::collections::HashMap<usize, SharedRgFetch>>,
     file_len: u64,
 }
 
@@ -289,14 +300,14 @@ impl RemoteChunkSource {
         }
 
         Self {
-            rg_fetches,
+            rg_fetches: std::sync::Mutex::new(rg_fetches),
             file_len,
         }
     }
 
     fn empty(file_len: u64) -> Self {
         Self {
-            rg_fetches: std::collections::HashMap::new(),
+            rg_fetches: std::sync::Mutex::new(std::collections::HashMap::new()),
             file_len,
         }
     }
@@ -335,13 +346,23 @@ impl RemoteChunkSource {
         &self,
         rg_idx: usize,
         leaves: &[usize],
+        evict_after: bool,
     ) -> DaftResult<std::collections::HashMap<usize, OffsetBytes>> {
-        let fut = self.rg_fetches.get(&rg_idx).cloned().ok_or_else(|| {
-            common_error::DaftError::ValueError(format!(
-                "RemoteChunkSource: no pre-spawned fetch for rg={}",
-                rg_idx
-            ))
-        })?;
+        // Brief lock to clone or remove; never held across the .await below.
+        let fut = {
+            let mut guard = self.rg_fetches.lock().unwrap();
+            let entry = if evict_after {
+                guard.remove(&rg_idx)
+            } else {
+                guard.get(&rg_idx).cloned()
+            };
+            entry.ok_or_else(|| {
+                common_error::DaftError::ValueError(format!(
+                    "RemoteChunkSource: no pre-spawned fetch for rg={}",
+                    rg_idx
+                ))
+            })?
+        };
         // Shared future's err is Arc<DaftError> because DaftError isn't Clone;
         // re-wrap as a fresh ValueError.
         let rg_bytes = fut
