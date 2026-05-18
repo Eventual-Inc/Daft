@@ -3223,6 +3223,8 @@ dependencies = [
  "futures",
  "indexmap",
  "parquet",
+ "parquet-variant",
+ "parquet-variant-json",
  "path_macro",
  "pyo3",
  "rayon",
@@ -3230,6 +3232,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "tango-bench",
+ "tempfile",
  "tokio",
  "tokio-stream",
 ]

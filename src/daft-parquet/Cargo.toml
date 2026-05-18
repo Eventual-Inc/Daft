@@ -28,7 +28,10 @@ tokio-stream = {workspace = true}
 bincode = {workspace = true}
 fastrand = "2.1.0"
 parquet = {workspace = true}
+parquet-variant = {workspace = true}
+parquet-variant-json = {workspace = true}
 path_macro = {workspace = true}
+tempfile = "3"
 tango-bench.workspace = true
 
 [features]

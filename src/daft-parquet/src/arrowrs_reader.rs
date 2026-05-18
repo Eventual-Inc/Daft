@@ -1964,4 +1964,185 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// Write variant data using pure arrow-rs/parquet-rs, then read it
+    /// through Daft's reader and verify the Variant dtype is detected.
+    #[tokio::test]
+    async fn test_read_variant_from_arrowrs_written_parquet() {
+        use daft_io::IOConfig;
+        use parquet_variant::VariantBuilder;
+        use parquet_variant_json::JsonToVariant;
+
+        let mut metadata_bufs = Vec::new();
+        let mut value_bufs = Vec::new();
+        let jsons = [
+            r#"{"name": "Alice", "age": 30}"#,
+            r"[1, 2, 3]",
+            r#""hello""#,
+            "42",
+            "null",
+        ];
+        for json in &jsons {
+            let mut builder = VariantBuilder::new();
+            builder.append_json(json).unwrap();
+            let (m, v) = builder.finish();
+            metadata_bufs.push(m);
+            value_bufs.push(v);
+        }
+
+        let value_arr: arrow::array::LargeBinaryArray =
+            value_bufs.iter().map(|v| Some(v.as_slice())).collect();
+        let metadata_arr: arrow::array::LargeBinaryArray =
+            metadata_bufs.iter().map(|m| Some(m.as_slice())).collect();
+
+        let struct_fields = vec![
+            ArrowField::new("value", ArrowDataType::LargeBinary, true),
+            ArrowField::new("metadata", ArrowDataType::LargeBinary, true),
+        ];
+        let struct_arr = arrow::array::StructArray::try_new(
+            struct_fields.clone().into(),
+            vec![Arc::new(value_arr), Arc::new(metadata_arr)],
+            None,
+        )
+        .unwrap();
+
+        let mut variant_field =
+            ArrowField::new("v", ArrowDataType::Struct(struct_fields.into()), true);
+        variant_field = variant_field.with_metadata(
+            std::iter::once((
+                "ARROW:extension:name".to_string(),
+                "arrow.parquet.variant".to_string(),
+            ))
+            .collect(),
+        );
+
+        let schema = Arc::new(ArrowSchema::new(vec![variant_field]));
+        let batch =
+            arrow::array::RecordBatch::try_new(schema.clone(), vec![Arc::new(struct_arr)]).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("variant_test.parquet");
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uri = path.to_str().unwrap();
+        let io_client = Arc::new(daft_io::IOClient::new(IOConfig::default().into()).unwrap());
+
+        let result = read_parquet_single_arrowrs(
+            uri,
+            None,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.schema.get_field("v").unwrap().dtype,
+            DataType::Variant
+        );
+        assert_eq!(result.len(), 5);
+    }
+
+    /// Write variant data using pure arrow-rs WITHOUT extension metadata,
+    /// but with Spark-style row metadata — verify Daft detects it as Variant.
+    #[tokio::test]
+    async fn test_read_variant_from_spark_style_metadata() {
+        use daft_io::IOConfig;
+        use parquet_variant::VariantBuilder;
+        use parquet_variant_json::JsonToVariant;
+
+        let mut metadata_bufs = Vec::new();
+        let mut value_bufs = Vec::new();
+        for json in &[r#"{"key": "val"}"#, "42"] {
+            let mut builder = VariantBuilder::new();
+            builder.append_json(json).unwrap();
+            let (m, v) = builder.finish();
+            metadata_bufs.push(m);
+            value_bufs.push(v);
+        }
+
+        let value_arr: arrow::array::BinaryArray =
+            value_bufs.iter().map(|v| Some(v.as_slice())).collect();
+        let metadata_arr: arrow::array::BinaryArray =
+            metadata_bufs.iter().map(|m| Some(m.as_slice())).collect();
+
+        let struct_fields = vec![
+            ArrowField::new("value", ArrowDataType::Binary, false),
+            ArrowField::new("metadata", ArrowDataType::Binary, false),
+        ];
+        let struct_arr = arrow::array::StructArray::try_new(
+            struct_fields.clone().into(),
+            vec![Arc::new(value_arr), Arc::new(metadata_arr)],
+            None,
+        )
+        .unwrap();
+
+        let variant_field = ArrowField::new("v", ArrowDataType::Struct(struct_fields.into()), true);
+
+        let spark_row_metadata = r#"{"type":"struct","fields":[{"name":"v","type":"variant","nullable":true,"metadata":{}}]}"#;
+        let schema = Arc::new(
+            ArrowSchema::new(vec![variant_field]).with_metadata(
+                std::iter::once((
+                    "org.apache.spark.sql.parquet.row.metadata".to_string(),
+                    spark_row_metadata.to_string(),
+                ))
+                .collect(),
+            ),
+        );
+
+        let batch =
+            arrow::array::RecordBatch::try_new(schema.clone(), vec![Arc::new(struct_arr)]).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spark_style_variant.parquet");
+        let file = std::fs::File::create(&path).unwrap();
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_key_value_metadata(Some(vec![parquet::file::metadata::KeyValue::new(
+                "org.apache.spark.sql.parquet.row.metadata".to_string(),
+                spark_row_metadata.to_string(),
+            )]))
+            .build();
+        let mut writer = ArrowWriter::try_new(file, schema, Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uri = path.to_str().unwrap();
+        let io_client = Arc::new(daft_io::IOClient::new(IOConfig::default().into()).unwrap());
+
+        let result = read_parquet_single_arrowrs(
+            uri,
+            None,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.schema.get_field("v").unwrap().dtype,
+            DataType::Variant
+        );
+        assert_eq!(result.len(), 2);
+    }
 }
