@@ -13,6 +13,8 @@ import pytest
 import daft
 from daft import DataType, Series, TimeUnit
 from daft.context import execution_config_ctx
+from daft.io.writer import ParquetFileWriter
+from daft.recordbatch.micropartition import MicroPartition
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -227,6 +229,14 @@ def test_roundtrip_arrow_extension_type(tmp_path, uuid_ext_type, native_parquet_
     ba = before.to_arrow()
     aa = after.to_arrow()
     assert ba.equals(aa, check_metadata=False)
+
+
+def test_parquet_file_writer_empty_micropartition(tmp_path):
+    empty = MicroPartition.from_arrow(pa.table({"id": pa.array([], type=pa.int64())}))
+    writer = ParquetFileWriter(root_dir=str(tmp_path), file_idx=0)
+    bytes_written = writer.write(empty)
+    assert bytes_written == 0
+    writer.close()
 
 
 # TODO: reading/writing:

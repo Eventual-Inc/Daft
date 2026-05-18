@@ -155,6 +155,8 @@ class ParquetFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow(), row_group_size=len(table))
@@ -240,6 +242,8 @@ class CSVFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed CSVFileWriter"
+        if len(table) == 0:
+            return 0
         arrow_table = table.to_arrow()
 
         # Apply custom date/timestamp formatting if specified
@@ -302,6 +306,8 @@ class IcebergWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed IcebergFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
             self.current_writer = self._create_writer(self.file_schema)
         casted = coerce_pyarrow_table_to_schema(table.to_arrow(), self.file_schema)
@@ -361,6 +367,8 @@ class DeltalakeWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
+        if len(table) == 0:
+            return 0
 
         converted_arrow_table = sanitize_table_for_deltalake(
             table,
