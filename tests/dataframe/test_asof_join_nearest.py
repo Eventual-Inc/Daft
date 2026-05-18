@@ -147,6 +147,25 @@ class TestNearestAsofJoinTieBreaking:
         assert result.to_pydict()["ts"] == [10]
         assert result.to_pydict()["w"][0] in [80, 81]
 
+    def test_one_right_row_matches_multiple_left_rows(self):
+        """A single right row is the nearest match for more than one left row.
+
+        left@[10,15], right@[7,13]:
+          @10: dist(7)=3 == dist(13)=3, tie → forward (13) wins → w=130
+          @15: dist(7)=8  > dist(13)=2  → right@13 → w=130
+
+        Both left rows end up matched to right@13.  This is also the minimal case
+        that exercises the probe's floor+ceil update: without a left row below ts=7,
+        right@7 has no floor and claims left@10 directly as its ceiling.  The probe
+        must still offer right@13 to left@10 (as right@13's floor candidate) so the
+        tie-break comparison can fire.  Without that, left@10 would incorrectly keep
+        right@7.
+        """
+        left = daft.from_pydict({"ts": [10, 15], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [7, 13], "w": [70, 130]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict() == {"ts": [10, 15], "v": [1, 2], "w": [130, 130]}
+
     def test_duplicate_left_timestamps(self):
         """Duplicate left timestamps both independently match the same nearest right row."""
         left = daft.from_pydict({"ts": [10, 10, 20], "v": [1, 2, 3]})
@@ -270,6 +289,39 @@ class TestNearestAsofJoinWithBy:
             "w": [20, 80, 80, None, None, None],
         }
 
+    def test_nearest_with_multiple_by_columns(self):
+        """Composite by-key (entity, region) groups rows independently; each group picks its own nearest."""
+        left = daft.from_pydict(
+            {"entity": ["A", "B"], "region": ["US", "EU"], "ts": [10, 10], "v": [1, 2]}
+        )
+        right = daft.from_pydict(
+            {
+                "entity": ["A", "A", "B", "B"],
+                "region": ["US", "US", "EU", "EU"],
+                "ts": [7, 14, 6, 13],
+                "w": [70, 140, 60, 130],
+            }
+        )
+        result = left.join_asof(
+            right, on="ts", by=["entity", "region"], strategy="nearest"
+        ).sort("entity")
+        assert result.to_pydict() == {
+            "entity": ["A", "B"],
+            "region": ["US", "EU"],
+            "ts": [10, 10],
+            "v": [1, 2],
+            # (A, US)@10: dist(7)=3 < dist(14)=4 → backward@7 → w=70
+            # (B, EU)@10: dist(6)=4 > dist(13)=3 → forward@13 → w=130
+            "w": [70, 130],
+        }
+
+    def test_cross_group_isolation_multiple_by(self):
+        """Right rows from a different (entity, region) pair are not used even if on-key is close."""
+        left = daft.from_pydict({"entity": ["A"], "region": ["US"], "ts": [10], "v": [1]})
+        right = daft.from_pydict({"entity": ["A"], "region": ["EU"], "ts": [9], "w": [90]})
+        result = left.join_asof(right, on="ts", by=["entity", "region"], strategy="nearest")
+        assert result.to_pydict()["w"] == [None]
+
 
 # ---------------------------------------------------------------------------
 # 5. Empty Tables
@@ -303,7 +355,39 @@ class TestNearestAsofJoinEmptyTables:
 
 
 # ---------------------------------------------------------------------------
-# 6. Distributed Execution
+# 6. Float on Column
+# ---------------------------------------------------------------------------
+
+
+class TestNearestAsofJoinFloatOnKey:
+    def test_basic_float_timestamps(self):
+        """Float on-key exercises the NaN-aware float comparator path."""
+        left = daft.from_pydict({"ts": [1.2, 3.7], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [1.0, 2.0, 4.0], "w": [10, 20, 40]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        # @1.2: dist(1.0)=0.2 < dist(2.0)=0.8 → backward@1.0 → w=10
+        # @3.7: dist(2.0)=1.7 > dist(4.0)=0.3 → forward@4.0 → w=40
+        assert result.to_pydict() == {"ts": [1.2, 3.7], "v": [1, 2], "w": [10, 40]}
+
+    def test_float_equidistant_forward_preferred(self):
+        """Float tie-breaking: equidistant candidates use the same forward-wins convention as integers."""
+        left = daft.from_pydict({"ts": [2.0], "v": [1]})
+        right = daft.from_pydict({"ts": [1.0, 3.0], "w": [10, 30]})
+        result = left.join_asof(right, on="ts", strategy="nearest")
+        # dist(1.0)=1.0 == dist(3.0)=1.0 → tie → forward wins → w=30
+        assert result.to_pydict()["w"] == [30]
+
+    def test_nan_in_right_on_not_picked_over_finite(self):
+        """NaN in right on-column is sorted to the end and never beats a finite candidate."""
+        left = daft.from_pydict({"ts": [5.0], "v": [1]})
+        right = daft.from_pydict({"ts": [3.0, float("nan")], "w": [30, 999]})
+        result = left.join_asof(right, on="ts", strategy="nearest")
+        # NaN treated as +inf: dist(3.0)=2.0 < dist(NaN)=inf → w=30
+        assert result.to_pydict()["w"] == [30]
+
+
+# ---------------------------------------------------------------------------
+# 7. Distributed Execution
 # ---------------------------------------------------------------------------
 
 

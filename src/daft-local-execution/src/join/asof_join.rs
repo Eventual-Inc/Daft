@@ -124,106 +124,6 @@ fn is_nearer(
     }
 }
 
-/// Captures the arrays upfront; each call only passes `(a_idx, b_idx, pivot_idx)`.
-type DynPartialNearestComparator = Box<dyn Fn(usize, usize, usize) -> bool + Send + Sync>;
-
-/// Returns a closure that answers "is sorted position `a_idx` nearer to right row `pivot_idx`
-/// than sorted position `b_idx`?" for the fixed `sorted_arr` / `pivot_arr` pair.
-fn build_partial_nearest_comparator(
-    sorted_arr: Arc<dyn Array>,
-    pivot_arr: Arc<dyn Array>,
-) -> DynPartialNearestComparator {
-    macro_rules! build_nearer_closure_int {
-        ($T:ty) => {{
-            let s = sorted_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap()
-                .clone();
-            let p = pivot_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap()
-                .clone();
-            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
-                    unreachable!("null keys must be filtered before calling nearest comparator");
-                }
-                let a = s.value(a_idx);
-                let b = s.value(b_idx);
-                let pv = p.value(p_idx);
-                is_nearer_int!(a, b, pv)
-            }) as DynPartialNearestComparator
-        }};
-    }
-
-    macro_rules! build_nearer_closure_float {
-        ($T:ty) => {{
-            let s = sorted_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap()
-                .clone();
-            let p = pivot_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap()
-                .clone();
-            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
-                    unreachable!("null keys must be filtered before calling nearest comparator");
-                }
-                let a = s.value(a_idx);
-                let b = s.value(b_idx);
-                let pv = p.value(p_idx);
-                is_nearer_float!(a, b, pv)
-            }) as DynPartialNearestComparator
-        }};
-    }
-
-    match sorted_arr.data_type() {
-        DataType::Int8 => build_nearer_closure_int!(Int8Type),
-        DataType::Int16 => build_nearer_closure_int!(Int16Type),
-        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => {
-            build_nearer_closure_int!(Int32Type)
-        }
-        DataType::Int64
-        | DataType::Date64
-        | DataType::Timestamp(_, _)
-        | DataType::Time64(_)
-        | DataType::Duration(_) => build_nearer_closure_int!(Int64Type),
-        DataType::UInt8 => build_nearer_closure_int!(UInt8Type),
-        DataType::UInt16 => build_nearer_closure_int!(UInt16Type),
-        DataType::UInt32 => build_nearer_closure_int!(UInt32Type),
-        DataType::UInt64 => build_nearer_closure_int!(UInt64Type),
-        DataType::Decimal128(_, _) => build_nearer_closure_int!(Decimal128Type),
-        DataType::Float16 => {
-            let s = sorted_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<Float16Type>>()
-                .unwrap()
-                .clone();
-            let p = pivot_arr
-                .as_any()
-                .downcast_ref::<PrimitiveArray<Float16Type>>()
-                .unwrap()
-                .clone();
-            Box::new(move |a_idx: usize, b_idx: usize, p_idx: usize| {
-                if !s.is_valid(a_idx) || !s.is_valid(b_idx) || !p.is_valid(p_idx) {
-                    unreachable!("null keys must be filtered before calling nearest comparator");
-                }
-                let a = s.value(a_idx).to_f32();
-                let b = s.value(b_idx).to_f32();
-                let pv = p.value(p_idx).to_f32();
-                is_nearer_float!(a, b, pv)
-            })
-        }
-        DataType::Float32 => build_nearer_closure_float!(Float32Type),
-        DataType::Float64 => build_nearer_closure_float!(Float64Type),
-        t => panic!("nearest join: unsupported on-key type {t:?}"),
-    }
-}
-
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
 // (the most-recent right event at or before the left event).
 //
@@ -428,7 +328,9 @@ impl AsofJoinFinalizedBuildState {
                     Some(Ordering::Greater) => hi = mid,
                     _ => lo = mid + 1,
                 },
-                AsofJoinStrategy::Nearest => unreachable!("use search_bucket_nearest for Nearest"),
+                AsofJoinStrategy::Nearest => {
+                    unreachable!("use search_bucket_update_range for Nearest")
+                }
             }
         }
         match dir {
@@ -437,28 +339,43 @@ impl AsofJoinFinalizedBuildState {
                 .checked_sub(1)
                 .and_then(|i| bucket.get(i))
                 .map(|&idx| idx as usize),
-            AsofJoinStrategy::Nearest => unreachable!("use search_bucket_nearest for Nearest"),
+            AsofJoinStrategy::Nearest => unreachable!("use search_bucket_update_range for Nearest"),
         }
     }
 
-    /// binary-searches for both the floor (last left <= right) and ceiling (first left >= right),
-    /// returns the nearest left row to `right_idx` (floor or ceil).
+    /// Returns the contiguous span of bucket positions a right row should offer itself to.
     ///
-    /// Example: left bucket on_keys = [1, 3, 7, 9], right on_key = 5
-    ///   binary search → lo = 2 (first index where left[lo] >= 5, i.e. left[2] = 7)
-    ///   ceil_pos  = Some(2) → value 7, distance |7 − 5| = 2
-    ///   floor_pos = Some(1) → value 3, distance |5 − 3| = 2
-    ///   nearest_cmp breaks the tie (implementation-defined); returns one of {1, 2}
-    fn search_bucket_nearest(
+    /// For the Nearest strategy every right row must be compared against every left row that
+    /// could plausibly be its nearest match — not just the single closest one.  Updating only
+    /// the nearest is wrong when two left rows are equidistant: the non-nearest one would
+    /// never see this right row and would miss the tie-break comparison.
+    ///
+    /// The minimal set of positions is always contiguous:
+    ///
+    ///   binary search gives lo = first position where sorted_left[lo] ≥ right
+    ///
+    ///   floor: lo-1 (last left ≤ right), extended backward while on_key == floor's on_key
+    ///   ceil:  lo   (first left ≥ right), extended forward  while on_key == ceil's on_key
+    ///
+    ///   Together: start..end  (exclusive end)
+    ///
+    /// Positions outside this span are guaranteed to have a strictly closer right candidate
+    /// already in the bucket, so they don't need to see this right row — nearest_fill will
+    /// carry the best match to them later.
+    ///
+    /// `on_key_cmp(pos, right_idx)` — sorted_left[pos] vs right[right_idx]
+    /// `self_cmp(i, j)`             — sorted_left[i]   vs sorted_left[j]
+    fn search_bucket_update_range(
         &self,
         bucket: &[u64],
         on_key_cmp: &DynPartialComparator,
+        self_cmp: &DynPartialComparator,
         right_idx: usize,
-        nearest_cmp: &DynPartialNearestComparator,
-    ) -> Option<usize> {
+    ) -> std::ops::Range<usize> {
         if bucket.is_empty() {
-            return None;
+            return 0..0;
         }
+
         let mut lo = 0usize;
         let mut hi = bucket.len();
         while lo < hi {
@@ -468,21 +385,29 @@ impl AsofJoinFinalizedBuildState {
                 _ => hi = mid,
             }
         }
-        let ceil_pos = if lo < bucket.len() { Some(lo) } else { None };
-        let floor_pos = lo.checked_sub(1);
 
-        match (floor_pos, ceil_pos) {
-            (None, Some(cp)) => Some(cp),
-            (Some(fp), None) => Some(fp),
-            (Some(fp), Some(cp)) => {
-                if nearest_cmp(cp, fp, right_idx) {
-                    Some(cp)
-                } else {
-                    Some(fp)
+        let start = match lo.checked_sub(1) {
+            None => lo,
+            Some(fp) => {
+                let mut pos = fp;
+                while pos > 0 && self_cmp(pos - 1, pos) == Some(Ordering::Equal) {
+                    pos -= 1;
                 }
+                pos
             }
-            (None, None) => None,
-        }
+        };
+
+        let end = if lo < bucket.len() {
+            let mut pos = lo;
+            while pos + 1 < bucket.len() && self_cmp(pos, pos + 1) == Some(Ordering::Equal) {
+                pos += 1;
+            }
+            pos + 1
+        } else {
+            lo
+        };
+
+        start..end
     }
 }
 
@@ -557,13 +482,12 @@ impl AsofJoinProbeState {
             .collect();
 
         if dir == AsofJoinStrategy::Nearest {
-            let grouped_nearest_cmps: Vec<DynPartialNearestComparator> = build_state
+            let left_self_cmps: Vec<DynPartialComparator> = build_state
                 .grouped_sorted_materialized_on_keys
                 .iter()
-                .map(|sorted_key_arr| {
-                    build_partial_nearest_comparator(sorted_key_arr.clone(), right_on_arr.clone())
-                })
-                .collect();
+                .map(|arr| build_partial_compare_with_nulls(arr.as_ref(), arr.as_ref(), false))
+                .collect::<DaftResult<_>>()?;
+
             for right_idx in 0..right_rb.len() {
                 if !right_on_arr.is_valid(right_idx) {
                     continue;
@@ -575,24 +499,25 @@ impl AsofJoinProbeState {
                 };
                 let sorted_on_key_arr = &build_state.grouped_sorted_materialized_on_keys[group_idx];
                 let bucket = &build_state.grouped_sorted_indices[group_idx];
-                let Some(matched_left_bucket_idx) = build_state.search_bucket_nearest(
+                let candidate = MatchCandidate {
+                    rb_idx,
+                    row_idx: right_idx,
+                };
+
+                for pos in build_state.search_bucket_update_range(
                     bucket,
                     &grouped_on_key_cmps[group_idx],
+                    &left_self_cmps[group_idx],
                     right_idx,
-                    &grouped_nearest_cmps[group_idx],
-                ) else {
-                    continue;
-                };
-                update_nearest_match(
-                    &mut self.best_match[bucket[matched_left_bucket_idx] as usize],
-                    &right_on_key_arrs,
-                    MatchCandidate {
-                        rb_idx,
-                        row_idx: right_idx,
-                    },
-                    sorted_on_key_arr.as_ref(),
-                    matched_left_bucket_idx,
-                )?;
+                ) {
+                    update_nearest_match(
+                        &mut self.best_match[bucket[pos] as usize],
+                        &right_on_key_arrs,
+                        candidate,
+                        sorted_on_key_arr.as_ref(),
+                        pos,
+                    )?;
+                }
             }
         } else {
             let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
