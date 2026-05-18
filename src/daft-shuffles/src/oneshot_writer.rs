@@ -46,6 +46,8 @@ impl Write for CountingFile {
     }
 }
 
+type ShuffleWriter = arrow_ipc::writer::StreamWriter<CountingFile>;
+
 /// Write `partitions_per_output` to a single combined IPC file. Returns one
 /// `PartitionCache` per output partition with the byte range to read.
 pub async fn write_partitions_one_shot(
@@ -62,11 +64,8 @@ pub async fn write_partitions_one_shot(
 
     get_io_runtime(true)
         .spawn_blocking(move || -> DaftResult<Vec<PartitionCache>> {
-            let mut partitions_per_output = partitions_per_output;
             std::fs::create_dir_all(&shuffle_dir)?;
             let file_path = format!("{}/map_{}.arrow", shuffle_dir, input_id);
-            let file = File::create(&file_path)?;
-            let counting = CountingFile::new(file);
             let arrow_schema = Arc::new(schema.to_arrow()?);
             let write_options = arrow_ipc::writer::IpcWriteOptions::default()
                 .try_with_compression(compression)
@@ -74,55 +73,22 @@ pub async fn write_partitions_one_shot(
                     DaftError::InternalError(format!("IPC compression init failed: {}", e))
                 })?;
             let mut writer = arrow_ipc::writer::StreamWriter::try_new_with_options(
-                counting,
+                CountingFile::new(File::create(&file_path)?),
                 arrow_schema.as_ref(),
                 write_options,
             )
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 
             let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
-            // Reused across partitions to avoid one Vec allocation per output.
-            let mut arrow_batches_buf: Vec<arrow_array::RecordBatch> = Vec::with_capacity(1);
-            for (idx, slot_in) in partitions_per_output.iter_mut().enumerate() {
-                let parts = std::mem::take(slot_in);
-                let ref_id = partition_ref_id(input_id, idx);
-                match concat_one_partition(
+            for (idx, parts) in partitions_per_output.into_iter().enumerate() {
+                caches.push(write_one_partition(
                     parts,
-                    CHUNK_TARGET_BYTES,
+                    partition_ref_id(input_id, idx),
+                    &mut writer,
                     &arrow_schema,
-                    &mut arrow_batches_buf,
-                )? {
-                    None => {
-                        caches.push(PartitionCache {
-                            partition_ref_id: ref_id,
-                            schema: schema.clone(),
-                            bytes_per_file: Vec::new(),
-                            file_paths: Vec::new(),
-                            num_rows: 0,
-                            size_bytes: 0,
-                            byte_ranges: Some(Vec::new()),
-                        });
-                    }
-                    Some((rows, bytes)) => {
-                        let offset_before = writer.get_ref().bytes_written;
-                        for batch in &arrow_batches_buf {
-                            writer.write(batch).map_err(|e| {
-                                DaftError::InternalError(format!("IPC write failed: {}", e))
-                            })?;
-                        }
-                        let offset_after = writer.get_ref().bytes_written;
-                        let batch_len = (offset_after - offset_before) as usize;
-                        caches.push(PartitionCache {
-                            partition_ref_id: ref_id,
-                            schema: schema.clone(),
-                            bytes_per_file: vec![batch_len],
-                            file_paths: vec![file_path.clone()],
-                            num_rows: rows,
-                            size_bytes: bytes,
-                            byte_ranges: Some(vec![(offset_before, offset_after)]),
-                        });
-                    }
-                }
+                    &schema,
+                    &file_path,
+                )?);
             }
 
             writer.finish().map_err(|e| {
@@ -137,71 +103,76 @@ pub async fn write_partitions_one_shot(
         .await?
 }
 
-/// Concat one output partition's MicroPartitions, then split into arrow batches
-/// each ≥ `chunk_target_bytes`. Single-batch pending groups skip the fuse.
-/// Appends output arrow batches to `out` (caller-owned, cleared at entry).
-fn concat_one_partition(
+/// Concat one output partition's MicroPartitions and write to `writer`,
+/// coalescing small Daft record batches up to `CHUNK_TARGET_BYTES` per IPC
+/// message. Large batches pass through unsplit.
+fn write_one_partition(
     parts: Vec<MicroPartition>,
-    chunk_target_bytes: usize,
+    ref_id: u64,
+    writer: &mut ShuffleWriter,
     arrow_schema: &Arc<arrow_schema::Schema>,
-    out: &mut Vec<arrow_array::RecordBatch>,
-) -> DaftResult<Option<(usize, usize)>> {
-    out.clear();
-    if parts.is_empty() {
-        return Ok(None);
+    schema: &SchemaRef,
+    file_path: &str,
+) -> DaftResult<PartitionCache> {
+    let num_rows: usize = parts.iter().map(|p| p.len()).sum();
+    if num_rows == 0 {
+        return Ok(PartitionCache {
+            partition_ref_id: ref_id,
+            schema: schema.clone(),
+            bytes_per_file: Vec::new(),
+            file_paths: Vec::new(),
+            num_rows: 0,
+            size_bytes: 0,
+            byte_ranges: Some(Vec::new()),
+        });
     }
-    let total_rows: usize = parts.iter().map(|p| p.len()).sum();
-    if total_rows == 0 {
-        return Ok(None);
-    }
-    let size_bytes: usize = parts.iter().map(|p| p.size_bytes()).sum();
     let combined = MicroPartition::concat(parts)?;
-    let rbs = combined.record_batches();
-    if rbs.is_empty() {
-        return Ok(None);
-    }
-    // Fast path: total fits in one chunk — skip per-rb size_bytes walk and emit a single fused batch.
-    if size_bytes < chunk_target_bytes {
-        let mut pending: Vec<&RecordBatch> = rbs.iter().collect();
-        flush_pending(&mut pending, out, arrow_schema)?;
-        return Ok(Some((total_rows, size_bytes)));
-    }
-    let mut pending: Vec<&RecordBatch> = Vec::with_capacity(rbs.len());
-    let mut pending_bytes: usize = 0;
-    for rb in rbs {
-        pending.push(rb);
-        pending_bytes += rb.size_bytes();
-        if pending_bytes >= chunk_target_bytes {
-            flush_pending(&mut pending, out, arrow_schema)?;
-            pending_bytes = 0;
+    let batches = combined.record_batches();
+
+    let offset_before = writer.get_ref().bytes_written;
+    let mut size_bytes = 0;
+    let mut group_start = 0;
+    let mut group_bytes = 0;
+    for (i, batch) in batches.iter().enumerate() {
+        let b = batch.size_bytes();
+        size_bytes += b;
+        group_bytes += b;
+        if group_bytes >= CHUNK_TARGET_BYTES {
+            write_coalesced(&batches[group_start..=i], writer, arrow_schema)?;
+            group_start = i + 1;
+            group_bytes = 0;
         }
     }
-    if !pending.is_empty() {
-        flush_pending(&mut pending, out, arrow_schema)?;
+    if group_start < batches.len() {
+        write_coalesced(&batches[group_start..], writer, arrow_schema)?;
     }
-    Ok(Some((total_rows, size_bytes)))
+    let offset_after = writer.get_ref().bytes_written;
+
+    Ok(PartitionCache {
+        partition_ref_id: ref_id,
+        schema: schema.clone(),
+        bytes_per_file: vec![(offset_after - offset_before) as usize],
+        file_paths: vec![file_path.to_string()],
+        num_rows,
+        size_bytes,
+        byte_ranges: Some(vec![(offset_before, offset_after)]),
+    })
 }
 
-fn flush_pending(
-    pending: &mut Vec<&RecordBatch>,
-    out: &mut Vec<arrow_array::RecordBatch>,
+fn write_coalesced(
+    batches: &[RecordBatch],
+    writer: &mut ShuffleWriter,
     arrow_schema: &Arc<arrow_schema::Schema>,
 ) -> DaftResult<()> {
-    let daft_batch_owned;
-    let daft_batch: &RecordBatch = if pending.len() == 1 {
-        pending[0]
-    } else {
-        daft_batch_owned = RecordBatch::concat(pending.as_slice())?;
-        &daft_batch_owned
-    };
-    let columns = daft_batch
+    let columns = RecordBatch::concat(batches)?
         .columns()
         .iter()
         .map(|c| c.as_materialized_series().to_arrow())
         .collect::<DaftResult<Vec<_>>>()?;
     let arrow_batch = arrow_array::RecordBatch::try_new(arrow_schema.clone(), columns)
         .map_err(DaftError::ArrowRsError)?;
-    out.push(arrow_batch);
-    pending.clear();
+    writer
+        .write(&arrow_batch)
+        .map_err(|e| DaftError::InternalError(format!("IPC write failed: {}", e)))?;
     Ok(())
 }
