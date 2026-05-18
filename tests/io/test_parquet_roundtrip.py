@@ -229,6 +229,25 @@ def test_roundtrip_arrow_extension_type(tmp_path, uuid_ext_type, native_parquet_
     assert ba.equals(aa, check_metadata=False)
 
 
+def test_roundtrip_variant_type(tmp_path) -> None:
+    """Parquet write/read preserves Variant logical type via arrow extension metadata."""
+    metadata_arr = pa.array([b"\x01\x00\x00", b"\x01\x00\x00", None], type=pa.large_binary())
+    value_arr = pa.array([b"\x00", b"\x02\x01", None], type=pa.large_binary())
+    struct_arr = pa.StructArray.from_arrays([metadata_arr, value_arr], names=["metadata", "value"])
+
+    s = Series.from_arrow(struct_arr, name="v", dtype=DataType.variant())
+    before = daft.from_pydict({"id": [1, 2, 3], "v": s})
+    assert before.schema()["v"].dtype == DataType.variant()
+
+    with execution_config_ctx(native_parquet_writer=True):
+        before.write_parquet(str(tmp_path))
+        after = daft.read_parquet(str(tmp_path)).collect()
+
+    assert after.schema()["v"].dtype == DataType.variant()
+    assert after.schema()["v"].dtype.is_variant()
+    assert len(after) == 3
+
+
 # TODO: reading/writing:
 # 1. Embedding type
 # 2. Image type
