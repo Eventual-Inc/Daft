@@ -113,6 +113,9 @@ async fn read_parquet(
         Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
         _ => None,
     };
+    // Note: scan-layer's `maintain_order` controls inter-scan-task ordering;
+    // the parquet reader always emits RGs in file order within a single file.
+    let _ = maintain_order;
     let opts = ParquetReadOptions {
         columns: file_column_names,
         num_rows: scan_task.pushdowns.limit,
@@ -126,7 +129,6 @@ async fn read_parquet(
             .sources
             .first()
             .and_then(|s| s.get_parquet_metadata().cloned()),
-        maintain_order,
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.

@@ -586,7 +586,6 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         batch_size: chunk_size,
         num_parallel_tasks,
         per_file,
-        maintain_order: true,
     };
     let all_tables = read_parquet_bulk_sync(uris, io_client, io_stats, multithreaded_io, opts)?;
 

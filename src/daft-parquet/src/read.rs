@@ -90,7 +90,7 @@ impl Default for ParquetSchemaInferenceOptions {
 }
 
 /// All projection, pushdown, and decode options for reading one parquet file.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct ParquetReadOptions {
     pub columns: Option<Vec<String>>,
     pub start_offset: Option<usize>,
@@ -102,28 +102,6 @@ pub struct ParquetReadOptions {
     pub delete_rows: Option<Vec<i64>>,
     pub batch_size: Option<usize>,
     pub metadata: Option<Arc<DaftParquetMetadata>>,
-    /// If true, emit batches in row-group order. If false, batches may interleave
-    /// across RGs as decoders complete — useful when the consumer doesn't care
-    /// about order and wants to start work as early as possible.
-    pub maintain_order: bool,
-}
-
-impl Default for ParquetReadOptions {
-    fn default() -> Self {
-        Self {
-            columns: None,
-            start_offset: None,
-            num_rows: None,
-            row_groups: None,
-            predicate: None,
-            schema_infer: ParquetSchemaInferenceOptions::default(),
-            field_id_mapping: None,
-            delete_rows: None,
-            batch_size: None,
-            metadata: None,
-            maintain_order: true,
-        }
-    }
 }
 
 /// Per-file overrides for [`ParquetBulkReadOptions`].
@@ -136,7 +114,7 @@ pub struct PerFileOptions {
 
 /// Options for bulk reads. Fields without `per_file` apply to every uri;
 /// `per_file[i]` overrides for the i-th uri.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct ParquetBulkReadOptions {
     pub columns: Option<Vec<String>>,
     pub start_offset: Option<usize>,
@@ -148,24 +126,6 @@ pub struct ParquetBulkReadOptions {
     pub num_parallel_tasks: usize,
     /// Per-uri overrides. Must be empty or `len() == uris.len()`.
     pub per_file: Vec<PerFileOptions>,
-    pub maintain_order: bool,
-}
-
-impl Default for ParquetBulkReadOptions {
-    fn default() -> Self {
-        Self {
-            columns: None,
-            start_offset: None,
-            num_rows: None,
-            predicate: None,
-            schema_infer: ParquetSchemaInferenceOptions::default(),
-            field_id_mapping: None,
-            batch_size: None,
-            num_parallel_tasks: 0,
-            per_file: Vec::new(),
-            maintain_order: true,
-        }
-    }
 }
 
 fn parse_source(uri: &str) -> DaftResult<(SourceType, String)> {
@@ -226,7 +186,6 @@ pub async fn stream_parquet(
         opts.batch_size,
         opts.field_id_mapping.clone(),
         opts.delete_rows.as_deref(),
-        opts.maintain_order,
     )
     .await?;
 
@@ -272,7 +231,6 @@ pub async fn read_parquet(
         opts.batch_size,
         opts.field_id_mapping,
         opts.delete_rows.as_deref(),
-        opts.maintain_order,
     )
     .await
 }
@@ -397,7 +355,6 @@ pub async fn read_parquet_bulk(
             delete_rows: per.delete_rows,
             batch_size: opts.batch_size,
             metadata: per.metadata,
-            maintain_order: opts.maintain_order,
         };
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();
@@ -472,7 +429,6 @@ pub fn read_parquet_into_pyarrow_bulk(
                     delete_rows: per.delete_rows,
                     batch_size: opts.batch_size,
                     metadata: per.metadata,
-                    maintain_order: opts.maintain_order,
                 };
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();

@@ -84,7 +84,6 @@ pub async fn stream_parquet(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
-    maintain_order: bool,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     // When a predicate is pushed, the remote prefetcher's row-count-based RG
     // pruning is unsafe — most rows survive the limit only after filtering, so
@@ -115,7 +114,6 @@ pub async fn stream_parquet(
         batch_size,
         field_id_mapping,
         delete_rows,
-        maintain_order,
     )
     .await
 }
@@ -190,7 +188,6 @@ async fn stream_parquet_from_source(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
-    maintain_order: bool,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     let chunk_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
     let prepared = prepare_metadata(
@@ -270,7 +267,6 @@ async fn stream_parquet_from_source(
         is_chunked_pred,
         predicate,
         num_rows,
-        maintain_order,
     );
 
     Ok((
@@ -721,14 +717,17 @@ fn transpose_pred_arrays(
 
 /// Spawn one decoder driver per active RG onto the compute runtime via a
 /// `JoinSet`. Each driver writes its sub-stream into its own bounded channel.
-/// The output stream merges the channels — in-order via `flatten` (per-RG
-/// receivers drained sequentially) or interleaved via `select_all` when
-/// `maintain_order = false`. Cross-RG concurrency comes from the spawned tasks
-/// filling their bounded channels while we drain the previous one.
+/// The output stream drains receivers in RG order — `flatten()` over a
+/// Vec<ReceiverStream> empties receiver[0] before receiver[1], etc. Cross-RG
+/// concurrency comes from the spawned tasks filling their bounded channels
+/// while we drain the previous one.
 ///
-/// Pattern mirrors the v0.7.4 reader's `read_from_ranges_into_table_stream`,
-/// but uses Daft's compute runtime + `JoinSet` instead of bare `tokio::spawn`,
-/// so tasks show up in runtime metrics and cancel together on stream drop.
+/// In-file output is always RG-ordered: the scan-layer's `maintain_order=false`
+/// is about INTER-scan-task reordering (between files); within a single file
+/// the downstream pipeline (and tests) expect deterministic file-order output.
+///
+/// Pattern adapts the v0.7.4 reader's `read_from_ranges_into_table_stream`
+/// but uses Daft's compute runtime + `JoinSet` instead of bare `tokio::spawn`.
 #[allow(clippy::too_many_arguments)]
 fn build_rg_stream(
     chunk_source: Arc<ChunkSource>,
@@ -744,7 +743,6 @@ fn build_rg_stream(
     is_chunked_pred: bool,
     predicate: Option<ExprRef>,
     num_rows: Option<usize>,
-    maintain_order: bool,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
     use tokio_stream::wrappers::ReceiverStream;
 
@@ -838,11 +836,8 @@ fn build_rg_stream(
     };
 
     let inner_streams = receivers.into_iter().map(ReceiverStream::new);
-    let merged: BoxStream<'static, DaftResult<RecordBatch>> = if maintain_order {
-        Box::pin(futures::stream::iter(inner_streams).flatten())
-    } else {
-        Box::pin(futures::stream::select_all(inner_streams))
-    };
+    let merged: BoxStream<'static, DaftResult<RecordBatch>> =
+        Box::pin(futures::stream::iter(inner_streams).flatten());
     common_runtime::combine_stream(merged, driver).boxed()
 }
 
@@ -918,7 +913,6 @@ pub async fn read_parquet(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
-    maintain_order: bool,
 ) -> DaftResult<RecordBatch> {
     use futures::TryStreamExt;
     let (schema, stream) = stream_parquet(
@@ -932,7 +926,6 @@ pub async fn read_parquet(
         batch_size,
         field_id_mapping,
         delete_rows,
-        maintain_order,
     )
     .await?;
     let batches: Vec<RecordBatch> = stream.try_collect().await?;
