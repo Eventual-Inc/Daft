@@ -224,25 +224,20 @@ impl AsofJoinNode {
                     .await?;
                 (none_vec(), forward_carryovers)
             }
-            AsofJoinStrategy::Nearest => {
-                let backward_carryovers = self
-                    .compute_carryovers(
-                        right_partitioned_outputs.clone(),
-                        true,
-                        task_id_counter,
-                        scheduler_handle,
-                    )
-                    .await?;
-                let forward_carryovers = self
-                    .compute_carryovers(
-                        right_partitioned_outputs.clone(),
-                        false,
-                        task_id_counter,
-                        scheduler_handle,
-                    )
-                    .await?;
-                (backward_carryovers, forward_carryovers)
-            }
+            AsofJoinStrategy::Nearest => tokio::try_join!(
+                self.compute_carryovers(
+                    right_partitioned_outputs.clone(),
+                    true,
+                    task_id_counter,
+                    scheduler_handle,
+                ),
+                self.compute_carryovers(
+                    right_partitioned_outputs.clone(),
+                    false,
+                    task_id_counter,
+                    scheduler_handle,
+                ),
+            )?,
         };
 
         let left_partition_groups =
@@ -325,15 +320,15 @@ impl AsofJoinNode {
             }))
             .await?;
 
+        let n = per_partition_outputs.len();
         if propagate_forward {
-            for i in 1..per_partition_outputs.len() {
+            for i in 1..n {
                 if per_partition_outputs[i].is_none() {
                     let prev = per_partition_outputs[i - 1].clone();
                     per_partition_outputs[i] = prev;
                 }
             }
         } else {
-            let n = per_partition_outputs.len();
             for i in (0..n.saturating_sub(1)).rev() {
                 if per_partition_outputs[i].is_none() {
                     let next = per_partition_outputs[i + 1].clone();
@@ -423,13 +418,11 @@ impl AsofJoinNode {
     ) -> DaftResult<SubmittedTask> {
         let composite_keys = self.right_composite_key();
         let node_id = self.node_id();
-        let descending_flag = descending;
-        let descending = vec![descending; composite_keys.len()];
+        let is_descending = descending;
+        let descending = vec![is_descending; composite_keys.len()];
         let nulls_first = vec![false; composite_keys.len()];
 
-        // Phase derived from (level, direction) — all four combinations get a unique constant so
-        // backward and forward pass outputs never collide in the Ray partition store.
-        let phase = match (is_per_worker, descending_flag) {
+        let phase = match (is_per_worker, is_descending) {
             (true, true) => PER_WORKER_CARRYOVER_BACKWARD_PHASE,
             (true, false) => PER_WORKER_CARRYOVER_FORWARD_PHASE,
             (false, true) => PER_PARTITION_CARRYOVER_BACKWARD_PHASE,
@@ -455,6 +448,7 @@ impl AsofJoinNode {
         );
 
         SwordfishTaskBuilder::new(plan, self, node_id)
+            .extend_fingerprint(u32::from(is_descending))
             .with_psets(node_id, psets)
             .with_strategy(strategy)
             .build(self.context().query_idx, task_id_counter)
