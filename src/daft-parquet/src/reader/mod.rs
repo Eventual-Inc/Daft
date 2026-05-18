@@ -85,12 +85,16 @@ pub async fn stream_parquet(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
+    // When a predicate is pushed, the remote prefetcher's row-count-based RG
+    // pruning is unsafe — most rows survive the limit only after filtering, so
+    // later RGs are still needed. Defer all limit handling to the planner.
+    let prefetch_num_rows = if predicate.is_some() { None } else { num_rows };
     let (chunk_source, arrow_metadata, effective_row_groups_owned) = open_chunk_source(
         &source,
         columns,
         row_groups,
         start_offset,
-        num_rows,
+        prefetch_num_rows,
         predicate.as_ref(),
         field_id_mapping.as_deref(),
     )
