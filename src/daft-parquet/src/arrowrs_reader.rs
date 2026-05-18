@@ -701,9 +701,12 @@ pub(crate) fn local_parquet_setup(
         ))
     })?;
 
-    let arrow_reader_metadata =
-        ArrowReaderMetadata::load(&file, ArrowReaderOptions::new().with_page_index(true))
-            .map_err(parquet_err)?;
+    let arrow_reader_metadata = ArrowReaderMetadata::load(
+        &file,
+        ArrowReaderOptions::new()
+            .with_page_index_policy(parquet::file::metadata::PageIndexPolicy::Optional),
+    )
+    .map_err(parquet_err)?;
     let mut parquet_metadata = arrow_reader_metadata.metadata().clone();
 
     // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.

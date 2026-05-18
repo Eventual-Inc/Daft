@@ -29,7 +29,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, VariantArray,
         },
     },
     file::{DaftMediaType, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
@@ -1691,6 +1691,20 @@ impl ListArray {
 impl MapArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         self.physical.cast(dtype)
+    }
+}
+
+impl VariantArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Variant => Ok(self.clone().into_series()),
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Variant to {dtype}"
+            ))),
+        }
     }
 }
 

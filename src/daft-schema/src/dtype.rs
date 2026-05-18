@@ -120,6 +120,9 @@ pub enum DataType {
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
 
+    /// Apache Parquet Variant type — self-describing binary encoding for semi-structured data.
+    Variant,
+
     // Non-ArrowTypes:
     /// A logical type for embeddings.
     Embedding(Box<DataType>, usize),
@@ -201,6 +204,7 @@ impl Display for DataType {
                 write!(f, "Struct[{}]", contents)
             }
             Self::Map { key, value } => write!(f, "Map[{key}: {value}]"),
+            Self::Variant => write!(f, "Variant"),
             Self::Extension(name, dtype, _) => write!(f, "Extension[{name}; {dtype}]"),
             Self::Embedding(dtype, size) => write!(f, "Embedding[{dtype}; {size}]"),
             Self::Image(mode) => {
@@ -419,6 +423,10 @@ impl DataType {
                     };
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
+            ]),
+            Variant => Struct(vec![
+                Field::new("metadata", Binary),
+                Field::new("value", Binary),
             ]),
             Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![
@@ -724,6 +732,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_variant(&self) -> bool {
+        matches!(self, Self::Variant)
+    }
+
+    #[inline]
     pub fn is_extension(&self) -> bool {
         matches!(self, Self::Extension(..))
     }
@@ -856,6 +869,7 @@ impl DataType {
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
+                | Self::Variant
                 | Self::File(..)
         )
     }

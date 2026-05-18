@@ -400,6 +400,7 @@ impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
 impl_logical_from_arrow!(FixedShapeImageType);
+impl_logical_from_arrow!(VariantType);
 impl<T> FromArrow for LogicalArray<FileType<T>>
 where
     T: DaftMediaType,

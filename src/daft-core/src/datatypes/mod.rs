@@ -253,6 +253,7 @@ impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(UuidType, Uuid, FixedSizeBinaryType);
+impl_daft_logical_data_array_datatype!(VariantType, Variant, StructType);
 
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);

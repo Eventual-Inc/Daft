@@ -73,6 +73,12 @@ impl UnionArray {
     }
 }
 
+impl VariantArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
 impl TensorArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(

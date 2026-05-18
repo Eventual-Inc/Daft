@@ -13,6 +13,7 @@ use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
 const ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
 const ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME: &str = "arrow.fixed_shape_tensor";
+const ARROW_VARIANT_EXTENSION_NAME: &str = "arrow.parquet.variant";
 
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
@@ -120,6 +121,14 @@ impl Field {
                 metadata_map.insert(
                     EXTENSION_TYPE_NAME_KEY.to_string(),
                     ARROW_UUID_EXTENSION_NAME.to_string(),
+                );
+                self.to_physical().to_arrow()?.with_metadata(metadata_map)
+            }
+            DataType::Variant => {
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
+                    ARROW_VARIANT_EXTENSION_NAME.to_string(),
                 );
                 self.to_physical().to_arrow()?.with_metadata(metadata_map)
             }
@@ -249,6 +258,16 @@ impl TryFrom<&arrow_schema::Field> for Field {
                 Ok(Self {
                     name: Arc::from(field.name().as_str()),
                     dtype: DataType::Uuid,
+                    metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(ARROW_VARIANT_EXTENSION_NAME) => {
+                let mut metadata = field.metadata().clone();
+                metadata.remove(EXTENSION_TYPE_NAME_KEY);
+
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::Variant,
                     metadata: Arc::new(metadata.into_iter().collect()),
                 })
             }

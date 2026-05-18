@@ -155,6 +155,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
                 arr.html_value(idx, truncate)
             })
         }
+        DataType::Variant => "&lt;Variant&gt;".to_string(),
         DataType::Unknown => {
             panic!("Unknown data type")
         }

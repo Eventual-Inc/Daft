@@ -159,6 +159,13 @@ impl UnionArray {
         Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
+impl VariantArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let new_array = self.physical.take(idx)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
 impl<T> FileArray<T>
 where
     T: DaftMediaType,

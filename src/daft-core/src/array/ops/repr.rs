@@ -12,7 +12,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, VariantArray,
         },
     },
     file::DaftMediaType,
@@ -289,6 +289,16 @@ impl FixedSizeListArray {
         match val {
             None => Ok("None".to_string()),
             Some(v) => series_as_list_str(&v),
+        }
+    }
+}
+
+impl VariantArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Variant>".to_string())
+        } else {
+            Ok("None".to_string())
         }
     }
 }

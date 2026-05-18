@@ -448,6 +448,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeTensor(..)
         | DataType::FixedShapeSparseTensor(..)
         | DataType::Unknown
+        | DataType::Variant
         | DataType::Union(..) => unreachable!("Literal should never have data type: {dtype}"),
     };
 
