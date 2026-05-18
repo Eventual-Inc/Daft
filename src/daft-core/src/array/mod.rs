@@ -12,6 +12,7 @@ mod struct_array;
 mod union_array;
 pub mod uuid_array;
 pub mod values;
+pub mod variant_array;
 
 use arrow::{
     array::{ArrayRef, ArrowPrimitiveType, make_array},

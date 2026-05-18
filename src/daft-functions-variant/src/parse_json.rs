@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use arrow_array::builder::LargeBinaryBuilder;
+use arrow_buffer::NullBuffer;
 use daft_core::{
     array::StructArray,
     datatypes::Field,
-    prelude::{BinaryArray, DataType, Schema, VariantArray},
+    prelude::{DataType, Schema, VariantArray},
     series::{IntoSeries, Series},
 };
 use daft_dsl::functions::prelude::*;
@@ -49,10 +51,9 @@ fn parse_json_impl(input: &Series) -> DaftResult<Series> {
     let utf8_arr = input.utf8()?;
     let field = Arc::new(Field::new(input.name(), DataType::Variant));
 
-    let mut metadata_values: Vec<Option<&[u8]>> = Vec::with_capacity(utf8_arr.len());
-    let mut value_values: Vec<Option<&[u8]>> = Vec::with_capacity(utf8_arr.len());
-    let mut metadata_bufs: Vec<Vec<u8>> = Vec::with_capacity(utf8_arr.len());
-    let mut value_bufs: Vec<Vec<u8>> = Vec::with_capacity(utf8_arr.len());
+    let mut metadata_builder = LargeBinaryBuilder::with_capacity(utf8_arr.len(), 0);
+    let mut value_builder = LargeBinaryBuilder::with_capacity(utf8_arr.len(), 0);
+    let mut validity = Vec::with_capacity(utf8_arr.len());
 
     for val in utf8_arr {
         match val {
@@ -62,34 +63,32 @@ fn parse_json_impl(input: &Series) -> DaftResult<Series> {
                     common_error::DaftError::ComputeError(format!("Failed to parse JSON: {e}"))
                 })?;
                 let (metadata, value) = builder.finish();
-                metadata_bufs.push(metadata);
-                value_bufs.push(value);
+                metadata_builder.append_value(&metadata);
+                value_builder.append_value(&value);
+                validity.push(true);
             }
             None => {
-                metadata_bufs.push(Vec::new());
-                value_bufs.push(Vec::new());
+                metadata_builder.append_null();
+                value_builder.append_null();
+                validity.push(false);
             }
         }
     }
 
-    for (i, val) in utf8_arr.into_iter().enumerate() {
-        if val.is_some() {
-            metadata_values.push(Some(&metadata_bufs[i]));
-            value_values.push(Some(&value_bufs[i]));
-        } else {
-            metadata_values.push(None);
-            value_values.push(None);
-        }
-    }
+    let metadata_arrow = metadata_builder.finish();
+    let value_arrow = value_builder.finish();
+    let has_nulls = validity.iter().any(|v| !v);
+    let null_buffer = if has_nulls {
+        Some(NullBuffer::from_iter(validity))
+    } else {
+        None
+    };
 
     let metadata_field = Field::new("metadata", DataType::Binary);
     let value_field = Field::new("value", DataType::Binary);
 
-    let metadata_series =
-        BinaryArray::from_iter(metadata_field.name.as_ref(), metadata_values.into_iter())
-            .into_series();
-    let value_series =
-        BinaryArray::from_iter(value_field.name.as_ref(), value_values.into_iter()).into_series();
+    let metadata_series = Series::from_arrow(metadata_field.clone(), Arc::new(metadata_arrow))?;
+    let value_series = Series::from_arrow(value_field.clone(), Arc::new(value_arrow))?;
 
     let struct_arr = StructArray::new(
         Arc::new(Field::new(
@@ -97,7 +96,7 @@ fn parse_json_impl(input: &Series) -> DaftResult<Series> {
             DataType::Struct(vec![metadata_field, value_field]),
         )),
         vec![metadata_series, value_series],
-        None,
+        null_buffer,
     );
 
     Ok(VariantArray::new(field, struct_arr).into_series())

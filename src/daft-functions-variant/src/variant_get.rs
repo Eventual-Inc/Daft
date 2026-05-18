@@ -1,4 +1,3 @@
-use arrow_array::Array;
 use daft_core::{
     datatypes::Field,
     prelude::{AsArrow, DataType, Schema, Utf8Array, VariantArray},
@@ -50,17 +49,12 @@ fn variant_get_impl(input: &Series, path: &str) -> DaftResult<Series> {
     })?;
 
     let variant_arr = input.downcast::<VariantArray>()?;
-    let struct_arr = &variant_arr.physical;
-
-    let metadata_series = struct_arr.get("metadata")?;
-    let value_series = struct_arr.get("value")?;
-
-    let metadata_arr = metadata_series.binary()?.as_arrow()?;
-    let value_arr = value_series.binary()?.as_arrow()?;
+    let metadata_arr = variant_arr.metadata_binary()?.as_arrow()?;
+    let value_arr = variant_arr.values_binary()?.as_arrow()?;
 
     let results: Vec<Option<String>> = (0..input.len())
         .map(|i| {
-            if metadata_arr.is_null(i) || value_arr.is_null(i) {
+            if !variant_arr.physical.is_valid(i) {
                 return Ok(None);
             }
             let metadata_bytes = metadata_arr.value(i);
