@@ -1484,6 +1484,22 @@ class Expression:
 
         return jq(self, filter)
 
+    def variant_parse_json(self) -> Expression:
+        """Parses a JSON string into a Variant binary encoding."""
+        return Expression._call_builtin_scalar_fn("variant_parse_json", self)
+
+    def variant_to_json(self) -> Expression:
+        """Converts a Variant value to its JSON string representation."""
+        return Expression._call_builtin_scalar_fn("variant_to_json", self)
+
+    def variant_get(self, path: builtins.str) -> Expression:
+        """Extracts a value from a Variant by path, returning the result as a JSON string.
+
+        Args:
+            path: Dot-notation path (e.g., "name", "address[0].city").
+        """
+        return Expression._call_builtin_scalar_fn("variant_get", self, lit(path))
+
     def name(self) -> builtins.str:
         return self._expr.name()
 
