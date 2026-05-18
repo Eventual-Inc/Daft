@@ -144,55 +144,32 @@ async fn read_parquet_single(
         .map(|v| v.iter().map(|s| s.as_str()).collect());
 
     let (source_type, fixed_uri) = parse_url(uri)?;
-    let table = if matches!(source_type, SourceType::File) {
-        let (send, recv) = tokio::sync::oneshot::channel();
-        let path = daft_io::strip_file_uri_to_path(&fixed_uri)
+    let path_buf;
+    let source = if matches!(source_type, SourceType::File) {
+        path_buf = daft_io::strip_file_uri_to_path(&fixed_uri)
             .unwrap_or(&fixed_uri)
             .to_string();
-        let columns_owned: Option<Vec<String>> = columns_ref
-            .as_deref()
-            .map(|c| c.iter().map(|s| (*s).to_string()).collect());
-        let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
-        let predicate = predicate.clone();
-        let field_id_mapping = field_id_mapping.clone();
-        let delete_rows = delete_rows.clone();
-        rayon::spawn(move || {
-            let col_refs: Option<Vec<&str>> = columns_owned
-                .as_ref()
-                .map(|v| v.iter().map(|s| s.as_str()).collect());
-            let result = crate::arrowrs_reader::local_parquet_read_arrowrs(
-                &path,
-                col_refs.as_deref(),
-                start_offset,
-                num_rows,
-                row_groups_owned.as_deref(),
-                predicate,
-                schema_infer_options,
-                chunk_size,
-                field_id_mapping,
-                delete_rows.as_deref(),
-            );
-            let _ = send.send(result);
-        });
-        recv.await.context(super::OneShotRecvSnafu {})??
+        crate::arrowrs_v2::ParquetSource::Local { path: &path_buf }
     } else {
-        crate::arrowrs_reader::read_parquet_single_arrowrs(
+        crate::arrowrs_v2::ParquetSource::Url {
             uri,
-            columns_ref.as_deref(),
-            start_offset,
-            num_rows,
-            row_groups.as_deref(),
-            predicate.clone(),
-            io_client,
-            io_stats,
-            schema_infer_options,
-            None,
-            chunk_size,
-            field_id_mapping,
-            delete_rows.as_deref(),
-        )
-        .await?
+            io_client: io_client.clone(),
+            io_stats: io_stats.clone(),
+        }
     };
+    let table = crate::arrowrs_v2::parquet_read_v2(
+        source,
+        columns_ref.as_deref(),
+        start_offset,
+        num_rows,
+        row_groups.as_deref(),
+        predicate.clone(),
+        schema_infer_options,
+        chunk_size,
+        field_id_mapping.clone(),
+        delete_rows.as_deref(),
+    )
+    .await?;
     Ok(table)
 }
 
@@ -210,7 +187,6 @@ async fn stream_parquet_single(
     // TODO(arrow-rs): wire metadata through to the arrowrs reader to skip redundant footer reads.
     _metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
-    maintain_order: bool,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let columns_ref: Option<Vec<&str>> = columns
@@ -218,42 +194,33 @@ async fn stream_parquet_single(
         .map(|v| v.iter().map(|s| s.as_str()).collect());
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
+    let path_buf;
+    let source = if matches!(source_type, SourceType::File) {
+        path_buf = daft_io::strip_file_uri_to_path(&fixed_uri)
+            .unwrap_or(&fixed_uri)
+            .to_string();
+        crate::arrowrs_v2::ParquetSource::Local { path: &path_buf }
+    } else {
+        crate::arrowrs_v2::ParquetSource::Url {
+            uri: uri.as_str(),
+            io_client: io_client.clone(),
+            io_stats: io_stats.clone(),
+        }
+    };
     let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
-        if matches!(source_type, SourceType::File) {
-            let path = daft_io::strip_file_uri_to_path(&fixed_uri)
-                .unwrap_or(&fixed_uri)
-                .to_string();
-            crate::arrowrs_reader::local_parquet_stream_arrowrs(
-                &path,
-                columns_ref.as_deref(),
-                num_rows,
-                row_groups.as_deref(),
-                predicate.clone(),
-                schema_infer_options,
-                chunk_size,
-                field_id_mapping.clone(),
-                delete_rows.as_deref(),
-                maintain_order,
-            )
-            .await?
-        } else {
-            crate::arrowrs_reader::stream_parquet_single_arrowrs(
-                uri.as_str(),
-                columns_ref.as_deref(),
-                None,
-                num_rows,
-                row_groups.as_deref(),
-                predicate.clone(),
-                io_client,
-                io_stats,
-                schema_infer_options,
-                None,
-                chunk_size,
-                field_id_mapping,
-                delete_rows.as_deref(),
-            )
-            .await?
-        };
+        crate::arrowrs_v2::parquet_stream_v2(
+            source,
+            columns_ref.as_deref(),
+            None,
+            num_rows,
+            row_groups.as_deref(),
+            predicate.clone(),
+            schema_infer_options,
+            chunk_size,
+            field_id_mapping.clone(),
+            delete_rows.as_deref(),
+        )
+        .await?;
 
     let mut remaining_rows = num_rows.map(|limit| limit as i64);
     let stream = table_stream.try_take_while(move |table| {
@@ -561,7 +528,6 @@ pub async fn stream_parquet(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<DaftParquetMetadata>>,
-    maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -577,7 +543,6 @@ pub async fn stream_parquet(
         field_id_mapping,
         metadata,
         delete_rows,
-        maintain_order,
         chunk_size,
     )
     .await?;
@@ -887,7 +852,6 @@ mod tests {
                 &Default::default(),
                 None,
                 None,
-                false,
                 None,
                 None,
             )
@@ -1041,7 +1005,6 @@ mod tests {
                     None,
                     None,
                     None,
-                    true,
                     None,
                 )
                 .await

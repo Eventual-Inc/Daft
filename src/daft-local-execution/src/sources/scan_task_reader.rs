@@ -122,7 +122,13 @@ async fn read_parquet(
             .sources
             .first()
             .and_then(|s| s.get_parquet_metadata().cloned());
-        daft_parquet::read::stream_parquet(
+        // The parquet reader is RG-sequential by construction (stream::iter +
+        // .then), so `maintain_order` from the scan-task layer is always
+        // satisfied; the parquet API no longer takes it as a parameter.
+        let _ = maintain_order;
+        // Box::pin: setup future is large (~20KB) due to many tuning args;
+        // setup-only, not hot-path.
+        Box::pin(daft_parquet::read::stream_parquet(
             url,
             file_column_names,
             scan_task.pushdowns.limit,
@@ -133,10 +139,9 @@ async fn read_parquet(
             &inference_options,
             cfg.field_id_mapping.clone(),
             metadata,
-            maintain_order,
             delete_rows,
             parquet_chunk_size,
-        )
+        ))
         .await
     }
 }
