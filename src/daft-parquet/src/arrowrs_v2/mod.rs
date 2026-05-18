@@ -92,8 +92,12 @@ impl ParquetSource<'_> {
     }
 }
 
-/// Single streaming entry point. Returns a stream of `RecordBatch`es.
-/// Dispatches local vs remote internally via `ParquetSource`.
+/// Single streaming entry point. Returns the projection schema and a stream of
+/// `RecordBatch`es. The schema is returned separately so the bulk path can
+/// preserve it when the stream produces zero batches (e.g. empty parquet
+/// files): per-RG processors emit `stream::empty()` for 0-row RGs to avoid
+/// signalling "I wrote rows" to downstream writers, so the schema would
+/// otherwise be lost.
 #[allow(clippy::too_many_arguments)]
 pub async fn parquet_stream_v2(
     source: ParquetSource<'_>,
@@ -106,7 +110,7 @@ pub async fn parquet_stream_v2(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
-) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     let (chunk_source, arrow_metadata, effective_row_groups_owned): (
         ChunkSource,
         ArrowReaderMetadata,
@@ -192,11 +196,12 @@ async fn parquet_stream_v2_from_source(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
+    // see parquet_stream_v2 for why schema is returned alongside the stream
     schema_infer_options: ParquetSchemaInferenceOptions,
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
-) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     const DEFAULT_BATCH_SIZE: usize = 128 * 1024;
     let chunk_size: usize = batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
 
@@ -273,10 +278,12 @@ async fn parquet_stream_v2_from_source(
     )?;
 
     if rg_indices_vec.is_empty() {
-        return Ok(futures::stream::once(async move {
-            Ok(RecordBatch::empty(Some(return_daft_schema.clone())))
-        })
-        .boxed());
+        let schema = return_daft_schema.clone();
+        let s = return_daft_schema.clone();
+        return Ok((
+            schema,
+            futures::stream::once(async move { Ok(RecordBatch::empty(Some(s))) }).boxed(),
+        ));
     }
 
     // 8. Compute per-RG row counts and global starts (for delete-rows handling).
@@ -308,7 +315,10 @@ async fn parquet_stream_v2_from_source(
         let total: usize = rg_row_counts.iter().sum();
         let limited = num_rows.map(|n| n.min(total)).unwrap_or(total);
         let batch = RecordBatch::new_with_size(return_daft_schema.clone(), Vec::new(), limited)?;
-        return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
+        return Ok((
+            return_daft_schema,
+            futures::stream::once(async move { Ok(batch) }).boxed(),
+        ));
     }
 
     let pred_col_set: HashSet<String> = row_filter_pred_cols
@@ -700,7 +710,7 @@ async fn parquet_stream_v2_from_source(
         Box::pin(stream)
     };
 
-    Ok(limited)
+    Ok((return_daft_schema, limited))
 }
 
 /// Bulk variant: collect the full stream into one concatenated `RecordBatch`.
@@ -719,7 +729,7 @@ pub async fn parquet_read_v2(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<RecordBatch> {
     use futures::TryStreamExt;
-    let stream = parquet_stream_v2(
+    let (schema, stream) = parquet_stream_v2(
         source,
         columns,
         start_offset,
@@ -734,7 +744,13 @@ pub async fn parquet_read_v2(
     .await?;
     let batches: Vec<RecordBatch> = stream.try_collect().await?;
     if batches.is_empty() {
-        return Ok(RecordBatch::empty(None));
+        // No batches produced — preserve the projection schema. This matters
+        // for empty parquet inputs (0-row RGs): the per-RG processor emits
+        // `stream::empty()` for those (so streaming writers like iceberg
+        // don't see "wrote a batch" and land an empty snapshot), but bulk
+        // callers like `MicroPartition.read_parquet` expect schema-bearing
+        // output.
+        return Ok(RecordBatch::empty(Some(schema)));
     }
     RecordBatch::concat(&batches)
 }

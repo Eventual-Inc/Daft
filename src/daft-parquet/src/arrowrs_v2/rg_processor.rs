@@ -92,13 +92,14 @@ pub(super) async fn process_rg_streaming(
     };
 
     if total_rows_for_rg == 0 {
-        // Empty RG (e.g. pyarrow's "empty table" writes 1 RG with 0 rows).
-        // Emit one schema-bearing empty batch so the outer concat preserves
-        // the projected schema; an empty stream here would let the bulk
-        // entry point return a schema-less empty batch.
-        let schema = return_daft_schema.clone();
-        return futures::stream::once(async move { Ok(RecordBatch::empty(Some(schema))) }).boxed();
+        // Empty RG contributes no rows. Return an empty stream — emitting an
+        // empty schema-bearing batch here would convince downstream consumers
+        // (e.g. iceberg writer) that there's data to land. The outer caller
+        // (parquet_stream_v2_from_source) guarantees a schema-bearing batch
+        // when no RGs contribute any rows.
+        return futures::stream::empty().boxed();
     }
+    let _ = return_daft_schema;
 
     // Spawn streaming decoders for data cols. Each emits ArrayRef chunks of
     // `chunk_size` rows via its own bounded mpsc.

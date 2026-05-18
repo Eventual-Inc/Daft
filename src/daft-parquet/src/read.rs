@@ -207,7 +207,7 @@ async fn stream_parquet_single(
             io_stats: io_stats.clone(),
         }
     };
-    let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
+    let (_schema, table_stream): (Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>) =
         crate::arrowrs_v2::parquet_stream_v2(
             source,
             columns_ref.as_deref(),
