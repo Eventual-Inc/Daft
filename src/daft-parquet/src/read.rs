@@ -149,15 +149,15 @@ async fn read_parquet_single(
         path_buf = daft_io::strip_file_uri_to_path(&fixed_uri)
             .unwrap_or(&fixed_uri)
             .to_string();
-        crate::arrowrs_v2::ParquetSource::Local { path: &path_buf }
+        crate::reader::ParquetSource::Local { path: &path_buf }
     } else {
-        crate::arrowrs_v2::ParquetSource::Url {
+        crate::reader::ParquetSource::Url {
             uri,
             io_client: io_client.clone(),
             io_stats: io_stats.clone(),
         }
     };
-    let table = crate::arrowrs_v2::parquet_read_v2(
+    let table = crate::reader::read_parquet(
         source,
         columns_ref.as_deref(),
         start_offset,
@@ -199,16 +199,16 @@ async fn stream_parquet_single(
         path_buf = daft_io::strip_file_uri_to_path(&fixed_uri)
             .unwrap_or(&fixed_uri)
             .to_string();
-        crate::arrowrs_v2::ParquetSource::Local { path: &path_buf }
+        crate::reader::ParquetSource::Local { path: &path_buf }
     } else {
-        crate::arrowrs_v2::ParquetSource::Url {
+        crate::reader::ParquetSource::Url {
             uri: uri.as_str(),
             io_client: io_client.clone(),
             io_stats: io_stats.clone(),
         }
     };
     let (_schema, table_stream): (Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>) =
-        crate::arrowrs_v2::parquet_stream_v2(
+        crate::reader::stream_parquet(
             source,
             columns_ref.as_deref(),
             None,

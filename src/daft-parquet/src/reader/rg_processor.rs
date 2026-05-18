@@ -1,15 +1,3 @@
-//! Per-row-group streaming processors.
-//!
-//! `process_rg_streaming` handles the standard path: predicate cols already
-//! decoded in phase 1, data cols decoded chunk-by-chunk in this RG, output
-//! assembled by interleaving pre-filtered pred slices with data chunks.
-//!
-//! `process_rg_chunked_pred` handles the chunked-pred path: no separate data
-//! cols, so we stream the predicate cols themselves chunk-by-chunk, evaluate
-//! the predicate per chunk, and emit filtered output. Used when the projection
-//! is fully covered by predicate columns — enables within-RG early stop on
-//! limit, and keeps per-chunk decode buffers small for cache locality.
-
 use std::sync::Arc;
 
 use arrow::{
@@ -31,13 +19,8 @@ use super::{
 };
 use crate::helpers::substitute_missing_cols;
 
-/// Stream chunks for one RG. Spawns one `decode_one_streaming` task per data
-/// column (each emits ArrayRef chunks of `chunk_size` rows via mpsc), pre-filters
-/// any phase-1 pred arrays once, and yields zipped RecordBatches per chunk.
-///
-/// Peak memory per RG is bounded to:
-/// - filtered pred arrays for this RG (sum of true rows × num pred cols)
-/// - chunk_size × num data cols × cell size (in-flight channel data)
+/// Standard per-RG path: pre-filter the phase-1 predicate arrays once, then
+/// spawn one streaming decoder per data column and zip chunks into batches.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process_rg_streaming(
     rg_pos: usize,
@@ -56,17 +39,15 @@ pub(super) async fn process_rg_streaming(
     predicate_for_fallback: Option<ExprRef>,
     predicate_pushed: bool,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
-    // Await this RG's pre-spawned coalesced byte-range fetch (or do an inline
-    // pread for local). Later RGs' fetches continue in the background — this
-    // is the pipeline that overlaps remote I/O with decode.
+    // Await this RG's pre-spawned coalesced fetch. Later RGs continue in the
+    // background — overlaps remote I/O with decode.
     let data_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, data_col_indices.as_ref()).into();
     let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, data_leaves).await {
         Ok(c) => Arc::new(c),
         Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
     };
-    // Pre-filter pred arrays for this RG once. The result has `num_trues` rows
-    // and is sliced per-chunk for zero-copy assembly.
+    // Pre-filter pred arrays once; sliced per-chunk for zero-copy assembly.
     let filtered_pred: Vec<ArrayRef> = pred_col_indices
         .iter()
         .enumerate()
@@ -81,8 +62,6 @@ pub(super) async fn process_rg_streaming(
         })
         .collect();
 
-    // Total rows this RG will emit (post-predicate). Match length of filtered pred
-    // or, if no pred, the selection / RG row count.
     let total_rows_for_rg: usize = if !pred_col_indices.is_empty() && !filtered_pred.is_empty() {
         filtered_pred[0].len()
     } else if let Some(sel) = &selection {
@@ -92,17 +71,13 @@ pub(super) async fn process_rg_streaming(
     };
 
     if total_rows_for_rg == 0 {
-        // Empty RG contributes no rows. Return an empty stream — emitting an
-        // empty schema-bearing batch here would convince downstream consumers
-        // (e.g. iceberg writer) that there's data to land. The outer caller
-        // (parquet_stream_v2_from_source) guarantees a schema-bearing batch
-        // when no RGs contribute any rows.
+        // Empty RG → empty stream. Emitting a 0-row schema-bearing batch
+        // would make streaming writers (e.g. iceberg) land an empty snapshot.
+        // The bulk path preserves schema via `read_parquet`.
         return futures::stream::empty().boxed();
     }
     let _ = return_daft_schema;
 
-    // Spawn streaming decoders for data cols. Each emits ArrayRef chunks of
-    // `chunk_size` rows via its own bounded mpsc.
     let compute = get_compute_runtime();
     let mut col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>> =
         Vec::with_capacity(data_col_indices.len());
@@ -131,8 +106,6 @@ pub(super) async fn process_rg_streaming(
         col_receivers.push(rx);
     }
 
-    // Stream state: receivers, drop-handles (keep tasks alive), pre-filtered
-    // pred arrays, and the row offset into pred arrays for slicing per chunk.
     struct ZipState {
         col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>>,
         _col_handles: Vec<common_runtime::RuntimeTask<DaftResult<()>>>,
@@ -157,8 +130,7 @@ pub(super) async fn process_rg_streaming(
         let return_daft_schema = return_daft_schema.clone();
         let predicate_for_fallback = predicate_for_fallback.clone();
         async move {
-            // Case A: data cols present — recv one chunk from each col channel.
-            // Case B: no data cols — emit chunks of filtered pred arrays directly.
+            // With data cols: recv one chunk per col. Without: emit pred slices directly.
             let chunk_rows: usize;
             let data_chunks: Vec<ArrayRef> = if !data_col_indices.is_empty() {
                 let mut got = Vec::with_capacity(state.col_receivers.len());
@@ -175,7 +147,6 @@ pub(super) async fn process_rg_streaming(
                 chunk_rows = got[0].len();
                 got
             } else {
-                // No data cols: emit pred-filtered chunks directly.
                 let remaining = state.total_rows_for_rg.saturating_sub(state.rows_so_far);
                 if remaining == 0 {
                     return None;
@@ -184,7 +155,7 @@ pub(super) async fn process_rg_streaming(
                 Vec::new()
             };
 
-            // Build read_col arrays in output order, drawing from pred-slice or data chunks.
+            // Assemble output cols from pred slices and/or data chunks.
             let mut fields = Vec::with_capacity(read_col_indices.len());
             let mut arrays: Vec<ArrayRef> = Vec::with_capacity(read_col_indices.len());
             for &col_idx in read_col_indices.iter() {
@@ -211,7 +182,7 @@ pub(super) async fn process_rg_streaming(
                 Err(e) => return Some((Err(e), state)),
             };
 
-            // Predicate fallback (non-pushed): evaluate per chunk.
+            // Predicate fallback when not pushed: eval per chunk.
             if let Some(ref pred) = predicate_for_fallback
                 && !predicate_pushed
             {
@@ -245,12 +216,10 @@ pub(super) async fn process_rg_streaming(
     .boxed()
 }
 
-/// Chunked-predicate per-RG processor. Used when the projection is entirely
-/// covered by the predicate columns (no data cols to phase-2 decode). Streams
-/// the predicate columns chunk-by-chunk, evaluates the predicate per chunk,
-/// filters in-place, and emits filtered RecordBatches. Honors the shared
-/// `remaining_atomic` counter for cross-RG limit accounting — within an RG, the
-/// last emitted chunk is truncated to the remaining limit.
+/// Chunked-pred path: used when the projection is fully covered by predicate
+/// columns. Streams pred cols chunk-by-chunk, evaluates per chunk, filters
+/// in-place. Honors a shared remaining-rows counter for cross-RG limit
+/// accounting.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn process_rg_chunked_pred(
     rg_idx: usize,
@@ -268,7 +237,6 @@ pub(super) async fn process_rg_chunked_pred(
     use std::sync::atomic::Ordering;
     let compute = get_compute_runtime();
 
-    // Await this RG's pre-spawned coalesced byte-range fetch.
     let pred_leaves: Arc<[usize]> =
         leaves_for_top_fields(&metadata, pred_col_indices.as_ref()).into();
     let rg_chunks = match chunk_source.read_rg_chunks(rg_idx, pred_leaves).await {
@@ -276,7 +244,6 @@ pub(super) async fn process_rg_chunked_pred(
         Err(e) => return futures::stream::once(async move { Err(e) }).boxed(),
     };
 
-    // Spawn streaming decoders for pred cols.
     let mut col_receivers: Vec<tokio::sync::mpsc::Receiver<DaftResult<ArrayRef>>> =
         Vec::with_capacity(pred_col_indices.len());
     let mut col_handles: Vec<_> = Vec::with_capacity(pred_col_indices.len());
@@ -304,9 +271,7 @@ pub(super) async fn process_rg_chunked_pred(
         col_receivers.push(rx);
     }
 
-    // Pre-build schemas + bound predicate ONCE per RG. The chunk schema
-    // doesn't change between chunks (same cols, same types), so binding the
-    // predicate per chunk was pure overhead (~50µs/chunk × 64 RGs).
+    // Build schemas + bind predicate once per RG (was ~50µs/chunk overhead).
     let chunk_arrow_schema = {
         let fields: Vec<Arc<ArrowField>> = pred_col_indices
             .iter()
@@ -333,7 +298,7 @@ pub(super) async fn process_rg_chunked_pred(
             .collect();
         Arc::new(ArrowSchema::new(fields))
     };
-    // Pre-compute output array indices (read_col → pred slot mapping).
+    // read_col → pred slot mapping for output assembly.
     let out_to_pred_slot: Arc<[usize]> = read_col_indices
         .iter()
         .map(|&col_idx| {
@@ -362,14 +327,12 @@ pub(super) async fn process_rg_chunked_pred(
         let remaining_atomic = remaining_atomic.clone();
         let return_daft_schema = return_daft_schema.clone();
         async move {
-            // Loop until we find a non-empty filtered chunk or run out of chunks/limit.
             loop {
                 let remaining = remaining_atomic.load(Ordering::Acquire);
                 if remaining == 0 {
                     return None;
                 }
 
-                // Recv one chunk from each pred col.
                 let mut chunks = Vec::with_capacity(state.col_receivers.len());
                 for r in &mut state.col_receivers {
                     match r.recv().await {
@@ -419,7 +382,6 @@ pub(super) async fn process_rg_chunked_pred(
                     continue;
                 }
 
-                // Filter pred chunks by mask and assemble output batch.
                 let mut filtered = Vec::with_capacity(chunks.len());
                 for arr in &chunks {
                     let f = match arrow::compute::filter(arr, &arrow_bool) {

@@ -1,12 +1,9 @@
-// The parquet entry points have many tuning/IO arguments by design; the
-// resulting setup futures are large but cold (not hot-path), so allow clippy's
-// large-future warning at the crate level instead of Box::pin'ing each call.
 #![allow(clippy::large_futures)]
 
 use common_error::DaftError;
 use snafu::Snafu;
 
-mod arrowrs_v2;
+mod reader;
 mod helpers;
 pub mod metadata;
 mod metadata_adapter;
@@ -20,7 +17,6 @@ mod statistics;
 pub use python::register_modules;
 pub use statistics::row_group_metadata_to_table_stats;
 
-/// Infer a Daft `Schema` from arrow-rs-backed `DaftParquetMetadata`.
 pub fn infer_schema_from_daft_metadata(
     metadata: &DaftParquetMetadata,
     options: read::ParquetSchemaInferenceOptions,
@@ -46,6 +42,11 @@ pub enum Error {
         "Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"
     ))]
     FileReadTimeout { path: String, duration_ms: i64 },
+    #[snafu(display("Internal IO Error when opening: {path}:\nDetails:\n{source}"))]
+    InternalIOError {
+        path: String,
+        source: std::io::Error,
+    },
 
     #[snafu(display(
         "Unable to parse parquet metadata (arrow-rs) for file {}: {}",
@@ -56,7 +57,24 @@ pub enum Error {
         path: String,
         source: parquet::errors::ParquetError,
     },
+    #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
+    UnableToParseMetadataFromLocalFile {
+        path: String,
+        source: arrow::error::ArrowError,
+    },
 
+    #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
+    UnableToReadParquetRowGroup {
+        path: String,
+        source: arrow::error::ArrowError,
+    },
+
+    #[snafu(display(
+        "Unable to create table from arrow chunk for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToCreateTableFromChunk { path: String, source: DaftError },
     #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
         path,
@@ -83,11 +101,71 @@ pub enum Error {
         file_size: usize,
     },
 
+    #[snafu(display(
+        "Parquet file: {} expected {} rows but only read: {} ",
+        path,
+        expected_rows,
+        read_rows
+    ))]
+    ParquetNumRowMismatch {
+        path: String,
+        expected_rows: usize,
+        read_rows: usize,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} has multiple columns with different number of rows",
+        path,
+    ))]
+    ParquetColumnsDontHaveEqualRows { path: String },
+
+    #[snafu(display(
+        "Parquet file: {} metadata listed {} columns but only read: {} ",
+        path,
+        metadata_num_columns,
+        read_columns
+    ))]
+    ParquetNumColumnMismatch {
+        path: String,
+        metadata_num_columns: usize,
+        read_columns: usize,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} unable to convert row group metadata to stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToConvertRowGroupMetadataToStats { path: String, source: DaftError },
+
+    #[snafu(display(
+        "Parquet file: {} unable to evaluate predicate on stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToRunExpressionOnStats {
+        path: String,
+        source: daft_stats::Error,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} unable to bind expression to schema\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToBindExpression { path: String, source: DaftError },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,
         source: tokio::task::JoinError,
     },
+    #[snafu(display(
+        "Sender of OneShot Channel Dropped before sending data over: {}",
+        source
+    ))]
+    OneShotRecvError {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
+    #[snafu(display("Parse error: {}", message))]
+    ParseError { message: String },
 }
 
 impl From<Error> for DaftError {
@@ -95,6 +173,7 @@ impl From<Error> for DaftError {
         match err {
             Error::DaftIOError { source } => source.into(),
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::UnableToBindExpression { source, .. } => source.into(),
             _ => Self::External(err.into()),
         }
     }

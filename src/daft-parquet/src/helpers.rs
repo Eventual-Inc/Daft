@@ -1,8 +1,3 @@
-//! Helpers used by the `arrowrs_v2` parquet reader.
-//!
-//! These are pure utility functions for predicate handling, RowSelection
-//! arithmetic, and row-group pruning. No I/O, no decode logic.
-
 use std::{borrow::Cow, collections::HashSet};
 
 use arrow::array::Array;
@@ -23,12 +18,8 @@ use parquet::{
 
 use crate::statistics::row_group_metadata_to_table_stats;
 
-/// Returns the set of column names a predicate requires for pushdown, or
-/// `None` if pushdown isn't possible (no referenced columns, or any column
-/// is absent from the file schema). The caller uses the set to decide
-/// which columns to phase-1-decode-and-eval-pred before phase-2 decoding
-/// the data-only columns. The actual predicate evaluation happens in the
-/// chunked-pred RG processor, not via arrow-rs's `RowFilter`.
+/// Column names a predicate references, or `None` if not pushable (no cols
+/// referenced, or any col is missing from the file schema).
 pub fn predicate_pushable_cols(
     predicate: &ExprRef,
     daft_schema: &Schema,
@@ -45,9 +36,8 @@ pub fn predicate_pushable_cols(
     Some(filter_columns.into_iter().collect())
 }
 
-/// Rewrite a predicate to handle Iceberg schema evolution: substitute null for
-/// any column reference not present in `schema`. Null propagates conservatively
-/// (predicate evaluates to null/unknown, never falsely excluding rows).
+/// Substitute null for any column reference not present in `schema` (Iceberg
+/// schema evolution). Null propagates conservatively — never falsely excludes.
 pub fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
     Ok(predicate
         .clone()

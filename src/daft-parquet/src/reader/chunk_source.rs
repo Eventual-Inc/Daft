@@ -1,13 +1,3 @@
-//! Byte sources for the v2 parquet reader.
-//!
-//! `OffsetBytes` is a `ChunkReader` windowed over a single column chunk's
-//! bytes; `LocalChunkSource` does positioned `pread`s (coalesced) per RG;
-//! `RemoteChunkSource` pre-spawns coalesced range GETs at construction time
-//! and serves decoders from in-memory `Bytes` slices.
-//!
-//! `open_local_file` and `fetch_remote_chunk_source` are the two top-level
-//! constructors used by `parquet_stream_v2`.
-
 use std::{collections::BTreeMap, sync::Arc};
 
 use bytes::Bytes;
@@ -25,21 +15,12 @@ use parquet::{
 use super::util::parquet_err;
 use crate::metadata::apply_field_ids_to_arrowrs_parquet_metadata;
 
-/// One leaf's byte range within the file: `(leaf_idx, start, len)`.
 type LeafRange = (usize, u64, u64);
-/// A coalesced run of byte ranges: `(run_start, run_end, leaves_in_run)`.
 type RangeGroup = (u64, u64, Vec<LeafRange>);
 
-// ---------------------------------------------------------------------------
-// OffsetBytes: ChunkReader windowed over a per-column-chunk byte slice.
-//
-// SerializedPageReader works in absolute file offsets (the values stored in
-// the column chunk metadata). OffsetBytes holds only ONE column chunk's bytes
-// but reports the FILE's total length via Length::len, and translates absolute
-// offsets to local-buffer offsets in get_read/get_bytes. This lets us avoid
-// holding the whole file in memory.
-// ---------------------------------------------------------------------------
-
+/// `ChunkReader` windowed over a single column chunk's bytes. Reports the
+/// file's total length but translates absolute offsets to local-buffer offsets,
+/// so `SerializedPageReader` works without holding the whole file in memory.
 #[derive(Clone)]
 pub(crate) struct OffsetBytes {
     base: u64,
@@ -97,27 +78,9 @@ impl ChunkReader for OffsetBytes {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ChunkSource: per-(rg, leaf) factory for the column-chunk byte slice each
-// leaf decoder reads from.
-//
-// LocalChunkSource: holds an Arc<File>; each call does one positioned `pread`
-// for an RG's active leaves (with adjacent leaves coalesced into a single
-// read). No mmap, no whole-file Bytes.
-//
-// RemoteChunkSource: for each RG, coalesces active leaves' byte ranges into
-// runs (≤1MB gap, ≤16MB per run, splits at chunk boundaries if a run
-// exceeds 24MB), spawns one task per run that does
-// `single_url_get(range).bytes().await`, and assembles the resulting
-// HashMap<leaf, (start, Bytes)> behind a `Shared<BoxFuture>` so decoders
-// for that RG can await once and get every leaf's slice. Bytes are fully
-// in RAM by the time any decoder reads from them — no per-byte pump, no
-// per-leaf condvar.
-// ---------------------------------------------------------------------------
-
-/// Enum-dispatched chunk source. Using an enum (rather than `dyn ChunkSource`)
-/// lets us write `async fn read_rg_chunks` directly — no per-call BoxFuture
-/// alloc, which adds up to milliseconds across many RGs.
+/// Per-(rg, leaf) factory for column-chunk byte slices. Enum-dispatched (rather
+/// than `dyn`) so `read_rg_chunks` can be a plain async fn — no per-call
+/// `BoxFuture` allocation.
 pub(super) enum ChunkSource {
     Local(LocalChunkSource),
     Remote(RemoteChunkSource),
@@ -136,9 +99,6 @@ impl ChunkSource {
     }
 }
 
-/// Coalesce sorted (leaf, start, len) tuples into runs of contiguous-ish ranges.
-/// Two adjacent ranges are merged into one read if the gap between them is
-/// ≤ `max_gap`. Returns (run_start, run_end, leaves-in-run) per run.
 fn coalesce_ranges(mut leaf_ranges: Vec<LeafRange>, max_gap: u64) -> Vec<RangeGroup> {
     leaf_ranges.sort_by_key(|&(_, s, _)| s);
     let mut groups: Vec<RangeGroup> = Vec::new();
@@ -163,9 +123,6 @@ pub(super) struct LocalChunkSource {
 }
 
 impl LocalChunkSource {
-    /// Maximum gap (bytes) between adjacent column chunks to coalesce into one
-    /// `pread`. parquet writes col chunks back-to-back within an RG, so gaps
-    /// here are usually zero. 64KB is a safe upper bound for noise.
     const MAX_COALESCE_GAP: u64 = 64 * 1024;
 
     fn read_rg_chunks_sync(
@@ -234,19 +191,10 @@ impl LocalChunkSource {
     }
 }
 
-/// Remote chunk source. For each row group:
-///   1. Compute each active leaf's `(start, len)` byte range.
-///   2. Coalesce contiguous-ish ranges (gap ≤ 1MB, run ≤ 16MB) into GET groups.
-///   3. Split oversized groups (> 24MB) at column-chunk boundaries into
-///      ~16MB pieces (each leaf still belongs to exactly one piece).
-///   4. Spawn one tokio task per piece that does
-///      `single_url_get(range).bytes().await` — the bytes are collected in
-///      full before any decoder reads from them. Decoders for that RG await
-///      a `Shared<BoxFuture>` of the assembled `HashMap<leaf, (start, Bytes)>`.
-///
-/// Parallel range fetches at construction time, in-memory `Bytes` caching
-/// per range, decoders read from cached slices. Decoders see bytes-already-
-/// there and never park.
+/// Per-row-group coalesced byte-range GETs (merge ≤1MB gaps, split >24MB at
+/// chunk boundaries into ~16MB pieces). Fetches run in the background;
+/// decoders await an assembled `HashMap<leaf, (start, Bytes)>` via a `Shared`
+/// future and never park on per-byte IO.
 pub(super) struct RemoteChunkSource {
     rg_fetches: std::collections::HashMap<usize, SharedRgFetch>,
     file_len: u64,
@@ -258,9 +206,6 @@ type SharedRgFetch = futures::future::Shared<
 >;
 
 impl RemoteChunkSource {
-    /// Adjacent column chunks separated by ≤ MAX_COALESCE_GAP are merged
-    /// into one GET. If the merged run exceeds SPLIT_THRESHOLD, it's split
-    /// at column-chunk boundaries into pieces of ≤ MAX_REQUEST_SIZE.
     const MAX_COALESCE_GAP: u64 = 1024 * 1024;
     const SPLIT_THRESHOLD: u64 = 24 * 1024 * 1024;
     const MAX_REQUEST_SIZE: u64 = 16 * 1024 * 1024;
@@ -287,7 +232,6 @@ impl RemoteChunkSource {
             }
             let groups = Self::coalesce_and_split(leaf_ranges);
 
-            // Spawn one fetch task per coalesced piece. They run concurrently.
             type FetchHandle = tokio::task::JoinHandle<Result<Bytes, common_error::DaftError>>;
             let mut group_handles: Vec<(FetchHandle, u64, Vec<LeafRange>)> =
                 Vec::with_capacity(groups.len());
@@ -314,8 +258,6 @@ impl RemoteChunkSource {
                 group_handles.push((handle, group_start, members));
             }
 
-            // Assemble: await each piece's bytes, slice per-leaf O(1). Splits
-            // respect chunk boundaries, so each leaf is in exactly one piece.
             let num_cols = active_col_indices.len();
             let fut: futures::future::BoxFuture<
                 'static,
@@ -359,9 +301,6 @@ impl RemoteChunkSource {
         }
     }
 
-    /// Coalesce sorted (leaf, start, len) tuples into ≤MAX_COALESCE_GAP-bounded
-    /// runs, then split runs larger than SPLIT_THRESHOLD at chunk boundaries
-    /// into pieces ≲ MAX_REQUEST_SIZE. Each leaf ends up in exactly one piece.
     fn coalesce_and_split(leaf_ranges: Vec<LeafRange>) -> Vec<RangeGroup> {
         let mut groups = coalesce_ranges(leaf_ranges, Self::MAX_COALESCE_GAP);
         let mut split_groups: Vec<RangeGroup> = Vec::with_capacity(groups.len());
@@ -403,8 +342,8 @@ impl RemoteChunkSource {
                 rg_idx
             ))
         })?;
-        // DaftError isn't Clone, so the Shared future's err is Arc<DaftError>;
-        // wrap the inner Display in a fresh ValueError for callers.
+        // Shared future's err is Arc<DaftError> because DaftError isn't Clone;
+        // re-wrap as a fresh ValueError.
         let rg_bytes = fut
             .await
             .map_err(|e| common_error::DaftError::ValueError(format!("{}", e)))?;
@@ -429,11 +368,6 @@ impl RemoteChunkSource {
     }
 }
 
-/// Open a local parquet file and load its metadata via positioned reads.
-/// Returns the open File handle (shared across decode tasks via Arc) and the
-/// file's total length. No mmap — each decode task does its own `pread` for
-/// just the column-chunk bytes it owns (one chunk in memory at a time, not
-/// the whole file).
 pub(super) async fn open_local_file(
     path: &str,
 ) -> DaftResult<(Arc<std::fs::File>, u64, ArrowReaderMetadata)> {
@@ -454,8 +388,6 @@ pub(super) async fn open_local_file(
                 ))
             })?
             .len();
-        // parquet implements ChunkReader for &File via try_clone+seek+read; the
-        // footer load only happens once, so the per-call cost is fine here.
         let meta =
             ArrowReaderMetadata::load(&file, ArrowReaderOptions::new()).map_err(parquet_err)?;
         DaftResult::Ok((Arc::new(file), file_len, meta))
@@ -463,13 +395,6 @@ pub(super) async fn open_local_file(
     .await?
 }
 
-/// Remote fetcher. Reads the parquet footer, prunes row groups by
-/// limit/offset, applies any Iceberg field-id mapping, then constructs a
-/// `RemoteChunkSource` whose `from_ranged` constructor spawns per-coalesced-
-/// range fetch tasks that run in the background while the caller proceeds
-/// with decode setup. Big column chunks get split into ~16MB parallel reads
-/// because a single sequential GET is bandwidth-limited (~500 MB/s on S3)
-/// while 16×16MB parallel ranges aggregate to 1+ GB/s.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn fetch_remote_chunk_source(
     uri: &str,
@@ -481,10 +406,6 @@ pub(super) async fn fetch_remote_chunk_source(
     num_rows: Option<usize>,
     field_id_mapping: Option<&BTreeMap<i32, Field>>,
 ) -> DaftResult<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
-    // Fetch metadata + file size. Two round-trips at worst (suffix-GET for
-    // the footer + HEAD for the size); on backends that support suffix
-    // ranges we still need the absolute file size for constructing the
-    // bounded byte-range GETs below.
     let (parquet_metadata_res, file_size_res) = futures::future::join(
         crate::metadata::read_parquet_metadata(
             uri,
@@ -501,10 +422,9 @@ pub(super) async fn fetch_remote_chunk_source(
     let file_size = file_size_res
         .map_err(|e| common_error::DaftError::IoError(std::io::Error::other(e.to_string())))?;
 
-    // Apply Iceberg field-id rewriting BEFORE filtering active leaves by
-    // column name. Otherwise the prefetch matches pre-rename names against
-    // post-rename user-supplied column names, fetches zero leaves, and the
-    // decoder errors with "chunk not pre-fetched for rg=X, leaf=Y".
+    // Apply Iceberg field-id mapping before filtering by column name —
+    // otherwise the prefetch matches pre-rename names against post-rename
+    // user-supplied names and fetches zero leaves.
     if let Some(mapping) = field_id_mapping {
         parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
     }
@@ -534,10 +454,9 @@ pub(super) async fn fetch_remote_chunk_source(
         Some(rgs) => rgs.iter().map(|&i| i as usize).collect(),
     };
 
-    // Prune RGs by start_offset + num_rows.
-    // The pruned set is returned in the tuple so the caller can pass it as the
-    // `row_groups` parameter to the downstream stream — otherwise the stream
-    // would try to decode RGs whose bytes we never fetched.
+    // Prune by start_offset + num_rows. Pruned set is returned so the caller
+    // passes it as row_groups to the stream — otherwise it tries to decode RGs
+    // we never fetched.
     let offset = start_offset.unwrap_or(0);
     let mut active_rg_indices: Vec<usize> = Vec::with_capacity(candidate_rgs.len());
     let mut cumulative = 0usize;
@@ -566,7 +485,6 @@ pub(super) async fn fetch_remote_chunk_source(
         Some(active_rg_indices.iter().map(|&i| i as i64).collect());
 
     if active_rg_indices.is_empty() {
-        // Nothing to fetch (e.g. limit=0 or offset >= total rows).
         let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
             .map_err(parquet_err)?;
         return Ok((

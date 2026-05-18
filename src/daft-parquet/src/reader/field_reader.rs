@@ -1,11 +1,3 @@
-//! Per-(row_group × top-level-field) decode for the v2 parquet reader.
-//!
-//! `build_top_field_reader` walks the parquet + arrow schemas in lockstep
-//! (mirroring arrow-rs's private `ParquetField` visitor) to assemble a tree of
-//! `Box<dyn ArrayReader>` rooted at one top-level arrow field. `decode_one`
-//! drives the reader for a single batch; `decode_one_streaming` chunks output
-//! into `chunk_size`-row arrays piped over an mpsc.
-
 use std::sync::Arc;
 
 use arrow::{array::ArrayRef, datatypes::Field as ArrowField};
@@ -29,10 +21,6 @@ use parquet::{
 
 use super::{chunk_source::OffsetBytes, util::parquet_err};
 
-// ---------------------------------------------------------------------------
-// PageIterator adapter: one PageReader → one-item PageIterator
-// ---------------------------------------------------------------------------
-
 struct SinglePageIter {
     inner: Option<Box<dyn PageReader>>,
 }
@@ -46,8 +34,6 @@ impl Iterator for SinglePageIter {
 
 impl PageIterator for SinglePageIter {}
 
-/// Compute the set of primitive leaf indices spanned by the given top-level
-/// field indices (in sorted, dedup'd order).
 pub(super) fn leaves_for_top_fields(
     metadata: &ParquetMetaData,
     top_field_indices: &[usize],
@@ -70,12 +56,6 @@ pub(super) fn leaves_for_top_fields(
     out
 }
 
-/// Build a primitive `ArrayReader` for one parquet leaf column.
-///
-/// Constructs a fresh `ColumnDescriptor` using the supplied def/rep levels
-/// (which may differ from the file-level descriptor's levels when the leaf
-/// sits inside a struct/list/map). The arrow-rs primitive readers do not
-/// actually use the column path, so we pass an empty path.
 fn build_primitive_leaf_reader(
     chunk_bytes: OffsetBytes,
     metadata: &ParquetMetaData,
@@ -89,7 +69,7 @@ fn build_primitive_leaf_reader(
     let col_chunk = rg.column(leaf_idx);
     let total_rows = rg.num_rows() as usize;
 
-    // Page locations come from the offset index (present when page-index is enabled).
+    // Page locations come from the offset index when present.
     let page_locations = metadata.offset_index().and_then(|oi| {
         oi.get(rg_idx)
             .and_then(|cols| cols.get(leaf_idx))
@@ -103,16 +83,14 @@ fn build_primitive_leaf_reader(
         inner: Some(Box::new(page_reader)),
     });
 
-    // Use the FILE-level schema descriptor (the per-column-chunk one may carry
-    // stale logical-type info if metadata was rebuilt via set_column_metadata).
+    // File-level descriptor (per-column-chunk may carry stale logical-type
+    // info after set_column_metadata).
     let file_col_descr = metadata.file_metadata().schema_descr().column(leaf_idx);
     let primitive_type = file_col_descr.self_type_ptr();
     let physical_type = file_col_descr.physical_type();
 
-    // Build a fresh column descriptor with the def/rep levels computed during
-    // the schema walk. For top-level primitive columns these match the
-    // file-level descriptor's levels; inside a nested type the levels are
-    // those of the leaf within the wrapping context.
+    // def/rep levels here are the leaf's levels within its wrapping context
+    // (may differ from the file-level descriptor's when nested).
     let col_descr = Arc::new(ColumnDescriptor::new(
         primitive_type,
         def_level,
@@ -165,7 +143,6 @@ fn build_primitive_leaf_reader(
     Ok(reader)
 }
 
-/// Returns true if a parquet group type is annotated as a LIST.
 fn parquet_type_is_list(t: &ParquetType) -> bool {
     if !t.is_group() {
         return false;
@@ -177,7 +154,6 @@ fn parquet_type_is_list(t: &ParquetType) -> bool {
     info.converted_type() == ConvertedType::LIST
 }
 
-/// Returns true if a parquet group has a single child field that is REPEATED.
 fn parquet_type_has_single_repeated_child(t: &ParquetType) -> bool {
     if !t.is_group() {
         return false;
@@ -188,8 +164,7 @@ fn parquet_type_has_single_repeated_child(t: &ParquetType) -> bool {
         && children[0].get_basic_info().repetition() == Repetition::REPEATED
 }
 
-/// Returns the repetition of a parquet type. Root schema has no repetition;
-/// treat it as REQUIRED.
+/// Root schema has no repetition; treat as REQUIRED.
 fn parquet_repetition(t: &ParquetType) -> Repetition {
     let info = t.get_basic_info();
     if info.has_repetition() {
@@ -199,14 +174,11 @@ fn parquet_repetition(t: &ParquetType) -> Repetition {
     }
 }
 
-/// Recursive schema walker that mirrors the algorithm in
-/// `parquet::arrow::schema::complex::Visitor`. Builds a tree of
-/// `Box<dyn ArrayReader>` from a parquet `Type` subtree and a matching arrow
-/// `Field`. The `leaf_idx` cursor tracks the next parquet leaf column to
-/// consume in depth-first order.
-///
-/// `parent_def_level` / `parent_rep_level` are the level counters at the
-/// PARENT context (i.e. before applying this type's own repetition).
+/// Walks the parquet + arrow schemas in lockstep (mirrors arrow-rs's
+/// private `complex::Visitor`) to build a tree of `Box<dyn ArrayReader>`.
+/// `leaf_idx` is the depth-first cursor into parquet leaf columns.
+/// `parent_def_level` / `parent_rep_level` are the PARENT-context level
+/// counters (before this type's repetition is applied).
 struct FieldReaderBuilder<'a> {
     chunks: &'a std::collections::HashMap<usize, OffsetBytes>,
     metadata: &'a ParquetMetaData,
@@ -277,17 +249,11 @@ impl FieldReaderBuilder<'_> {
         let (def_level, rep_level, _nullable) =
             apply_repetition(parent_def_level, parent_rep_level, repetition);
 
-        // If this primitive is REPEATED, arrow-rs wraps it as List<element>.
-        // We need to peek the arrow type and decode the inner element.
-        //
-        // arrow-rs's `ParquetField::into_list` keeps the SAME def/rep as the
-        // inner element. The `ListArrayReader::def_level` is interpreted as
-        // "the def level at which the element is fully defined", and
-        // `rep_level` as "the rep level at which a new element starts" — both
-        // are the element's levels, not the list's parent levels.
+        // REPEATED primitive: arrow wraps as List<inner>. The inner element
+        // drives the leaf decode and is non-nullable per parquet semantics.
+        // `ListArrayReader` takes the ELEMENT's def/rep (matches arrow-rs's
+        // `ParquetField::into_list`).
         if repetition == Repetition::REPEATED {
-            // arrow_type will be List<inner>; the inner element type drives the
-            // leaf decode. The element is non-nullable per parquet semantics.
             let inner_arrow_type = match arrow_type {
                 arrow::datatypes::DataType::List(f) => f.data_type().clone(),
                 arrow::datatypes::DataType::LargeList(f) => f.data_type().clone(),
@@ -386,8 +352,8 @@ impl FieldReaderBuilder<'_> {
                 rep_level,
                 leaf_idx,
             )?;
-            // Reflect reader's actual data type back into the arrow field so it
-            // matches what StructArray expects (mirrors arrow-rs builder).
+            // Reflect reader's actual type back into the field so it matches
+            // what StructArray expects.
             let actual_type = reader.get_data_type().clone();
             let child_field =
                 ArrowField::new(arrow_child.name(), actual_type, arrow_child.is_nullable())
@@ -407,9 +373,8 @@ impl FieldReaderBuilder<'_> {
         ));
 
         if repetition == Repetition::REPEATED {
-            // Wrap as a list. `ListArrayReader` interprets its def/rep_level as
-            // the ELEMENT's (i.e. the struct's) levels — same as `into_list` in
-            // arrow-rs which carries over the inner field's def/rep.
+            // REPEATED struct → List<Struct>. `ListArrayReader` takes the
+            // element's (struct's) def/rep levels.
             Ok(wrap_in_list_like(
                 struct_reader,
                 arrow_type.clone(),
@@ -430,7 +395,6 @@ impl FieldReaderBuilder<'_> {
         parent_rep_level: i16,
         leaf_idx: &mut usize,
     ) -> DaftResult<Box<dyn ArrayReader>> {
-        // Mirrors visit_list in arrow-rs.
         if parquet_type.is_primitive() {
             return Err(common_error::DaftError::ValueError(
                 "build_list: parquet type annotated as LIST is primitive".to_string(),
@@ -475,7 +439,7 @@ impl FieldReaderBuilder<'_> {
             }
         };
 
-        // Element-level def/rep (mirrors the recursion in arrow-rs).
+        // Element-level def/rep.
         let elem_def_level = list_def_level + 1;
         let elem_rep_level = parent_rep_level + 1;
 
@@ -503,9 +467,7 @@ impl FieldReaderBuilder<'_> {
             ));
         }
 
-        // Test for 2-level legacy group element: repeated group with multiple
-        // fields, OR single field but no nested list annotation and name is
-        // `array` or `<list>_tuple`.
+        // 2-level legacy group element detection.
         let items = repeated_field.get_fields();
         let is_two_level_group = items.len() != 1
             || (!parquet_type_is_list(repeated_field)
@@ -514,10 +476,8 @@ impl FieldReaderBuilder<'_> {
                     || repeated_field.name() == format!("{}_tuple", parquet_type.name())));
 
         if is_two_level_group {
-            // Element is the repeated group itself (treated as a struct).
-            // build_struct will see the REPEATED repetition and wrap its
-            // StructArrayReader in a list with the element's def/rep, so we
-            // pass our list_def_level/parent_rep_level as the parent context.
+            // Element is the repeated group (treated as a struct);
+            // build_struct will see REPEATED and wrap as List<Struct>.
             return self.build_struct(
                 repeated_field,
                 inner_arrow_field.data_type(),
@@ -527,7 +487,7 @@ impl FieldReaderBuilder<'_> {
             );
         }
 
-        // Standard 3-level LIST: `optional group L (LIST) { repeated group list { <T> element; } }`
+        // Standard 3-level LIST.
         let item_type = &items[0];
         let item_reader = self.build(
             item_type,
@@ -553,7 +513,6 @@ impl FieldReaderBuilder<'_> {
         parent_rep_level: i16,
         leaf_idx: &mut usize,
     ) -> DaftResult<Box<dyn ArrayReader>> {
-        // Mirrors visit_map.
         let map_rep = parquet_repetition(parquet_type);
         let rep_level = parent_rep_level + 1;
         let (def_level, nullable) = match map_rep {
@@ -646,8 +605,6 @@ impl FieldReaderBuilder<'_> {
     }
 }
 
-/// Apply a parquet repetition to a parent (def, rep, nullable) context, mirroring
-/// `VisitorContext::levels` in arrow-rs.
 fn apply_repetition(parent_def: i16, parent_rep: i16, repetition: Repetition) -> (i16, i16, bool) {
     match repetition {
         Repetition::OPTIONAL => (parent_def + 1, parent_rep, true),
@@ -656,8 +613,7 @@ fn apply_repetition(parent_def: i16, parent_rep: i16, repetition: Repetition) ->
     }
 }
 
-/// Wrap an item reader in a List/LargeList/FixedSizeList depending on the arrow
-/// type. `def_level` and `rep_level` are the LIST's own levels (not the item's).
+/// `def_level` / `rep_level` are the LIST's own levels (not the item's).
 fn wrap_in_list_like(
     item_reader: Box<dyn ArrayReader>,
     arrow_type: arrow::datatypes::DataType,
@@ -683,7 +639,6 @@ fn wrap_in_list_like(
                 nullable,
             ))
         }
-        // Default to List<i32> for any other list-like (List).
         _ => Box::new(ListArrayReader::<i32>::new(
             item_reader,
             arrow_type,
@@ -694,11 +649,6 @@ fn wrap_in_list_like(
     }
 }
 
-/// Compute the parquet leaf index for a given top-level arrow field index.
-///
-/// arrow-rs's parquet→arrow schema conversion visits top-level fields in order;
-/// each field consumes some contiguous range of leaf columns equal to its
-/// primitive leaf count. We count those leaves on the root parquet schema.
 fn leaf_index_for_top_field(metadata: &ParquetMetaData, top_field_idx: usize) -> usize {
     let root = metadata.file_metadata().schema_descr().root_schema();
     let root_fields = root.get_fields();
@@ -722,8 +672,6 @@ fn count_primitive_leaves(t: &ParquetType) -> usize {
         .sum()
 }
 
-/// Build a top-level field reader for one (RG, top-level arrow field).
-/// Returns the reader and the row count of the RG.
 fn build_top_field_reader(
     chunks: &std::collections::HashMap<usize, OffsetBytes>,
     metadata: &ParquetMetaData,
@@ -781,12 +729,8 @@ pub(super) fn decode_one(
 }
 
 /// Streaming variant of `decode_one`: yields `ArrayRef`s of up to `chunk_size`
-/// rows each via `sender`. Returns when the column chunk is fully consumed or
-/// when the receiver is dropped (back-pressure / early-cancel).
-///
-/// The remote path's coalesced fetches have already collected their bytes
-/// into `Bytes` by the time the per-RG entry is read, so this task reads
-/// from `OffsetBytes` slices synchronously — no parking, no condvars.
+/// rows each via `sender`. Exits when the column chunk is fully consumed or
+/// the receiver is dropped.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn decode_one_streaming(
     chunks: Arc<std::collections::HashMap<usize, OffsetBytes>>,
