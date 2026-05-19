@@ -2604,7 +2604,6 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
- "daft-stats",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
@@ -2749,6 +2748,7 @@ dependencies = [
 name = "daft-functions-json"
 version = "0.0.0"
 dependencies = [
+ "arrow",
  "common-error",
  "daft-core",
  "daft-dsl",

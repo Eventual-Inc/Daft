@@ -877,6 +877,28 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DistributedLimit(daft_local_plan::DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            stats_state,
+            context,
+            ..
+        }) => {
+            use crate::streaming_sink::distributed_limit::DistributedLimitSink;
+            let sink = DistributedLimitSink::new(actor_object.0.clone(), *limit, *offset);
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            StreamingSinkNode::new(
+                Arc::new(sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::Concat(Concat {
             input,
             other,

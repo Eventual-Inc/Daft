@@ -269,7 +269,7 @@ impl KeyFilteringJoinNode {
         let mut first_error = None;
         while let Some(result) = running_tasks.join_next().await {
             match result? {
-                Ok(()) => {}
+                Ok(_) => {}
                 Err(err) if first_error.is_none() => first_error = Some(err),
                 Err(_) => {}
             }
