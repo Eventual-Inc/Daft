@@ -1,13 +1,26 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
-use arrow::array::{Array, BooleanArray};
+use arrow::{
+    array::{Array, BooleanArray},
+    datatypes::{Field as ArrowField, Schema as ArrowSchema},
+};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_recordbatch::RecordBatch;
 use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
 
-pub(super) fn parquet_err<E: std::fmt::Display>(e: E) -> common_error::DaftError {
-    common_error::DaftError::ValueError(format!("parquet decode: {}", e))
+/// Build an `Arc<ArrowSchema>` containing the fields at the given positions
+/// of `arrow_schema`, in order. Shared by every place that constructs a
+/// per-column-subset arrow schema (prefilter, predicate-only processor, etc).
+pub(super) fn schema_from_indices(
+    arrow_schema: &ArrowSchema,
+    indices: &[usize],
+) -> Arc<ArrowSchema> {
+    let fields: Vec<Arc<ArrowField>> = indices
+        .iter()
+        .map(|&i| Arc::new(arrow_schema.field(i).clone()))
+        .collect();
+    Arc::new(ArrowSchema::new(fields))
 }
 
 pub(super) fn cap_selection_to(

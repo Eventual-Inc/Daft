@@ -2,41 +2,52 @@ use std::sync::Arc;
 
 use arrow::{
     array::{Array, ArrayRef, BooleanArray, RecordBatch as ArrowRecordBatch},
-    datatypes::{Field as ArrowField, Schema as ArrowSchema},
+    datatypes::Schema as ArrowSchema,
 };
 use common_error::DaftResult;
-use common_runtime::{RuntimeTask, get_compute_runtime};
+use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use parquet::{arrow::arrow_reader::RowSelection, file::metadata::ParquetMetaData};
+use snafu::ResultExt;
 use tokio::sync::mpsc;
 
 use super::{
     RgTaskCtx,
     chunk_source::OffsetBytes,
     field_reader::{decode_one_streaming, leaves_for_top_fields},
-    util::{parquet_err, project_to_schema, truncate_mask_to_n_trues},
+    util::{project_to_schema, schema_from_indices},
 };
-use crate::helpers::substitute_missing_cols;
+use crate::{ArrowSnafu, helpers::substitute_missing_cols};
 
 type ColRx = mpsc::Receiver<DaftResult<ArrayRef>>;
-type ColHandle = RuntimeTask<DaftResult<()>>;
 
 fn err_stream<T: Send + 'static>(e: common_error::DaftError) -> BoxStream<'static, DaftResult<T>> {
     futures::stream::once(async move { Err(e) }).boxed()
 }
 
-fn schema_from_indices(arrow_schema: &ArrowSchema, indices: &[usize]) -> Arc<ArrowSchema> {
-    let fields: Vec<Arc<ArrowField>> = indices
-        .iter()
-        .map(|&i| Arc::new(arrow_schema.field(i).clone()))
-        .collect();
-    Arc::new(ArrowSchema::new(fields))
+/// Recv one chunk from each column receiver in lockstep.
+///
+/// - `Some(Ok(v))` — every receiver yielded; `v` is the per-col array slice for this chunk.
+/// - `Some(Err(e))` — a receiver propagated a decode error.
+/// - `None` — at least one receiver closed (stream end). Decoders close their
+///   channel after the final chunk, so the first `None` we see ends the RG.
+pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> Option<DaftResult<Vec<ArrayRef>>> {
+    let mut out = Vec::with_capacity(receivers.len());
+    for r in receivers {
+        match r.recv().await {
+            Some(Ok(a)) => out.push(a),
+            Some(Err(e)) => return Some(Err(e)),
+            None => return None,
+        }
+    }
+    Some(Ok(out))
 }
 
-fn spawn_col_decoders(
+#[allow(clippy::too_many_arguments)]
+pub(super) fn spawn_col_decoders(
     col_indices: &[usize],
     rg_chunks: &Arc<std::collections::HashMap<usize, OffsetBytes>>,
     metadata: &Arc<ParquetMetaData>,
@@ -44,97 +55,68 @@ fn spawn_col_decoders(
     selection: Option<&RowSelection>,
     rg_idx: usize,
     chunk_size: usize,
-) -> (Vec<ColRx>, Vec<ColHandle>) {
+    path: &Arc<str>,
+) -> (Vec<ColRx>, JoinSet<DaftResult<()>>) {
     let compute = get_compute_runtime();
     let mut rxs = Vec::with_capacity(col_indices.len());
-    let mut handles = Vec::with_capacity(col_indices.len());
+    let mut joinset: JoinSet<DaftResult<()>> = JoinSet::new();
     for &col_idx in col_indices {
         let (tx, rx) = mpsc::channel::<DaftResult<ArrayRef>>(1);
         let chunks = rg_chunks.clone();
         let metadata = metadata.clone();
         let arrow_field = arrow_schema.field(col_idx).clone();
         let sel = selection.cloned();
-        let h = compute.spawn(async move {
-            decode_one_streaming(
-                chunks,
-                metadata,
-                rg_idx,
-                col_idx,
-                arrow_field,
-                sel,
-                chunk_size,
-                tx,
-            )
-            .await;
-            DaftResult::Ok(())
-        });
-        handles.push(h);
+        let path = path.clone();
+        joinset.spawn_on(
+            async move {
+                decode_one_streaming(
+                    chunks,
+                    metadata,
+                    rg_idx,
+                    col_idx,
+                    arrow_field,
+                    sel,
+                    chunk_size,
+                    path,
+                    tx,
+                )
+                .await;
+                DaftResult::Ok(())
+            },
+            &compute,
+        );
         rxs.push(rx);
     }
-    (rxs, handles)
+    (rxs, joinset)
 }
 
 struct StreamingState {
     ctx: Arc<RgTaskCtx>,
     col_receivers: Vec<ColRx>,
     offset: usize,
-    total_rows: usize,
     /// Phase-1 predicate arrays for this RG, already mask-filtered.
     /// Indexed by `ctx.plan.pred_col_indices` position.
     filtered_pred: Vec<ArrayRef>,
-}
-
-/// Awaits all col-decoder handles in order, surfacing panics as
-/// `DaftError::External` via `RuntimeTask`. Holding handles by ownership inside
-/// this future preserves abort-on-drop: dropping the combined stream drops the
-/// future, drops the handles, aborts the tasks.
-async fn drive_col_handles(handles: Vec<ColHandle>) -> DaftResult<()> {
-    for h in handles {
-        h.await??;
-    }
-    Ok(())
 }
 
 pub(super) async fn process_rg_streaming(
     ctx: Arc<RgTaskCtx>,
     rg_idx: usize,
     selection: Option<RowSelection>,
-    pred_arrays: Vec<ArrayRef>,
-    pred_mask: Option<BooleanArray>,
+    filtered_pred: Vec<ArrayRef>,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    // Default mode invariant: data_col_indices is non-empty. PredOnly handles
+    // the empty case via `process_rg_predicate_only`.
+    debug_assert!(!ctx.plan.data_col_indices.is_empty());
+
     let data_leaves: Arc<[usize]> =
         leaves_for_top_fields(&ctx.metadata, &ctx.plan.data_col_indices).into();
-    // Final read for this RG → evict so the cached `Arc<RgBytesMap>` is dropped.
     let rg_chunks = match ctx.chunk_source.read_rg_chunks(rg_idx, data_leaves).await {
         Ok(c) => Arc::new(c),
-        Err(e) => return err_stream(e),
-    };
-    // Pred mask length must equal pred-array length within an RG (both derived from
-    // the same row count post-base-selection) — filter failure is an invariant break.
-    let filtered_pred: Vec<ArrayRef> = pred_arrays
-        .into_iter()
-        .map(|arr| match &pred_mask {
-            Some(mask) => arrow::compute::filter(&arr, mask)
-                .expect("pred mask length must equal pred array length within an RG"),
-            None => arr,
-        })
-        .collect();
-
-    let total_rows_for_rg: usize = if !filtered_pred.is_empty() {
-        filtered_pred[0].len()
-    } else if let Some(sel) = &selection {
-        sel.row_count()
-    } else {
-        ctx.metadata.row_group(rg_idx).num_rows() as usize
+        Err(e) => return err_stream(e.into()),
     };
 
-    if total_rows_for_rg == 0 {
-        // Empty stream (not 0-row schema-bearing) — streaming writers would otherwise
-        // land an empty snapshot. The bulk path preserves schema via `read_parquet`.
-        return futures::stream::empty().boxed();
-    }
-
-    let (col_receivers, col_handles) = spawn_col_decoders(
+    let (col_receivers, mut col_decoders) = spawn_col_decoders(
         &ctx.plan.data_col_indices,
         &rg_chunks,
         &ctx.metadata,
@@ -142,42 +124,25 @@ pub(super) async fn process_rg_streaming(
         selection.as_ref(),
         rg_idx,
         ctx.chunk_size,
+        &ctx.path,
     );
 
     let state = StreamingState {
         ctx,
         col_receivers,
         offset: 0,
-        total_rows: total_rows_for_rg,
         filtered_pred,
     };
 
     let stream = futures::stream::unfold(state, |mut state| async move {
+        let data_chunks = match recv_one_chunk(&mut state.col_receivers).await {
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Some((Err(e), state)),
+            None => return None,
+        };
+        let chunk_rows = data_chunks[0].len();
         let ctx = &state.ctx;
         let plan = &ctx.plan;
-        let chunk_rows: usize;
-        let data_chunks: Vec<ArrayRef> = if !plan.data_col_indices.is_empty() {
-            let mut got = Vec::with_capacity(state.col_receivers.len());
-            for r in &mut state.col_receivers {
-                match r.recv().await {
-                    Some(Ok(a)) => got.push(a),
-                    Some(Err(e)) => return Some((Err(e), state)),
-                    None => return None,
-                }
-            }
-            if got.is_empty() {
-                return None;
-            }
-            chunk_rows = got[0].len();
-            got
-        } else {
-            let remaining = state.total_rows.saturating_sub(state.offset);
-            if remaining == 0 {
-                return None;
-            }
-            chunk_rows = remaining.min(ctx.chunk_size);
-            Vec::new()
-        };
 
         let mut fields = Vec::with_capacity(plan.read_col_indices.len());
         let mut arrays: Vec<ArrayRef> = Vec::with_capacity(plan.read_col_indices.len());
@@ -196,7 +161,10 @@ pub(super) async fn process_rg_streaming(
         }
 
         let batch_res = ArrowRecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), arrays)
-            .map_err(parquet_err)
+            .with_context(|_| ArrowSnafu {
+                path: ctx.path.to_string(),
+            })
+            .map_err(common_error::DaftError::from)
             .and_then(|b| RecordBatch::try_from(&b));
         let mut daft_batch = match batch_res {
             Ok(b) => b,
@@ -226,17 +194,13 @@ pub(super) async fn process_rg_streaming(
     })
     .boxed();
 
-    common_runtime::combine_stream(stream, drive_col_handles(col_handles)).boxed()
+    common_runtime::combine_stream(stream, async move { col_decoders.join_all().await }).boxed()
 }
 
 struct PredicateOnlyState {
     ctx: Arc<RgTaskCtx>,
-    remaining: Arc<std::sync::atomic::AtomicUsize>,
     chunk_arrow_schema: Arc<ArrowSchema>,
     bound_pred: BoundExpr,
-    out_arrow_schema: Arc<ArrowSchema>,
-    /// For each `plan.read_col_indices` position, the slot within `plan.pred_col_indices`.
-    out_to_pred_slot: Vec<usize>,
     col_receivers: Vec<ColRx>,
 }
 
@@ -244,10 +208,7 @@ pub(super) async fn process_rg_predicate_only(
     ctx: Arc<RgTaskCtx>,
     rg_idx: usize,
     selection: Option<RowSelection>,
-    remaining: Arc<std::sync::atomic::AtomicUsize>,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
-    use std::sync::atomic::Ordering;
-
     let plan = &ctx.plan;
     let predicate = ctx
         .predicate
@@ -256,13 +217,12 @@ pub(super) async fn process_rg_predicate_only(
 
     let pred_leaves: Arc<[usize]> =
         leaves_for_top_fields(&ctx.metadata, &plan.pred_col_indices).into();
-    // Sole decode for this RG — safe to evict the cached `Arc<RgBytesMap>`.
     let rg_chunks = match ctx.chunk_source.read_rg_chunks(rg_idx, pred_leaves).await {
         Ok(c) => Arc::new(c),
-        Err(e) => return err_stream(e),
+        Err(e) => return err_stream(e.into()),
     };
 
-    let (col_receivers, col_handles) = spawn_col_decoders(
+    let (col_receivers, mut col_decoders) = spawn_col_decoders(
         &plan.pred_col_indices,
         &rg_chunks,
         &ctx.metadata,
@@ -270,6 +230,7 @@ pub(super) async fn process_rg_predicate_only(
         selection.as_ref(),
         rg_idx,
         ctx.chunk_size,
+        &ctx.path,
     );
 
     // Build schemas + bind predicate once per RG (was ~50µs/chunk overhead).
@@ -284,50 +245,27 @@ pub(super) async fn process_rg_predicate_only(
         Ok(b) => b,
         Err(e) => return err_stream(e),
     };
-    let out_arrow_schema = schema_from_indices(&ctx.arrow_schema, &plan.read_col_indices);
-    let out_to_pred_slot: Vec<usize> = plan
-        .read_col_indices
-        .iter()
-        .map(|&col_idx| {
-            plan.pred_col_indices
-                .iter()
-                .position(|&i| i == col_idx)
-                .expect("read col must be in pred set for predicate-only path")
-        })
-        .collect();
-
     let state = PredicateOnlyState {
         ctx,
-        remaining,
         chunk_arrow_schema,
         bound_pred,
-        out_arrow_schema,
-        out_to_pred_slot,
         col_receivers,
     };
 
     let stream = futures::stream::unfold(state, |mut state| async move {
         loop {
-            let remaining = state.remaining.load(Ordering::Acquire);
-            if remaining == 0 {
-                return None;
-            }
-
-            let mut chunks = Vec::with_capacity(state.col_receivers.len());
-            for r in &mut state.col_receivers {
-                match r.recv().await {
-                    Some(Ok(arr)) => chunks.push(arr),
-                    Some(Err(e)) => return Some((Err(e), state)),
-                    None => return None,
-                }
-            }
-            if chunks.is_empty() {
-                return None;
-            }
+            let chunks = match recv_one_chunk(&mut state.col_receivers).await {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => return Some((Err(e), state)),
+                None => return None,
+            };
 
             let batch_res =
                 ArrowRecordBatch::try_new(state.chunk_arrow_schema.clone(), chunks.clone())
-                    .map_err(parquet_err)
+                    .with_context(|_| ArrowSnafu {
+                        path: state.ctx.path.to_string(),
+                    })
+                    .map_err(common_error::DaftError::from)
                     .and_then(|b| RecordBatch::try_from(&b));
             let daft_batch = match batch_res {
                 Ok(b) => b,
@@ -338,39 +276,33 @@ pub(super) async fn process_rg_predicate_only(
                 let b = m.bool()?;
                 Ok(b.as_arrow()?.clone())
             });
-            let mut arrow_bool: BooleanArray = match bool_res {
+            let arrow_bool: BooleanArray = match bool_res {
                 Ok(b) => b,
                 Err(e) => return Some((Err(e), state)),
             };
 
-            let true_count = arrow_bool.true_count();
-            let take = if true_count > remaining {
-                arrow_bool = truncate_mask_to_n_trues(&arrow_bool, remaining);
-                remaining
-            } else {
-                true_count
-            };
-            state.remaining.fetch_sub(take, Ordering::Release);
-
-            if take == 0 {
+            if arrow_bool.true_count() == 0 {
                 continue;
             }
 
             let mut filtered = Vec::with_capacity(chunks.len());
             for arr in &chunks {
-                match arrow::compute::filter(arr, &arrow_bool) {
+                match arrow::compute::filter(arr, &arrow_bool).with_context(|_| ArrowSnafu {
+                    path: state.ctx.path.to_string(),
+                }) {
                     Ok(f) => filtered.push(f),
-                    Err(e) => return Some((Err(parquet_err(e)), state)),
+                    Err(e) => return Some((Err(e.into()), state)),
                 }
             }
 
-            let arrays: Vec<ArrayRef> = state
-                .out_to_pred_slot
-                .iter()
-                .map(|&pp| filtered[pp].clone())
-                .collect();
-            let out_res = ArrowRecordBatch::try_new(state.out_arrow_schema.clone(), arrays)
-                .map_err(parquet_err)
+            // Build a RecordBatch over the predicate columns; project_to_schema
+            // picks the subset for `return_daft_schema` (which is read_col_indices,
+            // a subset of pred_col_indices in this path).
+            let out_res = ArrowRecordBatch::try_new(state.chunk_arrow_schema.clone(), filtered)
+                .with_context(|_| ArrowSnafu {
+                    path: state.ctx.path.to_string(),
+                })
+                .map_err(common_error::DaftError::from)
                 .and_then(|b| RecordBatch::try_from(&b))
                 .and_then(|b| project_to_schema(b, &state.ctx.plan.return_daft_schema));
             return Some(match out_res {
@@ -381,5 +313,5 @@ pub(super) async fn process_rg_predicate_only(
     })
     .boxed();
 
-    common_runtime::combine_stream(stream, drive_col_handles(col_handles)).boxed()
+    common_runtime::combine_stream(stream, async move { col_decoders.join_all().await }).boxed()
 }

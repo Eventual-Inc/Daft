@@ -2,22 +2,17 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use arrow::array::ArrayRef;
 use common_error::DaftResult;
-use common_runtime::get_io_runtime;
+use common_runtime::{OrderedJoinSet, get_io_runtime};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
-use futures::{
-    StreamExt, TryFutureExt, TryStreamExt,
-    future::{join_all, try_join_all},
-    stream::BoxStream,
-};
+use futures::{StreamExt, TryFutureExt, TryStreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
-use snafu::ResultExt;
 
-use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
+use crate::{DaftParquetMetadata, infer_schema_from_daft_metadata};
 
 /// How to decode Parquet BYTE_ARRAY columns annotated as strings.
 ///
@@ -64,17 +59,11 @@ impl ParquetSchemaInferenceOptions {
     pub fn from_python(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         string_encoding: &str,
-    ) -> crate::Result<Self> {
-        let string_encoding: StringEncoding =
-            string_encoding
-                .parse()
-                .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
-                    source: arrow::error::ArrowError::InvalidArgumentError(e.to_string()),
-                })?;
+    ) -> DaftResult<Self> {
         Ok(Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
-            string_encoding,
+            string_encoding: string_encoding.parse()?,
         })
     }
 }
@@ -292,11 +281,12 @@ pub async fn read_parquet_bulk(
     check_per_file_len(&opts.per_file, uris.len())?;
 
     let num_parallel = opts.num_parallel_tasks.max(1);
+    let io_runtime = get_io_runtime(true);
     let task_stream = futures::stream::iter(uris.into_iter().enumerate().map(|(i, uri)| {
         let single_opts = single_opts_for(&opts, i);
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();
-        tokio::task::spawn(async move {
+        io_runtime.spawn(async move {
             Box::pin(read_parquet_into_recordbatch(
                 &uri,
                 io_client,
@@ -319,8 +309,7 @@ pub async fn read_parquet_bulk(
             (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
         })
         .try_collect::<Vec<_>>()
-        .await
-        .context(JoinSnafu { path: "UNKNOWN" })?;
+        .await?;
     Ok(tables)
 }
 
@@ -347,31 +336,31 @@ pub fn read_parquet_into_pyarrow_bulk(
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
     check_per_file_len(&opts.per_file, uris.len())?;
     let num_parallel = opts.num_parallel_tasks.max(1);
-    let results = get_io_runtime(multithreaded_io)
-        .block_on_current_thread(async move {
-            futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
-                let uri = (*uri).to_string();
-                let single_opts = single_opts_for(&opts, i);
-                let io_client = io_client.clone();
-                let io_stats = io_stats.clone();
-                tokio::task::spawn(async move {
-                    Ok((
-                        i,
-                        Box::pin(read_parquet_into_arrow(
-                            &uri,
-                            io_client,
-                            io_stats,
-                            single_opts,
-                        ))
-                        .await?,
+    let io_runtime = get_io_runtime(multithreaded_io);
+    let spawn_runtime = io_runtime.clone();
+    let results = io_runtime.block_on_current_thread(async move {
+        futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
+            let uri = (*uri).to_string();
+            let single_opts = single_opts_for(&opts, i);
+            let io_client = io_client.clone();
+            let io_stats = io_stats.clone();
+            spawn_runtime.spawn(async move {
+                Ok((
+                    i,
+                    Box::pin(read_parquet_into_arrow(
+                        &uri,
+                        io_client,
+                        io_stats,
+                        single_opts,
                     ))
-                })
-            }))
-            .buffer_unordered(num_parallel)
-            .try_collect::<Vec<_>>()
-            .await
-        })
-        .context(JoinSnafu { path: "UNKNOWN" })?;
+                    .await?,
+                ))
+            })
+        }))
+        .buffer_unordered(num_parallel)
+        .try_collect::<Vec<_>>()
+        .await
+    })?;
     let mut collected = results.into_iter().collect::<DaftResult<Vec<_>>>()?;
     collected.sort_by_key(|(idx, _)| *idx);
     Ok(collected.into_iter().map(|(_, v)| v).collect())
@@ -422,20 +411,23 @@ pub async fn read_parquet_metadata_bulk(
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Vec<DaftParquetMetadata>> {
-    let handles = uris.iter().map(|uri| {
+    let io_runtime = get_io_runtime(true);
+    let mut joinset: OrderedJoinSet<DaftResult<DaftParquetMetadata>> = OrderedJoinSet::new();
+    for uri in uris {
         let uri = (*uri).to_string();
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();
         let field_id_mapping = field_id_mapping.clone();
-        tokio::spawn(async move {
-            read_parquet_metadata(&uri, io_client, io_stats, field_id_mapping).await
-        })
-    });
-    try_join_all(handles)
-        .await
-        .context(JoinSnafu { path: "BULK READ" })?
-        .into_iter()
-        .collect()
+        joinset.spawn_on(
+            async move { read_parquet_metadata(&uri, io_client, io_stats, field_id_mapping).await },
+            &io_runtime,
+        );
+    }
+    let mut results = Vec::with_capacity(uris.len());
+    while let Some(res) = joinset.join_next().await {
+        results.push(res??);
+    }
+    Ok(results)
 }
 
 pub fn read_parquet_statistics(
@@ -452,37 +444,41 @@ pub fn read_parquet_statistics(
     }
     let path_array: &Utf8Array = uris.downcast()?;
 
+    type StatsTuple = (Option<usize>, Option<usize>, Option<i32>);
     let runtime = get_io_runtime(true);
-    let handles = path_array.into_iter().map(|uri| {
-        let uri = uri.map(std::string::ToString::to_string);
-        let io_client = io_client.clone();
-        let io_stats = io_stats.clone();
-        let field_id_mapping = field_id_mapping.clone();
-        tokio::spawn(async move {
-            match uri {
-                Some(uri) => {
-                    let m =
-                        read_parquet_metadata(&uri, io_client, io_stats, field_id_mapping).await?;
-                    Ok((
-                        Some(m.num_rows()),
-                        Some(m.num_row_groups()),
-                        Some(m.version()),
-                    ))
-                }
-                None => Ok((None, None, None)),
-            }
-        })
-    });
-    let tuples = runtime.block_on_current_thread(async { join_all(handles).await });
-    let all = tuples
-        .into_iter()
-        .zip(path_array.into_iter())
-        .map(|(t, u)| {
-            t.with_context(|_| JoinSnafu {
-                path: u.unwrap().to_string(),
-            })?
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
+    let spawn_runtime = runtime.clone();
+    let all = runtime.block_on_current_thread(async move {
+        let mut joinset: OrderedJoinSet<DaftResult<StatsTuple>> = OrderedJoinSet::new();
+        for uri in path_array {
+            let uri = uri.map(std::string::ToString::to_string);
+            let io_client = io_client.clone();
+            let io_stats = io_stats.clone();
+            let field_id_mapping = field_id_mapping.clone();
+            joinset.spawn_on(
+                async move {
+                    match uri {
+                        Some(uri) => {
+                            let m =
+                                read_parquet_metadata(&uri, io_client, io_stats, field_id_mapping)
+                                    .await?;
+                            Ok((
+                                Some(m.num_rows()),
+                                Some(m.num_row_groups()),
+                                Some(m.version()),
+                            ))
+                        }
+                        None => Ok((None, None, None)),
+                    }
+                },
+                &spawn_runtime,
+            );
+        }
+        let mut out = Vec::with_capacity(uris.len());
+        while let Some(res) = joinset.join_next().await {
+            out.push(res??);
+        }
+        DaftResult::Ok(out)
+    })?;
     assert_eq!(all.len(), uris.len());
 
     let rows = UInt64Array::from_iter(

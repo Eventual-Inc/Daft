@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use bytes::{Bytes, BytesMut};
-use common_error::DaftResult;
+use common_runtime::get_io_runtime;
 use daft_core::datatypes::Field;
 use daft_io::{GetRange, IOClient, IOStatsRef};
 use snafu::ResultExt;
 
-use crate::{Error, JoinSnafu};
+use crate::{Error, ParquetMetadataSnafu, task_err};
 
 const FOOTER_SIZE: usize = 8;
 
@@ -127,7 +127,8 @@ fn recurse_children_only(
 pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     metadata: Arc<parquet::file::metadata::ParquetMetaData>,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> DaftResult<Arc<parquet::file::metadata::ParquetMetaData>> {
+    path: &str,
+) -> crate::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     use parquet::{
         file::metadata::{ColumnChunkMetaData, ParquetMetaData, RowGroupMetaData},
         schema::types::{SchemaDescriptor, Type},
@@ -148,7 +149,9 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     let new_root = Type::group_type_builder(old_root.name())
         .with_fields(new_fields)
         .build()
-        .map_err(|e| common_error::DaftError::External(e.into()))?;
+        .with_context(|_| ParquetMetadataSnafu {
+            path: path.to_string(),
+        })?;
     let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
 
     // 2. Build field_id → new ColumnDescriptor mapping
@@ -212,7 +215,9 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
                 .set_total_byte_size(total_byte_size)
                 .set_column_metadata(new_columns)
                 .build()
-                .map_err(|e| common_error::DaftError::External(e.into()))
+                .with_context(|_| ParquetMetadataSnafu {
+                    path: path.to_string(),
+                })
         })
         .collect();
 
@@ -245,7 +250,8 @@ fn rebuild_file_metadata(
 /// `StringEncoding::Raw` which reads string columns as raw bytes.
 pub(crate) fn strip_string_types_from_parquet_metadata(
     metadata: Arc<parquet::file::metadata::ParquetMetaData>,
-) -> DaftResult<Arc<parquet::file::metadata::ParquetMetaData>> {
+    path: &str,
+) -> crate::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     use parquet::{
         file::metadata::{ParquetMetaData, RowGroupMetaData},
         schema::types::{SchemaDescriptor, Type},
@@ -263,7 +269,9 @@ pub(crate) fn strip_string_types_from_parquet_metadata(
     let new_root = Type::group_type_builder(old_root.name())
         .with_fields(new_fields)
         .build()
-        .map_err(|e| common_error::DaftError::External(e.into()))?;
+        .with_context(|_| ParquetMetadataSnafu {
+            path: path.to_string(),
+        })?;
     let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
 
     // Rebuild row groups with the new schema descriptor.
@@ -276,7 +284,9 @@ pub(crate) fn strip_string_types_from_parquet_metadata(
                 .set_total_byte_size(rg.total_byte_size())
                 .set_column_metadata(rg.columns().to_vec())
                 .build()
-                .map_err(|e| common_error::DaftError::External(e.into()))
+                .with_context(|_| ParquetMetadataSnafu {
+                    path: path.to_string(),
+                })
         })
         .collect();
 
@@ -489,28 +499,22 @@ pub(crate) async fn read_parquet_metadata(
     )
     .await?;
 
-    let metadata = tokio::task::spawn_blocking(move || {
-        let thrift_bytes = &data.as_ref()[remaining..data.len() - FOOTER_SIZE];
-        parquet::file::metadata::ParquetMetaDataReader::decode_metadata(thrift_bytes)
-    })
-    .await
-    .context(JoinSnafu {
-        path: uri.to_string(),
-    })?
-    .map_err(|e| Error::UnableToParseMetadataArrowRs {
-        path: uri.to_string(),
-        source: e,
-    })?;
+    let metadata = get_io_runtime(true)
+        .spawn_blocking(move || {
+            let thrift_bytes = &data.as_ref()[remaining..data.len() - FOOTER_SIZE];
+            parquet::file::metadata::ParquetMetaDataReader::decode_metadata(thrift_bytes)
+        })
+        .await
+        .map_err(task_err(uri))?
+        .map_err(|e| Error::ParquetMetadata {
+            path: uri.to_string(),
+            source: e,
+        })?;
 
     let metadata = Arc::new(metadata);
 
     if let Some(field_id_mapping) = field_id_mapping {
-        apply_field_ids_to_arrowrs_parquet_metadata(metadata, field_id_mapping.as_ref()).map_err(
-            |e| Error::UnableToParseMetadataArrowRs {
-                path: uri.to_string(),
-                source: parquet::errors::ParquetError::External(e.into()),
-            },
-        )
+        apply_field_ids_to_arrowrs_parquet_metadata(metadata, field_id_mapping.as_ref(), uri)
     } else {
         Ok(metadata)
     }

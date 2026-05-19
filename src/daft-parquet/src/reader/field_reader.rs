@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arrow::{array::ArrayRef, datatypes::Field as ArrowField};
-use common_error::DaftResult;
 use parquet::{
     arrow::{
         array_reader::{
@@ -14,12 +13,14 @@ use parquet::{
     basic::{ConvertedType, LogicalType, Repetition, Type as PhysicalType},
     column::page::{PageIterator, PageReader},
     data_type::{BoolType, DoubleType, FloatType, Int32Type, Int64Type, Int96Type},
-    errors::Result as ParquetResult,
+    errors::{ParquetError, Result as ParquetResult},
     file::{metadata::ParquetMetaData, serialized_reader::SerializedPageReader},
     schema::types::{ColumnDescriptor, ColumnPath, Type as ParquetType},
 };
+use snafu::ResultExt;
 
-use super::{chunk_source::OffsetBytes, util::parquet_err};
+use super::chunk_source::OffsetBytes;
+use crate::ParquetColumnDecodeSnafu;
 
 struct SinglePageIter {
     inner: Option<Box<dyn PageReader>>,
@@ -66,7 +67,7 @@ fn build_primitive_leaf_reader(
     arrow_type: arrow::datatypes::DataType,
     def_level: i16,
     rep_level: i16,
-) -> DaftResult<Box<dyn ArrayReader>> {
+) -> ParquetResult<Box<dyn ArrayReader>> {
     let rg = metadata.row_group(rg_idx);
     let col_chunk = rg.column(leaf_idx);
     let total_rows = rg.num_rows() as usize;
@@ -79,8 +80,7 @@ fn build_primitive_leaf_reader(
     });
 
     let page_reader =
-        SerializedPageReader::new(Arc::new(chunk_bytes), col_chunk, total_rows, page_locations)
-            .map_err(parquet_err)?;
+        SerializedPageReader::new(Arc::new(chunk_bytes), col_chunk, total_rows, page_locations)?;
     let pages: Box<dyn PageIterator> = Box::new(SinglePageIter {
         inner: Some(Box::new(page_reader)),
     });
@@ -101,44 +101,47 @@ fn build_primitive_leaf_reader(
     ));
 
     let reader: Box<dyn ArrayReader> = if matches!(arrow_type, arrow::datatypes::DataType::Null) {
-        Box::new(NullArrayReader::<Int32Type>::new(pages, col_descr).map_err(parquet_err)?)
+        Box::new(NullArrayReader::<Int32Type>::new(pages, col_descr)?)
     } else {
         match physical_type {
-            PhysicalType::BOOLEAN => Box::new(
-                PrimitiveArrayReader::<BoolType>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
-            PhysicalType::INT32 => Box::new(
-                PrimitiveArrayReader::<Int32Type>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
-            PhysicalType::INT64 => Box::new(
-                PrimitiveArrayReader::<Int64Type>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
-            PhysicalType::FLOAT => Box::new(
-                PrimitiveArrayReader::<FloatType>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
-            PhysicalType::DOUBLE => Box::new(
-                PrimitiveArrayReader::<DoubleType>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
-            PhysicalType::INT96 => Box::new(
-                PrimitiveArrayReader::<Int96Type>::new(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
-            ),
+            PhysicalType::BOOLEAN => Box::new(PrimitiveArrayReader::<BoolType>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
+            PhysicalType::INT32 => Box::new(PrimitiveArrayReader::<Int32Type>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
+            PhysicalType::INT64 => Box::new(PrimitiveArrayReader::<Int64Type>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
+            PhysicalType::FLOAT => Box::new(PrimitiveArrayReader::<FloatType>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
+            PhysicalType::DOUBLE => Box::new(PrimitiveArrayReader::<DoubleType>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
+            PhysicalType::INT96 => Box::new(PrimitiveArrayReader::<Int96Type>::new(
+                pages,
+                col_descr,
+                Some(arrow_type),
+            )?),
             PhysicalType::BYTE_ARRAY => match arrow_type {
                 arrow::datatypes::DataType::Utf8View | arrow::datatypes::DataType::BinaryView => {
-                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type))
-                        .map_err(parquet_err)?
+                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type))?
                 }
-                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?,
+                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type))?,
             },
             PhysicalType::FIXED_LEN_BYTE_ARRAY => {
-                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type))
-                    .map_err(parquet_err)?
+                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type))?
             }
         }
     };
@@ -188,9 +191,9 @@ struct FieldReaderBuilder<'a> {
 }
 
 impl FieldReaderBuilder<'_> {
-    fn chunk_for(&self, leaf_idx: usize) -> DaftResult<OffsetBytes> {
+    fn chunk_for(&self, leaf_idx: usize) -> ParquetResult<OffsetBytes> {
         self.chunks.get(&leaf_idx).cloned().ok_or_else(|| {
-            common_error::DaftError::ValueError(format!(
+            ParquetError::General(format!(
                 "FieldReaderBuilder: chunk for rg={} leaf={} not pre-fetched",
                 self.rg_idx, leaf_idx
             ))
@@ -204,7 +207,7 @@ impl FieldReaderBuilder<'_> {
         parent_def_level: i16,
         parent_rep_level: i16,
         leaf_idx: &mut usize,
-    ) -> DaftResult<Box<dyn ArrayReader>> {
+    ) -> ParquetResult<Box<dyn ArrayReader>> {
         if parquet_type.is_primitive() {
             return self.build_primitive(
                 parquet_type,
@@ -246,7 +249,7 @@ impl FieldReaderBuilder<'_> {
         parent_def_level: i16,
         parent_rep_level: i16,
         leaf_idx: &mut usize,
-    ) -> DaftResult<Box<dyn ArrayReader>> {
+    ) -> ParquetResult<Box<dyn ArrayReader>> {
         let repetition = parquet_repetition(parquet_type);
         let (def_level, rep_level, _nullable) =
             apply_repetition(parent_def_level, parent_rep_level, repetition);
@@ -304,7 +307,7 @@ impl FieldReaderBuilder<'_> {
         parent_def_level: i16,
         parent_rep_level: i16,
         leaf_idx: &mut usize,
-    ) -> DaftResult<Box<dyn ArrayReader>> {
+    ) -> ParquetResult<Box<dyn ArrayReader>> {
         let repetition = parquet_repetition(parquet_type);
         let (def_level, rep_level, nullable) =
             apply_repetition(parent_def_level, parent_rep_level, repetition);
@@ -320,7 +323,7 @@ impl FieldReaderBuilder<'_> {
                 match f.data_type() {
                     arrow::datatypes::DataType::Struct(inner) => inner,
                     _ => {
-                        return Err(common_error::DaftError::ValueError(format!(
+                        return Err(ParquetError::General(format!(
                             "build_struct: expected List<Struct>, got {:?}",
                             arrow_type
                         )));
@@ -328,7 +331,7 @@ impl FieldReaderBuilder<'_> {
                 }
             }
             other => {
-                return Err(common_error::DaftError::ValueError(format!(
+                return Err(ParquetError::General(format!(
                     "build_struct: expected struct arrow type, got {:?}",
                     other
                 )));
@@ -337,7 +340,7 @@ impl FieldReaderBuilder<'_> {
 
         let parquet_fields = parquet_type.get_fields();
         if arrow_fields.len() != parquet_fields.len() {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(ParquetError::General(format!(
                 "build_struct: arrow has {} fields, parquet has {}",
                 arrow_fields.len(),
                 parquet_fields.len()
@@ -396,16 +399,16 @@ impl FieldReaderBuilder<'_> {
         parent_def_level: i16,
         parent_rep_level: i16,
         leaf_idx: &mut usize,
-    ) -> DaftResult<Box<dyn ArrayReader>> {
+    ) -> ParquetResult<Box<dyn ArrayReader>> {
         if parquet_type.is_primitive() {
-            return Err(common_error::DaftError::ValueError(
-                "build_list: parquet type annotated as LIST is primitive".to_string(),
+            return Err(ParquetError::General(
+                "build_list: parquet type annotated as LIST is primitive".into(),
             ));
         }
 
         let fields = parquet_type.get_fields();
         if fields.len() != 1 {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(ParquetError::General(format!(
                 "list type must have a single child, found {}",
                 fields.len()
             )));
@@ -413,9 +416,7 @@ impl FieldReaderBuilder<'_> {
 
         let repeated_field = &fields[0];
         if parquet_repetition(repeated_field) != Repetition::REPEATED {
-            return Err(common_error::DaftError::ValueError(
-                "list child must be repeated".to_string(),
-            ));
+            return Err(ParquetError::General("list child must be repeated".into()));
         }
 
         // List nullability + def level shift for the list itself.
@@ -423,9 +424,7 @@ impl FieldReaderBuilder<'_> {
             Repetition::REQUIRED => (parent_def_level, false),
             Repetition::OPTIONAL => (parent_def_level + 1, true),
             Repetition::REPEATED => {
-                return Err(common_error::DaftError::ValueError(
-                    "list type cannot be REPEATED".to_string(),
-                ));
+                return Err(ParquetError::General("list type cannot be REPEATED".into()));
             }
         };
 
@@ -434,7 +433,7 @@ impl FieldReaderBuilder<'_> {
             | arrow::datatypes::DataType::LargeList(f)
             | arrow::datatypes::DataType::FixedSizeList(f, _) => f.as_ref(),
             other => {
-                return Err(common_error::DaftError::ValueError(format!(
+                return Err(ParquetError::General(format!(
                     "build_list: expected list arrow type, got {:?}",
                     other
                 )));
@@ -514,30 +513,28 @@ impl FieldReaderBuilder<'_> {
         parent_def_level: i16,
         parent_rep_level: i16,
         leaf_idx: &mut usize,
-    ) -> DaftResult<Box<dyn ArrayReader>> {
+    ) -> ParquetResult<Box<dyn ArrayReader>> {
         let map_rep = parquet_repetition(parquet_type);
         let rep_level = parent_rep_level + 1;
         let (def_level, nullable) = match map_rep {
             Repetition::REQUIRED => (parent_def_level + 1, false),
             Repetition::OPTIONAL => (parent_def_level + 2, true),
             Repetition::REPEATED => {
-                return Err(common_error::DaftError::ValueError(
-                    "map cannot be repeated".to_string(),
-                ));
+                return Err(ParquetError::General("map cannot be repeated".into()));
             }
         };
 
         let map_fields = parquet_type.get_fields();
         if map_fields.len() != 1 {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(ParquetError::General(format!(
                 "map field must have one key_value child, found {}",
                 map_fields.len()
             )));
         }
         let key_value = &map_fields[0];
         if parquet_repetition(key_value) != Repetition::REPEATED {
-            return Err(common_error::DaftError::ValueError(
-                "map key_value child must be repeated".to_string(),
+            return Err(ParquetError::General(
+                "map key_value child must be repeated".into(),
             ));
         }
 
@@ -552,7 +549,7 @@ impl FieldReaderBuilder<'_> {
             );
         }
         if key_value.get_fields().len() != 2 {
-            return Err(common_error::DaftError::ValueError(format!(
+            return Err(ParquetError::General(format!(
                 "map key_value child must have two children, found {}",
                 key_value.get_fields().len()
             )));
@@ -567,14 +564,14 @@ impl FieldReaderBuilder<'_> {
                     (fields[0].as_ref(), fields[1].as_ref())
                 }
                 d => {
-                    return Err(common_error::DaftError::ValueError(format!(
+                    return Err(ParquetError::General(format!(
                         "map data type should contain struct with two children, got {:?}",
                         d
                     )));
                 }
             },
             other => {
-                return Err(common_error::DaftError::ValueError(format!(
+                return Err(ParquetError::General(format!(
                     "build_map: expected Map arrow type, got {:?}",
                     other
                 )));
@@ -680,7 +677,7 @@ fn build_top_field_reader(
     rg_idx: usize,
     top_field_idx: usize,
     arrow_field: &ArrowField,
-) -> DaftResult<(Box<dyn ArrayReader>, usize)> {
+) -> ParquetResult<(Box<dyn ArrayReader>, usize)> {
     let total_rows = metadata.row_group(rg_idx).num_rows() as usize;
     let mut leaf_idx = leaf_index_for_top_field(metadata, top_field_idx);
     let root_fields = metadata
@@ -698,6 +695,10 @@ fn build_top_field_reader(
     Ok((reader, total_rows))
 }
 
+/// Decode all rows (or just `row_selection`) of one top-level column from one RG.
+/// Inner pipeline runs in parquet's own error type; we attach file-path context
+/// here so callers see a `crate::Error` tagged with the file in question.
+#[allow(dead_code)]
 pub(super) fn decode_one(
     chunks: &HashMap<usize, OffsetBytes>,
     metadata: &ParquetMetaData,
@@ -705,7 +706,30 @@ pub(super) fn decode_one(
     top_field_idx: usize,
     arrow_field: &ArrowField,
     row_selection: Option<&RowSelection>,
-) -> DaftResult<ArrayRef> {
+    path: &str,
+) -> crate::Result<ArrayRef> {
+    decode_one_inner(
+        chunks,
+        metadata,
+        rg_idx,
+        top_field_idx,
+        arrow_field,
+        row_selection,
+    )
+    .with_context(|_| ParquetColumnDecodeSnafu {
+        path: path.to_string(),
+    })
+}
+
+#[allow(dead_code)]
+fn decode_one_inner(
+    chunks: &HashMap<usize, OffsetBytes>,
+    metadata: &ParquetMetaData,
+    rg_idx: usize,
+    top_field_idx: usize,
+    arrow_field: &ArrowField,
+    row_selection: Option<&RowSelection>,
+) -> ParquetResult<ArrayRef> {
     let (mut reader, total_rows) =
         build_top_field_reader(chunks, metadata, rg_idx, top_field_idx, arrow_field)?;
 
@@ -713,21 +737,17 @@ pub(super) fn decode_one(
         Some(sel) => {
             for selector in sel.iter() {
                 if selector.skip {
-                    reader
-                        .skip_records(selector.row_count)
-                        .map_err(parquet_err)?;
+                    reader.skip_records(selector.row_count)?;
                 } else {
-                    reader
-                        .read_records(selector.row_count)
-                        .map_err(parquet_err)?;
+                    reader.read_records(selector.row_count)?;
                 }
             }
         }
         None => {
-            reader.read_records(total_rows).map_err(parquet_err)?;
+            reader.read_records(total_rows)?;
         }
     }
-    reader.consume_batch().map_err(parquet_err)
+    reader.consume_batch()
 }
 
 /// Streaming variant of `decode_one`: yields `ArrayRef`s of up to `chunk_size`
@@ -742,9 +762,10 @@ pub(super) async fn decode_one_streaming(
     arrow_field: ArrowField,
     selection: Option<RowSelection>,
     chunk_size: usize,
-    sender: tokio::sync::mpsc::Sender<DaftResult<ArrayRef>>,
+    path: Arc<str>,
+    sender: tokio::sync::mpsc::Sender<common_error::DaftResult<ArrayRef>>,
 ) {
-    let result: DaftResult<()> = async {
+    let result: ParquetResult<()> = async {
         let (mut reader, total_rows) = build_top_field_reader(
             chunks.as_ref(),
             &metadata,
@@ -762,18 +783,18 @@ pub(super) async fn decode_one_streaming(
         let mut acc = 0usize;
         for sel in selectors {
             if sel.skip {
-                reader.skip_records(sel.row_count).map_err(parquet_err)?;
+                reader.skip_records(sel.row_count)?;
                 continue;
             }
             let mut remaining = sel.row_count;
             while remaining > 0 {
                 let room = chunk_size - acc;
                 let take = remaining.min(room);
-                reader.read_records(take).map_err(parquet_err)?;
+                reader.read_records(take)?;
                 acc += take;
                 remaining -= take;
                 if acc == chunk_size {
-                    let arr = reader.consume_batch().map_err(parquet_err)?;
+                    let arr = reader.consume_batch()?;
                     if sender.send(Ok(arr)).await.is_err() {
                         return Ok(());
                     }
@@ -782,7 +803,7 @@ pub(super) async fn decode_one_streaming(
             }
         }
         if acc > 0 {
-            let arr = reader.consume_batch().map_err(parquet_err)?;
+            let arr = reader.consume_batch()?;
             let _ = sender.send(Ok(arr)).await;
         }
         Ok(())
@@ -790,6 +811,11 @@ pub(super) async fn decode_one_streaming(
     .await;
 
     if let Err(e) = result {
-        let _ = sender.send(Err(e)).await;
+        let wrapped: crate::Error = Err::<(), _>(e)
+            .with_context(|_| ParquetColumnDecodeSnafu {
+                path: path.to_string(),
+            })
+            .unwrap_err();
+        let _ = sender.send(Err(wrapped.into())).await;
     }
 }
