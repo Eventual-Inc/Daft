@@ -84,10 +84,11 @@ impl LogicalPlanToPipelineNodeTranslator {
         self.pipeline_node_id_counter
     }
 
-    /// Record a user-facing hint surfaced as both a `tracing::warn!` log line and a Python
-    /// `UserWarning` once translation completes.
+    /// Record a user-facing hint. Hints are surfaced as a Python `UserWarning` when the plan
+    /// runs, and embedded inline in the rendered plan when the plan is displayed via
+    /// `repr_ascii` — display itself is side-effect free so that warnings can't interleave
+    /// with the plan's stdout output.
     pub(crate) fn record_hint(&mut self, msg: String) {
-        tracing::warn!("{}", msg);
         self.hints.push(msg);
     }
 

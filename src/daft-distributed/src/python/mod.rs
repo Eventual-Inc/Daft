@@ -124,7 +124,7 @@ impl PyDistributedPhysicalPlan {
         self.plan.idx().to_string()
     }
 
-    fn num_partitions(&self, py: Python) -> PyResult<usize> {
+    fn num_partitions(&self) -> PyResult<usize> {
         // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
@@ -137,14 +137,14 @@ impl PyDistributedPhysicalPlan {
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.num_partitions"),
         )?;
-        surface_hints(py, &translation.hints)?;
 
         Ok(translation.root.num_partitions())
     }
 
-    /// Visualize the distributed pipeline as ASCII text
-    fn repr_ascii(&self, py: Python, simple: bool) -> PyResult<String> {
-        // Create pipeline nodes from the logical plan
+    /// Visualize the distributed pipeline as ASCII text. Hints are embedded inline so the
+    /// caller receives a single self-contained string — emitting them as `warnings.warn` here
+    /// would write to stderr mid-call and interleave with the plan body on stdout.
+    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
@@ -156,13 +156,21 @@ impl PyDistributedPhysicalPlan {
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.repr_ascii"),
         )?;
-        surface_hints(py, &translation.hints)?;
 
-        Ok(viz_distributed_pipeline_ascii(&translation.root, simple))
+        let mut output = viz_distributed_pipeline_ascii(&translation.root, simple);
+        if !translation.hints.is_empty() {
+            output.push_str("\nHints:\n");
+            for hint in &translation.hints {
+                output.push_str("- ");
+                output.push_str(hint);
+                output.push('\n');
+            }
+        }
+        Ok(output)
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
-    fn repr_mermaid(&self, py: Python, simple: bool, bottom_up: bool) -> PyResult<String> {
+    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
@@ -175,7 +183,6 @@ impl PyDistributedPhysicalPlan {
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.repr_mermaid"),
         )?;
-        surface_hints(py, &translation.hints)?;
 
         let display_level = if simple {
             DisplayLevel::Compact
@@ -191,11 +198,7 @@ impl PyDistributedPhysicalPlan {
     }
 
     #[pyo3(signature = (psets=None))]
-    fn repr_json(
-        &self,
-        py: Python,
-        psets: Option<HashMap<String, Vec<RayPartitionRef>>>,
-    ) -> PyResult<String> {
+    fn repr_json(&self, psets: Option<HashMap<String, Vec<RayPartitionRef>>>) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
@@ -224,7 +227,6 @@ impl PyDistributedPhysicalPlan {
             &Meter::global_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        surface_hints(py, &translation.hints)?;
 
         Ok(serde_json::to_string(&translation.root.repr_json()).unwrap())
     }
