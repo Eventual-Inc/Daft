@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, TimeUnit};
 use arrow_array::{Array, PrimitiveArray, types::*};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
@@ -64,7 +64,7 @@ fn is_nearer(
     b_idx: usize,
     pivot_arr: &dyn Array,
     pivot_idx: usize,
-) -> bool {
+) -> DaftResult<bool> {
     if !a_arr.is_valid(a_idx) || !b_arr.is_valid(b_idx) || !pivot_arr.is_valid(pivot_idx) {
         unreachable!("null keys must be filtered before calling is_nearer");
     }
@@ -84,7 +84,7 @@ fn is_nearer(
             let a = extract_scalar!(a_arr, $T, a_idx);
             let b = extract_scalar!(b_arr, $T, b_idx);
             let p = extract_scalar!(pivot_arr, $T, pivot_idx);
-            is_nearer_int!(a, b, p)
+            Ok(is_nearer_int!(a, b, p))
         }};
     }
 
@@ -93,19 +93,35 @@ fn is_nearer(
             let a = extract_scalar!(a_arr, $T, a_idx);
             let b = extract_scalar!(b_arr, $T, b_idx);
             let p = extract_scalar!(pivot_arr, $T, pivot_idx);
-            is_nearer_float!(a, b, p)
+            Ok(is_nearer_float!(a, b, p))
         }};
     }
 
     match a_arr.data_type() {
         DataType::Int8 => extract_and_cmp_int!(Int8Type),
         DataType::Int16 => extract_and_cmp_int!(Int16Type),
-        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => extract_and_cmp_int!(Int32Type),
-        DataType::Int64
-        | DataType::Date64
-        | DataType::Timestamp(_, _)
-        | DataType::Time64(_)
-        | DataType::Duration(_) => extract_and_cmp_int!(Int64Type),
+        DataType::Int32 => extract_and_cmp_int!(Int32Type),
+        DataType::Date32 => extract_and_cmp_int!(Date32Type),
+        DataType::Time32(TimeUnit::Second) => extract_and_cmp_int!(Time32SecondType),
+        DataType::Time32(TimeUnit::Millisecond) => extract_and_cmp_int!(Time32MillisecondType),
+        DataType::Int64 => extract_and_cmp_int!(Int64Type),
+        DataType::Date64 => extract_and_cmp_int!(Date64Type),
+        DataType::Timestamp(TimeUnit::Second, _) => extract_and_cmp_int!(TimestampSecondType),
+        DataType::Timestamp(TimeUnit::Millisecond, _) => {
+            extract_and_cmp_int!(TimestampMillisecondType)
+        }
+        DataType::Timestamp(TimeUnit::Microsecond, _) => {
+            extract_and_cmp_int!(TimestampMicrosecondType)
+        }
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            extract_and_cmp_int!(TimestampNanosecondType)
+        }
+        DataType::Time64(TimeUnit::Microsecond) => extract_and_cmp_int!(Time64MicrosecondType),
+        DataType::Time64(TimeUnit::Nanosecond) => extract_and_cmp_int!(Time64NanosecondType),
+        DataType::Duration(TimeUnit::Second) => extract_and_cmp_int!(DurationSecondType),
+        DataType::Duration(TimeUnit::Millisecond) => extract_and_cmp_int!(DurationMillisecondType),
+        DataType::Duration(TimeUnit::Microsecond) => extract_and_cmp_int!(DurationMicrosecondType),
+        DataType::Duration(TimeUnit::Nanosecond) => extract_and_cmp_int!(DurationNanosecondType),
         DataType::UInt8 => extract_and_cmp_int!(UInt8Type),
         DataType::UInt16 => extract_and_cmp_int!(UInt16Type),
         DataType::UInt32 => extract_and_cmp_int!(UInt32Type),
@@ -116,11 +132,13 @@ fn is_nearer(
             let a = extract_scalar!(a_arr, Float16Type, a_idx).to_f32();
             let b = extract_scalar!(b_arr, Float16Type, b_idx).to_f32();
             let p = extract_scalar!(pivot_arr, Float16Type, pivot_idx).to_f32();
-            is_nearer_float!(a, b, p)
+            Ok(is_nearer_float!(a, b, p))
         }
         DataType::Float32 => extract_and_cmp_float!(Float32Type),
         DataType::Float64 => extract_and_cmp_float!(Float64Type),
-        t => unreachable!("nearest join: unsupported on-key type {t:?}"),
+        t => Err(DaftError::TypeError(format!(
+            "nearest join: unsupported on-key type {t:?}"
+        ))),
     }
 }
 
@@ -329,7 +347,7 @@ impl AsofJoinFinalizedBuildState {
                     _ => lo = mid + 1,
                 },
                 AsofJoinStrategy::Nearest => {
-                    unreachable!("use search_bucket_update_range for Nearest")
+                    unreachable!("use search_bucket_nearest_range for Nearest")
                 }
             }
         }
@@ -339,33 +357,22 @@ impl AsofJoinFinalizedBuildState {
                 .checked_sub(1)
                 .and_then(|i| bucket.get(i))
                 .map(|&idx| idx as usize),
-            AsofJoinStrategy::Nearest => unreachable!("use search_bucket_update_range for Nearest"),
+            AsofJoinStrategy::Nearest => {
+                unreachable!("use search_bucket_nearest_range for Nearest")
+            }
         }
     }
 
-    /// Returns the contiguous span of bucket positions a right row should offer itself to.
+    /// Returns `start..end` — the bucket positions this right row must be offered to.
     ///
-    /// For the Nearest strategy every right row must be compared against every left row that
-    /// could plausibly be its nearest match — not just the single closest one.  Updating only
-    /// the nearest is wrong when two left rows are equidistant: the non-nearest one would
-    /// never see this right row and would miss the tie-break comparison.
-    ///
-    /// The minimal set of positions is always contiguous:
-    ///
-    ///   binary search gives lo = first position where sorted_left[lo] ≥ right
-    ///
-    ///   floor: lo-1 (last left ≤ right), extended backward while on_key == floor's on_key
-    ///   ceil:  lo   (first left ≥ right), extended forward  while on_key == ceil's on_key
-    ///
-    ///   Together: start..end  (exclusive end)
-    ///
-    /// Positions outside this span are guaranteed to have a strictly closer right candidate
-    /// already in the bucket, so they don't need to see this right row — nearest_fill will
-    /// carry the best match to them later.
+    /// The range covers the floor (last left ≤ right) and ceil (first left ≥ right),
+    /// each extended through any adjacent duplicates sharing the same on_key.
+    /// Left rows outside this range either have a strictly closer right candidate
+    /// elsewhere in the bucket, or will be covered by `nearest_fill`.
     ///
     /// `on_key_cmp(pos, right_idx)` — sorted_left[pos] vs right[right_idx]
     /// `self_cmp(i, j)`             — sorted_left[i]   vs sorted_left[j]
-    fn search_bucket_update_range(
+    fn search_bucket_nearest_range(
         &self,
         bucket: &[u64],
         on_key_cmp: &DynPartialComparator,
@@ -386,6 +393,7 @@ impl AsofJoinFinalizedBuildState {
             }
         }
 
+        // Floor at lo-1: walk backward to include all left rows with the same on_key.
         let start = match lo.checked_sub(1) {
             None => lo,
             Some(fp) => {
@@ -397,6 +405,7 @@ impl AsofJoinFinalizedBuildState {
             }
         };
 
+        // Ceil at lo: walk forward to include all left rows with the same on_key.
         let end = if lo < bucket.len() {
             let mut pos = lo;
             while pos + 1 < bucket.len() && self_cmp(pos, pos + 1) == Some(Ordering::Equal) {
@@ -504,7 +513,7 @@ impl AsofJoinProbeState {
                     row_idx: right_idx,
                 };
 
-                for pos in build_state.search_bucket_update_range(
+                for pos in build_state.search_bucket_nearest_range(
                     bucket,
                     &grouped_on_key_cmps[group_idx],
                     &left_self_cmps[group_idx],
@@ -618,7 +627,7 @@ fn update_nearest_match(
             existing_right_idx as usize,
             left_on_arr,
             left_on_idx,
-        ),
+        )?,
     };
     if nearer {
         *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
@@ -672,14 +681,14 @@ fn backward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices:
 /// whichever candidate is closer to the left row's on_key. Ties prefer the larger (forward)
 /// right value, matching the `is_nearer` tie-break convention.
 fn nearest_fill(
-    global_best: &mut Vec<Option<(u32, u32)>>,
+    global_best: &mut [Option<(u32, u32)>],
     grouped_sorted_indices: &GroupIndices,
     left_on_arr: &dyn Array,
     global_right_on_key_arrs: &[Arc<dyn Array>],
-) {
-    let mut fwd = global_best.clone();
+) -> DaftResult<()> {
+    let mut fwd = global_best.to_owned();
     forward_fill(&mut fwd, grouped_sorted_indices);
-    let mut bwd = global_best.clone();
+    let mut bwd = global_best.to_owned();
     backward_fill(&mut bwd, grouped_sorted_indices);
 
     for i in 0..global_best.len() {
@@ -700,7 +709,7 @@ fn nearest_fill(
                     bwd_row as usize,
                     left_on_arr,
                     i,
-                ) {
+                )? {
                     fwd[i]
                 } else {
                     bwd[i]
@@ -708,6 +717,7 @@ fn nearest_fill(
             }
         };
     }
+    Ok(())
 }
 
 fn prune_right_batch(rb: &RecordBatch, right_cols_to_keep: &HashSet<String>) -> RecordBatch {
@@ -1038,7 +1048,7 @@ impl JoinOperator for AsofJoinOperator {
                                     .as_deref()
                                     .expect("left_on_arr required for Nearest fill"),
                                 &global_right_on_key_arrs,
-                            );
+                            )?;
                         }
                     }
 

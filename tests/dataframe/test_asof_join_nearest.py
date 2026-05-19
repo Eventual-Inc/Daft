@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+
 import pytest
 
 import daft
@@ -16,89 +18,84 @@ def get_n_partitions():
 
 
 class TestNearestAsofJoinMatchCorrectness:
-    def test_exact_match(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_exact_match(self, make_df, n_partitions, with_default_morsel_size):
         """Exact timestamp match wins over any equidistant candidates."""
-        left = daft.from_pydict({"ts": [10, 20, 30], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [10, 20, 30], "w": [11, 22, 33]})
+        left = make_df({"ts": [10, 20, 30], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [10, 20, 30], "w": [11, 22, 33]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [10, 20, 30], "v": [1, 2, 3], "w": [11, 22, 33]}
 
-    def test_picks_backward_when_closer(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_picks_backward_when_closer(self, make_df, n_partitions, with_default_morsel_size):
         """Picks backward right row when it is strictly closer than any forward candidate."""
-        # dist(7)=3 < dist(14)=4 → backward wins
-        left = daft.from_pydict({"ts": [10], "v": [1]})
-        right = daft.from_pydict({"ts": [7, 14], "w": [70, 140]})
+        left = make_df({"ts": [10], "v": [1]}, repartition=n_partitions)
+        right = make_df({"ts": [7, 14], "w": [70, 140]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [70]
 
-    def test_picks_forward_when_closer(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_picks_forward_when_closer(self, make_df, n_partitions, with_default_morsel_size):
         """Picks forward right row when it is strictly closer than any backward candidate."""
-        # dist(6)=4 > dist(13)=3 → forward wins
-        left = daft.from_pydict({"ts": [10], "v": [1]})
-        right = daft.from_pydict({"ts": [6, 13], "w": [60, 130]})
+        left = make_df({"ts": [10], "v": [1]}, repartition=n_partitions)
+        right = make_df({"ts": [6, 13], "w": [60, 130]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [130]
 
-    def test_direction_switches_within_sequence(self):
-        """Most important correctness test: direction of match changes row-by-row.
-
-        Impossible to cover with backward or forward alone.
-          @3:  only right@5 available (forward, dist=2)  → w=50
-          @8:  right@5 dist=3, right@11 dist=3 → tie → forward wins → w=110
-          @13: only right@11 reachable more closely (backward, dist=2) → w=110
-        """
-        left = daft.from_pydict({"ts": [3, 8, 13], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [5, 11], "w": [50, 110]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_direction_switches_within_sequence(self, make_df, n_partitions, with_default_morsel_size):
+        """Direction of nearest match changes row-by-row across the same right array."""
+        left = make_df({"ts": [3, 8, 13], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [5, 11], "w": [50, 110]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [3, 8, 13], "v": [1, 2, 3], "w": [50, 110, 110]}
 
-    def test_all_left_before_all_right_no_nulls(self):
-        """Key distinction from backward: nearest never nulls due to wrong direction.
-
-        When all left rows precede all right rows, nearest picks the first (closest) right row.
-        Backward would return all nulls here.
-        """
-        left = daft.from_pydict({"ts": [1, 2, 3], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [100, 200], "w": [1000, 2000]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_all_left_before_all_right_no_nulls(self, make_df, n_partitions, with_default_morsel_size):
+        """When all left rows precede all right rows, nearest picks the closest right rather than returning null."""
+        left = make_df({"ts": [1, 2, 3], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [100, 200], "w": [1000, 2000]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [1, 2, 3], "v": [1, 2, 3], "w": [1000, 1000, 1000]}
 
-    def test_all_left_after_all_right_no_nulls(self):
-        """Key distinction from forward: nearest never nulls due to wrong direction.
-
-        When all left rows follow all right rows, nearest picks the last (closest) right row.
-        Forward would return all nulls here.
-        """
-        left = daft.from_pydict({"ts": [100, 200, 300], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [10, 50], "w": [100, 500]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_all_left_after_all_right_no_nulls(self, make_df, n_partitions, with_default_morsel_size):
+        """When all left rows follow all right rows, nearest picks the closest right rather than returning null."""
+        left = make_df({"ts": [100, 200, 300], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [10, 50], "w": [100, 500]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [100, 200, 300], "v": [1, 2, 3], "w": [500, 500, 500]}
 
-    def test_single_right_row_always_matches(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_single_right_row_always_matches(self, make_df, n_partitions, with_default_morsel_size):
         """With only one right row, every left row matches it regardless of relative position."""
-        left = daft.from_pydict({"ts": [1, 50, 99], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [50], "w": [500]})
+        left = make_df({"ts": [1, 50, 99], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [50], "w": [500]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [1, 50, 99], "v": [1, 2, 3], "w": [500, 500, 500]}
 
-    def test_direction_mix_across_longer_sequence(self):
-        """Each left row independently picks its nearest right; direction varies throughout.
-
-        left@[5,10,15,20,25], right@[3,8,18,30]:
-          @5:  dist(3)=2 < dist(8)=3  → backward@3  → w=30
-          @10: dist(8)=2 < dist(18)=8 → backward@8  → w=80
-          @15: dist(8)=7 > dist(18)=3 → forward@18  → w=180
-          @20: dist(18)=2 < dist(30)=10 → backward@18 → w=180
-          @25: dist(18)=7 > dist(30)=5  → forward@30  → w=300
-        """
-        left = daft.from_pydict({"ts": [5, 10, 15, 20, 25], "v": [1, 2, 3, 4, 5]})
-        right = daft.from_pydict({"ts": [3, 8, 18, 30], "w": [30, 80, 180, 300]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_direction_mix_across_longer_sequence(self, make_df, n_partitions, with_default_morsel_size):
+        """Each left row independently picks its nearest right; the winning direction varies throughout."""
+        left = make_df({"ts": [5, 10, 15, 20, 25], "v": [1, 2, 3, 4, 5]}, repartition=n_partitions)
+        right = make_df({"ts": [3, 8, 18, 30], "w": [30, 80, 180, 300]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {
             "ts": [5, 10, 15, 20, 25],
             "v": [1, 2, 3, 4, 5],
             "w": [30, 80, 180, 180, 300],
         }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_left_on_right_on_different_names(self, make_df, n_partitions, with_default_morsel_size):
+        """Nearest join works when left and right use different names for the on column."""
+        left = make_df({"event_ts": [10, 20], "v": [1, 2]}, repartition=n_partitions)
+        right = make_df({"obs_ts": [8, 22], "w": [80, 220]}, repartition=n_partitions)
+        result = left.join_asof(right, left_on="event_ts", right_on="obs_ts", strategy="nearest").sort("event_ts")
+        assert result.column_names == ["event_ts", "v", "obs_ts", "w"]
+        pydict = result.to_pydict()
+        assert pydict["event_ts"] == [10, 20]
+        assert pydict["w"] == [80, 220]
 
 
 # ---------------------------------------------------------------------------
@@ -107,69 +104,35 @@ class TestNearestAsofJoinMatchCorrectness:
 
 
 class TestNearestAsofJoinTieBreaking:
-    def test_equidistant_forward_preferred(self):
-        """When backward and forward candidates are equidistant, forward is picked.
-
-        This pins down Daft's tie-break convention for nearest.
-        left@10, right@[8,12]: dist=2 on both sides → forward (12) wins.
-        """
-        left = daft.from_pydict({"ts": [10], "v": [1]})
-        right = daft.from_pydict({"ts": [8, 12], "w": [80, 120]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_equidistant_forward_preferred(self, make_df, n_partitions, with_default_morsel_size):
+        """When backward and forward candidates are equidistant, forward is picked."""
+        left = make_df({"ts": [10], "v": [1]}, repartition=n_partitions)
+        right = make_df({"ts": [8, 12], "w": [80, 120]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [120]
 
-    def test_equidistant_in_sequence(self):
-        """Tie-breaking applied mid-sequence; non-tie rows match straightforwardly.
-
-        left@[5,10,15], right@[7,13]:
-          @5:  only forward@7 available (dist=2)        → w=70
-          @10: dist(7)=3 == dist(13)=3, tie → forward@13 → w=130
-          @15: only backward@13 closer (dist=2)          → w=130
-        """
-        left = daft.from_pydict({"ts": [5, 10, 15], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [7, 13], "w": [70, 130]})
-        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
-        assert result.to_pydict() == {"ts": [5, 10, 15], "v": [1, 2, 3], "w": [70, 130, 130]}
-
-    def test_exact_match_beats_equidistant_candidates(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_exact_match_beats_equidistant_candidates(self, make_df, n_partitions, with_default_morsel_size):
         """Exact match (dist=0) always wins over equidistant backward/forward candidates."""
-        left = daft.from_pydict({"ts": [10], "v": [1]})
-        right = daft.from_pydict({"ts": [8, 10, 12], "w": [80, 100, 120]})
+        left = make_df({"ts": [10], "v": [1]}, repartition=n_partitions)
+        right = make_df({"ts": [8, 10, 12], "w": [80, 100, 120]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [100]
 
-    def test_duplicate_right_same_side(self):
-        """Duplicate right rows on the winning side: any one of them is a valid pick."""
-        # dist(8)=2 wins over dist(14)=4; two right rows at ts=8
-        left = daft.from_pydict({"ts": [10], "v": [1]})
-        right = daft.from_pydict({"ts": [8, 8, 14], "w": [80, 81, 140]})
-        result = left.join_asof(right, on="ts", strategy="nearest")
-        assert result.to_pydict()["ts"] == [10]
-        assert result.to_pydict()["w"][0] in [80, 81]
-
-    def test_one_right_row_matches_multiple_left_rows(self):
-        """A single right row is the nearest match for more than one left row.
-
-        left@[10,15], right@[7,13]:
-          @10: dist(7)=3 == dist(13)=3, tie → forward (13) wins → w=130
-          @15: dist(7)=8  > dist(13)=2  → right@13 → w=130
-
-        Both left rows end up matched to right@13.  This is also the minimal case
-        that exercises the probe's floor+ceil update: without a left row below ts=7,
-        right@7 has no floor and claims left@10 directly as its ceiling.  The probe
-        must still offer right@13 to left@10 (as right@13's floor candidate) so the
-        tie-break comparison can fire.  Without that, left@10 would incorrectly keep
-        right@7.
-        """
-        left = daft.from_pydict({"ts": [10, 15], "v": [1, 2]})
-        right = daft.from_pydict({"ts": [7, 13], "w": [70, 130]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_one_right_row_matches_multiple_left_rows(self, make_df, n_partitions, with_default_morsel_size):
+        """Multiple left rows can independently match the same nearest right row."""
+        left = make_df({"ts": [10, 15], "v": [1, 2]}, repartition=n_partitions)
+        right = make_df({"ts": [7, 13], "w": [70, 130]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         assert result.to_pydict() == {"ts": [10, 15], "v": [1, 2], "w": [130, 130]}
 
-    def test_duplicate_left_timestamps(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_duplicate_left_timestamps(self, make_df, n_partitions, with_default_morsel_size):
         """Duplicate left timestamps both independently match the same nearest right row."""
-        left = daft.from_pydict({"ts": [10, 10, 20], "v": [1, 2, 3]})
-        right = daft.from_pydict({"ts": [8, 15], "w": [80, 150]})
+        left = make_df({"ts": [10, 10, 20], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"ts": [8, 15], "w": [80, 150]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort(["ts", "v"])
         # @10: dist(8)=2 < dist(15)=5 → backward@8 → 80 (both duplicates)
         # @20: dist(8)=12 > dist(15)=5 → forward@15 → 150
@@ -208,15 +171,13 @@ class TestNearestAsofJoinNullHandling:
 
 
 class TestNearestAsofJoinWithBy:
-    def test_nearest_per_group_different_directions(self):
-        """Each group independently finds its nearest; direction can differ across groups.
-
-        Entity A: left@10, right@[7,14] → dist(7)=3 < dist(14)=4 → backward@7 → w=70
-        Entity B: left@10, right@[6,13] → dist(6)=4 > dist(13)=3 → forward@13 → w=130
-        """
-        left = daft.from_pydict({"entity": ["A", "B"], "ts": [10, 10], "v": [1, 2]})
-        right = daft.from_pydict(
-            {"entity": ["A", "A", "B", "B"], "ts": [7, 14, 6, 13], "w": [70, 140, 60, 130]}
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_nearest_per_group_different_directions(self, make_df, n_partitions, with_default_morsel_size):
+        """Each group independently finds its nearest; the winning direction can differ across groups."""
+        left = make_df({"entity": ["A", "B"], "ts": [10, 10], "v": [1, 2]}, repartition=n_partitions)
+        right = make_df(
+            {"entity": ["A", "A", "B", "B"], "ts": [7, 14, 6, 13], "w": [70, 140, 60, 130]},
+            repartition=n_partitions,
         )
         result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort("entity")
         assert result.to_pydict() == {
@@ -226,13 +187,11 @@ class TestNearestAsofJoinWithBy:
             "w": [70, 130],
         }
 
-    def test_only_right_after_all_left_in_group_no_nulls(self):
-        """Within a group, if all right rows follow all left rows, nearest still matches (no nulls).
-
-        Backward would give null here. Nearest gives right@100 (the only and thus nearest right).
-        """
-        left = daft.from_pydict({"entity": ["A", "A", "A"], "ts": [1, 2, 3], "v": [1, 2, 3]})
-        right = daft.from_pydict({"entity": ["A"], "ts": [100], "w": [1000]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_only_right_after_all_left_in_group_no_nulls(self, make_df, n_partitions, with_default_morsel_size):
+        """Within a group where all right rows follow all left rows, nearest still matches rather than returning null."""
+        left = make_df({"entity": ["A", "A", "A"], "ts": [1, 2, 3], "v": [1, 2, 3]}, repartition=n_partitions)
+        right = make_df({"entity": ["A"], "ts": [100], "w": [1000]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort("ts")
         assert result.to_pydict() == {
             "entity": ["A", "A", "A"],
@@ -241,13 +200,11 @@ class TestNearestAsofJoinWithBy:
             "w": [1000, 1000, 1000],
         }
 
-    def test_only_right_before_all_left_in_group_no_nulls(self):
-        """Within a group, if all right rows precede all left rows, nearest still matches (no nulls).
-
-        Forward would give null here. Nearest gives right@5 (the only and thus nearest right).
-        """
-        left = daft.from_pydict({"entity": ["A", "A"], "ts": [100, 200], "v": [1, 2]})
-        right = daft.from_pydict({"entity": ["A"], "ts": [5], "w": [50]})
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_only_right_before_all_left_in_group_no_nulls(self, make_df, n_partitions, with_default_morsel_size):
+        """Within a group where all right rows precede all left rows, nearest still matches rather than returning null."""
+        left = make_df({"entity": ["A", "A"], "ts": [100, 200], "v": [1, 2]}, repartition=n_partitions)
+        right = make_df({"entity": ["A"], "ts": [5], "w": [50]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort("ts")
         assert result.to_pydict() == {
             "entity": ["A", "A"],
@@ -256,12 +213,14 @@ class TestNearestAsofJoinWithBy:
             "w": [50, 50],
         }
 
-    def test_empty_right_group_gives_null(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_empty_right_group_gives_null(self, make_df, n_partitions, with_default_morsel_size):
         """A group with no right rows produces null; other groups still match correctly."""
-        left = daft.from_pydict(
-            {"entity": ["A", "A", "B", "B"], "ts": [5, 10, 5, 10], "v": [1, 2, 3, 4]}
+        left = make_df(
+            {"entity": ["A", "A", "B", "B"], "ts": [5, 10, 5, 10], "v": [1, 2, 3, 4]},
+            repartition=n_partitions,
         )
-        right = daft.from_pydict({"entity": ["B", "B"], "ts": [4, 9], "w": [40, 90]})
+        right = make_df({"entity": ["B", "B"], "ts": [4, 9], "w": [40, 90]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort(["entity", "ts"])
         assert result.to_pydict() == {
             "entity": ["A", "A", "B", "B"],
@@ -270,13 +229,18 @@ class TestNearestAsofJoinWithBy:
             "w": [None, None, 40, 90],
         }
 
-    def test_group_boundary_not_crossed(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_group_boundary_not_crossed(self, make_df, n_partitions, with_default_morsel_size):
         """A right row from one group cannot match a left row from a different group."""
-        left = daft.from_pydict(
-            {"entity": ["A", "A", "A", "B", "B", "B"], "ts": [3, 7, 10, 15, 20, 25], "v": [1, 2, 3, 4, 5, 6]}
+        left = make_df(
+            {
+                "entity": ["A", "A", "A", "B", "B", "B"],
+                "ts": [3, 7, 10, 15, 20, 25],
+                "v": [1, 2, 3, 4, 5, 6],
+            },
+            repartition=n_partitions,
         )
-        # Only entity A has right rows; entity B has none
-        right = daft.from_pydict({"entity": ["A", "A"], "ts": [2, 8], "w": [20, 80]})
+        right = make_df({"entity": ["A", "A"], "ts": [2, 8], "w": [20, 80]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort(["entity", "ts"])
         assert result.to_pydict() == {
             "entity": ["A", "A", "A", "B", "B", "B"],
@@ -289,22 +253,23 @@ class TestNearestAsofJoinWithBy:
             "w": [20, 80, 80, None, None, None],
         }
 
-    def test_nearest_with_multiple_by_columns(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_nearest_with_multiple_by_columns(self, make_df, n_partitions, with_default_morsel_size):
         """Composite by-key (entity, region) groups rows independently; each group picks its own nearest."""
-        left = daft.from_pydict(
-            {"entity": ["A", "B"], "region": ["US", "EU"], "ts": [10, 10], "v": [1, 2]}
+        left = make_df(
+            {"entity": ["A", "B"], "region": ["US", "EU"], "ts": [10, 10], "v": [1, 2]},
+            repartition=n_partitions,
         )
-        right = daft.from_pydict(
+        right = make_df(
             {
                 "entity": ["A", "A", "B", "B"],
                 "region": ["US", "US", "EU", "EU"],
                 "ts": [7, 14, 6, 13],
                 "w": [70, 140, 60, 130],
-            }
+            },
+            repartition=n_partitions,
         )
-        result = left.join_asof(
-            right, on="ts", by=["entity", "region"], strategy="nearest"
-        ).sort("entity")
+        result = left.join_asof(right, on="ts", by=["entity", "region"], strategy="nearest").sort("entity")
         assert result.to_pydict() == {
             "entity": ["A", "B"],
             "region": ["US", "EU"],
@@ -360,10 +325,11 @@ class TestNearestAsofJoinEmptyTables:
 
 
 class TestNearestAsofJoinFloatOnKey:
-    def test_basic_float_timestamps(self):
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_basic_float_on_key(self, make_df, n_partitions, with_default_morsel_size):
         """Float on-key exercises the NaN-aware float comparator path."""
-        left = daft.from_pydict({"ts": [1.2, 3.7], "v": [1, 2]})
-        right = daft.from_pydict({"ts": [1.0, 2.0, 4.0], "w": [10, 20, 40]})
+        left = make_df({"ts": [1.2, 3.7], "v": [1, 2]}, repartition=n_partitions)
+        right = make_df({"ts": [1.0, 2.0, 4.0], "w": [10, 20, 40]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
         # @1.2: dist(1.0)=0.2 < dist(2.0)=0.8 → backward@1.0 → w=10
         # @3.7: dist(2.0)=1.7 > dist(4.0)=0.3 → forward@4.0 → w=40
@@ -392,32 +358,9 @@ class TestNearestAsofJoinFloatOnKey:
 
 
 class TestNearestAsofJoinDistributed:
-    """Tests that exercise multi-partition nearest join paths.
-
-    Unlike backward (forward-only carryover) and forward (backward-only carryover),
-    nearest requires comparing candidates from BOTH directions across partition boundaries.
-    """
-
-    @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_no_by_keys_multi_partition(self, make_df, n_partitions, with_default_morsel_size):
-        """Nearest without by-keys across multiple partitions picks the true nearest right row."""
-        left = make_df({"ts": [5, 10, 15, 20, 25], "v": [1, 2, 3, 4, 5]}, repartition=n_partitions)
-        right = make_df({"ts": [3, 8, 18, 30], "w": [30, 80, 180, 300]}, repartition=n_partitions)
-        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
-        assert result.to_pydict() == {
-            "ts": [5, 10, 15, 20, 25],
-            "v": [1, 2, 3, 4, 5],
-            # @5:  dist(3)=2 < dist(8)=3  → backward@3  → 30
-            # @10: dist(8)=2 < dist(18)=8 → backward@8  → 80
-            # @15: dist(8)=7 > dist(18)=3 → forward@18  → 180
-            # @20: dist(18)=2 < dist(30)=10 → backward@18 → 180
-            # @25: dist(18)=7 > dist(30)=5  → forward@30  → 300
-            "w": [30, 80, 180, 180, 300],
-        }
-
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
     def test_multi_group_correctness(self, make_df, n_partitions, with_default_morsel_size):
-        """Multiple entities spread across partitions all nearest-match correctly."""
+        """Multiple groups spread across partitions all nearest-match correctly."""
         left = make_df(
             {
                 "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
@@ -439,108 +382,36 @@ class TestNearestAsofJoinDistributed:
             "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
             "ts": [10, 20, 10, 20, 10, 20, 10, 20],
             "v": [1, 5, 2, 6, 3, 7, 4, 8],
-            # A@10: dist(A@5)=5 < dist(A@18)=8  → backward@5  → 100
-            # A@20: dist(A@5)=15 > dist(A@18)=2 → forward@18  → 500
-            # B@10: dist(B@8)=2 < dist(B@22)=12 → backward@8  → 200
-            # B@20: dist(B@8)=12 > dist(B@22)=2 → forward@22  → 600
-            # C@10: dist(C@12)=2 < dist(C@25)=15 → forward@12 → 300
-            # C@20: dist(C@12)=8 > dist(C@25)=5 → forward@25  → 700
-            # D@10: dist(D@15)=5 < dist(D@28)=18 → forward@15 → 400
-            # D@20: dist(D@15)=5 < dist(D@28)=8 → backward@15 → 400
             "w": [100, 500, 200, 600, 300, 700, 400, 400],
         }
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_forward_carryover_beats_local_backward_match(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """A right row in a later partition wins because it is closer than the local backward match.
-
-        left@5: right@3 (dist=2) lives in an earlier partition, right@6 (dist=1) in a later one.
-        The forward carryover must propagate right@6 back so it beats right@3.
-        """
+    def test_forward_carryover_beats_local_backward_match(self, make_df, n_partitions, with_default_morsel_size):
+        """A closer right row in a later partition beats a local backward match."""
         left = make_df({"ts": [5], "v": [1]}, repartition=n_partitions)
         right = make_df({"ts": [3, 6], "w": [30, 60]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [60]
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_backward_match_beats_far_forward_carryover(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """A nearby backward match must not be overwritten by a distant forward carryover.
-
-        left@50: right@48 (dist=2) in an earlier bucket, right@200 (dist=150) in a later one.
-        The forward carryover must NOT replace the closer backward match.
-        """
+    def test_backward_match_beats_far_forward_carryover(self, make_df, n_partitions, with_default_morsel_size):
+        """A nearby backward match is not overwritten by a distant forward carryover."""
         left = make_df({"ts": [50], "v": [1]}, repartition=n_partitions)
         right = make_df({"ts": [48, 200], "w": [480, 2000]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [480]
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_equidistant_across_partition_boundary(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """Tie-breaking is consistent even when the two equidistant candidates span partitions.
-
-        left@10: right@8 (dist=2) and right@12 (dist=2) may land in different partitions.
-        Forward should win regardless of partitioning.
-        """
+    def test_equidistant_across_partition_boundary(self, make_df, n_partitions, with_default_morsel_size):
+        """Equidistant candidates spanning partitions: forward wins consistently."""
         left = make_df({"ts": [10], "v": [1]}, repartition=n_partitions)
         right = make_df({"ts": [8, 12], "w": [80, 120]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest")
         assert result.to_pydict()["w"] == [120]
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_all_right_before_all_left_distributed(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """All right rows precede all left rows across partitions: nearest gives the last right (no nulls).
-
-        This would produce all nulls with forward strategy. Nearest must propagate the
-        backward match (right@50) across all partitions to reach every left row.
-        """
-        left = make_df({"ts": [100, 200, 300], "v": [1, 2, 3]}, repartition=n_partitions)
-        right = make_df({"ts": [10, 50], "w": [100, 500]}, repartition=n_partitions)
-        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
-        assert result.to_pydict() == {
-            "ts": [100, 200, 300],
-            "v": [1, 2, 3],
-            "w": [500, 500, 500],
-        }
-
-    @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_all_right_after_all_left_distributed(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """All right rows follow all left rows across partitions: nearest gives the first right (no nulls).
-
-        This would produce all nulls with backward strategy. Nearest must propagate the
-        forward carryover (right@100) backwards through all partitions to reach every left row.
-        """
-        left = make_df({"ts": [1, 2, 3], "v": [1, 2, 3]}, repartition=n_partitions)
-        right = make_df({"ts": [100, 200], "w": [1000, 2000]}, repartition=n_partitions)
-        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
-        assert result.to_pydict() == {
-            "ts": [1, 2, 3],
-            "v": [1, 2, 3],
-            "w": [1000, 1000, 1000],
-        }
-
-    @pytest.mark.parametrize("n_partitions", get_n_partitions())
-    def test_nearest_requires_both_carryovers_simultaneously(
-        self, make_df, n_partitions, with_default_morsel_size
-    ):
-        """The critical distributed test: two left rows need opposite carryover directions.
-
-        left@[10, 90], right@[5, 50, 95]:
-          @10: dist(5)=5 < dist(50)=40 → backward@5  → w=50
-          @90: dist(50)=40 > dist(95)=5 → forward@95 → w=950
-
-        Both a backward pass (for @10) and a forward pass (for @90) must coexist.
-        An implementation that only carries in one direction will fail one of these rows.
-        """
+    def test_nearest_requires_both_carryovers_simultaneously(self, make_df, n_partitions, with_default_morsel_size):
+        """Left rows at opposite ends of the range each need carryover from a different direction simultaneously."""
         left = make_df({"ts": [10, 90], "v": [1, 2]}, repartition=n_partitions)
         right = make_df({"ts": [5, 50, 95], "w": [50, 500, 950]}, repartition=n_partitions)
         result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
@@ -549,3 +420,277 @@ class TestNearestAsofJoinDistributed:
             "v": [1, 2],
             "w": [50, 950],
         }
+
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions",
+        [(4, 2), (2, 4), (8, 2), (2, 8)],
+    )
+    def test_asymmetric_partition_counts(self, make_df, left_partitions, right_partitions, with_default_morsel_size):
+        """Left and right are hash-partitioned on the by-key with different partition counts."""
+        left = make_df(
+            {"entity": ["A", "B", "A", "B"], "ts": [10, 10, 20, 20], "v": [1, 2, 3, 4]},
+            repartition=left_partitions,
+            repartition_columns=["entity"],
+        )
+        right = make_df(
+            {"entity": ["A", "A", "B", "B"], "ts": [5, 18, 8, 22], "w": [100, 500, 200, 600]},
+            repartition=right_partitions,
+            repartition_columns=["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B"],
+            "ts": [10, 20, 10, 20],
+            "v": [1, 3, 2, 4],
+            # A@10: dist(5)=5 < dist(18)=8 → backward@5 → w=100
+            # A@20: dist(5)=15 > dist(18)=2 → forward@18 → w=500
+            # B@10: dist(8)=2 < dist(22)=12 → backward@8 → w=200
+            # B@20: dist(8)=12 > dist(22)=2 → forward@22 → w=600
+            "w": [100, 500, 200, 600],
+        }
+
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions,hash_partition_left",
+        [(4, 2, True), (2, 4, True), (4, 2, False), (2, 4, False)],
+    )
+    def test_one_side_not_hash_partitioned(
+        self, make_df, left_partitions, right_partitions, hash_partition_left, with_default_morsel_size
+    ):
+        """One side is hash-partitioned on the by-key; the other has a random clustering spec."""
+        left = make_df(
+            {"entity": ["A", "B", "A", "B"], "ts": [10, 10, 20, 20], "v": [1, 2, 3, 4]},
+            repartition=left_partitions,
+            repartition_columns=["entity"] if hash_partition_left else [],
+        )
+        right = make_df(
+            {"entity": ["A", "A", "B", "B"], "ts": [5, 18, 8, 22], "w": [100, 500, 200, 600]},
+            repartition=right_partitions,
+            repartition_columns=[] if hash_partition_left else ["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity", strategy="nearest").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B"],
+            "ts": [10, 20, 10, 20],
+            "v": [1, 3, 2, 4],
+            "w": [100, 500, 200, 600],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_child_join_same_by_keys(self, make_df, n_partitions, with_default_morsel_size):
+        """Nearest asof where left input is already a join hashed on the same by-keys."""
+        base_left = make_df(
+            {"ticker": ["AAPL", "GOOG", "AAPL", "GOOG"], "id": [1, 2, 3, 4], "ts": [10, 10, 20, 20]},
+            repartition=n_partitions,
+        )
+        base_right = make_df(
+            {"ticker": ["AAPL", "GOOG", "AAPL", "GOOG"], "id": [1, 2, 3, 4], "label": ["a", "b", "c", "d"]},
+            repartition=n_partitions,
+        )
+        joined_left = base_left.join(base_right, on=["ticker", "id"])
+
+        asof_right = make_df(
+            {"ticker": ["AAPL", "GOOG", "AAPL", "GOOG"], "ts": [5, 8, 22, 25], "w": [50, 80, 220, 250]},
+            repartition=n_partitions,
+        )
+        result = joined_left.join_asof(asof_right, on="ts", by="ticker", strategy="nearest").sort(["ticker", "ts"])
+        assert result.to_pydict() == {
+            "ticker": ["AAPL", "AAPL", "GOOG", "GOOG"],
+            "id": [1, 3, 2, 4],
+            "ts": [10, 20, 10, 20],
+            "label": ["a", "c", "b", "d"],
+            # AAPL@10: dist(5)=5 < dist(22)=12 → backward@5  → w=50
+            # AAPL@20: dist(5)=15 > dist(22)=2 → forward@22  → w=220
+            # GOOG@10: dist(8)=2 < dist(25)=15 → backward@8  → w=80
+            # GOOG@20: dist(8)=12 > dist(25)=5 → forward@25  → w=250
+            "w": [50, 220, 80, 250],
+        }
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_child_join_different_by_keys(self, make_df, n_partitions, with_default_morsel_size):
+        """Nearest asof where left input is a join hashed on different keys than the asof by-keys."""
+        base_left = make_df(
+            {"id": [1, 2, 3, 4], "ticker": ["AAPL", "GOOG", "AAPL", "GOOG"], "ts": [10, 10, 20, 20]},
+            repartition=n_partitions,
+        )
+        base_right = make_df(
+            {"id": [1, 2, 3, 4], "label": ["a", "b", "c", "d"]},
+            repartition=n_partitions,
+        )
+        joined_left = base_left.join(base_right, on="id")
+
+        asof_right = make_df(
+            {"ticker": ["AAPL", "GOOG", "AAPL", "GOOG"], "ts": [5, 8, 22, 25], "w": [50, 80, 220, 250]},
+            repartition=n_partitions,
+        )
+        result = joined_left.join_asof(asof_right, on="ts", by="ticker", strategy="nearest").sort(["ticker", "ts"])
+        assert result.to_pydict() == {
+            "id": [1, 3, 2, 4],
+            "ticker": ["AAPL", "AAPL", "GOOG", "GOOG"],
+            "ts": [10, 20, 10, 20],
+            "label": ["a", "c", "b", "d"],
+            "w": [50, 220, 80, 250],
+        }
+
+
+# ---------------------------------------------------------------------------
+# 8. On-Key Data Types
+# ---------------------------------------------------------------------------
+
+
+class TestNearestAsofJoinDataTypes:
+    """One correctness probe per supported on-key data type."""
+
+    def test_int8_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.int8()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.int8()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_int16_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.int16()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.int16()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_int32_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.int32()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.int32()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_int64_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_uint8_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.uint8()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.uint8()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_uint16_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.uint16()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.uint16()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_uint32_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.uint32()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.uint32()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_uint64_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.uint64()))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.uint64()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_decimal128_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.decimal128(10, 0)))
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.decimal128(10, 0)))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_float16_key(self):
+        left = daft.from_pydict({"ts": [10.0, 20.0], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.float16()))
+        right = daft.from_pydict({"ts": [8.0, 22.0], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.float16()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_float32_key(self):
+        left = daft.from_pydict({"ts": [10.0, 20.0], "v": [1, 2]})
+        left = left.with_column("ts", col("ts").cast(daft.DataType.float32()))
+        right = daft.from_pydict({"ts": [8.0, 22.0], "w": [80, 220]})
+        right = right.with_column("ts", col("ts").cast(daft.DataType.float32()))
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_float64_key(self):
+        left = daft.from_pydict({"ts": [10.0, 20.0], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [8.0, 22.0], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+
+# ---------------------------------------------------------------------------
+# Temporal key types (distributed)
+# ---------------------------------------------------------------------------
+
+
+class TestNearestAsofJoinTemporalKeys:
+    """Nearest join over various temporal and numeric on-key types.
+
+    Each test uses the same shape:
+      left  ts=[A, B],  right ts=[C, D]   where A is closer to C and B is closer to D.
+    Expected w=[80, 220] for all type variants.
+
+    These tests run with DAFT_RUNNER=ray to exercise the distributed code path,
+    where Arrow IPC serialization preserves the true Arrow type rather than
+    Daft's internal int-backed representation.
+    """
+
+    def test_date32_key(self):
+        """Date32: distance in days; 2 days < 12 days selects the correct direction."""
+        left = daft.from_pydict({"ts": [date(2020, 1, 11), date(2020, 1, 21)], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [date(2020, 1, 9), date(2020, 1, 23)], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_int64_key(self):
+        left = daft.from_pydict({"ts": [10, 20], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [8, 22], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_date64_key(self):
+        # daft promotes pa.date64 to Timestamp[ms] internally.
+        import pyarrow as pa
+
+        left = daft.from_pydict({"ts": pa.array([date(2020, 1, 11), date(2020, 1, 21)], type=pa.date64()), "v": [1, 2]})
+        right = daft.from_pydict(
+            {"ts": pa.array([date(2020, 1, 9), date(2020, 1, 23)], type=pa.date64()), "w": [80, 220]}
+        )
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_timestamp_us_key(self):
+        """Timestamp[us]: distance in microseconds; 2 days < 12 days selects the correct direction."""
+        left = daft.from_pydict({"ts": [datetime(2020, 1, 11), datetime(2020, 1, 21)], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [datetime(2020, 1, 9), datetime(2020, 1, 23)], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_time64_us_key(self):
+        """Time64[us]: distance in microseconds; 2 hours < 12 hours selects the correct direction."""
+        left = daft.from_pydict({"ts": [time(10), time(20)], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [time(8), time(22)], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
+
+    def test_duration_us_key(self):
+        """Duration[us]: distance in microseconds; 2s < 12s selects the correct direction."""
+        left = daft.from_pydict({"ts": [timedelta(seconds=10), timedelta(seconds=20)], "v": [1, 2]})
+        right = daft.from_pydict({"ts": [timedelta(seconds=8), timedelta(seconds=22)], "w": [80, 220]})
+        result = left.join_asof(right, on="ts", strategy="nearest").sort("ts")
+        assert result.to_pydict()["w"] == [80, 220]
