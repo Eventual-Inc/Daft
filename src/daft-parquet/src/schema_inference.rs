@@ -341,6 +341,7 @@ fn coerce_strings_to_binary_datatype(dtype: &DataType) -> Option<DataType> {
 /// Convert an arrow-rs `Schema` to a Daft `Schema`.
 ///
 /// This uses the existing `TryFrom<&arrow_schema::Schema>` implementation on `daft_core::prelude::Schema`.
+#[allow(dead_code)]
 pub fn arrow_schema_to_daft_schema(
     arrow_schema: &Schema,
 ) -> DaftResult<daft_core::prelude::Schema> {

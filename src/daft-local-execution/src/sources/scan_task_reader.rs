@@ -5,7 +5,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_parquet::read::{ParquetReadOptions, ParquetSchemaInferenceOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
     ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
@@ -99,46 +99,70 @@ async fn read_parquet(
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
     {
-        daft_parquet::read::stream_parquet_count_pushdown(
+        return count_pushdown_stream(
             url,
             io_client,
-            Some(io_stats),
+            io_stats,
             cfg.field_id_mapping.clone(),
             aggregation,
         )
-        .await
-    } else {
-        let parquet_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-        let inference_options =
-            ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit));
+        .await;
+    }
 
-        let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
-        let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-            Some(row_groups.clone())
-        } else {
-            None
-        };
-        let metadata = scan_task
+    let row_groups = match source.get_chunk_spec() {
+        Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
+        _ => None,
+    };
+    // Note: scan-layer's `maintain_order` controls inter-scan-task ordering;
+    // the parquet reader always emits RGs in file order within a single file.
+    let _ = maintain_order;
+    let opts = ParquetReadOptions {
+        columns: file_column_names,
+        num_rows: scan_task.pushdowns.limit,
+        row_groups,
+        predicate: scan_task.pushdowns.filters.clone(),
+        schema_infer: ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit)),
+        field_id_mapping: cfg.field_id_mapping.clone(),
+        delete_rows: delete_map.as_ref().and_then(|m| m.get(url).cloned()),
+        batch_size: cfg.chunk_size.or(Some(chunk_size)),
+        metadata: scan_task
             .sources
             .first()
-            .and_then(|s| s.get_parquet_metadata().cloned());
-        daft_parquet::read::stream_parquet(
-            url,
-            file_column_names,
-            scan_task.pushdowns.limit,
-            row_groups,
-            scan_task.pushdowns.filters.clone(),
-            io_client,
-            Some(io_stats),
-            &inference_options,
-            cfg.field_id_mapping.clone(),
-            metadata,
-            maintain_order,
-            delete_rows,
-            parquet_chunk_size,
-        )
-        .await
-    }
+            .and_then(|s| s.get_parquet_metadata().cloned()),
+        ..Default::default()
+    };
+    // Box::pin: setup future is large (~20KB) due to many tuning args.
+    let (_schema, stream) = Box::pin(daft_parquet::read::stream_parquet(
+        url,
+        io_client,
+        Some(io_stats),
+        opts,
+    ))
+    .await?;
+    Ok(stream)
+}
+
+async fn count_pushdown_stream(
+    url: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+    field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
+    aggregation: &daft_dsl::ExprRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    use daft_core::prelude::*;
+    let metadata =
+        daft_parquet::read::read_parquet_metadata(url, io_client, Some(io_stats), field_id_mapping)
+            .await?;
+    let count = metadata.num_rows();
+    let count_field = Field::new(aggregation.name(), DataType::UInt64);
+    let count_array =
+        UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
+    let batch = RecordBatch::new_with_size(
+        Schema::new(vec![count_field]),
+        vec![count_array.into_series()],
+        1,
+    )?;
+    Ok(Box::pin(futures::stream::once(async move { Ok(batch) })))
 }
 
 async fn read_csv(

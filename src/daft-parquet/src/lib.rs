@@ -1,22 +1,20 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
-mod arrowrs_reader;
-mod async_reader;
+mod helpers;
 pub mod metadata;
 mod metadata_adapter;
+mod reader;
 pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
-mod read_planner;
 mod schema_inference;
 mod statistics;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 pub use statistics::row_group_metadata_to_table_stats;
 
-/// Infer a Daft `Schema` from arrow-rs-backed `DaftParquetMetadata`.
 pub fn infer_schema_from_daft_metadata(
     metadata: &DaftParquetMetadata,
     options: read::ParquetSchemaInferenceOptions,
