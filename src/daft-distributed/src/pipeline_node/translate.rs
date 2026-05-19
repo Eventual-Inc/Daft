@@ -34,10 +34,6 @@ use crate::{
     plan::PlanConfig,
 };
 
-/// Result of translating a logical plan into a distributed pipeline.
-/// Carries any user-facing hints raised during translation (e.g., suggestions
-/// to switch shuffle algorithm) so the caller can surface them via the
-/// Python `warnings` module or any other channel.
 pub(crate) struct TranslationOutput {
     pub root: DistributedPipelineNode,
     pub hints: Vec<String>,
@@ -64,12 +60,8 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
-    // Track whether we've already hinted to the user about flight shuffle.
-    // Emit at most once per query per reason, to avoid spamming.
     pub(crate) warned_large_shuffle_bytes: bool,
     pub(crate) warned_large_shuffle_partition_product: bool,
-    /// User-facing hints accumulated during translation. Drained by the caller
-    /// and surfaced as Python warnings or via subscribers.
     pub(crate) shuffle_hints: Vec<String>,
 }
 

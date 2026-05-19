@@ -32,24 +32,18 @@ use crate::{
     },
 };
 
-/// Emit a Python `UserWarning` via the `warnings` module. The `stacklevel=2`
-/// makes the warning point at the caller of the binding (e.g., the user's
-/// `.collect()` / `.explain()` call) rather than into Rust.
-fn emit_python_warning(py: Python, message: &str) -> PyResult<()> {
-    let warnings = PyModule::import(py, pyo3::intern!(py, "warnings"))?;
+// stacklevel=2 points the warning at the user's binding call site, not into Rust.
+fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
+    if hints.is_empty() {
+        return Ok(());
+    }
+    let warn =
+        PyModule::import(py, pyo3::intern!(py, "warnings"))?.getattr(pyo3::intern!(py, "warn"))?;
     let user_warning = py
         .import(pyo3::intern!(py, "builtins"))?
         .getattr(pyo3::intern!(py, "UserWarning"))?;
-    warnings
-        .getattr(pyo3::intern!(py, "warn"))?
-        .call1((message, user_warning, 2_usize))?;
-    Ok(())
-}
-
-/// Convenience: emit each translator-collected hint as a `UserWarning`.
-fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
     for hint in hints {
-        emit_python_warning(py, hint)?;
+        warn.call1((hint.as_str(), &user_warning, 2_usize))?;
     }
     Ok(())
 }
@@ -299,8 +293,6 @@ impl PyDistributedPhysicalPlanRunner {
             &meter,
         )?;
 
-        // Surface translation hints (e.g., suggestions to switch shuffle algorithm) as
-        // Python UserWarnings so they show up in notebooks/consoles and can be filtered.
         surface_hints(py, &translation.hints)?;
 
         let statistics_manager = StatisticsManager::from_pipeline_node(

@@ -16,15 +16,9 @@ use crate::pipeline_node::{
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
-/// Approx size at which we hint the user to switch to flight_shuffle for memory/IO efficiency.
-const LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD: usize = 10 * 1024 * 1024 * 1024; // 10 GiB
-
-/// Approx num of (input × output) partition slots at which we hint the user to switch to
-/// flight_shuffle. The map-reduce shuffle materializes one object per (input, output) slot on
-/// the head node (~3KB per slot). 500k slots ≈ 1.5GB head-node memory pressure.
+const LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD: usize = 10 * 1024 * 1024 * 1024;
 const LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD: usize = 500_000;
-
-/// Approx bytes of head-node memory used per (input × output) partition slot in map-reduce shuffle.
+// Map-reduce shuffle materializes one object per (input, output) slot on the head node.
 const PARTITION_SLOT_HEAD_MEMORY_BYTES: usize = 3 * 1024;
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -67,12 +61,11 @@ impl LogicalPlanToPipelineNodeTranslator {
     ) -> DaftResult<DistributedPipelineNode> {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
         let num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => config.num_partitions.unwrap_or(input_num_partitions),
-            RepartitionSpec::Random(config) => {
-                config.num_partitions.unwrap_or(input_num_partitions)
-            }
-            RepartitionSpec::Range(config) => config.num_partitions.unwrap_or(input_num_partitions),
-        };
+            RepartitionSpec::Hash(c) => c.num_partitions,
+            RepartitionSpec::Random(c) => c.num_partitions,
+            RepartitionSpec::Range(c) => c.num_partitions,
+        }
+        .unwrap_or(input_num_partitions);
 
         self.maybe_warn_large_shuffle(
             &backend,
@@ -165,20 +158,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         )
     }
 
-    /// Emit a one-time-per-query hint to the user when a shuffle looks large enough that flight
-    /// shuffle would likely be a better choice than the default map-reduce / pre-shuffle-merge
-    /// algorithms. Two independent checks:
-    ///
-    /// 1. **Shuffle byte size**: total data passing through the shuffle exceeds
-    ///    `LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD`. Map-reduce shuffles read/write this volume
-    ///    through Ray's object store; flight shuffle is more efficient for big payloads.
-    ///
-    /// 2. **Partition slot count**: `input_num_partitions × output_num_partitions` exceeds
-    ///    `LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD`. Map-reduce materializes one object per
-    ///    (input, output) slot on the head node (~3KB each), so high partition fan-out causes
-    ///    head-node memory pressure regardless of total bytes.
-    ///
-    /// Skipped if the user is already on flight_shuffle.
+    /// Hint the user to switch to flight_shuffle when total bytes or partition fan-out
+    /// would cause Ray object-store / head-node memory pressure. Fires at most once per
+    /// kind per query; skipped if already on flight_shuffle.
     pub(crate) fn maybe_warn_large_shuffle(
         &mut self,
         backend: &DistributedShuffleBackend,
@@ -190,19 +172,18 @@ impl LogicalPlanToPipelineNodeTranslator {
             return;
         }
 
+        let algo = &self.plan_config.config.shuffle_algorithm;
+
         if !self.warned_large_shuffle_bytes
             && input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD
         {
             self.warned_large_shuffle_bytes = true;
-            let msg = format!(
+            self.record_hint(format!(
                 "Large shuffle detected (~{} flowing through a `{}` shuffle). \
-                 Consider setting `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")` \
-                 for better performance on large shuffles.",
+                 Consider `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")`.",
                 bytes_to_human_readable(input_size_bytes),
-                self.plan_config.config.shuffle_algorithm,
-            );
-            tracing::warn!("{}", msg);
-            self.shuffle_hints.push(msg);
+                algo,
+            ));
         }
 
         let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
@@ -211,19 +192,19 @@ impl LogicalPlanToPipelineNodeTranslator {
         {
             self.warned_large_shuffle_partition_product = true;
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
-            let msg = format!(
-                "High shuffle fan-out detected ({} input × {} output = {} partitions, \
-                 ~{} of head-node memory). Map-reduce shuffles allocate one object per \
-                 (input, output) partition slot on the head node, which scales poorly. \
-                 Consider setting `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")` \
-                 to avoid head-node memory pressure.",
+            self.record_hint(format!(
+                "High shuffle fan-out ({} × {} = {} partition slots, ~{} of head-node memory). \
+                 Consider `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")`.",
                 input_num_partitions,
                 output_num_partitions,
                 partition_product,
                 bytes_to_human_readable(head_memory),
-            );
-            tracing::warn!("{}", msg);
-            self.shuffle_hints.push(msg);
+            ));
         }
+    }
+
+    fn record_hint(&mut self, msg: String) {
+        tracing::warn!("{}", msg);
+        self.shuffle_hints.push(msg);
     }
 }
