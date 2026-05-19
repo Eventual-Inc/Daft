@@ -19,6 +19,11 @@ use daft_schema::schema::SchemaRef;
 
 use crate::shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache, partition_ref_id};
 
+/// 1 MiB BufWriter capacity — amortizes syscall cost across multiple
+/// small IPC writes per stripe. `StreamWriter::write` issues several
+/// `write` calls per batch (continuation marker, metadata flatbuffer,
+/// padding, then each column buffer); at sub-256-KiB stripes these
+/// were going straight to the kernel as separate syscalls.
 const FILE_BUF_BYTES: usize = 1024 * 1024;
 
 struct CountingFile {
@@ -48,7 +53,7 @@ impl Write for CountingFile {
 
 type ShuffleWriter = arrow_ipc::writer::StreamWriter<CountingFile>;
 
-/// Write `partitions_per_output` to a single combined IPC file. Returns one
+/// Write `partitions` to a single combined IPC file. Returns one
 /// `PartitionCache` per output partition with the byte range to read.
 pub async fn write_partitions_one_shot(
     input_id: u32,
@@ -56,12 +61,16 @@ pub async fn write_partitions_one_shot(
     shuffle_dirs: &[String],
     schema: SchemaRef,
     compression: Option<arrow_ipc::CompressionType>,
-    partitions_per_output: Vec<MicroPartition>,
+    partitions: Vec<MicroPartition>,
 ) -> DaftResult<Vec<PartitionCache>> {
-    let num_partitions = partitions_per_output.len();
+    let num_partitions = partitions.len();
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
     let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
 
+    // IPC encode + disk write all run on a single spawn_blocking thread.
+    // Previously we fanned out per-partition `tokio::spawn` calls, but at
+    // N=8192 partitions per map task that was 1.6M task allocations whose
+    // scheduling overhead exceeded the actual work.
     get_io_runtime(true)
         .spawn_blocking(move || -> DaftResult<Vec<PartitionCache>> {
             std::fs::create_dir_all(&shuffle_dir)?;
@@ -80,7 +89,7 @@ pub async fn write_partitions_one_shot(
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 
             let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
-            for (idx, partition) in partitions_per_output.into_iter().enumerate() {
+            for (idx, partition) in partitions.into_iter().enumerate() {
                 caches.push(write_one_partition(
                     partition,
                     partition_ref_id(input_id, idx),
@@ -105,6 +114,11 @@ pub async fn write_partitions_one_shot(
 
 /// Write one output partition to `writer`, coalescing small Daft record batches
 /// up to `CHUNK_TARGET_BYTES` per IPC message. Large batches pass through unsplit.
+///
+/// Adapts naturally to partition shape:
+///   - low-N / big per-RB: each RB is already ≥ target → emit as-is, zero fuse work
+///   - high-N / tiny per-RB: everything stays under target → fuse once at end
+///   - middle: combine small siblings up to target
 fn write_one_partition(
     partition: MicroPartition,
     ref_id: u64,
@@ -157,6 +171,10 @@ fn write_one_partition(
     })
 }
 
+/// Fuse `batches` into one `arrow_array::RecordBatch` and write it. Uses the
+/// pre-computed `arrow_schema` to avoid the per-call `Schema::to_arrow` rebuild
+/// that `RecordBatch::try_into` would otherwise pay — that rebuild is
+/// N·schema_fields allocations per partition.
 fn write_coalesced(
     batches: &[RecordBatch],
     writer: &mut ShuffleWriter,
