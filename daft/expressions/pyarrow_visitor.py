@@ -32,7 +32,7 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
         """Convert an alias 'expression' by ... ignoring it .. as these aren't supposed to be expressions."""
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: DataType) -> pc.Expression:
+    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> pc.Expression:
         """Converts the cast with default safety and cast options because daft does not have these options."""
         pc_expr = self.visit(expr)
         pc_type = dtype.to_arrow_dtype()

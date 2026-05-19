@@ -1,6 +1,6 @@
 """Tests for Series.try_cast() - safe type conversion that returns null on failure."""
 
-import pytest
+from __future__ import annotations
 
 import daft
 from daft import DataType, Series

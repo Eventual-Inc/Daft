@@ -79,8 +79,8 @@ class TracingVisitor(PredicateVisitor[list[Trace]]):
         acc += [trace]
         return acc
 
-    def visit_cast(self, expr: Expression, dtype: DataType) -> list[Trace]:
-        trace = Trace("visit_cast", [expr, dtype])
+    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> list[Trace]:
+        trace = Trace("visit_cast", [expr, dtype, try_cast])
         acc = []
         acc += self.visit(expr)
         acc += [trace]
@@ -313,7 +313,7 @@ def test_visit_lit():
 )
 def test_visit_cast(data_type):
     exp = col("x").cast(data_type)
-    assert trace(exp) == [Trace("visit_col", ["x"]), Trace("visit_cast", [col("x"), data_type])]
+    assert trace(exp) == [Trace("visit_col", ["x"]), Trace("visit_cast", [col("x"), data_type, False])]
 
 
 def test_visit_list():

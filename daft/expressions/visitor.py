@@ -28,7 +28,7 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...         print(f"Alias: {alias}")
         ...         self.visit(expr)
         ...
-        ...     def visit_cast(self, expr: Expression, dtype: DataType) -> None:
+        ...     def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> None:
         ...         print(f"Cast: {dtype}")
         ...         self.visit(expr)
         ...
@@ -74,7 +74,7 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...
 
     @abstractmethod
-    def visit_cast(self, expr: Expression, dtype: DataType) -> R:
+    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> R:
         """Visit a cast expression."""
         ...
 
@@ -170,7 +170,7 @@ class _ColumnVisitor(ExpressionVisitor[set[str]]):
     def visit_alias(self, expr: Expression, alias: str) -> set[str]:
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: DataType) -> set[str]:
+    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> set[str]:
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> set[str]:
