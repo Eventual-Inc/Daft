@@ -50,7 +50,7 @@ pub(crate) fn logical_plan_to_pipeline_node(
     let _ = plan.visit(&mut translator)?;
     Ok(TranslationOutput {
         root: translator.curr_node.pop().unwrap(),
-        hints: translator.shuffle_hints,
+        hints: translator.hints,
     })
 }
 
@@ -60,7 +60,7 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
-    pub(crate) shuffle_hints: Vec<String>,
+    pub(crate) hints: Vec<String>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -75,13 +75,20 @@ impl LogicalPlanToPipelineNodeTranslator {
             pipeline_node_id_counter: 0,
             psets,
             curr_node: Vec::new(),
-            shuffle_hints: Vec::new(),
+            hints: Vec::new(),
         }
     }
 
     pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
+    }
+
+    /// Record a user-facing hint surfaced as both a `tracing::warn!` log line and a Python
+    /// `UserWarning` once translation completes.
+    pub(crate) fn record_hint(&mut self, msg: String) {
+        tracing::warn!("{}", msg);
+        self.hints.push(msg);
     }
 
     pub(crate) fn needs_hash_repartition(

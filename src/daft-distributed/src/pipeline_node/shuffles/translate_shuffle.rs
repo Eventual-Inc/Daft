@@ -195,12 +195,10 @@ impl LogicalPlanToPipelineNodeTranslator {
     }
 
     fn record_flight_shuffle_hint(&mut self, trigger: String) {
-        let msg = format!(
+        self.record_hint(format!(
             "{trigger}. `flight_shuffle` writes shuffle data to disk and scales better. Enable: \
              daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
              flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"]."
-        );
-        tracing::warn!("{}", msg);
-        self.shuffle_hints.push(msg);
+        ));
     }
 }
