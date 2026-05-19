@@ -599,12 +599,9 @@ def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
 
     shuffle_warnings = [str(w.message) for w in caught if "flight_shuffle" in str(w.message)]
     assert shuffle_warnings == [
-        "High shuffle fan-out (800 × 800 = 640000 partition slots, ~1.83 GiB of head-node memory). "
-        "Map-reduce shuffles allocate one Ray object per (input × output) slot on the head node, "
-        "so memory grows quadratically with partition count. `flight_shuffle` transfers data "
-        "peer-to-peer between workers with no per-slot head-node allocations, eliminating this "
-        "bottleneck. Enable with: "
+        "High shuffle fan-out (800 × 800 = 640000 slots, ~1.83 GiB of head-node memory). "
+        "Map-reduce allocates one Ray object per slot on the head node; `flight_shuffle` "
+        "transfers peer-to-peer with no head-node fan-out. Enable: "
         'daft.context.set_execution_config(shuffle_algorithm="flight_shuffle", '
-        'flight_shuffle_dirs=["/path/to/fast/local/disk"]). `flight_shuffle_dirs` defaults to '
-        '["/tmp"]; point it at one or more fast local SSDs/NVMes (one per disk) for best throughput.'
+        'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
     ], shuffle_warnings

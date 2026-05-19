@@ -179,15 +179,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         {
             self.warned_large_shuffle_bytes = true;
             self.record_hint(format!(
-                "Large shuffle (~{} via `{}` shuffle). The default algorithms stream all shuffle \
-                 data through Ray's object store, which becomes a memory and throughput bottleneck \
-                 at this scale. `flight_shuffle` spills shuffle data to local disk and transfers it \
-                 peer-to-peer between workers via Arrow Flight, bypassing the object store. \
-                 Enable with: daft.context.set_execution_config(\
-                 shuffle_algorithm=\"flight_shuffle\", \
-                 flight_shuffle_dirs=[\"/path/to/fast/local/disk\"]). \
-                 `flight_shuffle_dirs` defaults to [\"/tmp\"]; point it at one or more fast local \
-                 SSDs/NVMes (one per disk) for best throughput.",
+                "Large shuffle (~{} via `{}`). `flight_shuffle` spills to local disk and transfers \
+                 peer-to-peer via Arrow Flight, avoiding Ray's object store bottleneck. Enable: \
+                 daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
+                 flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"].",
                 bytes_to_human_readable(input_size_bytes),
                 algo,
             ));
@@ -200,16 +195,11 @@ impl LogicalPlanToPipelineNodeTranslator {
             self.warned_large_shuffle_partition_product = true;
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
             self.record_hint(format!(
-                "High shuffle fan-out ({} × {} = {} partition slots, ~{} of head-node memory). \
-                 Map-reduce shuffles allocate one Ray object per (input × output) slot on the head \
-                 node, so memory grows quadratically with partition count. `flight_shuffle` \
-                 transfers data peer-to-peer between workers with no per-slot head-node \
-                 allocations, eliminating this bottleneck. \
-                 Enable with: daft.context.set_execution_config(\
-                 shuffle_algorithm=\"flight_shuffle\", \
-                 flight_shuffle_dirs=[\"/path/to/fast/local/disk\"]). \
-                 `flight_shuffle_dirs` defaults to [\"/tmp\"]; point it at one or more fast local \
-                 SSDs/NVMes (one per disk) for best throughput.",
+                "High shuffle fan-out ({} × {} = {} slots, ~{} of head-node memory). Map-reduce \
+                 allocates one Ray object per slot on the head node; `flight_shuffle` transfers \
+                 peer-to-peer with no head-node fan-out. Enable: \
+                 daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
+                 flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"].",
                 input_num_partitions,
                 output_num_partitions,
                 partition_product,
