@@ -180,6 +180,10 @@ class Series:
     def cast(self, dtype: DataType) -> Series:
         return Series._from_pyseries(self._series.cast(dtype._dtype))
 
+    def try_cast(self, dtype: DataType) -> Series:
+        """Attempts to cast the Series to the given datatype, returning null for failed conversions."""
+        return Series._from_pyseries(self._series.try_cast(dtype._dtype))
+
     def _pycast_to_pynative(self, typefn: type, dtype: PyDataType) -> Series:
         """Apply Python-level casting to this Series.
 
