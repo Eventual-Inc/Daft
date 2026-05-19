@@ -594,5 +594,11 @@ def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
     # 1-partition base, eliminating the 800×800 fan-out we're trying to trigger.
     with daft.execution_config_ctx(shuffle_algorithm="auto"):
         df = daft.range(800, partitions=800).repartition(800, "id")
-        with pytest.warns(UserWarning, match=r"flight_shuffle"):
+        with pytest.warns(UserWarning) as caught:
             df.explain(show_all=True, file=io.StringIO())
+
+    shuffle_warnings = [str(w.message) for w in caught if "flight_shuffle" in str(w.message)]
+    assert shuffle_warnings == [
+        "High shuffle fan-out (800 × 800 = 640000 partition slots, ~1.83 GiB of head-node memory). "
+        'Consider `daft.context.set_execution_config(shuffle_algorithm="flight_shuffle")`.'
+    ], shuffle_warnings
