@@ -1,13 +1,17 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow::{
-    array::{Array, BooleanArray},
+    array::{Array, ArrayRef, BooleanArray, RecordBatch as ArrowRecordBatch},
     datatypes::{Field as ArrowField, Schema as ArrowSchema},
 };
 use common_error::DaftResult;
 use daft_core::prelude::*;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_recordbatch::RecordBatch;
 use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
+use snafu::ResultExt;
+
+use crate::ArrowSnafu;
 
 /// Build an `Arc<ArrowSchema>` containing the fields at the given positions
 /// of `arrow_schema`, in order. Shared by every place that constructs a
@@ -21,6 +25,47 @@ pub(super) fn schema_from_indices(
         .map(|&i| Arc::new(arrow_schema.field(i).clone()))
         .collect();
     Arc::new(ArrowSchema::new(fields))
+}
+
+pub(super) fn record_batch_from_arrow(
+    arrow_schema: Arc<ArrowSchema>,
+    arrays: Vec<ArrayRef>,
+    path: &str,
+) -> DaftResult<RecordBatch> {
+    ArrowRecordBatch::try_new(arrow_schema, arrays)
+        .with_context(|_| ArrowSnafu {
+            path: path.to_string(),
+        })
+        .map_err(common_error::DaftError::from)
+        .and_then(|b| RecordBatch::try_from(&b))
+}
+
+pub(super) fn eval_predicate_mask(
+    batch: &RecordBatch,
+    bound_pred: &BoundExpr,
+) -> DaftResult<BooleanArray> {
+    batch.eval_expression(bound_pred).and_then(|m| {
+        let b = m.bool()?;
+        Ok(b.as_arrow()?.clone())
+    })
+}
+
+pub(super) fn filter_arrays_by_mask(
+    arrays: &[ArrayRef],
+    mask: &BooleanArray,
+    path: &str,
+) -> DaftResult<Vec<ArrayRef>> {
+    let mut filtered = Vec::with_capacity(arrays.len());
+    for arr in arrays {
+        filtered.push(
+            arrow::compute::filter(arr, mask)
+                .with_context(|_| ArrowSnafu {
+                    path: path.to_string(),
+                })
+                .map_err(common_error::DaftError::from)?,
+        );
+    }
+    Ok(filtered)
 }
 
 pub(super) fn cap_selection_to(

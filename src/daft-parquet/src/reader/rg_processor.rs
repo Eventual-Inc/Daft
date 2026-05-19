@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{Array, ArrayRef, BooleanArray, RecordBatch as ArrowRecordBatch},
+    array::{Array, ArrayRef},
     datatypes::Schema as ArrowSchema,
 };
 use common_error::DaftResult;
@@ -11,16 +11,18 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use parquet::{arrow::arrow_reader::RowSelection, file::metadata::ParquetMetaData};
-use snafu::ResultExt;
 use tokio::sync::mpsc;
 
 use super::{
     RgTaskCtx,
     chunk_source::OffsetBytes,
     field_reader::{decode_one_streaming, leaves_for_top_fields},
-    util::{project_to_schema, schema_from_indices},
+    util::{
+        eval_predicate_mask, filter_arrays_by_mask, project_to_schema, record_batch_from_arrow,
+        schema_from_indices,
+    },
 };
-use crate::{ArrowSnafu, helpers::substitute_missing_cols};
+use crate::helpers::substitute_missing_cols;
 
 type ColRx = mpsc::Receiver<DaftResult<ArrayRef>>;
 
@@ -99,7 +101,7 @@ struct StreamingState {
     filtered_pred: Vec<ArrayRef>,
 }
 
-pub(super) async fn process_rg_streaming(
+pub(super) async fn process_rg_with_data_cols(
     ctx: Arc<RgTaskCtx>,
     rg_idx: usize,
     selection: Option<RowSelection>,
@@ -160,13 +162,11 @@ pub(super) async fn process_rg_streaming(
             }
         }
 
-        let batch_res = ArrowRecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), arrays)
-            .with_context(|_| ArrowSnafu {
-                path: ctx.path.to_string(),
-            })
-            .map_err(common_error::DaftError::from)
-            .and_then(|b| RecordBatch::try_from(&b));
-        let mut daft_batch = match batch_res {
+        let mut daft_batch = match record_batch_from_arrow(
+            Arc::new(ArrowSchema::new(fields)),
+            arrays,
+            ctx.path.as_ref(),
+        ) {
             Ok(b) => b,
             Err(e) => return Some((Err(e), state)),
         };
@@ -260,23 +260,16 @@ pub(super) async fn process_rg_predicate_only(
                 None => return None,
             };
 
-            let batch_res =
-                ArrowRecordBatch::try_new(state.chunk_arrow_schema.clone(), chunks.clone())
-                    .with_context(|_| ArrowSnafu {
-                        path: state.ctx.path.to_string(),
-                    })
-                    .map_err(common_error::DaftError::from)
-                    .and_then(|b| RecordBatch::try_from(&b));
-            let daft_batch = match batch_res {
+            let daft_batch = match record_batch_from_arrow(
+                state.chunk_arrow_schema.clone(),
+                chunks.clone(),
+                state.ctx.path.as_ref(),
+            ) {
                 Ok(b) => b,
                 Err(e) => return Some((Err(e), state)),
             };
 
-            let bool_res = daft_batch.eval_expression(&state.bound_pred).and_then(|m| {
-                let b = m.bool()?;
-                Ok(b.as_arrow()?.clone())
-            });
-            let arrow_bool: BooleanArray = match bool_res {
+            let arrow_bool = match eval_predicate_mask(&daft_batch, &state.bound_pred) {
                 Ok(b) => b,
                 Err(e) => return Some((Err(e), state)),
             };
@@ -285,26 +278,21 @@ pub(super) async fn process_rg_predicate_only(
                 continue;
             }
 
-            let mut filtered = Vec::with_capacity(chunks.len());
-            for arr in &chunks {
-                match arrow::compute::filter(arr, &arrow_bool).with_context(|_| ArrowSnafu {
-                    path: state.ctx.path.to_string(),
-                }) {
-                    Ok(f) => filtered.push(f),
-                    Err(e) => return Some((Err(e.into()), state)),
-                }
-            }
+            let filtered =
+                match filter_arrays_by_mask(&chunks, &arrow_bool, state.ctx.path.as_ref()) {
+                    Ok(f) => f,
+                    Err(e) => return Some((Err(e), state)),
+                };
 
             // Build a RecordBatch over the predicate columns; project_to_schema
             // picks the subset for `return_daft_schema` (which is read_col_indices,
             // a subset of pred_col_indices in this path).
-            let out_res = ArrowRecordBatch::try_new(state.chunk_arrow_schema.clone(), filtered)
-                .with_context(|_| ArrowSnafu {
-                    path: state.ctx.path.to_string(),
-                })
-                .map_err(common_error::DaftError::from)
-                .and_then(|b| RecordBatch::try_from(&b))
-                .and_then(|b| project_to_schema(b, &state.ctx.plan.return_daft_schema));
+            let out_res = record_batch_from_arrow(
+                state.chunk_arrow_schema.clone(),
+                filtered,
+                state.ctx.path.as_ref(),
+            )
+            .and_then(|b| project_to_schema(b, &state.ctx.plan.return_daft_schema));
             return Some(match out_res {
                 Ok(p) => (Ok(p), state),
                 Err(e) => (Err(e), state),

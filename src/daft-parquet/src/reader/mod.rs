@@ -8,10 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::{
-    array::{ArrayRef, RecordBatch as ArrowRecordBatch},
-    datatypes::Schema as ArrowSchema,
-};
+use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{ChunkSource, LocalChunkSource, fetch_remote_chunk_source, open_local_file};
 use common_error::DaftResult;
 use common_runtime::{JoinSet, get_compute_runtime};
@@ -25,10 +22,13 @@ use parquet::{
     file::metadata::ParquetMetaData,
 };
 use rg_processor::{
-    process_rg_predicate_only, process_rg_streaming, recv_one_chunk, spawn_col_decoders,
+    process_rg_predicate_only, process_rg_with_data_cols, recv_one_chunk, spawn_col_decoders,
 };
 use snafu::ResultExt;
-use util::{cap_selection_to, project_schema, schema_from_indices, truncate_mask_to_n_trues};
+use util::{
+    cap_selection_to, eval_predicate_mask, filter_arrays_by_mask, project_schema,
+    record_batch_from_arrow, schema_from_indices, truncate_mask_to_n_trues,
+};
 
 use crate::{
     ArrowSnafu,
@@ -496,16 +496,9 @@ async fn build_rg_inputs(
                 None => break,
             };
             let chunk_rows = chunks[0].len();
-            let pred_batch = ArrowRecordBatch::try_new(pred_arrow_schema.clone(), chunks.clone())
-                .with_context(|_| ArrowSnafu {
-                path: path.to_string(),
-            })?;
-            let daft_pred = RecordBatch::try_from(&pred_batch)?;
-            let mask = daft_pred
-                .eval_expression(&bound_pred)?
-                .bool()?
-                .as_arrow()?
-                .clone();
+            let daft_pred =
+                record_batch_from_arrow(pred_arrow_schema.clone(), chunks.clone(), path.as_ref())?;
+            let mask = eval_predicate_mask(&daft_pred, &bound_pred)?;
 
             let true_count = mask.true_count();
             let (capped_mask, contributed) = if true_count > remaining {
@@ -514,9 +507,8 @@ async fn build_rg_inputs(
                 (mask, true_count)
             };
 
-            for (col_pos, arr) in chunks.into_iter().enumerate() {
-                let filtered = arrow::compute::filter(&arr, &capped_mask)
-                    .expect("pred mask length must equal pred array length within an RG");
+            let filtered = filter_arrays_by_mask(&chunks, &capped_mask, path.as_ref())?;
+            for (col_pos, filtered) in filtered.into_iter().enumerate() {
                 chunk_filtered_per_col[col_pos].push(filtered);
             }
             chunk_masks.push(capped_mask);
@@ -618,7 +610,8 @@ fn build_rg_stream(
                 let mut sub_stream = if ctx.plan.data_col_indices.is_empty() {
                     process_rg_predicate_only(ctx.clone(), rg_idx, inputs.selection).await
                 } else {
-                    process_rg_streaming(ctx, rg_idx, inputs.selection, inputs.pred_arrays).await
+                    process_rg_with_data_cols(ctx, rg_idx, inputs.selection, inputs.pred_arrays)
+                        .await
                 };
                 while let Some(item) = sub_stream.next().await {
                     if sender.send(item).await.is_err() {
