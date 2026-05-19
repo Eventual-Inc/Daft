@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, atomic::Ordering};
+use std::{
+    sync::{Arc, Mutex, atomic::Ordering},
+    time::Instant,
+};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
@@ -57,6 +60,8 @@ struct OperatorLifecycle {
     /// Together with `phase == Started` and `pending_tasks == 0`, this
     /// triggers the `Ended` transition.
     produce_complete: bool,
+    started_at: Option<Instant>,
+    wall_time_us: Option<u64>,
 }
 
 pub struct RuntimeNodeManager {
@@ -116,6 +121,7 @@ impl RuntimeNodeManager {
         s.pending_tasks += 1;
         if s.phase == LifecyclePhase::Pending {
             s.phase = LifecyclePhase::Started;
+            s.started_at = Some(Instant::now());
             true
         } else {
             false
@@ -146,7 +152,7 @@ impl RuntimeNodeManager {
     /// fired) or `Ended` (terminal).
     fn maybe_end(s: &mut OperatorLifecycle) -> bool {
         if s.phase == LifecyclePhase::Started && s.produce_complete && s.pending_tasks == 0 {
-            s.phase = LifecyclePhase::Ended;
+            Self::mark_ended(s);
             true
         } else {
             false
@@ -162,10 +168,19 @@ impl RuntimeNodeManager {
     pub fn force_end(&self) -> bool {
         let mut s = self.lifecycle.lock().unwrap();
         if s.phase == LifecyclePhase::Started {
-            s.phase = LifecyclePhase::Ended;
+            Self::mark_ended(&mut s);
             true
         } else {
             false
+        }
+    }
+
+    fn mark_ended(s: &mut OperatorLifecycle) {
+        s.phase = LifecyclePhase::Ended;
+        if s.wall_time_us.is_none()
+            && let Some(started_at) = s.started_at
+        {
+            s.wall_time_us = Some(started_at.elapsed().as_micros().min(u64::MAX as u128) as u64);
         }
     }
 
@@ -248,6 +263,10 @@ impl RuntimeNodeManager {
             }
             TaskEvent::Submitted { .. } => (), // We don't track submitted tasks
         }
+    }
+
+    pub fn wall_time_us(&self) -> Option<u64> {
+        self.lifecycle.lock().unwrap().wall_time_us
     }
 }
 
@@ -605,5 +624,34 @@ mod tests {
                 case.name
             );
         }
+    }
+
+    #[test]
+    fn wall_time_is_recorded_only_when_lifecycle_ends() {
+        let mgr = runtime_node_manager(42);
+
+        assert_eq!(mgr.wall_time_us(), None);
+
+        assert!(mgr.on_task_submitted());
+        assert_eq!(mgr.wall_time_us(), None);
+
+        assert!(!mgr.on_task_finished());
+        assert_eq!(mgr.wall_time_us(), None);
+
+        assert!(mgr.on_produce_complete());
+        assert!(mgr.wall_time_us().is_some());
+    }
+
+    #[test]
+    fn force_end_records_wall_time_for_started_operator() {
+        let mgr = runtime_node_manager(42);
+
+        assert!(!mgr.force_end());
+
+        assert!(mgr.on_task_submitted());
+        assert!(mgr.force_end());
+        assert!(mgr.wall_time_us().is_some());
+
+        assert!(!mgr.force_end());
     }
 }
