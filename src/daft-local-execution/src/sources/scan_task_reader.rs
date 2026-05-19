@@ -91,6 +91,10 @@ async fn read_parquet(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+    // Unused: the arrow-rs reader is always file-ordered within a single file
+    // (see `build_rg_stream` in daft-parquet's reader). `maintain_order=false`
+    // at the scan layer reorders only BETWEEN scan tasks, which is handled by
+    // the caller, not here.
     _maintain_order: bool,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {

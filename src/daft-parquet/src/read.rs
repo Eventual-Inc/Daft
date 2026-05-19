@@ -89,6 +89,9 @@ pub struct ParquetReadOptions {
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     pub delete_rows: Option<Vec<i64>>,
     pub batch_size: Option<usize>,
+    // TODO(arrow-rs): wire this through to the arrowrs reader to skip redundant footer reads.
+    // The arrowrs reader currently reads its own metadata via ArrowReaderMetadata::load(),
+    // but callers (e.g. scan_task.rs) already have pre-fetched DaftParquetMetadata from planning.
     pub metadata: Option<Arc<DaftParquetMetadata>>,
 }
 
@@ -97,6 +100,7 @@ pub struct ParquetReadOptions {
 pub struct PerFileOptions {
     pub row_groups: Option<Vec<i64>>,
     pub delete_rows: Option<Vec<i64>>,
+    /// See [`ParquetReadOptions::metadata`].
     pub metadata: Option<Arc<DaftParquetMetadata>>,
 }
 
@@ -209,6 +213,9 @@ async fn read_parquet_into_arrow(
         "read_parquet_into_arrow: predicate/delete_rows/batch_size not supported on the pyarrow path"
     );
 
+    // Read data and metadata concurrently. The metadata read is needed to recover
+    // schema-level key-value metadata (e.g. custom metadata like {"str": "foo"}) and
+    // per-field nullability — info that Daft's `RecordBatch` doesn't carry.
     let data_fut = read_parquet_into_recordbatch(uri, io_client.clone(), io_stats.clone(), opts);
     let metadata_fut =
         crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
@@ -226,6 +233,10 @@ async fn read_parquet_into_arrow(
         .map(|s| s.metadata().clone())
         .unwrap_or_default();
 
+    // Convert each Daft Series → FFI-compatible arrays for the pyarrow bridge.
+    // Output layout is COLUMN-MAJOR: all_arrays[col_idx] = [chunks_for_that_column].
+    // The Python side (recordbatch.py) zips schema fields with this outer list,
+    // so each entry must be the list of chunks for one column.
     let mut ffi_fields = Vec::with_capacity(rb.schema.fields().len());
     let mut all_arrays: Vec<ArrowChunk> = Vec::with_capacity(rb.schema.fields().len());
     for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
@@ -519,7 +530,7 @@ mod tests {
 
     fn get_local_parquet_path() -> String {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("../../");
+        d.push("../../"); // CARGO_MANIFEST_DIR is at src/daft-parquet
         d.push(PARQUET_FILE_LOCAL);
         d.to_str().unwrap().to_string()
     }
@@ -636,6 +647,8 @@ mod tests {
         }
     }
 
+    /// Regression test: streaming with a limit equal to the batch size should
+    /// return all requested rows, not an empty stream.
     #[test]
     fn test_stream_limit_exact_batch_size() {
         use arrow::{
@@ -648,6 +661,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("test.parquet");
 
+        // Write a parquet file with exactly 5 rows.
         let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "id",
             ArrowDataType::Int32,
@@ -667,6 +681,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
         let runtime = get_io_runtime(true);
 
+        // Stream with num_rows=5 (exactly the file size).
         let total_rows: usize = runtime
             .block_within_async_context(async move {
                 let opts = ParquetReadOptions {
@@ -682,7 +697,10 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(total_rows, 5);
+        assert_eq!(
+            total_rows, 5,
+            "stream with limit=5 on 5-row file should return 5 rows"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
