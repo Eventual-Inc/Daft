@@ -173,16 +173,16 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         let algo = &self.plan_config.config.shuffle_algorithm;
 
+        // Both triggers point to the same fix (switch to flight_shuffle), so emit at most one
+        // hint per shuffle op even if both thresholds are crossed.
+        let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
         if input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD {
             self.record_flight_shuffle_hint(format!(
                 "Large shuffle (~{} via `{}` shuffle algorithm)",
                 bytes_to_human_readable(input_size_bytes),
                 algo,
             ));
-        }
-
-        let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
-        if partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD {
+        } else if partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD {
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
             self.record_flight_shuffle_hint(format!(
                 "Shuffle with many partitions ({} × {} = {} pieces, ~{} of head-node memory)",

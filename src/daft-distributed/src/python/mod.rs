@@ -32,7 +32,9 @@ use crate::{
     },
 };
 
-// stacklevel=2 points the warning at the user's binding call site, not into Rust.
+// stacklevel=1: attribute to the immediate Python caller of the binding. Higher values would
+// point further up the daft-internal stack, but the depth varies per entry point (run_plan vs
+// repr_ascii vs ...), which would make Python's location-based warning dedup inconsistent.
 fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
     if hints.is_empty() {
         return Ok(());
@@ -43,7 +45,7 @@ fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
         .import(pyo3::intern!(py, "builtins"))?
         .getattr(pyo3::intern!(py, "UserWarning"))?;
     for hint in hints {
-        warn.call1((hint.as_str(), &user_warning, 2_usize))?;
+        warn.call1((hint.as_str(), &user_warning, 1_usize))?;
     }
     Ok(())
 }
