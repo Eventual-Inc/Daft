@@ -78,29 +78,25 @@ pub(super) fn project_to_schema(
     batch: RecordBatch,
     return_schema: &Schema,
 ) -> DaftResult<RecordBatch> {
-    if batch.schema.len() == return_schema.len()
-        && batch
-            .schema
-            .field_names()
-            .zip(return_schema.field_names())
-            .all(|(a, b)| a == b)
-    {
+    if batch.schema.field_names().eq(return_schema.field_names()) {
         return Ok(batch);
     }
-    let mut indices: Vec<usize> = Vec::with_capacity(return_schema.len());
-    for name in return_schema.field_names() {
-        let (idx, _) = batch
-            .schema
-            .get_fields_with_name(name)
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                common_error::DaftError::ValueError(format!(
-                    "project_to_schema: column '{}' not found",
-                    name
-                ))
-            })?;
-        indices.push(idx);
-    }
+    let indices = return_schema
+        .field_names()
+        .map(|name| {
+            batch
+                .schema
+                .get_fields_with_name(name)
+                .into_iter()
+                .next()
+                .map(|(idx, _)| idx)
+                .ok_or_else(|| {
+                    common_error::DaftError::ValueError(format!(
+                        "project_to_schema: column '{}' not found",
+                        name
+                    ))
+                })
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
     Ok(batch.get_columns(&indices))
 }

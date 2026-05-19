@@ -129,7 +129,7 @@ async fn read_parquet(
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.
-    Box::pin(daft_parquet::read::stream_parquet(
+    Box::pin(daft_parquet::read::read_parquet(
         url,
         io_client,
         Some(io_stats),

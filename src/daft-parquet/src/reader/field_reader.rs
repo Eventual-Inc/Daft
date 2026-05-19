@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use arrow::{array::ArrayRef, datatypes::Field as ArrowField};
 use common_error::DaftResult;
@@ -43,13 +43,15 @@ pub(super) fn leaves_for_top_fields(
         .schema_descr()
         .root_schema()
         .get_fields();
+    // Prefix sums of leaf counts: starts[i]..starts[i+1] is the leaf range for top field i.
+    let mut starts = Vec::with_capacity(root_fields.len() + 1);
+    starts.push(0usize);
+    for f in root_fields {
+        starts.push(starts.last().unwrap() + count_primitive_leaves(f));
+    }
     let mut out = Vec::new();
     for &i in top_field_indices {
-        let start = leaf_index_for_top_field(metadata, i);
-        let count = count_primitive_leaves(&root_fields[i]);
-        for l in start..start + count {
-            out.push(l);
-        }
+        out.extend(starts[i]..starts[i + 1]);
     }
     out.sort_unstable();
     out.dedup();
@@ -180,7 +182,7 @@ fn parquet_repetition(t: &ParquetType) -> Repetition {
 /// `parent_def_level` / `parent_rep_level` are the PARENT-context level
 /// counters (before this type's repetition is applied).
 struct FieldReaderBuilder<'a> {
-    chunks: &'a std::collections::HashMap<usize, OffsetBytes>,
+    chunks: &'a HashMap<usize, OffsetBytes>,
     metadata: &'a ParquetMetaData,
     rg_idx: usize,
 }
@@ -673,7 +675,7 @@ fn count_primitive_leaves(t: &ParquetType) -> usize {
 }
 
 fn build_top_field_reader(
-    chunks: &std::collections::HashMap<usize, OffsetBytes>,
+    chunks: &HashMap<usize, OffsetBytes>,
     metadata: &ParquetMetaData,
     rg_idx: usize,
     top_field_idx: usize,
@@ -697,7 +699,7 @@ fn build_top_field_reader(
 }
 
 pub(super) fn decode_one(
-    chunks: &std::collections::HashMap<usize, OffsetBytes>,
+    chunks: &HashMap<usize, OffsetBytes>,
     metadata: &ParquetMetaData,
     rg_idx: usize,
     top_field_idx: usize,
@@ -733,7 +735,7 @@ pub(super) fn decode_one(
 /// the receiver is dropped.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn decode_one_streaming(
-    chunks: Arc<std::collections::HashMap<usize, OffsetBytes>>,
+    chunks: Arc<HashMap<usize, OffsetBytes>>,
     metadata: Arc<ParquetMetaData>,
     rg_idx: usize,
     top_field_idx: usize,
@@ -751,11 +753,10 @@ pub(super) async fn decode_one_streaming(
             &arrow_field,
         )?;
 
-        let selectors: Vec<parquet::arrow::arrow_reader::RowSelector> = match &selection {
+        use parquet::arrow::arrow_reader::RowSelector;
+        let selectors: Vec<RowSelector> = match &selection {
             Some(s) => s.iter().copied().collect(),
-            None => vec![parquet::arrow::arrow_reader::RowSelector::select(
-                total_rows,
-            )],
+            None => vec![RowSelector::select(total_rows)],
         };
 
         let mut acc = 0usize;

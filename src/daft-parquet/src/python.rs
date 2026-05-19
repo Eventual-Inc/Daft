@@ -12,7 +12,25 @@ pub mod pylib {
 
     use crate::read::{
         ArrowChunk, ParquetBulkReadOptions, ParquetReadOptions, ParquetSchemaInferenceOptions,
+        PerFileOptions,
     };
+
+    /// Expand a bulk `row_groups` argument into one `PerFileOptions` per uri.
+    fn per_file_from_row_groups(
+        row_groups: Option<&[Option<Vec<i64>>]>,
+        uris_len: usize,
+    ) -> Vec<PerFileOptions> {
+        let Some(rgs) = row_groups else {
+            return Vec::new();
+        };
+        assert_eq!(rgs.len(), uris_len, "row_groups length mismatch");
+        rgs.iter()
+            .map(|r| PerFileOptions {
+                row_groups: r.clone(),
+                ..Default::default()
+            })
+            .collect()
+    }
 
     #[allow(clippy::too_many_arguments)]
     #[pyfunction(signature = (
@@ -57,12 +75,9 @@ pub mod pylib {
                 ..Default::default()
             };
             let runtime = common_runtime::get_io_runtime(multithreaded_io);
-            let table = runtime.block_on_current_thread(crate::read::read_parquet(
-                uri,
-                io_client,
-                Some(io_stats),
-                opts,
-            ))?;
+            let table = runtime.block_on_current_thread(
+                crate::read::read_parquet_into_recordbatch(uri, io_client, Some(io_stats), opts),
+            )?;
             Ok(table.into())
         })
     }
@@ -190,18 +205,7 @@ pub mod pylib {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let per_file = row_groups
-                .as_deref()
-                .map(|rgs| {
-                    assert_eq!(rgs.len(), uris.len(), "row_groups length mismatch");
-                    rgs.iter()
-                        .map(|r| crate::read::PerFileOptions {
-                            row_groups: r.clone(),
-                            ..Default::default()
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let per_file = per_file_from_row_groups(row_groups.as_deref(), uris.len());
             let opts = ParquetBulkReadOptions {
                 columns,
                 start_offset,
@@ -256,18 +260,7 @@ pub mod pylib {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let per_file = row_groups
-                .as_deref()
-                .map(|rgs| {
-                    assert_eq!(rgs.len(), uris.len(), "row_groups length mismatch");
-                    rgs.iter()
-                        .map(|r| crate::read::PerFileOptions {
-                            row_groups: r.clone(),
-                            ..Default::default()
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let per_file = per_file_from_row_groups(row_groups.as_deref(), uris.len());
             let opts = ParquetBulkReadOptions {
                 columns,
                 start_offset,

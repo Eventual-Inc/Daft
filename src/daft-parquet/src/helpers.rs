@@ -64,43 +64,6 @@ pub fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelect
     }
 }
 
-fn normalize_delete_rows(delete_rows: &[i64]) -> Cow<'_, [i64]> {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
-        let mut sorted = delete_rows.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        Cow::Owned(sorted)
-    } else {
-        Cow::Borrowed(delete_rows)
-    }
-}
-
-fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSelection {
-    if local_deletes.is_empty() {
-        return vec![RowSelector::select(total_rows)].into();
-    }
-    let mut selectors = Vec::with_capacity(local_deletes.len() * 2 + 1);
-    let mut pos = 0usize;
-    for &del in local_deletes {
-        if del < pos {
-            continue;
-        }
-        if del > pos {
-            selectors.push(RowSelector::select(del - pos));
-        }
-        selectors.push(RowSelector::skip(1));
-        pos = del + 1;
-    }
-    if pos < total_rows {
-        selectors.push(RowSelector::select(total_rows - pos));
-    }
-    selectors.into()
-}
-
 /// Build a `RowSelection` for a single row group from Iceberg positional
 /// delete indices.
 pub fn build_single_rg_delete_selection(
@@ -108,16 +71,45 @@ pub fn build_single_rg_delete_selection(
     rg_global_start: usize,
     rg_rows: usize,
 ) -> RowSelection {
-    let delete_rows = normalize_delete_rows(delete_rows);
-    let delete_rows = &*delete_rows;
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    // Normalize: ensure sorted+unique (callers typically pass sorted data).
+    let normalized: Cow<'_, [i64]> = if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
+        let mut sorted = delete_rows.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        Cow::Owned(sorted)
+    } else {
+        Cow::Borrowed(delete_rows)
+    };
+
     let rg_end = rg_global_start + rg_rows;
-    let lo = delete_rows.partition_point(|&r| (r as usize) < rg_global_start);
-    let hi = delete_rows.partition_point(|&r| (r as usize) < rg_end);
-    let local_deletes: Vec<usize> = delete_rows[lo..hi]
-        .iter()
-        .map(|&r| r as usize - rg_global_start)
-        .collect();
-    deletes_to_row_selection(&local_deletes, rg_rows)
+    let lo = normalized.partition_point(|&r| (r as usize) < rg_global_start);
+    let hi = normalized.partition_point(|&r| (r as usize) < rg_end);
+    let rg_deletes = &normalized[lo..hi];
+
+    if rg_deletes.is_empty() {
+        return vec![RowSelector::select(rg_rows)].into();
+    }
+    let mut selectors = Vec::with_capacity(rg_deletes.len() * 2 + 1);
+    let mut pos = 0usize;
+    for &del in rg_deletes {
+        let local = del as usize - rg_global_start;
+        if local < pos {
+            continue;
+        }
+        if local > pos {
+            selectors.push(RowSelector::select(local - pos));
+        }
+        selectors.push(RowSelector::skip(1));
+        pos = local + 1;
+    }
+    if pos < rg_rows {
+        selectors.push(RowSelector::select(rg_rows - pos));
+    }
+    selectors.into()
 }
 
 /// Combine two optional `RowSelection`s via intersection.
@@ -235,9 +227,8 @@ pub fn prune_row_groups(
         (0..num_row_groups).collect()
     };
 
-    let predicate = match predicate {
-        Some(p) => p,
-        None => return Ok(candidates),
+    let Some(predicate) = predicate else {
+        return Ok(candidates);
     };
     let predicate = substitute_missing_cols(predicate, schema)?;
     let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
@@ -249,17 +240,13 @@ pub fn prune_row_groups(
 
     let mut result = Vec::with_capacity(candidates.len());
     for rg_idx in candidates {
-        let rg_meta = metadata.row_group(rg_idx);
-        match row_group_metadata_to_table_stats(rg_meta, schema) {
-            Ok(stats) => {
-                let evaled = stats.eval_expression(&bound_pred)?;
-                if evaled.to_truth_value() != TruthValue::False {
-                    result.push(rg_idx);
-                }
-            }
-            Err(_) => {
-                result.push(rg_idx);
-            }
+        // If stats are unavailable (or fail to convert), conservatively keep the RG.
+        let keep = match row_group_metadata_to_table_stats(metadata.row_group(rg_idx), schema) {
+            Ok(stats) => stats.eval_expression(&bound_pred)?.to_truth_value() != TruthValue::False,
+            Err(_) => true,
+        };
+        if keep {
+            result.push(rg_idx);
         }
     }
     Ok(result)

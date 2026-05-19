@@ -175,77 +175,35 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
     }
 }
 
-/// Stream a single parquet file as `RecordBatch`es.
-pub async fn stream_parquet(
-    uri: &str,
-    io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
-    opts: ParquetReadOptions,
-) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let columns_ref: Option<Vec<&str>> = opts
-        .columns
-        .as_ref()
-        .map(|v| v.iter().map(String::as_str).collect());
-
-    let mut local_path = String::new();
-    let source = make_source(uri, &mut local_path, io_client, io_stats)?;
-
-    let (_schema, table_stream) = Box::pin(crate::reader::stream_parquet(
-        source,
-        columns_ref.as_deref(),
-        opts.start_offset,
-        opts.num_rows,
-        opts.row_groups.as_deref(),
-        opts.predicate,
-        opts.schema_infer,
-        opts.batch_size,
-        opts.field_id_mapping,
-        opts.delete_rows.as_deref(),
-    ))
-    .await?;
-
-    let mut remaining_rows = opts.num_rows.map(|limit| limit as i64);
-    let stream = table_stream.try_take_while(move |table| {
-        let should_continue = match remaining_rows {
-            Some(rows_left) if rows_left <= 0 => false,
-            Some(rows_left) => {
-                remaining_rows = Some(rows_left - table.len() as i64);
-                true
-            }
-            None => true,
-        };
-        futures::future::ready(Ok(should_continue))
-    });
-    Ok(stream.boxed())
-}
-
+/// Read a single parquet file as a stream of `RecordBatch`es.
 pub async fn read_parquet(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     opts: ParquetReadOptions,
-) -> DaftResult<RecordBatch> {
-    let columns_ref: Option<Vec<&str>> = opts
-        .columns
-        .as_ref()
-        .map(|v| v.iter().map(String::as_str).collect());
-
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let mut local_path = String::new();
     let source = make_source(uri, &mut local_path, io_client, io_stats)?;
+    let (_schema, stream) = Box::pin(crate::reader::stream_parquet(source, &opts)).await?;
+    Ok(stream)
+}
 
-    Box::pin(crate::reader::read_parquet(
-        source,
-        columns_ref.as_deref(),
-        opts.start_offset,
-        opts.num_rows,
-        opts.row_groups.as_deref(),
-        opts.predicate,
-        opts.schema_infer,
-        opts.batch_size,
-        opts.field_id_mapping,
-        opts.delete_rows.as_deref(),
-    ))
-    .await
+/// Eager variant of `read_parquet`: collects the full stream into one
+/// `RecordBatch`, or a schema-bearing empty batch if the stream produced none.
+pub async fn read_parquet_into_recordbatch(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    opts: ParquetReadOptions,
+) -> DaftResult<RecordBatch> {
+    let mut local_path = String::new();
+    let source = make_source(uri, &mut local_path, io_client, io_stats)?;
+    let (schema, stream) = Box::pin(crate::reader::stream_parquet(source, &opts)).await?;
+    let batches: Vec<RecordBatch> = stream.try_collect().await?;
+    if batches.is_empty() {
+        return Ok(RecordBatch::empty(Some(schema)));
+    }
+    RecordBatch::concat(&batches)
 }
 
 /// Read a single parquet file and convert to pyarrow-friendly `ArrowChunk`s,
@@ -262,7 +220,7 @@ async fn read_parquet_into_arrow(
         "read_parquet_into_arrow: predicate/delete_rows/batch_size not supported on the pyarrow path"
     );
 
-    let data_fut = read_parquet(uri, io_client.clone(), io_stats.clone(), opts);
+    let data_fut = read_parquet_into_recordbatch(uri, io_client.clone(), io_stats.clone(), opts);
     let metadata_fut =
         crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
     let (rb, parquet_metadata) =
@@ -339,7 +297,13 @@ pub async fn read_parquet_bulk(
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();
         tokio::task::spawn(async move {
-            Box::pin(read_parquet(&uri, io_client, io_stats, single_opts)).await
+            Box::pin(read_parquet_into_recordbatch(
+                &uri,
+                io_client,
+                io_stats,
+                single_opts,
+            ))
+            .await
         })
     }));
 
@@ -571,7 +535,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let runtime = get_io_runtime(true);
-        let table = runtime.block_on_current_thread(read_parquet(
+        let table = runtime.block_on_current_thread(read_parquet_into_recordbatch(
             PARQUET_FILE,
             io_client,
             None,
@@ -590,8 +554,7 @@ mod tests {
         let runtime = get_io_runtime(true);
         runtime.block_on_current_thread(async move {
             let stream =
-                stream_parquet(PARQUET_FILE, io_client, None, ParquetReadOptions::default())
-                    .await?;
+                read_parquet(PARQUET_FILE, io_client, None, ParquetReadOptions::default()).await?;
             let tables = stream
                 .collect::<Vec<_>>()
                 .await
@@ -714,7 +677,7 @@ mod tests {
                     num_rows: Some(5),
                     ..Default::default()
                 };
-                let mut stream = stream_parquet(&uri, io_client, None, opts).await.unwrap();
+                let mut stream = read_parquet(&uri, io_client, None, opts).await.unwrap();
                 let mut count = 0;
                 while let Some(batch) = stream.next().await {
                     count += batch.unwrap().len();
