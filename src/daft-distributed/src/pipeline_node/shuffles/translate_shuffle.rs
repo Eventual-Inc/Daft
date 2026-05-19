@@ -179,8 +179,15 @@ impl LogicalPlanToPipelineNodeTranslator {
         {
             self.warned_large_shuffle_bytes = true;
             self.record_hint(format!(
-                "Large shuffle detected (~{} flowing through a `{}` shuffle). \
-                 Consider `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")`.",
+                "Large shuffle (~{} via `{}` shuffle). The default algorithms stream all shuffle \
+                 data through Ray's object store, which becomes a memory and throughput bottleneck \
+                 at this scale. `flight_shuffle` spills shuffle data to local disk and transfers it \
+                 peer-to-peer between workers via Arrow Flight, bypassing the object store. \
+                 Enable with: daft.context.set_execution_config(\
+                 shuffle_algorithm=\"flight_shuffle\", \
+                 flight_shuffle_dirs=[\"/path/to/fast/local/disk\"]). \
+                 `flight_shuffle_dirs` defaults to [\"/tmp\"]; point it at one or more fast local \
+                 SSDs/NVMes (one per disk) for best throughput.",
                 bytes_to_human_readable(input_size_bytes),
                 algo,
             ));
@@ -194,7 +201,15 @@ impl LogicalPlanToPipelineNodeTranslator {
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
             self.record_hint(format!(
                 "High shuffle fan-out ({} × {} = {} partition slots, ~{} of head-node memory). \
-                 Consider `daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\")`.",
+                 Map-reduce shuffles allocate one Ray object per (input × output) slot on the head \
+                 node, so memory grows quadratically with partition count. `flight_shuffle` \
+                 transfers data peer-to-peer between workers with no per-slot head-node \
+                 allocations, eliminating this bottleneck. \
+                 Enable with: daft.context.set_execution_config(\
+                 shuffle_algorithm=\"flight_shuffle\", \
+                 flight_shuffle_dirs=[\"/path/to/fast/local/disk\"]). \
+                 `flight_shuffle_dirs` defaults to [\"/tmp\"]; point it at one or more fast local \
+                 SSDs/NVMes (one per disk) for best throughput.",
                 input_num_partitions,
                 output_num_partitions,
                 partition_product,
