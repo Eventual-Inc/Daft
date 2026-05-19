@@ -8,7 +8,7 @@ use google_cloud_storage::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     http::{
         Error as GError,
-        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        objects::{delete::DeleteObjectRequest, get::GetObjectRequest, list::ListObjectsRequest},
     },
 };
 use google_cloud_token::{TokenSource, TokenSourceProvider};
@@ -40,6 +40,9 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes { path: String, source: GError },
 
+    #[snafu(display("Unable to delete {}: {}", path, source))]
+    UnableToDeleteFile { path: String, source: GError },
+
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials {
         source: google_cloud_storage::client::google_cloud_auth::error::Error,
@@ -61,8 +64,8 @@ enum Error {
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore, UnableToListObjects,
-            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+            NotAFile, NotFound, UnableToCreateClient, UnableToDeleteFile, UnableToGrabSemaphore,
+            UnableToListObjects, UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
 
         fn from_reqwest_err(path: String, err: reqwest::Error) -> super::Error {
@@ -100,6 +103,7 @@ impl From<Error> for super::Error {
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
+            | UnableToDeleteFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => from_reqwest_err(path, err),
                 GError::Response(err) => match err.code {
@@ -278,6 +282,54 @@ impl GCSClientWrapper {
         }
         Ok(response.size as usize)
     }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        let (bucket, key) = parse_raw_uri(uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
+        let req = DeleteObjectRequest {
+            bucket: bucket.into(),
+            object: key.into(),
+            ..Default::default()
+        };
+
+        let is_success = match client.delete_object(&req).await {
+            Ok(()) => true,
+            Err(e) => {
+                let is_404 = matches!(
+                    &e,
+                    GError::Response(err) if err.code == 404 || err.code == 410
+                ) || matches!(
+                    &e,
+                    GError::HttpClient(err) if err.status().map(|s| s.as_u16()) == Some(404)
+                        || err.status().map(|s| s.as_u16()) == Some(410)
+                );
+                if !is_404 {
+                    return Err(UnableToDeleteFileSnafu {
+                        path: uri.to_string(),
+                    }
+                    .into_error(e)
+                    .into());
+                }
+                // 404/410 means the object doesn't exist — idempotent delete per trait contract
+                true
+            }
+        };
+
+        if is_success && let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn ls_impl(
         &self,
@@ -596,6 +648,10 @@ impl ObjectSource for GCSSource {
             io_stats,
         )
         .await
+    }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        self.client.delete(uri, io_stats).await
     }
 
     async fn ls(
