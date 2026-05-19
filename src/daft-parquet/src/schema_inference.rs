@@ -44,11 +44,11 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
     // Dictionary(Int32, Utf8) etc. for dictionary-encoded columns. Daft doesn't
     // support dictionary types, so unwrap to the value type.
     // This must run before large-offset promotion so Dictionary(_, Utf8) → Utf8 → LargeUtf8.
-    arrow_schema = transform_schema(&arrow_schema, &|dt| match dt {
-        // Strip any nested dicts in the value type too.
-        DataType::Dictionary(_, v) => Some(strip_dictionaries(v)),
-        _ => None,
-    });
+    // Uses its own walker (not `transform_schema`) because unwrapping a Dictionary can
+    // expose nested containers whose children may themselves be Dictionary — e.g.
+    // `Dictionary<List<Dictionary<Utf8>>>`. The generic helper short-circuits after the
+    // outer rewrite and would leave the inner Dictionary intact.
+    arrow_schema = strip_dictionaries_schema(&arrow_schema);
 
     // Post-process: promote small-offset types to large-offset types.
     // Arrow-rs parquet reader produces Utf8/Binary/List (i32 offsets) by default,
@@ -69,60 +69,95 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
     Ok(arrow_schema)
 }
 
-/// Recursively unwrap nested `Dictionary(_, value)` to the innermost value type.
-fn strip_dictionaries(dtype: &DataType) -> DataType {
-    match dtype {
-        DataType::Dictionary(_, v) => strip_dictionaries(v),
-        other => other.clone(),
-    }
-}
-
-fn transform_schema(schema: &Schema, leaf: &impl Fn(&DataType) -> Option<DataType>) -> Schema {
+/// Recursively strip `Dictionary(_, value)` anywhere in the schema, descending through
+/// containers so nested dicts inside the unwrapped value get stripped too.
+fn strip_dictionaries_schema(schema: &Schema) -> Schema {
     let new_fields: Vec<Field> = schema
         .fields()
         .iter()
-        .map(|f| transform_field(f.as_ref(), leaf))
+        .map(|f| strip_dictionaries_field(f.as_ref()))
         .collect();
     Schema::new_with_metadata(new_fields, schema.metadata().clone())
 }
 
-fn transform_field(field: &Field, leaf: &impl Fn(&DataType) -> Option<DataType>) -> Field {
-    match transform_datatype(field.data_type(), leaf) {
+fn strip_dictionaries_field(field: &Field) -> Field {
+    field
+        .clone()
+        .with_data_type(strip_dictionaries_datatype(field.data_type()))
+}
+
+fn strip_dictionaries_datatype(dtype: &DataType) -> DataType {
+    match dtype {
+        DataType::Dictionary(_, v) => strip_dictionaries_datatype(v),
+        DataType::List(inner) => DataType::List(strip_dictionaries_field(inner.as_ref()).into()),
+        DataType::LargeList(inner) => {
+            DataType::LargeList(strip_dictionaries_field(inner.as_ref()).into())
+        }
+        DataType::FixedSizeList(inner, size) => {
+            DataType::FixedSizeList(strip_dictionaries_field(inner.as_ref()).into(), *size)
+        }
+        DataType::Map(inner, sorted) => {
+            DataType::Map(strip_dictionaries_field(inner.as_ref()).into(), *sorted)
+        }
+        DataType::Struct(fields) => {
+            let new_fields: Vec<Field> = fields
+                .iter()
+                .map(|f| strip_dictionaries_field(f.as_ref()))
+                .collect();
+            DataType::Struct(new_fields.into())
+        }
+        other => other.clone(),
+    }
+}
+
+/// Apply `transform` to every datatype in the schema. If `transform` returns `Some`,
+/// the result replaces the input type as-is (no further recursion into its children —
+/// the caller is responsible for producing a fully-transformed type). If it returns
+/// `None`, we recurse into nested children (List/LargeList/FixedSizeList/Struct/Map).
+fn transform_schema(schema: &Schema, transform: &impl Fn(&DataType) -> Option<DataType>) -> Schema {
+    let new_fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .map(|f| transform_field(f.as_ref(), transform))
+        .collect();
+    Schema::new_with_metadata(new_fields, schema.metadata().clone())
+}
+
+fn transform_field(field: &Field, transform: &impl Fn(&DataType) -> Option<DataType>) -> Field {
+    match transform_datatype(field.data_type(), transform) {
         Some(dt) => field.clone().with_data_type(dt),
         None => field.clone(),
     }
 }
 
-/// Apply `leaf` to `dtype` first; if it returns None, recurse into nested children
-/// (List/LargeList/FixedSizeList/Struct/Map). Returns Some only when the type changed.
 fn transform_datatype(
     dtype: &DataType,
-    leaf: &impl Fn(&DataType) -> Option<DataType>,
+    transform: &impl Fn(&DataType) -> Option<DataType>,
 ) -> Option<DataType> {
-    if let Some(new_dt) = leaf(dtype) {
+    if let Some(new_dt) = transform(dtype) {
         return Some(new_dt);
     }
     match dtype {
         DataType::List(inner) => {
-            let new_inner = transform_field(inner.as_ref(), leaf);
+            let new_inner = transform_field(inner.as_ref(), transform);
             (&new_inner != inner.as_ref()).then(|| DataType::List(new_inner.into()))
         }
         DataType::LargeList(inner) => {
-            let new_inner = transform_field(inner.as_ref(), leaf);
+            let new_inner = transform_field(inner.as_ref(), transform);
             (&new_inner != inner.as_ref()).then(|| DataType::LargeList(new_inner.into()))
         }
         DataType::FixedSizeList(inner, size) => {
-            let new_inner = transform_field(inner.as_ref(), leaf);
+            let new_inner = transform_field(inner.as_ref(), transform);
             (&new_inner != inner.as_ref()).then(|| DataType::FixedSizeList(new_inner.into(), *size))
         }
         DataType::Map(inner, sorted) => {
-            let new_inner = transform_field(inner.as_ref(), leaf);
+            let new_inner = transform_field(inner.as_ref(), transform);
             (&new_inner != inner.as_ref()).then(|| DataType::Map(new_inner.into(), *sorted))
         }
         DataType::Struct(fields) => {
             let new_fields: Vec<Field> = fields
                 .iter()
-                .map(|f| transform_field(f.as_ref(), leaf))
+                .map(|f| transform_field(f.as_ref(), transform))
                 .collect();
             new_fields
                 .iter()
@@ -278,10 +313,7 @@ mod tests {
                 true,
             ),
         ]);
-        let result = transform_schema(&schema, &|dt| match dt {
-            DataType::Dictionary(_, v) => Some(strip_dictionaries(v)),
-            _ => None,
-        });
+        let result = strip_dictionaries_schema(&schema);
 
         assert_eq!(result.field(0).data_type(), &DataType::Utf8);
         assert_eq!(result.field(1).data_type(), &DataType::Int32);
@@ -289,6 +321,28 @@ mod tests {
             DataType::List(inner) => {
                 assert_eq!(inner.data_type(), &DataType::Utf8);
             }
+            other => panic!("Expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_strip_dictionary_nested_in_value_type() {
+        // Dictionary<Int32, List<Dictionary<Int8, Utf8>>> — the inner Dictionary lives
+        // inside the outer Dictionary's value type. Stripping must descend through the
+        // unwrapped List to remove it.
+        let inner_dict = DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8));
+        let outer = DataType::Dictionary(
+            Box::new(DataType::Int32),
+            Box::new(DataType::List(Arc::new(Field::new(
+                "item", inner_dict, true,
+            )))),
+        );
+        let schema = Schema::new(vec![Field::new("col", outer, true)]);
+
+        let result = strip_dictionaries_schema(&schema);
+
+        match result.field(0).data_type() {
+            DataType::List(inner) => assert_eq!(inner.data_type(), &DataType::Utf8),
             other => panic!("Expected List, got {:?}", other),
         }
     }
