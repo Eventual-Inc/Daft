@@ -190,7 +190,18 @@ pub mod pylib {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let per_file = build_per_file(row_groups.as_deref(), uris.len());
+            let per_file = row_groups
+                .as_deref()
+                .map(|rgs| {
+                    assert_eq!(rgs.len(), uris.len(), "row_groups length mismatch");
+                    rgs.iter()
+                        .map(|r| crate::read::PerFileOptions {
+                            row_groups: r.clone(),
+                            ..Default::default()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             let opts = ParquetBulkReadOptions {
                 columns,
                 start_offset,
@@ -245,7 +256,18 @@ pub mod pylib {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let per_file = build_per_file(row_groups.as_deref(), uris.len());
+            let per_file = row_groups
+                .as_deref()
+                .map(|rgs| {
+                    assert_eq!(rgs.len(), uris.len(), "row_groups length mismatch");
+                    rgs.iter()
+                        .map(|r| crate::read::PerFileOptions {
+                            row_groups: r.clone(),
+                            ..Default::default()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             let opts = ParquetBulkReadOptions {
                 columns,
                 start_offset,
@@ -272,24 +294,6 @@ pub mod pylib {
                 convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, n)
             })
             .collect()
-    }
-
-    fn build_per_file(
-        row_groups: Option<&[Option<Vec<i64>>]>,
-        n: usize,
-    ) -> Vec<crate::read::PerFileOptions> {
-        match row_groups {
-            None => Vec::new(),
-            Some(rgs) => {
-                assert_eq!(rgs.len(), n, "row_groups length mismatch");
-                rgs.iter()
-                    .map(|r| crate::read::PerFileOptions {
-                        row_groups: r.clone(),
-                        ..Default::default()
-                    })
-                    .collect()
-            }
-        }
     }
 
     #[pyfunction(signature = (

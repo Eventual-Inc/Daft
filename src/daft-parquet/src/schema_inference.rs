@@ -1,5 +1,4 @@
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-use common_error::DaftResult;
 
 /// Infer an arrow-rs schema from arrow-rs parquet metadata, with optional post-processing
 /// for INT96 timestamp coercion and raw string encoding.
@@ -338,16 +337,6 @@ fn coerce_strings_to_binary_datatype(dtype: &DataType) -> Option<DataType> {
     }
 }
 
-/// Convert an arrow-rs `Schema` to a Daft `Schema`.
-///
-/// This uses the existing `TryFrom<&arrow_schema::Schema>` implementation on `daft_core::prelude::Schema`.
-#[allow(dead_code)]
-pub fn arrow_schema_to_daft_schema(
-    arrow_schema: &Schema,
-) -> DaftResult<daft_core::prelude::Schema> {
-    daft_core::prelude::Schema::try_from(arrow_schema)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -512,18 +501,5 @@ mod tests {
             }
             other => panic!("Expected List, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn test_arrow_schema_to_daft_schema() {
-        let schema = Schema::new(vec![
-            Field::new("a", DataType::Int32, true),
-            Field::new("b", DataType::Utf8, true),
-        ]);
-
-        let daft_schema = arrow_schema_to_daft_schema(&schema).unwrap();
-        assert_eq!(daft_schema.len(), 2);
-        assert_eq!(&*daft_schema.fields()[0].name, "a");
-        assert_eq!(&*daft_schema.fields()[1].name, "b");
     }
 }

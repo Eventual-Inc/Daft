@@ -460,24 +460,6 @@ fn get_file_column_names<'a>(
     }
 }
 
-fn build_per_file(
-    uris: &[&str],
-    row_groups: Option<&[Option<Vec<i64>>]>,
-    delete_map: Option<&HashMap<String, Vec<i64>>>,
-) -> Vec<PerFileOptions> {
-    if row_groups.is_none() && delete_map.is_none() {
-        return Vec::new();
-    }
-    uris.iter()
-        .enumerate()
-        .map(|(i, uri)| PerFileOptions {
-            row_groups: row_groups.and_then(|rgs| rgs[i].clone()),
-            delete_rows: delete_map.and_then(|m| m.get(*uri).cloned()),
-            metadata: None,
-        })
-        .collect()
-}
-
 fn read_delete_files(
     delete_files: &[&str],
     uris: &[&str],
@@ -574,8 +556,19 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     });
 
     let file_column_names = get_file_column_names(columns.as_deref(), partition_spec);
-    let per_file: Vec<PerFileOptions> =
-        build_per_file(uris, row_groups.as_deref(), delete_map.as_ref());
+    let row_groups = row_groups.as_deref();
+    let per_file: Vec<PerFileOptions> = if row_groups.is_none() && delete_map.is_none() {
+        Vec::new()
+    } else {
+        uris.iter()
+            .enumerate()
+            .map(|(i, uri)| PerFileOptions {
+                row_groups: row_groups.and_then(|rgs| rgs[i].clone()),
+                delete_rows: delete_map.as_ref().and_then(|m| m.get(*uri).cloned()),
+                metadata: None,
+            })
+            .collect()
+    };
     let opts = ParquetBulkReadOptions {
         columns: file_column_names.map(|v| v.into_iter().map(str::to_string).collect()),
         start_offset,
