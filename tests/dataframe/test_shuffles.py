@@ -601,7 +601,7 @@ def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
     into a single repartition over the 1-partition base, eliminating the fan-out.
     """
     with daft.execution_config_ctx(shuffle_algorithm="auto"):
-        df = daft.range(end=800, partitions=800).repartition(800, "id")
+        df = daft.range(800, partitions=800).repartition(800, "id")
 
         with pytest.warns(UserWarning, match=r"flight_shuffle"):
             df.explain(show_all=True, file=io.StringIO())
