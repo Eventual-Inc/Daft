@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use arrow_array::builder::FixedSizeBinaryBuilder;
 use chrono::{DateTime, Datelike};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    lit::{FromLiteral, Literal},
     prelude::{DataType, Field, FixedSizeBinaryArray, FromArrow, Int64Array, Schema, UuidArray},
     series::{IntoSeries, Series},
 };
@@ -20,6 +21,81 @@ use uuid::Uuid as RustUuid;
 /// Number of bytes in a UUID (128 bits).
 const UUID_LEN: usize = 16;
 
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+enum UuidVersion {
+    V4,
+    V7,
+}
+
+impl UuidVersion {
+    fn generate(self) -> RustUuid {
+        match self {
+            Self::V4 => RustUuid::new_v4(),
+            Self::V7 => RustUuid::now_v7(),
+        }
+    }
+}
+
+impl Default for UuidVersion {
+    fn default() -> Self {
+        Self::V4
+    }
+}
+
+impl std::fmt::Debug for UuidVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::V4 => "v4",
+            Self::V7 => "v7",
+        })
+    }
+}
+
+impl Display for UuidVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<UuidVersion> for Literal {
+    fn from(value: UuidVersion) -> Self {
+        Self::Utf8(value.to_string())
+    }
+}
+
+impl FromLiteral for UuidVersion {
+    fn try_from_literal(lit: &Literal) -> DaftResult<Self> {
+        if let Literal::Utf8(s) = lit {
+            s.parse()
+        } else {
+            Err(DaftError::ValueError(format!(
+                "Expected a string literal, got {:?}",
+                lit
+            )))
+        }
+    }
+}
+
+impl FromStr for UuidVersion {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "4" | "v4" => Ok(Self::V4),
+            "7" | "v7" => Ok(Self::V7),
+            _ => Err(DaftError::ValueError(format!(
+                "`version` must be 'v4' or 'v7', got {s:?}"
+            ))),
+        }
+    }
+}
+
+#[derive(FunctionArgs)]
+struct UuidArgs {
+    #[arg(optional)]
+    version: Option<UuidVersion>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Uuid;
 
@@ -29,14 +105,10 @@ impl ScalarUDF for Uuid {
         "uuid"
     }
 
-    fn call(&self, _inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
-        let len = ctx.row_count;
-
-        let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN as i32);
-        for _ in 0..len {
-            builder.append_value(RustUuid::new_v4())?;
-        }
-        uuid_series_from_builder(builder)
+    fn call(&self, inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
+        let UuidArgs { version } = inputs.try_into()?;
+        let array = uuid_kernel(ctx.row_count, version.unwrap_or_default())?;
+        uuid_series_from_builder(array)
     }
 
     fn is_deterministic(&self) -> bool {
@@ -48,17 +120,12 @@ impl ScalarUDF for Uuid {
         inputs: FunctionArgs<ExprRef>,
         _schema: &Schema,
     ) -> DaftResult<Field> {
-        if !inputs.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Expected 0 input args, got {}",
-                inputs.len()
-            )));
-        }
+        let UuidArgs { .. } = inputs.try_into()?;
         Ok(Field::new("", DataType::Uuid))
     }
 
     fn docstring(&self) -> &'static str {
-        "Generates a column of UUIDv4 values."
+        "Generates a column of UUID values."
     }
 }
 
@@ -67,6 +134,7 @@ pub fn uuid() -> ExprRef {
     ScalarFn::builtin(Uuid, vec![]).into()
 }
 
+/// Backward-compatible UUIDv7 function for serialized plans and SQL callers.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UuidV7;
 
@@ -80,9 +148,14 @@ impl ScalarUDF for UuidV7 {
         &["uuid_v7"]
     }
 
-    fn call(&self, _inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
-        let array = uuid_v7_kernel(ctx.row_count)?;
-        uuid_series_from_builder(array)
+    fn call(&self, inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
+        if !inputs.is_empty() {
+            return Err(DaftError::ValueError(format!(
+                "Expected 0 input args, got {}",
+                inputs.len()
+            )));
+        }
+        uuid_series_from_builder(uuid_kernel(ctx.row_count, UuidVersion::V7)?)
     }
 
     fn is_deterministic(&self) -> bool {
@@ -353,11 +426,11 @@ fn uuid_series_from_builder(mut builder: FixedSizeBinaryBuilder) -> DaftResult<S
     )
 }
 
-fn uuid_v7_kernel(len: usize) -> DaftResult<FixedSizeBinaryBuilder> {
+fn uuid_kernel(len: usize, version: UuidVersion) -> DaftResult<FixedSizeBinaryBuilder> {
     let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN as i32);
 
     for _ in 0..len {
-        builder.append_value(RustUuid::now_v7())?;
+        builder.append_value(version.generate())?;
     }
 
     Ok(builder)
@@ -370,8 +443,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uuid_v7_kernel_sets_version_and_variant_bits() {
-        let array = uuid_v7_kernel(128).unwrap().finish();
+    fn uuid_kernel_sets_version_and_variant_bits() {
+        let array = uuid_kernel(128, UuidVersion::V7).unwrap().finish();
 
         assert_eq!(array.len(), 128);
         for idx in 0..array.len() {
@@ -383,7 +456,7 @@ mod tests {
 
     #[test]
     fn uuid_v7_kernel_outputs_lexicographically_ordered_values() {
-        let array = uuid_v7_kernel(128).unwrap().finish();
+        let array = uuid_kernel(128, UuidVersion::V7).unwrap().finish();
 
         for idx in 1..array.len() {
             assert!(array.value(idx - 1) < array.value(idx));
@@ -501,5 +574,26 @@ mod tests {
             .into_series();
         let err = extract_uuid7(&s, Uuid7Unit::Hour, "extract_hour_uuid7");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn uuid_kernel_generates_requested_version() {
+        let v4 = uuid_kernel(1, UuidVersion::V4).unwrap().finish();
+        let v7 = uuid_kernel(1, UuidVersion::V7).unwrap().finish();
+
+        assert_eq!(v4.value(0)[6] >> 4, 0x4);
+        assert_eq!(v7.value(0)[6] >> 4, 0x7);
+    }
+
+    #[test]
+    fn uuidv7_legacy_function_generates_v7_values() {
+        assert_eq!(UuidV7.aliases(), &["uuid_v7"]);
+
+        let series = UuidV7
+            .call(FunctionArgs::empty(), &EvalContext { row_count: 1 })
+            .unwrap();
+        let array = series.uuid().unwrap();
+
+        assert_eq!(array.physical.get(0).unwrap()[6] >> 4, 0x7);
     }
 }
