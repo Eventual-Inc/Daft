@@ -540,7 +540,7 @@ pub(super) async fn prepare_remote_chunk_source(
     io_client: Arc<daft_io::IOClient>,
     io_stats: Option<daft_io::IOStatsRef>,
     opts: &ParquetReadOptions,
-) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata, Option<Vec<i64>>)> {
+) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata)> {
     let (parquet_metadata_res, file_size_res) = Box::pin(futures::future::join(
         crate::metadata::read_parquet_metadata(
             uri,
@@ -590,55 +590,6 @@ pub(super) async fn prepare_remote_chunk_source(
             })
             .collect(),
     };
-    let num_rgs = parquet_metadata.num_row_groups();
-    let candidate_rgs: Vec<usize> = match opts.row_groups.as_deref() {
-        None => (0..num_rgs).collect(),
-        Some(rgs) => rgs.iter().map(|&i| i as usize).collect(),
-    };
-
-    // Prune by start_offset + num_rows. Pruned set is returned so the caller
-    // passes it as row_groups to the stream — otherwise it tries to decode RGs
-    // we never fetched.
-    //
-    // With a predicate, row-count pruning is unsafe: rows survive the limit
-    // only after filtering, so later RGs may still be needed. Disable the
-    // num_rows cap in that case.
-    //
-    // `start_offset` is a file-level row skip, so each candidate RG's position
-    // must be computed against the full file — not against an offset-from-zero
-    // walk over `candidate_rgs`. Precompute file-relative row starts up front.
-    let mut rg_file_start: Vec<usize> = Vec::with_capacity(num_rgs);
-    let mut acc = 0usize;
-    for rg_idx in 0..num_rgs {
-        rg_file_start.push(acc);
-        acc += parquet_metadata.row_group(rg_idx).num_rows() as usize;
-    }
-
-    let offset = opts.start_offset.unwrap_or(0);
-    let prune_num_rows = opts.predicate.is_none().then_some(opts.num_rows).flatten();
-    let mut active_rg_indices: Vec<usize> = Vec::with_capacity(candidate_rgs.len());
-    let mut rows_remaining: i64 = prune_num_rows.map(|n| n as i64).unwrap_or(i64::MAX);
-    for &rg_idx in &candidate_rgs {
-        let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-        let rg_start = rg_file_start[rg_idx];
-        let rg_end = rg_start + rg_rows;
-        if rg_end <= offset {
-            continue;
-        }
-        if rows_remaining <= 0 {
-            break;
-        }
-        active_rg_indices.push(rg_idx);
-        let contrib = if rg_start < offset {
-            rg_end - offset
-        } else {
-            rg_rows
-        };
-        rows_remaining = rows_remaining.saturating_sub(contrib as i64);
-    }
-
-    let override_rgs: Option<Vec<i64>> =
-        Some(active_rg_indices.iter().map(|&i| i as i64).collect());
 
     let path: Arc<str> = Arc::from(uri);
     let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
@@ -653,5 +604,5 @@ pub(super) async fn prepare_remote_chunk_source(
         io_client,
         io_stats,
     });
-    Ok((builder, meta, override_rgs))
+    Ok((builder, meta))
 }

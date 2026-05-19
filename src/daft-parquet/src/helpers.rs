@@ -199,11 +199,20 @@ pub fn refine_selection(base: &RowSelection, predicate_sel: &RowSelection) -> Ro
     result.into()
 }
 
-/// Filter the set of row groups to read using predicate statistics +
-/// user-supplied indices.
+/// Single-source-of-truth RG-level pruning. Applies, in order:
+/// - user-supplied `requested_row_groups` (validated against metadata)
+/// - positional `start_offset`: drop RGs whose last row is at/before the offset
+/// - `num_rows` cap (no-predicate only — with a predicate, rows survive the
+///   limit only after filtering, so later RGs may still be needed)
+/// - `predicate` stats: drop RGs the min/max stats prove can't match
+///
+/// Returns RG indices in original (file) order.
+#[allow(clippy::too_many_arguments)]
 pub fn prune_row_groups(
     metadata: &ParquetMetaData,
     requested_row_groups: Option<&[i64]>,
+    start_offset: usize,
+    num_rows: Option<usize>,
     predicate: Option<&ExprRef>,
     schema: &Schema,
     uri: &str,
@@ -227,27 +236,62 @@ pub fn prune_row_groups(
         (0..num_row_groups).collect()
     };
 
-    let Some(predicate) = predicate else {
-        return Ok(candidates);
+    // File-relative row starts for ALL RGs — start_offset is a file-level
+    // skip, not relative to `candidates`.
+    let mut rg_file_start = Vec::with_capacity(num_row_groups);
+    let mut acc = 0usize;
+    for rg_idx in 0..num_row_groups {
+        rg_file_start.push(acc);
+        acc += metadata.row_group(rg_idx).num_rows() as usize;
+    }
+
+    let mut rows_remaining: i64 = if predicate.is_none() {
+        num_rows.map(|n| n as i64).unwrap_or(i64::MAX)
+    } else {
+        i64::MAX
     };
-    let predicate = substitute_missing_cols(predicate, schema)?;
-    let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
-        common_error::DaftError::ValueError(format!(
-            "Failed to bind predicate for row group pruning on '{}': {}",
-            uri, e
-        ))
-    })?;
+
+    let bound_pred = match predicate {
+        Some(pred) => {
+            let substituted = substitute_missing_cols(pred, schema)?;
+            Some(BoundExpr::try_new(substituted, schema).map_err(|e| {
+                common_error::DaftError::ValueError(format!(
+                    "Failed to bind predicate for row group pruning on '{}': {}",
+                    uri, e
+                ))
+            })?)
+        }
+        None => None,
+    };
 
     let mut result = Vec::with_capacity(candidates.len());
     for rg_idx in candidates {
-        // If stats are unavailable (or fail to convert), conservatively keep the RG.
-        let keep = match row_group_metadata_to_table_stats(metadata.row_group(rg_idx), schema) {
-            Ok(stats) => stats.eval_expression(&bound_pred)?.to_truth_value() != TruthValue::False,
-            Err(_) => true,
-        };
-        if keep {
-            result.push(rg_idx);
+        let rg_rows = metadata.row_group(rg_idx).num_rows() as usize;
+        let rg_start = rg_file_start[rg_idx];
+        let rg_end = rg_start + rg_rows;
+        if rg_end <= start_offset {
+            continue;
         }
+        if rows_remaining <= 0 {
+            break;
+        }
+        if let Some(bound) = &bound_pred {
+            // If stats are unavailable (or fail to convert), conservatively keep the RG.
+            let keep = match row_group_metadata_to_table_stats(metadata.row_group(rg_idx), schema) {
+                Ok(stats) => stats.eval_expression(bound)?.to_truth_value() != TruthValue::False,
+                Err(_) => true,
+            };
+            if !keep {
+                continue;
+            }
+        }
+        result.push(rg_idx);
+        let contrib = if rg_start < start_offset {
+            rg_end - start_offset
+        } else {
+            rg_rows
+        };
+        rows_remaining = rows_remaining.saturating_sub(contrib as i64);
     }
     Ok(result)
 }

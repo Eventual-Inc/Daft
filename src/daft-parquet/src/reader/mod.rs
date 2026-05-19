@@ -71,12 +71,8 @@ pub async fn stream_parquet(
     source: ParquetSource<'_>,
     opts: &ParquetReadOptions,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let (cs_builder, arrow_metadata, effective_row_groups_owned) =
-        open_chunk_source(&source, opts).await?;
+    let (cs_builder, arrow_metadata) = open_chunk_source(&source, opts).await?;
     let path = cs_builder.path().clone();
-    let row_groups: Option<&[i64]> = effective_row_groups_owned
-        .as_deref()
-        .or(opts.row_groups.as_deref());
 
     let chunk_size = opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
     let prepared = prepare_metadata(
@@ -87,12 +83,14 @@ pub async fn stream_parquet(
     )?;
     let plan = resolve_column_plan(&prepared, opts)?;
 
-    // Prune by predicate stats BEFORE building the remote chunk source —
-    // `cs_builder.build` is what spawns byte-range fetches, so issuing it
-    // earlier would prefetch RGs the predicate eliminates.
+    // Single RG-level pruning pass: user row_groups + positional (start_offset,
+    // num_rows) + predicate stats. Must run before `cs_builder.build`, which is
+    // what spawns remote byte fetches.
     let rg_indices = prune_row_groups(
         &prepared.parquet_metadata,
-        row_groups,
+        opts.row_groups.as_deref(),
+        opts.start_offset.unwrap_or(0),
+        opts.num_rows,
         opts.predicate.as_ref(),
         &plan.read_daft_schema,
         source.label(),
@@ -125,7 +123,6 @@ pub async fn stream_parquet(
         &global_starts,
         opts,
     );
-    let no_pred_active = count_active_rgs(&base_selections);
 
     let rg_inputs = build_rg_inputs(
         &chunk_source,
@@ -134,7 +131,6 @@ pub async fn stream_parquet(
         &rg_indices,
         &plan,
         base_selections,
-        no_pred_active,
         opts,
         &path,
     )
@@ -158,7 +154,7 @@ pub async fn stream_parquet(
 async fn open_chunk_source(
     source: &ParquetSource<'_>,
     opts: &ParquetReadOptions,
-) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata, Option<Vec<i64>>)> {
+) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata)> {
     match source {
         ParquetSource::Local { path } => {
             let (file, file_len, arrow_metadata) = open_local_file(path).await?;
@@ -168,7 +164,7 @@ async fn open_chunk_source(
                 file_len,
                 metadata: arrow_metadata.metadata().clone(),
             };
-            Ok((ChunkSourceBuilder::Local(cs), arrow_metadata, None))
+            Ok((ChunkSourceBuilder::Local(cs), arrow_metadata))
         }
         ParquetSource::Url {
             uri,
@@ -222,11 +218,17 @@ fn prepare_metadata(
 
 #[derive(Clone)]
 pub(super) struct ColumnPlan {
+    /// Physical Parquet column indices that must be read, including projection and filter columns.
     pub(super) read_col_indices: Vec<usize>,
+    /// Physical Parquet column indices used only for predicate pushdown evaluation.
     pub(super) pred_col_indices: Vec<usize>,
+    /// Physical Parquet column indices returned as data after predicate pushdown.
     pub(super) data_col_indices: Vec<usize>,
+    /// Whether the predicate can be evaluated while reading Parquet row groups.
     pub(super) predicate_pushed: bool,
+    /// Schema visible to callers after applying the requested projection.
     pub(super) return_daft_schema: Arc<Schema>,
+    /// Schema for all columns read from Parquet, including predicate helper columns.
     pub(super) read_daft_schema: Schema,
 }
 
@@ -348,29 +350,34 @@ fn build_base_selections(
         .collect()
 }
 
+/// Row-level offset selection within the RG straddling `start_offset`. RGs
+/// entirely before the offset are already pruned by `prune_row_groups`, so
+/// only the straddling case (or no-skip) reaches here.
 fn build_offset_selection(
     global_offset: usize,
     rg_global_start: usize,
     rg_rows: usize,
 ) -> Option<RowSelection> {
-    let rg_end = rg_global_start + rg_rows;
-    match global_offset {
-        0 => None,
-        o if o >= rg_end => Some(vec![RowSelector::skip(rg_rows)].into()),
-        o if o > rg_global_start => Some(build_offset_row_selection(o - rg_global_start, rg_rows)),
-        _ => None,
+    if global_offset > rg_global_start {
+        Some(build_offset_row_selection(
+            global_offset - rg_global_start,
+            rg_rows,
+        ))
+    } else {
+        None
     }
 }
 
+/// Cap the selection for the RG straddling the `num_rows` boundary. RGs past
+/// the limit are already pruned by `prune_row_groups`, so we only need to
+/// cap-or-passthrough — never produce an all-skip selection.
 fn apply_limit_to_selection(
     sel: Option<RowSelection>,
     remaining: &mut usize,
     rg_rows: usize,
 ) -> Option<RowSelection> {
     let contrib = sel.as_ref().map(|s| s.row_count()).unwrap_or(rg_rows);
-    if *remaining == 0 {
-        Some(RowSelection::from(vec![RowSelector::skip(rg_rows)]))
-    } else if contrib > *remaining {
+    if contrib > *remaining {
         let cap = *remaining;
         *remaining = 0;
         Some(cap_selection_to(sel.as_ref(), cap, rg_rows))
@@ -378,14 +385,6 @@ fn apply_limit_to_selection(
         *remaining -= contrib;
         sel
     }
-}
-
-/// Drops trailing all-skip RGs when the limit was already exhausted.
-fn count_active_rgs(base_selections: &[Option<RowSelection>]) -> usize {
-    base_selections
-        .iter()
-        .rposition(|sel| sel.as_ref().is_none_or(|s| s.iter().any(|r| !r.skip)))
-        .map_or(0, |i| i + 1)
 }
 
 /// Per-RG inputs to the streaming decode pass.
@@ -423,8 +422,7 @@ async fn build_rg_inputs(
     arrow_schema: &Arc<ArrowSchema>,
     rg_indices: &[usize],
     plan: &ColumnPlan,
-    mut base_selections: Vec<Option<RowSelection>>,
-    no_pred_active: usize,
+    base_selections: Vec<Option<RowSelection>>,
     opts: &ParquetReadOptions,
     path: &Arc<str>,
 ) -> DaftResult<Vec<RgInputs>> {
@@ -434,7 +432,6 @@ async fn build_rg_inputs(
         .as_ref()
         .filter(|_| plan.predicate_pushed && !plan.data_col_indices.is_empty())
     else {
-        base_selections.truncate(no_pred_active);
         return Ok(base_selections
             .into_iter()
             .map(|selection| RgInputs {
