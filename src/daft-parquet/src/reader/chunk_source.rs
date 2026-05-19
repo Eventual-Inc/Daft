@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use bytes::Bytes;
-use common_runtime::{JoinSet, get_io_runtime};
+use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_dsl::optimization::get_required_columns;
 use parquet::{
     arrow::arrow_reader::{ArrowReaderMetadata, ArrowReaderOptions},
@@ -134,22 +134,16 @@ impl ChunkSourceBuilder {
     ) -> ChunkSource {
         match self {
             Self::Local(cs) => ChunkSource::Local(cs),
-            Self::Remote(prep) => {
-                if rg_indices.is_empty() {
-                    ChunkSource::Remote(RemoteChunkSource::empty(prep.path, prep.file_size as u64))
-                } else {
-                    ChunkSource::Remote(RemoteChunkSource::from_ranged(
-                        prep.path,
-                        parquet_metadata,
-                        prep.file_size,
-                        &prep.active_col_indices,
-                        rg_indices,
-                        prep.io_client,
-                        prep.io_stats,
-                        prep.uri,
-                    ))
-                }
-            }
+            Self::Remote(prep) => ChunkSource::Remote(RemoteChunkSource::from_ranged(
+                prep.path,
+                parquet_metadata,
+                prep.file_size,
+                &prep.active_col_indices,
+                rg_indices,
+                prep.io_client,
+                prep.io_stats,
+                prep.uri,
+            )),
         }
     }
 }
@@ -296,22 +290,52 @@ impl LocalChunkSource {
     }
 }
 
-/// Per-row-group coalesced byte-range GETs (merge ≤1MB gaps, split >24MB at
-/// chunk boundaries into ~16MB pieces). Fetches run in the background;
-/// decoders await an assembled `HashMap<leaf, (start, Bytes)>` via a `Shared`
-/// future and never park on per-byte IO. The error side is `Arc<crate::Error>`
-/// because `Shared` requires its output to be `Clone` and `crate::Error` isn't
-/// — the typed error is preserved end-to-end behind a single Arc.
-pub(crate) struct RemoteChunkSource {
-    path: Arc<str>,
-    rg_fetches: HashMap<usize, SharedRgFetch>,
-    file_len: u64,
+type SharedErr = Arc<crate::Error>;
+type GroupResult = Result<Bytes, SharedErr>;
+
+/// Per-coalesced-byte-range fetch state. Starts as `InFlight(task)`; the
+/// first awaiter drives the spawned task to completion and stores the
+/// (cloneable) result in `Ready`. Subsequent awaiters clone the cached
+/// bytes/error instead of re-fetching.
+enum RangeState {
+    InFlight(RuntimeTask<crate::Result<Bytes>>),
+    Ready(GroupResult),
 }
 
-type RgBytesMap = HashMap<usize, (u64, Bytes)>;
-type SharedRgFetch = futures::future::Shared<
-    futures::future::BoxFuture<'static, Result<Arc<RgBytesMap>, Arc<crate::Error>>>,
->;
+/// One coalesced byte-range within a row group: the absolute file offset its
+/// bytes start at, plus the lazily-resolved fetch state.
+struct GroupSlot {
+    group_start: u64,
+    state: tokio::sync::Mutex<RangeState>,
+}
+
+/// Where a leaf's bytes live: which coalesced group, and its absolute slice
+/// within that group's bytes. We slice on demand at read time rather than
+/// pre-building a per-leaf `(start, Bytes)` map.
+struct LeafLoc {
+    group_idx: usize,
+    leaf_start: u64,
+    leaf_len: u64,
+}
+
+struct RgState {
+    groups: Vec<GroupSlot>,
+    leaves: HashMap<usize, LeafLoc>,
+}
+
+/// Per-row-group coalesced byte-range GETs (merge ≤1MB gaps, split >24MB at
+/// chunk boundaries into ~16MB pieces). Each coalesced group has its own
+/// spawned fetch task with `InFlight → Ready` state transitions, so a
+/// `read_rg_chunks` call only awaits the groups containing its requested
+/// leaves — never the whole RG's bundle. Once driven, the cached `Ready`
+/// bytes let a later call for a different leaf in the same group skip
+/// re-fetching. Errors are wrapped in `Arc` so they can be cloned to every
+/// subsequent awaiter.
+pub(crate) struct RemoteChunkSource {
+    path: Arc<str>,
+    rgs: HashMap<usize, RgState>,
+    file_len: u64,
+}
 
 impl RemoteChunkSource {
     const MAX_COALESCE_GAP: u64 = 1024 * 1024;
@@ -329,15 +353,13 @@ impl RemoteChunkSource {
         io_stats: Option<daft_io::IOStatsRef>,
         uri: String,
     ) -> Self {
-        use futures::future::FutureExt;
         let file_len = file_size as u64;
         let io_runtime = get_io_runtime(true);
-        let mut rg_fetches = HashMap::with_capacity(active_rg_indices.len());
-        let num_cols = active_col_indices.len();
+        let mut rgs = HashMap::with_capacity(active_rg_indices.len());
 
         for &rg_idx in active_rg_indices {
             let rg = parquet_metadata.row_group(rg_idx);
-            let mut leaf_ranges: Vec<LeafRange> = Vec::with_capacity(num_cols);
+            let mut leaf_ranges: Vec<LeafRange> = Vec::with_capacity(active_col_indices.len());
             for &col_idx in active_col_indices {
                 let (start, len) = rg.column(col_idx).byte_range();
                 leaf_ranges.push(LeafRange {
@@ -348,72 +370,62 @@ impl RemoteChunkSource {
             }
             let groups = Self::coalesce_and_split(leaf_ranges);
 
-            // Bake (group_start, members) into each spawned future so the
-            // JoinSet carries everything needed to slice bytes after the GET.
-            let mut joinset: JoinSet<crate::Result<(u64, Vec<LeafRange>, Bytes)>> = JoinSet::new();
-            for RangeGroup {
-                start: group_start,
-                end: group_end,
-                members,
-            } in groups
+            let mut group_slots: Vec<GroupSlot> = Vec::with_capacity(groups.len());
+            let mut leaves: HashMap<usize, LeafLoc> =
+                HashMap::with_capacity(active_col_indices.len());
+
+            for (
+                group_idx,
+                RangeGroup {
+                    start: group_start,
+                    end: group_end,
+                    members,
+                },
+            ) in groups.into_iter().enumerate()
             {
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
                 let uri = uri.clone();
                 let range = group_start as usize..group_end as usize;
-                joinset.spawn_on(
-                    async move {
-                        let get_result = io_client
-                            .single_url_get(
-                                uri,
-                                Some(daft_io::range::GetRange::Bounded(range)),
-                                io_stats,
-                            )
-                            .await?;
-                        let bytes = get_result.bytes().await?;
-                        Ok((group_start, members, bytes))
-                    },
-                    &io_runtime,
-                );
-            }
-
-            let path_for_fut = path.clone();
-            let fut: futures::future::BoxFuture<
-                'static,
-                Result<Arc<RgBytesMap>, Arc<crate::Error>>,
-            > = async move {
-                let mut rg_map: RgBytesMap = HashMap::with_capacity(num_cols);
-                let mut joinset = joinset;
-                while let Some(result) = joinset.join_next().await {
-                    let (group_start, members, group_bytes) = match result {
-                        Ok(Ok(t)) => t,
-                        Ok(Err(e)) => return Err(Arc::new(e)),
-                        Err(e) => return Err(Arc::new(task_err(path_for_fut.to_string())(e))),
-                    };
-                    for LeafRange { leaf, start, len } in members {
-                        let local_start = (start - group_start) as usize;
-                        let local_end = local_start + len as usize;
-                        let slice = group_bytes.slice(local_start..local_end);
-                        rg_map.insert(leaf, (start, slice));
-                    }
+                let task = io_runtime.spawn(async move {
+                    let get_result = io_client
+                        .single_url_get(
+                            uri,
+                            Some(daft_io::range::GetRange::Bounded(range)),
+                            io_stats,
+                        )
+                        .await?;
+                    let bytes = get_result.bytes().await?;
+                    crate::Result::Ok(bytes)
+                });
+                group_slots.push(GroupSlot {
+                    group_start,
+                    state: tokio::sync::Mutex::new(RangeState::InFlight(task)),
+                });
+                for LeafRange { leaf, start, len } in members {
+                    leaves.insert(
+                        leaf,
+                        LeafLoc {
+                            group_idx,
+                            leaf_start: start,
+                            leaf_len: len,
+                        },
+                    );
                 }
-                Ok(Arc::new(rg_map))
             }
-            .boxed();
-            rg_fetches.insert(rg_idx, fut.shared());
+
+            rgs.insert(
+                rg_idx,
+                RgState {
+                    groups: group_slots,
+                    leaves,
+                },
+            );
         }
 
         Self {
             path,
-            rg_fetches,
-            file_len,
-        }
-    }
-
-    fn empty(path: Arc<str>, file_len: u64) -> Self {
-        Self {
-            path,
-            rg_fetches: HashMap::new(),
+            rgs,
             file_len,
         }
     }
@@ -469,40 +481,95 @@ impl RemoteChunkSource {
         rg_idx: usize,
         leaves: &[usize],
     ) -> crate::Result<HashMap<usize, OffsetBytes>> {
-        let fut = self
-            .rg_fetches
-            .get(&rg_idx)
-            .cloned()
-            .with_context(|| ReaderInternalSnafu {
-                path: self.path.to_string(),
-                message: format!("RemoteChunkSource: no pre-spawned fetch for rg={}", rg_idx),
-            })?;
-        let rg_bytes = fut
-            .await
-            .map_err(|source| crate::Error::RemoteFetchFailed {
-                path: self.path.to_string(),
-                source,
-            })?;
-        let mut out = HashMap::with_capacity(leaves.len());
+        if leaves.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let rg = self.rgs.get(&rg_idx).with_context(|| ReaderInternalSnafu {
+            path: self.path.to_string(),
+            message: format!("RemoteChunkSource: no pre-spawned fetch for rg={}", rg_idx),
+        })?;
+
+        // Map each leaf to its enclosing coalesced group, then dedup so we
+        // only drive each group's fetch once even when several requested
+        // leaves share a group.
+        let mut needed_groups: Vec<usize> = Vec::with_capacity(leaves.len());
         for &leaf in leaves {
-            let (base, bytes) = rg_bytes.get(&leaf).with_context(|| ReaderInternalSnafu {
+            let loc = rg.leaves.get(&leaf).with_context(|| ReaderInternalSnafu {
                 path: self.path.to_string(),
                 message: format!(
                     "RemoteChunkSource: chunk not pre-fetched for rg={}, leaf={}",
                     rg_idx, leaf
                 ),
             })?;
+            needed_groups.push(loc.group_idx);
+        }
+        needed_groups.sort_unstable();
+        needed_groups.dedup();
+
+        // Drive only the groups containing requested leaves, in parallel.
+        // Unrelated groups in this RG stay in-flight (or untouched) and we
+        // never park on their completion.
+        let path = self.path.as_ref();
+        let futs = needed_groups.iter().map(|&gi| {
+            let slot = &rg.groups[gi];
+            async move { (gi, drive_group(slot, path).await) }
+        });
+        let results = futures::future::join_all(futs).await;
+
+        let mut group_bytes: HashMap<usize, Bytes> = HashMap::with_capacity(results.len());
+        for (gi, res) in results {
+            let bytes = res.map_err(|source| crate::Error::RemoteFetchFailed {
+                path: self.path.to_string(),
+                source,
+            })?;
+            group_bytes.insert(gi, bytes);
+        }
+
+        let mut out = HashMap::with_capacity(leaves.len());
+        for &leaf in leaves {
+            let loc = rg.leaves.get(&leaf).expect("validated above");
+            let bytes = group_bytes.get(&loc.group_idx).expect("driven above");
+            let group_start = rg.groups[loc.group_idx].group_start;
+            let local_start = (loc.leaf_start - group_start) as usize;
+            let local_end = local_start + loc.leaf_len as usize;
+            let slice = bytes.slice(local_start..local_end);
             out.insert(
                 leaf,
                 OffsetBytes {
-                    base: *base,
+                    base: loc.leaf_start,
                     file_len: self.file_len,
-                    bytes: bytes.clone(),
+                    bytes: slice,
                 },
             );
         }
         Ok(out)
     }
+}
+
+async fn drive_group(slot: &GroupSlot, path: &str) -> GroupResult {
+    let mut guard = slot.state.lock().await;
+    if let RangeState::Ready(r) = &*guard {
+        return r.clone();
+    }
+    // Drive InFlight → Ready. Holding the lock across `.await` serializes
+    // concurrent waiters, but they'd have had to wait for the same spawned
+    // task to finish either way — no extra latency.
+    //
+    // `Pin::new(task).await` polls the task to completion without consuming
+    // it (RuntimeTask is Unpin), so the borrow ends with the inner block and
+    // we can then write the Ready result back through the same guard.
+    let res: GroupResult = {
+        let RangeState::InFlight(task) = &mut *guard else {
+            unreachable!("Ready branch returned above")
+        };
+        match Pin::new(task).await {
+            Ok(Ok(bytes)) => Ok(bytes),
+            Ok(Err(e)) => Err(Arc::new(e)),
+            Err(daft_err) => Err(Arc::new(task_err(path.to_string())(daft_err))),
+        }
+    };
+    *guard = RangeState::Ready(res.clone());
+    res
 }
 
 pub(super) async fn open_local_file(

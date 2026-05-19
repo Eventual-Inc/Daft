@@ -17,7 +17,6 @@ use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
-use field_reader::leaves_for_top_fields;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use parquet::{
     arrow::arrow_reader::{ArrowReaderMetadata, RowSelection, RowSelector},
@@ -116,21 +115,12 @@ pub async fn stream_parquet(
     // Now spawn the byte-range fetches (remote) — pruned set only.
     let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
 
-    let global_starts = build_global_starts(&prepared.parquet_metadata);
-    let base_selections = build_base_selections(
-        &prepared.parquet_metadata,
-        &rg_indices,
-        &global_starts,
-        opts,
-    );
-
     let rg_inputs = build_rg_inputs(
         &chunk_source,
         &prepared.parquet_metadata,
         &prepared.arrow_schema,
         &rg_indices,
         &plan,
-        base_selections,
         opts,
         &path,
     )
@@ -317,10 +307,10 @@ fn build_global_starts(metadata: &ParquetMetaData) -> Vec<usize> {
 fn build_base_selections(
     metadata: &ParquetMetaData,
     rg_indices: &[usize],
-    global_starts: &[usize],
     opts: &ParquetReadOptions,
 ) -> Vec<Option<RowSelection>> {
     // With a predicate, limit is enforced post-filter, not at RG-build time.
+    let global_starts = build_global_starts(metadata);
     let start_offset = opts.start_offset.unwrap_or(0);
     let delete_rows = opts.delete_rows.as_deref();
     let mut limit_remaining: Option<usize> =
@@ -401,20 +391,10 @@ struct RgInputs {
 
 /// Build the per-RG input bundles for the streaming decoder.
 ///
-/// Two paths in the same function:
-///
-/// 1. **Predicate prefilter** (predicate is pushed AND the projection has
-///    data cols beyond pred cols): per RG, decode pred cols chunk-by-chunk,
-///    evaluate the predicate, build filtered pred arrays + a refined
-///    `RowSelection` so the per-RG data-col decoder can page-skip rows that
-///    won't survive. With `opts.num_rows` set, decoding stops early once the
-///    limit is satisfied. Unbounded: `chunk_size = usize::MAX` so the
-///    streaming decoder emits one chunk per col, matching bulk-decode perf.
-///
-/// 2. **Passthrough** (everything else — no predicate, predicate-only
-///    projection, or non-pushable predicate): trim trailing all-skip RGs and
-///    forward the offset/delete-derived selections. The per-RG processor
-///    handles any predicate at decode time.
+/// Without a pushed predicate prefilter, this just forwards offset/delete/limit
+/// selections. With one, it first decodes predicate columns, evaluates the mask,
+/// and uses that same mask for both filtered predicate arrays and a data-column
+/// `RowSelection`.
 #[allow(clippy::too_many_arguments)]
 async fn build_rg_inputs(
     chunk_source: &Arc<ChunkSource>,
@@ -422,12 +402,11 @@ async fn build_rg_inputs(
     arrow_schema: &Arc<ArrowSchema>,
     rg_indices: &[usize],
     plan: &ColumnPlan,
-    base_selections: Vec<Option<RowSelection>>,
     opts: &ParquetReadOptions,
     path: &Arc<str>,
 ) -> DaftResult<Vec<RgInputs>> {
-    // Passthrough fast path.
-    let Some(predicate) = opts
+    let base_selections = build_base_selections(metadata, rg_indices, opts);
+    let Some(prefilter_predicate) = opts
         .predicate
         .as_ref()
         .filter(|_| plan.predicate_pushed && !plan.data_col_indices.is_empty())
@@ -441,43 +420,35 @@ async fn build_rg_inputs(
             .collect());
     };
 
-    // Predicate prefilter path.
     // Limit set → chunked streaming for early termination. Unbounded → one
     // chunk per col so per-chunk arrow setup costs collapse to per-RG.
     let chunk_size = match opts.num_rows {
         Some(_) => opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1),
         None => usize::MAX,
     };
-    let pred_leaves: Arc<[usize]> = leaves_for_top_fields(metadata, &plan.pred_col_indices).into();
     let pred_arrow_schema = schema_from_indices(arrow_schema, &plan.pred_col_indices);
     // Bind predicate once across all RGs — same chunk schema everywhere.
     let chunk_daft_schema = Arc::new(Schema::try_from(pred_arrow_schema.as_ref())?);
     let bound_pred = BoundExpr::try_new(
-        substitute_missing_cols(predicate, &chunk_daft_schema)?,
+        substitute_missing_cols(prefilter_predicate, &chunk_daft_schema)?,
         &chunk_daft_schema,
     )?;
 
-    let mut remaining = opts.num_rows.unwrap_or(usize::MAX);
+    let mut selected_rows_remaining = opts.num_rows.unwrap_or(usize::MAX);
     let mut out: Vec<RgInputs> = Vec::with_capacity(rg_indices.len());
 
-    for (rg_pos, &rg_idx) in rg_indices.iter().enumerate() {
-        if remaining == 0 {
+    for (&rg_idx, base_sel) in rg_indices.iter().zip(base_selections) {
+        if selected_rows_remaining == 0 {
             break;
         }
-        let base_sel = base_selections[rg_pos].clone();
         let total_selected = base_sel
             .as_ref()
             .map(|s| s.row_count())
             .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
 
-        let rg_chunks = Arc::new(
-            chunk_source
-                .read_rg_chunks(rg_idx, pred_leaves.clone())
-                .await?,
-        );
         let (mut col_receivers, _col_handles) = spawn_col_decoders(
             &plan.pred_col_indices,
-            &rg_chunks,
+            chunk_source,
             metadata,
             arrow_schema,
             base_sel.as_ref(),
@@ -486,39 +457,39 @@ async fn build_rg_inputs(
             path,
         );
 
-        // Per-chunk masks + filtered arrays; concatenated after the loop.
-        let mut chunk_masks: Vec<arrow::array::BooleanArray> = Vec::new();
-        let mut chunk_filtered_per_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
+        let mut predicate_selectors: Vec<RowSelector> = Vec::new();
+        let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
             .map(|_| Vec::new())
             .collect();
         let mut processed_rows = 0usize;
 
         loop {
-            let chunks = match recv_one_chunk(&mut col_receivers).await {
-                Some(Ok(v)) => v,
-                Some(Err(e)) => return Err(e),
-                None => break,
+            let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
+                break;
             };
             let chunk_rows = chunks[0].len();
             let daft_pred =
                 record_batch_from_arrow(pred_arrow_schema.clone(), chunks.clone(), path.as_ref())?;
             let mask = eval_predicate_mask(&daft_pred, &bound_pred)?;
 
-            let true_count = mask.true_count();
-            let (capped_mask, contributed) = if true_count > remaining {
-                (truncate_mask_to_n_trues(&mask, remaining), remaining)
+            let selected_rows = mask.true_count();
+            let (mask, selected_rows) = if selected_rows > selected_rows_remaining {
+                (
+                    truncate_mask_to_n_trues(&mask, selected_rows_remaining),
+                    selected_rows_remaining,
+                )
             } else {
-                (mask, true_count)
+                (mask, selected_rows)
             };
 
-            let filtered = filter_arrays_by_mask(&chunks, &capped_mask, path.as_ref())?;
+            let filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
             for (col_pos, filtered) in filtered.into_iter().enumerate() {
-                chunk_filtered_per_col[col_pos].push(filtered);
+                filtered_pred_by_col[col_pos].push(filtered);
             }
-            chunk_masks.push(capped_mask);
+            predicate_selectors.extend(bool_array_to_row_selection(&mask).iter().copied());
             processed_rows += chunk_rows;
-            remaining -= contributed;
-            if remaining == 0 {
+            selected_rows_remaining -= selected_rows;
+            if selected_rows_remaining == 0 {
                 break;
             }
         }
@@ -533,7 +504,7 @@ async fn build_rg_inputs(
             .iter()
             .enumerate()
             .map(|(col_pos, &col_idx)| {
-                let chunks = &chunk_filtered_per_col[col_pos];
+                let chunks = &filtered_pred_by_col[col_pos];
                 if chunks.is_empty() {
                     arrow::array::new_empty_array(arrow_schema.field(col_idx).data_type())
                 } else {
@@ -544,20 +515,11 @@ async fn build_rg_inputs(
             })
             .collect();
 
-        // Build a RowSelection over the base-selected row space: chunked masks
-        // → selectors over processed_rows; tail-skip unprocessed rows so the
-        // total length matches `total_selected`.
-        let mut selectors: Vec<RowSelector> = Vec::new();
-        for cm in &chunk_masks {
-            for s in bool_array_to_row_selection(cm).iter() {
-                selectors.push(*s);
-            }
-        }
         let unprocessed = total_selected - processed_rows;
         if unprocessed > 0 {
-            selectors.push(RowSelector::skip(unprocessed));
+            predicate_selectors.push(RowSelector::skip(unprocessed));
         }
-        let pred_sel = RowSelection::from(selectors);
+        let pred_sel = RowSelection::from(predicate_selectors);
         let selection = Some(match &base_sel {
             Some(base) => refine_selection(base, &pred_sel),
             None => pred_sel,

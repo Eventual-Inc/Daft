@@ -9,13 +9,13 @@ use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_recordbatch::RecordBatch;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{StreamExt, future::try_join_all, stream::BoxStream};
 use parquet::{arrow::arrow_reader::RowSelection, file::metadata::ParquetMetaData};
 use tokio::sync::mpsc;
 
 use super::{
     RgTaskCtx,
-    chunk_source::OffsetBytes,
+    chunk_source::ChunkSource,
     field_reader::{decode_one_streaming, leaves_for_top_fields},
     util::{
         eval_predicate_mask, filter_arrays_by_mask, project_to_schema, record_batch_from_arrow,
@@ -32,26 +32,24 @@ fn err_stream<T: Send + 'static>(e: common_error::DaftError) -> BoxStream<'stati
 
 /// Recv one chunk from each column receiver in lockstep.
 ///
-/// - `Some(Ok(v))` — every receiver yielded; `v` is the per-col array slice for this chunk.
-/// - `Some(Err(e))` — a receiver propagated a decode error.
-/// - `None` — at least one receiver closed (stream end). Decoders close their
+/// - `Ok(Some(v))` — every receiver yielded; `v` is the per-col array slice for this chunk.
+/// - `Err(e)` — a receiver propagated a decode error.
+/// - `Ok(None)` — at least one receiver closed (stream end). Decoders close their
 ///   channel after the final chunk, so the first `None` we see ends the RG.
-pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> Option<DaftResult<Vec<ArrayRef>>> {
-    let mut out = Vec::with_capacity(receivers.len());
-    for r in receivers {
-        match r.recv().await {
-            Some(Ok(a)) => out.push(a),
-            Some(Err(e)) => return Some(Err(e)),
-            None => return None,
-        }
-    }
-    Some(Ok(out))
+pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> DaftResult<Option<Vec<ArrayRef>>> {
+    try_join_all(
+        receivers
+            .iter_mut()
+            .map(|r| async { r.recv().await.transpose() }),
+    )
+    .await
+    .map(|chunks| chunks.into_iter().collect())
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_col_decoders(
     col_indices: &[usize],
-    rg_chunks: &Arc<std::collections::HashMap<usize, OffsetBytes>>,
+    chunk_source: &Arc<ChunkSource>,
     metadata: &Arc<ParquetMetaData>,
     arrow_schema: &Arc<ArrowSchema>,
     selection: Option<&RowSelection>,
@@ -64,13 +62,27 @@ pub(super) fn spawn_col_decoders(
     let mut joinset: JoinSet<DaftResult<()>> = JoinSet::new();
     for &col_idx in col_indices {
         let (tx, rx) = mpsc::channel::<DaftResult<ArrayRef>>(1);
-        let chunks = rg_chunks.clone();
+        let chunk_source = chunk_source.clone();
         let metadata = metadata.clone();
         let arrow_field = arrow_schema.field(col_idx).clone();
         let sel = selection.cloned();
         let path = path.clone();
+        let leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), &[col_idx]).into();
         joinset.spawn_on(
             async move {
+                // Each decoder awaits only the coalesced byte-range groups
+                // covering its own leaves — fast columns start streaming
+                // while slow groups for other columns are still in flight.
+                // When two columns share a coalesced group, the per-slot
+                // mutex serializes the readiness check; both decoders get
+                // the bytes the moment the group resolves.
+                let chunks = match chunk_source.read_rg_chunks(rg_idx, leaves).await {
+                    Ok(c) => Arc::new(c),
+                    Err(e) => {
+                        let _ = tx.send(Err(e.into())).await;
+                        return DaftResult::Ok(());
+                    }
+                };
                 decode_one_streaming(
                     chunks,
                     metadata,
@@ -111,16 +123,9 @@ pub(super) async fn process_rg_with_data_cols(
     // the empty case via `process_rg_predicate_only`.
     debug_assert!(!ctx.plan.data_col_indices.is_empty());
 
-    let data_leaves: Arc<[usize]> =
-        leaves_for_top_fields(&ctx.metadata, &ctx.plan.data_col_indices).into();
-    let rg_chunks = match ctx.chunk_source.read_rg_chunks(rg_idx, data_leaves).await {
-        Ok(c) => Arc::new(c),
-        Err(e) => return err_stream(e.into()),
-    };
-
     let (col_receivers, mut col_decoders) = spawn_col_decoders(
         &ctx.plan.data_col_indices,
-        &rg_chunks,
+        &ctx.chunk_source,
         &ctx.metadata,
         &ctx.arrow_schema,
         selection.as_ref(),
@@ -138,9 +143,9 @@ pub(super) async fn process_rg_with_data_cols(
 
     let stream = futures::stream::unfold(state, |mut state| async move {
         let data_chunks = match recv_one_chunk(&mut state.col_receivers).await {
-            Some(Ok(v)) => v,
-            Some(Err(e)) => return Some((Err(e), state)),
-            None => return None,
+            Ok(Some(v)) => v,
+            Ok(None) => return None,
+            Err(e) => return Some((Err(e), state)),
         };
         let chunk_rows = data_chunks[0].len();
         let ctx = &state.ctx;
@@ -215,16 +220,9 @@ pub(super) async fn process_rg_predicate_only(
         .clone()
         .expect("predicate-only path requires a predicate");
 
-    let pred_leaves: Arc<[usize]> =
-        leaves_for_top_fields(&ctx.metadata, &plan.pred_col_indices).into();
-    let rg_chunks = match ctx.chunk_source.read_rg_chunks(rg_idx, pred_leaves).await {
-        Ok(c) => Arc::new(c),
-        Err(e) => return err_stream(e.into()),
-    };
-
     let (col_receivers, mut col_decoders) = spawn_col_decoders(
         &plan.pred_col_indices,
-        &rg_chunks,
+        &ctx.chunk_source,
         &ctx.metadata,
         &ctx.arrow_schema,
         selection.as_ref(),
@@ -255,9 +253,9 @@ pub(super) async fn process_rg_predicate_only(
     let stream = futures::stream::unfold(state, |mut state| async move {
         loop {
             let chunks = match recv_one_chunk(&mut state.col_receivers).await {
-                Some(Ok(v)) => v,
-                Some(Err(e)) => return Some((Err(e), state)),
-                None => return None,
+                Ok(Some(v)) => v,
+                Ok(None) => return None,
+                Err(e) => return Some((Err(e), state)),
             };
 
             let daft_batch = match record_batch_from_arrow(
