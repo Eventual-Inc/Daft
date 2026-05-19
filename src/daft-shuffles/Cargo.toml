@@ -3,7 +3,6 @@ arrow-array = {workspace = true}
 arrow-schema = {workspace = true}
 arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
-arrow-select = {workspace = true}
 async-channel = "2.5.0"
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
