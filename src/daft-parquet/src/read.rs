@@ -175,15 +175,13 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
     }
 }
 
-/// Stream a single parquet file as `RecordBatch`es. Returns the projected
-/// schema (so callers can construct a schema-bearing empty batch if the stream
-/// is empty).
+/// Stream a single parquet file as `RecordBatch`es.
 pub async fn stream_parquet(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     opts: ParquetReadOptions,
-) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let columns_ref: Option<Vec<&str>> = opts
         .columns
         .as_ref()
@@ -192,7 +190,7 @@ pub async fn stream_parquet(
     let mut local_path = String::new();
     let source = make_source(uri, &mut local_path, io_client, io_stats)?;
 
-    let (schema, table_stream) = Box::pin(crate::reader::stream_parquet(
+    let (_schema, table_stream) = Box::pin(crate::reader::stream_parquet(
         source,
         columns_ref.as_deref(),
         opts.start_offset,
@@ -218,7 +216,7 @@ pub async fn stream_parquet(
         };
         futures::future::ready(Ok(should_continue))
     });
-    Ok((schema, stream.boxed()))
+    Ok(stream.boxed())
 }
 
 pub async fn read_parquet(
@@ -591,7 +589,7 @@ mod tests {
 
         let runtime = get_io_runtime(true);
         runtime.block_on_current_thread(async move {
-            let (_schema, stream) =
+            let stream =
                 stream_parquet(PARQUET_FILE, io_client, None, ParquetReadOptions::default())
                     .await?;
             let tables = stream
@@ -716,8 +714,7 @@ mod tests {
                     num_rows: Some(5),
                     ..Default::default()
                 };
-                let (_schema, mut stream) =
-                    stream_parquet(&uri, io_client, None, opts).await.unwrap();
+                let mut stream = stream_parquet(&uri, io_client, None, opts).await.unwrap();
                 let mut count = 0;
                 while let Some(batch) = stream.next().await {
                     count += batch.unwrap().len();

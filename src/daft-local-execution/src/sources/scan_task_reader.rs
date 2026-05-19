@@ -91,7 +91,7 @@ async fn read_parquet(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-    maintain_order: bool,
+    _maintain_order: bool,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
@@ -113,9 +113,6 @@ async fn read_parquet(
         Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
         _ => None,
     };
-    // Note: scan-layer's `maintain_order` controls inter-scan-task ordering;
-    // the parquet reader always emits RGs in file order within a single file.
-    let _ = maintain_order;
     let opts = ParquetReadOptions {
         columns: file_column_names,
         num_rows: scan_task.pushdowns.limit,
@@ -132,14 +129,13 @@ async fn read_parquet(
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.
-    let (_schema, stream) = Box::pin(daft_parquet::read::stream_parquet(
+    Box::pin(daft_parquet::read::stream_parquet(
         url,
         io_client,
         Some(io_stats),
         opts,
     ))
-    .await?;
-    Ok(stream)
+    .await
 }
 
 async fn count_pushdown_stream(
