@@ -10,6 +10,20 @@ from daft.expressions import col
 from daft.functions import format, uuid
 
 
+def _uuid_bytes(value: str) -> bytes:
+    return bytes.fromhex(value.replace("-", ""))
+
+
+def _uuidv7_components(value: str) -> tuple[int, int, int, int, int]:
+    raw = _uuid_bytes(value)
+    timestamp_ms = int.from_bytes(raw[:6], "big")
+    version = raw[6] >> 4
+    rand_a = ((raw[6] & 0x0F) << 8) | raw[7]
+    variant = raw[8] >> 6
+    rand_b = int.from_bytes(raw[8:], "big") & ((1 << 62) - 1)
+    return timestamp_ms, version, rand_a, variant, rand_b
+
+
 def test_uuid_column_generation(make_df) -> None:
     data = {"a": list(range(200))}
     df = make_df(data).with_column("uuid", uuid()).collect()
@@ -21,6 +35,8 @@ def test_uuid_column_generation(make_df) -> None:
     assert len(set(values)) == 200
     uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     assert all(isinstance(v, str) and uuid_re.match(v) is not None for v in values)
+    assert all(_uuid_bytes(v)[6] >> 4 == 0x4 for v in values)
+    assert all(_uuid_bytes(v)[8] >> 6 == 0b10 for v in values)
 
 
 def test_uuidv7_column_generation(make_df) -> None:
@@ -41,6 +57,28 @@ def test_uuidv7_column_generation(make_df) -> None:
 
     timestamp_ms = int(values[0].replace("-", "")[:12], 16)
     assert before_ms <= timestamp_ms <= after_ms
+
+
+def test_uuidv7_byte_layout_components(make_df) -> None:
+    data = {"a": list(range(200))}
+    before_ms = int(time.time() * 1000)
+    df = make_df(data).with_column("uuid", uuid(version="v7")).collect()
+    after_ms = int(time.time() * 1000)
+
+    components = [_uuidv7_components(v) for v in df.to_pydict()["uuid"]]
+    timestamp_ms = [parts[0] for parts in components]
+    versions = [parts[1] for parts in components]
+    rand_a = [parts[2] for parts in components]
+    variants = [parts[3] for parts in components]
+    rand_b = [parts[4] for parts in components]
+
+    assert timestamp_ms == sorted(timestamp_ms)
+    assert all(before_ms <= ts <= after_ms for ts in timestamp_ms)
+    assert all(version == 0x7 for version in versions)
+    assert all(0 <= value < (1 << 12) for value in rand_a)
+    assert all(variant == 0b10 for variant in variants)
+    assert all(0 <= value < (1 << 62) for value in rand_b)
+    assert len(set(zip(timestamp_ms, rand_a, rand_b))) == len(components)
 
 
 def test_uuid_version_argument_supports_v7(make_df) -> None:
