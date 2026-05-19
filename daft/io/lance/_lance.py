@@ -33,12 +33,6 @@ def read_lance(
     include_fragment_id: Any = None,
     checkpoint: Any = None,
 ) -> Any:
-    warnings.warn(
-        "daft.read_lance is deprecated and will be removed in a future release. "
-        "Please use daft_lance.read_lance from the daft-lance package instead: pip install daft-lance",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
     return _daft_lance.read_lance(
         uri,
         io_config=io_config,
