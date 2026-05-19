@@ -55,11 +55,11 @@ class PaimonDataSink(DataSink[list[Any]]):
             ]
         )
 
-    def _align_batch_to_target_schema(self, batch: pa.RecordBatch, *, validate_schema: bool = True) -> pa.RecordBatch:
+    def _align_batch_to_target_schema(self, batch: pa.RecordBatch, *, need_validate: bool = True) -> pa.RecordBatch:
         target_names = self._target_schema.names
         input_names = batch.schema.names
 
-        if validate_schema:
+        if need_validate:
             if len(set(input_names)) != len(input_names):
                 raise ValueError(f"Cannot write to Paimon with duplicate input field names: {input_names}")
 
@@ -89,16 +89,16 @@ class PaimonDataSink(DataSink[list[Any]]):
 
         total_rows = 0
         total_bytes = 0
-        validated_schema: pa.Schema | None = None
+        last_input_schema: pa.Schema | None = None
         try:
             for mp in micropartitions:
                 for rb in mp.get_record_batches():
                     batch = rb.to_arrow_record_batch()
-                    validate_schema = batch.schema != validated_schema
                     input_schema = batch.schema
-                    batch = self._align_batch_to_target_schema(batch, validate_schema=validate_schema)
-                    if validate_schema:
-                        validated_schema = input_schema
+                    need_validate = input_schema != last_input_schema
+                    batch = self._align_batch_to_target_schema(batch, need_validate=need_validate)
+                    if need_validate:
+                        last_input_schema = input_schema
                     table_write.write_arrow_batch(batch)
                     total_rows += batch.num_rows
                     total_bytes += batch.nbytes
