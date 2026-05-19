@@ -56,7 +56,7 @@ pub async fn write_partitions_one_shot(
     shuffle_dirs: &[String],
     schema: SchemaRef,
     compression: Option<arrow_ipc::CompressionType>,
-    partitions_per_output: Vec<Vec<MicroPartition>>,
+    partitions_per_output: Vec<MicroPartition>,
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions_per_output.len();
     let dir_idx = (input_id as usize) % shuffle_dirs.len();
@@ -80,9 +80,9 @@ pub async fn write_partitions_one_shot(
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 
             let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
-            for (idx, parts) in partitions_per_output.into_iter().enumerate() {
+            for (idx, partition) in partitions_per_output.into_iter().enumerate() {
                 caches.push(write_one_partition(
-                    parts,
+                    partition,
                     partition_ref_id(input_id, idx),
                     &mut writer,
                     &arrow_schema,
@@ -103,18 +103,17 @@ pub async fn write_partitions_one_shot(
         .await?
 }
 
-/// Concat one output partition's MicroPartitions and write to `writer`,
-/// coalescing small Daft record batches up to `CHUNK_TARGET_BYTES` per IPC
-/// message. Large batches pass through unsplit.
+/// Write one output partition to `writer`, coalescing small Daft record batches
+/// up to `CHUNK_TARGET_BYTES` per IPC message. Large batches pass through unsplit.
 fn write_one_partition(
-    parts: Vec<MicroPartition>,
+    partition: MicroPartition,
     ref_id: u64,
     writer: &mut ShuffleWriter,
     arrow_schema: &Arc<arrow_schema::Schema>,
     schema: &SchemaRef,
     file_path: &str,
 ) -> DaftResult<PartitionCache> {
-    let num_rows: usize = parts.iter().map(|p| p.len()).sum();
+    let num_rows = partition.len();
     if num_rows == 0 {
         return Ok(PartitionCache {
             partition_ref_id: ref_id,
@@ -126,8 +125,7 @@ fn write_one_partition(
             byte_ranges: Some(Vec::new()),
         });
     }
-    let combined = MicroPartition::concat(parts)?;
-    let batches = combined.record_batches();
+    let batches = partition.record_batches();
 
     let offset_before = writer.get_ref().bytes_written;
     let mut size_bytes = 0;

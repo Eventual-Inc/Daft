@@ -214,19 +214,17 @@ impl BlockingSink for RepartitionSink {
                     states
                         .iter_mut()
                         .try_for_each(RepartitionAccState::flush_pre_partitioned)?;
-                    let (per_partition, input_id) = flatten_per_partition(states, num_partitions);
+                    let (per_partition, input_id) =
+                        flatten_per_partition(states, num_partitions, schema.clone())?;
 
                     match backend {
                         RepartitionBackend::Ray => {
                             let mut joinset = OrderedJoinSet::new();
                             for data in per_partition {
-                                let schema = schema.clone();
                                 joinset.spawn(async move {
-                                    let concated_mp =
-                                        MicroPartition::concat_or_empty(data, schema)?;
-                                    let concated_rb = concated_mp.concat_or_get()?;
+                                    let concated_rb = data.concat_or_get()?;
                                     let mp = MicroPartition::new_loaded(
-                                        concated_mp.schema(),
+                                        data.schema(),
                                         Arc::new(concated_rb.into_iter().collect()),
                                         None,
                                     );
@@ -317,23 +315,32 @@ impl BlockingSink for RepartitionSink {
 }
 
 fn flatten_per_partition(
-    states: Vec<RepartitionAccState>,
+    mut states: Vec<RepartitionAccState>,
     num_partitions: usize,
-) -> (Vec<Vec<MicroPartition>>, InputId) {
+    schema: SchemaRef,
+) -> DaftResult<(Vec<MicroPartition>, InputId)> {
     let input_id = states
         .first()
         .map(|s| s.input_id)
         .expect("RepartitionSink::finalize called with no states");
     debug_assert!(states.iter().all(|s| s.input_id == input_id));
+    debug_assert!(
+        states
+            .iter()
+            .all(|s| s.post_repartitioned.len() == num_partitions)
+    );
 
-    let mut per_partition: Vec<Vec<MicroPartition>> =
-        (0..num_partitions).map(|_| Vec::new()).collect();
-    for state in states {
-        for (i, mut chunk) in state.post_repartitioned.into_iter().enumerate() {
-            per_partition[i].append(&mut chunk);
-        }
-    }
-    (per_partition, input_id)
+    let per_partition = (0..num_partitions)
+        .map(|partition_idx| {
+            let chunks = states
+                .iter_mut()
+                .flat_map(|state| std::mem::take(&mut state.post_repartitioned[partition_idx]))
+                .collect::<Vec<_>>();
+            MicroPartition::concat_or_empty(chunks, schema.clone())
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    Ok((per_partition, input_id))
 }
 
 fn parse_compression(s: Option<&str>) -> DaftResult<Option<arrow_ipc::CompressionType>> {
