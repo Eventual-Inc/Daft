@@ -179,6 +179,97 @@ fn parquet_repetition(t: &ParquetType) -> Repetition {
     }
 }
 
+fn count_primitive_leaves(t: &ParquetType) -> usize {
+    if t.is_primitive() {
+        return 1;
+    }
+    t.get_fields()
+        .iter()
+        .map(|c| count_primitive_leaves(c))
+        .sum()
+}
+
+fn leaf_index_for_top_field(metadata: &ParquetMetaData, top_field_idx: usize) -> usize {
+    let root = metadata.file_metadata().schema_descr().root_schema();
+    let root_fields = root.get_fields();
+    let mut idx = 0usize;
+    for (i, f) in root_fields.iter().enumerate() {
+        if i == top_field_idx {
+            break;
+        }
+        idx += count_primitive_leaves(f);
+    }
+    idx
+}
+
+fn apply_repetition(parent_def: i16, parent_rep: i16, repetition: Repetition) -> (i16, i16, bool) {
+    match repetition {
+        Repetition::OPTIONAL => (parent_def + 1, parent_rep, true),
+        Repetition::REQUIRED => (parent_def, parent_rep, false),
+        Repetition::REPEATED => (parent_def + 1, parent_rep + 1, false),
+    }
+}
+
+/// `def_level` / `rep_level` are the LIST's own levels (not the item's).
+fn wrap_in_list_like(
+    item_reader: Box<dyn ArrayReader>,
+    arrow_type: arrow::datatypes::DataType,
+    def_level: i16,
+    rep_level: i16,
+    nullable: bool,
+) -> Box<dyn ArrayReader> {
+    match arrow_type {
+        arrow::datatypes::DataType::LargeList(_) => Box::new(ListArrayReader::<i64>::new(
+            item_reader,
+            arrow_type,
+            def_level,
+            rep_level,
+            nullable,
+        )),
+        arrow::datatypes::DataType::FixedSizeList(_, size) => {
+            Box::new(FixedSizeListArrayReader::new(
+                item_reader,
+                size as usize,
+                arrow_type,
+                def_level,
+                rep_level,
+                nullable,
+            ))
+        }
+        _ => Box::new(ListArrayReader::<i32>::new(
+            item_reader,
+            arrow_type,
+            def_level,
+            rep_level,
+            nullable,
+        )),
+    }
+}
+
+fn build_top_field_reader(
+    chunks: &HashMap<usize, OffsetBytes>,
+    metadata: &ParquetMetaData,
+    rg_idx: usize,
+    top_field_idx: usize,
+    arrow_field: &ArrowField,
+) -> ParquetResult<(Box<dyn ArrayReader>, usize)> {
+    let total_rows = metadata.row_group(rg_idx).num_rows() as usize;
+    let mut leaf_idx = leaf_index_for_top_field(metadata, top_field_idx);
+    let root_fields = metadata
+        .file_metadata()
+        .schema_descr()
+        .root_schema()
+        .get_fields();
+    let parquet_type = &root_fields[top_field_idx];
+    let builder = FieldReaderBuilder {
+        chunks,
+        metadata,
+        rg_idx,
+    };
+    let reader = builder.build(parquet_type, arrow_field.data_type(), 0, 0, &mut leaf_idx)?;
+    Ok((reader, total_rows))
+}
+
 /// Walks the parquet + arrow schemas in lockstep (mirrors arrow-rs's
 /// private `complex::Visitor`) to build a tree of `Box<dyn ArrayReader>`.
 /// `leaf_idx` is the depth-first cursor into parquet leaf columns.
@@ -602,97 +693,6 @@ impl FieldReaderBuilder<'_> {
             nullable,
         )))
     }
-}
-
-fn apply_repetition(parent_def: i16, parent_rep: i16, repetition: Repetition) -> (i16, i16, bool) {
-    match repetition {
-        Repetition::OPTIONAL => (parent_def + 1, parent_rep, true),
-        Repetition::REQUIRED => (parent_def, parent_rep, false),
-        Repetition::REPEATED => (parent_def + 1, parent_rep + 1, false),
-    }
-}
-
-/// `def_level` / `rep_level` are the LIST's own levels (not the item's).
-fn wrap_in_list_like(
-    item_reader: Box<dyn ArrayReader>,
-    arrow_type: arrow::datatypes::DataType,
-    def_level: i16,
-    rep_level: i16,
-    nullable: bool,
-) -> Box<dyn ArrayReader> {
-    match arrow_type {
-        arrow::datatypes::DataType::LargeList(_) => Box::new(ListArrayReader::<i64>::new(
-            item_reader,
-            arrow_type,
-            def_level,
-            rep_level,
-            nullable,
-        )),
-        arrow::datatypes::DataType::FixedSizeList(_, size) => {
-            Box::new(FixedSizeListArrayReader::new(
-                item_reader,
-                size as usize,
-                arrow_type,
-                def_level,
-                rep_level,
-                nullable,
-            ))
-        }
-        _ => Box::new(ListArrayReader::<i32>::new(
-            item_reader,
-            arrow_type,
-            def_level,
-            rep_level,
-            nullable,
-        )),
-    }
-}
-
-fn leaf_index_for_top_field(metadata: &ParquetMetaData, top_field_idx: usize) -> usize {
-    let root = metadata.file_metadata().schema_descr().root_schema();
-    let root_fields = root.get_fields();
-    let mut idx = 0usize;
-    for (i, f) in root_fields.iter().enumerate() {
-        if i == top_field_idx {
-            break;
-        }
-        idx += count_primitive_leaves(f);
-    }
-    idx
-}
-
-fn count_primitive_leaves(t: &ParquetType) -> usize {
-    if t.is_primitive() {
-        return 1;
-    }
-    t.get_fields()
-        .iter()
-        .map(|c| count_primitive_leaves(c))
-        .sum()
-}
-
-fn build_top_field_reader(
-    chunks: &HashMap<usize, OffsetBytes>,
-    metadata: &ParquetMetaData,
-    rg_idx: usize,
-    top_field_idx: usize,
-    arrow_field: &ArrowField,
-) -> ParquetResult<(Box<dyn ArrayReader>, usize)> {
-    let total_rows = metadata.row_group(rg_idx).num_rows() as usize;
-    let mut leaf_idx = leaf_index_for_top_field(metadata, top_field_idx);
-    let root_fields = metadata
-        .file_metadata()
-        .schema_descr()
-        .root_schema()
-        .get_fields();
-    let parquet_type = &root_fields[top_field_idx];
-    let builder = FieldReaderBuilder {
-        chunks,
-        metadata,
-        rg_idx,
-    };
-    let reader = builder.build(parquet_type, arrow_field.data_type(), 0, 0, &mut leaf_idx)?;
-    Ok((reader, total_rows))
 }
 
 /// Stream `ArrayRef`s of up to `chunk_size` rows each from one top-level
