@@ -152,6 +152,10 @@ fn uuid_kernel(len: usize, version: UuidVersion) -> DaftResult<FixedSizeBinaryBu
 #[cfg(test)]
 mod tests {
     use arrow_array::Array;
+    use daft_dsl::{
+        functions::{FunctionArg, FunctionArgs, ScalarUDF, scalar::EvalContext},
+        lit,
+    };
 
     use super::*;
 
@@ -183,5 +187,78 @@ mod tests {
 
         assert_eq!(v4.value(0)[6] >> 4, 0x4);
         assert_eq!(v7.value(0)[6] >> 4, 0x7);
+    }
+
+    #[test]
+    fn uuid_version_parses_supported_aliases() {
+        assert_eq!("4".parse::<UuidVersion>().unwrap(), UuidVersion::V4);
+        assert_eq!("v4".parse::<UuidVersion>().unwrap(), UuidVersion::V4);
+        assert_eq!("V4".parse::<UuidVersion>().unwrap(), UuidVersion::V4);
+        assert_eq!("7".parse::<UuidVersion>().unwrap(), UuidVersion::V7);
+        assert_eq!("v7".parse::<UuidVersion>().unwrap(), UuidVersion::V7);
+        assert_eq!("V7".parse::<UuidVersion>().unwrap(), UuidVersion::V7);
+    }
+
+    #[test]
+    fn uuid_version_rejects_unsupported_versions() {
+        let err = "v1".parse::<UuidVersion>().unwrap_err();
+        assert!(err.to_string().contains("`version` must be 'v4' or 'v7'"));
+    }
+
+    #[test]
+    fn uuid_version_converts_to_and_from_string_literal() {
+        let literal = Literal::from(UuidVersion::V7);
+        assert_eq!(literal, Literal::Utf8("v7".to_string()));
+        assert_eq!(
+            UuidVersion::try_from_literal(&literal).unwrap(),
+            UuidVersion::V7
+        );
+    }
+
+    #[test]
+    fn uuid_version_rejects_non_string_literal() {
+        let err = UuidVersion::try_from_literal(&Literal::Int64(7)).unwrap_err();
+        assert!(err.to_string().contains("Expected a string literal"));
+    }
+
+    #[test]
+    fn uuid_default_call_generates_v4_series() {
+        let series = Uuid
+            .call(FunctionArgs::empty(), &EvalContext { row_count: 16 })
+            .unwrap();
+        let array = series.uuid().unwrap();
+
+        assert_eq!(array.len(), 16);
+        for idx in 0..array.len() {
+            let bytes = array.physical.get(idx).unwrap();
+            assert_eq!(bytes[6] >> 4, 0x4);
+            assert_eq!(bytes[8] >> 6, 0b10);
+        }
+    }
+
+    #[test]
+    fn uuid_get_return_field_accepts_version_argument() {
+        let field = Uuid
+            .get_return_field(FunctionArgs::new_unnamed(vec![lit("v7")]), &Schema::empty())
+            .unwrap();
+
+        assert_eq!(field.dtype, DataType::Uuid);
+    }
+
+    #[test]
+    fn uuid_get_return_field_rejects_invalid_version_argument() {
+        let err = Uuid
+            .get_return_field(FunctionArgs::new_unnamed(vec![lit("v1")]), &Schema::empty())
+            .unwrap_err();
+
+        assert!(err.to_string().contains("`version` must be 'v4' or 'v7'"));
+    }
+
+    #[test]
+    fn uuid_get_return_field_accepts_named_version_argument() {
+        let args = FunctionArgs::try_new(vec![FunctionArg::named("version", lit("v7"))]).unwrap();
+        let field = Uuid.get_return_field(args, &Schema::empty()).unwrap();
+
+        assert_eq!(field.dtype, DataType::Uuid);
     }
 }
