@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from daft.lazy_import import LazyImport
+
+if TYPE_CHECKING:
+    import os
 
 _daft_lance = LazyImport("daft_lance._lance")
 
@@ -16,14 +19,40 @@ __all__ = [
 ]
 
 
-def read_lance(*args: Any, **kwargs: Any) -> Any:
+def read_lance(
+    uri: str | os.PathLike[str],
+    io_config: Any = None,
+    version: Any = None,
+    asof: Any = None,
+    block_size: Any = None,
+    commit_lock: Any = None,
+    index_cache_size: Any = None,
+    default_scan_options: Any = None,
+    metadata_cache_size_bytes: Any = None,
+    fragment_group_size: Any = None,
+    include_fragment_id: Any = None,
+    checkpoint: Any = None,
+) -> Any:
     warnings.warn(
         "daft.read_lance is deprecated and will be removed in a future release. "
         "Please use daft_lance.read_lance from the daft-lance package instead: pip install daft-lance",
         category=DeprecationWarning,
         stacklevel=2,
     )
-    return _daft_lance.read_lance(*args, **kwargs)
+    return _daft_lance.read_lance(
+        uri,
+        io_config=io_config,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+        fragment_group_size=fragment_group_size,
+        include_fragment_id=include_fragment_id,
+        checkpoint=checkpoint,
+    )
 
 
 def merge_columns(*args: Any, **kwargs: Any) -> Any:
