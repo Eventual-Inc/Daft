@@ -9,7 +9,9 @@ use std::{
 };
 
 use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
-use chunk_source::{ChunkSource, LocalChunkSource, fetch_remote_chunk_source, open_local_file};
+use chunk_source::{
+    ChunkSource, ChunkSourceBuilder, LocalChunkSource, open_local_file, prepare_remote_chunk_source,
+};
 use common_error::DaftResult;
 use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
@@ -69,10 +71,9 @@ pub async fn stream_parquet(
     source: ParquetSource<'_>,
     opts: &ParquetReadOptions,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let (chunk_source, arrow_metadata, effective_row_groups_owned) =
+    let (cs_builder, arrow_metadata, effective_row_groups_owned) =
         open_chunk_source(&source, opts).await?;
-    let path = chunk_source.path().clone();
-    let chunk_source = Arc::new(chunk_source);
+    let path = cs_builder.path().clone();
     let row_groups: Option<&[i64]> = effective_row_groups_owned
         .as_deref()
         .or(opts.row_groups.as_deref());
@@ -86,6 +87,9 @@ pub async fn stream_parquet(
     )?;
     let plan = resolve_column_plan(&prepared, opts)?;
 
+    // Prune by predicate stats BEFORE building the remote chunk source —
+    // `cs_builder.build` is what spawns byte-range fetches, so issuing it
+    // earlier would prefetch RGs the predicate eliminates.
     let rg_indices = prune_row_groups(
         &prepared.parquet_metadata,
         row_groups,
@@ -110,6 +114,9 @@ pub async fn stream_parquet(
             plan.return_daft_schema,
         );
     }
+
+    // Now spawn the byte-range fetches (remote) — pruned set only.
+    let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
 
     let global_starts = build_global_starts(&prepared.parquet_metadata);
     let base_selections = build_base_selections(
@@ -151,24 +158,24 @@ pub async fn stream_parquet(
 async fn open_chunk_source(
     source: &ParquetSource<'_>,
     opts: &ParquetReadOptions,
-) -> crate::Result<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
+) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata, Option<Vec<i64>>)> {
     match source {
         ParquetSource::Local { path } => {
             let (file, file_len, arrow_metadata) = open_local_file(path).await?;
-            let cs = ChunkSource::Local(LocalChunkSource {
+            let cs = LocalChunkSource {
                 path: Arc::from(*path),
                 file,
                 file_len,
                 metadata: arrow_metadata.metadata().clone(),
-            });
-            Ok((cs, arrow_metadata, None))
+            };
+            Ok((ChunkSourceBuilder::Local(cs), arrow_metadata, None))
         }
         ParquetSource::Url {
             uri,
             io_client,
             io_stats,
         } => {
-            Box::pin(fetch_remote_chunk_source(
+            Box::pin(prepare_remote_chunk_source(
                 uri,
                 io_client.clone(),
                 io_stats.clone(),

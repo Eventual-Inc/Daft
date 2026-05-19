@@ -99,14 +99,62 @@ pub(crate) enum ChunkSource {
     Remote(RemoteChunkSource),
 }
 
-impl ChunkSource {
+/// Deferred construction of a `ChunkSource`. For `Local` the source is already
+/// open (`open_local_file` is a cheap syscall + footer read). For `Remote` we
+/// hold the bits needed to spawn byte-range fetches but have NOT spawned them
+/// yet — caller passes a final, predicate-pruned RG set to [`Self::build`].
+pub(crate) enum ChunkSourceBuilder {
+    Local(LocalChunkSource),
+    Remote(RemoteChunkSourcePrep),
+}
+
+pub(crate) struct RemoteChunkSourcePrep {
+    pub(super) path: Arc<str>,
+    pub(super) uri: String,
+    pub(super) file_size: usize,
+    pub(super) active_col_indices: Vec<usize>,
+    pub(super) io_client: Arc<daft_io::IOClient>,
+    pub(super) io_stats: Option<daft_io::IOStatsRef>,
+}
+
+impl ChunkSourceBuilder {
     pub(super) fn path(&self) -> &Arc<str> {
         match self {
             Self::Local(s) => &s.path,
-            Self::Remote(s) => &s.path,
+            Self::Remote(p) => &p.path,
         }
     }
 
+    /// Finalize the chunk source. For `Remote`, this is when byte-range fetches
+    /// for `rg_indices` are spawned — call only after predicate-based pruning.
+    pub(super) fn build(
+        self,
+        parquet_metadata: Arc<ParquetMetaData>,
+        rg_indices: &[usize],
+    ) -> ChunkSource {
+        match self {
+            Self::Local(cs) => ChunkSource::Local(cs),
+            Self::Remote(prep) => {
+                if rg_indices.is_empty() {
+                    ChunkSource::Remote(RemoteChunkSource::empty(prep.path, prep.file_size as u64))
+                } else {
+                    ChunkSource::Remote(RemoteChunkSource::from_ranged(
+                        prep.path,
+                        parquet_metadata,
+                        prep.file_size,
+                        &prep.active_col_indices,
+                        rg_indices,
+                        prep.io_client,
+                        prep.io_stats,
+                        prep.uri,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+impl ChunkSource {
     pub(super) async fn read_rg_chunks(
         &self,
         rg_idx: usize,
@@ -487,12 +535,12 @@ pub(super) async fn open_local_file(
         .map_err(task_err(path_for_join))?
 }
 
-pub(super) async fn fetch_remote_chunk_source(
+pub(super) async fn prepare_remote_chunk_source(
     uri: &str,
     io_client: Arc<daft_io::IOClient>,
     io_stats: Option<daft_io::IOStatsRef>,
     opts: &ParquetReadOptions,
-) -> crate::Result<(ChunkSource, ArrowReaderMetadata, Option<Vec<i64>>)> {
+) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata, Option<Vec<i64>>)> {
     let (parquet_metadata_res, file_size_res) = Box::pin(futures::future::join(
         crate::metadata::read_parquet_metadata(
             uri,
@@ -593,31 +641,17 @@ pub(super) async fn fetch_remote_chunk_source(
         Some(active_rg_indices.iter().map(|&i| i as i64).collect());
 
     let path: Arc<str> = Arc::from(uri);
-    if active_rg_indices.is_empty() {
-        let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
-            .with_context(|_| ParquetMetadataSnafu {
-                path: uri.to_string(),
-            })?;
-        return Ok((
-            ChunkSource::Remote(RemoteChunkSource::empty(path, file_size as u64)),
-            meta,
-            override_rgs,
-        ));
-    }
-
-    let chunk_source_enum = ChunkSource::Remote(RemoteChunkSource::from_ranged(
-        path,
-        parquet_metadata.clone(),
-        file_size,
-        &active_col_indices,
-        &active_rg_indices,
-        io_client,
-        io_stats,
-        uri.to_string(),
-    ));
     let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
         .with_context(|_| ParquetMetadataSnafu {
             path: uri.to_string(),
         })?;
-    Ok((chunk_source_enum, meta, override_rgs))
+    let builder = ChunkSourceBuilder::Remote(RemoteChunkSourcePrep {
+        path,
+        uri: uri.to_string(),
+        file_size,
+        active_col_indices,
+        io_client,
+        io_stats,
+    });
+    Ok((builder, meta, override_rgs))
 }
