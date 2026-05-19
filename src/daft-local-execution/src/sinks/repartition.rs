@@ -10,6 +10,7 @@ use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
     oneshot_writer::write_partitions_one_shot, server::flight_server::ShuffleFlightServer,
+    shuffle_cache::CHUNK_TARGET_BYTES,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -22,12 +23,13 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
-// Worst-case buffered memory is `num_workers × num_inputs ×
-// REPARTITION_BUFFER_THRESHOLD_BYTES` — one accumulator per (worker, input).
-const REPARTITION_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024;
+// Worst-case buffered memory is `num_workers × num_inputs × threshold` — one
+// accumulator per (worker, input).
+const REPARTITION_MIN_BUFFER_THRESHOLD_BYTES: usize = 16 * 1024 * 1024; // 16 MB
+const REPARTITION_MAX_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024; // 256 MB
 
 /// Per-(worker, input) accumulator. Morsels are buffered until they cross
-/// `REPARTITION_BUFFER_THRESHOLD_BYTES`, then fused and partitioned in one pass.
+/// the sink's threshold, then fused and partitioned in one pass.
 pub(crate) struct RepartitionAccState {
     post_repartitioned: Vec<Vec<MicroPartition>>,
     pre_repartitioned: Vec<MicroPartition>,
@@ -110,6 +112,21 @@ impl RepartitionBackend {
     }
 }
 
+fn repartition_buffer_threshold_bytes(
+    backend: &RepartitionBackend,
+    num_partitions: usize,
+) -> usize {
+    match backend {
+        RepartitionBackend::Ray => REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
+        RepartitionBackend::Flight { .. } => CHUNK_TARGET_BYTES
+            .saturating_mul(num_partitions.max(1))
+            .clamp(
+                REPARTITION_MIN_BUFFER_THRESHOLD_BYTES,
+                REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
+            ),
+    }
+}
+
 pub struct RepartitionSink {
     backend: RepartitionBackend,
     schema: SchemaRef,
@@ -179,6 +196,8 @@ impl BlockingSink for RepartitionSink {
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
+        let buffer_threshold_bytes =
+            repartition_buffer_threshold_bytes(&self.backend, self.num_partitions);
         spawner
             .spawn(
                 async move {
@@ -186,7 +205,7 @@ impl BlockingSink for RepartitionSink {
                     state.pre_repartitioned_size_bytes += input_bytes;
                     state.pre_repartitioned.push(input);
 
-                    if state.pre_repartitioned_size_bytes >= REPARTITION_BUFFER_THRESHOLD_BYTES {
+                    if state.pre_repartitioned_size_bytes >= buffer_threshold_bytes {
                         state.flush_pre_partitioned()?;
                     }
 
