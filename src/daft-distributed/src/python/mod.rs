@@ -32,6 +32,28 @@ use crate::{
     },
 };
 
+/// Emit a Python `UserWarning` via the `warnings` module. The `stacklevel=2`
+/// makes the warning point at the caller of the binding (e.g., the user's
+/// `.collect()` / `.explain()` call) rather than into Rust.
+fn emit_python_warning(py: Python, message: &str) -> PyResult<()> {
+    let warnings = PyModule::import(py, pyo3::intern!(py, "warnings"))?;
+    let user_warning = py
+        .import(pyo3::intern!(py, "builtins"))?
+        .getattr(pyo3::intern!(py, "UserWarning"))?;
+    warnings
+        .getattr(pyo3::intern!(py, "warn"))?
+        .call1((message, user_warning, 2_usize))?;
+    Ok(())
+}
+
+/// Convenience: emit each translator-collected hint as a `UserWarning`.
+fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
+    for hint in hints {
+        emit_python_warning(py, hint)?;
+    }
+    Ok(())
+}
+
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
@@ -106,55 +128,58 @@ impl PyDistributedPhysicalPlan {
         self.plan.idx().to_string()
     }
 
-    fn num_partitions(&self) -> PyResult<usize> {
+    fn num_partitions(&self, py: Python) -> PyResult<usize> {
         // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.num_partitions"),
         )?;
+        surface_hints(py, &translation.hints)?;
 
-        Ok(pipeline_node.num_partitions())
+        Ok(translation.root.num_partitions())
     }
 
     /// Visualize the distributed pipeline as ASCII text
-    fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+    fn repr_ascii(&self, py: Python, simple: bool) -> PyResult<String> {
         // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.repr_ascii"),
         )?;
+        surface_hints(py, &translation.hints)?;
 
-        Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
+        Ok(viz_distributed_pipeline_ascii(&translation.root, simple))
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
-    fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
+    fn repr_mermaid(&self, py: Python, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.repr_mermaid"),
         )?;
+        surface_hints(py, &translation.hints)?;
 
         let display_level = if simple {
             DisplayLevel::Compact
@@ -162,7 +187,7 @@ impl PyDistributedPhysicalPlan {
             DisplayLevel::Default
         };
         Ok(viz_distributed_pipeline_mermaid(
-            &pipeline_node,
+            &translation.root,
             display_level,
             bottom_up,
             None,
@@ -170,7 +195,11 @@ impl PyDistributedPhysicalPlan {
     }
 
     #[pyo3(signature = (psets=None))]
-    fn repr_json(&self, psets: Option<HashMap<String, Vec<RayPartitionRef>>>) -> PyResult<String> {
+    fn repr_json(
+        &self,
+        py: Python,
+        psets: Option<HashMap<String, Vec<RayPartitionRef>>>,
+    ) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
@@ -192,15 +221,16 @@ impl PyDistributedPhysicalPlan {
             ),
             None => Arc::new(HashMap::new()),
         };
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             psets,
             &Meter::global_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        surface_hints(py, &translation.hints)?;
 
-        Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
+        Ok(serde_json::to_string(&translation.root.repr_json()).unwrap())
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
@@ -262,19 +292,27 @@ impl PyDistributedPhysicalPlanRunner {
 
         let meter = Meter::query_scope(query_id.clone(), "daft.execution.distributed");
 
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             (&plan.plan).into(),
             logical_plan,
             Arc::new(psets),
             &meter,
         )?;
 
-        let statistics_manager =
-            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter, query_id)?;
+        // Surface translation hints (e.g., suggestions to switch shuffle algorithm) as
+        // Python UserWarnings so they show up in notebooks/consoles and can be filtered.
+        surface_hints(py, &translation.hints)?;
+
+        let statistics_manager = StatisticsManager::from_pipeline_node(
+            &translation.root,
+            subscribers,
+            &meter,
+            query_id,
+        )?;
 
         let plan_result =
             self.runner
-                .run_plan(query_idx, pipeline_node, statistics_manager.clone())?;
+                .run_plan(query_idx, translation.root, statistics_manager.clone())?;
 
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),

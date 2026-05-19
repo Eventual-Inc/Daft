@@ -582,3 +582,22 @@ def test_flight_gather_mixed_empty_inputs(flight_shuffle_ctx):
 
         top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
         assert top == sorted(expected_rows, reverse=True)[:5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle hints are emitted by the distributed (ray) translator",
+)
+def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
+    """High (input × output) partition fan-out should emit a UserWarning suggesting flight_shuffle.
+
+    The map-reduce shuffle materializes one object on the head node per (input, output)
+    partition slot, so 800 × 800 = 640_000 slots crosses the 500_000-slot threshold and the
+    translator records a hint. We trigger translation cheaply via `df.explain(show_all=True)`,
+    which calls `repr_ascii` and surfaces any hints as Python `UserWarning`s.
+    """
+    with daft.execution_config_ctx(shuffle_algorithm="auto"):
+        df = daft.from_pydict({"a": list(range(1))}).into_partitions(800).repartition(800, "a")
+
+        with pytest.warns(UserWarning, match=r"flight_shuffle"):
+            df.explain(show_all=True, file=io.StringIO())
