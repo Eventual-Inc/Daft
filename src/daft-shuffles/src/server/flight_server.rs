@@ -19,10 +19,10 @@ use tokio::{
 };
 use tonic::{Request, Response, Status, transport::Server};
 
-use super::stream::{FileReadSpec, FlightDataStreamReader, concat_specs_into_flight_data_stream};
+use super::stream::FlightDataStreamReader;
 use crate::{
     client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache},
+    shuffle_cache::PartitionCache,
 };
 
 struct ParsedTicket {
@@ -67,6 +67,17 @@ impl ParsedTicket {
 struct FlightPartitionKey {
     shuffle_id: u64,
     partition_ref_id: u64,
+}
+
+/// How to read one file's contribution to a Flight response.
+enum FileReadSpec {
+    /// Read the entire IPC stream file (per-partition cache).
+    Whole { path: String },
+    /// Read one or more `(start, end)` ranges from a single file (combined-file shuffle).
+    Ranges {
+        path: String,
+        ranges: Vec<(u64, u64)>,
+    },
 }
 
 #[derive(Clone, Default)]
@@ -269,20 +280,15 @@ impl FlightService for ShuffleFlightServer {
                 ))
             })?;
 
-        let arrow_schema: arrow_schema::SchemaRef = Arc::new(
-            schema
-                .to_arrow()
-                .map_err(|e| Status::internal(format!("schema to arrow: {}", e)))?,
-        );
-        let flight_schema =
-            SchemaAsIpc::new(arrow_schema.as_ref(), &IpcWriteOptions::default()).into();
-        let flight_data_stream = Box::pin(concat_specs_into_flight_data_stream(
-            specs,
-            arrow_schema,
-            CHUNK_TARGET_BYTES,
-        )?);
-        let flight_data =
-            futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
+        let arrow_schema = schema
+            .to_arrow()
+            .map_err(|e| Status::internal(format!("schema to arrow: {}", e)))?;
+        let flight_schema = SchemaAsIpc::new(&arrow_schema, &IpcWriteOptions::default()).into();
+
+        let data_stream = futures::stream::iter(specs)
+            .flat_map(open_spec_as_flight_stream)
+            .map_err(|e| Status::internal(format!("flight stream: {}", e)));
+        let flight_data = futures::stream::once(async { Ok(flight_schema) }).chain(data_stream);
         Ok(Response::new(Box::pin(flight_data)))
     }
 
