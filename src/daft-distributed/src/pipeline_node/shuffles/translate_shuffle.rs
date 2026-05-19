@@ -158,9 +158,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         )
     }
 
-    /// Hint the user to switch to flight_shuffle when total bytes or partition fan-out
-    /// would cause Ray object-store / head-node memory pressure. Fires at most once per
-    /// kind per query; skipped if already on flight_shuffle.
+    /// Hint the user to switch to flight_shuffle when total bytes or partition product
+    /// would cause Ray object-store / head-node memory pressure. Skipped on flight_shuffle.
     pub(crate) fn maybe_warn_large_shuffle(
         &mut self,
         backend: &DistributedShuffleBackend,
@@ -174,10 +173,7 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         let algo = &self.plan_config.config.shuffle_algorithm;
 
-        if !self.warned_large_shuffle_bytes
-            && input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD
-        {
-            self.warned_large_shuffle_bytes = true;
+        if input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD {
             self.record_hint(format!(
                 "Large shuffle (~{} via `{}`). `flight_shuffle` writes shuffle data to disk \
                  instead of through Ray's object store. Enable: \
@@ -189,10 +185,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
 
         let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
-        if !self.warned_large_shuffle_partition_product
-            && partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD
-        {
-            self.warned_large_shuffle_partition_product = true;
+        if partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD {
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
             self.record_hint(format!(
                 "Shuffle with many partitions ({} × {} = {} pieces, ~{} of head-node memory). \

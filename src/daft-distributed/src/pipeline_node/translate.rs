@@ -60,8 +60,6 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
-    pub(crate) warned_large_shuffle_bytes: bool,
-    pub(crate) warned_large_shuffle_partition_product: bool,
     pub(crate) shuffle_hints: Vec<String>,
 }
 
@@ -77,8 +75,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             pipeline_node_id_counter: 0,
             psets,
             curr_node: Vec::new(),
-            warned_large_shuffle_bytes: false,
-            warned_large_shuffle_partition_product: false,
             shuffle_hints: Vec::new(),
         }
     }
