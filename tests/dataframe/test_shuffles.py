@@ -595,9 +595,13 @@ def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
     partition slot, so 800 × 800 = 640_000 slots crosses the 500_000-slot threshold and the
     translator records a hint. We trigger translation cheaply via `df.explain(show_all=True)`,
     which calls `repr_ascii` and surfaces any hints as Python `UserWarning`s.
+
+    `daft.range(..., partitions=N)` is used (not `into_partitions(N)`) because the
+    `DropRepartition` optimizer rule would collapse `into_partitions(N).repartition(N, ...)`
+    into a single repartition over the 1-partition base, eliminating the fan-out.
     """
     with daft.execution_config_ctx(shuffle_algorithm="auto"):
-        df = daft.from_pydict({"a": list(range(1))}).into_partitions(800).repartition(800, "a")
+        df = daft.range(end=800, partitions=800).repartition(800, "id")
 
         with pytest.warns(UserWarning, match=r"flight_shuffle"):
             df.explain(show_all=True, file=io.StringIO())
