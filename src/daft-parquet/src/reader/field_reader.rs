@@ -695,64 +695,9 @@ fn build_top_field_reader(
     Ok((reader, total_rows))
 }
 
-/// Decode all rows (or just `row_selection`) of one top-level column from one RG.
-/// Inner pipeline runs in parquet's own error type; we attach file-path context
-/// here so callers see a `crate::Error` tagged with the file in question.
-#[allow(dead_code)]
-pub(super) fn decode_one(
-    chunks: &HashMap<usize, OffsetBytes>,
-    metadata: &ParquetMetaData,
-    rg_idx: usize,
-    top_field_idx: usize,
-    arrow_field: &ArrowField,
-    row_selection: Option<&RowSelection>,
-    path: &str,
-) -> crate::Result<ArrayRef> {
-    decode_one_inner(
-        chunks,
-        metadata,
-        rg_idx,
-        top_field_idx,
-        arrow_field,
-        row_selection,
-    )
-    .with_context(|_| ParquetColumnDecodeSnafu {
-        path: path.to_string(),
-    })
-}
-
-#[allow(dead_code)]
-fn decode_one_inner(
-    chunks: &HashMap<usize, OffsetBytes>,
-    metadata: &ParquetMetaData,
-    rg_idx: usize,
-    top_field_idx: usize,
-    arrow_field: &ArrowField,
-    row_selection: Option<&RowSelection>,
-) -> ParquetResult<ArrayRef> {
-    let (mut reader, total_rows) =
-        build_top_field_reader(chunks, metadata, rg_idx, top_field_idx, arrow_field)?;
-
-    match row_selection {
-        Some(sel) => {
-            for selector in sel.iter() {
-                if selector.skip {
-                    reader.skip_records(selector.row_count)?;
-                } else {
-                    reader.read_records(selector.row_count)?;
-                }
-            }
-        }
-        None => {
-            reader.read_records(total_rows)?;
-        }
-    }
-    reader.consume_batch()
-}
-
-/// Streaming variant of `decode_one`: yields `ArrayRef`s of up to `chunk_size`
-/// rows each via `sender`. Exits when the column chunk is fully consumed or
-/// the receiver is dropped.
+/// Stream `ArrayRef`s of up to `chunk_size` rows each from one top-level
+/// column of one RG via `sender`. Exits when the column chunk is fully
+/// consumed or the receiver is dropped.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn decode_one_streaming(
     chunks: Arc<HashMap<usize, OffsetBytes>>,
