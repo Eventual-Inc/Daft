@@ -600,8 +600,7 @@ def test_high_fanout_shuffle_warns_user_to_use_flight_shuffle():
     shuffle_warnings = [str(w.message) for w in caught if "flight_shuffle" in str(w.message)]
     assert shuffle_warnings == [
         "Shuffle with many partitions (800 × 800 = 640000 pieces, ~1.83 GiB of head-node memory). "
-        "`flight_shuffle` writes shuffle data to disk instead, avoiding this memory pressure on "
-        "the head node. Enable: "
+        "`flight_shuffle` writes shuffle data to disk and scales better. Enable: "
         'daft.context.set_execution_config(shuffle_algorithm="flight_shuffle", '
         'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
     ], shuffle_warnings

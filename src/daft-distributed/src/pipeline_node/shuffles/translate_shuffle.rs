@@ -174,11 +174,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         let algo = &self.plan_config.config.shuffle_algorithm;
 
         if input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD {
-            self.record_hint(format!(
-                "Large shuffle (~{} via `{}`). `flight_shuffle` writes shuffle data to disk \
-                 instead of through Ray's object store. Enable: \
-                 daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
-                 flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"].",
+            self.record_flight_shuffle_hint(format!(
+                "Large shuffle (~{} via `{}` shuffle algorithm)",
                 bytes_to_human_readable(input_size_bytes),
                 algo,
             ));
@@ -187,12 +184,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
         if partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD {
             let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
-            self.record_hint(format!(
-                "Shuffle with many partitions ({} × {} = {} pieces, ~{} of head-node memory). \
-                 `flight_shuffle` writes shuffle data to disk instead, avoiding this memory \
-                 pressure on the head node. Enable: \
-                 daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
-                 flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"].",
+            self.record_flight_shuffle_hint(format!(
+                "Shuffle with many partitions ({} × {} = {} pieces, ~{} of head-node memory)",
                 input_num_partitions,
                 output_num_partitions,
                 partition_product,
@@ -201,7 +194,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
     }
 
-    fn record_hint(&mut self, msg: String) {
+    fn record_flight_shuffle_hint(&mut self, trigger: String) {
+        let msg = format!(
+            "{trigger}. `flight_shuffle` writes shuffle data to disk and scales better. Enable: \
+             daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
+             flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"]."
+        );
         tracing::warn!("{}", msg);
         self.shuffle_hints.push(msg);
     }
