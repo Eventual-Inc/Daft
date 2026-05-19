@@ -47,7 +47,7 @@ pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> DaftResult<Option
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn spawn_col_decoders(
+pub(super) async fn spawn_col_decoders(
     col_indices: &[usize],
     chunk_source: &Arc<ChunkSource>,
     metadata: &Arc<ParquetMetaData>,
@@ -56,28 +56,27 @@ pub(super) fn spawn_col_decoders(
     rg_idx: usize,
     chunk_size: usize,
     path: &Arc<str>,
-) -> (Vec<ColRx>, JoinSet<DaftResult<()>>) {
+) -> DaftResult<(Vec<ColRx>, JoinSet<DaftResult<()>>)> {
+    // The reader picks its own per-RG access pattern (batched pre-fetch for
+    // local, lazy per-column for remote). See `ChunkSource::open_rg`.
+    let all_leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), col_indices).into();
+    let rg_reader = chunk_source.clone().open_rg(rg_idx, all_leaves).await?;
+
     let compute = get_compute_runtime();
     let mut rxs = Vec::with_capacity(col_indices.len());
     let mut joinset: JoinSet<DaftResult<()>> = JoinSet::new();
     for &col_idx in col_indices {
         let (tx, rx) = mpsc::channel::<DaftResult<ArrayRef>>(1);
-        let chunk_source = chunk_source.clone();
+        let rg_reader = rg_reader.clone();
         let metadata = metadata.clone();
         let arrow_field = arrow_schema.field(col_idx).clone();
         let sel = selection.cloned();
         let path = path.clone();
-        let leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), &[col_idx]).into();
+        let col_leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), &[col_idx]).into();
         joinset.spawn_on(
             async move {
-                // Each decoder awaits only the coalesced byte-range groups
-                // covering its own leaves — fast columns start streaming
-                // while slow groups for other columns are still in flight.
-                // When two columns share a coalesced group, the per-slot
-                // mutex serializes the readiness check; both decoders get
-                // the bytes the moment the group resolves.
-                let chunks = match chunk_source.read_rg_chunks(rg_idx, leaves).await {
-                    Ok(c) => Arc::new(c),
+                let chunks = match rg_reader.read_col(col_leaves).await {
+                    Ok(c) => c,
                     Err(e) => {
                         let _ = tx.send(Err(e.into())).await;
                         return DaftResult::Ok(());
@@ -101,7 +100,7 @@ pub(super) fn spawn_col_decoders(
         );
         rxs.push(rx);
     }
-    (rxs, joinset)
+    Ok((rxs, joinset))
 }
 
 struct StreamingState {
@@ -123,7 +122,7 @@ pub(super) async fn process_rg_with_data_cols(
     // the empty case via `process_rg_predicate_only`.
     debug_assert!(!ctx.plan.data_col_indices.is_empty());
 
-    let (col_receivers, mut col_decoders) = spawn_col_decoders(
+    let (col_receivers, mut col_decoders) = match spawn_col_decoders(
         &ctx.plan.data_col_indices,
         &ctx.chunk_source,
         &ctx.metadata,
@@ -132,7 +131,12 @@ pub(super) async fn process_rg_with_data_cols(
         rg_idx,
         ctx.chunk_size,
         &ctx.path,
-    );
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return err_stream(e),
+    };
 
     let state = StreamingState {
         ctx,
@@ -220,7 +224,7 @@ pub(super) async fn process_rg_predicate_only(
         .clone()
         .expect("predicate-only path requires a predicate");
 
-    let (col_receivers, mut col_decoders) = spawn_col_decoders(
+    let (col_receivers, mut col_decoders) = match spawn_col_decoders(
         &plan.pred_col_indices,
         &ctx.chunk_source,
         &ctx.metadata,
@@ -229,7 +233,12 @@ pub(super) async fn process_rg_predicate_only(
         rg_idx,
         ctx.chunk_size,
         &ctx.path,
-    );
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => return err_stream(e),
+    };
 
     // Build schemas + bind predicate once per RG (was ~50µs/chunk overhead).
     let chunk_arrow_schema = schema_from_indices(&ctx.arrow_schema, &plan.pred_col_indices);

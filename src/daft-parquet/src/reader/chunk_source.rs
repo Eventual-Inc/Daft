@@ -18,6 +18,155 @@ use crate::{
     metadata::apply_field_ids_to_arrowrs_parquet_metadata, read::ParquetReadOptions, task_err,
 };
 
+fn coalesce_ranges(mut leaf_ranges: Vec<LeafRange>, max_gap: u64) -> Vec<RangeGroup> {
+    leaf_ranges.sort_by_key(|r| r.start);
+    let mut groups: Vec<RangeGroup> = Vec::new();
+    for entry in leaf_ranges {
+        let entry_end = entry.start + entry.len;
+        if let Some(group) = groups.last_mut()
+            && entry.start <= group.end + max_gap
+        {
+            group.end = group.end.max(entry_end);
+            group.members.push(entry);
+            continue;
+        }
+        groups.push(RangeGroup {
+            start: entry.start,
+            end: entry_end,
+            members: vec![entry],
+        });
+    }
+    groups
+}
+
+async fn drive_group(slot: &GroupSlot, path: &str) -> GroupResult {
+    let mut guard = slot.state.lock().await;
+    if let RangeState::Ready(r) = &*guard {
+        return r.clone();
+    }
+    // Drive InFlight → Ready. Holding the lock across `.await` serializes
+    // concurrent waiters, but they'd have had to wait for the same spawned
+    // task to finish either way — no extra latency.
+    //
+    // `Pin::new(task).await` polls the task to completion without consuming
+    // it (RuntimeTask is Unpin), so the borrow ends with the inner block and
+    // we can then write the Ready result back through the same guard.
+    let res: GroupResult = {
+        let RangeState::InFlight(task) = &mut *guard else {
+            unreachable!("Ready branch returned above")
+        };
+        match Pin::new(task).await {
+            Ok(Ok(bytes)) => Ok(bytes),
+            Ok(Err(e)) => Err(Arc::new(e)),
+            Err(daft_err) => Err(Arc::new(task_err(path.to_string())(daft_err))),
+        }
+    };
+    *guard = RangeState::Ready(res.clone());
+    res
+}
+
+pub(super) async fn open_local_file(
+    path: &str,
+) -> crate::Result<(Arc<std::fs::File>, u64, ArrowReaderMetadata)> {
+    let path_owned = path.to_string();
+    let path_for_join = path.to_string();
+    get_io_runtime(true)
+        .spawn_blocking(move || {
+            let file = std::fs::File::open(&path_owned).map_err(|e| crate::Error::LocalIO {
+                path: path_owned.clone(),
+                source: e,
+            })?;
+            let file_len = file
+                .metadata()
+                .map_err(|e| crate::Error::LocalIO {
+                    path: path_owned.clone(),
+                    source: e,
+                })?
+                .len();
+            let meta =
+                ArrowReaderMetadata::load(&file, ArrowReaderOptions::new()).with_context(|_| {
+                    ParquetMetadataSnafu {
+                        path: path_owned.clone(),
+                    }
+                })?;
+            crate::Result::Ok((Arc::new(file), file_len, meta))
+        })
+        .await
+        .map_err(task_err(path_for_join))?
+}
+
+pub(super) async fn prepare_remote_chunk_source(
+    uri: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: Option<daft_io::IOStatsRef>,
+    opts: &ParquetReadOptions,
+) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata)> {
+    let (parquet_metadata_res, file_size_res) = Box::pin(futures::future::join(
+        crate::metadata::read_parquet_metadata(
+            uri,
+            None,
+            io_client.clone(),
+            io_stats.clone(),
+            None,
+            None,
+        ),
+        io_client.single_url_get_size(uri.to_string(), io_stats.clone()),
+    ))
+    .await;
+    let mut parquet_metadata = parquet_metadata_res?;
+    let file_size = file_size_res?;
+
+    // Apply Iceberg field-id mapping before filtering by column name —
+    // otherwise the prefetch matches pre-rename names against post-rename
+    // user-supplied names and fetches zero leaves.
+    if let Some(mapping) = opts.field_id_mapping.as_deref() {
+        parquet_metadata =
+            apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping, uri)?;
+    }
+
+    // Prefetch needs the union of user-requested columns and predicate columns.
+    let prefetch_col_names: Option<std::collections::HashSet<String>> =
+        opts.columns.as_ref().map(|cols| {
+            let mut acc: std::collections::HashSet<String> = cols.iter().cloned().collect();
+            if let Some(pred) = opts.predicate.as_ref() {
+                acc.extend(get_required_columns(pred));
+            }
+            acc
+        });
+
+    let schema_descr = parquet_metadata.file_metadata().schema_descr();
+    let num_cols_total = schema_descr.num_columns();
+    let active_col_indices: Vec<usize> = match &prefetch_col_names {
+        None => (0..num_cols_total).collect(),
+        Some(want) => (0..num_cols_total)
+            .filter(|&i| {
+                schema_descr
+                    .column(i)
+                    .path()
+                    .parts()
+                    .first()
+                    .map(|n| want.contains(n.as_str()))
+                    .unwrap_or(false)
+            })
+            .collect(),
+    };
+
+    let path: Arc<str> = Arc::from(uri);
+    let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
+        .with_context(|_| ParquetMetadataSnafu {
+            path: uri.to_string(),
+        })?;
+    let builder = ChunkSourceBuilder::Remote(RemoteChunkSourcePrep {
+        path,
+        uri: uri.to_string(),
+        file_size,
+        active_col_indices,
+        io_client,
+        io_stats,
+    });
+    Ok((builder, meta))
+}
+
 #[derive(Copy, Clone)]
 struct LeafRange {
     leaf: usize,
@@ -169,27 +318,64 @@ impl ChunkSource {
             Self::Remote(s) => s.read_rg_chunks(rg_idx, &leaves).await,
         }
     }
+
+    /// One per RG, called by the decoder dispatch. Lets each `ChunkSource`
+    /// variant choose its own access pattern without leaking the dispatch into
+    /// callers:
+    ///
+    /// - `Local`: one batched `spawn_blocking` for *all* requested leaves, then
+    ///   every column decoder reads slices from the same `Arc<HashMap>`. The
+    ///   alternative (per-column reads) would multiply `spawn_blocking` calls
+    ///   by `num_cols`, dominating wide-schema runtimes.
+    /// - `Remote`: returns a lazy handle. Each decoder later asks for its own
+    ///   leaves and awaits only the coalesced byte-range groups covering them,
+    ///   so fast columns start streaming while slower groups are still in
+    ///   flight.
+    pub(super) async fn open_rg(
+        self: Arc<Self>,
+        rg_idx: usize,
+        all_leaves: Arc<[usize]>,
+    ) -> crate::Result<RgReader> {
+        match self.as_ref() {
+            Self::Local(_) => {
+                let chunks = self.read_rg_chunks(rg_idx, all_leaves).await?;
+                Ok(RgReader::PreFetched(Arc::new(chunks)))
+            }
+            Self::Remote(_) => Ok(RgReader::Lazy {
+                chunk_source: self,
+                rg_idx,
+            }),
+        }
+    }
 }
 
-fn coalesce_ranges(mut leaf_ranges: Vec<LeafRange>, max_gap: u64) -> Vec<RangeGroup> {
-    leaf_ranges.sort_by_key(|r| r.start);
-    let mut groups: Vec<RangeGroup> = Vec::new();
-    for entry in leaf_ranges {
-        let entry_end = entry.start + entry.len;
-        if let Some(group) = groups.last_mut()
-            && entry.start <= group.end + max_gap
-        {
-            group.end = group.end.max(entry_end);
-            group.members.push(entry);
-            continue;
+/// Decoder-facing handle returned by [`ChunkSource::open_rg`]. Per-column
+/// decoders call [`Self::read_col`] without caring whether the bytes are
+/// pre-fetched or fetched on demand.
+#[derive(Clone)]
+pub(crate) enum RgReader {
+    PreFetched(Arc<HashMap<usize, OffsetBytes>>),
+    Lazy {
+        chunk_source: Arc<ChunkSource>,
+        rg_idx: usize,
+    },
+}
+
+impl RgReader {
+    pub(super) async fn read_col(
+        &self,
+        col_leaves: Arc<[usize]>,
+    ) -> crate::Result<Arc<HashMap<usize, OffsetBytes>>> {
+        match self {
+            Self::PreFetched(map) => Ok(map.clone()),
+            Self::Lazy {
+                chunk_source,
+                rg_idx,
+            } => Ok(Arc::new(
+                chunk_source.read_rg_chunks(*rg_idx, col_leaves).await?,
+            )),
         }
-        groups.push(RangeGroup {
-            start: entry.start,
-            end: entry_end,
-            members: vec![entry],
-        });
     }
-    groups
 }
 
 #[derive(Clone)]
@@ -544,132 +730,4 @@ impl RemoteChunkSource {
         }
         Ok(out)
     }
-}
-
-async fn drive_group(slot: &GroupSlot, path: &str) -> GroupResult {
-    let mut guard = slot.state.lock().await;
-    if let RangeState::Ready(r) = &*guard {
-        return r.clone();
-    }
-    // Drive InFlight → Ready. Holding the lock across `.await` serializes
-    // concurrent waiters, but they'd have had to wait for the same spawned
-    // task to finish either way — no extra latency.
-    //
-    // `Pin::new(task).await` polls the task to completion without consuming
-    // it (RuntimeTask is Unpin), so the borrow ends with the inner block and
-    // we can then write the Ready result back through the same guard.
-    let res: GroupResult = {
-        let RangeState::InFlight(task) = &mut *guard else {
-            unreachable!("Ready branch returned above")
-        };
-        match Pin::new(task).await {
-            Ok(Ok(bytes)) => Ok(bytes),
-            Ok(Err(e)) => Err(Arc::new(e)),
-            Err(daft_err) => Err(Arc::new(task_err(path.to_string())(daft_err))),
-        }
-    };
-    *guard = RangeState::Ready(res.clone());
-    res
-}
-
-pub(super) async fn open_local_file(
-    path: &str,
-) -> crate::Result<(Arc<std::fs::File>, u64, ArrowReaderMetadata)> {
-    let path_owned = path.to_string();
-    let path_for_join = path.to_string();
-    get_io_runtime(true)
-        .spawn_blocking(move || {
-            let file = std::fs::File::open(&path_owned).map_err(|e| crate::Error::LocalIO {
-                path: path_owned.clone(),
-                source: e,
-            })?;
-            let file_len = file
-                .metadata()
-                .map_err(|e| crate::Error::LocalIO {
-                    path: path_owned.clone(),
-                    source: e,
-                })?
-                .len();
-            let meta =
-                ArrowReaderMetadata::load(&file, ArrowReaderOptions::new()).with_context(|_| {
-                    ParquetMetadataSnafu {
-                        path: path_owned.clone(),
-                    }
-                })?;
-            crate::Result::Ok((Arc::new(file), file_len, meta))
-        })
-        .await
-        .map_err(task_err(path_for_join))?
-}
-
-pub(super) async fn prepare_remote_chunk_source(
-    uri: &str,
-    io_client: Arc<daft_io::IOClient>,
-    io_stats: Option<daft_io::IOStatsRef>,
-    opts: &ParquetReadOptions,
-) -> crate::Result<(ChunkSourceBuilder, ArrowReaderMetadata)> {
-    let (parquet_metadata_res, file_size_res) = Box::pin(futures::future::join(
-        crate::metadata::read_parquet_metadata(
-            uri,
-            None,
-            io_client.clone(),
-            io_stats.clone(),
-            None,
-            None,
-        ),
-        io_client.single_url_get_size(uri.to_string(), io_stats.clone()),
-    ))
-    .await;
-    let mut parquet_metadata = parquet_metadata_res?;
-    let file_size = file_size_res?;
-
-    // Apply Iceberg field-id mapping before filtering by column name —
-    // otherwise the prefetch matches pre-rename names against post-rename
-    // user-supplied names and fetches zero leaves.
-    if let Some(mapping) = opts.field_id_mapping.as_deref() {
-        parquet_metadata =
-            apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping, uri)?;
-    }
-
-    // Prefetch needs the union of user-requested columns and predicate columns.
-    let prefetch_col_names: Option<std::collections::HashSet<String>> =
-        opts.columns.as_ref().map(|cols| {
-            let mut acc: std::collections::HashSet<String> = cols.iter().cloned().collect();
-            if let Some(pred) = opts.predicate.as_ref() {
-                acc.extend(get_required_columns(pred));
-            }
-            acc
-        });
-
-    let schema_descr = parquet_metadata.file_metadata().schema_descr();
-    let num_cols_total = schema_descr.num_columns();
-    let active_col_indices: Vec<usize> = match &prefetch_col_names {
-        None => (0..num_cols_total).collect(),
-        Some(want) => (0..num_cols_total)
-            .filter(|&i| {
-                schema_descr
-                    .column(i)
-                    .path()
-                    .parts()
-                    .first()
-                    .map(|n| want.contains(n.as_str()))
-                    .unwrap_or(false)
-            })
-            .collect(),
-    };
-
-    let path: Arc<str> = Arc::from(uri);
-    let meta = ArrowReaderMetadata::try_new(parquet_metadata, ArrowReaderOptions::new())
-        .with_context(|_| ParquetMetadataSnafu {
-            path: uri.to_string(),
-        })?;
-    let builder = ChunkSourceBuilder::Remote(RemoteChunkSourcePrep {
-        path,
-        uri: uri.to_string(),
-        file_size,
-        active_col_indices,
-        io_client,
-        io_stats,
-    });
-    Ok((builder, meta))
 }

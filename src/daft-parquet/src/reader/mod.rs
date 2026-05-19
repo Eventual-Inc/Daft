@@ -66,81 +66,6 @@ impl ParquetSource<'_> {
 
 const DEFAULT_BATCH_SIZE: usize = 128 * 1024;
 
-pub async fn stream_parquet(
-    source: ParquetSource<'_>,
-    opts: &ParquetReadOptions,
-) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let (cs_builder, arrow_metadata) = open_chunk_source(&source, opts).await?;
-    let path = cs_builder.path().clone();
-
-    let chunk_size = opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
-    let prepared = prepare_metadata(
-        arrow_metadata,
-        opts.field_id_mapping.as_ref(),
-        opts.schema_infer,
-        &path,
-    )?;
-    let plan = resolve_column_plan(&prepared, opts)?;
-
-    // Single RG-level pruning pass: user row_groups + positional (start_offset,
-    // num_rows) + predicate stats. Must run before `cs_builder.build`, which is
-    // what spawns remote byte fetches.
-    let rg_indices = prune_row_groups(
-        &prepared.parquet_metadata,
-        opts.row_groups.as_deref(),
-        opts.start_offset.unwrap_or(0),
-        opts.num_rows,
-        opts.predicate.as_ref(),
-        &plan.read_daft_schema,
-        source.label(),
-    )?;
-    if rg_indices.is_empty() {
-        return Ok((
-            plan.return_daft_schema.clone(),
-            futures::stream::once(
-                async move { Ok(RecordBatch::empty(Some(plan.return_daft_schema))) },
-            )
-            .boxed(),
-        ));
-    }
-    if plan.read_col_indices.is_empty() {
-        return count_only_stream(
-            &prepared.parquet_metadata,
-            &rg_indices,
-            opts.num_rows,
-            plan.return_daft_schema,
-        );
-    }
-
-    // Now spawn the byte-range fetches (remote) — pruned set only.
-    let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
-
-    let rg_inputs = build_rg_inputs(
-        &chunk_source,
-        &prepared.parquet_metadata,
-        &prepared.arrow_schema,
-        &rg_indices,
-        &plan,
-        opts,
-        &path,
-    )
-    .await?;
-
-    let return_schema = plan.return_daft_schema.clone();
-    let ctx = Arc::new(RgTaskCtx {
-        path,
-        chunk_source,
-        metadata: prepared.parquet_metadata,
-        arrow_schema: prepared.arrow_schema,
-        plan,
-        predicate: opts.predicate.clone(),
-        chunk_size,
-    });
-    let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
-
-    Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
-}
-
 async fn open_chunk_source(
     source: &ParquetSource<'_>,
     opts: &ParquetReadOptions,
@@ -455,7 +380,8 @@ async fn build_rg_inputs(
             rg_idx,
             chunk_size,
             path,
-        );
+        )
+        .await?;
 
         let mut predicate_selectors: Vec<RowSelector> = Vec::new();
         let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
@@ -640,4 +566,79 @@ fn apply_cross_rg_limit(
         std::future::ready(out)
     });
     Box::pin(bounded)
+}
+
+pub async fn stream_parquet(
+    source: ParquetSource<'_>,
+    opts: &ParquetReadOptions,
+) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
+    let (cs_builder, arrow_metadata) = open_chunk_source(&source, opts).await?;
+    let path = cs_builder.path().clone();
+
+    let chunk_size = opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
+    let prepared = prepare_metadata(
+        arrow_metadata,
+        opts.field_id_mapping.as_ref(),
+        opts.schema_infer,
+        &path,
+    )?;
+    let plan = resolve_column_plan(&prepared, opts)?;
+
+    // Single RG-level pruning pass: user row_groups + positional (start_offset,
+    // num_rows) + predicate stats. Must run before `cs_builder.build`, which is
+    // what spawns remote byte fetches.
+    let rg_indices = prune_row_groups(
+        &prepared.parquet_metadata,
+        opts.row_groups.as_deref(),
+        opts.start_offset.unwrap_or(0),
+        opts.num_rows,
+        opts.predicate.as_ref(),
+        &plan.read_daft_schema,
+        source.label(),
+    )?;
+    if rg_indices.is_empty() {
+        return Ok((
+            plan.return_daft_schema.clone(),
+            futures::stream::once(
+                async move { Ok(RecordBatch::empty(Some(plan.return_daft_schema))) },
+            )
+            .boxed(),
+        ));
+    }
+    if plan.read_col_indices.is_empty() {
+        return count_only_stream(
+            &prepared.parquet_metadata,
+            &rg_indices,
+            opts.num_rows,
+            plan.return_daft_schema,
+        );
+    }
+
+    // Now spawn the byte-range fetches (remote) — pruned set only.
+    let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
+
+    let rg_inputs = build_rg_inputs(
+        &chunk_source,
+        &prepared.parquet_metadata,
+        &prepared.arrow_schema,
+        &rg_indices,
+        &plan,
+        opts,
+        &path,
+    )
+    .await?;
+
+    let return_schema = plan.return_daft_schema.clone();
+    let ctx = Arc::new(RgTaskCtx {
+        path,
+        chunk_source,
+        metadata: prepared.parquet_metadata,
+        arrow_schema: prepared.arrow_schema,
+        plan,
+        predicate: opts.predicate.clone(),
+        chunk_size,
+    });
+    let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
+
+    Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
 }
