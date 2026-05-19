@@ -442,4 +442,8 @@ def test_csv_file_writer_empty_micropartition(tmp_path):
     writer = CSVFileWriter(root_dir=str(tmp_path), file_idx=0)
     bytes_written = writer.write(empty)
     assert bytes_written == 0
-    writer.close()
+    result = writer.close()
+
+    # Empty micropartition should result in an empty record batch.
+    assert len(result) == 0
+    assert "path" in result.schema().column_names()

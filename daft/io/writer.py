@@ -4,11 +4,13 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     get_protocol_from_path,
 )
+from daft.io.common import _get_schema_from_dict
 from daft.io.delta_lake.delta_lake_write import (
     make_deltalake_add_action,
     make_deltalake_fs,
@@ -167,14 +169,14 @@ class ParquetFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
 
 
@@ -260,15 +262,14 @@ class CSVFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
-
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
 
 
@@ -319,9 +320,10 @@ class IcebergWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"data_file": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
@@ -385,9 +387,10 @@ class DeltalakeWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"add_action": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
