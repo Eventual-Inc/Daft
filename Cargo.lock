@@ -3360,7 +3360,6 @@ dependencies = [
  "arrow-flight",
  "arrow-ipc",
  "arrow-schema 57.3.0",
- "arrow-select",
  "async-channel 2.5.0",
  "async-stream",
  "common-error",
