@@ -248,9 +248,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         let shuffle = if partition_by.is_empty() {
-            self.gen_gather_node(input_node)
+            self.gen_gather_node(input_node, input_size_bytes)
         } else {
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
@@ -259,6 +260,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 input_node.config().schema.clone(),
                 input_node,
+                input_size_bytes,
             )?
         };
 
@@ -283,6 +285,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_node: DistributedPipelineNode,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let node_id = self.get_next_pipeline_node_id();
@@ -306,7 +309,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .shuffle_aggregation_default_partitions,
         );
         let shuffle = if split_details.partition_by.is_empty() {
-            self.gen_gather_node(initial_agg)
+            self.gen_gather_node(initial_agg, input_size_bytes)
         } else {
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
@@ -319,6 +322,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 split_details.first_stage_schema.clone(),
                 initial_agg,
+                input_size_bytes,
             )?
         };
 
@@ -367,6 +371,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         if Self::needs_hash_repartition(&input_node, &group_by)? {
             let node_id = self.get_next_pipeline_node_id();
@@ -409,9 +414,10 @@ impl LogicalPlanToPipelineNodeTranslator {
                 aggregations,
                 output_schema,
                 partition_by,
+                input_size_bytes,
             )
         } else {
-            self.gen_with_pre_agg(input_node, split_details, output_schema)
+            self.gen_with_pre_agg(input_node, split_details, output_schema, input_size_bytes)
         }
     }
 }
