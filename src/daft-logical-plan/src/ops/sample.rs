@@ -42,12 +42,7 @@ impl Hash for Sample {
             })
             .hash(state);
 
-        // Hash size if present
-        if let Some(size) = self.size {
-            size.hash(state);
-        }
-
-        // Hash the rest of the fields.
+        self.size.hash(state);
         self.with_replacement.hash(state);
         self.seed.hash(state);
     }
