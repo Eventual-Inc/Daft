@@ -200,7 +200,7 @@ class RaySwordfishActor:
             # Coalesce small MicroPartition outputs to reduce head-node ObjectRef pressure. Skip
             # when the plan emits a fixed output per partition slot (RepartitionWrite/GatherWrite)
             # — downstream transpose depends on count and order.
-            target_bytes = 0 if plan.has_partitioned_output() else exec_cfg.flotilla_output_target_bytes
+            target_bytes = 0 if plan.has_partitioned_output() else 64 * 1024 * 1024
             buf: list[MicroPartition] = []
             buf_bytes = 0
 
