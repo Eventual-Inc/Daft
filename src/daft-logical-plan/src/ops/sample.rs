@@ -31,10 +31,16 @@ impl Hash for Sample {
         // Hash the `input` field.
         self.input.hash(state);
 
-        // Hash fraction if present (rounded to 6 decimals to avoid tiny differences)
-        if let Some(fraction) = self.fraction {
-            format!("{:.6}", fraction).hash(state);
-        }
+        // Normalize -0.0 to 0.0 before hashing so Hash agrees with PartialEq (-0.0 == 0.0).
+        self.fraction
+            .map(|f| {
+                if f == 0.0 {
+                    0.0f64.to_bits()
+                } else {
+                    f.to_bits()
+                }
+            })
+            .hash(state);
 
         // Hash size if present
         if let Some(size) = self.size {
@@ -106,5 +112,32 @@ impl Sample {
             res.push(format!("Stats = {}", stats));
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    use daft_core::prelude::Field;
+    use daft_schema::dtype::DataType;
+
+    use super::Sample;
+    use crate::test::{dummy_scan_node, dummy_scan_operator};
+
+    fn compute_hash<T: Hash>(value: &T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn test_hash_normalizes_signed_zero_fraction() {
+        let input =
+            dummy_scan_node(dummy_scan_operator(vec![Field::new("x", DataType::Int64)])).build();
+        let a = Sample::new(input.clone(), Some(-0.0), None, false, None);
+        let b = Sample::new(input, Some(0.0), None, false, None);
+        assert_eq!(a, b);
+        assert_eq!(compute_hash(&a), compute_hash(&b));
     }
 }
