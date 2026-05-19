@@ -597,12 +597,13 @@ pub async fn stream_parquet(
         source.label(),
     )?;
     if rg_indices.is_empty() {
+        // Empty stream — NOT a single empty batch. Downstream sinks
+        // (e.g. iceberg writer) treat any received batch as "there's
+        // something to write" and emit metadata for it; a 0-row batch
+        // would still land an empty snapshot.
         return Ok((
             plan.return_daft_schema.clone(),
-            futures::stream::once(
-                async move { Ok(RecordBatch::empty(Some(plan.return_daft_schema))) },
-            )
-            .boxed(),
+            futures::stream::empty().boxed(),
         ));
     }
     if plan.read_col_indices.is_empty() {
