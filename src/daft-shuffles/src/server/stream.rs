@@ -12,12 +12,17 @@ use common_error::{DaftError, DaftResult};
 use futures::Stream;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
+/// Reading state maintenance
 struct ReadState<R> {
+    // The reader to read from
     reader: R,
 }
 
+/// State machine for stream processing
 enum StreamState<R> {
+    // A tuple of the current read state and the flight data to be sent
     Ready((ReadState<R>, FlightData)),
+    // The read state is done, no more data to read
     Done,
 }
 
@@ -29,6 +34,7 @@ pub struct FlightDataStreamReader<R: AsyncRead + Unpin> {
 
 impl<R: AsyncRead + AsyncSeek + Unpin> FlightDataStreamReader<R> {
     pub async fn try_new(mut reader: R) -> DaftResult<Self> {
+        // Skip stream metadata in the file since we don't need it when sending data over flight
         skip_stream_metadata(&mut reader).await?;
         Ok(Self {
             state: Some(ReadState { reader }),
@@ -57,6 +63,7 @@ impl<R: AsyncRead + Unpin> FlightDataStreamReader<R> {
     }
 }
 
+/// Skip stream metadata on reader. We don't need it when sending data over flight.
 pub async fn skip_stream_metadata<R: AsyncRead + AsyncSeek + Unpin>(
     reader: &mut R,
 ) -> DaftResult<()> {
@@ -73,10 +80,12 @@ pub async fn skip_stream_metadata<R: AsyncRead + AsyncSeek + Unpin>(
     Ok(())
 }
 
+/// Process next IPC message into FlightData
 async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
     let mut meta_len = match state.reader.read_i32_le().await {
         Ok(meta_len) => meta_len,
         Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
+            // TODO: Should we return an error here?
             return Ok(StreamState::Done);
         }
         Err(e) => return Err(DaftError::from(e)),
@@ -94,9 +103,11 @@ async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResu
         return Ok(StreamState::Done);
     }
 
+    // Read message header
     let mut message_buffer = vec![0; meta_len];
     state.reader.read_exact(&mut message_buffer).await?;
 
+    // Read message body length
     let message = root_as_message(&message_buffer)
         .map_err(|e| DaftError::InternalError(format!("Invalid flatbuffer message: {e}")))?;
 
@@ -105,6 +116,7 @@ async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResu
         .try_into()
         .map_err(|_| DaftError::InternalError("Unexpected negative integer".to_string()))?;
 
+    // Read message body
     let mut data_buffer = vec![0; body_length];
     state.reader.read_exact(&mut data_buffer).await?;
 
