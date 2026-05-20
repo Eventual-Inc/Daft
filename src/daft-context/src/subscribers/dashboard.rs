@@ -7,9 +7,8 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, QueryPlan, snapshot::StatSnapshotImpl};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -17,10 +16,47 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent, TaskEndEvent, TaskSubmitEvent},
+    events::{
+        InMemoryScanSource, OperatorEndEvent, OperatorStartEvent, PhysicalScanSource, StatsEvent,
+        TaskEndEvent, TaskScheduledEvent, TaskSource, TaskStatsUpdateEvent, TaskSubmitEvent,
+    },
 };
 
-const TOTAL_ROWS: usize = 10;
+// `daft-dashboard` does not (and shouldn't) depend on `daft-context`, so these
+// `From` impls live here. The orphan rule permits them because the trait's
+// input type (`TaskSource` etc.) is local to this crate.
+
+impl From<&PhysicalScanSource> for daft_dashboard::engine::PhysicalScanSourceArgs {
+    fn from(p: &PhysicalScanSource) -> Self {
+        Self {
+            source_id: p.source_id,
+            scan_tasks: p.scan_tasks,
+            paths: p.paths.clone(),
+            storage_bytes: p.storage_bytes.map(|b| b as u64),
+            estimated_memory_bytes: p.estimated_memory_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&InMemoryScanSource> for daft_dashboard::engine::InMemoryScanSourceArgs {
+    fn from(m: &InMemoryScanSource) -> Self {
+        Self {
+            source_id: m.source_id,
+            partitions: m.partitions as u64,
+            total_bytes: m.total_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&TaskSource> for daft_dashboard::engine::TaskSourceArgs {
+    fn from(source: &TaskSource) -> Self {
+        match source {
+            TaskSource::PhysicalScan(p) => Self::PhysicalScan(p.into()),
+            TaskSource::InMemoryScan(m) => Self::InMemoryScan(m.into()),
+        }
+    }
+}
+
 const DASHBOARD_EVENT_LIMIT: usize = 512;
 const DASHBOARD_SHUTDOWN_TIMEOUT_MS: u64 = 500;
 
@@ -43,7 +79,6 @@ pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
-    preview_rows: DashMap<QueryID, Vec<MicroPartition>>,
     execution_ids: DashMap<QueryID, String>,
     worker_id: Option<String>,
 
@@ -58,7 +93,6 @@ impl std::fmt::Debug for DashboardSubscriber {
             .field("url", &self.url)
             .field("client", &self.client)
             .field("runtime", &self.runtime.runtime)
-            .field("preview_rows", &self.preview_rows)
             .field("execution_ids", &self.execution_ids)
             .field("worker_id", &self.worker_id)
             .field("dashboard_tx", &self.dashboard_tx.is_some())
@@ -138,7 +172,6 @@ impl DashboardSubscriber {
             url,
             client,
             runtime,
-            preview_rows: DashMap::new(),
             execution_ids: DashMap::new(),
             worker_id,
             dashboard_tx: Some(dashboard_tx),
@@ -221,11 +254,6 @@ impl DashboardSubscriber {
             return Ok(());
         }
 
-        self.preview_rows.insert(
-            query_id.clone(),
-            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
-        );
-
         self.enqueue_json(
             format!("engine/query/{}/start", query_id),
             "query_start",
@@ -258,48 +286,10 @@ impl DashboardSubscriber {
         Ok(())
     }
 
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
-        // Limit to TOTAL_ROWS rows
-        // TODO: Limit by X MB and # of rows
-        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
-            return Err(DaftError::ValueError(format!(
-                "Query `{}` not started or already ended in DashboardSubscriber",
-                query_id
-            )));
-        };
-
-        let all_results = entry.value_mut();
-        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
-        if num_rows < TOTAL_ROWS && !result.is_empty() {
-            let result = result.head(TOTAL_ROWS - num_rows)?;
-            all_results.push(result);
-        }
-        Ok(())
-    }
-
     fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
-        let results = self.preview_rows.remove(&query_id);
-        let results_ipc = if let Some((_, results)) = results {
-            let result = MicroPartition::concat(results)?;
-            debug_assert!(result.len() <= TOTAL_ROWS);
-            if result.is_empty() {
-                // Flotilla queries never call on_result_out, so preview is empty (#6559)
-                None
-            } else {
-                let results_ipc = result.write_to_ipc_stream()?;
-                if results_ipc.len() > 1024 * 1024 * 2 {
-                    // 2MB, our dashboard cap
-                    None
-                } else {
-                    Some(results_ipc)
-                }
-            }
-        } else {
-            None
-        };
 
         self.enqueue_json(
             format!("engine/query/{}/end", query_id),
@@ -308,7 +298,6 @@ impl DashboardSubscriber {
                 end_sec: secs_from_epoch(),
                 end_state: end_result.end_state,
                 error_message: end_result.error_message,
-                results: results_ipc,
             },
         );
         Ok(())
@@ -460,6 +449,35 @@ impl DashboardSubscriber {
         Ok(())
     }
 
+    fn on_task_stats_update(&self, event: &TaskStatsUpdateEvent) -> DaftResult<()> {
+        if event.tasks.is_empty() {
+            return Ok(());
+        }
+        let query_id = event.header.query_id.clone();
+        self.enqueue_json(
+            format!("engine/query/{}/tasks/stats", query_id),
+            "tasks_stats_update",
+            &daft_dashboard::engine::TasksStatsUpdateArgs {
+                timestamp_sec: event.header.timestamp_epoch_secs,
+                tasks: event
+                    .tasks
+                    .iter()
+                    .map(|t| daft_dashboard::engine::TaskStatsEntry {
+                        task_id: t.task_id,
+                        totals: daft_dashboard::engine::TaskTotals {
+                            cpu_us: t.cpu_us,
+                            rows_in: t.rows_in,
+                            rows_out: t.rows_out,
+                            bytes_in: t.bytes_in,
+                            bytes_out: t.bytes_out,
+                        },
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
     fn on_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -467,6 +485,7 @@ impl DashboardSubscriber {
 
         let query_id = event.header.query_id.clone();
         let task = &event.task;
+        let sources = event.sources.iter().map(Into::into).collect::<Vec<_>>();
         self.enqueue_json(
             format!("engine/query/{}/task/submit", query_id),
             "task_submit",
@@ -477,6 +496,29 @@ impl DashboardSubscriber {
                 node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
                 plan_fingerprint: task.plan_fingerprint,
                 name: task.name.as_deref().map(str::to_string),
+                sources,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_scheduled(&self, event: &TaskScheduledEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        self.enqueue_json(
+            format!("engine/query/{}/task/schedule", query_id),
+            "task_schedule",
+            &daft_dashboard::engine::TaskScheduledArgs {
+                scheduled_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
             },
         );
         Ok(())
@@ -490,21 +532,22 @@ impl DashboardSubscriber {
         let query_id = event.header.query_id.clone();
         let task = &event.task;
 
-        // CPU duration is the only task-level total we currently report; it
-        // sums correctly across all nodes in the fused pipeline. rows/bytes
-        // I/O totals require head/leaf identification (see follow-up ticket)
-        // and are intentionally omitted to avoid double-counting.
-        let mut totals = daft_dashboard::engine::TaskTotals::default();
-        for (_, snapshot) in &event.stats {
-            let stats = snapshot.to_stats();
-            for (name, stat) in stats.iter() {
-                if let (common_metrics::DURATION_KEY, common_metrics::Stat::Duration(d)) =
-                    (name, stat)
-                {
-                    totals.cpu_us += d.as_micros() as u64;
-                }
-            }
+        // Aggregate per-snapshot scalars across the task's local plan nodes.
+        // `is_task_root` / `is_task_leaf` filtering (and the source-leaf
+        // `rows.out` / `bytes.read` fallback) lives in
+        // `common_metrics::task_io::TaskExternalIo` so this site and the
+        // mid-flight aggregator in `daft-local-execution` stay in lockstep.
+        let mut io = common_metrics::task_io::TaskExternalIo::default();
+        for (node_info, snapshot) in &event.stats {
+            io.accumulate(node_info, snapshot);
         }
+        let totals = daft_dashboard::engine::TaskTotals {
+            cpu_us: io.cpu_us,
+            rows_in: io.rows_in,
+            rows_out: io.rows_out,
+            bytes_in: io.bytes_in,
+            bytes_out: io.bytes_out,
+        };
 
         let outcome = match &event.outcome {
             crate::subscribers::events::TaskOutcome::Success => {
@@ -598,15 +641,20 @@ impl Subscriber for DashboardSubscriber {
             Event::Stats(e) => {
                 self.on_stats(&e)?;
             }
-            Event::ProcessStats(_e) => {}
-            Event::ResultOut(e) => {
-                if let Some(result) = &e.data {
-                    self.on_result_out(e.header.query_id.clone(), result.clone())?;
-                }
+            Event::TaskStatsUpdate(e) => {
+                self.on_task_stats_update(&e)?;
             }
+            Event::ProcessStats(_e) => {}
             Event::TaskSubmit(e) => {
                 self.on_task_submit(&e)?;
             }
+            Event::TaskScheduled(e) => {
+                self.on_task_scheduled(&e)?;
+            }
+            // Worker-side TaskStart not yet wired to the dashboard; the
+            // driver's TaskScheduled stands in as the "running" signal until
+            // worker-side wiring lands.
+            Event::TaskStart(_) => {}
             Event::TaskEnd(e) => {
                 self.on_task_end(&e)?;
             }

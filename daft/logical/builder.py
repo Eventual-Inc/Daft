@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
+    AsofJoinStrategy,
     CountMode,
     FileFormat,
     IOConfig,
@@ -322,16 +323,18 @@ class LogicalPlanBuilder:
         right_by: list[Expression],
         left_on: Expression,
         right_on: Expression,
+        strategy: AsofJoinStrategy,
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> LogicalPlanBuilder:
-        """Backward asof join (logical plan). Each left row matches the latest right row at or before the asof key per group."""
+        """Asof join (logical plan). Each left row matches the nearest right row according to the chosen strategy."""
         builder = self._builder.join_asof(
             right._builder,
             [expr._expr for expr in left_by],
             [expr._expr for expr in right_by],
             left_on._expr,
             right_on._expr,
+            strategy,
             prefix,
             suffix,
         )

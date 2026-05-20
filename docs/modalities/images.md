@@ -544,9 +544,12 @@ This is necessary because multimodal data such as images, videos, and audio file
 === "🐍 Python"
     ```python
     # Each operation uses different batch sizes automatically
-    df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("urls").download())  # Small batches
-          .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
+    df = (
+        daft.read_parquet("metadata.parquet")  # Large batches
+        .with_column("image_data", col("urls").download())  # Small batches
+        .with_column("image", col("image_data").decode_image())  # Decode to image
+        .with_column("resized", col("image").resize(224, 224))  # Medium batches
+    )
     ```
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

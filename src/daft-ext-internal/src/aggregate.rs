@@ -49,20 +49,17 @@ unsafe impl Sync for Inner {}
 
 #[derive(Clone)]
 pub struct AggregateFunctionHandle {
-    name: &'static str,
+    name: String,
     inner: Option<Arc<Inner>>,
 }
 
 impl AggregateFunctionHandle {
     fn new(ffi: FFI_AggregateFunction, module: Arc<ModuleHandle>) -> Self {
         let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
-        let name: &'static str = Box::leak(
-            unsafe { CStr::from_ptr(name_ptr) }
-                .to_str()
-                .expect("FFI aggregate function name must be valid UTF-8")
-                .to_owned()
-                .into_boxed_str(),
-        );
+        let name = unsafe { CStr::from_ptr(name_ptr) }
+            .to_str()
+            .expect("FFI aggregate function name must be valid UTF-8")
+            .to_owned();
         Self {
             name,
             inner: Some(Arc::new(Inner { ffi, module })),
@@ -174,8 +171,8 @@ impl AggregateFunctionHandle {
 
 #[typetag::serde(name = "AggregateFunctionHandle")]
 impl AggFn for AggregateFunctionHandle {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn return_dtype(&self, input_types: &[DataType]) -> DaftResult<DataType> {
@@ -313,7 +310,7 @@ impl Serialize for AggregateFunctionHandle {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("AggregateFunctionHandle", 1)?;
-        s.serialize_field("name", self.name)?;
+        s.serialize_field("name", &self.name)?;
         s.end()
     }
 }
@@ -326,7 +323,7 @@ impl<'de> Deserialize<'de> for AggregateFunctionHandle {
         }
         let h = Helper::deserialize(deserializer)?;
         Ok(Self {
-            name: Box::leak(h.name.into_boxed_str()),
+            name: h.name,
             inner: None,
         })
     }

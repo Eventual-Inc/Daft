@@ -20,7 +20,6 @@ from daft.subscribers.events import (
     OptimizationCompleted,
     QueryFinished,
     QueryStarted,
-    ResultProduced,
     Stats,
 )
 from tests.conftest import get_tests_daft_runner_name
@@ -42,7 +41,6 @@ class MockSubscriber(Subscriber):
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
         self.end_states = {}
         self.end_messages = {}
-        self.query_result_rows: defaultdict[str, int] = defaultdict(int)
         self.query_ids = []
 
     def on_query_started(self, event: QueryStarted) -> None:
@@ -52,9 +50,6 @@ class MockSubscriber(Subscriber):
     def on_query_finished(self, event: QueryFinished) -> None:
         self.end_states[event.query_id] = event.result.end_state
         self.end_messages[event.query_id] = event.result.error_message
-
-    def on_result_produced(self, event: ResultProduced) -> None:
-        self.query_result_rows[event.query_id] += event.num_rows
 
     def on_optimization_completed(self, event: OptimizationCompleted) -> None:
         self.query_optimized_plan[event.query_id] = event.optimized_plan
@@ -189,9 +184,8 @@ def test_subscriber_template():
         # Optimized plan should be different from unoptimized plan
         assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
 
-        # ResultProduced and per-row execution stats are only wired through the native runner today.
+        # Per-row execution stats are only wired through the native runner today.
         if get_tests_daft_runner_name() == "native":
-            assert subscriber.query_result_rows[query_id] == 3
             for _, stats in subscriber.query_node_stats[query_id].items():
                 for stat_name, stat_value in stats.items():
                     if stat_name == "rows_in" or stat_name == "rows_out":

@@ -5,10 +5,8 @@ use std::{
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{
-    Column, Expr, ExprRef, UnresolvedColumn, join::infer_asof_join_schema, resolved_col,
-    unresolved_col,
-};
+use daft_core::join::AsofJoinStrategy;
+use daft_dsl::{Column, Expr, ExprRef, UnresolvedColumn, resolved_col, unresolved_col};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +16,58 @@ use crate::{
     ops::Project,
     stats::{ApproxStats, PlanStats, StatsState},
 };
+
+/// Infer the output schema for an asof join.
+/// Column order: all left columns in their original schema order, then
+/// right columns not in `right_cols_to_drop` in their original schema order.
+fn infer_asof_join_schema(
+    left_schema: &SchemaRef,
+    right_schema: &SchemaRef,
+    right_cols_to_drop: &HashSet<String>,
+) -> DaftResult<SchemaRef> {
+    let fields: Vec<_> = left_schema
+        .into_iter()
+        .chain(
+            right_schema
+                .into_iter()
+                .filter(|f| !right_cols_to_drop.contains(f.name.as_ref())),
+        )
+        .cloned()
+        .collect();
+    Ok(daft_schema::schema::Schema::new(fields).into())
+}
+
+/// Compute the right key column names to exclude from the asof join output.
+///
+/// For by-keys: all right by columns that are direct column references (not complex expressions) are dropped.
+/// For on-keys: the right on column is dropped only when it has the same name as the left on column.
+///
+/// Returns the set of right column names to drop from the output.
+pub(crate) fn get_right_cols_to_drop<E, F>(
+    right_by: &[E],
+    left_on: &E,
+    right_on: &E,
+    extract_name: F,
+) -> HashSet<String>
+where
+    F: Fn(&E) -> Option<String>,
+{
+    let mut right_cols_to_drop = HashSet::new();
+
+    for r in right_by {
+        if let Some(right_name) = extract_name(r) {
+            right_cols_to_drop.insert(right_name);
+        }
+    }
+
+    if let (Some(left_name), Some(right_name)) = (extract_name(left_on), extract_name(right_on))
+        && left_name == right_name
+    {
+        right_cols_to_drop.insert(right_name);
+    }
+
+    right_cols_to_drop
+}
 
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -30,6 +80,7 @@ pub struct AsofJoin {
     pub right_by: Vec<ExprRef>,
     pub left_on: ExprRef,
     pub right_on: ExprRef,
+    pub strategy: AsofJoinStrategy,
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -44,6 +95,7 @@ impl AsofJoin {
         left_on: ExprRef,
         right_on: ExprRef,
         right_cols_to_drop: HashSet<String>,
+        strategy: AsofJoinStrategy,
     ) -> logical_plan::Result<Self> {
         let output_schema =
             infer_asof_join_schema(&left.schema(), &right.schema(), &right_cols_to_drop)?;
@@ -57,6 +109,7 @@ impl AsofJoin {
             right_by,
             left_on,
             right_on,
+            strategy,
             output_schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -172,7 +225,7 @@ impl AsofJoin {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec!["AsofJoin: strategy = backward".to_string()];
+        let mut res = vec![format!("AsofJoin: strategy = {}", self.strategy)];
         res.push(format!(
             "left_by = [{}]",
             self.left_by

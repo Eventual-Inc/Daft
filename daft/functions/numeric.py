@@ -293,6 +293,19 @@ def bin(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("bin", expr)
 
 
+def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
+    """Converts a number from base ``from_base`` to base ``to_base`` (bases 2-36).
+
+    Positive ``to_base`` interprets negative inputs as 64-bit two's complement
+    (``conv("-1", 10, 16) == "FFFFFFFFFFFFFFFF"``); negative ``to_base`` returns
+    a signed result (``conv("-1", 10, -16) == "-1"``). Trailing invalid characters
+    are silently truncated (``conv("11abc", 10, 16) == "B"``). Returns NULL on
+    out-of-range bases, on u64 overflow during parsing, or when a negated
+    magnitude exceeds 2^63.
+    """
+    return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
+
+
 def is_nan(expr: Expression) -> Expression:
     """Checks if values are NaN (a special float value indicating not-a-number).
 

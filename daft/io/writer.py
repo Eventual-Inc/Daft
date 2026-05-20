@@ -4,11 +4,13 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     get_protocol_from_path,
 )
+from daft.io.common import _get_schema_from_dict
 from daft.io.delta_lake.delta_lake_write import (
     make_deltalake_add_action,
     make_deltalake_fs,
@@ -164,6 +166,8 @@ class ParquetFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
             schema = table.schema().to_pyarrow_schema()
             self.current_writer = self._create_writer(schema)
@@ -175,14 +179,14 @@ class ParquetFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
 
     def _resolve_column_compression(
@@ -289,6 +293,8 @@ class CSVFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed CSVFileWriter"
+        if len(table) == 0:
+            return 0
         arrow_table = table.to_arrow()
 
         # Apply custom date/timestamp formatting if specified
@@ -305,15 +311,14 @@ class CSVFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
-
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
 
 
@@ -351,6 +356,8 @@ class IcebergWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed IcebergFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
             self.current_writer = self._create_writer(self.file_schema)
         casted = coerce_pyarrow_table_to_schema(table.to_arrow(), self.file_schema)
@@ -362,9 +369,10 @@ class IcebergWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"data_file": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
@@ -410,6 +418,8 @@ class DeltalakeWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
+        if len(table) == 0:
+            return 0
 
         converted_arrow_table = sanitize_table_for_deltalake(
             table,
@@ -426,9 +436,10 @@ class DeltalakeWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"add_action": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]

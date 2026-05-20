@@ -15,10 +15,10 @@ use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::join::{AsofJoinStrategy, JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -42,7 +42,7 @@ use crate::{
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self, Limit, Offset, SetQuantifier, UnionStrategy,
+        self, Limit, Offset, SetQuantifier, UnionStrategy, get_right_cols_to_drop,
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
@@ -768,6 +768,7 @@ impl LogicalPlanBuilder {
         right_by: Vec<ExprRef>,
         left_on: ExprRef,
         right_on: ExprRef,
+        strategy: AsofJoinStrategy,
         options: JoinOptions,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
@@ -806,6 +807,7 @@ impl LogicalPlanBuilder {
             left_on,
             right_on,
             right_cols_to_drop,
+            strategy,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -1598,7 +1600,7 @@ impl PyLogicalPlanBuilder {
         Ok(result.into())
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, prefix, suffix))]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix))]
     pub fn join_asof(
         &self,
         right: &Self,
@@ -1606,6 +1608,7 @@ impl PyLogicalPlanBuilder {
         right_by: Vec<PyExpr>,
         left_on: PyExpr,
         right_on: PyExpr,
+        strategy: AsofJoinStrategy,
         prefix: Option<String>,
         suffix: Option<String>,
     ) -> PyResult<Self> {
@@ -1617,6 +1620,7 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_by),
                 left_on.into(),
                 right_on.into(),
+                strategy,
                 JoinOptions { prefix, suffix },
             )?
             .into())

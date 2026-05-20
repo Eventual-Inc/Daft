@@ -7,6 +7,7 @@ from sqlalchemy import Column, Float, Integer, MetaData, String, Table, create_e
 
 import daft
 from daft.datatype import DataType
+from daft.sql.sql_connection import SQLConnection
 
 
 @pytest.fixture()
@@ -100,3 +101,44 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
 
     assert len(result["value"]) == 50
     assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
+
+
+@pytest.mark.parametrize(
+    ("url", "secret"),
+    [
+        # userinfo password
+        ("postgresql+psycopg2://alice:super-secret-pw@127.0.0.1:1/nope", "super-secret-pw"),
+        # query-param token (Trino JWT shape, the customer-reported leak)
+        (
+            "trino://alice@127.0.0.1:1?auth=jwt&access_token=SUPER_SECRET_TOKEN&http_scheme=https",
+            "SUPER_SECRET_TOKEN",
+        ),
+        # password with URL-special chars
+        ("postgresql+psycopg2://alice:p#ss@127.0.0.1:1/nope", "p#ss"),
+    ],
+)
+def test_execute_sql_error_does_not_leak_credentials(url, secret):
+    """The raised RuntimeError must not echo any part of the connection URL.
+
+    Secrets can appear anywhere in a URL (userinfo, query params, driver
+    extras), so the URL is omitted from the error message entirely rather
+    than relying on field-specific redaction.
+    """
+    pytest.importorskip("psycopg2")
+    conn = SQLConnection.from_url(url)
+    with pytest.raises(RuntimeError) as exc_info:
+        conn.execute_sql_query("SELECT 1")
+    assert secret not in str(exc_info.value)
+
+
+def test_repr_does_not_leak_url():
+    """SQLConnection.__repr__ must not echo the connection URL.
+
+    Same reasoning as the error-message path. Show only dialect/driver.
+    """
+    secret = "super-secret-token-do-not-leak"
+    conn = SQLConnection.from_url(f"trino://alice@trino.example.com:443?access_token={secret}")
+    r = repr(conn)
+    assert secret not in r
+    assert "trino.example.com" not in r
+    assert "alice" not in r

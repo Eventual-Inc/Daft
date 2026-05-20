@@ -5,7 +5,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{DaftExecutionConfig, DaftPlanningConfig};
+use crate::{DaftEventLogConfig, DaftExecutionConfig, DaftPlanningConfig};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft", from_py_object)]
@@ -478,3 +478,53 @@ impl PyDaftExecutionConfig {
 }
 
 impl_bincode_py_state_serialization!(PyDaftExecutionConfig);
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", from_py_object)]
+pub struct PyDaftEventLogConfig {
+    pub config: DaftEventLogConfig,
+}
+
+#[pymethods]
+impl PyDaftEventLogConfig {
+    #[new]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[staticmethod]
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            config: DaftEventLogConfig::from_env(),
+        }
+    }
+
+    #[pyo3(signature = (enabled=None, path=None))]
+    fn with_config_values(&self, enabled: Option<bool>, path: Option<String>) -> PyResult<Self> {
+        let mut config = self.config.clone();
+
+        if let Some(enabled) = enabled {
+            config.enabled = enabled;
+        }
+
+        if let Some(path) = path {
+            config.path = path;
+        }
+
+        Ok(Self { config })
+    }
+
+    #[getter(enabled)]
+    fn enabled(&self) -> bool {
+        self.config.enabled
+    }
+
+    #[getter(path)]
+    fn path(&self) -> String {
+        self.config.path.clone()
+    }
+}
+
+impl_bincode_py_state_serialization!(PyDaftEventLogConfig);

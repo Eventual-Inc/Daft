@@ -13,6 +13,8 @@ import pytest
 import daft
 from daft import DataType, Series, TimeUnit
 from daft.context import execution_config_ctx
+from daft.io.writer import ParquetFileWriter
+from daft.recordbatch.micropartition import MicroPartition
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -48,8 +50,11 @@ from tests.conftest import get_tests_daft_runner_name
             DataType.duration(TimeUnit.ms()),
         ),
         ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # TODO: Crashes when parsing fixed size lists
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
+        (
+            [[1, 2, 3], [4, 5, 6], None],
+            pa.list_(pa.int64(), list_size=3),
+            DataType.fixed_size_list(DataType.int64(), 3),
+        ),
         ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
         (
             [[("a", 1), ("b", 2)], [], None],
@@ -224,6 +229,18 @@ def test_roundtrip_arrow_extension_type(tmp_path, uuid_ext_type, native_parquet_
     ba = before.to_arrow()
     aa = after.to_arrow()
     assert ba.equals(aa, check_metadata=False)
+
+
+def test_parquet_file_writer_empty_micropartition(tmp_path):
+    empty = MicroPartition.from_arrow(pa.table({"id": pa.array([], type=pa.int64())}))
+    writer = ParquetFileWriter(root_dir=str(tmp_path), file_idx=0)
+    bytes_written = writer.write(empty)
+    assert bytes_written == 0
+    result = writer.close()
+
+    # Empty micropartition should result in an empty record batch.
+    assert len(result) == 0
+    assert "path" in result.schema().column_names()
 
 
 # TODO: reading/writing:

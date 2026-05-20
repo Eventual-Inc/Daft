@@ -712,6 +712,17 @@ fn replace_column_with_semantic_id_aggexpr(
                 })
             }
         }
+        AggExpr::AggFnCombine { handle, partial } => {
+            let t = replace_column_with_semantic_id(partial.clone(), subexprs_to_replace, schema);
+            if !t.transformed {
+                Transformed::no(AggExpr::AggFnCombine { handle, partial })
+            } else {
+                Transformed::yes(AggExpr::AggFnCombine {
+                    handle,
+                    partial: t.data,
+                })
+            }
+        }
         AggExpr::AggFnReduce {
             handle,
             partial,

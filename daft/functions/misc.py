@@ -50,11 +50,15 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
-def uuid() -> Expression:
+def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     """Generates a column of UUID strings.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
-    (e.g. two separate columns) are independent and will produce different values.
+    (e.g. two separate columns) are independent and will produce different values. By default,
+    this generates UUIDv4 values. Pass ``version="v7"`` to generate time-ordered UUIDv7 values.
+
+    Args:
+        version: UUID version to generate. Supported values are ``"v4"`` and ``"v7"``.
 
     Returns:
         Expression (UUID Expression): An expression that generates UUID values.
@@ -69,7 +73,11 @@ def uuid() -> Expression:
         >>> df.schema()["u2"].dtype == daft.DataType.uuid()
         True
     """
-    return Expression._call_builtin_scalar_fn("uuid")
+    if version == "v4":
+        return Expression._call_builtin_scalar_fn("uuid")
+    if version == "v7":
+        return Expression._call_builtin_scalar_fn("uuidv7")
+    raise ValueError("`version` must be 'v4' or 'v7'")
 
 
 def random_int(low: int, high: int, seed: int | None = None) -> Expression:
@@ -751,6 +759,42 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     """
     key_expr = Expression._to_expression(key)
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
+
+
+def map_keys(expr: Expression) -> Expression:
+    """Returns a list of all keys in the map.
+
+    Args:
+        expr: the map expression to get from
+
+    Returns:
+        Expression: the keys list expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1), ("b", 2)], [("c", 3)], [], None], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("keys", df["map_col"].map_keys())
+        >>> df.show()
+        ╭────────────────────┬──────────────╮
+        │ map_col            ┆ keys         │
+        │ ---                ┆ ---          │
+        │ Map[String: Int64] ┆ List[String] │
+        ╞════════════════════╪══════════════╡
+        │ {"a": 1, "b": 2}   ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c": 3}           ┆ [c]          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}                 ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None               ┆ None         │
+        ╰────────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._from_pyexpr(expr._expr.map_keys())
 
 
 def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:

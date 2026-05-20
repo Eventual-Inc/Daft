@@ -11,7 +11,7 @@ pub use crate::count_mode::CountMode;
 // Re-export common data types and arrays
 pub use crate::datatypes::prelude::*;
 // Re-export join-related types
-pub use crate::join::{JoinStrategy, JoinType};
+pub use crate::join::{AsofJoinStrategy, JoinStrategy, JoinType};
 // Re-export operator enum
 pub use crate::operator::Operator;
 pub use crate::{
