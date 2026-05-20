@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import daft.daft as native
