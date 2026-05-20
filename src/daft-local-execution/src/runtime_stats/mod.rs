@@ -1,5 +1,6 @@
 mod process_stats;
 mod progress_bar;
+mod shuffle;
 mod values;
 
 use std::{
@@ -18,7 +19,7 @@ use daft_context::{
     subscribers::{
         event_header,
         events::{
-            Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
+            Event, ExecEndEvent, ExecStartEvent, ExecutionConfig, OperatorEndEvent, OperatorMeta,
             OperatorStartEvent, ProcessStatsEvent, StatsEvent, TaskStatsSnapshot,
             TaskStatsUpdateEvent,
         },
@@ -27,6 +28,7 @@ use daft_context::{
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::{ExecutionStats, InputId};
 use progress_bar::{ProgressBar, make_progress_bar_manager};
+pub use shuffle::ShuffleWriteRuntimeStats;
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},

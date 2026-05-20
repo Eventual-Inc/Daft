@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
-pub trait RuntimeStats: Send + Sync + std::any::Any {
+pub trait RuntimeStats: Send + Sync {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self
     where
         Self: Sized;
@@ -35,6 +35,21 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     /// not directly comparable across operator kinds — interpret relative
     /// to the operator's own scale.
     fn increment_num_tasks(&self);
+
+    /// Optional sink-output hooks. Most nodes do not distinguish generic
+    /// output from materialized writes, so row/byte write defaults delegate
+    /// to generic output counters.
+    fn add_rows_written(&self, rows: u64) {
+        self.add_rows_out(rows);
+    }
+    fn add_bytes_written(&self, bytes: u64) {
+        self.add_bytes_out(bytes);
+    }
+    fn add_partitions_written(&self, _partitions: u64) {}
+    /// Wall time spent inside the sink's `finalize()` call after all input is
+    /// received, including any buffered-data flush, concat, and backend
+    /// write/close work done there. Default no-op; sinks that care override.
+    fn add_finalize_duration_us(&self, _duration_us: u64) {}
 }
 
 pub struct DefaultRuntimeStats {
@@ -94,5 +109,56 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn increment_num_tasks(&self) {
         self.num_tasks.add(1, self.node_kv.as_slice());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::ops::NodeInfo;
+
+    use super::*;
+
+    /// Locks down the trait's delegating defaults: `add_rows_written` lands in
+    /// `rows_out` and `add_bytes_written` lands in `bytes_out`. The framework's
+    /// `BlockingSinkNode::spawn_finalize` calls the `*_written` hooks for all
+    /// blocking-sink outputs; if these defaults silently became no-ops, every
+    /// non-shuffle BlockingSink would lose its rows_out / bytes_out accounting.
+    #[test]
+    fn default_stats_add_rows_and_bytes_written_delegates() {
+        let stats = DefaultRuntimeStats::new(
+            &Meter::test_scope("default_delegation"),
+            &NodeInfo::default(),
+        );
+        stats.add_rows_written(100);
+        stats.add_bytes_written(2048);
+
+        let StatSnapshot::Default(snap) = stats.snapshot() else {
+            panic!("expected Default snapshot");
+        };
+        assert_eq!(snap.rows_out, 100);
+        assert_eq!(snap.bytes_out, 2048);
+    }
+
+    /// `add_partitions_written` and `add_finalize_duration_us` are no-ops on
+    /// the base trait — `DefaultSnapshot` has no fields for them and shouldn't
+    /// gain any. Confirms calling them on a non-shuffle stats type doesn't
+    /// affect the snapshot's other counters.
+    #[test]
+    fn default_stats_partitions_and_finalize_duration_are_noops() {
+        let stats = DefaultRuntimeStats::new(
+            &Meter::test_scope("default_noops"),
+            &NodeInfo::default(),
+        );
+        stats.add_rows_in(50);
+        stats.add_partitions_written(42);
+        stats.add_finalize_duration_us(1000);
+
+        let StatSnapshot::Default(snap) = stats.snapshot() else {
+            panic!("expected Default snapshot");
+        };
+        assert_eq!(snap.rows_in, 50);
+        assert_eq!(snap.rows_out, 0);
+        assert_eq!(snap.bytes_out, 0);
+        assert_eq!(snap.cpu_us, 0);
     }
 }

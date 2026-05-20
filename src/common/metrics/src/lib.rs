@@ -165,6 +165,17 @@ pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
 pub const UNIT_PERCENT: &str = "%";
 
+// Shuffle write metrics
+pub const SHUFFLE_ROWS_IN_KEY: &str = "shuffle.rows_in";
+pub const SHUFFLE_ROWS_WRITTEN_KEY: &str = "shuffle.rows_written";
+
+pub const SHUFFLE_BYTES_IN_KEY: &str = "shuffle.bytes_in";
+pub const SHUFFLE_BYTES_WRITTEN_KEY: &str = "shuffle.bytes_written";
+
+pub const SHUFFLE_PARTITIONS_WRITTEN_KEY: &str = "shuffle.partitions_written";
+
+pub const SHUFFLE_FINALIZE_DURATION_KEY: &str = "shuffle.finalize_duration";
+
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;

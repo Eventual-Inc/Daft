@@ -17,6 +17,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::ShuffleWriteRuntimeStats,
 };
 
 pub(crate) struct RayIntoPartitionsState {
@@ -231,6 +232,7 @@ impl IntoPartitionsSink {
 
 impl BlockingSink for IntoPartitionsSink {
     type State = IntoPartitionsState;
+    type Stats = ShuffleWriteRuntimeStats;
 
     #[instrument(skip_all, name = "IntoPartitionsSink::sink")]
     fn sink(

@@ -245,7 +245,17 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 .as_ref()
                 .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
 
+            // Wall time spent inside the sink's finalize() call after all input is
+            // received: includes any buffered-data flush, concat, and backend
+            // write/close work done there. Captured inside the spawned task so the
+            // measurement excludes spawner queue time. Excludes post-finalize
+            // framework work like output sending and checkpoint staging, which run
+            // after this measurement closes.
+            let finalize_start = Instant::now();
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
+            per_input
+                .runtime_stats
+                .add_finalize_duration_us(finalize_start.elapsed().as_micros() as u64);
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
@@ -259,11 +269,19 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         }
                     }
 
+                    let mut rows_written = 0;
+                    let mut bytes_written = 0;
+                    for partition in &partitions {
+                        rows_written += partition.len() as u64;
+                        bytes_written += partition.size_bytes() as u64;
+                    }
+                    per_input.runtime_stats.add_rows_written(rows_written);
+                    per_input.runtime_stats.add_bytes_written(bytes_written);
+                    per_input
+                        .runtime_stats
+                        .add_partitions_written(partitions.len() as u64);
+
                     for partition in partitions {
-                        per_input.runtime_stats.add_rows_out(partition.len() as u64);
-                        per_input
-                            .runtime_stats
-                            .add_bytes_out(partition.size_bytes() as u64);
                         let _ = output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
@@ -273,6 +291,18 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
                 }
                 BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
+                    let mut rows_written = 0;
+                    let mut bytes_written = 0;
+                    for partition_ref in &partition_refs {
+                        rows_written += partition_ref.num_rows as u64;
+                        bytes_written += partition_ref.size_bytes as u64;
+                    }
+                    per_input.runtime_stats.add_rows_written(rows_written);
+                    per_input.runtime_stats.add_bytes_written(bytes_written);
+                    per_input
+                        .runtime_stats
+                        .add_partitions_written(partition_refs.len() as u64);
+
                     for partition_ref in partition_refs {
                         let _ = output_tx
                             .send(PipelineMessage::FlightPartitionRef {

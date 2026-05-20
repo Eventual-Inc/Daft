@@ -21,6 +21,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::ShuffleWriteRuntimeStats,
 };
 
 // Worst-case buffered memory is `num_workers × num_inputs × threshold` — one
@@ -187,6 +188,7 @@ impl RepartitionSink {
 
 impl BlockingSink for RepartitionSink {
     type State = RepartitionAccState;
+    type Stats = ShuffleWriteRuntimeStats;
 
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
