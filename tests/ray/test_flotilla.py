@@ -15,10 +15,15 @@ def test_swordfish_task_handle_cancel_does_not_fail_ray_task(monkeypatch):
     records as a FAILED entry in its task table. The handle now routes
     through `actor.cancel_input.remote(...)`, which closes the per-input
     result channel inside the worker so `run_plan` returns cleanly — the
-    Ray task ends FINISHED. Asserting `ray.cancel` is not called is how
-    we catch a re-introduction without standing up a cluster or the
-    dashboard.
+    Ray task ends FINISHED.
+
+    The test tolerates both the pre-fix and post-fix constructor /
+    coroutine shapes of `RaySwordfishTaskHandle` so the failure on pre-fix
+    code reads `must not call ray.cancel` (the actual contract) instead
+    of a `TypeError` on the missing kwargs.
     """
+    import inspect
+
     ray_cancel_calls = []
     monkeypatch.setattr(
         "daft.runners.flotilla.ray.cancel",
@@ -28,16 +33,24 @@ def test_swordfish_task_handle_cancel_does_not_fail_ray_task(monkeypatch):
     actor = MagicMock()
     actor.cancel_input.remote.side_effect = lambda *a, **kw: asyncio.sleep(0)
 
-    handle = RaySwordfishTaskHandle(
-        result_handle=MagicMock(),
-        actor_handle=actor,
-        task_id=42,
-        plan_fingerprint=7,
-    )
-    asyncio.run(handle.cancel())
+    params = inspect.signature(RaySwordfishTaskHandle).parameters
+    kwargs = {"result_handle": MagicMock()}
+    if "actor_handle" in params:
+        kwargs["actor_handle"] = actor
+    if "task_id" in params:
+        kwargs["task_id"] = 42
+    if "plan_fingerprint" in params:
+        kwargs["plan_fingerprint"] = 7
+    handle = RaySwordfishTaskHandle(**kwargs)
+
+    # Pre-fix `cancel` is sync; post-fix it's async. Handle either shape.
+    result = handle.cancel()
+    if asyncio.iscoroutine(result):
+        asyncio.run(result)
 
     assert not ray_cancel_calls, "RaySwordfishTaskHandle.cancel must not call ray.cancel"
-    actor.cancel_input.remote.assert_called_once_with(7, 42)
+    if "actor_handle" in params:
+        actor.cancel_input.remote.assert_called_once_with(7, 42)
 
 
 def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
