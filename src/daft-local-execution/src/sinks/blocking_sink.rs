@@ -251,11 +251,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             // measurement excludes spawner queue time. Excludes post-finalize
             // framework work like output sending and checkpoint staging, which run
             // after this measurement closes.
+            //
+            // Record the duration before propagating any error so that a slow
+            // finalize that ultimately fails (timeout, OOM, backend error) still
+            // surfaces its wall time in the snapshot.
             let finalize_start = Instant::now();
-            let output = op.finalize(per_input.states, &finalize_spawner).await??;
+            let finalize_result = op.finalize(per_input.states, &finalize_spawner).await;
             per_input
                 .runtime_stats
                 .add_finalize_duration_us(finalize_start.elapsed().as_micros() as u64);
+            let output = finalize_result??;
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
