@@ -11,7 +11,6 @@ from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
 from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
 from pyiceberg.partitioning import _PartitionNameGenerator
-from pyiceberg.schema import Schema as PyIcebergSchema
 from pyiceberg.schema import assign_fresh_schema_ids
 from pyiceberg.table import Table as InnerTable
 from pyiceberg.transforms import (
@@ -29,6 +28,8 @@ from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from pyiceberg.schema import Schema as PyIcebergSchema
 
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
