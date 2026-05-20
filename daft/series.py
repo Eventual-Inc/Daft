@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 import daft.daft as native
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
@@ -17,6 +11,8 @@ from daft.schema import Field
 if TYPE_CHECKING:
     import builtins
     from collections.abc import Callable
+
+    from typing_extensions import Self
 
     from daft.daft import PyDataType
 
