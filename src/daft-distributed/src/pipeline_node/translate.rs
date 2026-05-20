@@ -229,7 +229,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 };
 
                 if let Some(join) = inner_join {
-                    let (remaining, left_eq_keys, right_eq_keys, null_equals_nulls) =
+                    let (remaining, left_eq_keys, right_eq_keys, _null_equals_nulls) =
                         join.on.split_eq_preds();
 
                     // Only rewrite when the join has equi-keys and no remaining
