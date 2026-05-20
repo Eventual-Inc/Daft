@@ -37,7 +37,7 @@ def test_explain_with_python_function_datasource(input_df_with_uri):
         |   Source = LanceDBScanOperator({dataset_uri})
         |   Schema: {{id#Int64}}
         |   Scan Tasks: [
-        |   {{daft.io.lance.lance_scan:_lancedb_table_factory_function}}
+        |   {{daft_lance.lance_scan:_lancedb_table_factory_function}}
         |   ]
         """
     assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(expected)

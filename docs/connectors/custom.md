@@ -23,12 +23,13 @@ Create a class that inherits from [`DataSource`](../api/io.md#daft.io.source.Dat
 
 === "🐍 Python"
 ```python
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from daft.datatype import DataType
 from daft.io import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.io.pushdowns import Pushdowns
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 
@@ -62,7 +63,7 @@ class TextFileDataSource(DataSource):
             ("line", DataType.string()),
         ])
 
-    def get_tasks(self, pushdowns) -> Iterator["TextFileDataSourceTask"]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator["TextFileDataSourceTask"]:
         """Create tasks for each file to enable parallel processing.
 
         Args:
@@ -76,7 +77,7 @@ class TextFileDataSource(DataSource):
 
 
 class TextFileDataSourceTask(DataSourceTask):
-    """A task that reads a single text file and converts it to MicroPartitions."""
+    """A task that reads a single text file and converts it to RecordBatches."""
 
     def __init__(self, file_path: Path):
         """Initialize the task with a specific file path.
@@ -93,22 +94,22 @@ class TextFileDataSourceTask(DataSourceTask):
             ("line", DataType.string()),
         ])
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        """Read the text file and yield MicroPartitions.
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        """Read the text file and yield RecordBatches.
 
-        This method reads the file line by line and creates MicroPartitions
+        This method reads the file line by line and creates RecordBatches
         containing the line data.
 
         Yields:
-            MicroPartition: Contains the lines from the text file
+            RecordBatch: Contains the lines from the text file
         """
         lines = []
         with open(self.file_path, encoding='utf-8') as f:
             for line in f:
                 lines.append(line)
 
-        # Create a single MicroPartition with all lines.
-        yield MicroPartition.from_pydict({
+        # Create a single RecordBatch with all lines.
+        yield RecordBatch.from_pydict({
             "line": lines,
         })
 ```

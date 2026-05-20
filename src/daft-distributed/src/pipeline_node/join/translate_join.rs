@@ -75,6 +75,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
+        left_size_bytes: usize,
+        right_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         let left_spec = left.config().clustering_spec.as_ref();
         let right_spec = right.config().clustering_spec.as_ref();
@@ -125,6 +127,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 left.config().schema.clone(),
                 left,
+                left_size_bytes,
             )?
         } else {
             left
@@ -140,6 +143,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 right.config().schema.clone(),
                 right,
+                right_size_bytes,
             )?
         } else {
             right
@@ -434,6 +438,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 null_equals_nulls,
                 join.join_type,
                 join.output_schema.clone(),
+                left_stats.size_bytes,
+                right_stats.size_bytes,
             ),
             JoinStrategy::SortMerge => self.gen_sort_merge_join_node(
                 left_node,

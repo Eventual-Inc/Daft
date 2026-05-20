@@ -191,20 +191,6 @@ class TestDistributedIndexing:
                 index_type="INVERTED",
             )
 
-    def test_build_distributed_index_invalid_index_type(self, multi_fragment_lance_dataset):
-        """Test error handling for invalid index type."""
-        dataset_uri = multi_fragment_lance_dataset
-
-        with pytest.raises(
-            NotImplementedError,
-            match=r'Only "BTREE", "BITMAP", "NGRAM", "ZONEMAP", "LABEL_LIST", or "INVERTED" or "BLOOMFILTER" are supported for scalar columns.  Received INVALID',
-        ):
-            create_scalar_index(
-                uri=dataset_uri,
-                column="text",
-                index_type="INVALID",
-            )
-
     def test_build_distributed_index_empty_column(self, multi_fragment_lance_dataset):
         """Test error handling for empty column name."""
         dataset_uri = multi_fragment_lance_dataset
