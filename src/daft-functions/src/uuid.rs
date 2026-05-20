@@ -160,7 +160,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uuid_kernel_sets_version_and_variant_bits() {
+    fn uuid_v7_kernel_sets_version_and_variant_bits() {
         let array = uuid_kernel(128, UuidVersion::V7).unwrap().finish();
 
         assert_eq!(array.len(), 128);
