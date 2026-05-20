@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock
 
+import pytest
+
 import daft.runners.flotilla as flotilla
 from daft.context import execution_config_ctx
 from daft.runners.flotilla import RaySwordfishTaskHandle
+from tests.conftest import get_tests_daft_runner_name
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="flotilla-specific behavior")
 def test_swordfish_task_handle_cancel_does_not_fail_ray_task(monkeypatch):
     """Regression: cancelling a swordfish task must not surface it as FAILED in Ray.
 
