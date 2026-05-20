@@ -78,6 +78,7 @@
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
         * [Telemetry](observability/telemetry.md)
+        * [Grafana Dashboard](observability/grafana.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
