@@ -128,6 +128,8 @@ pub enum LocalPhysicalPlan {
     AsofJoin(AsofJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
+    #[cfg(feature = "python")]
+    DistributedLimit(DistributedLimit),
     VLLMProject(VLLMProject),
 }
 #[cfg(not(debug_assertions))]
@@ -201,6 +203,7 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject {
                 stats_state, ..
             })
+            | Self::DistributedLimit(DistributedLimit { stats_state, .. })
             | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
@@ -251,6 +254,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
     }
@@ -300,6 +304,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
     }
@@ -539,6 +544,28 @@ impl LocalPhysicalPlan {
             schema,
             passthrough_columns,
             required_columns,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    #[cfg(feature = "python")]
+    pub fn distributed_limit(
+        input: LocalPhysicalPlanRef,
+        actor_object: PyObjectWrapper,
+        limit: u64,
+        offset: Option<u64>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::DistributedLimit(DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            schema,
             stats_state,
             context,
         })
@@ -1192,6 +1219,8 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
             Self::GatherWrite(GatherWrite { schema, .. }) => schema,
@@ -1277,6 +1306,8 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
             Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
@@ -1718,6 +1749,21 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                #[cfg(feature = "python")]
+                Self::DistributedLimit(DistributedLimit {
+                    actor_object,
+                    limit,
+                    offset,
+                    context,
+                    ..
+                }) => Self::distributed_limit(
+                    new_child.clone(),
+                    actor_object.clone(),
+                    *limit,
+                    *offset,
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
                     backend,
@@ -1998,6 +2044,19 @@ pub struct DistributedActorPoolProject {
     pub schema: SchemaRef,
     pub passthrough_columns: Vec<BoundExpr>,
     pub required_columns: Vec<usize>,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[cfg(feature = "python")]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct DistributedLimit {
+    pub input: LocalPhysicalPlanRef,
+    pub actor_object: PyObjectWrapper,
+    pub limit: u64,
+    pub offset: Option<u64>,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }

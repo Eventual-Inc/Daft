@@ -252,12 +252,12 @@ pipeline in Daft.
 
 ### Data Evolution
 
-If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
+If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft_lance.merge_columns` from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package (installed as part of the `daft[lance]` extra):
 
 === "🐍 Python"
 
 ```python
-from daft.io.lance import merge_columns
+from daft_lance import merge_columns
 
 # Example: double the values in column c and write to a new column new_column
 import pyarrow.compute as pc
@@ -283,10 +283,12 @@ Compaction is the process of rewriting a Lance dataset to optimize its structure
 Use compaction when a dataset has undergone many small appends, has a high number of deleted rows, or contains a large number of small files.
 
 
-Daft provides a distributed implementation of compaction through [`daft.io.lance.compact_files`][daft.io.lance.compact_files].
+Daft provides a distributed implementation of compaction through `daft_lance.compact_files` (from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package, installed as part of the `daft[lance]` extra).
 
 ```python
-daft.io.lance.compact_files(
+from daft_lance import compact_files
+
+compact_files(
     uri,
     compaction_options=None,
     io_config=None,
@@ -318,6 +320,7 @@ This example compacts a dataset with multiple fragments into a single, larger fr
     import lance
     import pandas as pd
     import pyarrow as pa
+    from daft_lance import compact_files
 
     daft.set_runner_ray()
 
@@ -329,7 +332,7 @@ This example compacts a dataset with multiple fragments into a single, larger fr
     # The initial row count is 800, and the initial fragment count is 4
     print(f"Initial row count: {dataset.count_rows()}, and initial fragment count: {len(dataset.get_fragments())}")
 
-    metrics = daft.io.lance.compact_files(
+    metrics = compact_files(
         dataset_path,
         compaction_options={
             "target_rows_per_fragment": 400,
