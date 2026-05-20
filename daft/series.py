@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
-from typing_extensions import Self
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import daft.daft as native
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
