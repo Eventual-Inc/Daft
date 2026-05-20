@@ -12,8 +12,6 @@ from daft.dataframe import DataFrame
 from daft.io._checkpoint import attach_checkpoint
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
-from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
-from daft.io.lance.rest_scan import LanceRestScanOperator
 from daft.io.lance.utils import construct_lance_dataset
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
@@ -36,7 +34,6 @@ LanceDataset = Any
 def read_lance(
     uri: str | pathlib.Path,
     io_config: IOConfig | None = None,
-    rest_config: LanceRestConfig | None = None,
     version: str | int | None = None,
     asof: str | None = None,
     block_size: int | None = None,
@@ -48,14 +45,12 @@ def read_lance(
     include_fragment_id: bool | None = None,
     checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
-    """Create a DataFrame from a LanceDB table or Lance REST service.
+    """Create a DataFrame from a LanceDB table.
 
     Args:
-        uri: The URI of the Lance table to read from. Supports:
-            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
-            - REST URIs: "rest://namespace/table_name" (requires rest_config)
+        uri: The URI of the Lance table to read from. Accepts a local path or an
+            object-store URI like "s3://bucket/path".
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
-        rest_config: Configuration for REST-based Lance services. Required when using REST URIs.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
             latest version. A version number (`int`) or a tag (`str`) can be provided.
@@ -129,47 +124,34 @@ def read_lance(
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
         >>> df = daft.read_lance("s3://daft-oss-public-data/lance/words-test-dataset", io_config=io_config)
         >>> df.show()
-
-        Read a Lance table via REST API:
-        >>> from daft.io.lance import LanceRestConfig
-        >>> rest_config = LanceRestConfig(base_url="https://api.lancedb.com", api_key="your-api-key")
-        >>> df = daft.read_lance("rest://my_namespace/my_table", rest_config=rest_config)
-        >>> df.show()
     """
-    # Parse URI to determine if it's REST-based or file-based
     uri_str = str(uri)
-    uri_type, uri_info = parse_lance_uri(uri_str)
-
-    if uri_type == "rest":
-        # REST-based Lance table
-        if rest_config is None:
-            raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
-
-        lance_operator: LanceDBScanOperator | LanceRestScanOperator = LanceRestScanOperator(
-            rest_config=rest_config,
-            namespace=uri_info["namespace"],
-            table_name=uri_info["table_name"],
-        )
-    else:
-        # File-based Lance table (existing logic)
-        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, uri_str)
-
-        ds = construct_lance_dataset(
-            uri_str,
-            storage_options=storage_options,
-            version=version,
-            asof=asof,
-            block_size=block_size,
-            commit_lock=commit_lock,
-            index_cache_size=index_cache_size,
-            default_scan_options=default_scan_options,
-            metadata_cache_size_bytes=metadata_cache_size_bytes,
+    if uri_str.startswith("rest://"):
+        raise ValueError(
+            "rest:// Lance URIs are no longer supported by daft.read_lance. "
+            "The previous REST-namespace integration did not match the real "
+            "lance-namespace API and has been removed. Use a local path or "
+            "object-store URI, or the daft-lance package."
         )
 
-        lance_operator = LanceDBScanOperator(
-            ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
-        )
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = io_config_to_storage_options(io_config, uri_str)
+
+    ds = construct_lance_dataset(
+        uri_str,
+        storage_options=storage_options,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+    )
+
+    lance_operator = LanceDBScanOperator(
+        ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
+    )
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
