@@ -950,6 +950,7 @@ class DataFrame:
         write_success_file: bool = False,
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        column_compression: dict[str, str] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
@@ -957,11 +958,12 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
-            compression (str, optional): compression algorithm. Defaults to "snappy".
+            compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -991,12 +993,19 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        file_format_option: PyFormatSinkOption | None = None
+        if column_compression:
+            file_format_option = PyFormatSinkOption.parquet(
+                column_compression=list(column_compression.items()),
+            )
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             write_success_file=write_success_file,
             file_format=FileFormat.Parquet,
+            file_format_option=file_format_option,
             compression=compression,
             io_config=io_config,
         )

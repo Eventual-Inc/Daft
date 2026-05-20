@@ -361,8 +361,12 @@ impl Default for JsonFormatOption {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ParquetFormatOption {}
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ParquetFormatOption {
+    /// Per-column compression overrides, the type matches the parquet writer builder
+    /// method for setting column compression. The writer will parse the codec names.
+    pub column_compression: Option<Vec<(String, String)>>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FormatSinkOption {
@@ -382,6 +386,12 @@ impl FormatSinkOption {
         match self {
             Self::Json(json) => json,
             _ => JsonFormatOption::default(),
+        }
+    }
+    pub fn to_parquet(self) -> ParquetFormatOption {
+        match self {
+            Self::Parquet(parquet) => parquet,
+            _ => ParquetFormatOption::default(),
         }
     }
 }
@@ -438,9 +448,13 @@ impl PyFormatSinkOption {
     }
 
     #[classmethod]
-    pub fn parquet(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
+    #[pyo3(signature = (column_compression=None))]
+    pub fn parquet(
+        _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
+        column_compression: Option<Vec<(String, String)>>,
+    ) -> Self {
         Self {
-            inner: FormatSinkOption::Parquet(ParquetFormatOption {}),
+            inner: FormatSinkOption::Parquet(ParquetFormatOption { column_compression }),
         }
     }
 }
