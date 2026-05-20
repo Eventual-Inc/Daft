@@ -19,7 +19,7 @@ use daft_context::{
     subscribers::{
         event_header,
         events::{
-            Event, ExecEndEvent, ExecStartEvent, ExecutionConfig, OperatorEndEvent, OperatorMeta,
+            Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
             OperatorStartEvent, ProcessStatsEvent, StatsEvent, TaskStatsSnapshot,
             TaskStatsUpdateEvent,
         },

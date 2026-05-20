@@ -1,11 +1,9 @@
 use std::sync::atomic::Ordering;
 
 use common_metrics::{
-    Counter, Meter, SHUFFLE_BYTES_IN_KEY, SHUFFLE_BYTES_WRITTEN_KEY,
-    SHUFFLE_FINALIZE_DURATION_KEY, SHUFFLE_PARTITIONS_WRITTEN_KEY, SHUFFLE_ROWS_IN_KEY,
-    SHUFFLE_ROWS_WRITTEN_KEY, StatSnapshot,
-    ops::NodeInfo,
-    snapshot::ShuffleWriteSnapshot,
+    Counter, Meter, SHUFFLE_BYTES_IN_KEY, SHUFFLE_BYTES_WRITTEN_KEY, SHUFFLE_FINALIZE_DURATION_KEY,
+    SHUFFLE_PARTITIONS_WRITTEN_KEY, SHUFFLE_ROWS_IN_KEY, SHUFFLE_ROWS_WRITTEN_KEY, StatSnapshot,
+    ops::NodeInfo, snapshot::ShuffleWriteSnapshot,
 };
 use opentelemetry::KeyValue;
 

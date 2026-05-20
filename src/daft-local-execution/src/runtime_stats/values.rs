@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
-pub trait RuntimeStats: Send + Sync {
+pub trait RuntimeStats: Send + Sync + std::any::Any {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self
     where
         Self: Sized;
@@ -145,10 +145,8 @@ mod tests {
     /// affect the snapshot's other counters.
     #[test]
     fn default_stats_partitions_and_finalize_duration_are_noops() {
-        let stats = DefaultRuntimeStats::new(
-            &Meter::test_scope("default_noops"),
-            &NodeInfo::default(),
-        );
+        let stats =
+            DefaultRuntimeStats::new(&Meter::test_scope("default_noops"), &NodeInfo::default());
         stats.add_rows_in(50);
         stats.add_partitions_written(42);
         stats.add_finalize_duration_us(1000);
