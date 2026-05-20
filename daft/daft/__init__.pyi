@@ -181,6 +181,22 @@ class JoinStrategy(Enum):
         """
         ...
 
+class AsofJoinStrategy(Enum):
+    """Asof join strategy."""
+
+    Backward = 1
+    Forward = 2
+
+    @staticmethod
+    def from_asof_join_strategy_str(strategy: str) -> AsofJoinStrategy:
+        """Create an AsofJoinStrategy from its string representation.
+
+        Args:
+            strategy: String representation of the asof join strategy.
+            e.g. ``AsofJoinStrategy.from_asof_join_strategy_str("backward")`` would return ``AsofJoinStrategy.Backward``.
+        """
+        ...
+
 class JoinSide(Enum):
     Left = 1
     Right = 2
@@ -2252,6 +2268,7 @@ class LogicalPlanBuilder:
         right_by: list[PyExpr],
         left_on: PyExpr,
         right_on: PyExpr,
+        strategy: AsofJoinStrategy,
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> LogicalPlanBuilder: ...
@@ -2398,6 +2415,7 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
+    def has_partitioned_output(self) -> bool: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""

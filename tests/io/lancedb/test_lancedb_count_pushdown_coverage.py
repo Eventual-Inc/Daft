@@ -55,7 +55,7 @@ class TestLanceCountResultFunction:
         scan_op = LanceDBScanOperator(ds)
 
         with patch.object(scan_op, "supported_count_modes", return_value=[CountMode.All]):
-            with patch("daft.io.lance.lance_scan.logger") as mock_logger:
+            with patch("daft_lance.lance_scan.logger") as mock_logger:
                 mock_pushdowns = MagicMock()
                 mock_pushdowns.aggregation = MagicMock()
                 mock_pushdowns.aggregation_count_mode.return_value = CountMode.Valid

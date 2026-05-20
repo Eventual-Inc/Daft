@@ -28,14 +28,16 @@ const MetaField = ({
   href,
   mono,
   title,
+  align = "left",
 }: {
   label: string;
   value: string;
   href?: string;
   mono?: boolean;
   title?: string;
+  align?: "left" | "right";
 }) => (
-  <div className="min-w-0">
+  <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
     <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
       {label}
     </p>
@@ -50,8 +52,8 @@ const MetaField = ({
       </a>
     ) : (
       <p
-        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100`}
-        title={title}
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100 truncate`}
+        title={title ?? value}
       >
         {value}
       </p>
@@ -203,7 +205,7 @@ function QueryPageInner() {
     <div className="h-full flex flex-col">
       {/* Compact Header */}
       <div className="flex-shrink-0">
-        <div className="px-6 pt-0 pb-1">
+        <div className="px-6 pb-1">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -226,7 +228,7 @@ function QueryPageInner() {
 
         <div className="w-full flex items-stretch">
           {/* Status — fixed width so the divider never shifts during execution */}
-          <div className="w-52 flex-shrink-0 px-6 py-5 flex items-center justify-start">
+          <div className="w-52 flex-shrink-0 px-6 py-3 flex items-center justify-start">
             <Status
               status={query.state.status}
               start_sec={query.start_sec}
@@ -239,12 +241,12 @@ function QueryPageInner() {
           <div className="w-px bg-zinc-800 my-4 flex-shrink-0" />
 
           {/* Metadata — 4 columns, 2 rows */}
-          <div className="flex-1 px-6 py-5 grid grid-cols-4 gap-x-8 gap-y-3 content-center overflow-hidden">
+          <div className="flex-1 px-6 py-3 grid grid-cols-4 gap-x-8 gap-y-3 content-center overflow-hidden">
             {/* Row 1 */}
             <MetaField label="Query ID" value={query.id} mono />
             <MetaField label="Engine" value={getEngineName(query.runner)} mono />
             <MetaField label="Start Time" value={toHumanReadableDate(query.start_sec)} mono />
-            <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono />
+            <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono align="right" />
 
             {/* Row 2 */}
             <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono title={query.entrypoint} />
@@ -263,6 +265,7 @@ function QueryPageInner() {
                 label="Versions"
                 value={[query.python_version && `Python ${query.python_version}`, query.ray_version && `Ray ${query.ray_version}`].filter(Boolean).join(" | ")}
                 mono
+                align="right"
               />
             ) : (
               <div />
@@ -278,7 +281,7 @@ function QueryPageInner() {
           onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="flex w-full flex-shrink-0 justify-start gap-x-0 rounded-none bg-transparent p-0 border-b border-zinc-800">
+          <TabsList className="flex w-full flex-shrink-0 justify-start gap-x-0 rounded-none bg-transparent px-6 py-0 border-b border-zinc-800">
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -307,9 +310,9 @@ function QueryPageInner() {
 
           <TabsContent
             value="progress-table"
-            className="mt-4 flex-1 overflow-hidden"
+            className="flex-1 overflow-hidden"
           >
-            <div className="bg-zinc-900 h-full flex">
+            <div className="h-full flex">
               {"exec_info" in query.state && query.state.exec_info !== null ? (
                 <>
                   <div className="flex-1 min-w-0 h-full">
@@ -320,6 +323,7 @@ function QueryPageInner() {
                       onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
                       tasksOpen={isFlotilla && tasksOpen}
                       onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
+                      queryStatus={query.state.status}
                     />
                   </div>
                   {isFlotilla && tasksOpen && queryId && (
@@ -347,7 +351,7 @@ function QueryPageInner() {
 
           <TabsContent
             value="optimized-plan"
-            className="mt-4 flex-1 overflow-auto"
+            className="flex-1 overflow-auto"
           >
             {query.state.status === "Pending" ? (
               <div className="bg-zinc-900 p-4">
@@ -368,7 +372,7 @@ function QueryPageInner() {
 
           <TabsContent
             value="unoptimized-plan"
-            className="mt-4 flex-1 overflow-auto"
+            className="flex-1 overflow-auto"
           >
             <PlanVisualizer planJson={query.unoptimized_plan} />
           </TabsContent>

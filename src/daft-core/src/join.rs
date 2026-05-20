@@ -155,6 +155,54 @@ impl FromStr for JoinStrategy {
     feature = "python",
     pyclass(module = "daft.daft", eq, eq_int, from_py_object)
 )]
+pub enum AsofJoinStrategy {
+    Backward,
+    Forward,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl AsofJoinStrategy {
+    #[staticmethod]
+    pub fn from_asof_join_strategy_str(strategy: &str) -> PyResult<Self> {
+        Self::from_str(strategy).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(self.to_string())
+    }
+}
+impl_bincode_py_state_serialization!(AsofJoinStrategy);
+
+impl AsofJoinStrategy {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
+        static ASOF_JOIN_STRATEGIES: [AsofJoinStrategy; 2] =
+            [AsofJoinStrategy::Backward, AsofJoinStrategy::Forward];
+        ASOF_JOIN_STRATEGIES.iter()
+    }
+}
+
+impl FromStr for AsofJoinStrategy {
+    type Err = DaftError;
+
+    fn from_str(strategy: &str) -> DaftResult<Self> {
+        match strategy {
+            "backward" => Ok(Self::Backward),
+            "forward" => Ok(Self::Forward),
+            _ => Err(DaftError::TypeError(format!(
+                "Asof join strategy {} is not supported; only the following strategies are supported: {:?}",
+                strategy,
+                Self::iterator().as_slice()
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum JoinSide {
     #[display("left")]
     Left,

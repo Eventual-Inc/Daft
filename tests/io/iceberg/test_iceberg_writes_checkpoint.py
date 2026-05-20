@@ -65,6 +65,22 @@ def iceberg_table(local_catalog):
 
 
 @pytest.fixture(scope="function")
+def partitioned_iceberg_table(local_catalog):
+    """Identity-partitioned on ``file_id`` — one partition per distinct key."""
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    schema = Schema(
+        NestedField(field_id=1, name="file_id", type=StringType()),
+        NestedField(field_id=2, name="x", type=LongType()),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="file_id")
+    )
+    return local_catalog.create_table("default.partitioned_idempotent_test", schema, partition_spec=partition_spec)
+
+
+@pytest.fixture(scope="function")
 def parquet_input(tmpdir):
     """A small parquet input directory we can read with checkpoint=."""
     path = str(tmpdir / "input")
@@ -264,6 +280,54 @@ def test_user_snapshot_properties_pass_through(iceberg_table, parquet_input, che
     assert summary["release"] == "v1"
 
 
+def test_partitioned_table_result_includes_partitioning_column(
+    partitioned_iceberg_table, parquet_input, checkpoint_store, idempotent_commit
+):
+    """Result includes ``partitioning`` struct column on partitioned tables.
+
+    Same shape as non-checkpoint ``write_iceberg``. Regression for C1 from
+    code review: an earlier version of
+    ``_write_iceberg_with_checkpoint._build_result()`` omitted partitioning,
+    silently dropping the column when users flipped ``checkpoint=`` on a
+    partitioned table.
+
+    Pins schema-level presence only. Value-level correctness of partition
+    extraction is inherited from the non-checkpoint path's ``getattr``
+    against ``data_file.partition`` and is a pyiceberg-internals concern.
+    """
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
+    result = df.write_iceberg(partitioned_iceberg_table, checkpoint=idempotent_commit)
+
+    cols = set(result.schema().column_names())
+    assert {"operation", "rows", "file_size", "file_name", "partitioning"} <= cols, (
+        f"expected partitioned-table result columns to include `partitioning`; got {cols}"
+    )
+
+
+def test_partitioned_table_recovery_branch_result_includes_partitioning_column(
+    partitioned_iceberg_table, parquet_input, checkpoint_store, idempotent_commit
+):
+    """Recovery-branch empty result has the same schema as the populated branch.
+
+    Regression for CC1 from code review: the recovery short-circuit used to
+    call the shared ``empty_write_result()`` which always returned 4 columns,
+    while the populated branch returns 5 cols (with ``partitioning``) on a
+    partitioned table. ``pa.concat`` over runs would break on the mismatch.
+    """
+    df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
+    populated = df.write_iceberg(partitioned_iceberg_table, checkpoint=idempotent_commit)
+
+    # Second call with same key → step 1 marker-found short-circuit → empty result.
+    df2 = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
+    empty = df2.write_iceberg(partitioned_iceberg_table, checkpoint=idempotent_commit)
+
+    assert empty.schema().column_names() == populated.schema().column_names(), (
+        f"recovery-branch result schema must match populated-branch on partitioned tables; "
+        f"got empty={empty.schema().column_names()} vs populated={populated.schema().column_names()}"
+    )
+    assert empty.count_rows() == 0
+
+
 def test_retry_loop_recovers_from_transient_commit_failure(
     iceberg_table, parquet_input, checkpoint_store, idempotent_commit
 ):
@@ -426,3 +490,56 @@ def test_idempotent_commit_rejects_empty_key(checkpoint_store):
     """`IdempotentCommit` constructor rejects empty idempotence_key."""
     with pytest.raises(ValueError, match="non-empty"):
         daft.IdempotentCommit(store=checkpoint_store, idempotence_key="")
+
+
+def test_incremental_writes_dedupe_committed_keys(iceberg_table, tmpdir, checkpoint_store):
+    """Two successive write_iceberg calls with distinct keys against the same store.
+
+    Different ``idempotence_key`` per call — each commits its own snapshot —
+    but the source-side filter drops keys already Committed by the first
+    call, so snapshot 2 only contains the *new* rows. Pins the source filter
+    behavior across logical commits (this is *not* same-key dedup; it's
+    different-key cross-call dedup via the source anti-join, which is a
+    legitimate part of the feature surface).
+    """
+    # Call 1: input {a, b, c}.
+    inp1 = str(tmpdir / "in1")
+    os.makedirs(inp1, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]}).write_parquet(inp1)
+    daft.read_parquet(inp1, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
+        iceberg_table,
+        checkpoint=daft.IdempotentCommit(store=checkpoint_store, idempotence_key="run-1"),
+    )
+
+    iceberg_table.refresh()
+    assert len(iceberg_table.metadata.snapshots) == 1
+    assert iceberg_table.metadata.snapshots[0].summary["daft.idempotence-key"] == "run-1"
+
+    # Call 2: input {a, b, c, d, e, f} — superset.
+    inp2 = str(tmpdir / "in2")
+    os.makedirs(inp2, exist_ok=True)
+    daft.from_pydict({"file_id": ["a", "b", "c", "d", "e", "f"], "x": [1, 2, 3, 4, 5, 6]}).write_parquet(inp2)
+    daft.read_parquet(inp2, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id")).write_iceberg(
+        iceberg_table,
+        checkpoint=daft.IdempotentCommit(store=checkpoint_store, idempotence_key="run-2"),
+    )
+
+    iceberg_table.refresh()
+    snapshots = list(iceberg_table.metadata.snapshots)
+    assert len(snapshots) == 2
+
+    # Snapshot 1's marker unchanged.
+    assert snapshots[0].summary["daft.idempotence-key"] == "run-1"
+    # Snapshot 2 carries the new key.
+    assert snapshots[-1].summary["daft.idempotence-key"] == "run-2"
+    # Snapshot 2 only adds the *new* rows; the source filter drops {a,b,c}.
+    assert int(snapshots[-1].summary["added-records"]) == 3
+    assert int(snapshots[-1].summary["added-data-files"]) == 1
+
+    # All entries Committed.
+    pending = [c for c in checkpoint_store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
+    assert not pending
+
+    # Final table is the union; no duplicates.
+    rows = daft.read_iceberg(iceberg_table).to_pydict()
+    assert sorted(rows["file_id"]) == ["a", "b", "c", "d", "e", "f"]
