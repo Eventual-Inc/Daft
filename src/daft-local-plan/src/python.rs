@@ -56,6 +56,22 @@ impl PyLocalPhysicalPlan {
             dict.into(),
         ))
     }
+
+    /// True iff a single task amplifies one input into multiple output MicroPartitions whose
+    /// count is part of the plan's contract — repartitions, `IntoPartitions`, and `IntoBatches`.
+    /// Coalescing such outputs collapses the slot/batch count and breaks every downstream
+    /// operator that reasons about partition layout. Other operators (writes, IDs that encode a
+    /// partition index, etc.) are safe because their per-task output rows are preserved by
+    /// `concat`.
+    fn has_partitioned_output(&self) -> bool {
+        matches!(
+            self.plan.as_ref(),
+            crate::LocalPhysicalPlan::RepartitionWrite(_)
+                | crate::LocalPhysicalPlan::GatherWrite(_)
+                | crate::LocalPhysicalPlan::IntoPartitions(_)
+                | crate::LocalPhysicalPlan::IntoBatches(_)
+        )
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
