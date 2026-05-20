@@ -89,7 +89,7 @@ const STATUS_CONFIG: Record<QueryStatusName, { icon: ReactNode; label: string; t
   Setup:      { icon: <LoaderCircle size={15} strokeWidth={3} className="text-magenta-500 animate-spin" />,label: "Setting Up Runner",  textColor: "text-magenta-500" },
   Executing:  { icon: <AnimatedFish />,                                                                     label: "Running",            textColor: "text-(--daft-accent)" },
   Finalizing: { icon: <LoaderCircle size={15} strokeWidth={3} className="text-blue-500 animate-spin" />,   label: "Finalizing",         textColor: "text-blue-500" },
-  Finished:   { icon: <Naruto />,                                                                           label: "Finished",           textColor: "text-green-500" },
+  Finished:   { icon: <Naruto animated={false} />,                                                          label: "Finished",           textColor: "text-green-500" },
   Failed:     { icon: <CircleX size={15} strokeWidth={3} className="text-red-500" />,                      label: "Failed",             textColor: "text-red-500" },
   Canceled:   { icon: <Ban size={15} strokeWidth={3} className="text-zinc-500" />,                         label: "Canceled",           textColor: "text-zinc-400" },
   Dead:       { icon: <Skull size={15} strokeWidth={3} className="text-zinc-500" />,                       label: "Dead",               textColor: "text-zinc-400" },
@@ -112,20 +112,19 @@ export function Status({
 
   return (
     <div className="flex flex-col gap-y-1.5">
-      <div className="flex items-center gap-x-2 whitespace-nowrap">
+      <div className="flex items-center gap-x-2">
         {icon}
         <span className={`${main.className} ${textColor} font-bold text-base`}>
           {label}
         </span>
-        <span className="text-zinc-600">·</span>
-        {end_sec != null ? (
-          <span className={`${main.className} text-sm font-mono text-zinc-400`}>
-            {toHumanReadableDuration(end_sec - start_sec)}
-          </span>
-        ) : (
-          <Timer start_sec={start_sec} />
-        )}
       </div>
+      {end_sec != null ? (
+        <span className={`${main.className} text-sm font-mono text-zinc-400`}>
+          {toHumanReadableDuration(end_sec - start_sec)}
+        </span>
+      ) : (
+        <Timer start_sec={start_sec} />
+      )}
       {last_heartbeat_sec && <LastHeartbeat last_heartbeat_sec={last_heartbeat_sec} />}
       {status === "Failed" && errorMessage && (
         <ErrorModal message={errorMessage} />

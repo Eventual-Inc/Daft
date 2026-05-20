@@ -12,6 +12,7 @@ use daft_core::{
     array::ops::{
         GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
     },
+    join::AsofJoinStrategy,
     kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
@@ -211,24 +212,38 @@ impl AsofJoinFinalizedBuildState {
         }
     }
 
-    /// Binary-search `bucket` for the first left row with on_key >= right_on_arr[right_idx].
-    /// Returns the best potential left row index, or `None` if no valid match exists.
+    /// Backward: first left row with on_key >= right_on_arr[right_idx] (ceiling).
+    /// Forward:  last left row with on_key <= right_on_arr[right_idx] (floor).
+    /// Returns `None` if no valid match exists.
     fn search_bucket(
         &self,
         bucket: &[u64],
         on_key_cmp: &DynPartialComparator,
         right_idx: usize,
+        dir: AsofJoinStrategy,
     ) -> Option<usize> {
         let mut lo = 0usize;
         let mut hi = bucket.len();
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            match on_key_cmp(mid, right_idx) {
-                Some(Ordering::Less) => lo = mid + 1,
-                _ => hi = mid,
+            match dir {
+                AsofJoinStrategy::Backward => match on_key_cmp(mid, right_idx) {
+                    Some(Ordering::Less) => lo = mid + 1,
+                    _ => hi = mid,
+                },
+                AsofJoinStrategy::Forward => match on_key_cmp(mid, right_idx) {
+                    Some(Ordering::Greater) => hi = mid,
+                    _ => lo = mid + 1,
+                },
             }
         }
-        bucket.get(lo).map(|&idx| idx as usize)
+        match dir {
+            AsofJoinStrategy::Backward => bucket.get(lo).map(|&idx| idx as usize),
+            AsofJoinStrategy::Forward => lo
+                .checked_sub(1)
+                .and_then(|i| bucket.get(i))
+                .map(|&idx| idx as usize),
+        }
     }
 }
 
@@ -247,6 +262,7 @@ impl AsofJoinProbeState {
         right_on: &BoundExpr,
         right_by: &[BoundExpr],
         right_cols_to_keep: &HashSet<String>,
+        dir: AsofJoinStrategy,
     ) -> DaftResult<()> {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
@@ -322,7 +338,7 @@ impl AsofJoinProbeState {
 
             let bucket = &build_state.grouped_sorted_indices[group_idx];
             let Some(matched_left_idx) =
-                build_state.search_bucket(bucket, &grouped_on_key_cmps[group_idx], right_idx)
+                build_state.search_bucket(bucket, &grouped_on_key_cmps[group_idx], right_idx, dir)
             else {
                 continue;
             };
@@ -330,9 +346,12 @@ impl AsofJoinProbeState {
             update_best_match(
                 &mut self.best_match[matched_left_idx],
                 &right_on_key_arrs,
-                rb_idx,
-                right_idx,
+                MatchCandidate {
+                    rb_idx,
+                    row_idx: right_idx,
+                },
                 &mut cmp_cache,
+                dir,
             )?;
         }
 
@@ -340,57 +359,60 @@ impl AsofJoinProbeState {
     }
 }
 
+#[derive(Clone, Copy)]
+struct MatchCandidate {
+    rb_idx: usize,
+    row_idx: usize,
+}
+
 fn update_best_match(
     slot: &mut Option<(u32, u32)>,
     on_key_arrs: &[Arc<dyn Array>],
-    candidate_rb_idx: usize,
-    candidate_right_idx: usize,
+    candidate: MatchCandidate,
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+    dir: AsofJoinStrategy,
 ) -> DaftResult<()> {
+    let preferred_ordering = match dir {
+        AsofJoinStrategy::Backward => Ordering::Greater,
+        AsofJoinStrategy::Forward => Ordering::Less,
+    };
     let is_better = match *slot {
         None => true,
         Some((existing_rb_idx, existing_right_idx)) => is_candidate_better(
-            candidate_rb_idx,
-            candidate_right_idx,
-            on_key_arrs[candidate_rb_idx].as_ref(),
-            existing_rb_idx as usize,
-            existing_right_idx as usize,
-            on_key_arrs[existing_rb_idx as usize].as_ref(),
+            candidate,
+            MatchCandidate {
+                rb_idx: existing_rb_idx as usize,
+                row_idx: existing_right_idx as usize,
+            },
+            on_key_arrs,
             cmp_cache,
+            preferred_ordering,
         )?,
     };
     if is_better {
-        *slot = Some((candidate_rb_idx as u32, candidate_right_idx as u32));
+        *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
     }
     Ok(())
 }
 
 fn is_candidate_better(
-    candidate_rb_idx: usize,
-    candidate_right_idx: usize,
-    candidate_on_arr: &dyn Array,
-    existing_rb_idx: usize,
-    existing_right_idx: usize,
-    existing_on_arr: &dyn Array,
+    candidate: MatchCandidate,
+    existing: MatchCandidate,
+    on_key_arrs: &[Arc<dyn Array>],
     cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+    preferred_ordering: Ordering,
 ) -> DaftResult<bool> {
-    let cmp = match cmp_cache.entry((candidate_rb_idx, existing_rb_idx)) {
+    let cmp = match cmp_cache.entry((candidate.rb_idx, existing.rb_idx)) {
         Entry::Occupied(e) => e.into_mut(),
         Entry::Vacant(e) => e.insert(build_partial_compare_with_nulls(
-            candidate_on_arr,
-            existing_on_arr,
+            on_key_arrs[candidate.rb_idx].as_ref(),
+            on_key_arrs[existing.rb_idx].as_ref(),
             false,
         )?),
     };
-    Ok(matches!(
-        cmp(candidate_right_idx, existing_right_idx),
-        Some(Ordering::Greater)
-    ))
+    Ok(cmp(candidate.row_idx, existing.row_idx) == Some(preferred_ordering))
 }
 
-/// For each left row that has no match, if the previous left row in the same
-/// group has a match, carry that match forward. This implements the "as-of"
-/// semantics where unmatched rows inherit the most recent prior match.
 fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: &GroupIndices) {
     for bucket in grouped_sorted_indices {
         for i in 1..bucket.len() {
@@ -398,6 +420,18 @@ fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: 
             let curr_left_idx = bucket[i] as usize;
             if global_best[curr_left_idx].is_none() && global_best[prev_left_idx].is_some() {
                 global_best[curr_left_idx] = global_best[prev_left_idx];
+            }
+        }
+    }
+}
+
+fn backward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: &GroupIndices) {
+    for bucket in grouped_sorted_indices {
+        for i in (0..bucket.len().saturating_sub(1)).rev() {
+            let next_left_idx = bucket[i + 1] as usize;
+            let curr_left_idx = bucket[i] as usize;
+            if global_best[curr_left_idx].is_none() && global_best[next_left_idx].is_some() {
+                global_best[curr_left_idx] = global_best[next_left_idx];
             }
         }
     }
@@ -467,6 +501,7 @@ pub struct AsofJoinOperator {
     left_schema: SchemaRef,
     join_schema: SchemaRef,
     right_cols_to_keep: HashSet<String>,
+    strategy: AsofJoinStrategy,
 }
 
 impl AsofJoinOperator {
@@ -475,6 +510,7 @@ impl AsofJoinOperator {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         left_schema: SchemaRef,
         join_schema: SchemaRef,
     ) -> DaftResult<Self> {
@@ -492,6 +528,7 @@ impl AsofJoinOperator {
             left_schema,
             join_schema,
             right_cols_to_keep,
+            strategy,
         })
     }
 }
@@ -550,6 +587,7 @@ impl JoinOperator for AsofJoinOperator {
         let right_on = self.right_on.clone();
         let right_by = self.right_by.clone();
         let right_cols_to_keep = self.right_cols_to_keep.clone();
+        let strategy = self.strategy;
 
         spawner
             .spawn(
@@ -562,7 +600,14 @@ impl JoinOperator for AsofJoinOperator {
                         if right_rb.is_empty() {
                             continue;
                         }
-                        state.probe_batch(right_rb, &right_on, &right_by, &right_cols_to_keep)?;
+                        let dir = strategy;
+                        state.probe_batch(
+                            right_rb,
+                            &right_on,
+                            &right_by,
+                            &right_cols_to_keep,
+                            dir,
+                        )?;
                     }
                     Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
@@ -577,6 +622,7 @@ impl JoinOperator for AsofJoinOperator {
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeFinalizeResult {
         let join_schema = self.join_schema.clone();
+        let strategy = self.strategy;
         let left_field_names: HashSet<&str> = self.left_schema.field_names().collect();
         let pruned_right_schema: SchemaRef = Arc::new(Schema::new(
             self.join_schema
@@ -660,9 +706,12 @@ impl JoinOperator for AsofJoinOperator {
                                         update_best_match(
                                             curr_best_match,
                                             &global_right_on_key_arrs,
-                                            candidate_global_rb_idx,
-                                            candidate_right_idx as usize,
+                                            MatchCandidate {
+                                                rb_idx: candidate_global_rb_idx,
+                                                row_idx: candidate_right_idx as usize,
+                                            },
                                             &mut cmp_cache,
+                                            strategy,
                                         )?;
                                     }
                                 }
@@ -680,7 +729,15 @@ impl JoinOperator for AsofJoinOperator {
                         global_best[start..start + chunk.len()].copy_from_slice(&chunk);
                     }
 
-                    forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                    match strategy {
+                        AsofJoinStrategy::Backward => {
+                            forward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                        }
+                        AsofJoinStrategy::Forward => {
+                            backward_fill(&mut global_best, &build_state.grouped_sorted_indices);
+                        }
+                    }
+
                     let right_rb =
                         build_right_output(&global_best, global_right_rbs, pruned_right_schema)?;
                     Ok(Some(build_join_output(

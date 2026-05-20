@@ -4,7 +4,7 @@ export type PlanInfo = {
   optimized_plan: string;
 };
 
-export type OperatorStatus = "Pending" | "Executing" | "Finished" | "Failed";
+export type OperatorStatus = "Pending" | "Executing" | "Finished" | "Failed" | "Canceled";
 
 export type NodeInfo = {
   name: string;

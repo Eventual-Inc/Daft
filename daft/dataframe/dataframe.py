@@ -22,6 +22,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import (
+    AsofJoinStrategy,
     CheckpointStatus,
     DistributedPhysicalPlan,
     FileFormat,
@@ -32,7 +33,14 @@ from daft.daft import (
     WriteMode,
 )
 from daft.dataframe.display import MermaidOptions
-from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
+from daft.dataframe.preview import (
+    Preview,
+    PreviewAlign,
+    PreviewColumn,
+    PreviewFormat,
+    PreviewFormatter,
+    resolve_show_defaults,
+)
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
@@ -71,7 +79,6 @@ if TYPE_CHECKING:
     from daft.convert import ArrowStreamExportable
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
-    from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
 
 from daft.schema import Schema
@@ -1936,7 +1943,6 @@ class DataFrame:
         uri: str | pathlib.Path,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
-        rest_config: "LanceRestConfig | None" = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -1945,16 +1951,14 @@ class DataFrame:
         """Writes the DataFrame to a Lance table.
 
         Args:
-          uri: The URI of the Lance table to write to. Supports:
-            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
-            - REST URIs: "rest://namespace/table_name" (requires rest_config)
+          uri: The URI of the Lance table to write to. Accepts a local path or an
+            object-store URI like "s3://bucket/path".
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
-          rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
             - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
@@ -2019,32 +2023,19 @@ class DataFrame:
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
-        from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
-        # Parse URI to determine if it's REST-based or file-based
         uri_str = str(uri)
-        uri_type, uri_info = parse_lance_uri(uri_str)
-
-        if uri_type == "rest":
-            # REST-based Lance table
-            if rest_config is None:
-                raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
-
-            # For REST, we handle writes differently
-            return self._write_lance_rest(
-                rest_config=rest_config,
-                namespace=uri_info["namespace"],
-                table_name=uri_info["table_name"],
-                mode=mode,
-                schema=schema,
-                **kwargs,
+        if uri_str.startswith("rest://"):
+            raise ValueError(
+                "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
+                "The previous REST-namespace integration did not match the real "
+                "lance-namespace API and has been removed."
             )
 
-        # File-based Lance table (existing logic)
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
@@ -2143,48 +2134,6 @@ class DataFrame:
                 }
             )
         )
-
-    def _write_lance_rest(
-        self,
-        rest_config: "LanceRestConfig",
-        namespace: str,
-        table_name: str,
-        mode: str,
-        schema: Union[Schema, "pyarrow.Schema"] | None = None,
-        **kwargs: Any,
-    ) -> "DataFrame":
-        """Write DataFrame to Lance table via REST API."""
-        from daft.io.lance.rest_write import write_lance_rest
-        from daft.recordbatch import MicroPartition
-
-        # Collect the DataFrame to get all data
-        collected = self.collect()
-
-        # Convert to MicroPartition - handle case where there are multiple partitions
-        if collected._result:
-            # Get all micropartitions from the result
-            micropartitions = [result.micropartition() for result in collected._result.values()]
-            # Concatenate all micropartitions if there are multiple
-            if len(micropartitions) > 1:
-                mp = MicroPartition.concat(micropartitions)
-            else:
-                mp = micropartitions[0]
-        else:
-            mp = MicroPartition.empty()
-
-        # Write via REST API
-        result_mp = write_lance_rest(
-            mp=mp,
-            rest_config=rest_config,
-            namespace=namespace,
-            table_name=table_name,
-            mode=mode,
-            schema=schema._arrow_schema if schema is not None and hasattr(schema, "_arrow_schema") else None,
-            **kwargs,
-        )
-
-        # Return result as DataFrame
-        return DataFrame._from_micropartitions(result_mp)
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -3662,7 +3611,7 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
-        strategy: Literal["backward"] = "backward",
+        strategy: Literal["backward", "forward"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
@@ -3676,7 +3625,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
-            strategy: Match strategy. Currently only ``"backward"`` is supported.
+            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
@@ -3747,12 +3696,14 @@ class DataFrame:
                         f"{len(left_by_exprs)} and {len(right_by_exprs)}"
                     )
 
+        asof_strategy = AsofJoinStrategy.from_asof_join_strategy_str(strategy)
         builder = self._builder.join_asof(
             other._builder,
             left_by=left_by_exprs,
             right_by=right_by_exprs,
             left_on=left_on_expr,
             right_on=right_on_expr,
+            strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
         )
@@ -5251,9 +5202,9 @@ class DataFrame:
         self,
         n: int = 8,
         format: PreviewFormat | None = None,
-        verbose: bool = False,
-        max_width: int = 30,
-        align: PreviewAlign = "left",
+        verbose: bool | None = None,
+        max_width: int | None = None,
+        align: PreviewAlign | None = None,
         columns: list[PreviewColumn] | None = None,
     ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
@@ -5266,12 +5217,17 @@ class DataFrame:
             - Headers contain the column's data type.
             - Columns are truncated to 30 characters.
             - The table's overall width is limited to 10 columns.
+        Default values can be overridden with environment variables:
+            - ``DAFT_SHOW_FORMAT``
+            - ``DAFT_SHOW_VERBOSE``
+            - ``DAFT_SHOW_MAX_WIDTH``
+            - ``DAFT_SHOW_ALIGN``
 
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
             verbose (bool): if True, headers include the column's data type.
-            max_width (int): global max column width
+            max_width (int | None): global max column width
             align (PreviewAlign): global column align
             columns (list[PreviewColumn]): column overrides
 
@@ -5284,7 +5240,7 @@ class DataFrame:
             >>> df.show()  # doctest: +SKIP
             >>> df.show(format="markdown")  # doctest: +SKIP
             >>> df.show(max_width=50)  # doctest: +SKIP
-            >>> df.show(align="left")  # doctest: +SKIP
+            >>> df.show(align="auto")  # doctest: +SKIP
 
         Tip: Usage
             - If columns are given, their length MUST match the schema.
@@ -5293,6 +5249,7 @@ class DataFrame:
         """
         schema = self.schema()
         preview = self._construct_show_preview(n)
+        format, verbose, max_width, align = resolve_show_defaults(format, verbose, max_width, align)
         preview_formatter = PreviewFormatter(
             preview,
             schema,

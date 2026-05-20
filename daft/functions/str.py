@@ -91,6 +91,141 @@ def jq(expr: Expression, filter: str) -> Expression:
     return Expression._call_builtin_scalar_fn("jq", expr, filter=filter)
 
 
+def json_array_length(expr: Expression) -> Expression:
+    """Returns the number of elements in the outermost JSON array.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an array. Equivalent to Spark's
+    ``json_array_length``.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: An ``Int32`` expression with the array length.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_array_length
+        >>>
+        >>> df = daft.from_pydict({"col": ["[1, 2, 3]", "[]", '{"a": 1}', None]})
+        >>> df.with_column("len", json_array_length(df["col"])).collect()
+        ╭───────────┬───────╮
+        │ col       ┆ len   │
+        │ ---       ┆ ---   │
+        │ String    ┆ Int32 │
+        ╞═══════════╪═══════╡
+        │ [1, 2, 3] ┆ 3     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []        ┆ 0     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ {"a": 1}  ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ None      ┆ None  │
+        ╰───────────┴───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_array_length", expr)
+
+
+def json_object_keys(expr: Expression) -> Expression:
+    """Returns the top-level keys of a JSON object as a list of strings.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an object. Returns an empty list for empty
+    objects.
+
+    Note:
+        Keys are returned in **sorted alphabetical order**, not source
+        insertion order. This differs from Spark's ``json_object_keys``,
+        which preserves insertion order.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: A ``List[String]`` expression with the object's keys.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_object_keys
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": 2}', "{}", "[1, 2]", None]})
+        >>> df.with_column("keys", json_object_keys(df["col"])).collect()
+        ╭──────────────────┬──────────────╮
+        │ col              ┆ keys         │
+        │ ---              ┆ ---          │
+        │ String           ┆ List[String] │
+        ╞══════════════════╪══════════════╡
+        │ {"a": 1, "b": 2} ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}               ┆ []           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2]           ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None             ┆ None         │
+        ╰──────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_object_keys", expr)
+
+
+def json_tuple(expr: Expression, *fields: str) -> Expression:
+    """Extracts the values for the given top-level keys from a JSON object string.
+
+    Spark's ``json_tuple`` returns one column per requested key (``c0``,
+    ``c1``, ...). To fit Daft's single-output expression model, this returns
+    a ``Struct`` whose field names are the requested keys, each typed as
+    ``String``. Use ``.get("key")`` to pull individual fields out.
+
+    Behavior:
+
+    * Non-string scalar values (numbers, booleans) are stringified without
+      surrounding quotes (e.g. ``"1"``, ``"true"``).
+    * Nested objects/arrays are returned as their JSON-encoded string form.
+    * Missing keys yield ``NULL`` for that field only; the row itself is
+      still valid as long as the input parses as a JSON object.
+    * Malformed JSON, non-object roots, and ``NULL`` inputs yield a
+      row-level ``NULL`` (``is_null()`` returns ``True``); every child
+      field is also ``NULL``.
+    * Field names must be unique; passing a duplicate raises an error.
+
+    Args:
+        expr: A string expression containing JSON.
+        *fields: One or more top-level keys to extract.
+
+    Returns:
+        Expression: A ``Struct`` expression with one ``String`` field per key.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_tuple
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": "x"}', '{"a": 2}', None]})
+        >>> df = df.with_column("t", json_tuple(df["col"], "a", "b"))
+        >>> df.select(df["t"].get("a").alias("a"), df["t"].get("b").alias("b")).collect()
+        ╭────────┬────────╮
+        │ a      ┆ b      │
+        │ ---    ┆ ---    │
+        │ String ┆ String │
+        ╞════════╪════════╡
+        │ 1      ┆ x      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2      ┆ None   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ None   ┆ None   │
+        ╰────────┴────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    if not fields:
+        raise ValueError("json_tuple requires at least one field name")
+    field_lits = [lit(f) for f in fields]
+    return Expression._call_builtin_scalar_fn("json_tuple", expr, *field_lits)
+
+
 def format(f_string: str, *args: Expression | str) -> Expression:
     """Format a string using the given arguments.
 

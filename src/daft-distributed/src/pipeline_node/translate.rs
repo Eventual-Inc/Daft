@@ -34,16 +34,24 @@ use crate::{
     plan::PlanConfig,
 };
 
+pub(crate) struct TranslationOutput {
+    pub root: DistributedPipelineNode,
+    pub hints: Vec<String>,
+}
+
 pub(crate) fn logical_plan_to_pipeline_node(
     plan_config: PlanConfig,
     plan: LogicalPlanRef,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     meter: &Meter,
-) -> DaftResult<DistributedPipelineNode> {
+) -> DaftResult<TranslationOutput> {
     let mut translator =
         LogicalPlanToPipelineNodeTranslator::new(plan_config, psets, meter.clone());
     let _ = plan.visit(&mut translator)?;
-    Ok(translator.curr_node.pop().unwrap())
+    Ok(TranslationOutput {
+        root: translator.curr_node.pop().unwrap(),
+        hints: translator.hints,
+    })
 }
 
 pub(crate) struct LogicalPlanToPipelineNodeTranslator {
@@ -52,10 +60,11 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     pipeline_node_id_counter: NodeID,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
+    pub(crate) hints: Vec<String>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
-    fn new(
+    pub(crate) fn new(
         plan_config: PlanConfig,
         psets: Arc<HashMap<String, Vec<PartitionRef>>>,
         meter: Meter,
@@ -66,12 +75,21 @@ impl LogicalPlanToPipelineNodeTranslator {
             pipeline_node_id_counter: 0,
             psets,
             curr_node: Vec::new(),
+            hints: Vec::new(),
         }
     }
 
     pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
         self.pipeline_node_id_counter += 1;
         self.pipeline_node_id_counter
+    }
+
+    /// Record a user-facing hint. Hints are surfaced as a Python `UserWarning` when the plan
+    /// runs, and embedded inline in the rendered plan when the plan is displayed via
+    /// `repr_ascii` — display itself is side-effect free so that warnings can't interleave
+    /// with the plan's stdout output.
+    pub(crate) fn record_hint(&mut self, msg: String) {
+        self.hints.push(msg);
     }
 
     pub(crate) fn needs_hash_repartition(
@@ -356,10 +374,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 | RepartitionSpec::Random(_)
                 | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
+                    let input_size_bytes = repartition
+                        .input
+                        .materialized_stats()
+                        .approx_stats
+                        .size_bytes;
                     self.gen_repartition_node(
                         repartition.repartition_spec.clone(),
                         node.schema(),
                         child,
+                        input_size_bytes,
                     )?
                 }
             },
@@ -390,12 +414,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     .collect::<DaftResult<Vec<_>>>()?;
 
                 let input_node = self.curr_node.pop().unwrap();
+                let input_size_bytes = aggregate.input.materialized_stats().approx_stats.size_bytes;
                 self.gen_agg_nodes(
                     input_node,
                     group_by.clone(),
                     aggregations,
                     aggregate.output_schema.clone(),
                     group_by,
+                    input_size_bytes,
                 )?
             }
             LogicalPlan::Distinct(distinct) => {
@@ -423,6 +449,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         &self.meter,
                     )
                 } else {
+                    let input_size_bytes =
+                        distinct.input.materialized_stats().approx_stats.size_bytes;
                     // Need full 2-stage distinct with shuffle
                     // First stage: Initial local distinct to reduce the dataset
                     let initial_distinct = DistributedPipelineNode::new(
@@ -444,6 +472,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )),
                         distinct.input.schema(),
                         initial_distinct,
+                        input_size_bytes,
                     )?;
 
                     // Last stage: Redo the distinct to get the final result
@@ -469,8 +498,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 // First stage: Shuffle by the partition_by columns to colocate rows
                 let input_node = self.curr_node.pop().unwrap();
+                let input_size_bytes = window.input.materialized_stats().approx_stats.size_bytes;
                 let repartition = if partition_by.is_empty() {
-                    self.gen_gather_node(input_node)
+                    self.gen_gather_node(input_node, input_size_bytes)
                 } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
@@ -481,6 +511,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )),
                         window.input.schema(),
                         input_node,
+                        input_size_bytes,
                     )?
                 };
 
@@ -552,7 +583,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 );
 
                 // Second stage: Gather all data to a single node
-                let gather = self.gen_gather_node(local_topn);
+                let input_size_bytes = top_n.input.materialized_stats().approx_stats.size_bytes;
+                let gather = self.gen_gather_node(local_topn, input_size_bytes);
 
                 // Final stage: Do another topN to get the final result
                 DistributedPipelineNode::new(
@@ -595,12 +627,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let output_schema = Arc::new(Schema::new(output_fields));
 
                 // First stage: Local aggregation with group_by + pivot_column
+                let input_size_bytes = pivot.input.materialized_stats().approx_stats.size_bytes;
                 let agg = self.gen_agg_nodes(
                     input_node,
                     group_by_with_pivot,
                     vec![aggregation.clone()],
                     output_schema,
                     group_by.clone(),
+                    input_size_bytes,
                 )?;
 
                 // Final stage: Pivot transformation
