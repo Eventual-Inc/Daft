@@ -1804,4 +1804,56 @@ mod tests {
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
         assert_batches_equal(&inline_result, &fallback_result);
     }
+
+    /// Exercises the Int8/Int16/Int32/Int64 -> Int64 widening dispatch arm.
+    #[test]
+    fn test_inline_i32_product_matches_fallback() {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2)],
+        )
+        .into_series();
+        let vals = Int32Array::from_iter(
+            Field::new("val", DataType::Int32),
+            vec![Some(2), Some(3), Some(5), Some(7)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int32),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    /// Exercises the UInt8/UInt16/UInt32/UInt64 -> UInt64 widening dispatch arm.
+    #[test]
+    fn test_inline_u16_product_matches_fallback() {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2)],
+        )
+        .into_series();
+        let vals = UInt16Array::from_iter(
+            Field::new("val", DataType::UInt16),
+            vec![Some(2), Some(3), Some(5), Some(7)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::UInt16),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
 }
