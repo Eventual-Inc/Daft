@@ -40,7 +40,7 @@ impl OptimizerRule for PushDownFilter {
 }
 
 impl PushDownFilter {
-    #[allow(clippy::only_used_in_recursion)]
+    #[allow(clippy::self_only_used_in_recursion)]
     fn try_optimize_node(
         &self,
         plan: Arc<LogicalPlan>,

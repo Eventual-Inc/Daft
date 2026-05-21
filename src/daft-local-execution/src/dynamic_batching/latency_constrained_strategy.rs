@@ -214,13 +214,16 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             );
 
         // else if ¯𝜏 < 𝐷SLA − 𝜖D
-        } else if t < delta_sla - self.latency_tolerance {
+        } else if t < delta_sla.checked_sub(self.latency_tolerance).unwrap() {
             // Latency good, expand search space
             log::debug!(
                 "[{}] LATENCY GOOD (𝜏={}ms < 𝐷SLA={}ms), expanding search space",
                 std::thread::current().name().unwrap_or("unknown"),
                 t.as_millis(),
-                (delta_sla - self.latency_tolerance).as_millis(),
+                delta_sla
+                    .checked_sub(self.latency_tolerance)
+                    .unwrap()
+                    .as_millis(),
             );
             // 𝑏low 𝑡 ← min{ ¯𝑏, 𝑏high 𝑡 −1 − 𝛼}
             state.b_low = usize::max(

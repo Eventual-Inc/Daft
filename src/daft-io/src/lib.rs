@@ -168,6 +168,7 @@ pub enum Error {
     JoinError { source: tokio::task::JoinError },
 
     #[snafu(display("Cached error: {}", source))]
+    #[allow(clippy::use_self)]
     CachedError { source: Arc<Error> },
 }
 
