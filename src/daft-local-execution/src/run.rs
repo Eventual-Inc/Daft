@@ -149,6 +149,14 @@ impl MessageRouter {
         self.input_start_times.insert(input_id, Instant::now());
         self.output_senders.insert(input_id, sender);
     }
+
+    /// Drop the result sender for `input_id` so the Python consumer iteration
+    /// sees end-of-stream. Subsequent pipeline messages for this input_id are
+    /// silently dropped. Used by `NativeExecutor::cancel_input`.
+    fn cancel_input(&mut self, input_id: InputId) {
+        self.input_start_times.remove(&input_id);
+        self.output_senders.remove(&input_id);
+    }
 }
 
 impl Drop for MessageRouter {
@@ -166,6 +174,9 @@ impl Drop for MessageRouter {
 struct PlanState {
     task_handle: RuntimeTask<DaftResult<()>>,
     enqueue_input_sender: Sender<EnqueueInputMessage>,
+    /// Fire-and-forget channel telling the run loop to drop the result
+    /// sender for an `InputId` (no error if the loop already exited).
+    cancel_input_sender: UnboundedSender<InputId>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
 }
@@ -255,6 +266,19 @@ impl PyNativeExecutor {
         Ok(())
     }
 
+    pub fn cancel_input(
+        &self,
+        py: Python<'_>,
+        fingerprint: u64,
+        input_id: InputId,
+    ) -> PyResult<()> {
+        self.executor
+            .lock_py_attached(py)
+            .unwrap()
+            .cancel_input(fingerprint, input_id);
+        Ok(())
+    }
+
     #[staticmethod]
     pub fn repr_ascii(
         logical_plan_builder: &PyLogicalPlanBuilder,
@@ -319,6 +343,7 @@ async fn run_execution_loop(
     cancel: CancellationToken,
     stats_manager: RuntimeStatsManager,
     mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
+    mut cancel_input_rx: crate::channel::UnboundedReceiver<InputId>,
     input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
     pipeline: Box<dyn crate::pipeline::PipelineNode>,
     maintain_order: bool,
@@ -367,6 +392,15 @@ async fn run_execution_loop(
                     input_senders.take();
                     input_exhausted = true;
                 }
+            }
+            Some(input_id) = cancel_input_rx.recv() => {
+                // External request to abandon a specific input_id (e.g. the
+                // distributed Limit cancelling non-contributor tasks). Drop
+                // the result sender so the Python consumer iteration sees
+                // end-of-stream and run_plan returns without raising —
+                // ray.cancel would instead mark the task as failed. The
+                // pipeline keeps running for the other inputs.
+                message_router.cancel_input(input_id);
             }
             msg = output_receiver.recv() => {
                 match msg {
@@ -498,12 +532,14 @@ impl NativeExecutor {
             let stats_handle = stats_manager.handle();
 
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
+            let (cancel_input_tx, cancel_input_rx) = create_unbounded_channel::<InputId>();
 
             let input_senders = Arc::new(input_senders);
             let task = run_execution_loop(
                 cancel,
                 stats_manager,
                 enqueue_input_rx,
+                cancel_input_rx,
                 input_senders,
                 pipeline,
                 maintain_order,
@@ -515,6 +551,7 @@ impl NativeExecutor {
                 PlanState {
                     task_handle,
                     enqueue_input_sender: enqueue_input_tx,
+                    cancel_input_sender: cancel_input_tx,
                     stats_handle,
                     active_input_ids: HashSet::new(),
                 },
@@ -598,6 +635,17 @@ impl NativeExecutor {
     pub fn cancel_plan(&mut self, fingerprint: u64) {
         // RuntimeTask drop cancels the spawned task
         self.plans.remove(&fingerprint);
+    }
+
+    /// Signal the run loop to abandon a specific `input_id`. Returns
+    /// immediately; the run loop drops the result sender on its next
+    /// iteration, ending the consumer's iteration cleanly. Used by the
+    /// flotilla scheduler to cancel tasks without `ray.cancel`, which
+    /// would surface them as failed.
+    pub fn cancel_input(&mut self, fingerprint: u64, input_id: InputId) {
+        if let Some(plan_state) = self.plans.get(&fingerprint) {
+            let _ = plan_state.cancel_input_sender.send(input_id);
+        }
     }
 
     fn repr_ascii(
@@ -747,5 +795,65 @@ fn dispatch_task_start_event(subscribers: &[Arc<dyn Subscriber>], event: &Event)
         if let Err(e) = subscriber.on_event(event.clone()) {
             log::debug!("Failed to dispatch task start event: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `cancel_input` is what the flotilla scheduler's cancel path leans on:
+    /// `LimitNode` calls `NativeExecutor::cancel_input(fingerprint, input_id)`
+    /// to stop emitting morsels for a specific input without disturbing
+    /// other inputs that share the same plan. This test pins the
+    /// per-input scoping so a future refactor can't accidentally make
+    /// it tear down everything.
+    #[tokio::test]
+    async fn message_router_cancel_input_only_closes_the_target() {
+        let mut router = MessageRouter::new();
+        let (a_tx, mut a_rx) = create_unbounded_channel::<ExecutionEngineResultItem>();
+        let (b_tx, mut b_rx) = create_unbounded_channel::<ExecutionEngineResultItem>();
+        router.insert_output_sender(1, a_tx);
+        router.insert_output_sender(2, b_tx);
+
+        router.cancel_input(1);
+
+        // The cancelled input's consumer sees EOS — `recv()` resolves to `None`.
+        assert!(
+            a_rx.recv().await.is_none(),
+            "cancelled input should see EOS"
+        );
+        // The other input is untouched — `recv()` would block, so a short timeout
+        // tells us the channel is still open and empty rather than closed.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), b_rx.recv())
+                .await
+                .is_err(),
+            "non-cancelled input should remain open"
+        );
+        assert!(!router.output_senders.contains_key(&1));
+        assert!(router.output_senders.contains_key(&2));
+        assert!(!router.input_start_times.contains_key(&1));
+        assert!(router.input_start_times.contains_key(&2));
+    }
+
+    /// Cancelling an unknown input_id is a no-op; we rely on this when
+    /// the scheduler races a cancel against a task that already finished
+    /// and removed itself via `Flush`.
+    #[tokio::test]
+    async fn message_router_cancel_unknown_input_is_noop() {
+        let mut router = MessageRouter::new();
+        let (tx, mut rx) = create_unbounded_channel::<ExecutionEngineResultItem>();
+        router.insert_output_sender(1, tx);
+
+        router.cancel_input(42); // never registered
+
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "untouched input should remain open"
+        );
+        assert!(router.output_senders.contains_key(&1));
     }
 }

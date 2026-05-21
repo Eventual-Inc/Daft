@@ -133,12 +133,24 @@ impl TaskResultHandle for RayTaskResultHandle {
         }
     }
 
-    fn cancel_callback(&mut self) {
-        Python::attach(|py| {
-            self.handle
-                .call_method0(py, "cancel")
-                .expect("Failed to cancel task");
-        });
+    fn cancel_callback(&mut self) -> impl Future<Output = ()> + Send + 'static {
+        // Clone the Python handle so the returned future owns its state and
+        // doesn't borrow `self`. The Python `cancel()` is async and awaits
+        // `actor.cancel_input.remote(...)`, which only resolves once the
+        // worker actor has processed the cancellation — that's the signal
+        // callers like `LimitNode` rely on before tearing down the counter
+        // actor.
+        let handle = Python::attach(|py| self.handle.clone_ref(py));
+        async move {
+            if let Err(e) = common_runtime::python::execute_python_coroutine_noreturn(move |py| {
+                let coro = handle.call_method0(py, pyo3::intern!(py, "cancel"))?;
+                Ok(coro.into_bound(py))
+            })
+            .await
+            {
+                tracing::warn!("RaySwordfishTaskHandle.cancel failed: {:?}", e);
+            }
+        }
     }
 }
 

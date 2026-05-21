@@ -242,6 +242,17 @@ class RaySwordfishActor:
                 is_flight_shuffle=is_flight_shuffle,
             )
 
+    def cancel_input(self, fingerprint: int, input_id: int) -> None:
+        """Cancel a single in-flight input on this worker's NativeExecutor.
+
+        Closes the per-input result channel inside the Rust executor; the
+        Python `run_plan` iteration then sees end-of-stream and returns
+        normally, so Ray doesn't surface the task as failed (which
+        `ray.cancel` would). The pipeline keeps running for other inputs
+        on the same plan.
+        """
+        self.native_executor.cancel_input(fingerprint, input_id)
+
 
 @ray.remote  # type: ignore[untyped-decorator]
 def get_boundaries_remote(
@@ -283,6 +294,9 @@ class RaySwordfishTaskHandle:
     """
 
     result_handle: ray.ObjectRef
+    actor_handle: ray.actor.ActorHandle
+    task_id: int
+    plan_fingerprint: int
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
@@ -315,10 +329,17 @@ class RaySwordfishTaskHandle:
         self.task = asyncio.create_task(self._get_result())
         return await self.task
 
-    def cancel(self) -> None:
+    async def cancel(self) -> None:
         if self.task:
             self.task.cancel()
-        ray.cancel(self.result_handle)
+        # `ray.cancel` would surface this task as a failure in Ray's task
+        # table. Instead, ask the actor's NativeExecutor to close the
+        # per-input result channel; `run_plan` then drains naturally and
+        # the actor method returns without raising. Awaited (rather than
+        # fire-and-forget) so callers that need cancellation to be fully
+        # acknowledged before tearing down a shared resource — e.g.
+        # `LimitNode` killing the counter actor — can sequence on it.
+        await self.actor_handle.cancel_input.remote(self.plan_fingerprint, self.task_id)
 
 
 class RaySwordfishActorHandle:
@@ -339,13 +360,17 @@ class RaySwordfishActorHandle:
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
+        task_context = task.context()
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(),
             task.config(),
-            task.context(),
+            task_context,
             **inputs,
         )
-        return RaySwordfishTaskHandle(result_handle)
+        # `plan_fingerprint` is keyed on the worker's plan registry; the
+        # cancel path needs it to scope cancellation to this task's input.
+        plan_fingerprint = int(task_context.get("plan_fingerprint", "0"))
+        return RaySwordfishTaskHandle(result_handle, self.actor_handle, task.id(), plan_fingerprint)
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
