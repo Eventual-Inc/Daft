@@ -245,16 +245,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 .as_ref()
                 .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
 
-            // Wall time spent inside the sink's finalize() call after all input is
-            // received: includes any buffered-data flush, concat, and backend
-            // write/close work done there. Captured inside the spawned task so the
-            // measurement excludes spawner queue time. Excludes post-finalize
-            // framework work like output sending and checkpoint staging, which run
-            // after this measurement closes.
-            //
-            // Record the duration before propagating any error so that a slow
-            // finalize that ultimately fails (timeout, OOM, backend error) still
-            // surfaces its wall time in the snapshot.
+            // Record finalize wall time before propagating so a slow-then-failed
+            // finalize (timeout, OOM, backend error) still surfaces its duration.
             let finalize_start = Instant::now();
             let finalize_result = op.finalize(per_input.states, &finalize_spawner).await;
             per_input

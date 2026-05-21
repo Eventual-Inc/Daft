@@ -55,13 +55,9 @@ impl RuntimeStats for ShuffleWriteRuntimeStats {
         self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
-    // add_rows_out / add_bytes_out are required by the trait but represent the
-    // generic "node produced output" concept. Shuffle writes track output via
-    // add_rows_written / add_bytes_written, which we override below. The framework
-    // drives all shuffle accounting through the *_written methods directly, so
-    // these stay as no-ops — if some future non-BlockingSink path ever calls
-    // add_rows_out on a ShuffleWriteRuntimeStats, silently dropping the value is
-    // preferable to mis-attributing it against the typed rows_written counter.
+    // Override to no-op so a direct add_rows_out call (bypassing the framework's
+    // add_rows_written path) doesn't mis-attribute into rows_written via the
+    // trait's delegating default.
     fn add_rows_out(&self, _rows: u64) {}
 
     fn add_duration_us(&self, duration_us: u64) {
@@ -132,11 +128,8 @@ mod tests {
         assert_eq!(snap.num_tasks, 2);
     }
 
-    /// Pins the no-op contract documented at the top of the `RuntimeStats` impl:
-    /// `add_rows_out` / `add_bytes_out` must not increment `rows_written` /
-    /// `bytes_written` via the trait's delegating defaults. A future "helpful"
-    /// change that routes generic outputs into the typed counters would silently
-    /// double-count shuffle writes and this test would catch it.
+    // Pins the no-op contract: add_rows_out/add_bytes_out must not route into
+    // rows_written/bytes_written via the trait's delegating defaults.
     #[test]
     fn shuffle_write_add_rows_out_is_noop() {
         let stats = ShuffleWriteRuntimeStats::new(

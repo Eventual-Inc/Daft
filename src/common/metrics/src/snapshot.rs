@@ -450,10 +450,7 @@ pub struct ShuffleWriteSnapshot {
     #[serde(default)]
     pub bytes_written: u64,
     pub partitions_written: u64,
-    /// Wall time spent inside the sink's `finalize()` call after all input is
-    /// received, including any buffered-data flush, concat, and backend
-    /// write/close work done there. Complements `cpu_us`, which today only
-    /// accumulates time across `sink()` task invocations and excludes finalize.
+    // Wall time inside finalize(); complements cpu_us, which only covers sink() calls.
     pub finalize_duration_us: u64,
     pub num_tasks: u64,
 }
@@ -790,10 +787,7 @@ mod tests {
             stat_for_key(&stats, DURATION_KEY),
             &Stat::Duration(Duration::from_micros(1_000_000))
         );
-        assert_eq!(
-            stat_for_key(&stats, SHUFFLE_ROWS_IN_KEY),
-            &Stat::Count(100)
-        );
+        assert_eq!(stat_for_key(&stats, SHUFFLE_ROWS_IN_KEY), &Stat::Count(100));
         assert_eq!(
             stat_for_key(&stats, SHUFFLE_ROWS_WRITTEN_KEY),
             &Stat::Count(200)
@@ -816,5 +810,4 @@ mod tests {
         );
         assert_eq!(stat_for_key(&stats, NUM_TASKS_KEY), &Stat::Count(5));
     }
-
 }
