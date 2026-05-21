@@ -258,14 +258,6 @@ impl PyNativeExecutor {
         self.executor.lock_py_attached(py).unwrap().plans.len()
     }
 
-    pub fn cancel_plan(&self, py: Python<'_>, fingerprint: u64) -> PyResult<()> {
-        self.executor
-            .lock_py_attached(py)
-            .unwrap()
-            .cancel_plan(fingerprint);
-        Ok(())
-    }
-
     pub fn cancel_input(
         &self,
         py: Python<'_>,
@@ -630,11 +622,6 @@ impl NativeExecutor {
             }
             .boxed())
         }
-    }
-
-    pub fn cancel_plan(&mut self, fingerprint: u64) {
-        // RuntimeTask drop cancels the spawned task
-        self.plans.remove(&fingerprint);
     }
 
     /// Signal the run loop to abandon a specific `input_id`. Returns
