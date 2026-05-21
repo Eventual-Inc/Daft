@@ -781,6 +781,7 @@ mod tests {
         let batch = vec![
             FileMetadata::new(FileFormat::Iceberg, vec![1, 2, 3, 4]),
             FileMetadata::new(FileFormat::Parquet, vec![5, 6]),
+            FileMetadata::new(FileFormat::Lance, vec![9, 10]),
             FileMetadata::new(FileFormat::Iceberg, vec![]),
         ];
         let encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
@@ -790,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_encode_decode_file_metadata_single_item() {
-        for format in [FileFormat::Iceberg, FileFormat::Parquet] {
+        for format in [FileFormat::Iceberg, FileFormat::Parquet, FileFormat::Lance] {
             let batch = vec![FileMetadata::new(format, vec![0xde, 0xad])];
             let encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
             let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();

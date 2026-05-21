@@ -161,6 +161,7 @@ pub enum PyCheckpointFileFormat {
     Iceberg,
     Parquet,
     DeltaLake,
+    Lance,
 }
 
 impl From<crate::FileFormat> for PyCheckpointFileFormat {
@@ -173,6 +174,7 @@ impl From<crate::FileFormat> for PyCheckpointFileFormat {
             crate::FileFormat::Iceberg => Self::Iceberg,
             crate::FileFormat::Parquet => Self::Parquet,
             crate::FileFormat::DeltaLake => Self::DeltaLake,
+            crate::FileFormat::Lance => Self::Lance,
         }
     }
 }

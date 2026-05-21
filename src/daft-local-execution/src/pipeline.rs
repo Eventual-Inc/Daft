@@ -392,6 +392,37 @@ pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     s
 }
 
+#[cfg(feature = "python")]
+// Ask a Python DataSink whether its per-input write_results should be staged
+// in the checkpoint store, and map the returned format name to the Rust tag.
+// Returning None keeps the DataSink on the default path, where Daft does not
+// checkpoint sink output metadata.
+fn datasink_checkpoint_file_format(
+    data_sink_info: &daft_logical_plan::DataSinkInfo,
+) -> crate::Result<Option<daft_checkpoint::FileFormat>> {
+    use pyo3::Python;
+
+    let format = Python::attach(|py| -> pyo3::PyResult<Option<String>> {
+        let result = data_sink_info
+            .sink
+            .call_method0(py, "checkpoint_file_format")?;
+        if result.is_none(py) {
+            Ok(None)
+        } else {
+            result.extract::<String>(py).map(Some)
+        }
+    })
+    .map_err(|source| crate::Error::PyIO { source })?;
+
+    match format.as_deref() {
+        None => Ok(None),
+        Some("lance" | "Lance") => Ok(Some(daft_checkpoint::FileFormat::Lance)),
+        Some(other) => Err(crate::Error::ValueError {
+            message: format!("unsupported DataSink checkpoint file format: {other:?}"),
+        }),
+    }
+}
+
 pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
@@ -410,8 +441,21 @@ pub fn translate_physical_plan_to_pipeline(
         LocalPhysicalPlan::PhysicalWrite(_) | LocalPhysicalPlan::CommitWrite(_)
     );
     #[cfg(feature = "python")]
-    let root_is_write_sink =
-        root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
+    let root_is_write_sink = {
+        let mut is_write_sink =
+            root_is_write_sink || matches!(physical_plan, LocalPhysicalPlan::LanceWrite(_));
+        if let LocalPhysicalPlan::DataSink(daft_local_plan::DataSink { data_sink_info, .. }) =
+            physical_plan
+        {
+            // Generic Python DataSinks are not native write sinks above. If the
+            // sink declares a checkpoint file format, it will use
+            // BlockingSinkNode::with_checkpoint below, so do not add a
+            // CheckpointTerminusNode around it here.
+            is_write_sink =
+                is_write_sink || datasink_checkpoint_file_format(data_sink_info)?.is_some();
+        }
+        is_write_sink
+    };
     if !root_is_write_sink && let Some((store, id_map, _key_expr)) = ctx.checkpoint() {
         pipeline_node = crate::checkpoint_terminus::CheckpointTerminusNode::new(
             pipeline_node,
@@ -1569,14 +1613,24 @@ fn physical_plan_to_pipeline(
                 None,
                 file_schema.clone(),
             );
-            BlockingSinkNode::new(
+            let mut node = BlockingSinkNode::new(
                 Arc::new(write_sink),
                 child_node,
                 stats_state.clone(),
                 ctx,
                 context,
-            )
-            .boxed()
+            );
+            // If this DataSink declares a checkpoint file format, attach the
+            // checkpoint context to the BlockingSinkNode. The node stages each
+            // input's write_results before store.checkpoint(id), while Python
+            // finalize() remains responsible for interpreting the staged
+            // payload.
+            if let Some((store, id_map, _)) = ctx.checkpoint()
+                && let Some(file_format) = datasink_checkpoint_file_format(data_sink_info)?
+            {
+                node = node.with_checkpoint(store, id_map, file_format);
+            }
+            node.boxed()
         }
         LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
             input,
