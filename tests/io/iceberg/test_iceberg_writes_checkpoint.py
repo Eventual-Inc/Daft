@@ -12,6 +12,10 @@ exactly one new Iceberg snapshot tagged with the call's idempotence key.
 The checkpoint-aware source filter (``daft.read_parquet(checkpoint=...)``)
 runs only on the Ray runner, so these tests are skipped on the native
 runner. See ``tests/checkpoint/test_native_runner_gate.py``.
+
+Optional: set ``CHECKPOINTING_TEST_BUCKET`` (and ensure ``AWS_REGION`` /
+AWS auth are exported) to route fixtures through real S3 instead of the
+local filesystem. CI defaults to local; S3 is opt-in.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from pyiceberg.table import Transaction
 from pyiceberg.types import LongType, NestedField, StringType
 
 from daft.daft import CheckpointStatus
+from tests.io._s3_helpers import S3_BUCKET, S3_REGION, s3_io_config, s3_uri
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("DAFT_RUNNER") != "ray",
@@ -45,11 +50,19 @@ IDEMPOTENCE_KEY = "test-run-2026-05-04"
 
 @pytest.fixture(scope="function")
 def local_catalog(tmpdir):
-    catalog = SqlCatalog(
-        "default",
-        uri=f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
-        warehouse=f"file://{tmpdir}",
-    )
+    if S3_BUCKET:
+        catalog = SqlCatalog(
+            "default",
+            uri=f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
+            warehouse=s3_uri("iceberg", "warehouse"),
+            **{"s3.region": S3_REGION},
+        )
+    else:
+        catalog = SqlCatalog(
+            "default",
+            uri=f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
+            warehouse=f"file://{tmpdir}",
+        )
     catalog.create_namespace("default")
     yield catalog
     catalog.engine.dispose()
@@ -83,14 +96,21 @@ def partitioned_iceberg_table(local_catalog):
 @pytest.fixture(scope="function")
 def parquet_input(tmpdir):
     """A small parquet input directory we can read with checkpoint=."""
+    df = daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]})
+    if S3_BUCKET:
+        path = s3_uri("iceberg", "input")
+        df.write_parquet(path, io_config=s3_io_config())
+        return path
     path = str(tmpdir / "input")
     os.makedirs(path, exist_ok=True)
-    daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]}).write_parquet(path)
+    df.write_parquet(path)
     return path
 
 
 @pytest.fixture(scope="function")
 def checkpoint_store(tmpdir):
+    if S3_BUCKET:
+        return daft.CheckpointStore(s3_uri("iceberg", "ckpt"), io_config=s3_io_config())
     return daft.CheckpointStore(f"file://{tmpdir}/ckpt")
 
 
