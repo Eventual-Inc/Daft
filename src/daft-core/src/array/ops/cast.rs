@@ -647,12 +647,12 @@ where
                 (Unknown, Unknown) | (Video, Video) | (Audio, Audio) | (Image, Image) => {
                     Ok(self.clone().into_series())
                 }
-                (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
-                (Unknown, Audio) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
-                (Unknown, Image) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
-                (Video, Unknown) | (Audio, Unknown) | (Image, Unknown) => {
+                (Unknown, Video) | (Unknown, Audio) | (Unknown, Image) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
+                (Video, Unknown) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
+                (Audio, Unknown) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
+                (Image, Unknown) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
                 _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {

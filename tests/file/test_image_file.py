@@ -182,6 +182,14 @@ def test_image_file_from_unknown_file(sample_png: Path):
     assert field.dtype == dt.file(MediaType.image())
 
 
+def test_cast_unknown_file_to_image_file(sample_png: Path):
+    df = daft.from_pydict({"paths": [str(sample_png)]})
+    df = df.select(file(df["paths"]).cast(dt.file(MediaType.image())).alias("image"))
+
+    assert df.schema() == daft.Schema.from_pydict({"image": dt.file(MediaType.image())})
+    df.collect()
+
+
 # ── dependency guard ──
 
 
