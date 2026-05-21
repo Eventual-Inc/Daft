@@ -1926,6 +1926,16 @@ mod tests {
     }
 
     #[test]
+    fn test_inline_bool_or_with_nulls_matches_fallback() {
+        let (rb, group_by, schema) = make_bool_val_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolOr(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
     fn test_inline_all_null_bool_or_matches_fallback() {
         let (rb, group_by, schema) = make_all_null_bool_val_test_batch();
         let bound_agg =
