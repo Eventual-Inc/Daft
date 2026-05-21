@@ -123,6 +123,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -161,6 +162,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -302,6 +304,19 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(flight_shuffle_compression) = flight_shuffle_compression {
+            config.flight_shuffle_compression = match flight_shuffle_compression {
+                "" | "none" => None,
+                "lz4" | "zstd" => Some(flight_shuffle_compression.to_string()),
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "flight_shuffle_compression must be 'lz4', 'zstd', or 'none' (got '{}')",
+                        other
+                    )));
+                }
+            };
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -474,6 +489,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
+    }
+
+    #[getter]
+    fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
+        Ok(self.config.flight_shuffle_compression.as_deref())
     }
 }
 
