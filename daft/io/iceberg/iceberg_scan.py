@@ -4,7 +4,6 @@ import logging
 import warnings
 from typing import TYPE_CHECKING
 
-from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.schema import visit
 
 import daft
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+    from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import Table
     from pyiceberg.typedef import Record
 
