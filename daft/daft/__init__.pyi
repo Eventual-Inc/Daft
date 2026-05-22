@@ -2482,6 +2482,7 @@ class PyDaftExecutionConfig:
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
+        flight_shuffle_compression: str | None = None,
         enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -2548,6 +2549,8 @@ class PyDaftExecutionConfig:
     def dynamic_batching_strategy(self) -> str: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
+    @property
+    def flight_shuffle_compression(self) -> str | None: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
     @property
