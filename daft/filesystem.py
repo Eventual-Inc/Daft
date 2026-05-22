@@ -100,6 +100,7 @@ _CANONICAL_PROTOCOLS = {
     "ssh": "sftp",
     "arrow_hdfs": "hdfs",
     "az": "abfs",
+    "abfss": "abfs",
     "blockcache": "cached",
     "jlab": "jupyter",
 }
@@ -237,6 +238,7 @@ def _build_filesystem(
     # HTTP: Use FSSpec as a fallback
     ###
     if protocol == "http":
+        # "https" canonicalizes to "http"; fsspec's HTTPFileSystem handles both schemes.
         fsspec_fs = fsspec.get_filesystem_class("http")()
         return pafs.PyFileSystem(fsspec_fs), None
 
