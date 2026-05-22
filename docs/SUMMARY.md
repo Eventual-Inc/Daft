@@ -73,6 +73,7 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Join Strategies](optimization/join-strategies.md)
+    * [Checkpointing](use-case/checkpointing.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)

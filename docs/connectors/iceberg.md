@@ -116,12 +116,12 @@ Every idempotent commit tags its Iceberg snapshot summary with `daft.idempotence
     ```python
     # Inspect via pyiceberg's Table API — `table` is the same pyiceberg.table.Table
     # loaded in the "Reading a Table" section above.
-    summary = table.metadata.snapshots[-1].summary
+    summary = table.current_snapshot().summary
     print(summary.get("daft.idempotence-key"))
     # → "job-2026-05-21-001"
     ```
 
-For older commits, walk `table.metadata.snapshots` and check each snapshot's `summary`.
+For older commits, walk `table.metadata.snapshots` (order isn't guaranteed — sort by `timestamp_ms` if you need chronological order) and check each snapshot's `summary`.
 
 ### Constraints
 
