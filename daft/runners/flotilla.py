@@ -618,7 +618,17 @@ def get_head_node_id() -> str | None:
 
 
 class FlotillaRunner:
-    """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface."""
+    """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface.
+
+    .. warning::
+        Extensions must be loaded **before** the first query is executed.
+
+        ``RemoteFlotillaRunner`` is a named singleton Ray actor (``get_if_exists=True``).
+        Once created, Ray ignores any subsequent ``runtime_env`` options — including
+        ``DAFT_EXTENSION_PATHS`` — and never re-runs ``__init__`` on the existing actor.
+        Calling ``daft.load_extension(...)`` after the first query will not propagate
+        the extension to existing workers.
+    """
 
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
@@ -641,6 +651,9 @@ class FlotillaRunner:
         flotilla_options: dict[str, object] = {
             "name": get_flotilla_runner_actor_name(),
             "namespace": FLOTILLA_RUNNER_NAMESPACE,
+            # NOTE: get_if_exists=True returns the existing actor when one already exists,
+            # silently ignoring any new runtime_env options (including DAFT_EXTENSION_PATHS).
+            # Extensions loaded after the first query will not be propagated to workers.
             "get_if_exists": True,
             "scheduling_strategy": (
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
@@ -657,12 +670,22 @@ class FlotillaRunner:
         self.runner = RemoteFlotillaRunner.options(**flotilla_options).remote(  # type: ignore
             dashboard_url=dashboard_url, event_log_dir=event_log_dir
         )
+        self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
 
     def stream_plan(
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
+        current_extensions = frozenset(get_loaded_extension_paths())
+        new_extensions = current_extensions - self._init_extension_paths
+        if new_extensions:
+            logger.warning(
+                "Extensions loaded after the first query was executed will not be available on Ray workers: %s. "
+                "Call daft.load_extension() before executing any queries to ensure extensions are propagated.",
+                sorted(new_extensions),
+            )
+
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
