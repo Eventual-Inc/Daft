@@ -13,7 +13,7 @@ use daft_core::{
         GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
     },
     join::AsofJoinStrategy,
-    kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls, is_nearer},
+    kernels::cmp::{DynPartialComparator, build_partial_compare_with_nulls, is_nearer},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;

@@ -28,7 +28,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::{cmp_float, make_daft_comparator},
+    kernels::cmp::{cmp_float, make_daft_comparator},
     prelude::UInt64Array,
     series::Series,
 };
