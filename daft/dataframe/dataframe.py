@@ -1254,6 +1254,8 @@ class DataFrame:
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
+        For the conceptual overview of the ``checkpoint=`` parameter, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
@@ -1681,6 +1683,8 @@ class DataFrame:
         checkpoint: "IdempotentCommit | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
+
+        For the conceptual overview of the ``checkpoint=`` parameter, see the [Checkpointing guide](../use-case/checkpointing.md).
 
         Args:
             table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
