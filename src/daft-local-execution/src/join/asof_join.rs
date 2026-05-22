@@ -211,102 +211,101 @@ impl AsofJoinFinalizedBuildState {
             }
         }
     }
+}
 
-    /// Backward: first left row with on_key >= right_on_arr[right_idx] (ceiling).
-    /// Forward:  last left row with on_key <= right_on_arr[right_idx] (floor).
-    /// Returns `None` if no valid match exists.
-    fn search_bucket(
-        &self,
-        bucket: &[u64],
-        on_key_cmp: &DynPartialComparator,
-        right_idx: usize,
-        dir: AsofJoinStrategy,
-    ) -> Option<usize> {
-        let mut lo = 0usize;
-        let mut hi = bucket.len();
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            match dir {
-                AsofJoinStrategy::Backward => match on_key_cmp(mid, right_idx) {
-                    Some(Ordering::Less) => lo = mid + 1,
-                    _ => hi = mid,
-                },
-                AsofJoinStrategy::Forward => match on_key_cmp(mid, right_idx) {
-                    Some(Ordering::Greater) => hi = mid,
-                    _ => lo = mid + 1,
-                },
-                AsofJoinStrategy::Nearest => {
-                    unreachable!("use search_bucket_nearest_range for Nearest")
-                }
-            }
+/// First left row with on_key >= right_on_arr[right_idx] (ceiling).
+/// Used by Backward strategy. Returns `None` if the bucket is empty.
+fn search_ceil(
+    bucket: &[u64],
+    on_key_cmp: &DynPartialComparator,
+    right_idx: usize,
+) -> Option<usize> {
+    let mut lo = 0usize;
+    let mut hi = bucket.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match on_key_cmp(mid, right_idx) {
+            Some(Ordering::Less) => lo = mid + 1,
+            _ => hi = mid,
         }
-        match dir {
-            AsofJoinStrategy::Backward => bucket.get(lo).map(|&idx| idx as usize),
-            AsofJoinStrategy::Forward => lo
-                .checked_sub(1)
-                .and_then(|i| bucket.get(i))
-                .map(|&idx| idx as usize),
-            AsofJoinStrategy::Nearest => {
-                unreachable!("use search_bucket_nearest_range for Nearest")
-            }
+    }
+    bucket.get(lo).map(|&idx| idx as usize)
+}
+
+/// Last left row with on_key <= right_on_arr[right_idx] (floor).
+/// Used by Forward strategy. Returns `None` if no such row exists.
+fn search_floor(
+    bucket: &[u64],
+    on_key_cmp: &DynPartialComparator,
+    right_idx: usize,
+) -> Option<usize> {
+    let mut lo = 0usize;
+    let mut hi = bucket.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match on_key_cmp(mid, right_idx) {
+            Some(Ordering::Greater) => hi = mid,
+            _ => lo = mid + 1,
+        }
+    }
+    lo.checked_sub(1)
+        .and_then(|i| bucket.get(i))
+        .map(|&idx| idx as usize)
+}
+
+/// Returns `start..end` — the bucket positions this right row must be offered to.
+///
+/// The range covers the floor (last left ≤ right) and ceil (first left ≥ right),
+/// each extended through any adjacent duplicates sharing the same on_key.
+/// Left rows outside this range either have a strictly closer right candidate
+/// elsewhere in the bucket, or will be covered by `nearest_fill`.
+///
+/// `on_key_cmp(pos, right_idx)` — sorted_left[pos] vs right[right_idx]
+/// `self_cmp(i, j)`             — sorted_left[i]   vs sorted_left[j]
+fn search_nearest(
+    bucket: &[u64],
+    on_key_cmp: &DynPartialComparator,
+    self_cmp: &DynPartialComparator,
+    right_idx: usize,
+) -> std::ops::Range<usize> {
+    if bucket.is_empty() {
+        return 0..0;
+    }
+
+    let mut lo = 0usize;
+    let mut hi = bucket.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match on_key_cmp(mid, right_idx) {
+            Some(Ordering::Less) => lo = mid + 1,
+            _ => hi = mid,
         }
     }
 
-    /// Returns `start..end` — the bucket positions this right row must be offered to.
-    ///
-    /// The range covers the floor (last left ≤ right) and ceil (first left ≥ right),
-    /// each extended through any adjacent duplicates sharing the same on_key.
-    /// Left rows outside this range either have a strictly closer right candidate
-    /// elsewhere in the bucket, or will be covered by `nearest_fill`.
-    ///
-    /// `on_key_cmp(pos, right_idx)` — sorted_left[pos] vs right[right_idx]
-    /// `self_cmp(i, j)`             — sorted_left[i]   vs sorted_left[j]
-    fn search_bucket_nearest_range(
-        &self,
-        bucket: &[u64],
-        on_key_cmp: &DynPartialComparator,
-        self_cmp: &DynPartialComparator,
-        right_idx: usize,
-    ) -> std::ops::Range<usize> {
-        if bucket.is_empty() {
-            return 0..0;
+    // Floor at lo-1: walk backward to include all left rows with the same on_key.
+    let start = match lo.checked_sub(1) {
+        None => lo,
+        Some(fp) => {
+            let mut pos = fp;
+            while pos > 0 && self_cmp(pos - 1, pos) == Some(Ordering::Equal) {
+                pos -= 1;
+            }
+            pos
         }
+    };
 
-        let mut lo = 0usize;
-        let mut hi = bucket.len();
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            match on_key_cmp(mid, right_idx) {
-                Some(Ordering::Less) => lo = mid + 1,
-                _ => hi = mid,
-            }
+    // Ceil at lo: walk forward to include all left rows with the same on_key.
+    let end = if lo < bucket.len() {
+        let mut pos = lo;
+        while pos + 1 < bucket.len() && self_cmp(pos, pos + 1) == Some(Ordering::Equal) {
+            pos += 1;
         }
+        pos + 1
+    } else {
+        lo
+    };
 
-        // Floor at lo-1: walk backward to include all left rows with the same on_key.
-        let start = match lo.checked_sub(1) {
-            None => lo,
-            Some(fp) => {
-                let mut pos = fp;
-                while pos > 0 && self_cmp(pos - 1, pos) == Some(Ordering::Equal) {
-                    pos -= 1;
-                }
-                pos
-            }
-        };
-
-        // Ceil at lo: walk forward to include all left rows with the same on_key.
-        let end = if lo < bucket.len() {
-            let mut pos = lo;
-            while pos + 1 < bucket.len() && self_cmp(pos, pos + 1) == Some(Ordering::Equal) {
-                pos += 1;
-            }
-            pos + 1
-        } else {
-            lo
-        };
-
-        start..end
-    }
+    start..end
 }
 
 pub(crate) struct AsofJoinProbeState {
@@ -335,7 +334,7 @@ impl AsofJoinProbeState {
             right_on_arr.clone(),
         ));
         // Build one comparator per by_key group: compares that group's sorted left on_key array
-        // against the current right batch's on_key array, used for binary search in search_bucket.
+        // against the current right batch's on_key array, used for binary search.
         let grouped_on_key_cmps: Vec<DynPartialComparator> = build_state
             .grouped_sorted_materialized_on_keys
             .iter()
@@ -402,7 +401,7 @@ impl AsofJoinProbeState {
                     row_idx: right_idx,
                 };
 
-                for pos in build_state.search_bucket_nearest_range(
+                for pos in search_nearest(
                     bucket,
                     &grouped_on_key_cmps[group_idx],
                     &left_self_cmps[group_idx],
@@ -438,12 +437,15 @@ impl AsofJoinProbeState {
                     continue;
                 };
                 let bucket = &build_state.grouped_sorted_indices[group_idx];
-                let Some(matched_left_idx) = build_state.search_bucket(
-                    bucket,
-                    &grouped_on_key_cmps[group_idx],
-                    right_idx,
-                    dir,
-                ) else {
+                let Some(matched_left_idx) = (match dir {
+                    AsofJoinStrategy::Backward => {
+                        search_ceil(bucket, &grouped_on_key_cmps[group_idx], right_idx)
+                    }
+                    AsofJoinStrategy::Forward => {
+                        search_floor(bucket, &grouped_on_key_cmps[group_idx], right_idx)
+                    }
+                    AsofJoinStrategy::Nearest => unreachable!(),
+                }) else {
                     continue;
                 };
                 update_best_match(
