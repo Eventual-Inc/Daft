@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import sys
-from io import IOBase
 from typing import TYPE_CHECKING, Any, Literal
 
 from daft.file import File
@@ -18,10 +17,10 @@ if TYPE_CHECKING:
 
 
 # Also should inherit the io.Reader protocol from 3.14+
-class DaftFileIO(IOBase):
+class DaftFileIO(io.RawIOBase):
     """A read-only file-like wrapper about Daft's IO backend.
 
-    Implements :class:`io.IOBase` so instances work with
+    Implements :class:`io.RawIOBase` so instances work with
     libraries that expect standard Python file objects.
     """
 
@@ -29,6 +28,19 @@ class DaftFileIO(IOBase):
 
     def __init__(self, inner: PyDaftFile) -> None:
         self._inner = inner
+        # PyDaftFile requires __enter__ before read/seek
+        self._inner.__enter__()
+
+    @override
+    def readinto(self, b: Any) -> int:
+        # Technically b is a WriteableBuffer, but not available in typing_extensions
+        # TODO: Add Rust implementation of readinto.
+        data = self._inner.read(len(b))
+        if not data:
+            return 0
+        n = len(data)
+        b[:n] = data
+        return n
 
     @override
     def read(self, size: int = -1, /) -> bytes:
@@ -44,7 +56,9 @@ class DaftFileIO(IOBase):
 
     @override
     def close(self) -> None:
-        self._inner.close()
+        if not self.closed:
+            self._inner.__exit__(None, None, None)
+        super().close()
 
     @override
     @property
@@ -88,7 +102,7 @@ class DaftFileIO(IOBase):
 def open_file(
     url: str,
     mode: Literal["r", "rt", "rb"] = "r",
-    buffering: int = 0,
+    buffering: int = -1,
     encoding: str | None = None,
     io_config: IOConfig | None = None,
 ) -> io.IOBase:
@@ -103,10 +117,12 @@ def open_file(
         mode (Literal["r", "rt", "rb"]): The mode to open the file in.
             - "r" / "rt": Text mode (default).
             - "rb": Binary mode.
-        buffering (int): The buffering strategy to use.
-            - 0: No buffering (default).
+        buffering (int): The buffering strategy to use. Note, if reading in text mode, we use the
+        platform default buffer size defined in `io.DEFAULT_BUFFER_SIZE`.
+            - -1: Use the default buffer size (default).
+            - 0: No buffering (binary mode only).
             - 1: Line buffering (only applies to text mode).
-            - >1: Fixed-sized buffer of size `buffering`.
+            - >0: Fixed-sized buffer of size `buffering`.
         encoding (str | None): The encoding to use for text mode.
             - None: Use the default encoding (based on locale.getencoding()).
             - Any valid encoding supported by Python's codecs module.
@@ -118,12 +134,16 @@ def open_file(
     file_handle: io.IOBase
     file_handle = DaftFileIO(File(url, io_config).open())
 
-    if buffering > 0 or mode in ("rt", "r"):
-        file_handle = io.BufferedReader(file_handle, buffering)  # type: ignore[type-var]
+    if buffering == 0 and mode in ("rt", "r"):
+        raise ValueError("Buffering must be enabled (not 0) when reading in text mode.")
+
+    if buffering != 0 or mode in ("rt", "r"):
+        buffering = buffering if buffering != -1 else io.DEFAULT_BUFFER_SIZE
+        file_handle = io.BufferedReader(file_handle, buffering)
 
     if mode == "rb":
         return file_handle
     elif mode in ("rt", "r"):
-        return io.TextIOWrapper(file_handle, encoding=encoding)  # type: ignore[type-var]
+        return io.TextIOWrapper(file_handle, encoding=encoding, line_buffering=buffering in (1, -1))  # type: ignore[type-var]
     else:
         raise ValueError(f"Invalid file open mode `{mode}`. Only read modes `r`, `rt`, and `rb` are supported.")
