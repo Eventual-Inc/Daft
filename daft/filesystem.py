@@ -125,13 +125,15 @@ def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], pafs.FileSystem]:
-    """Resolve and normalize paths and return them with their shared PyArrow filesystem.
+    """Resolves and normalizes the provided path and infers its filesystem.
+
+    Also ensures that the inferred filesystem is compatible with the passed filesystem, if provided.
 
     Args:
         paths: A single file/directory path or a list of file/directory paths.
             A list of paths can contain both files and directories.
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
-            FileSystem.
+            FileSystem
     """
     if isinstance(paths, pathlib.Path):
         paths = [str(paths)]
@@ -143,20 +145,29 @@ def _resolve_paths_and_filesystem(
 
     # Apply protocol aliases from io_config (e.g. {"foo": "s3"}).
     # This mirrors resolve_url_alias() in Rust so that custom URI schemes are
-    # handled by the appropriate PyArrow filesystem. The original scheme is
+    # handled by the appropriate PyArrow filesystem.  The original scheme is
     # preserved by callers (e.g. Iceberg DataFile file_path entries).
-    if io_config is not None and io_config.protocol_aliases:
-        paths = [_apply_protocol_alias(p, io_config.protocol_aliases) for p in paths]
+    if io_config is not None:
+        aliases = io_config.protocol_aliases
+        if aliases:
+            paths = [_apply_protocol_alias(p, aliases) for p in paths]
 
-    # Sanitize s3a/s3n protocols, which Hadoop-based systems use to pick an s3
-    # filesystem client. PyArrow doesn't recognize these.
+    # Sanitize s3a/s3n protocols, which are produced by Hadoop-based systems as a way of denoting which s3
+    # filesystem client to use. However this doesn't matter for Daft, and PyArrow cannot recognize these protocols.
     paths = [f"s3://{p[6:]}" if p.startswith("s3a://") or p.startswith("s3n://") else p for p in paths]
 
-    # All paths must map to the same canonical protocol (hence the same fs).
-    canonical_protocols = {canonicalize_protocol(get_protocol_from_path(p)) for p in paths}
-    if len(canonical_protocols) > 1:
-        raise ValueError(f"All paths must share a canonical protocol, got {canonical_protocols} for paths {paths}")
-    protocol = next(iter(canonical_protocols))
+    # Ensure that protocols for all paths are consistent, i.e. that they would map to the
+    # same filesystem.
+    protocols = {get_protocol_from_path(path) for path in paths}
+    canonicalized_protocols = {canonicalize_protocol(protocol) for protocol in protocols}
+    if len(canonicalized_protocols) > 1:
+        raise ValueError(
+            "All paths must have the same canonical protocol to ensure that they are all "
+            f"hitting the same storage backend, but got protocols {protocols} with canonical "
+            f"protocols - {canonicalized_protocols} and full paths - {paths}"
+        )
+
+    protocol = next(iter(canonicalized_protocols))
 
     fs = _get_fs_from_cache(protocol, io_config)
     if fs is None:
@@ -173,9 +184,13 @@ def _build_filesystem(
     """Build a PyArrow filesystem for the given canonical protocol."""
 
     def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None) -> None:
+        """Helper method used when setting kwargs for pyarrow."""
         if val is not None:
             kwargs[key] = val
 
+    ###
+    # S3
+    ###
     if protocol == "s3":
         translated_kwargs: dict[str, Any] = {}
         expiry: datetime | None = None
@@ -200,9 +215,15 @@ def _build_filesystem(
                 expiry = s3_creds.expiry
         return pafs.S3FileSystem(**translated_kwargs), expiry
 
+    ###
+    # Local
+    ###
     if protocol == "file":
         return pafs.LocalFileSystem(), None
 
+    ###
+    # GCS
+    ###
     if protocol == "gs":
         from pyarrow.fs import GcsFileSystem
 
@@ -212,11 +233,16 @@ def _build_filesystem(
             _set_if_not_none(gcs_kwargs, "project_id", io_config.gcs.project_id)
         return GcsFileSystem(**gcs_kwargs), None
 
+    ###
+    # HTTP: Use FSSpec as a fallback
+    ###
     if protocol == "http":
-        # Both http and https canonicalize to "http"; build a matching fsspec fs.
         fsspec_fs = fsspec.get_filesystem_class("http")()
         return pafs.PyFileSystem(fsspec_fs), None
 
+    ###
+    # Azure: Use FSSpec as a fallback
+    ###
     if protocol == "abfs":
         fsspec_fs_cls = fsspec.get_filesystem_class("abfs")
         if io_config is not None:
@@ -234,9 +260,12 @@ def _build_filesystem(
             fsspec_fs = fsspec_fs_cls()
         return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
+    ###
+    # Gravitino GVFS: Use custom filesystem for write operations
+    ###
     if protocol == "gvfs":
-        # Gravitino's filesystem delegates to Daft's Rust layer; reads go through
-        # Rust directly, writes use this custom PyArrow filesystem.
+        # gvfs:// URLs are handled by Daft's Rust layer for read operations.
+        # For write operations, we use a custom PyArrow filesystem that delegates to Daft's Rust layer.
         from daft.io.gravitino_filesystem import GravitinoFileSystem
 
         return GravitinoFileSystem(io_config=io_config), None
