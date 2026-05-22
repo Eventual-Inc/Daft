@@ -322,6 +322,7 @@ impl Serialize for AggregateFunctionHandle {
 
 impl<'de> Deserialize<'de> for AggregateFunctionHandle {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
         #[derive(Deserialize)]
         struct Helper {
             name: String,
@@ -336,6 +337,7 @@ impl<'de> Deserialize<'de> for AggregateFunctionHandle {
         // directly so `inner` is populated and FFI calls work.
         if let Some(path) = &h.module_path
             && let Some(existing) = crate::module::lookup_extension_aggregate(path, &h.name)
+                .map_err(D::Error::custom)?
         {
             return Ok(existing);
         }
@@ -354,14 +356,14 @@ impl<'de> Deserialize<'de> for AggregateFunctionHandle {
 pub fn into_aggregate_fn_handle(
     ffi: FFI_AggregateFunction,
     module: Arc<ModuleHandle>,
-) -> AggFnHandle {
+) -> DaftResult<AggFnHandle> {
     let handle = AggregateFunctionHandle::new(ffi, module);
     let name = handle.name.clone();
-    // module_path is always Some for freshly constructed handles.
+    // `module_path` is always `Some` for freshly constructed handles.
     if let Some(path) = &handle.module_path {
-        crate::module::register_extension_aggregate(path, name, handle.clone());
+        crate::module::register_extension_aggregate(path, name, handle.clone())?;
     }
-    AggFnHandle::new(Arc::new(handle))
+    Ok(AggFnHandle::new(Arc::new(handle)))
 }
 
 #[cfg(test)]
@@ -716,7 +718,8 @@ mod tests {
             &path,
             "test_sum".to_string(),
             live_handle.clone(),
-        );
+        )
+        .unwrap();
 
         let json = serde_json::to_string(&live_handle).unwrap();
         assert!(json.contains("test_sum"));
@@ -736,7 +739,22 @@ mod tests {
     #[test]
     fn test_into_aggregate_fn_handle() {
         let (ffi, module) = make_mock_agg_handle();
-        let handle = into_aggregate_fn_handle(ffi, module);
+        crate::module::insert_test_module(module.path().to_path_buf());
+        let handle = into_aggregate_fn_handle(ffi, module).unwrap();
         assert_eq!(handle.name(), "test_sum");
+    }
+
+    #[test]
+    fn test_into_aggregate_fn_handle_errors_when_module_not_loaded() {
+        let (ffi, module) = make_mock_agg_handle();
+        let path = std::path::PathBuf::from(
+            "/mock/test_into_aggregate_fn_handle_errors_when_module_not_loaded/mock_agg_module",
+        );
+        let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path));
+        let err = into_aggregate_fn_handle(ffi, module).unwrap_err();
+        assert!(
+            err.to_string().contains("not loaded"),
+            "unexpected error: {err}"
+        );
     }
 }

@@ -116,80 +116,99 @@ pub fn load_module(path: &Path) -> DaftResult<Arc<ModuleHandle>> {
 ///
 /// Called by [`crate::function::into_scalar_function_factory`] during extension
 /// initialization. Idempotent — re-registering the same `(path, name)` overwrites.
-pub fn register_extension_function(path: &Path, name: String, handle: ScalarFunctionHandle) {
-    match MODULES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
-        Ok(mut guard) => {
-            if let Some(entry) = guard.get_mut(path) {
-                entry.scalar_fns.insert(name, handle);
-            } else {
-                log::warn!(
-                    "register_extension_function: module '{}' not in registry",
-                    path.display()
-                );
-            }
-        }
-        Err(e) => log::warn!("MODULES lock poisoned in register_extension_function: {e}"),
-    }
+/// Errors if the module is not loaded or the `MODULES` lock is poisoned.
+pub fn register_extension_function(
+    path: &Path,
+    name: String,
+    handle: ScalarFunctionHandle,
+) -> DaftResult<()> {
+    let mut guard = MODULES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    let entry = guard.get_mut(path).ok_or_else(|| {
+        DaftError::InternalError(format!(
+            "cannot register extension function '{name}': module '{}' not loaded",
+            path.display(),
+        ))
+    })?;
+    entry.scalar_fns.insert(name, handle);
+    Ok(())
 }
 
 /// Look up a scalar function handle by module path and function name.
 ///
-/// Returns `None` if the module is not loaded in this process or the function
-/// was never registered.
-pub fn lookup_extension_function(path: &Path, name: &str) -> Option<ScalarFunctionHandle> {
-    let guard = MODULES
-        .get()?
+/// Returns `Ok(None)` if the module is not loaded in this process or the
+/// function was never registered. Errors if the `MODULES` lock is poisoned.
+pub fn lookup_extension_function(
+    path: &Path,
+    name: &str,
+) -> DaftResult<Option<ScalarFunctionHandle>> {
+    let Some(modules) = MODULES.get() else {
+        return Ok(None);
+    };
+    let guard = modules
         .lock()
-        .map_err(|e| log::warn!("MODULES lock poisoned in lookup_extension_function: {e}"))
-        .ok()?;
-    guard.get(path)?.scalar_fns.get(name).cloned()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard
+        .get(path)
+        .and_then(|m| m.scalar_fns.get(name).cloned()))
 }
 
 /// Register an aggregate function handle in the module's `MODULES` entry.
 ///
 /// Called by [`crate::aggregate::into_aggregate_fn_handle`] during extension
 /// initialization. Idempotent — re-registering the same `(path, name)` overwrites.
-pub fn register_extension_aggregate(path: &Path, name: String, handle: AggregateFunctionHandle) {
-    match MODULES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
-        Ok(mut guard) => {
-            if let Some(entry) = guard.get_mut(path) {
-                entry.agg_fns.insert(name, handle);
-            } else {
-                log::warn!(
-                    "register_extension_aggregate: module '{}' not in registry",
-                    path.display()
-                );
-            }
-        }
-        Err(e) => log::warn!("MODULES lock poisoned in register_extension_aggregate: {e}"),
-    }
+/// Errors if the module is not loaded or the `MODULES` lock is poisoned.
+pub fn register_extension_aggregate(
+    path: &Path,
+    name: String,
+    handle: AggregateFunctionHandle,
+) -> DaftResult<()> {
+    let mut guard = MODULES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    let entry = guard.get_mut(path).ok_or_else(|| {
+        DaftError::InternalError(format!(
+            "cannot register extension aggregate '{name}': module '{}' not loaded",
+            path.display(),
+        ))
+    })?;
+    entry.agg_fns.insert(name, handle);
+    Ok(())
 }
 
 /// Look up an aggregate function handle by module path and function name.
 ///
-/// Returns `None` if the module is not loaded in this process or the function
-/// was never registered.
-pub fn lookup_extension_aggregate(path: &Path, name: &str) -> Option<AggregateFunctionHandle> {
-    let guard = MODULES
-        .get()?
+/// Returns `Ok(None)` if the module is not loaded in this process or the
+/// function was never registered. Errors if the `MODULES` lock is poisoned.
+pub fn lookup_extension_aggregate(
+    path: &Path,
+    name: &str,
+) -> DaftResult<Option<AggregateFunctionHandle>> {
+    let Some(modules) = MODULES.get() else {
+        return Ok(None);
+    };
+    let guard = modules
         .lock()
-        .map_err(|e| log::warn!("MODULES lock poisoned in lookup_extension_aggregate: {e}"))
-        .ok()?;
-    guard.get(path)?.agg_fns.get(name).cloned()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard.get(path).and_then(|m| m.agg_fns.get(name).cloned()))
 }
 
 /// Return all paths currently in the process-global `MODULES` cache.
 ///
 /// Order is unspecified. Intended for propagating the driver's loaded
-/// extension set to Ray workers.
-pub fn loaded_module_paths() -> Vec<PathBuf> {
+/// extension set to Ray workers. Returns an empty vec when no extensions
+/// have ever been loaded; errors only if the `MODULES` lock is poisoned.
+pub fn loaded_module_paths() -> DaftResult<Vec<PathBuf>> {
     let Some(modules) = MODULES.get() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Ok(guard) = modules.lock() else {
-        return Vec::new();
-    };
-    guard.keys().cloned().collect()
+    let guard = modules
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard.keys().cloned().collect())
 }
 
 /// Opens a shared library from disk, returning a [`Library`] handle.
@@ -335,7 +354,15 @@ mod tests {
 
     #[test]
     fn lookup_unknown_module_returns_none() {
-        assert!(lookup_extension_function(Path::new("/no/such/module.so"), "some_fn").is_none());
-        assert!(lookup_extension_aggregate(Path::new("/no/such/module.so"), "some_agg").is_none());
+        assert!(
+            lookup_extension_function(Path::new("/no/such/module.so"), "some_fn")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            lookup_extension_aggregate(Path::new("/no/such/module.so"), "some_agg")
+                .unwrap()
+                .is_none()
+        );
     }
 }

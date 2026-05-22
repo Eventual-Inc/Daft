@@ -242,11 +242,12 @@ impl PySession {
 }
 
 #[pyo3::pyfunction]
-pub fn get_loaded_extension_paths() -> Vec<String> {
-    daft_ext_internal::module::loaded_module_paths()
+pub fn get_loaded_extension_paths() -> PyResult<Vec<String>> {
+    Ok(daft_ext_internal::module::loaded_module_paths()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
         .into_iter()
         .map(|p| p.to_string_lossy().into_owned())
-        .collect()
+        .collect())
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
