@@ -217,6 +217,8 @@ def _infer_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
+    # Strip trailing slashes (PyArrow's normalize_path doesn't).
+    path = path.rstrip("/") or path
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
     resolved_filesystem: pafs.FileSystem

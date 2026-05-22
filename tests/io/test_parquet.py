@@ -522,6 +522,33 @@ def test_write_parquet_success_file(tmp_path_factory):
     assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
 
 
+def test_resolve_paths_strips_trailing_slash(tmp_path):
+    # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
+    # A trailing "/" must be stripped at the resolver layer so it doesn't leak into
+    # downstream "{dir}/{file}" joins as "{dir}//{file}", which PyArrow's
+    # object-store filesystems reject with ArrowInvalid: Empty path component.
+    from daft.filesystem import _resolve_paths_and_filesystem
+
+    [resolved], _ = _resolve_paths_and_filesystem(f"{tmp_path}/")
+    assert not resolved.endswith("/"), resolved
+    [resolved_double], _ = _resolve_paths_and_filesystem(f"{tmp_path}//")
+    assert not resolved_double.endswith("/"), resolved_double
+
+
+def test_writer_trailing_slash_normalized(tmp_path):
+    # Integration-level regression for #6978: verify the writer produces a
+    # clean full_path when the user supplies a trailing-slash root_dir, for
+    # both partitioned and non-partitioned writes.
+    writer = ParquetFileWriter(root_dir=f"{tmp_path}/", file_idx=0)
+    assert "//" not in writer.full_path, writer.full_path
+    writer.close()
+
+    rb = MicroPartition.from_pydict({"k": ["x"]}).get_record_batches()[0]
+    partitioned = ParquetFileWriter(root_dir=f"{tmp_path}/", file_idx=0, partition_values=rb)
+    assert "//" not in partitioned.full_path, partitioned.full_path
+    partitioned.close()
+
+
 def _column_codecs(parquet_path: str) -> dict[str, str]:
     meta = papq.ParquetFile(parquet_path).metadata
     rg = meta.row_group(0)
