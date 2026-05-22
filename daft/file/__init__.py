@@ -7,4 +7,4 @@ from .video import VideoFile
 from .file_io import DaftFileIO, open_file
 
 
-__all__ = ["AudioFile", "DaftFileIO", "File", "ImageFile", "VideoFile", "open_file", "open_file"]
+__all__ = ["AudioFile", "DaftFileIO", "File", "ImageFile", "VideoFile", "open_file"]
