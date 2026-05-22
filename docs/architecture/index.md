@@ -1,12 +1,12 @@
 # Daft Architecture
 
-Daft is a high-performance data engine designed for any modality and any scale. The architecture of Daft consists of 3 main layers: API, Planning, and Execution.
+Daft is a high-performance data engine designed for any modality and any scale. At a high level, a Daft query moves through 3 main stages: Planning, Optimization, and Execution.
 
-![Architecture diagram for the Daft library spanning the API, Planning, and Execution layers](../img/architecture.png)
+![Architecture diagram for the Daft library](../img/architecture.png)
 
-## API
+## Planning
 
-Users express their workloads via the Python DataFrame API or the SQL interface. Internally, these are represented as a `LogicalPlan`: a tree of operators that describe *what* work should happen. Example operators include `Source`, `Project`, `Filter`, `GroupBy`, and `Join`.
+Users express their workloads via the Python DataFrame API or the SQL interface. These APIs are lazy: operations construct a plan of execution, but they do not read or transform data yet. Internally, the workload is represented as a `LogicalPlan`: a tree of operators that describe *what* work should happen. Example operators include `Source`, `Project`, `Filter`, `GroupBy`, and `Join`.
 
 Within each operator, especially the `Project` operator, there is a collection of expressions that define how data should be transformed. When users apply native functions (like `col("a") + 1`) or custom Python UDFs (such as `col("b").apply(my_udf)`), these are represented internally as nodes in an *expression tree*. Each node in the tree can be a column reference, a literal, a function call, or a UDF, and complex expressions are built by chaining these nodes together.
 
@@ -33,7 +33,7 @@ Internally, this becomes a simple expression attached to the `Project` operator:
 
 ## Optimization
 
-Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization when a materializing operation such as `collect()` or `write_parquet()` is invoked.
+Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization after execution is requested and before data processing begins.
 
 - **Rule-based pass.** Classical rewrite rules execute first: filter, projection, limit, and aggregation pushdowns; projection folding and splitting; pruning redundant repartitions; expression simplification; and subquery unnesting. These transform the plan structure without needing runtime statistics.
 - **Cost-based pass.** Joins are reordered using a brute-force enumerator that evaluates the cheapest ordering based on available statistics calculated from sources.
@@ -45,7 +45,9 @@ This hybrid optimizer lets users focus on declarative queries while still obtain
 
 ## Execution
 
-Once optimization completes, the plan is executed by either the native runner (single-machine) or the Ray runner (distributed).
+Execution is triggered by a materializing operation: an API call that needs concrete output instead of another lazy DataFrame plan. Examples include `collect()`, `show()`, `to_arrow()`, and write methods such as `write_parquet()`.
+
+Once optimization completes, the optimized logical plan is lowered into a physical plan and executed by either the native runner (single-machine) or the Ray runner (distributed).
 
 ### Native Runner (aka Swordfish)
 
