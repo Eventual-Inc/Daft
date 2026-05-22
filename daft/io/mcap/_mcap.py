@@ -243,7 +243,7 @@ class MCAPSourceTask(DataSourceTask):
 
         make_reader = importlib.import_module("mcap.reader").make_reader
 
-        from daft.filesystem import _infer_filesystem
+        from daft.filesystem import _resolve_paths_and_filesystem
 
         class _NonSeekableStreamWrapper:
             def __init__(self, file_obj: BytesIO):
@@ -276,7 +276,7 @@ class MCAPSourceTask(DataSourceTask):
                 self.close()
                 return False
 
-        resolved_path, fs, _ = _infer_filesystem(self._file_path, self._io_config)
+        [resolved_path], fs = _resolve_paths_and_filesystem(self._file_path, self._io_config)
 
         with fs.open_input_file(resolved_path) as file_obj:
             file_content = file_obj.read()

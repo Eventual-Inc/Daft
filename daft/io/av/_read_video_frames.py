@@ -11,7 +11,7 @@ import av
 
 from daft.daft import FileInfos, ImageMode
 from daft.datatype import DataType
-from daft.filesystem import _infer_filesystem, glob_path_with_stats
+from daft.filesystem import _resolve_paths_and_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
 from daft.schema import Schema
@@ -209,7 +209,7 @@ class _VideoFramesSourceTask(DataSourceTask):
         if _is_youtube_url(self.path):
             return self._open_youtube_file()
         else:
-            fp, fs, _ = _infer_filesystem(self.path, io_config=self.io_config)
+            [fp], fs = _resolve_paths_and_filesystem(self.path, io_config=self.io_config)
             return fs.open_input_file(fp)
 
     @contextmanager
