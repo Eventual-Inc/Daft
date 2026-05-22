@@ -23,73 +23,49 @@ pub fn make_probeable_builder(
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
     let physical_type = (schema.len() == 1).then(|| schema[0].dtype.to_physical());
+
+    // TODO: Null handling when nulls can be equal should be specially handled.
+    // Ideally via:
+    // - Storing Option<T> instead of T in the hash table, but doubles key size
+    // - Specially tracking row_idx of nulls in another field (potentially in a nested struct?)
     let nulls_equal = nulls_equal_aware
         .map(|v| v.iter().any(|is_null_equal| *is_null_equal))
         .unwrap_or(false);
     let physical_type = if !nulls_equal { physical_type } else { None };
 
     if track_indices {
-        match physical_type {
-            Some(DataType::Int8) => Ok(Box::new(
-                IntProbeTableBuilder::<Int8Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::Int16) => Ok(Box::new(
-                IntProbeTableBuilder::<Int16Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::Int32) => Ok(Box::new(
-                IntProbeTableBuilder::<Int32Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::Int64) => Ok(Box::new(
-                IntProbeTableBuilder::<Int64Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::UInt8) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt8Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::UInt16) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt16Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::UInt32) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt32Type, ProbeIndices>::new()?,
-            )),
-            Some(DataType::UInt64) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt64Type, ProbeIndices>::new()?,
-            )),
-            _ => Ok(Box::new(ProbeTableBuilder::<ProbeIndices>::new(
-                schema,
-                nulls_equal_aware,
-            )?)),
-        }
+        make_probeable_builder_for_physical_type::<ProbeIndices>(
+            physical_type,
+            nulls_equal_aware,
+            schema,
+        )
     } else {
-        match physical_type {
-            Some(DataType::Int8) => Ok(Box::new(
-                IntProbeTableBuilder::<Int8Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::Int16) => Ok(Box::new(
-                IntProbeTableBuilder::<Int16Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::Int32) => Ok(Box::new(
-                IntProbeTableBuilder::<Int32Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::Int64) => Ok(Box::new(
-                IntProbeTableBuilder::<Int64Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::UInt8) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt8Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::UInt16) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt16Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::UInt32) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt32Type, ProbeExists>::new()?,
-            )),
-            Some(DataType::UInt64) => Ok(Box::new(
-                IntProbeTableBuilder::<UInt64Type, ProbeExists>::new()?,
-            )),
-            _ => Ok(Box::new(ProbeTableBuilder::<ProbeExists>::new(
-                schema,
-                nulls_equal_aware,
-            )?)),
-        }
+        make_probeable_builder_for_physical_type::<ProbeExists>(
+            physical_type,
+            nulls_equal_aware,
+            schema,
+        )
+    }
+}
+
+fn make_probeable_builder_for_physical_type<T: ProbeContent>(
+    physical_type: Option<DataType>,
+    nulls_equal_aware: Option<&Vec<bool>>,
+    schema: SchemaRef,
+) -> DaftResult<Box<dyn ProbeableBuilder>> {
+    match physical_type {
+        Some(DataType::Int8) => Ok(Box::new(IntProbeTableBuilder::<Int8Type, T>::new()?)),
+        Some(DataType::Int16) => Ok(Box::new(IntProbeTableBuilder::<Int16Type, T>::new()?)),
+        Some(DataType::Int32) => Ok(Box::new(IntProbeTableBuilder::<Int32Type, T>::new()?)),
+        Some(DataType::Int64) => Ok(Box::new(IntProbeTableBuilder::<Int64Type, T>::new()?)),
+        Some(DataType::UInt8) => Ok(Box::new(IntProbeTableBuilder::<UInt8Type, T>::new()?)),
+        Some(DataType::UInt16) => Ok(Box::new(IntProbeTableBuilder::<UInt16Type, T>::new()?)),
+        Some(DataType::UInt32) => Ok(Box::new(IntProbeTableBuilder::<UInt32Type, T>::new()?)),
+        Some(DataType::UInt64) => Ok(Box::new(IntProbeTableBuilder::<UInt64Type, T>::new()?)),
+        _ => Ok(Box::new(ProbeTableBuilder::<T>::new(
+            schema,
+            nulls_equal_aware,
+        )?)),
     }
 }
 

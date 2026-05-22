@@ -5,7 +5,10 @@ use daft_core::{array::DataArray, prelude::DaftIntegerType};
 use hashbrown::HashMap;
 
 use super::{IndicesMapper, ProbeContent, Probeable, ProbeableBuilder};
-use crate::RecordBatch;
+use crate::{
+    RecordBatch,
+    probeable::probes::{LOWER_MASK, TABLE_IDX_SHIFT},
+};
 
 // Applies to logical types that are backed by ints as well
 // TODO: Extend to types other than ints
@@ -25,9 +28,6 @@ impl<T: DaftIntegerType, V: ProbeContent> IntProbeTable<T, V>
 where
     T::Native: Ord + std::hash::Hash,
 {
-    // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
-    const TABLE_IDX_SHIFT: usize = 36;
-    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
     const DEFAULT_SIZE: usize = 64 * 1024;
 
     pub(crate) fn new() -> DaftResult<Self> {
@@ -49,15 +49,15 @@ where
     }
 
     fn add_table(&mut self, input: &DataArray<T>) -> DaftResult<()> {
-        debug_assert!(self.num_tables < (1 << (64 - Self::TABLE_IDX_SHIFT)));
-        debug_assert!(input.len() < (1 << Self::TABLE_IDX_SHIFT));
+        debug_assert!(self.num_tables < (1 << (64 - TABLE_IDX_SHIFT)));
+        debug_assert!(input.len() < (1 << TABLE_IDX_SHIFT));
 
         for (i, h) in input.into_iter().enumerate() {
             let Some(h) = h else {
                 continue;
             };
 
-            let idx = (self.num_tables << Self::TABLE_IDX_SHIFT) | i;
+            let idx = (self.num_tables << TABLE_IDX_SHIFT) | i;
             self.hash_table.entry(h).or_default().add_row(idx as u64);
         }
 
@@ -81,8 +81,8 @@ where
         let converted_iter = iter.map(|opt| V::to_indices(opt));
         Ok(IndicesMapper::new(
             Box::new(converted_iter),
-            Self::TABLE_IDX_SHIFT,
-            Self::LOWER_MASK,
+            TABLE_IDX_SHIFT,
+            LOWER_MASK,
         ))
     }
 

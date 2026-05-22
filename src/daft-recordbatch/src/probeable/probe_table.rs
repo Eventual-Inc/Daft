@@ -9,7 +9,10 @@ use daft_core::{
 use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use super::{ArrowTableEntry, IndicesMapper, ProbeContent, Probeable, ProbeableBuilder};
-use crate::RecordBatch;
+use crate::{
+    RecordBatch,
+    probeable::probes::{LOWER_MASK, TABLE_IDX_SHIFT},
+};
 
 pub struct ProbeTable<T: ProbeContent> {
     schema: SchemaRef,
@@ -20,10 +23,6 @@ pub struct ProbeTable<T: ProbeContent> {
 }
 
 impl<T: ProbeContent> ProbeTable<T> {
-    // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
-    const TABLE_IDX_SHIFT: usize = 36;
-    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
-
     const DEFAULT_SIZE: usize = 32;
 
     pub(crate) fn new(schema: SchemaRef, null_equal_aware: Option<&Vec<bool>>) -> DaftResult<Self> {
@@ -100,8 +99,8 @@ impl<T: ProbeContent> ProbeTable<T> {
                 Some(h) => {
                     if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
                         h == other.hash && {
-                            let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
-                            let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
+                            let other_table_idx = (other.idx >> TABLE_IDX_SHIFT) as usize;
+                            let other_row_idx = (other.idx & LOWER_MASK) as usize;
                             comparators[other_table_idx](other_row_idx, idx)
                         }
                     }) {
@@ -119,10 +118,10 @@ impl<T: ProbeContent> ProbeTable<T> {
         debug_assert_eq!(table.schema, self.schema);
         let hashes = table.hash_rows()?;
         let table_idx = self.tables.len();
-        let table_offset = table_idx << Self::TABLE_IDX_SHIFT;
+        let table_offset = table_idx << TABLE_IDX_SHIFT;
 
-        debug_assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
-        debug_assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
+        debug_assert!(table_idx < (1 << (64 - TABLE_IDX_SHIFT)));
+        debug_assert!(table.len() < (1 << TABLE_IDX_SHIFT));
         let current_arrays = table
             .columns
             .iter()
@@ -156,8 +155,8 @@ impl<T: ProbeContent> ProbeTable<T> {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
-                    let j_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
-                    let j_row_idx = (other.idx & Self::LOWER_MASK) as usize;
+                    let j_table_idx = (other.idx >> TABLE_IDX_SHIFT) as usize;
+                    let j_row_idx = (other.idx & LOWER_MASK) as usize;
                     comparators[j_table_idx](i, j_row_idx)
                 }
             });
@@ -189,8 +188,8 @@ impl<T: ProbeContent> Probeable for ProbeTable<T> {
         let converted_iter = iter.map(|opt| T::to_indices(opt));
         Ok(IndicesMapper::new(
             Box::new(converted_iter),
-            Self::TABLE_IDX_SHIFT,
-            Self::LOWER_MASK,
+            TABLE_IDX_SHIFT,
+            LOWER_MASK,
         ))
     }
 

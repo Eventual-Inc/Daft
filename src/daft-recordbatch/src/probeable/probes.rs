@@ -44,3 +44,7 @@ impl ProbeContent for ProbeIndices {
         output
     }
 }
+
+// Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
+pub(crate) const TABLE_IDX_SHIFT: usize = 36;
+pub(crate) const LOWER_MASK: u64 = (1 << TABLE_IDX_SHIFT) - 1;
