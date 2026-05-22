@@ -8,6 +8,7 @@ from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.filesystem import get_protocol_from_path
 from daft.io._checkpoint import attach_checkpoint
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -66,14 +67,15 @@ def _enable_oss_io_config(io_config: IOConfig | None, location: str | None) -> I
     ``s3`` and enabling virtual-hosted-style addressing lets the existing S3
     filesystem resolve ``oss://`` paths -- no OSS-specific backend is involved.
 
-    Applied only to the IOConfig derived from the table; pass an explicit
-    ``io_config`` to ``read_iceberg``/``write_iceberg`` to opt out.
+    Runs on the IOConfig Daft derives from the table, or a fresh one when the
+    table exposes no IO properties (e.g. environment-variable credentials).
+    Pass an explicit ``io_config`` to ``read_iceberg``/``write_iceberg`` to opt out.
     """
-    from daft.filesystem import get_protocol_from_path
-
-    if io_config is None or location is None or get_protocol_from_path(location) != "oss":
+    if location is None or get_protocol_from_path(location) != "oss":
         return io_config
-    logger.debug("oss:// table detected; applying S3-compatible settings to the derived IOConfig")
+    if io_config is None:
+        io_config = IOConfig()
+    logger.debug("oss:// table detected; applying S3-compatible settings to the IOConfig")
     return io_config.replace(
         s3=io_config.s3.replace(force_virtual_addressing=True),
         protocol_aliases={"oss": "s3"},
