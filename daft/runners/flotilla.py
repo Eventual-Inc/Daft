@@ -418,7 +418,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             is_head = node["Resources"].get("node:__internal_head__", 0) == 1
             ext_env = _extension_runtime_env()
             runtime_env_vars: dict[str, str] = dict(worker_env_vars) if worker_env_vars else {}
-            if ext_env and "env_vars" in ext_env:
+            if "env_vars" in ext_env:
                 runtime_env_vars.update(ext_env["env_vars"])
             runtime_env: dict[str, object] = {}
             if runtime_env_vars:

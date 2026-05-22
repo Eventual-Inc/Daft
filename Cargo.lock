@@ -2677,6 +2677,7 @@ dependencies = [
  "daft-dsl",
  "daft-ext",
  "libloading 0.9.0",
+ "log",
  "serde",
  "serde_json",
  "typetag",

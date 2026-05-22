@@ -1,8 +1,7 @@
 use std::{
-    collections::HashMap,
     ffi::{CStr, c_char},
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    path::PathBuf,
+    sync::Arc,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -60,33 +59,6 @@ impl Drop for Inner {
 // SAFETY: The FFI_ScalarFunction is already Send + Sync; ModuleHandle is Send + Sync.
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
-
-/// Process-global registry of loaded extension functions.
-///
-/// Populated during `Session::load_and_init_extension`, consulted by
-/// `ScalarFunctionHandle::deserialize` to re-attach the FFI vtable on
-/// processes where the plan was deserialized (e.g. Ray workers).
-///
-/// Keyed by `(module_path, function_name)`. Handles are stored by value;
-/// clones are cheap (the inner state is `Arc`-shared).
-static FUNCTION_REGISTRY: OnceLock<Mutex<HashMap<(PathBuf, String), ScalarFunctionHandle>>> =
-    OnceLock::new();
-
-/// Register a function handle in the process-global registry. Idempotent —
-/// re-registering the same `(path, name)` overwrites the previous entry.
-pub fn register_function(path: PathBuf, name: String, handle: ScalarFunctionHandle) {
-    let mut reg = FUNCTION_REGISTRY
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .expect("FUNCTION_REGISTRY lock poisoned");
-    reg.insert((path, name), handle);
-}
-
-/// Look up a registered function by module path and function name.
-pub fn lookup_function(path: &Path, name: &str) -> Option<ScalarFunctionHandle> {
-    let reg = FUNCTION_REGISTRY.get()?.lock().ok()?;
-    reg.get(&(path.to_path_buf(), name.to_string())).cloned()
-}
 
 /// Wraps an `FFI_ScalarFunction` vtable (from a loaded extension module)
 /// into Daft's `ScalarUDF` and `ScalarFunctionFactory` traits.
@@ -273,7 +245,7 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
         // If the module is loaded in this process, return the live handle
         // directly so `inner` is populated and FFI calls work.
         if let Some(path) = &h.module_path
-            && let Some(existing) = lookup_function(path, &h.name)
+            && let Some(existing) = crate::module::lookup_extension_function(path, &h.name)
         {
             return Ok(existing);
         }
@@ -308,17 +280,17 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
 ///
 /// Called by the extension loader when a module invokes `define_function`
 /// during initialization. As a side effect, this also registers the function
-/// in the process-global `FUNCTION_REGISTRY` so that deserialized handles in
-/// other parts of the process (or on Ray workers after they load the same
-/// `.so`) can re-attach their FFI vtable.
+/// in `MODULES` (via [`crate::module::register_extension_function`]) so that
+/// deserialized handles on Ray workers can re-attach their FFI vtable after
+/// loading the same `.so`.
 pub fn into_scalar_function_factory(
     ffi: FFI_ScalarFunction,
     module: Arc<ModuleHandle>,
 ) -> Arc<dyn ScalarFunctionFactory> {
-    let path = module.path().to_path_buf();
     let handle = ScalarFunctionHandle::new(ffi, module);
+    let path = handle.module_path.clone();
     let name = handle.name.to_string();
-    register_function(path, name, handle.clone());
+    crate::module::register_extension_function(&path, name, handle.clone());
     Arc::new(handle)
 }
 
@@ -508,9 +480,8 @@ mod tests {
         // Simulate a worker environment: the plan has been serialized by the
         // driver and arrives here to be deserialized. The worker process has
         // already loaded the extension (e.g. via the Ray actor init hook),
-        // which in a real flow populates FUNCTION_REGISTRY. We populate it
-        // directly here with a unique path so the test doesn't interact with
-        // other tests that might register "increment".
+        // which in a real flow populates MODULES. We populate it directly here
+        // with a unique path so the test doesn't interact with other tests.
         let (ffi, module) = make_mock_handle();
         let path =
             std::path::PathBuf::from("/mock/test_serde_roundtrip_with_module_loaded/mock_module");
@@ -518,7 +489,12 @@ mod tests {
         // ModuleHandle with the same FFI_Module but our unique path.
         let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path.clone()));
         let live_handle = ScalarFunctionHandle::new(ffi, module);
-        register_function(path.clone(), "increment".to_string(), live_handle.clone());
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_function(
+            &path,
+            "increment".to_string(),
+            live_handle.clone(),
+        );
 
         // Driver: serialize.
         let json = serde_json::to_string(&live_handle).unwrap();
@@ -531,7 +507,7 @@ mod tests {
         assert_eq!(ScalarUDF::name(&deser), "increment");
         assert!(
             deser.inner.is_some(),
-            "expected inner to be re-attached from FUNCTION_REGISTRY"
+            "expected inner to be re-attached from MODULES"
         );
 
         // And calls should actually work.
@@ -669,13 +645,15 @@ mod tests {
     }
 
     #[test]
-    fn function_registry_roundtrip() {
+    fn extension_function_registry_roundtrip() {
         let (ffi, module) = make_mock_handle();
         let path = module.path().to_path_buf();
         let handle = ScalarFunctionHandle::new(ffi, module);
-        register_function(path.clone(), "increment".to_string(), handle);
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_function(&path, "increment".to_string(), handle);
 
-        let found = lookup_function(&path, "increment").expect("should find registered function");
+        let found = crate::module::lookup_extension_function(&path, "increment")
+            .expect("should find registered function");
         assert_eq!(ScalarUDF::name(&found), "increment");
         assert!(found.inner.is_some());
     }

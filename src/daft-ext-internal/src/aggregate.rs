@@ -1,8 +1,7 @@
 use std::{
-    collections::HashMap,
     ffi::{CStr, c_char},
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    path::PathBuf,
+    sync::Arc,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -49,34 +48,10 @@ impl Drop for Inner {
 unsafe impl Send for Inner {}
 unsafe impl Sync for Inner {}
 
-/// Process-global registry of loaded extension aggregate functions.
-///
-/// Populated during `Session::load_and_init_extension`, consulted by
-/// `AggregateFunctionHandle::deserialize` to re-attach the FFI vtable on
-/// processes where the plan was deserialized (e.g. Ray workers).
-static AGGREGATE_FUNCTION_REGISTRY: OnceLock<
-    Mutex<HashMap<(PathBuf, String), AggregateFunctionHandle>>,
-> = OnceLock::new();
-
-/// Register an aggregate handle in the process-global registry. Idempotent.
-pub fn register_aggregate_function(path: PathBuf, name: String, handle: AggregateFunctionHandle) {
-    let mut reg = AGGREGATE_FUNCTION_REGISTRY
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .expect("AGGREGATE_FUNCTION_REGISTRY lock poisoned");
-    reg.insert((path, name), handle);
-}
-
-/// Look up a registered aggregate function by module path and function name.
-pub fn lookup_aggregate_function(path: &Path, name: &str) -> Option<AggregateFunctionHandle> {
-    let reg = AGGREGATE_FUNCTION_REGISTRY.get()?.lock().ok()?;
-    reg.get(&(path.to_path_buf(), name.to_string())).cloned()
-}
-
 #[derive(Clone)]
 pub struct AggregateFunctionHandle {
     name: String,
-    module_path: PathBuf,
+    module_path: Option<PathBuf>,
     inner: Option<Arc<Inner>>,
 }
 
@@ -87,7 +62,7 @@ impl AggregateFunctionHandle {
             .to_str()
             .expect("FFI aggregate function name must be valid UTF-8")
             .to_owned();
-        let module_path = module.path().to_path_buf();
+        let module_path = Some(module.path().to_path_buf());
         Self {
             name,
             module_path,
@@ -340,7 +315,7 @@ impl Serialize for AggregateFunctionHandle {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("AggregateFunctionHandle", 2)?;
         s.serialize_field("name", &self.name)?;
-        s.serialize_field("module_path", &Some(&self.module_path))?;
+        s.serialize_field("module_path", &self.module_path)?;
         s.end()
     }
 }
@@ -350,20 +325,27 @@ impl<'de> Deserialize<'de> for AggregateFunctionHandle {
         #[derive(Deserialize)]
         struct Helper {
             name: String,
+            // Optional for forward-compat with older serialized plans that
+            // predate this field.
             #[serde(default)]
             module_path: Option<PathBuf>,
         }
         let h = Helper::deserialize(deserializer)?;
 
+        // If the module is loaded in this process, return the live handle
+        // directly so `inner` is populated and FFI calls work.
         if let Some(path) = &h.module_path
-            && let Some(existing) = lookup_aggregate_function(path, &h.name)
+            && let Some(existing) = crate::module::lookup_extension_aggregate(path, &h.name)
         {
             return Ok(existing);
         }
 
+        // Fall back to a handle with `inner: None`. Calls will error with
+        // `extension aggregate function 'X' is not loaded`, which is the correct
+        // behavior when the worker hasn't loaded the extension.
         Ok(Self {
             name: h.name,
-            module_path: h.module_path.unwrap_or_default(),
+            module_path: h.module_path,
             inner: None,
         })
     }
@@ -373,10 +355,12 @@ pub fn into_aggregate_fn_handle(
     ffi: FFI_AggregateFunction,
     module: Arc<ModuleHandle>,
 ) -> AggFnHandle {
-    let path = module.path().to_path_buf();
     let handle = AggregateFunctionHandle::new(ffi, module);
     let name = handle.name.clone();
-    register_aggregate_function(path, name, handle.clone());
+    // module_path is always Some for freshly constructed handles.
+    if let Some(path) = &handle.module_path {
+        crate::module::register_extension_aggregate(path, name, handle.clone());
+    }
     AggFnHandle::new(Arc::new(handle))
 }
 
@@ -727,7 +711,12 @@ mod tests {
         );
         let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path.clone()));
         let live_handle = AggregateFunctionHandle::new(ffi, module);
-        register_aggregate_function(path.clone(), "test_sum".to_string(), live_handle.clone());
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_aggregate(
+            &path,
+            "test_sum".to_string(),
+            live_handle.clone(),
+        );
 
         let json = serde_json::to_string(&live_handle).unwrap();
         assert!(json.contains("test_sum"));
@@ -737,7 +726,7 @@ mod tests {
         assert_eq!(AggFn::name(&deser), "test_sum");
         assert!(
             deser.inner.is_some(),
-            "expected inner to be re-attached from AGGREGATE_FUNCTION_REGISTRY"
+            "expected inner to be re-attached from MODULES"
         );
 
         let dt = deser.return_dtype(&[DataType::Int32]).unwrap();
