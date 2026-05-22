@@ -180,5 +180,9 @@ fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
         Event::TaskScheduled(_event) => Ok(None),
         Event::TaskStart(_event) => Ok(None),
         Event::TaskEnd(_event) => Ok(None),
+        Event::CheckpointStaged(_event) => Ok(None),
+        Event::CheckpointSealed(_event) => Ok(None),
+        Event::CheckpointCommitted(_event) => Ok(None),
+        Event::CheckpointFailed(_event) => Ok(None),
     }
 }

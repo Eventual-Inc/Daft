@@ -53,6 +53,35 @@ def decode_file_metadata(store: CheckpointStore, column_name: str) -> list[Any]:
     return files
 
 
+def commit_checkpoints(write_df: DataFrame, checkpoint_ids: list[str], store: Any) -> None:
+    """Mark ``checkpoint_ids`` committed and emit one ``CheckpointCommitted`` event.
+
+    Caller wraps in a broader try/except and invokes ``notify_checkpoint_failed``
+    on raise; this function emits only the success-side event to avoid
+    double-emission across the catalog-commit / mark_committed boundary.
+    """
+    import time
+
+    from daft.context import get_context
+
+    md = write_df._metadata
+    assert md is not None, "commit_checkpoints must run after write_df.collect()"
+    start = time.monotonic_ns()
+    store.mark_committed(checkpoint_ids)
+    duration_us = (time.monotonic_ns() - start) // 1000
+    get_context()._notify_checkpoint_committed(md.query_id, checkpoint_ids, duration_us)
+
+
+def notify_checkpoint_failed(write_df: DataFrame, checkpoint_ids: list[str], error: BaseException) -> None:
+    """Emit one ``CheckpointFailed`` for ``checkpoint_ids``. Caller re-raises."""
+    from daft.context import get_context
+
+    md = write_df._metadata
+    if md is None:
+        return
+    get_context()._notify_checkpoint_failed(md.query_id, checkpoint_ids, str(error))
+
+
 def empty_write_result(write_df: DataFrame) -> DataFrame:
     """Build an empty write-result DataFrame preserving ``write_df``'s metadata.
 

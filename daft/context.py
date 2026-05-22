@@ -107,6 +107,12 @@ class DaftContext:
     def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
         self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
 
+    def _notify_checkpoint_committed(self, query_id: str, checkpoint_ids: list[str], duration_us: int) -> None:
+        self._ctx.notify_checkpoint_committed(query_id, checkpoint_ids, duration_us)
+
+    def _notify_checkpoint_failed(self, query_id: str, checkpoint_ids: list[str], error: str) -> None:
+        self._ctx.notify_checkpoint_failed(query_id, checkpoint_ids, error)
+
 
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""

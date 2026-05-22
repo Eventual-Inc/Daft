@@ -18,9 +18,9 @@ pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
 use crate::subscribers::{
     event_header,
     events::{
-        ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
-        OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
-        QueryStartEvent, StatsEvent,
+        CheckpointCommittedEvent, CheckpointFailedEvent, ExecEndEvent, ExecStartEvent,
+        OperatorEndEvent, OperatorMeta, OperatorStartEvent, OptimizationCompleteEvent,
+        OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent, QueryStartEvent, StatsEvent,
     },
 };
 
@@ -236,6 +236,34 @@ impl DaftContext {
             stats: Arc::new(stats),
         });
         self.dispatch_event(&event, "notify exec emit stats")
+    }
+
+    pub fn notify_checkpoint_committed(
+        &self,
+        query_id: QueryID,
+        checkpoint_ids: Vec<String>,
+        duration_us: u64,
+    ) -> DaftResult<()> {
+        let event = Event::CheckpointCommitted(CheckpointCommittedEvent {
+            header: event_header(query_id),
+            checkpoint_ids,
+            duration_us,
+        });
+        self.dispatch_event(&event, "notify checkpoint committed")
+    }
+
+    pub fn notify_checkpoint_failed(
+        &self,
+        query_id: QueryID,
+        checkpoint_ids: Vec<String>,
+        error: String,
+    ) -> DaftResult<()> {
+        let event = Event::CheckpointFailed(CheckpointFailedEvent {
+            header: event_header(query_id),
+            checkpoint_ids,
+            error,
+        });
+        self.dispatch_event(&event, "notify checkpoint failed")
     }
 
     pub fn notify(&self, event: &Event) -> DaftResult<()> {

@@ -29,6 +29,49 @@ pub enum Event {
     Stats(StatsEvent),
     TaskStatsUpdate(TaskStatsUpdateEvent),
     ProcessStats(ProcessStatsEvent),
+    /// Staging complete for a checkpoint id; ready to be sealed.
+    CheckpointStaged(CheckpointStagedEvent),
+    /// `CheckpointStore::checkpoint` returned; manifest is durably written.
+    CheckpointSealed(CheckpointSealedEvent),
+    /// `mark_committed` succeeded for a batch of ids.
+    CheckpointCommitted(CheckpointCommittedEvent),
+    /// Seal or commit raised; lifecycle terminates here for these ids.
+    CheckpointFailed(CheckpointFailedEvent),
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointStagedEvent {
+    pub header: EventHeader,
+    pub checkpoint_id: String,
+    pub num_keys: u64,
+    pub num_files: u64,
+    pub duration_us: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointSealedEvent {
+    pub header: EventHeader,
+    pub checkpoint_id: String,
+    pub num_key_files: u64,
+    pub num_file_files: u64,
+    pub duration_us: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointCommittedEvent {
+    pub header: EventHeader,
+    /// Batch of ids covered by one `mark_committed` call.
+    pub checkpoint_ids: Vec<String>,
+    /// Wall-clock of the `mark_committed` call.
+    pub duration_us: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointFailedEvent {
+    pub header: EventHeader,
+    /// Seal failures send a 1-element list; commit failures send the batch.
+    pub checkpoint_ids: Vec<String>,
+    pub error: String,
 }
 
 #[derive(Debug, Clone)]

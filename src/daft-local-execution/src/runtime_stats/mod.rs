@@ -18,9 +18,9 @@ use daft_context::{
     subscribers::{
         event_header,
         events::{
-            Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
-            OperatorStartEvent, ProcessStatsEvent, StatsEvent, TaskStatsSnapshot,
-            TaskStatsUpdateEvent,
+            CheckpointFailedEvent, CheckpointSealedEvent, CheckpointStagedEvent, Event,
+            ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
+            ProcessStatsEvent, StatsEvent, TaskStatsSnapshot, TaskStatsUpdateEvent,
         },
     },
 };
@@ -42,6 +42,22 @@ pub enum StatsManagerMessage {
     NodeEvent(usize, bool),
     RegisterRuntimeStats(NodeID, InputId, Arc<dyn RuntimeStats>),
     TakeInputSnapshot(InputId, oneshot::Sender<ExecutionStats>),
+    CheckpointStaged {
+        checkpoint_id: String,
+        num_keys: u64,
+        num_files: u64,
+        duration_us: u64,
+    },
+    CheckpointSealed {
+        checkpoint_id: String,
+        num_key_files: u64,
+        num_file_files: u64,
+        duration_us: u64,
+    },
+    CheckpointFailed {
+        checkpoint_ids: Vec<String>,
+        error: String,
+    },
 }
 
 fn should_enable_process_monitor() -> bool {
@@ -105,6 +121,51 @@ impl RuntimeStatsManagerHandle {
             log::warn!(
                 "Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}"
             );
+        }
+    }
+
+    pub fn checkpoint_staged(
+        &self,
+        checkpoint_id: String,
+        num_keys: u64,
+        num_files: u64,
+        duration_us: u64,
+    ) {
+        if let Err(e) = self.tx.send(StatsManagerMessage::CheckpointStaged {
+            checkpoint_id,
+            num_keys,
+            num_files,
+            duration_us,
+        }) {
+            log::warn!("Unable to send CheckpointStaged: stats manager finished: {e}");
+        }
+    }
+
+    pub fn checkpoint_sealed(
+        &self,
+        checkpoint_id: String,
+        num_key_files: u64,
+        num_file_files: u64,
+        duration_us: u64,
+    ) {
+        if let Err(e) = self.tx.send(StatsManagerMessage::CheckpointSealed {
+            checkpoint_id,
+            num_key_files,
+            num_file_files,
+            duration_us,
+        }) {
+            log::warn!("Unable to send CheckpointSealed: stats manager finished: {e}");
+        }
+    }
+
+    /// Best-effort: on shutdown-race the event is dropped; `QueryEnd.error_message`
+    /// carries the seal error in that case.
+    pub fn checkpoint_failed(&self, checkpoint_ids: Vec<String>, error: String) {
+        if let Err(e) = self.tx.send(StatsManagerMessage::CheckpointFailed {
+            checkpoint_ids,
+            error,
+        }) {
+            log::warn!("Unable to send CheckpointFailed: stats manager finished: {e}");
         }
     }
 
@@ -258,6 +319,47 @@ impl RuntimeStatsManager {
                     ExecutionStats::new(query_id.clone(), result)
                         .with_query_plan(query_plan.clone()),
                 );
+            }
+            StatsManagerMessage::CheckpointStaged {
+                checkpoint_id,
+                num_keys,
+                num_files,
+                duration_us,
+            } => {
+                let event = Event::CheckpointStaged(CheckpointStagedEvent {
+                    header: event_header(query_id.clone()),
+                    checkpoint_id,
+                    num_keys,
+                    num_files,
+                    duration_us,
+                });
+                dispatch_event(subscribers, &event, "notify checkpoint staged");
+            }
+            StatsManagerMessage::CheckpointSealed {
+                checkpoint_id,
+                num_key_files,
+                num_file_files,
+                duration_us,
+            } => {
+                let event = Event::CheckpointSealed(CheckpointSealedEvent {
+                    header: event_header(query_id.clone()),
+                    checkpoint_id,
+                    num_key_files,
+                    num_file_files,
+                    duration_us,
+                });
+                dispatch_event(subscribers, &event, "notify checkpoint sealed");
+            }
+            StatsManagerMessage::CheckpointFailed {
+                checkpoint_ids,
+                error,
+            } => {
+                let event = Event::CheckpointFailed(CheckpointFailedEvent {
+                    header: event_header(query_id.clone()),
+                    checkpoint_ids,
+                    error,
+                });
+                dispatch_event(subscribers, &event, "notify checkpoint failed");
             }
         }
     }

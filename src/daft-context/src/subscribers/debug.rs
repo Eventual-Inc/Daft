@@ -256,6 +256,26 @@ impl Subscriber for DebugSubscriber {
             Event::TaskScheduled(e) => self.handle_task_scheduled(&e)?,
             Event::TaskStart(e) => self.handle_task_start(&e)?,
             Event::TaskEnd(e) => self.handle_task_end(&e)?,
+            Event::CheckpointStaged(e) => eprintln!(
+                "checkpoint_staged query_id={} checkpoint_id={} num_keys={} num_files={} duration_us={}",
+                e.header.query_id, e.checkpoint_id, e.num_keys, e.num_files, e.duration_us
+            ),
+            Event::CheckpointSealed(e) => eprintln!(
+                "checkpoint_sealed query_id={} checkpoint_id={} num_key_files={} num_file_files={} duration_us={}",
+                e.header.query_id,
+                e.checkpoint_id,
+                e.num_key_files,
+                e.num_file_files,
+                e.duration_us
+            ),
+            Event::CheckpointCommitted(e) => eprintln!(
+                "checkpoint_committed query_id={} checkpoint_ids={:?} duration_us={}",
+                e.header.query_id, e.checkpoint_ids, e.duration_us
+            ),
+            Event::CheckpointFailed(e) => eprintln!(
+                "checkpoint_failed query_id={} checkpoint_ids={:?} error={:?}",
+                e.header.query_id, e.checkpoint_ids, e.error
+            ),
         }
         Ok(())
     }

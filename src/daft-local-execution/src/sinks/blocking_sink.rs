@@ -17,7 +17,7 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use tracing::info_span;
+use tracing::{Instrument, Span, info_span};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
@@ -227,6 +227,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             .collect()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_finalize(
         op: Arc<Op>,
         per_input: PerInputState<Op>,
@@ -234,6 +235,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_tx: Sender<PipelineMessage>,
         tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+        stats_manager: RuntimeStatsManagerHandle,
         checkpoint: Option<(
             CheckpointStoreRef,
             CheckpointIdMap,
@@ -245,49 +247,87 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 .as_ref()
                 .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
 
-            let output = op.finalize(per_input.states, &finalize_spawner).await??;
-            per_input.runtime_stats.increment_num_tasks();
-            match output {
-                BlockingSinkOutput::Partitions(partitions) => {
-                    // Stage write results as file metadata before sending.
-                    if let Some((ref store, _, file_format)) = checkpoint {
-                        let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
-                        if !file_metadata.is_empty() {
-                            store
-                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
-                                .await?;
+            let finalize_span = if checkpoint.is_some() {
+                info_span!(
+                    "BlockingSink::finalize_checkpoint",
+                    checkpoint_id = ?checkpoint_id,
+                )
+            } else {
+                Span::none()
+            };
+
+            async move {
+                let output = op.finalize(per_input.states, &finalize_spawner).await??;
+                per_input.runtime_stats.increment_num_tasks();
+
+                let mut staged_num_files: u64 = 0;
+
+                match output {
+                    BlockingSinkOutput::Partitions(partitions) => {
+                        // Stage write results as file metadata before sending.
+                        if let Some((ref store, _, file_format)) = checkpoint {
+                            let file_metadata =
+                                Self::encode_file_metadata(&partitions, file_format)?;
+                            staged_num_files = file_metadata.len() as u64;
+                            if !file_metadata.is_empty() {
+                                store
+                                    .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
+                                    .await?;
+                            }
+                        }
+
+                        for partition in partitions {
+                            per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                            per_input
+                                .runtime_stats
+                                .add_bytes_out(partition.size_bytes() as u64);
+                            let _ = output_tx
+                                .send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition,
+                                })
+                                .await;
                         }
                     }
+                    BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
+                        for partition_ref in partition_refs {
+                            let _ = output_tx
+                                .send(PipelineMessage::FlightPartitionRef {
+                                    input_id,
+                                    partition_ref,
+                                })
+                                .await;
+                        }
+                    }
+                }
 
-                    for partition in partitions {
-                        per_input.runtime_stats.add_rows_out(partition.len() as u64);
-                        per_input
-                            .runtime_stats
-                            .add_bytes_out(partition.size_bytes() as u64);
-                        let _ = output_tx
-                            .send(PipelineMessage::Morsel {
-                                input_id,
-                                partition,
-                            })
-                            .await;
+                if let Some((store, _, _)) = &checkpoint {
+                    let ckpt_id = checkpoint_id.as_ref().unwrap();
+
+                    stats_manager.checkpoint_staged(ckpt_id.to_string(), 0, staged_num_files, 0);
+
+                    let seal_start = Instant::now();
+                    let seal_result = async { store.checkpoint(ckpt_id).await }
+                        .instrument(info_span!("BlockingSink::seal"))
+                        .await;
+                    let seal_us = seal_start.elapsed().as_micros() as u64;
+                    if let Err(e) = &seal_result {
+                        stats_manager.checkpoint_failed(vec![ckpt_id.to_string()], format!("{e}"));
                     }
+                    seal_result?;
+
+                    stats_manager.checkpoint_sealed(
+                        ckpt_id.to_string(),
+                        0,
+                        staged_num_files,
+                        seal_us,
+                    );
                 }
-                BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
-                    for partition_ref in partition_refs {
-                        let _ = output_tx
-                            .send(PipelineMessage::FlightPartitionRef {
-                                input_id,
-                                partition_ref,
-                            })
-                            .await;
-                    }
-                }
+                let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+                Ok(TaskResult::Finalized)
             }
-            if let Some((store, _, _)) = &checkpoint {
-                store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
-            }
-            let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
-            Ok(TaskResult::Finalized)
+            .instrument(finalize_span)
+            .await
         });
     }
 
@@ -351,6 +391,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            stats_manager.clone(),
                             checkpoint.clone(),
                         );
                     }
@@ -400,6 +441,15 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     // PerInputState the flush was silently dropped and finalize never
                     // ran, leaving the checkpoint unsealed. Create one on demand,
                     // mirroring the Vacant arm in the partition handler above.
+                    //
+                    // Activate the node here too — the Morsel arm normally fires
+                    // `OperatorStart`, but a zero-morsel input would skip it and
+                    // we'd end up emitting CheckpointStaged/Sealed for a node
+                    // whose lifecycle never opened.
+                    if !node_initialized {
+                        stats_manager.activate_node(node_id);
+                        node_initialized = true;
+                    }
                     if let Entry::Vacant(e) = inputs.entry(input_id) {
                         let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
                         stats_manager.register_runtime_stats(
@@ -423,6 +473,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            stats_manager.clone(),
                             checkpoint.clone(),
                         );
                     }
@@ -444,6 +495,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             finalize_spawner.clone(),
                             output_tx.clone(),
                             &mut tasks,
+                            stats_manager.clone(),
                             checkpoint.clone(),
                         );
                     }

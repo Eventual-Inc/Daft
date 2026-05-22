@@ -2437,6 +2437,7 @@ dependencies = [
  "snafu",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

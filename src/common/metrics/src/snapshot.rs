@@ -438,6 +438,60 @@ impl WriteSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+pub struct StageCheckpointKeysSnapshot {
+    pub cpu_us: u64,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub keys_staged: u64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
+    #[serde(default)]
+    pub num_tasks: u64,
+}
+
+impl StatSnapshotImpl for StageCheckpointKeysSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
+    fn to_stats(&self) -> Stats {
+        stats![
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            ROWS_IN_KEY; Stat::Count(self.rows_in),
+            ROWS_OUT_KEY; Stat::Count(self.rows_out),
+            "keys staged"; Stat::Count(self.keys_staged),
+            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
+        ]
+    }
+
+    fn to_message(&self) -> String {
+        format!(
+            "{} rows in, {} keys staged",
+            HumanCount(self.rows_in),
+            HumanCount(self.keys_staged),
+        )
+    }
+}
+
+impl StageCheckpointKeysSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_out: self.rows_out + other.rows_out,
+            keys_staged: self.keys_staged + other.keys_staged,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_out: self.bytes_out + other.bytes_out,
+            num_tasks: self.num_tasks + other.num_tasks,
+        }
+    }
+}
+
 #[enum_dispatch(StatSnapshotImpl)]
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
@@ -448,6 +502,7 @@ pub enum StatSnapshot {
     Udf(UdfSnapshot),
     Join(JoinSnapshot),
     Write(WriteSnapshot),
+    StageCheckpointKeys(StageCheckpointKeysSnapshot),
 }
 
 impl StatSnapshot {
@@ -461,6 +516,9 @@ impl StatSnapshot {
             (Self::Udf(a), Self::Udf(b)) => Self::Udf(a.merge(b)),
             (Self::Join(a), Self::Join(b)) => Self::Join(a.merge(b)),
             (Self::Write(a), Self::Write(b)) => Self::Write(a.merge(b)),
+            (Self::StageCheckpointKeys(a), Self::StageCheckpointKeys(b)) => {
+                Self::StageCheckpointKeys(a.merge(b))
+            }
             (s, _) => s,
         }
     }

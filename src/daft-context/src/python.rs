@@ -324,6 +324,34 @@ impl PyDaftContext {
         Ok(())
     }
 
+    pub fn notify_checkpoint_committed(
+        &self,
+        py: Python,
+        query_id: String,
+        checkpoint_ids: Vec<String>,
+        duration_us: u64,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner
+                .notify_checkpoint_committed(query_id.into(), checkpoint_ids, duration_us)
+        })?;
+        Ok(())
+    }
+
+    pub fn notify_checkpoint_failed(
+        &self,
+        py: Python,
+        query_id: String,
+        checkpoint_ids: Vec<String>,
+        error: String,
+    ) -> PyResult<()> {
+        py.detach(|| {
+            self.inner
+                .notify_checkpoint_failed(query_id.into(), checkpoint_ids, error)
+        })?;
+        Ok(())
+    }
+
     pub fn notify_exec_emit_stats(
         &self,
         py: Python,

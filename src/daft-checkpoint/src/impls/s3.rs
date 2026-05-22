@@ -16,6 +16,7 @@ use futures::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
+use tracing::{Instrument, info_span, instrument};
 
 use crate::{
     Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
@@ -265,6 +266,7 @@ impl S3CheckpointStore {
         Some(CheckpointId::from_string(id_str.to_string()))
     }
 
+    #[instrument(skip_all, name = "S3CheckpointStore::read_manifest", fields(checkpoint_id = %id), err)]
     async fn read_manifest(&self, id: &CheckpointId) -> CheckpointResult<Manifest> {
         let path = self.manifest_path(id);
         let result = self
@@ -290,6 +292,7 @@ impl S3CheckpointStore {
         })
     }
 
+    #[instrument(skip_all, name = "S3CheckpointStore::write_manifest", fields(checkpoint_id = %id), err)]
     async fn write_manifest(&self, id: &CheckpointId, manifest: &Manifest) -> CheckpointResult<()> {
         let path = self.manifest_path(id);
         let raw = serde_json::to_vec(manifest).map_err(|e| CheckpointError::Internal {
@@ -337,6 +340,7 @@ impl S3CheckpointStore {
     /// cache. The store is observed across processes (workers write, drivers
     /// read), so a cached snapshot in one process would silently miss writes
     /// committed by another.
+    #[instrument(skip_all, name = "S3CheckpointStore::sealed_manifests", err)]
     async fn sealed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
         let ids: Vec<CheckpointId> = manifest_paths
@@ -448,6 +452,14 @@ impl S3CheckpointStore {
             })?;
         let first_error = Arc::clone(&entry.first_error);
 
+        // `.instrument(put_span)` carries the caller's span context onto
+        // the IO runtime; spawn_on would otherwise drop it.
+        let put_span = info_span!(
+            "S3CheckpointStore::put",
+            checkpoint_id = %id,
+            bytes = data.len(),
+        );
+
         entry.pending.spawn_on(
             async move {
                 let result = Self::put_bytes(&client, &path, data).await;
@@ -455,7 +467,8 @@ impl S3CheckpointStore {
                     let _ = first_error.set(format!("{e}"));
                 }
                 result
-            },
+            }
+            .instrument(put_span),
             io_runtime.runtime.handle(),
         );
         Ok(())
@@ -476,6 +489,7 @@ impl S3CheckpointStore {
 
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
+    #[instrument(skip_all, name = "S3CheckpointStore::stage_keys", fields(checkpoint_id = %id, num_rows = keys.len()), err)]
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
         self.check_first_error(id)?;
         // Persist under the canonical column name so the on-disk key files
@@ -493,6 +507,7 @@ impl CheckpointStore for S3CheckpointStore {
         self.spawn_put(id, self.key_path(id, idx), parquet_bytes)
     }
 
+    #[instrument(skip_all, name = "S3CheckpointStore::stage_files", fields(checkpoint_id = %id, num_files = files.len()), err)]
     async fn stage_files(
         &self,
         id: &CheckpointId,
@@ -513,6 +528,7 @@ impl CheckpointStore for S3CheckpointStore {
         self.spawn_put(id, self.file_path(id, idx), blob)
     }
 
+    #[instrument(skip_all, name = "S3CheckpointStore::checkpoint", fields(checkpoint_id = %id), err)]
     async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
         // Take ownership of the staged entry's `pending` JoinSet (replacing with empty)
         // and copy its scalar fields. Holding the lock for the swap is fine — the swap
@@ -558,9 +574,19 @@ impl CheckpointStore for S3CheckpointStore {
         // `join_all` resumes panics — those are bugs in `put_bytes` and should propagate.
         // Cancellation can't occur in this flow: the JoinSet was just `mem::replace`d
         // out of the staged entry and is owned solely by this stack.
-        for r in pending.join_all().await {
-            r?;
+        let drain: CheckpointResult<()> = async {
+            for r in pending.join_all().await {
+                r?;
+            }
+            Ok(())
         }
+        .instrument(info_span!(
+            "drain_pending_puts",
+            num_key_files,
+            num_file_files
+        ))
+        .await;
+        drain?;
 
         // manifest.json is written last — its presence is the atomic seal.
         let manifest = Manifest {
@@ -719,6 +745,7 @@ impl CheckpointStore for S3CheckpointStore {
         )))
     }
 
+    #[instrument(skip_all, name = "S3CheckpointStore::mark_committed", fields(num_ids = ids.len()), err)]
     async fn mark_committed(&self, ids: &[CheckpointId]) -> CheckpointResult<()> {
         if ids.is_empty() {
             return Ok(());

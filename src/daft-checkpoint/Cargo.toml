@@ -23,6 +23,7 @@ serde = {workspace = true}
 serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true, features = ["rt"]}
+tracing = {workspace = true, optional = true}
 
 [dependencies.daft-io]
 optional = true
@@ -31,7 +32,7 @@ default-features = false
 
 [features]
 python = ["dep:pyo3", "common-checkpoint-config/python"]
-s3 = ["daft-io"]
+s3 = ["daft-io", "dep:tracing"]
 test-utils = []
 
 [dev-dependencies]

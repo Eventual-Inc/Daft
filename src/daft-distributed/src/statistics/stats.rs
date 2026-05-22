@@ -1,8 +1,9 @@
 use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use common_metrics::{
-    Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
-    TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
+    BYTES_IN_KEY, BYTES_OUT_KEY, Counter, DURATION_KEY, Meter, ROWS_IN_KEY, ROWS_OUT_KEY, Stat,
+    StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY,
+    UNIT_TASKS, UpDownCounter,
     ops::NodeInfo,
     snapshot::{DefaultSnapshot, StatSnapshotImpl as _},
 };
@@ -325,17 +326,20 @@ impl DefaultRuntimeStats {
 
 impl RuntimeStats for DefaultRuntimeStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
-        self.base.add_duration_us(snapshot.duration_us());
-
-        let StatSnapshot::Default(snapshot) = snapshot else {
-            // TODO: Return immediately for now, but ideally should error
-            return;
-        };
-
-        self.base.add_rows_in(snapshot.rows_in);
-        self.base.add_rows_out(snapshot.rows_out);
-        self.base.add_bytes_in(snapshot.bytes_in);
-        self.base.add_bytes_out(snapshot.bytes_out);
+        // Common axes by key — works for any variant whose `to_stats()`
+        // emits the standard names. Variant-specific extras need dedicated impls.
+        for (name, stat) in snapshot.to_stats().iter() {
+            match (name, stat) {
+                (DURATION_KEY, Stat::Duration(d)) => {
+                    self.base.add_duration_us(d.as_micros() as u64);
+                }
+                (ROWS_IN_KEY, Stat::Count(v)) => self.base.add_rows_in(*v),
+                (ROWS_OUT_KEY, Stat::Count(v)) => self.base.add_rows_out(*v),
+                (BYTES_IN_KEY, Stat::Bytes(v)) => self.base.add_bytes_in(*v),
+                (BYTES_OUT_KEY, Stat::Bytes(v)) => self.base.add_bytes_out(*v),
+                _ => {}
+            }
+        }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {

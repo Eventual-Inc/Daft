@@ -658,6 +658,11 @@ impl Subscriber for DashboardSubscriber {
             Event::TaskEnd(e) => {
                 self.on_task_end(&e)?;
             }
+            // Checkpoint lifecycle: dashboard wiring is a follow-up.
+            Event::CheckpointStaged(_) => {}
+            Event::CheckpointSealed(_) => {}
+            Event::CheckpointCommitted(_) => {}
+            Event::CheckpointFailed(_) => {}
         }
         Ok(())
     }

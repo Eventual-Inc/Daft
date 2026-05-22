@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use common_checkpoint_config::CheckpointIdMap;
 use common_display::tree::TreeDisplay;
@@ -9,6 +9,7 @@ use common_metrics::{
 use daft_checkpoint::CheckpointStoreRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
+use tracing::{Instrument, info_span};
 
 use crate::{
     ExecutionRuntimeContext,
@@ -189,7 +190,31 @@ impl PipelineNode for CheckpointTerminusNode {
                         }
                         PipelineMessage::Flush(input_id) => {
                             let checkpoint_id = id_map.get_or_generate(input_id);
-                            store.checkpoint(&checkpoint_id).await?;
+                            stats_manager.checkpoint_staged(checkpoint_id.to_string(), 0, 0, 0);
+
+                            let seal_start = Instant::now();
+                            let seal_result = async { store.checkpoint(&checkpoint_id).await }
+                                .instrument(info_span!(
+                                    "CheckpointTerminus::seal",
+                                    checkpoint_id = %checkpoint_id,
+                                ))
+                                .await;
+                            let seal_us = seal_start.elapsed().as_micros() as u64;
+                            if let Err(e) = &seal_result {
+                                stats_manager.checkpoint_failed(
+                                    vec![checkpoint_id.to_string()],
+                                    format!("{e}"),
+                                );
+                            }
+                            seal_result?;
+
+                            stats_manager.checkpoint_sealed(
+                                checkpoint_id.to_string(),
+                                0,
+                                0,
+                                seal_us,
+                            );
+
                             if output_sender
                                 .send(PipelineMessage::Flush(input_id))
                                 .await

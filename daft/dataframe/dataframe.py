@@ -1497,7 +1497,11 @@ class DataFrame:
         from pyiceberg.exceptions import CommitFailedException
 
         from daft import from_pydict
-        from daft.dataframe._checkpoint_commit import decode_file_metadata
+        from daft.dataframe._checkpoint_commit import (
+            commit_checkpoints,
+            decode_file_metadata,
+            notify_checkpoint_failed,
+        )
 
         store = checkpoint.store
         idempotence_key = checkpoint.idempotence_key
@@ -1554,6 +1558,7 @@ class DataFrame:
             return result
 
         # ── 1. Check-first: did a previous attempt already land?
+        # Recovery short-circuit — no commit fires here, so no event.
         table.refresh()
         if _snapshot_with_our_key_exists():
             pending_ids = _pending_ids()
@@ -1570,61 +1575,54 @@ class DataFrame:
         if not pending_ids:
             return _build_result([])
 
-        # Pull DataFile objects out of the staged FileMetadata blobs. Each blob
-        # is an Arrow IPC stream of a MicroPartition produced by the iceberg
-        # writer (see `IcebergWriteVisitors.to_metadata` and the encode side in
-        # `BlockingSinkNode::encode_file_metadata`); cells are pickled
-        # `pyiceberg.DataFile` instances.
-        data_files: list[Any] = decode_file_metadata(store, "data_file")
+        # Outer try fires CheckpointFailed on any final-propagating exception;
+        # the inner `except CommitFailedException` keeps retrying without emitting.
+        try:
+            data_files: list[Any] = decode_file_metadata(store, "data_file")
 
-        # Honor the table's `commit.manifest-merge.enabled` property the same
-        # way the non-checkpoint branch does — users who set it expect manifest
-        # merging regardless of whether they pass `checkpoint=`.
-        from pyiceberg.table import TableProperties
-        from pyiceberg.utils.properties import property_as_bool
+            # Honor the table's `commit.manifest-merge.enabled` property the same
+            # way the non-checkpoint branch does — users who set it expect manifest
+            # merging regardless of whether they pass `checkpoint=`.
+            from pyiceberg.table import TableProperties
+            from pyiceberg.utils.properties import property_as_bool
 
-        max_retries = 2  # defensive — transient CommitFailedException only
-        last_err: Exception | None = None
-        # Step 1's `table.refresh()` (above) gives iter 1 the current view;
-        # subsequent iters refresh only after a CommitFailedException. The
-        # pre-loop view stays valid for iter 1 because under the concurrency
-        # assumption ("at most one Python process per logical commit") no
-        # snapshot carrying our marker can land between step 1 and iter 1.
-        for _ in range(max_retries):
-            # Recheck the marker — a prior iteration's commit may have
-            # landed despite returning CommitFailedException (rare, but
-            # the post-commit hook can fail in odd ways). Cheap.
-            if _snapshot_with_our_key_exists():
-                store.mark_committed(pending_ids)
-                return _build_result(data_files)
+            max_retries = 2  # defensive — transient CommitFailedException only
+            last_err: Exception | None = None
+            for _ in range(max_retries):
+                # Recheck before each attempt — a prior iter's commit may have
+                # landed despite raising CommitFailedException.
+                if _snapshot_with_our_key_exists():
+                    commit_checkpoints(write_df, pending_ids, store)
+                    return _build_result(data_files)
 
-            try:
-                tx = table.transaction()
-                update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
-                manifest_merge_enabled = property_as_bool(
-                    tx.table_metadata.properties,
-                    TableProperties.MANIFEST_MERGE_ENABLED,
-                    TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
-                )
-                append_method = update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
-                with append_method() as append_files:
-                    for df_ in data_files:
-                        append_files.append_data_file(df_)
-                tx.commit_transaction()
-                store.mark_committed(pending_ids)
-                return _build_result(data_files)
-            except CommitFailedException as e:
-                # Narrow to CommitFailedException on purpose: catalog-raised
-                # conflicts (concurrent commit, lock-acquisition contention)
-                # retry. Other exception types — REST 5xx, network blips,
-                # auth, pyiceberg internals — propagate to the caller, who
-                # can wrap this whole `write_iceberg` in their own retry
-                # policy. Broadening tracked separately.
-                last_err = e
-                table.refresh()
-                continue
+                try:
+                    tx = table.transaction()
+                    update_snapshot = tx.update_snapshot(snapshot_properties=full_props)
+                    manifest_merge_enabled = property_as_bool(
+                        tx.table_metadata.properties,
+                        TableProperties.MANIFEST_MERGE_ENABLED,
+                        TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
+                    )
+                    append_method = (
+                        update_snapshot.merge_append if manifest_merge_enabled else update_snapshot.fast_append
+                    )
+                    with append_method() as append_files:
+                        for df_ in data_files:
+                            append_files.append_data_file(df_)
+                    tx.commit_transaction()
+                    commit_checkpoints(write_df, pending_ids, store)
+                    return _build_result(data_files)
+                except CommitFailedException as e:
+                    # Narrow on purpose — only catalog-raised commit conflicts
+                    # retry; other exceptions propagate to the outer except.
+                    last_err = e
+                    table.refresh()
+                    continue
 
-        raise last_err or CommitFailedException(f"write_iceberg with checkpoint exhausted {max_retries} retries")
+            raise last_err or CommitFailedException(f"write_iceberg with checkpoint exhausted {max_retries} retries")
+        except Exception as e:
+            notify_checkpoint_failed(write_df, pending_ids, e)
+            raise
 
     @DataframePublicAPI
     def write_paimon(
@@ -2006,7 +2004,12 @@ class DataFrame:
         from deltalake.exceptions import CommitFailedError, TableNotFoundError
 
         from daft import from_pydict
-        from daft.dataframe._checkpoint_commit import decode_file_metadata, empty_write_result
+        from daft.dataframe._checkpoint_commit import (
+            commit_checkpoints,
+            decode_file_metadata,
+            empty_write_result,
+            notify_checkpoint_failed,
+        )
         from daft.io.delta_lake.delta_lake_write import AddAction, create_table_with_add_actions
 
         store = checkpoint.store
@@ -2052,6 +2055,7 @@ class DataFrame:
             return [c.id for c in store.list_checkpoints() if c.status == CheckpointStatus.Checkpointed]
 
         # ── 1. Check-first: did a previous attempt already land?
+        # Recovery short-circuit — no commit fires here, so no event.
         resolved = _resolve_table()
         if _commit_with_our_key_exists(resolved):
             pending_ids = _pending_ids()
@@ -2068,83 +2072,79 @@ class DataFrame:
         if not pending_ids:
             return empty_write_result(write_df)
 
-        add_actions: list[AddAction] = decode_file_metadata(store, "add_action")
+        # Outer try fires CheckpointFailed on any final-propagating exception;
+        # the inner `except CommitFailedError` keeps retrying without emitting.
+        try:
+            add_actions: list[AddAction] = decode_file_metadata(store, "add_action")
 
-        def _build_result() -> "DataFrame":
-            operations: list[str] = []
-            paths: list[str] = []
-            row_counts: list[int] = []
-            sizes: list[int] = []
-            for aa in add_actions:
-                stats = json.loads(aa.stats)
-                operations.append("ADD")
-                paths.append(os.path.basename(aa.path))
-                row_counts.append(stats["numRecords"])
-                sizes.append(aa.size)
-            result = from_pydict(
-                {
-                    "operation": pa.array(operations, type=pa.string()),
-                    "rows": pa.array(row_counts, type=pa.int64()),
-                    "file_size": pa.array(sizes, type=pa.int64()),
-                    "file_name": pa.array(paths, type=pa.string()),
-                }
-            )
-            result._metadata = write_df._metadata
-            return result
+            def _build_result() -> "DataFrame":
+                operations: list[str] = []
+                paths: list[str] = []
+                row_counts: list[int] = []
+                sizes: list[int] = []
+                for aa in add_actions:
+                    stats = json.loads(aa.stats)
+                    operations.append("ADD")
+                    paths.append(os.path.basename(aa.path))
+                    row_counts.append(stats["numRecords"])
+                    sizes.append(aa.size)
+                result = from_pydict(
+                    {
+                        "operation": pa.array(operations, type=pa.string()),
+                        "rows": pa.array(row_counts, type=pa.int64()),
+                        "file_size": pa.array(sizes, type=pa.int64()),
+                        "file_name": pa.array(paths, type=pa.string()),
+                    }
+                )
+                result._metadata = write_df._metadata
+                return result
 
-        # Defensive retry — parity with iceberg's max_retries = 2. We narrow
-        # to deltalake's CommitFailedError so schema mismatches, decode bugs,
-        # and metadata-construction errors propagate immediately instead of
-        # masquerading as transient commit conflicts.
-        max_retries = 2
-        last_err: Exception | None = None
-        # `resolved` carried over from step 1; refresh only after a commit
-        # failure. Iter 1's view stays valid because under the concurrency
-        # assumption ("at most one Python process per logical commit") no
-        # commit carrying our marker can land between step 1 and iter 1.
-        for _ in range(max_retries):
-            # Recheck the marker in case a previous iteration's commit
-            # actually landed despite raising (rare, but cheap to check).
-            if _commit_with_our_key_exists(resolved):
-                store.mark_committed(pending_ids)
-                return _build_result()
+            max_retries = 2  # parity with iceberg — narrow to CommitFailedError
+            last_err: Exception | None = None
+            for _ in range(max_retries):
+                if _commit_with_our_key_exists(resolved):
+                    commit_checkpoints(write_df, pending_ids, store)
+                    return _build_result()
 
-            try:
-                if resolved is None:
-                    create_table_with_add_actions(
-                        table_uri,
-                        delta_schema,
-                        add_actions,
-                        mode,
-                        partition_cols or [],
-                        name,
-                        description,
-                        configuration,
-                        storage_options,
-                        full_meta,
-                    )
-                else:
-                    metadata_param = _create_delta_metadata_param(full_meta)
-                    resolved._table.create_write_transaction(
-                        add_actions,
-                        mode,
-                        partition_cols or [],
-                        deltalake.Schema.from_arrow(delta_schema),
-                        None,
-                        metadata_param,
-                    )
-                    resolved.update_incremental()
-                store.mark_committed(pending_ids)
-                return _build_result()
-            except CommitFailedError as e:
-                last_err = e
-                if resolved is None:
-                    resolved = _resolve_table()  # fresh-table case
-                else:
-                    resolved.update_incremental()  # incremental refresh
-                continue
+                try:
+                    if resolved is None:
+                        create_table_with_add_actions(
+                            table_uri,
+                            delta_schema,
+                            add_actions,
+                            mode,
+                            partition_cols or [],
+                            name,
+                            description,
+                            configuration,
+                            storage_options,
+                            full_meta,
+                        )
+                    else:
+                        metadata_param = _create_delta_metadata_param(full_meta)
+                        resolved._table.create_write_transaction(
+                            add_actions,
+                            mode,
+                            partition_cols or [],
+                            deltalake.Schema.from_arrow(delta_schema),
+                            None,
+                            metadata_param,
+                        )
+                        resolved.update_incremental()
+                    commit_checkpoints(write_df, pending_ids, store)
+                    return _build_result()
+                except CommitFailedError as e:
+                    last_err = e
+                    if resolved is None:
+                        resolved = _resolve_table()  # fresh-table case
+                    else:
+                        resolved.update_incremental()  # incremental refresh
+                    continue
 
-        raise last_err or RuntimeError(f"write_deltalake with checkpoint exhausted {max_retries} retries")
+            raise last_err or RuntimeError(f"write_deltalake with checkpoint exhausted {max_retries} retries")
+        except Exception as e:
+            notify_checkpoint_failed(write_df, pending_ids, e)
+            raise
 
     @DataframePublicAPI
     def write_sink(self, sink: "DataSink[WriteResultType]") -> "DataFrame":
