@@ -527,9 +527,7 @@ def test_write_parquet_with_trailing_slash(tmp_path, use_native):
     # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
     # write_parquet with a trailing-slash root_dir used to produce
     # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
-    # with ArrowInvalid: Empty path component. Both writer paths must produce
-    # clean paths — the native Rust writer via Path::join, the PyArrow writer
-    # via the resolver-layer strip.
+    # with ArrowInvalid: Empty path component.
     from daft.context import execution_config_ctx
 
     df = daft.from_pydict({"x": [1, 2, 3]})
