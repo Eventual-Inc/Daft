@@ -526,9 +526,14 @@ def test_write_parquet_with_trailing_slash(tmp_path):
     # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
     # write_parquet with a trailing-slash root_dir used to produce
     # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
-    # with ArrowInvalid: Empty path component.
+    # with ArrowInvalid: Empty path component. The native Rust writer joins
+    # paths via Path::join and normalizes "//" away, so we force the PyArrow
+    # writer here to exercise the path that actually had the bug.
+    from daft.context import execution_config_ctx
+
     df = daft.from_pydict({"x": [1, 2, 3]})
-    manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
+    with execution_config_ctx(native_parquet_writer=False):
+        manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
 
     assert manifest["path"], "no files written"
     for written_path in manifest["path"]:
