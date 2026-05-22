@@ -411,23 +411,14 @@ impl AsofJoinNode {
         &self,
         inputs: Vec<MaterializedOutput>,
         descending: bool,
-        is_per_worker: bool,
+        phase: &str,
         strategy: Option<SchedulingStrategy>,
         task_id_counter: &TaskIDCounter,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<SubmittedTask> {
         let composite_keys = self.right_composite_key();
+        let n_keys = composite_keys.len();
         let node_id = self.node_id();
-        let is_descending = descending;
-        let descending = vec![is_descending; composite_keys.len()];
-        let nulls_first = vec![false; composite_keys.len()];
-
-        let phase = match (is_per_worker, is_descending) {
-            (true, true) => PER_WORKER_CARRYOVER_BACKWARD_PHASE,
-            (true, false) => PER_WORKER_CARRYOVER_FORWARD_PHASE,
-            (false, true) => PER_PARTITION_CARRYOVER_BACKWARD_PHASE,
-            (false, false) => PER_PARTITION_CARRYOVER_FORWARD_PHASE,
-        };
 
         let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
             inputs,
@@ -439,8 +430,8 @@ impl AsofJoinNode {
         let plan = LocalPhysicalPlan::top_n(
             in_memory_scan,
             composite_keys,
-            descending,
-            nulls_first,
+            vec![descending; n_keys],
+            vec![false; n_keys],
             1,
             None,
             StatsState::NotMaterialized,
@@ -448,7 +439,10 @@ impl AsofJoinNode {
         );
 
         SwordfishTaskBuilder::new(plan, self, node_id)
-            .extend_fingerprint(u32::from(is_descending))
+            // Forward (min) and backward (max) carryover tasks have identical top_n plans but
+            // compute different results, so give them distinct fingerprints to avoid
+            // sharing a worker pipeline and producing incorrect outputs.
+            .extend_fingerprint(u32::from(descending))
             .with_psets(node_id, psets)
             .with_strategy(strategy)
             .build(self.context().query_idx, task_id_counter)
@@ -484,10 +478,15 @@ impl AsofJoinNode {
                     .map(|splits| splits[bucket_idx].clone())
                     .collect();
 
+                let phase = if descending {
+                    PER_WORKER_CARRYOVER_BACKWARD_PHASE
+                } else {
+                    PER_WORKER_CARRYOVER_FORWARD_PHASE
+                };
                 let submitted = self.submit_top1_carryover_task(
                     mos_for_bucket,
                     descending,
-                    true,
+                    phase,
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id: worker_id.clone(),
                         soft: false,
@@ -527,10 +526,15 @@ impl AsofJoinNode {
                     return Ok(None);
                 }
 
+                let phase = if descending {
+                    PER_PARTITION_CARRYOVER_BACKWARD_PHASE
+                } else {
+                    PER_PARTITION_CARRYOVER_FORWARD_PHASE
+                };
                 self.submit_top1_carryover_task(
                     non_empty,
                     descending,
-                    false,
+                    phase,
                     None,
                     task_id_counter,
                     scheduler_handle,

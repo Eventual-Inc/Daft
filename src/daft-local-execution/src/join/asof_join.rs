@@ -4,8 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::datatypes::{DataType, TimeUnit};
-use arrow_array::{Array, PrimitiveArray, types::*};
+use arrow_array::Array;
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
@@ -14,7 +13,7 @@ use daft_core::{
         GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
     },
     join::AsofJoinStrategy,
-    kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls, cmp_float},
+    kernels::search_sorted::{DynPartialComparator, build_partial_compare_with_nulls, is_nearer},
     prelude::{DataType as DaftDataType, Field, Schema, SchemaRef, Series, UInt64Array},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -31,116 +30,6 @@ use crate::{
     },
     pipeline::NodeName,
 };
-
-macro_rules! is_nearer_int {
-    ($a:expr, $b:expr, $pv:expr) => {
-        match ($a).abs_diff($pv).cmp(&($b).abs_diff($pv)) {
-            Ordering::Less => true,
-            Ordering::Greater => false,
-            Ordering::Equal => $a > $b,
-        }
-    };
-}
-
-macro_rules! is_nearer_float {
-    ($a:expr, $b:expr, $pv:expr) => {{
-        let ad = ($a - $pv).abs();
-        let bd = ($b - $pv).abs();
-        match cmp_float(&ad, &bd) {
-            Ordering::Less => true,
-            Ordering::Greater => false,
-            Ordering::Equal => cmp_float(&$a, &$b).is_gt(),
-        }
-    }};
-}
-
-/// Returns `true` if `a_arr[a_idx]` is strictly closer to `pivot_arr[pivot_idx]` than
-/// `b_arr[b_idx]` is.  Type dispatch runs on every call;
-/// Supported types: Numeric + Temporal types via their underlying integer repr.
-fn is_nearer(
-    a_arr: &dyn Array,
-    a_idx: usize,
-    b_arr: &dyn Array,
-    b_idx: usize,
-    pivot_arr: &dyn Array,
-    pivot_idx: usize,
-) -> DaftResult<bool> {
-    if !a_arr.is_valid(a_idx) || !b_arr.is_valid(b_idx) || !pivot_arr.is_valid(pivot_idx) {
-        unreachable!("null keys must be filtered before calling is_nearer");
-    }
-
-    /// Extract a typed scalar from a `&dyn Array` at index `$i`.
-    macro_rules! extract_scalar {
-        ($arr:expr, $T:ty, $i:expr) => {
-            $arr.as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap()
-                .value($i)
-        };
-    }
-
-    macro_rules! extract_and_cmp_int {
-        ($T:ty) => {{
-            let a = extract_scalar!(a_arr, $T, a_idx);
-            let b = extract_scalar!(b_arr, $T, b_idx);
-            let p = extract_scalar!(pivot_arr, $T, pivot_idx);
-            Ok(is_nearer_int!(a, b, p))
-        }};
-    }
-
-    macro_rules! extract_and_cmp_float {
-        ($T:ty) => {{
-            let a = extract_scalar!(a_arr, $T, a_idx);
-            let b = extract_scalar!(b_arr, $T, b_idx);
-            let p = extract_scalar!(pivot_arr, $T, pivot_idx);
-            Ok(is_nearer_float!(a, b, p))
-        }};
-    }
-
-    match a_arr.data_type() {
-        DataType::Int8 => extract_and_cmp_int!(Int8Type),
-        DataType::Int16 => extract_and_cmp_int!(Int16Type),
-        DataType::Int32 => extract_and_cmp_int!(Int32Type),
-        DataType::Date32 => extract_and_cmp_int!(Date32Type),
-        DataType::Time32(TimeUnit::Second) => extract_and_cmp_int!(Time32SecondType),
-        DataType::Time32(TimeUnit::Millisecond) => extract_and_cmp_int!(Time32MillisecondType),
-        DataType::Int64 => extract_and_cmp_int!(Int64Type),
-        DataType::Date64 => extract_and_cmp_int!(Date64Type),
-        DataType::Timestamp(TimeUnit::Second, _) => extract_and_cmp_int!(TimestampSecondType),
-        DataType::Timestamp(TimeUnit::Millisecond, _) => {
-            extract_and_cmp_int!(TimestampMillisecondType)
-        }
-        DataType::Timestamp(TimeUnit::Microsecond, _) => {
-            extract_and_cmp_int!(TimestampMicrosecondType)
-        }
-        DataType::Timestamp(TimeUnit::Nanosecond, _) => {
-            extract_and_cmp_int!(TimestampNanosecondType)
-        }
-        DataType::Time64(TimeUnit::Microsecond) => extract_and_cmp_int!(Time64MicrosecondType),
-        DataType::Time64(TimeUnit::Nanosecond) => extract_and_cmp_int!(Time64NanosecondType),
-        DataType::Duration(TimeUnit::Second) => extract_and_cmp_int!(DurationSecondType),
-        DataType::Duration(TimeUnit::Millisecond) => extract_and_cmp_int!(DurationMillisecondType),
-        DataType::Duration(TimeUnit::Microsecond) => extract_and_cmp_int!(DurationMicrosecondType),
-        DataType::Duration(TimeUnit::Nanosecond) => extract_and_cmp_int!(DurationNanosecondType),
-        DataType::UInt8 => extract_and_cmp_int!(UInt8Type),
-        DataType::UInt16 => extract_and_cmp_int!(UInt16Type),
-        DataType::UInt32 => extract_and_cmp_int!(UInt32Type),
-        DataType::UInt64 => extract_and_cmp_int!(UInt64Type),
-        DataType::Decimal128(_, _) => extract_and_cmp_int!(Decimal128Type),
-        DataType::Float16 => {
-            // Promote to f32; f16 has no Sub in std.
-            let a = extract_scalar!(a_arr, Float16Type, a_idx).to_f32();
-            let b = extract_scalar!(b_arr, Float16Type, b_idx).to_f32();
-            let p = extract_scalar!(pivot_arr, Float16Type, pivot_idx).to_f32();
-            Ok(is_nearer_float!(a, b, p))
-        }
-        DataType::Float32 => extract_and_cmp_float!(Float32Type),
-        DataType::Float64 => extract_and_cmp_float!(Float64Type),
-        t => Err(DaftError::TypeError(format!(
-            "nearest join: unsupported on-key type {t:?}"
-        ))),
-    }
-}
 
 // ASOF join: for each left row, find the right row with the largest on_key <= left.on_key
 // (the most-recent right event at or before the left event).
@@ -627,7 +516,7 @@ fn update_nearest_match(
             existing_right_idx as usize,
             left_on_arr,
             left_on_idx,
-        )?,
+        ),
     };
     if nearer {
         *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
@@ -685,7 +574,7 @@ fn nearest_fill(
     grouped_sorted_indices: &GroupIndices,
     left_on_arr: &dyn Array,
     global_right_on_key_arrs: &[Arc<dyn Array>],
-) -> DaftResult<()> {
+) {
     let mut fwd = global_best.to_owned();
     forward_fill(&mut fwd, grouped_sorted_indices);
     let mut bwd = global_best.to_owned();
@@ -709,7 +598,7 @@ fn nearest_fill(
                     bwd_row as usize,
                     left_on_arr,
                     i,
-                )? {
+                ) {
                     fwd[i]
                 } else {
                     bwd[i]
@@ -717,7 +606,6 @@ fn nearest_fill(
             }
         };
     }
-    Ok(())
 }
 
 fn prune_right_batch(rb: &RecordBatch, right_cols_to_keep: &HashSet<String>) -> RecordBatch {
@@ -1048,7 +936,7 @@ impl JoinOperator for AsofJoinOperator {
                                     .as_deref()
                                     .expect("left_on_arr required for Nearest fill"),
                                 &global_right_on_key_arrs,
-                            )?;
+                            );
                         }
                     }
 
