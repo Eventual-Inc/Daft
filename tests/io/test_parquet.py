@@ -522,17 +522,18 @@ def test_write_parquet_success_file(tmp_path_factory):
     assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
 
 
-def test_write_parquet_with_trailing_slash(tmp_path):
+@pytest.mark.parametrize("use_native", [True, False])
+def test_write_parquet_with_trailing_slash(tmp_path, use_native):
     # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
     # write_parquet with a trailing-slash root_dir used to produce
     # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
-    # with ArrowInvalid: Empty path component. The native Rust writer joins
-    # paths via Path::join and normalizes "//" away, so we force the PyArrow
-    # writer here to exercise the path that actually had the bug.
+    # with ArrowInvalid: Empty path component. Both writer paths must produce
+    # clean paths — the native Rust writer via Path::join, the PyArrow writer
+    # via the resolver-layer strip.
     from daft.context import execution_config_ctx
 
     df = daft.from_pydict({"x": [1, 2, 3]})
-    with execution_config_ctx(native_parquet_writer=False):
+    with execution_config_ctx(native_parquet_writer=use_native):
         manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
 
     assert manifest["path"], "no files written"
