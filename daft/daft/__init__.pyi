@@ -181,6 +181,22 @@ class JoinStrategy(Enum):
         """
         ...
 
+class AsofJoinStrategy(Enum):
+    """Asof join strategy."""
+
+    Backward = 1
+    Forward = 2
+
+    @staticmethod
+    def from_asof_join_strategy_str(strategy: str) -> AsofJoinStrategy:
+        """Create an AsofJoinStrategy from its string representation.
+
+        Args:
+            strategy: String representation of the asof join strategy.
+            e.g. ``AsofJoinStrategy.from_asof_join_strategy_str("backward")`` would return ``AsofJoinStrategy.Backward``.
+        """
+        ...
+
 class JoinSide(Enum):
     Left = 1
     Right = 2
@@ -2084,7 +2100,7 @@ class PyFormatSinkOption:
         timestamp_format: str | None = None,
     ) -> PyFormatSinkOption: ...
     @classmethod
-    def parquet(cls) -> PyFormatSinkOption: ...
+    def parquet(cls, column_compression: list[tuple[str, str]] | None = None) -> PyFormatSinkOption: ...
 
 class CheckpointStoreConfig:
     @staticmethod
@@ -2252,6 +2268,7 @@ class LogicalPlanBuilder:
         right_by: list[PyExpr],
         left_on: PyExpr,
         right_on: PyExpr,
+        strategy: AsofJoinStrategy,
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> LogicalPlanBuilder: ...
@@ -2398,6 +2415,7 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
+    def has_partitioned_output(self) -> bool: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""
@@ -2464,6 +2482,7 @@ class PyDaftExecutionConfig:
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
+        flight_shuffle_compression: str | None = None,
         enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -2530,6 +2549,8 @@ class PyDaftExecutionConfig:
     def dynamic_batching_strategy(self) -> str: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
+    @property
+    def flight_shuffle_compression(self) -> str | None: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
     @property

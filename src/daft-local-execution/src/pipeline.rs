@@ -877,6 +877,28 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DistributedLimit(daft_local_plan::DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            stats_state,
+            context,
+            ..
+        }) => {
+            use crate::streaming_sink::distributed_limit::DistributedLimitSink;
+            let sink = DistributedLimitSink::new(actor_object.0.clone(), *limit, *offset);
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            StreamingSinkNode::new(
+                Arc::new(sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::Concat(Concat {
             input,
             other,
@@ -1346,6 +1368,7 @@ fn physical_plan_to_pipeline(
             left_on,
             right_on,
             schema,
+            strategy,
             stats_state,
             context,
         }) => {
@@ -1357,6 +1380,7 @@ fn physical_plan_to_pipeline(
                 right_by.clone(),
                 left_on.clone(),
                 right_on.clone(),
+                *strategy,
                 left.schema().clone(),
                 schema.clone(),
             )
@@ -1614,17 +1638,25 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                ShuffleBackend::Ray => BlockingSinkNode::new(
-                    Arc::new(RepartitionSink::new_ray(
+                ShuffleBackend::Ray => {
+                    let repartition_sink = RepartitionSink::new_ray(
+                        schema.clone(),
                         repartition_spec.clone(),
                         *num_partitions,
-                    )),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+
+                    BlockingSinkNode::new(
+                        Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
                 ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,

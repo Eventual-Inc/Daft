@@ -171,7 +171,7 @@ from daft import datasets
 from daft import functions
 
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io import read_lance
 

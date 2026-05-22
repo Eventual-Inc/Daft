@@ -237,17 +237,43 @@ class RaySwordfishActor:
             )
             metas = []
             is_flight_shuffle = False
+            # Coalesce small MicroPartition outputs to reduce head-node ObjectRef pressure. Skip
+            # when the plan emits a fixed output per partition slot (RepartitionWrite/GatherWrite)
+            # — downstream transpose depends on count and order.
+            target_bytes = 0 if plan.has_partitioned_output() else 64 * 1024 * 1024
+            buf: list[MicroPartition] = []
+            buf_bytes = 0
+
+            def flush() -> MicroPartition:
+                nonlocal buf, buf_bytes
+                merged = MicroPartition.concat(buf)
+                metas.append(PartitionMetadata.from_table(merged))
+                buf = []
+                buf_bytes = 0
+                return merged
+
             async for partition in result_handle:
                 if isinstance(partition, FlightPartitionRef):
                     is_flight_shuffle = True
                     metas.append(PartitionMetadata.from_flight_partition_ref(partition))
                     yield partition
-                elif isinstance(partition, PyMicroPartition):
-                    mp = MicroPartition._from_pymicropartition(partition)
+                    continue
+                if not isinstance(partition, PyMicroPartition):
+                    break
+                mp = MicroPartition._from_pymicropartition(partition)
+                if target_bytes <= 0:
                     metas.append(PartitionMetadata.from_table(mp))
                     yield mp
-                else:
-                    break
+                    continue
+                buf.append(mp)
+                # An unknown size collapses to target_bytes so we flush immediately rather than
+                # buffering unboundedly when size metadata is missing.
+                buf_bytes += mp.size_bytes() or target_bytes
+                if buf_bytes >= target_bytes:
+                    yield flush()
+
+            if buf:
+                yield flush()
 
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(

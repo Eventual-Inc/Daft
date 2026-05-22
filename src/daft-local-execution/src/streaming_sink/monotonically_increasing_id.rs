@@ -10,7 +10,10 @@ use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -111,7 +114,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(MonotonicallyIncreasingIdState {
             id_offset: self.params.starting_offset.unwrap_or(0),
         })

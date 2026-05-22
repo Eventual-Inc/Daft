@@ -75,7 +75,7 @@ class TestAsofJoinParameterValidation:
         left = daft.from_pydict({"ts": [1, 2]})
         right = daft.from_pydict({"ts": [1, 2]})
         with pytest.raises(APITypeError):
-            left.join_asof(right, strategy="forward")
+            left.join_asof(right, strategy="invalid_strategy")
 
 
 # ---------------------------------------------------------------------------
