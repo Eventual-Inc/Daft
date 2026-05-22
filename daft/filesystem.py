@@ -216,6 +216,11 @@ def _infer_filesystem(
         path: A single file/directory path.
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
+
+    Returns:
+        - The resolved path after normalization.
+        - The PyArrow FileSystem object for the protocol of the path.
+        - The optional expiry of the filesystem.
     """
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]

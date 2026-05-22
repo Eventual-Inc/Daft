@@ -1417,7 +1417,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pyarrow" },
     { name = "tqdm" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
 
 [package.optional-dependencies]
@@ -1679,7 +1679,7 @@ requires-dist = [
     { name = "tqdm", specifier = "<4.68.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = "<5.2.0" },
     { name = "turbopuffer", marker = "extra == 'turbopuffer'", specifier = "<1.16.0" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.0.0" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'", specifier = "<0.2.0" },
 ]
 provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]

@@ -8,7 +8,7 @@ dependencies = [
   "pyarrow >= 8.0.0,<24.0.0",
   "fsspec<2026.3.0",
   "tqdm<4.68.0",
-  "typing-extensions >= 4.0.0; python_version < '3.11'",
+  "typing-extensions >= 4.0.0; python_version < '3.12'",
   "packaging"
 ]
 description = "Distributed Dataframes for Multimodal Data"
