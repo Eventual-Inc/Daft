@@ -1309,7 +1309,7 @@ class DataFrame:
         import pyiceberg
         from packaging.version import parse
 
-        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
+        from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config, _enable_oss_io_config
 
         if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
@@ -1341,7 +1341,11 @@ class DataFrame:
                     )
 
         io_config = (
-            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+            _enable_oss_io_config(
+                _convert_iceberg_file_io_properties_to_io_config(table.io.properties), table.location()
+            )
+            if io_config is None
+            else io_config
         )
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

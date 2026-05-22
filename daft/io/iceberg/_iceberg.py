@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
@@ -14,6 +15,9 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
 
     from daft.checkpoint import CheckpointConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
@@ -53,6 +57,27 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
     )
 
     return io_config if any_props_set else None
+
+
+def _enable_oss_io_config(io_config: IOConfig | None, location: str | None) -> IOConfig | None:
+    """Apply the S3-compatible settings an ``oss://`` table needs to ``io_config``.
+
+    The ``oss://`` scheme (Alibaba Cloud OSS) is S3-compatible: aliasing it to
+    ``s3`` and enabling virtual-hosted-style addressing lets the existing S3
+    filesystem resolve ``oss://`` paths -- no OSS-specific backend is involved.
+
+    Applied only to the IOConfig derived from the table; pass an explicit
+    ``io_config`` to ``read_iceberg``/``write_iceberg`` to opt out.
+    """
+    from daft.filesystem import get_protocol_from_path
+
+    if io_config is None or location is None or get_protocol_from_path(location) != "oss":
+        return io_config
+    logger.debug("oss:// table detected; applying S3-compatible settings to the derived IOConfig")
+    return io_config.replace(
+        s3=io_config.s3.replace(force_virtual_addressing=True),
+        protocol_aliases={"oss": "s3"},
+    )
 
 
 @PublicAPI
@@ -107,7 +132,9 @@ def read_iceberg(
         table = StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
-        _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+        _enable_oss_io_config(_convert_iceberg_file_io_properties_to_io_config(table.io.properties), table.location())
+        if io_config is None
+        else io_config
     )
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
