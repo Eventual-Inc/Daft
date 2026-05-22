@@ -31,6 +31,25 @@ Internally, this becomes a simple expression attached to the `Project` operator:
 |   Output schema = a#Int64
 ```
 
+## Lazy Evaluation Boundary
+
+Daft DataFrames are lazy until a terminal API asks for materialized results. Python owns the user-facing `DataFrame` object, but the DataFrame stores a Rust-backed `LogicalPlanBuilder` that represents the work to perform. Transformations such as `select`, `filter`, `join`, and `groupby` do not execute data; they call into the Rust logical-plan builder and return a new DataFrame wrapping the updated plan.
+
+Execution begins when a materializing operation such as `collect()`, `show()`, `to_arrow()`, or a write method calls the active runner. At that point Daft freezes the relevant execution context, optimizes the logical plan, lowers it into a physical plan, and streams materialized partitions back through the runner.
+
+The high-level boundary looks like this:
+
+```text
+Python DataFrame API
+  -> Rust LogicalPlanBuilder
+  -> optimized Rust logical plan
+  -> local or distributed physical plan
+  -> native or Ray execution
+  -> materialized partitions
+```
+
+The native runner lowers the optimized logical plan into a local physical plan and executes it with the Rust Swordfish engine. The Ray runner lowers the optimized logical plan into a distributed physical plan, schedules work across Ray workers with Flotilla, and executes each task with Swordfish on the worker.
+
 ## Optimization
 
 Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization when a materializing operation such as `collect()` or `write_parquet()` is invoked.
