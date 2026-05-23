@@ -131,6 +131,20 @@ def test_mcap_read(mcap_dataset_path):
     assert pdf["publish_time"].between(0, 9900).all()
 
 
+def test_mcap_read_huggingface():
+    """Read a public MCAP file from Hugging Face via hf://."""
+    # Public gameplay MCAP from https://huggingface.co/datasets/open-world-agents/D2E-480p (~1.4 MiB).
+    HF_MCAP_PATH = "hf://datasets/open-world-agents/D2E-480p/PEAK/recording_20250901_122320__8bd56fb0_split_02.mcap"
+
+    df = daft.read_mcap(HF_MCAP_PATH, topics=["mouse"]).limit(10)
+    pdf = df.to_pandas()
+
+    assert len(pdf) == 10
+    assert set(pdf.columns) == {"topic", "log_time", "publish_time", "sequence", "data"}
+    assert (pdf["topic"] == "mouse").all()
+    assert pdf["log_time"].is_monotonic_increasing
+
+
 @pytest.mark.skipif(not HAS_S3, reason="S3 Env not set, skip S3 tests")
 @pytest.mark.parametrize("data_from_s3", ["data_from_s3"], indirect=True)
 def test_mcap_read_s3(data_from_s3):
