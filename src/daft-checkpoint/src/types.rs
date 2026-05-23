@@ -78,7 +78,7 @@ pub enum FileFormat {
 /// by the format-specific committer. The checkpoint store treats it as
 /// an opaque blob.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileMetadata {
     pub format: FileFormat,
     pub data: Vec<u8>,
