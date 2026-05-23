@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -98,7 +98,10 @@ async fn read_parquet(
     _maintain_order: bool,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = scan_task
+        .sources
+        .first()
+        .ok_or_else(|| DaftError::ValueError("ScanTask has no sources".to_string()))?;
 
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
@@ -223,7 +226,10 @@ async fn read_json(
     io_stats: IOStatsRef,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = scan_task
+        .sources
+        .first()
+        .ok_or_else(|| DaftError::ValueError("ScanTask has no sources".to_string()))?;
     let schema_of_file = scan_task.schema.clone();
     let convert_options = JsonConvertOptions::new_internal(
         scan_task.pushdowns.limit,
@@ -339,4 +345,92 @@ async fn read_python_function(
     let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
     let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
     Ok(Box::pin(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftError;
+    use daft_core::prelude::Schema;
+    use daft_io::{IOConfig, IOStatsContext, get_io_client};
+    use daft_scan::{
+        FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, Pushdowns, ScanTask, SourceConfig,
+        storage_config::StorageConfig,
+    };
+
+    use super::*;
+
+    /// Build a malformed `ScanTask` with no sources via struct literal.
+    /// `ScanTask::new` asserts non-empty sources, but the public fields make it
+    /// possible (e.g. via deserialization or direct construction in tests) for
+    /// an empty-source task to reach the reader. We assert that the reader
+    /// returns a typed `DaftError::ValueError` instead of panicking.
+    fn empty_scan_task(source_config: SourceConfig) -> Arc<ScanTask> {
+        Arc::new(ScanTask {
+            sources: vec![],
+            schema: Arc::new(Schema::empty()),
+            source_config: Arc::new(source_config),
+            storage_config: Arc::new(StorageConfig::new_internal(false, None)),
+            pushdowns: Pushdowns::default(),
+            size_bytes_on_disk: None,
+            metadata: None,
+            statistics: None,
+            generated_fields: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn read_parquet_returns_value_error_for_empty_sources() {
+        let scan_task = empty_scan_task(SourceConfig::File(FileFormatConfig::Parquet(
+            ParquetSourceConfig::default(),
+        )));
+        let cfg = ParquetSourceConfig::default();
+        let io_client =
+            get_io_client(false, Arc::new(IOConfig::default())).expect("io client construction");
+        let io_stats = IOStatsContext::new("test_empty_parquet");
+        let result = read_parquet(
+            &scan_task,
+            &cfg,
+            "memory://unused",
+            None,
+            io_client,
+            io_stats,
+            None,
+            false,
+            8192,
+        )
+        .await;
+        match result {
+            Err(DaftError::ValueError(msg)) => assert_eq!(msg, "ScanTask has no sources"),
+            Err(other) => panic!("expected DaftError::ValueError, got {other:?}"),
+            Ok(_) => panic!("expected ValueError for empty sources, got Ok stream"),
+        }
+    }
+
+    #[tokio::test]
+    async fn read_json_returns_value_error_for_empty_sources() {
+        let scan_task = empty_scan_task(SourceConfig::File(FileFormatConfig::Json(
+            JsonSourceConfig::default(),
+        )));
+        let cfg = JsonSourceConfig::default();
+        let io_client =
+            get_io_client(false, Arc::new(IOConfig::default())).expect("io client construction");
+        let io_stats = IOStatsContext::new("test_empty_json");
+        let result = read_json(
+            &scan_task,
+            &cfg,
+            "memory://unused",
+            None,
+            io_client,
+            io_stats,
+            8192,
+        )
+        .await;
+        match result {
+            Err(DaftError::ValueError(msg)) => assert_eq!(msg, "ScanTask has no sources"),
+            Err(other) => panic!("expected DaftError::ValueError, got {other:?}"),
+            Ok(_) => panic!("expected ValueError for empty sources, got Ok stream"),
+        }
+    }
 }
