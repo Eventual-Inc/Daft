@@ -7,6 +7,7 @@ import uuid
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from deltalake import DeltaTable
 
 import daft
 from daft.logical.schema import Schema
@@ -169,8 +170,6 @@ def test_deltalake_read_column_mapping_flat(tmp_path, mode):
     )
 
     df = daft.read_deltalake(str(path))
-    from deltalake import DeltaTable
-
     expected_schema = Schema.from_pyarrow_schema(pa.schema(DeltaTable(path).schema().to_arrow()))
     assert df.schema() == expected_schema
     assert_pyarrow_tables_equal(df.to_arrow().sort_by("a"), data.sort_by("a"))

@@ -9,6 +9,8 @@ from urllib.request import Request, urlopen
 
 import deltalake
 from deltalake.exceptions import TableNotFoundError
+from deltalake.schema import ArrayType, MapType, StructType
+from deltalake.schema import Schema as DeltaSchema
 from deltalake.table import DeltaTable
 from packaging.version import parse
 
@@ -25,6 +27,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
 from daft.io.delta_lake.utils import construct_delta_file_path
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import ScanOperator
@@ -42,11 +45,7 @@ _CM_PHYSICAL_NAME_KEY = "delta.columnMapping.physicalName"
 
 def _delta_field_to_pyfield(field: deltalake.schema.Field) -> PyField:
     """Convert a Delta `Field` to a Daft `PyField` carrying its logical name and real dtype."""
-    from deltalake.schema import Schema
-
-    from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
-
-    pa_field = delta_schema_to_pyarrow(Schema([field])).field(0)
+    pa_field = delta_schema_to_pyarrow(DeltaSchema([field])).field(0)
     return PyField.create(field.name, DataType.from_arrow_type(pa_field.type)._dtype)
 
 
@@ -58,7 +57,6 @@ def _iter_mapped_fields(schema: deltalake.Schema) -> Iterator[deltalake.schema.F
     fields (e.g. `array<struct<...>>`). We recurse through container types but only
     yield fields that actually carry the mapping metadata.
     """
-    from deltalake.schema import ArrayType, MapType, StructType
 
     def walk_type(t: object) -> Iterator[deltalake.schema.Field]:
         if isinstance(t, StructType):
@@ -207,8 +205,6 @@ class DeltaLakeScanOperator(ScanOperator):
                 self._table.load_as_version(version)
 
         self._storage_config = storage_config
-
-        from ._deltalake import delta_schema_to_pyarrow
 
         delta_schema = self._table.schema()
         self._schema = Schema.from_pyarrow_schema(delta_schema_to_pyarrow(delta_schema))
