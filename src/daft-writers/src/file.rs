@@ -178,6 +178,106 @@ impl AsyncFileWriter for TargetFileSizeWriter {
     }
 }
 
+/// SingleFileWriter wraps a base writer and never rotates — all data flows into one file.
+/// Used when `single_file=true` is set on the write.
+struct SingleFileWriter {
+    writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>,
+    results: Vec<RecordBatch>,
+    bytes_per_file: Vec<usize>,
+    total_bytes_written: usize,
+    has_written: bool,
+    is_closed: bool,
+}
+
+impl SingleFileWriter {
+    fn new(
+        writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>,
+    ) -> Self {
+        Self {
+            writer,
+            results: vec![],
+            bytes_per_file: vec![],
+            total_bytes_written: 0,
+            has_written: false,
+            is_closed: false,
+        }
+    }
+}
+
+#[async_trait]
+impl AsyncFileWriter for SingleFileWriter {
+    type Input = MicroPartition;
+    type Result = Vec<RecordBatch>;
+
+    async fn write(&mut self, input: MicroPartition) -> DaftResult<WriteResult> {
+        assert!(!self.is_closed, "Cannot write to a closed SingleFileWriter");
+        if input.is_empty() {
+            return Ok(WriteResult {
+                bytes_written: 0,
+                rows_written: 0,
+            });
+        }
+        self.has_written = true;
+        let result = self.writer.write(input).await?;
+        self.total_bytes_written += result.bytes_written;
+        Ok(result)
+    }
+
+    fn bytes_written(&self) -> usize {
+        self.total_bytes_written
+    }
+
+    fn bytes_per_file(&self) -> Vec<usize> {
+        self.bytes_per_file.clone()
+    }
+
+    async fn close(&mut self) -> DaftResult<Self::Result> {
+        // Guard: if no non-empty input was ever written, the underlying parquet
+        // file_writer was never initialised and closing it would panic.
+        if self.has_written
+            && let Some(result) = self.writer.close().await?
+        {
+            self.results.push(result);
+            self.bytes_per_file.push(self.writer.bytes_written());
+        }
+        self.is_closed = true;
+        Ok(std::mem::take(&mut self.results))
+    }
+}
+
+pub(crate) struct SingleFileWriterFactory {
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
+}
+
+impl SingleFileWriterFactory {
+    pub(crate) fn new(
+        writer_factory: Arc<
+            dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>,
+        >,
+    ) -> Self {
+        Self { writer_factory }
+    }
+}
+
+impl WriterFactory for SingleFileWriterFactory {
+    type Input = MicroPartition;
+    type Result = Vec<RecordBatch>;
+
+    fn create_writer(
+        &self,
+        file_idx: usize,
+        partition_values: Option<&RecordBatch>,
+    ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
+        let writer = self
+            .writer_factory
+            .create_writer(file_idx, partition_values)?;
+        Ok(Box::new(SingleFileWriter::new(writer))
+            as Box<
+                dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
+            >)
+    }
+}
+
 pub(crate) struct TargetFileSizeWriterFactory {
     writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
