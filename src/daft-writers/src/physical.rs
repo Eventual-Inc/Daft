@@ -120,6 +120,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 partition_values,
                 self.output_file_info.io_config.clone(),
                 self.output_file_info.format_option.clone(),
+                self.output_file_info.compression.as_deref(),
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -145,13 +146,19 @@ pub fn create_pyarrow_file_writer(
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     match format {
         #[cfg(feature = "python")]
-        FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
-            root_dir,
-            file_idx,
-            compression,
-            io_config,
-            partition,
-        )?)),
+        FileFormat::Parquet => {
+            let parquet_option = format_option
+                .map(|opt| opt.to_parquet())
+                .unwrap_or_default();
+            Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
+                root_dir,
+                file_idx,
+                compression,
+                io_config,
+                partition,
+                parquet_option.column_compression.as_deref(),
+            )?))
+        }
         #[cfg(feature = "python")]
         FileFormat::Csv => {
             let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();
@@ -165,6 +172,7 @@ pub fn create_pyarrow_file_writer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_native_writer(
     root_dir: &str,
     file_idx: usize,
@@ -173,13 +181,25 @@ fn create_native_writer(
     partition_values: Option<&RecordBatch>,
     io_config: Option<daft_io::IOConfig>,
     format_option: Option<FormatSinkOption>,
+    compression: Option<&str>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     let (path, io_config) = parse_url_and_config(root_dir, io_config)?;
     let root_dir = path.as_str();
 
     match file_format {
         FileFormat::Parquet => {
-            create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
+            let parquet_option = format_option
+                .map(|opt| opt.to_parquet())
+                .unwrap_or_default();
+            create_native_parquet_writer(
+                root_dir,
+                schema,
+                file_idx,
+                partition_values,
+                io_config,
+                compression,
+                parquet_option.column_compression.as_deref(),
+            )
         }
         FileFormat::Json => {
             let json_option = format_option.map(|opt| opt.to_json()).unwrap_or_default();

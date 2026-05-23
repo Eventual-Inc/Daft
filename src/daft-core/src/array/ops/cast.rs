@@ -256,7 +256,7 @@ impl DateArray {
                 let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
                 Ok(Utf8Array::from_iter(
                     self.name(),
-                    self.physical.into_iter().map(|opt_days| {
+                    self.physical.iter().map(|opt_days| {
                         opt_days.map(|days| {
                             let date = epoch + chrono::TimeDelta::days(days as i64);
                             format!("{}-{}-{}", date.year(), date.month(), date.day())
@@ -356,7 +356,7 @@ impl TimestampArray {
                 });
                 let str_array = Utf8Array::from_iter(
                     self.name(),
-                    self.physical.into_iter().map(|val| {
+                    self.physical.iter().map(|val| {
                         val.map(|val| match &tz_parsed {
                             Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
                                 timestamp_to_str_offset(val, unit, offset)
@@ -410,7 +410,7 @@ impl TimeArray {
             }
             DataType::Utf8 => Ok(Utf8Array::from_iter(
                 self.name(),
-                self.physical.into_iter().map(|val| {
+                self.physical.iter().map(|val| {
                     val.map(|val| {
                         let DataType::Time(unit) = &self.field.dtype else {
                             panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
@@ -647,12 +647,12 @@ where
                 (Unknown, Unknown) | (Video, Video) | (Audio, Audio) | (Image, Image) => {
                     Ok(self.clone().into_series())
                 }
-                (Unknown, Video) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
-                (Unknown, Audio) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
-                (Unknown, Image) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
-                (Video, Unknown) | (Audio, Unknown) | (Image, Unknown) => {
+                (Unknown, Video) | (Unknown, Audio) | (Unknown, Image) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
+                (Video, Unknown) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
+                (Audio, Unknown) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
+                (Image, Unknown) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
                 _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {
@@ -2174,7 +2174,7 @@ mod tests {
         // Date is stored as days since epoch (1970-01-01)
         // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
         let date_array = result.date().unwrap();
-        let values: Vec<Option<i32>> = date_array.physical.into_iter().collect();
+        let values: Vec<Option<i32>> = date_array.physical.iter().collect();
         // Check that we got valid dates (not None from failed parse)
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");
