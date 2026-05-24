@@ -74,6 +74,7 @@ pub(crate) async fn read_scan_task(
             FileFormatConfig::Text(cfg) => {
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
             }
+            FileFormatConfig::Avro(_cfg) => read_avro(scan_task, url, io_client, io_stats).await,
         },
         #[cfg(feature = "python")]
         SourceConfig::Database(cfg) => read_database(scan_task, cfg).await,
@@ -295,6 +296,27 @@ async fn read_text(
         Some(io_stats),
     )
     .await
+}
+
+async fn read_avro(
+    scan_task: &ScanTask,
+    url: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let column_projection = scan_task.pushdowns.columns.as_deref().cloned();
+    let max_records = scan_task.pushdowns.limit;
+
+    let record_batch = daft_avro::read::read_avro(
+        url,
+        io_client,
+        Some(io_stats),
+        column_projection,
+        max_records,
+    )
+    .await?;
+
+    Ok(Box::pin(futures::stream::once(async { Ok(record_batch) })))
 }
 
 #[cfg(feature = "python")]

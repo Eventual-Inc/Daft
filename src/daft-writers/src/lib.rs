@@ -1,3 +1,4 @@
+mod avro_writer;
 mod batch;
 mod batch_file_writer;
 mod csv_writer;
@@ -220,7 +221,32 @@ pub fn make_physical_writer_factory(
                 Ok(Arc::new(file_writer_factory))
             }
         }
-        _ => unreachable!("Physical write should only support Parquet, CSV, and JSON"),
+        FileFormat::Avro => {
+            // Avro is a compact binary format; inflation factor is higher than JSON (0.25)
+            // but lower than plain text (1.0).
+            // TODO: Add dedicated Avro file-size config fields (avro_target_filesize / avro_inflation_factor).
+            const AVRO_TARGET_FILESIZE: usize = 512 * 1024 * 1024; // 512MB
+            const AVRO_INFLATION_FACTOR: f64 = 0.6;
+            let file_size_calculator =
+                TargetInMemorySizeBytesCalculator::new(AVRO_TARGET_FILESIZE, AVRO_INFLATION_FACTOR);
+
+            let file_writer_factory = TargetFileSizeWriterFactory::new(
+                Arc::new(base_writer_factory),
+                Arc::new(file_size_calculator),
+            );
+
+            if let Some(partition_cols) = &file_info.partition_cols {
+                let partitioned_writer_factory = PartitionedWriterFactory::new(
+                    Arc::new(file_writer_factory),
+                    partition_cols.clone(),
+                    non_partition_column_indices,
+                );
+                Ok(Arc::new(partitioned_writer_factory))
+            } else {
+                Ok(Arc::new(file_writer_factory))
+            }
+        }
+        _ => unreachable!("Physical write should only support Parquet, CSV, JSON, and Avro"),
     }
 }
 

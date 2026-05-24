@@ -8,6 +8,7 @@ common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-algebra = {path = "../daft-algebra", default-features = false}
+daft-avro = {path = "../daft-avro", default-features = false}
 either = "1.9"
 fnv = "1.0.7"
 daft-core = {path = "../daft-core", default-features = false}
@@ -52,7 +53,8 @@ python = [
   "daft-stats/python",
   "common-file-formats/python",
   "common-io-config/python",
-  "common-daft-config/python"
+  "common-daft-config/python",
+  "daft-avro/python"
 ]
 
 [lints]

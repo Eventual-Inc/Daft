@@ -1419,6 +1419,8 @@ fn physical_plan_to_pipeline(
                 (FileFormat::Csv, false) => WriteFormat::Csv,
                 (FileFormat::Json, true) => WriteFormat::PartitionedJson,
                 (FileFormat::Json, false) => WriteFormat::Json,
+                (FileFormat::Avro, true) => WriteFormat::PartitionedAvro,
+                (FileFormat::Avro, false) => WriteFormat::Avro,
                 (_, _) => panic!("Unsupported file format"),
             };
             let write_sink = WriteSink::new(

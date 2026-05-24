@@ -8,6 +8,7 @@ use std::{
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
+use daft_avro::AvroSourceConfig;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use daft_schema::python::schema::PySchema;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -183,6 +184,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Text(config)))
     }
 
+    /// Create an Avro file format config.
+    #[staticmethod]
+    fn from_avro_config(config: AvroSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Avro(config)))
+    }
+
     /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
@@ -204,6 +211,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Avro(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),

@@ -325,6 +325,15 @@ impl GlobScanOperator {
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
+                FileFormatConfig::Avro(_) => {
+                    let schema = daft_avro::read_avro_schema(
+                        first_filepath.as_str(),
+                        io_client.clone(),
+                        Some(io_stats.clone()),
+                    )
+                    .await?;
+                    (Arc::unwrap_or_clone(schema), None, first_filepath)
+                }
             };
 
             let schema = match user_provided_schema {
