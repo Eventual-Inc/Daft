@@ -243,6 +243,7 @@ def set_execution_config(
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    flight_shuffle_compression: str | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
     hash_join_spill_threshold_bytes: int | None = None,
 ) -> DaftContext:
@@ -293,6 +294,7 @@ def set_execution_config(
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to None (uncompressed).
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -335,6 +337,7 @@ def set_execution_config(
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            flight_shuffle_compression=flight_shuffle_compression,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
             hash_join_spill_threshold_bytes=hash_join_spill_threshold_bytes,
         )

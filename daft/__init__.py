@@ -159,7 +159,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile
+from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -269,6 +269,7 @@ __all__ = [
     "load_extension",
     "method",
     "metrics",
+    "open_file",
     "planning_config_ctx",
     "range",
     "read_csv",

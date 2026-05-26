@@ -153,6 +153,7 @@ pub struct DaftExecutionConfig {
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_partition_threshold: usize,
+    pub flight_shuffle_compression: Option<String>,
     pub enable_multi_glob_path_tasks: bool,
     /// If set, hash join build side partitions that exceed this many bytes will be spilled to
     /// `flight_shuffle_dirs`. Enables grace-hash-join spill-to-disk. Default `None` (disabled).
@@ -204,6 +205,7 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_partition_threshold: 500,
+            flight_shuffle_compression: None,
             enable_multi_glob_path_tasks: false,
             hash_join_spill_threshold_bytes: None,
         }

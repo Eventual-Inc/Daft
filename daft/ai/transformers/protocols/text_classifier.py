@@ -5,7 +5,6 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
-import transformers
 from transformers import pipeline
 
 if sys.version_info < (3, 11):
@@ -21,6 +20,8 @@ from daft.ai.utils import get_gpu_udf_options, get_torch_device
 _model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
+    import transformers
+
     from daft.ai.typing import Label, Options, UDFOptions
 
 

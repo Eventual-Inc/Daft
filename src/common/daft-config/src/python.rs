@@ -124,6 +124,7 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
         flight_shuffle_partition_threshold=None,
+        flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
         hash_join_spill_threshold_bytes=None,
     ))]
@@ -164,6 +165,7 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_partition_threshold: Option<usize>,
+        flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
         hash_join_spill_threshold_bytes: Option<usize>,
     ) -> PyResult<Self> {
@@ -310,6 +312,19 @@ impl PyDaftExecutionConfig {
 
         if let Some(flight_shuffle_partition_threshold) = flight_shuffle_partition_threshold {
             config.flight_shuffle_partition_threshold = flight_shuffle_partition_threshold;
+        }
+
+        if let Some(flight_shuffle_compression) = flight_shuffle_compression {
+            config.flight_shuffle_compression = match flight_shuffle_compression {
+                "" | "none" => None,
+                "lz4" | "zstd" => Some(flight_shuffle_compression.to_string()),
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "flight_shuffle_compression must be 'lz4', 'zstd', or 'none' (got '{}')",
+                        other
+                    )));
+                }
+            };
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -491,6 +506,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn hash_join_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.config.hash_join_spill_threshold_bytes)
+    }
+    
+    #[getter]
+    fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
+        Ok(self.config.flight_shuffle_compression.as_deref())
     }
 }
 

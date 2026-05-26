@@ -30,7 +30,7 @@ macro_rules! collect_to_set_and_check_membership {
 impl<T> DaftIsIn<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as crate::datatypes::NumericNative>::ARROWTYPE as arrow::array::ArrowPrimitiveType>::Native:
         std::hash::Hash + std::cmp::Eq,
 {
