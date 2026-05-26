@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from io import BytesIO
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
+import daft
 from daft.api_annotations import PublicAPI
+from daft.daft import io_glob
 from daft.dependencies import pafs
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
@@ -13,9 +15,7 @@ from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
-    import pathlib
     from collections.abc import AsyncIterator
-    from types import TracebackType
 
     from daft import DataFrame
     from daft.io import IOConfig
@@ -58,6 +58,18 @@ def list_files(
     resolved_path: str | None = None,
     fs: pafs.FileSystem | None = None,
 ) -> list[str]:
+    if isinstance(root_dir, pathlib.Path):
+        root_dir = str(root_dir)
+
+    # Special case for handling HuggingFace paths
+    # TODO: Remove once we remove fsspec-based filesystem resolution
+    if get_protocol_from_path(root_dir) == "hf":
+        glob_path = root_dir if "*" in root_dir else root_dir.rstrip("/")
+        if not glob_path.endswith(".mcap"):
+            glob_path = f"{glob_path}/**/*.mcap" if "**" not in glob_path else glob_path
+        files = io_glob(glob_path, io_config=io_config)
+        return [f["path"] for f in files if f["type"] == "File"]
+
     if resolved_path is None or fs is None:
         [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
 
@@ -243,70 +255,32 @@ class MCAPSourceTask(DataSourceTask):
 
         make_reader = importlib.import_module("mcap.reader").make_reader
 
-        from daft.filesystem import _resolve_paths_and_filesystem
+        with daft.open_file(self._file_path, "rb", io_config=self._io_config) as f:
+            reader = make_reader(f, decoder_factories=[])
 
-        class _NonSeekableStreamWrapper:
-            def __init__(self, file_obj: BytesIO):
-                self._file_obj = file_obj
+            buffer: list[dict[str, object]] = []
+            for _, channel, message in reader.iter_messages(
+                topics=self._topics,
+                start_time=self._start_time,
+                end_time=self._end_time,
+                log_time_order=True,
+            ):
+                buffer.append(
+                    {
+                        "topic": channel.topic,
+                        "log_time": message.log_time,
+                        "publish_time": message.publish_time,
+                        "sequence": message.sequence,
+                        "data": str(message.data),
+                    }
+                )
 
-            def read(self, size: int = -1) -> bytes:
-                return self._file_obj.read(size)
+                if len(buffer) >= self._batch_size:
+                    yield self._create_recordbatch(buffer)
+                    buffer.clear()
 
-            def readable(self) -> bool:
-                return True
-
-            def seekable(self) -> bool:
-                return False
-
-            def tell(self) -> int:
-                return self._file_obj.tell()
-
-            def close(self) -> None:
-                self._file_obj.close()
-
-            def __enter__(self) -> _NonSeekableStreamWrapper:
-                return self
-
-            def __exit__(
-                self,
-                exc_type: type[BaseException] | None,
-                exc: BaseException | None,
-                tb: TracebackType | None,
-            ) -> Literal[False]:
-                self.close()
-                return False
-
-        [resolved_path], fs = _resolve_paths_and_filesystem(self._file_path, self._io_config)
-
-        with fs.open_input_file(resolved_path) as file_obj:
-            file_content = file_obj.read()
-
-        in_memory_file = BytesIO(file_content)
-        reader = make_reader(_NonSeekableStreamWrapper(in_memory_file), decoder_factories=[])
-
-        buffer: list[dict[str, object]] = []
-        for _, channel, message in reader.iter_messages(
-            topics=self._topics,
-            start_time=self._start_time,
-            end_time=self._end_time,
-            log_time_order=True,
-        ):
-            buffer.append(
-                {
-                    "topic": channel.topic,
-                    "log_time": message.log_time,
-                    "publish_time": message.publish_time,
-                    "sequence": message.sequence,
-                    "data": str(message.data),
-                }
-            )
-
-            if len(buffer) >= self._batch_size:
+            if buffer:
                 yield self._create_recordbatch(buffer)
-                buffer.clear()
-
-        if buffer:
-            yield self._create_recordbatch(buffer)
 
     def _create_recordbatch(self, data: list[dict[str, object]]) -> RecordBatch:
         import pyarrow as pa
