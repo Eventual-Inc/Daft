@@ -55,7 +55,7 @@ transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.1
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<30.9.0"]
 turbopuffer = ["turbopuffer<2.2.0"]
-unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake>=1.5.0,<1.6.0"]
+unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake>=1.5.0,<1.7.0"]
 video = ["av >= 15.0.0,< 17.1.0"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
@@ -88,19 +88,19 @@ dev = [
   "lxml==6.1.1",
   "dask[dataframe]==2025.11.0",
   "numpy==2.2.6; python_version >= '3.13'",
-  "numpy==1.26.4; python_version < '3.13'",
+  "numpy==2.2.6; python_version < '3.13'",
   "pandas==2.3.3; python_version >= '3.13'",
   "pandas==2.2.3; python_version < '3.13'",
   "pandas-stubs==2.3.3.260113",
   "xxhash==3.7.0",
-  "Pillow==12.1.1",
+  "Pillow==12.2.0",
   "reportlab==4.5.1",
   "opencv-python==4.13.0.92",
   "tiktoken==0.13.0",
   "duckdb==1.5.3",
   "datasets==4.8.5",
-  "torch==2.12.0",
-  "torchvision==0.27.0",
+  "torch==2.11.0",
+  "torchvision==0.26.0",
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   # Pyarrow
@@ -129,15 +129,15 @@ dev = [
   "sqlglot==30.8.0",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2026.4.0",
-  "boto3==1.43.14",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.43.14",
+  "s3fs==2026.2.0",
+  "boto3==1.36.2",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,server]==5.2.1",
   # Azure
-  "adlfs==2026.5.0",
+  "adlfs==2026.2.0",
   "azure-storage-blob==12.29.0",
   # GCS
-  "gcsfs==2026.5.0",
+  "gcsfs==2026.2.0",
   # Hugging Face
   "huggingface-hub==1.16.1",
   # AI
