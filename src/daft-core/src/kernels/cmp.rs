@@ -194,12 +194,29 @@ pub fn is_nearer(
     match a_arr.data_type() {
         DataType::Int8 => extract_and_cmp_int!(Int8Type),
         DataType::Int16 => extract_and_cmp_int!(Int16Type),
-        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => extract_and_cmp_int!(Int32Type),
-        DataType::Int64
-        | DataType::Date64
-        | DataType::Timestamp(_, _)
-        | DataType::Time64(_)
-        | DataType::Duration(_) => extract_and_cmp_int!(Int64Type),
+        DataType::Int32 => extract_and_cmp_int!(Int32Type),
+        DataType::Date32 => extract_and_cmp_int!(Date32Type),
+        DataType::Time32(TimeUnit::Second) => extract_and_cmp_int!(Time32SecondType),
+        DataType::Time32(TimeUnit::Millisecond) => extract_and_cmp_int!(Time32MillisecondType),
+        DataType::Int64 => extract_and_cmp_int!(Int64Type),
+        DataType::Date64 => extract_and_cmp_int!(Date64Type),
+        DataType::Time64(TimeUnit::Microsecond) => extract_and_cmp_int!(Time64MicrosecondType),
+        DataType::Time64(TimeUnit::Nanosecond) => extract_and_cmp_int!(Time64NanosecondType),
+        DataType::Timestamp(TimeUnit::Second, _) => extract_and_cmp_int!(TimestampSecondType),
+        DataType::Timestamp(TimeUnit::Millisecond, _) => {
+            extract_and_cmp_int!(TimestampMillisecondType)
+        }
+        DataType::Timestamp(TimeUnit::Microsecond, _) => {
+            extract_and_cmp_int!(TimestampMicrosecondType)
+        }
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            extract_and_cmp_int!(TimestampNanosecondType)
+        }
+        DataType::Duration(TimeUnit::Second) => extract_and_cmp_int!(DurationSecondType),
+        DataType::Duration(TimeUnit::Millisecond) => extract_and_cmp_int!(DurationMillisecondType),
+        DataType::Duration(TimeUnit::Microsecond) => extract_and_cmp_int!(DurationMicrosecondType),
+        DataType::Duration(TimeUnit::Nanosecond) => extract_and_cmp_int!(DurationNanosecondType),
+        // --- unsigned integers ---
         DataType::UInt8 => extract_and_cmp_int!(UInt8Type),
         DataType::UInt16 => extract_and_cmp_int!(UInt16Type),
         DataType::UInt32 => extract_and_cmp_int!(UInt32Type),
