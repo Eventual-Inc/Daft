@@ -1877,7 +1877,7 @@ dev = [
     { name = "clickhouse-connect", specifier = "==1.0.1" },
     { name = "connectorx", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'", specifier = "==0.4.5" },
     { name = "connectorx", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", specifier = "==0.4.5" },
-    { name = "daft-lance", specifier = "==0.3.3" },
+    { name = "daft-lance", specifier = "==0.3.2" },
     { name = "dask", extras = ["dataframe"], specifier = "==2025.11.0" },
     { name = "databricks-sdk", specifier = "==0.110.0" },
     { name = "datasets", specifier = "==4.8.5" },
@@ -1900,7 +1900,7 @@ dev = [
     { name = "mcap-protobuf-support", specifier = "==0.5.4" },
     { name = "mcap-ros2-support", specifier = "==0.5.7" },
     { name = "memray", marker = "sys_platform != 'win32'", specifier = "==1.19.3" },
-    { name = "moto", extras = ["glue", "s3", "server"], specifier = "==5.2.1" },
+    { name = "moto", extras = ["glue", "s3", "server"], specifier = "==5.1.21" },
     { name = "numpy", marker = "python_full_version < '3.13'", specifier = "==2.2.6" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = "==2.2.6" },
     { name = "openai", specifier = "==2.38.0" },
@@ -1966,16 +1966,16 @@ lint = [
 
 [[package]]
 name = "daft-lance"
-version = "0.3.3"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lance-namespace" },
     { name = "lance-namespace-urllib3-client" },
     { name = "pylance" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/ad/4defcdb0bf100cd39a4d3daf8c04c01c4a364434796fae39598c1ec8b3a5/daft_lance-0.3.3.tar.gz", hash = "sha256:0bc943db5707c70585d37f7a6d77ac001684ae4e53e36bdeb45e0f8f31e5d9bd", size = 136226, upload-time = "2026-05-22T22:48:12.653Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/56/79bb22dd385ecf360544ee004aeeda6e8fac057cd814a242243e60558687/daft_lance-0.3.2.tar.gz", hash = "sha256:5db4374a7c68b620f4e4e82f74186494a736e700b8fb40fd943ddb4177e58564", size = 120888, upload-time = "2026-05-18T20:35:28.721Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/d7/80fdea24abe472a7c66a59fe9b08e0a7ce29f5cfae0cebf3ef8a9c6c1f24/daft_lance-0.3.3-py3-none-any.whl", hash = "sha256:41ea0c415e50da72bec9a358c4cbfa642fe66b165248fed4a848e0861d87c235", size = 38754, upload-time = "2026-05-22T22:48:10.958Z" },
+    { url = "https://files.pythonhosted.org/packages/46/dd/57601b4f9933a88ac9301e262951c73d042a64e44e9949105ab49681e7f1/daft_lance-0.3.2-py3-none-any.whl", hash = "sha256:f32fe3b3bdcd209d708353bbc0960cb80ba8aa1289f436e4f91e917f8acd4af9", size = 33010, upload-time = "2026-05-18T20:35:26.271Z" },
 ]
 
 [[package]]
@@ -5212,20 +5212,22 @@ wheels = [
 
 [[package]]
 name = "moto"
-version = "5.2.1"
+version = "5.1.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
     { name = "botocore" },
     { name = "cryptography" },
+    { name = "jinja2" },
+    { name = "python-dateutil" },
     { name = "requests" },
     { name = "responses" },
     { name = "werkzeug" },
     { name = "xmltodict" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f6/e9/c38202162db2e76623176be9f1dbc9aa41228ffa91ee8da2d3986082c3e3/moto-5.2.1.tar.gz", hash = "sha256:ccb2f3e1dfa82e50e054bda98b0be708d244d2668364dcc1d45e8d3de6091bde", size = 8634437, upload-time = "2026-05-10T19:11:57.286Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/f8/81e2ee90f47a6ae1e475a961bd6a1a1569b04999ba941897b87101b0d5af/moto-5.1.21.tar.gz", hash = "sha256:713dde46e71e2714fa9a29eec513ec618d35e1d84c256331b5aab3f30692feeb", size = 8441171, upload-time = "2026-02-08T21:52:39.157Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/79/8085b7c1ecd48d0535c3c8444a1d8df2926e457dce8e55fabc332a382c9c/moto-5.2.1-py3-none-any.whl", hash = "sha256:19d2fbd6e613aa5b4e364c52cd5d3cea371643a0f4210689a703227bd2924c5c", size = 6671379, upload-time = "2026-05-10T19:11:53.543Z" },
+    { url = "https://files.pythonhosted.org/packages/53/c7/4b0bc06f0811caa67f7e8c3ca2e637bd8cb4317c2f8839b7d643d7ace68c/moto-5.1.21-py3-none-any.whl", hash = "sha256:311a30095b08b39dd2707f161f1440d361684fe0090b9fd0751dfd1c9b022445", size = 6514163, upload-time = "2026-02-08T21:52:36.91Z" },
 ]
 
 [package.optional-dependencies]
@@ -5238,6 +5240,7 @@ s3 = [
 ]
 server = [
     { name = "antlr4-python3-runtime" },
+    { name = "aws-sam-translator" },
     { name = "aws-xray-sdk" },
     { name = "cfn-lint" },
     { name = "docker" },
@@ -5248,6 +5251,7 @@ server = [
     { name = "jsonpath-ng" },
     { name = "openapi-spec-validator" },
     { name = "py-partiql-parser" },
+    { name = "pydantic" },
     { name = "pyparsing" },
     { name = "pyyaml" },
     { name = "setuptools", version = "79.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
