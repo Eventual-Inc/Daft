@@ -1,6 +1,8 @@
 [dependencies]
-apache-avro = {version = "0.17"}
+arrow = {workspace = true}
 arrow-array = {workspace = true}
+arrow-avro = "57"
+arrow-schema = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

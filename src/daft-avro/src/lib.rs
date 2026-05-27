@@ -11,16 +11,16 @@ pub mod python;
 
 pub use options::{AvroCompression, AvroSourceConfig, AvroWriteOptions};
 pub use read::read_avro;
-pub use schema::{avro_schema_to_daft_schema, daft_schema_to_avro_schema, read_avro_schema};
+pub use schema::read_avro_schema;
 pub use write::write_record_batch_to_avro;
 
 #[derive(Debug, Snafu)]
 pub enum AvroError {
-    #[snafu(display("Failed to read Avro file: {}", source))]
-    ReadError { source: Box<apache_avro::Error> },
+    #[snafu(display("Failed to read Avro file: {}", message))]
+    ReadError { message: String },
 
-    #[snafu(display("Failed to write Avro file: {}", source))]
-    WriteError { source: Box<apache_avro::Error> },
+    #[snafu(display("Failed to write Avro file: {}", message))]
+    WriteError { message: String },
 
     #[snafu(display("Schema conversion error: {}", message))]
     SchemaConversionError { message: String },
@@ -33,6 +33,15 @@ pub enum AvroError {
 
     #[snafu(display("IO error: {}", source))]
     IOError { source: daft_io::Error },
+
+    #[snafu(display("Arrow error: {}", source))]
+    ArrowError { source: arrow_schema::ArrowError },
+}
+
+impl From<arrow_schema::ArrowError> for AvroError {
+    fn from(err: arrow_schema::ArrowError) -> Self {
+        Self::ArrowError { source: err }
+    }
 }
 
 impl From<AvroError> for DaftError {

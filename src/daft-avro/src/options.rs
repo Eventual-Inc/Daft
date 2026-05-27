@@ -35,15 +35,7 @@ impl fmt::Display for AvroCompression {
     }
 }
 
-impl AvroCompression {
-    /// Convert to apache_avro::Codec for use with the apache-avro crate.
-    pub fn to_avro_codec(&self) -> apache_avro::Codec {
-        match self {
-            Self::Null => apache_avro::Codec::Null,
-            Self::Deflate => apache_avro::Codec::Deflate,
-        }
-    }
-}
+impl AvroCompression {}
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -117,18 +109,6 @@ mod tests {
     fn test_compression_display() {
         assert_eq!(AvroCompression::Null.to_string(), "null");
         assert_eq!(AvroCompression::Deflate.to_string(), "deflate");
-    }
-
-    #[test]
-    fn test_compression_to_avro_codec() {
-        assert_eq!(
-            AvroCompression::Null.to_avro_codec(),
-            apache_avro::Codec::Null
-        );
-        assert_eq!(
-            AvroCompression::Deflate.to_avro_codec(),
-            apache_avro::Codec::Deflate
-        );
     }
 }
 
