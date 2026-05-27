@@ -128,7 +128,7 @@ def test_roundtrip_large_uint64_rejected(tmp_path):
 
 def test_cross_tool_compatibility_with_fastavro(tmp_path):
     """Verify Daft-written Avro files are readable by external Avro tools."""
-    import fastavro
+    fastavro = pytest.importorskip("fastavro")
 
     data = {
         "ints": [1, 2, 3, None, 5],
