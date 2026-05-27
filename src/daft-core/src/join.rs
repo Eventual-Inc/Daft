@@ -158,6 +158,7 @@ impl FromStr for JoinStrategy {
 pub enum AsofJoinStrategy {
     Backward,
     Forward,
+    Nearest,
 }
 
 #[cfg(feature = "python")]
@@ -176,8 +177,11 @@ impl_bincode_py_state_serialization!(AsofJoinStrategy);
 
 impl AsofJoinStrategy {
     pub fn iterator() -> std::slice::Iter<'static, Self> {
-        static ASOF_JOIN_STRATEGIES: [AsofJoinStrategy; 2] =
-            [AsofJoinStrategy::Backward, AsofJoinStrategy::Forward];
+        static ASOF_JOIN_STRATEGIES: [AsofJoinStrategy; 3] = [
+            AsofJoinStrategy::Backward,
+            AsofJoinStrategy::Forward,
+            AsofJoinStrategy::Nearest,
+        ];
         ASOF_JOIN_STRATEGIES.iter()
     }
 }
@@ -189,6 +193,7 @@ impl FromStr for AsofJoinStrategy {
         match strategy {
             "backward" => Ok(Self::Backward),
             "forward" => Ok(Self::Forward),
+            "nearest" => Ok(Self::Nearest),
             _ => Err(DaftError::TypeError(format!(
                 "Asof join strategy {} is not supported; only the following strategies are supported: {:?}",
                 strategy,
