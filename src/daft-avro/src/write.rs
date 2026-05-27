@@ -20,15 +20,15 @@ pub fn write_record_batch_to_avro(
         &options.record_namespace,
     )?;
 
+    let codec = options.compression.to_avro_codec();
+
     if num_rows == 0 {
         // Write an empty Avro file with just the schema
-        let codec = options.compression.to_avro_codec();
         let writer = Writer::with_codec(&avro_schema, Vec::new(), codec);
         writer.into_inner().map_err(|e| AvroError::WriteError {
             source: Box::new(e),
         })
     } else {
-        let codec = options.compression.to_avro_codec();
         let mut writer = Writer::with_codec(&avro_schema, Vec::new(), codec);
 
         // Convert each row to an Avro Record

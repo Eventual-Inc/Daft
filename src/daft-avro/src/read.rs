@@ -180,11 +180,12 @@ fn build_boolean_array(values: &[Option<&AvroValue>], num_rows: usize) -> Result
     let mut builder = BooleanBuilder::new();
     for val in values.iter().take(num_rows) {
         match val {
-        match val {
             Some(AvroValue::Boolean(b)) => builder.append_value(*b),
             Some(_) => builder.append_null(),
             None => builder.append_null(),
         }
+    }
+    Ok(Arc::new(builder.finish()))
 }
 
 fn build_int32_array(values: &[Option<&AvroValue>], num_rows: usize) -> Result<ArrayRef> {
