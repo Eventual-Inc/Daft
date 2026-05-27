@@ -200,7 +200,6 @@ impl AsofJoinNode {
 
         // backward_carryovers[i] = max of bucket i (forward-propagated): used as carryover for bucket i+1.
         // forward_carryovers[i]  = min of bucket i (backward-propagated): used as carryover for bucket i-1.
-        let none_vec = || vec![None::<MaterializedOutput>; num_partitions];
         let (backward_carryovers, forward_carryovers) = match self.strategy {
             AsofJoinStrategy::Backward => {
                 let backward_carryovers = self
@@ -211,7 +210,10 @@ impl AsofJoinNode {
                         scheduler_handle,
                     )
                     .await?;
-                (backward_carryovers, none_vec())
+                (
+                    backward_carryovers,
+                    vec![None::<MaterializedOutput>; num_partitions],
+                )
             }
             AsofJoinStrategy::Forward => {
                 let forward_carryovers = self
@@ -222,7 +224,10 @@ impl AsofJoinNode {
                         scheduler_handle,
                     )
                     .await?;
-                (none_vec(), forward_carryovers)
+                (
+                    vec![None::<MaterializedOutput>; num_partitions],
+                    forward_carryovers,
+                )
             }
             AsofJoinStrategy::Nearest => tokio::try_join!(
                 self.compute_carryovers(
