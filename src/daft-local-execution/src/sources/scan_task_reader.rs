@@ -15,6 +15,8 @@ use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
 
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+
 /// Dispatches a ScanTask to the appropriate reader based on its SourceConfig,
 /// returning a stream of RecordBatches.
 ///
@@ -29,6 +31,7 @@ pub(crate) async fn read_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     match scan_task.source_config.as_ref() {
         SourceConfig::File(ffc) => match ffc {
@@ -43,6 +46,7 @@ pub(crate) async fn read_scan_task(
                     delete_map,
                     maintain_order,
                     chunk_size,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -55,6 +59,7 @@ pub(crate) async fn read_scan_task(
                     io_client,
                     io_stats,
                     chunk_size,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -97,6 +102,7 @@ async fn read_parquet(
     // the caller, not here.
     _maintain_order: bool,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
@@ -109,6 +115,8 @@ async fn read_parquet(
             io_stats,
             cfg.field_id_mapping.clone(),
             aggregation,
+            cfg.ignore_corrupt_files,
+            skipped_corrupt_files,
         )
         .await;
     }
@@ -130,6 +138,8 @@ async fn read_parquet(
             .sources
             .first()
             .and_then(|s| s.get_parquet_metadata().cloned()),
+        ignore_corrupt_files: cfg.ignore_corrupt_files,
+        skipped_corrupt_files: skipped_corrupt_files.clone(),
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.
@@ -148,23 +158,22 @@ async fn count_pushdown_stream(
     io_stats: IOStatsRef,
     field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
     aggregation: &daft_dsl::ExprRef,
+    ignore_corrupt_files: bool,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    use daft_core::prelude::*;
-    let metadata =
-        daft_parquet::read::read_parquet_metadata(url, io_client, Some(io_stats), field_id_mapping)
-            .await?;
-    let count = metadata.num_rows();
-    let count_field = Field::new(aggregation.name(), DataType::UInt64);
-    let count_array =
-        UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
-    let batch = RecordBatch::new_with_size(
-        Schema::new(vec![count_field]),
-        vec![count_array.into_series()],
-        1,
-    )?;
-    Ok(Box::pin(futures::stream::once(async move { Ok(batch) })))
+    daft_parquet::read::stream_parquet_count_pushdown(
+        url,
+        io_client,
+        Some(io_stats),
+        field_id_mapping,
+        aggregation,
+        ignore_corrupt_files,
+        skipped_corrupt_files,
+    )
+    .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv(
     scan_task: &ScanTask,
     cfg: &CsvSourceConfig,
@@ -173,6 +182,7 @@ async fn read_csv(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let schema_of_file = scan_task.schema.clone();
     let col_names = if !cfg.has_headers {
@@ -210,6 +220,8 @@ async fn read_csv(
         io_client,
         Some(io_stats),
         None,
+        cfg.ignore_corrupt_files,
+        skipped_corrupt_files,
     )
     .await
 }

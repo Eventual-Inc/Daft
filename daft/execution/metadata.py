@@ -102,6 +102,14 @@ class ExecutionMetadata:
     def to_recordbatch(self) -> RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._py.to_recordbatch())
 
+    @property
+    def skipped_corrupt_files(self) -> list[tuple[str, str]]:
+        """Files skipped during execution due to ignore_corrupt_files=True.
+
+        Returns a list of (path, reason) tuples for every file that was skipped.
+        """
+        return self._py.skipped_corrupt_files
+
     def _plan_to_mermaid_string(self) -> str:
         """Convert query_plan dict to mermaid diagram string (bottom-up)."""
         metrics = {int(item["id"]): item["stats"] for item in self.to_recordbatch().to_pylist()}

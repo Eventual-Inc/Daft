@@ -18,6 +18,8 @@ pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
+    /// Files skipped due to `ignore_corrupt_files=True`: (path, reason).
+    pub skipped_corrupt_files: Vec<(String, String)>,
 }
 
 impl ExecutionStats {
@@ -27,7 +29,20 @@ impl ExecutionStats {
             query_id,
             query_plan: None,
             nodes,
+            skipped_corrupt_files: vec![],
         }
+    }
+
+    pub fn with_skipped_corrupt_files(
+        mut self,
+        skipped_corrupt_files: Vec<(String, String)>,
+    ) -> Self {
+        let mut seen = std::collections::HashSet::new();
+        self.skipped_corrupt_files = skipped_corrupt_files
+            .into_iter()
+            .filter(|(path, _)| seen.insert(path.clone()))
+            .collect();
+        self
     }
 
     pub fn with_query_plan(mut self, query_plan: serde_json::Value) -> Self {
@@ -37,13 +52,17 @@ impl ExecutionStats {
 
     /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
-        bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionStats")
+        bincode::encode_to_vec(
+            (&self.nodes, &self.skipped_corrupt_files),
+            bincode::config::legacy(),
+        )
+        .expect("Failed to encode ExecutionStats")
     }
 
     /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
-        let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
+        type Decoded = (Vec<(Arc<NodeInfo>, StatSnapshot)>, Vec<(String, String)>);
+        let ((nodes, skipped_corrupt_files), _): (Decoded, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
                     DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
@@ -53,6 +72,7 @@ impl ExecutionStats {
             query_id: "".into(),
             query_plan: None,
             nodes,
+            skipped_corrupt_files,
         }
     }
 
