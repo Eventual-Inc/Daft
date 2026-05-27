@@ -255,6 +255,7 @@ class FileFormat(Enum):
     Parquet = 1
     Csv = 2
     Json = 3
+    Avro = 6
 
     def ext(self) -> str: ...
 
@@ -329,6 +330,11 @@ class WarcSourceConfig:
 
     def __init__(self) -> None: ...
 
+class AvroSourceConfig:
+    """Configuration of an Avro data source."""
+
+    def __init__(self) -> None: ...
+
 class DatabaseSourceConfig:
     """Configuration of a database data source."""
 
@@ -358,7 +364,7 @@ class TextSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig | AvroSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -378,6 +384,11 @@ class FileFormatConfig:
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
+        ...
+
+    @staticmethod
+    def from_avro_config(config: AvroSourceConfig) -> FileFormatConfig:
+        """Create an Avro file format config."""
         ...
 
     @staticmethod

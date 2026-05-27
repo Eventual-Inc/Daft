@@ -13,6 +13,7 @@ use arrow_array::{
 };
 use daft_core::datatypes::DataType as DaftDataType;
 use daft_recordbatch::RecordBatch;
+use futures::StreamExt;
 
 use crate::{AvroError, Result, schema::avro_schema_to_daft_schema};
 
@@ -38,7 +39,6 @@ pub async fn read_avro(
                 })?
         }
         daft_io::GetResult::Stream(stream, ..) => {
-            use futures::StreamExt;
             let mut data = Vec::new();
             futures::pin_mut!(stream);
             while let Some(chunk) = stream.next().await {

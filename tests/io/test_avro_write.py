@@ -124,3 +124,35 @@ def test_roundtrip_large_uint64_rejected(tmp_path):
     path = str(tmp_path)
     with pytest.raises(Exception, match="exceeds Avro Long"):
         df.write_avro(path, write_mode="overwrite")
+
+
+def test_cross_tool_compatibility_with_fastavro(tmp_path):
+    """Verify Daft-written Avro files are readable by external Avro tools."""
+    import fastavro
+
+    data = {
+        "ints": [1, 2, 3, None, 5],
+        "floats": [1.0, 2.5, None, 4.0, 5.5],
+        "strings": ["a", None, "c", "d", ""],
+        "bools": [True, False, None, True, False],
+    }
+    df = daft.from_pydict(data)
+    path = str(tmp_path)
+    df.write_avro(path, compression="deflate", write_mode="overwrite")
+
+    avro_files = list(tmp_path.glob("*.avro"))
+    assert len(avro_files) == 1, f"Expected 1 avro file, got {len(avro_files)}"
+
+    with open(avro_files[0], "rb") as f:
+        reader = fastavro.reader(f)
+        records = list(reader)
+
+    assert len(records) == 5
+    for i, rec in enumerate(records):
+        for key in data:
+            expected = data[key][i]
+            actual = rec.get(key)
+            if expected is None:
+                assert actual is None, f"row {i} col {key}: expected None, got {actual}"
+            else:
+                assert actual == expected, f"row {i} col {key}: expected {expected}, got {actual}"
