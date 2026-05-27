@@ -169,18 +169,12 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 input_data.eval_expression_list(&params.partition_by)?;
                             let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-                            let partitions = partitionvals_indices
+                            let grouped_results: Vec<RecordBatch> = partitionvals_indices
                                 .iter()
-                                .map(|indices| {
+                                .map(|indices| -> DaftResult<RecordBatch> {
                                     let indices_arr =
                                         UInt64Array::from_vec("indices", indices.to_vec());
-                                    input_data.take(&indices_arr).unwrap()
-                                })
-                                .collect::<Vec<_>>();
-
-                            let grouped_results: Vec<RecordBatch> = partitions
-                                .into_iter()
-                                .map(|partition| -> DaftResult<RecordBatch> {
+                                    let partition = input_data.take(&indices_arr)?;
                                     let partition = partition.sort(
                                         &params.order_by,
                                         &params.descending,
