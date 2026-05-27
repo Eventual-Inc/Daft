@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft_lance import merge_columns_df
 from daft.dependencies import pa
 
 
@@ -127,7 +128,7 @@ def test_merge_columns_df_rowaddr(lance_dataset_path):
         .select("_rowaddr", "fragment_id", "double_lat")
     )
 
-    daft.io.lance.merge_columns_df(
+    merge_columns_df(
         df_subset,
         lance_dataset_path,
         read_columns=["_rowaddr", "double_lat"],

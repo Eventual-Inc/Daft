@@ -9,7 +9,7 @@ import pytest
 from packaging import version as packaging_version
 
 import daft
-from daft.io.lance import create_scalar_index
+from daft_lance import create_scalar_index
 
 
 def check_lance_version_compatibility():

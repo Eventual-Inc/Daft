@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 import daft
+from daft_lance import merge_columns
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -36,7 +37,7 @@ class TestCustomTask:
             )
 
         # Add columns
-        daft.io.lance.merge_columns(
+        merge_columns(
             path,
             transform=double_score,
             read_columns=["c"],
