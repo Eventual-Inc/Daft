@@ -2443,10 +2443,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "apache-avro",
  "arrow-array 57.3.0",
- "arrow-buffer 57.3.0",
- "arrow-schema 57.3.0",
  "common-error",
- "common-file-formats",
  "common-py-serde",
  "common-runtime",
  "daft-core",
@@ -2455,9 +2452,7 @@ dependencies = [
  "daft-schema",
  "futures",
  "pyo3",
- "rstest",
  "serde",
- "serde_json",
  "snafu",
  "tokio",
 ]
