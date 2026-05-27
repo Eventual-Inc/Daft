@@ -6,10 +6,10 @@ from pathlib import Path
 import lance
 import pandas as pd
 import pytest
+from daft_lance import create_scalar_index
 from packaging import version as packaging_version
 
 import daft
-from daft_lance import create_scalar_index
 
 
 def check_lance_version_compatibility():

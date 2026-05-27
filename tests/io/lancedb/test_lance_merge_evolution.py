@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from daft_lance import merge_columns_df
 
 import daft
-from daft_lance import merge_columns_df
 from daft.dependencies import pa
 
 

@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pandas as pd
+from daft_lance import merge_columns
 
 import daft
-from daft_lance import merge_columns
 
 if TYPE_CHECKING:
     import pyarrow as pa
