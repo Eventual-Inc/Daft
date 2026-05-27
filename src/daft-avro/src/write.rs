@@ -22,7 +22,8 @@ pub fn write_record_batch_to_avro(
 
     if num_rows == 0 {
         // Write an empty Avro file with just the schema
-        let writer = Writer::new(&avro_schema, Vec::new());
+        let codec = options.compression.to_avro_codec();
+        let writer = Writer::with_codec(&avro_schema, Vec::new(), codec);
         writer.into_inner().map_err(|e| AvroError::WriteError {
             source: Box::new(e),
         })
