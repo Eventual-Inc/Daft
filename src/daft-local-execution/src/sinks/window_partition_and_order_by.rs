@@ -160,7 +160,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 input_data.eval_expression_list(&params.partition_by)?;
                             let (_, groupvals_indices) = groupby_table.make_groups()?;
 
-                            let mut partitions = groupvals_indices
+                            let partitions = groupvals_indices
                                 .iter()
                                 .map(|indices| {
                                     let indices_arr =
@@ -169,58 +169,66 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 })
                                 .collect::<Vec<_>>();
 
-                            for partition in &mut partitions {
-                                // Sort the partition by the order_by columns
-                                *partition = partition.sort(
-                                    &params.order_by,
-                                    &params.descending,
-                                    &params.nulls_first,
-                                )?;
+                            let grouped_results: Vec<RecordBatch> = partitions
+                                .into_iter()
+                                .map(|partition| -> DaftResult<RecordBatch> {
+                                    let partition = partition.sort(
+                                        &params.order_by,
+                                        &params.descending,
+                                        &params.nulls_first,
+                                    )?;
 
-                                for (window_expr, name) in
-                                    params.window_exprs.iter().zip(params.aliases.iter())
-                                {
-                                    *partition = match window_expr.as_ref() {
-                                        WindowExpr::Agg(agg_expr) => {
-                                            let new_col = partition
-                                                .eval_expression(&BoundExpr::new_unchecked(
-                                                    Arc::new(Expr::Agg(agg_expr.clone())),
-                                                ))?
-                                                .broadcast(partition.len())?
-                                                .rename(name.clone());
-                                            let agg_batch =
-                                                RecordBatch::from_nonempty_columns(vec![new_col])?;
-                                            partition.union(&agg_batch)?
-                                        }
-                                        WindowExpr::RowNumber => {
-                                            partition.window_row_number(name.clone())?
-                                        }
-                                        WindowExpr::Rank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            false,
-                                        )?,
-                                        WindowExpr::DenseRank => partition.window_rank(
-                                            name.clone(),
-                                            &params.order_by,
-                                            true,
-                                        )?,
-                                        WindowExpr::Offset {
-                                            input,
-                                            offset,
-                                            default,
-                                        } => partition.window_offset(
-                                            name.clone(),
-                                            BoundExpr::new_unchecked(input.clone()),
-                                            *offset,
-                                            default.clone().map(BoundExpr::new_unchecked),
-                                        )?,
+                                    let new_cols: Vec<Series> = params
+                                        .window_exprs
+                                        .iter()
+                                        .zip(params.aliases.iter())
+                                        .map(|(window_expr, name)| -> DaftResult<Series> {
+                                            match window_expr.as_ref() {
+                                                WindowExpr::Agg(agg_expr) => {
+                                                    let agg = partition.eval_expression(
+                                                        &BoundExpr::new_unchecked(Arc::new(
+                                                            Expr::Agg(agg_expr.clone()),
+                                                        )),
+                                                    )?;
+                                                    Ok(agg.broadcast(partition.len())?.rename(name))
+                                                }
+                                                WindowExpr::RowNumber => {
+                                                    partition.window_row_number_col(name)
+                                                }
+                                                WindowExpr::Rank => partition.window_rank_col(
+                                                    name,
+                                                    &params.order_by,
+                                                    false,
+                                                ),
+                                                WindowExpr::DenseRank => partition.window_rank_col(
+                                                    name,
+                                                    &params.order_by,
+                                                    true,
+                                                ),
+                                                WindowExpr::Offset {
+                                                    input,
+                                                    offset,
+                                                    default,
+                                                } => partition.window_offset_col(
+                                                    name,
+                                                    BoundExpr::new_unchecked(input.clone()),
+                                                    *offset,
+                                                    default.clone().map(BoundExpr::new_unchecked),
+                                                ),
+                                            }
+                                        })
+                                        .collect::<DaftResult<_>>()?;
+
+                                    if new_cols.is_empty() {
+                                        Ok(partition)
+                                    } else {
+                                        partition
+                                            .union(&RecordBatch::from_nonempty_columns(new_cols)?)
                                     }
-                                }
-                            }
+                                })
+                                .collect::<DaftResult<_>>()?;
 
-                            let final_result = RecordBatch::concat(&partitions)?;
-                            Ok(final_result)
+                            RecordBatch::concat(&grouped_results)
                         });
                     }
 
