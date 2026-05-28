@@ -77,16 +77,6 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
-        // Crypto/hash functions
-        parent.add_fn(Md5Function);
-        parent.add_fn(Sha1Function);
-        parent.add_fn(Sha2Function);
-        parent.add_fn(XxHash64Function);
-        parent.add_fn(Crc32Function);
->>>>>>> 8beb69497 (feat: implement hash/crypto functions (md5, sha1, sha2, xxhash64, crc32))
-    }
-}
-=======
         parent.add_fn(Uuid);
         parent.add_fn(UuidV7);
         parent.add_fn(ExtractMinuteUuid7);
@@ -99,15 +89,5 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(Sha2Function);
         parent.add_fn(XxHash64Function);
         parent.add_fn(Crc32Function);
-    }
-}
-=======
-        // Crypto/hash functions
-        parent.add_fn(Md5Function);
-        parent.add_fn(Sha1Function);
-        parent.add_fn(Sha2Function);
-        parent.add_fn(XxHash64Function);
-        parent.add_fn(Crc32Function);
->>>>>>> 8beb69497 (feat: implement hash/crypto functions (md5, sha1, sha2, xxhash64, crc32))
     }
 }
