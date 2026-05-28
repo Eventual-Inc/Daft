@@ -8,6 +8,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
 use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
@@ -136,35 +137,35 @@ impl BlockingSink for WindowOrderByOnlySink {
                             continue;
                         }
 
-                        let mut result_batch = batch;
-
-                        // Apply each window expression
-                        for (wexpr, name) in params.window_exprs.iter().zip(&params.aliases) {
-                            result_batch = match wexpr.as_ref() {
-                                WindowExpr::RowNumber => {
-                                    result_batch.window_row_number(name.clone())?
-                                }
-                                WindowExpr::Rank => result_batch.window_rank(
-                                    name.clone(),
-                                    &params.order_by,
-                                    false,
-                                )?,
-                                WindowExpr::DenseRank => result_batch.window_rank(
-                                    name.clone(),
-                                    &params.order_by,
-                                    true,
-                                )?,
-                                _ => {
-                                    return Err(DaftError::ValueError(
+                        let new_cols: Vec<Series> = params
+                            .window_exprs
+                            .iter()
+                            .zip(&params.aliases)
+                            .map(|(window_expr, name)| -> DaftResult<Series> {
+                                match window_expr.as_ref() {
+                                    WindowExpr::RowNumber => batch.window_row_number_col(name),
+                                    WindowExpr::Rank => {
+                                        batch.window_rank_col(name, &params.order_by, false)
+                                    }
+                                    WindowExpr::DenseRank => {
+                                        batch.window_rank_col(name, &params.order_by, true)
+                                    }
+                                    _ => Err(DaftError::ValueError(
                                         format!(
                                             "Unsupported window function for order by only: {:?}",
-                                            wexpr
+                                            window_expr
                                         )
                                         .into(),
-                                    ));
+                                    )),
                                 }
-                            };
-                        }
+                            })
+                            .collect::<DaftResult<_>>()?;
+
+                        let result_batch = if new_cols.is_empty() {
+                            batch
+                        } else {
+                            batch.union(&RecordBatch::from_nonempty_columns(new_cols)?)?
+                        };
                         out_batches.push(result_batch);
                     }
 

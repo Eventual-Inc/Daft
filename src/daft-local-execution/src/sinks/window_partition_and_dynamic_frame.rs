@@ -169,41 +169,49 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 input_data.eval_expression_list(&params.partition_by)?;
                             let (_, partitionvals_indices) = partitionby_table.make_groups()?;
 
-                            let mut partitions = partitionvals_indices
+                            let grouped_results: Vec<RecordBatch> = partitionvals_indices
                                 .iter()
-                                .map(|indices| {
+                                .map(|indices| -> DaftResult<RecordBatch> {
                                     let indices_arr =
                                         UInt64Array::from_vec("indices", indices.to_vec());
-                                    input_data.take(&indices_arr).unwrap()
-                                })
-                                .collect::<Vec<_>>();
-
-                            for partition in &mut partitions {
-                                // Sort the partition by the order_by columns
-                                *partition = partition.sort(
-                                    &params.order_by,
-                                    &params.descending,
-                                    &params.nulls_first,
-                                )?;
-
-                                for (agg_expr, name) in
-                                    params.aggregations.iter().zip(params.aliases.iter())
-                                {
-                                    let dtype =
-                                        agg_expr.as_ref().to_field(&params.original_schema)?.dtype;
-                                    *partition = partition.window_agg_dynamic_frame(
-                                        name.clone(),
-                                        agg_expr,
+                                    let partition = input_data.take(&indices_arr)?;
+                                    let partition = partition.sort(
                                         &params.order_by,
                                         &params.descending,
-                                        params.min_periods,
-                                        &dtype,
-                                        &params.frame,
+                                        &params.nulls_first,
                                     )?;
-                                }
-                            }
 
-                            let final_result = RecordBatch::concat(&partitions)?;
+                                    let new_cols: Vec<Series> = params
+                                        .aggregations
+                                        .iter()
+                                        .zip(params.aliases.iter())
+                                        .map(|(agg_expr, name)| -> DaftResult<Series> {
+                                            let dtype = agg_expr
+                                                .as_ref()
+                                                .to_field(&params.original_schema)?
+                                                .dtype;
+                                            partition.window_agg_dynamic_frame_col(
+                                                name,
+                                                agg_expr,
+                                                &params.order_by,
+                                                &params.descending,
+                                                params.min_periods,
+                                                &dtype,
+                                                &params.frame,
+                                            )
+                                        })
+                                        .collect::<DaftResult<_>>()?;
+
+                                    if new_cols.is_empty() {
+                                        Ok(partition)
+                                    } else {
+                                        partition
+                                            .union(&RecordBatch::from_nonempty_columns(new_cols)?)
+                                    }
+                                })
+                                .collect::<DaftResult<_>>()?;
+
+                            let final_result = RecordBatch::concat(&grouped_results)?;
                             Ok(final_result)
                         });
                     }
