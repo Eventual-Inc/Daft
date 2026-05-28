@@ -209,6 +209,10 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                     *offset,
                                                     default.clone().map(BoundExpr::new_unchecked),
                                                 ),
+                                                WindowExpr::FirstValue(_, _)
+                                                | WindowExpr::LastValue(_, _) => {
+                                                    unreachable!("first_value/last_value require a frame and cannot appear in a partition+order_by-only window")
+                                                }
                                             }
                                         })
                                         .collect::<DaftResult<_>>()?;
