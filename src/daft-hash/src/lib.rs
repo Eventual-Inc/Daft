@@ -40,11 +40,6 @@ pub fn compute_crc32(data: &[u8]) -> i64 {
     hasher.finalize() as i64
 }
 
-/// Computes xxHash64 and returns an i64 value (Spark-compatible)
-pub fn compute_xxhash64(data: &[u8], seed: u64) -> i64 {
-    xxhash_rust::xxh64::xxh64(data, seed) as i64
-}
-
 /// Computes xxHash64 for multi-column combination (Spark-compatible)
 pub fn compute_xxhash64_seeded(data: &[u8], seed: i64) -> i64 {
     xxhash_rust::xxh64::xxh64(data, seed as u64) as i64
