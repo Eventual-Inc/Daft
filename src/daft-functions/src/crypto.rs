@@ -28,11 +28,12 @@ impl ScalarUDF for Md5Function {
     ) -> DaftResult<Series> {
         let Md5Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
-        let result: Vec<Option<String>> = (0..input.len())
-            .map(|i| input.get(i).map(daft_hash::compute_md5))
-            .collect();
         let name = input.name().to_string();
-        Ok(Utf8Array::from_iter(&name, result.into_iter()).into_series())
+        Ok(Utf8Array::from_iter(
+            &name,
+            (0..input.len()).map(|i| input.get(i).map(daft_hash::compute_md5)),
+        )
+        .into_series())
     }
 
     fn get_return_field(
@@ -72,11 +73,12 @@ impl ScalarUDF for Sha1Function {
     ) -> DaftResult<Series> {
         let Sha1Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
-        let result: Vec<Option<String>> = (0..input.len())
-            .map(|i| input.get(i).map(daft_hash::compute_sha1))
-            .collect();
         let name = input.name().to_string();
-        Ok(Utf8Array::from_iter(&name, result.into_iter()).into_series())
+        Ok(Utf8Array::from_iter(
+            &name,
+            (0..input.len()).map(|i| input.get(i).map(daft_hash::compute_sha1)),
+        )
+        .into_series())
     }
 
     fn get_return_field(
@@ -124,15 +126,16 @@ impl ScalarUDF for Sha2Function {
             )));
         }
         let input = input_to_bytes(&input)?;
-        let result: Vec<Option<String>> = (0..input.len())
-            .map(|i| {
+        let name = input.name().to_string();
+        Ok(Utf8Array::from_iter(
+            &name,
+            (0..input.len()).map(|i| {
                 input
                     .get(i)
                     .map(|bytes| daft_hash::compute_sha2(bytes, bit_length))
-            })
-            .collect();
-        let name = input.name().to_string();
-        Ok(Utf8Array::from_iter(&name, result.into_iter()).into_series())
+            }),
+        )
+        .into_series())
     }
 
     fn get_return_field(
@@ -198,20 +201,20 @@ impl ScalarUDF for XxHash64Function {
 
         for series in &input {
             let bytes_series = input_to_bytes(series)?;
-            for i in 0..num_rows {
+            for (i, hash) in hashes.iter_mut().enumerate().take(num_rows) {
                 // In Spark, null columns do not update the running hash — the seed is
                 // forwarded unchanged. Only hash when data is non-null.
                 if let Some(data) = bytes_series.get(i) {
-                    hashes[i] = daft_hash::compute_xxhash64_seeded(data, hashes[i]);
+                    *hash = daft_hash::compute_xxhash64_seeded(data, *hash);
                 }
             }
         }
 
-        let result: Vec<Option<i64>> = hashes.into_iter().map(Some).collect();
-        Ok(
-            Int64Array::from_iter(Field::new(first_name, DataType::Int64), result.into_iter())
-                .into_series(),
+        Ok(Int64Array::from_iter(
+            Field::new(first_name, DataType::Int64),
+            hashes.into_iter().map(Some),
         )
+        .into_series())
     }
 
     fn get_return_field(
@@ -253,14 +256,12 @@ impl ScalarUDF for Crc32Function {
     ) -> DaftResult<Series> {
         let Crc32Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
-        let result: Vec<Option<i64>> = (0..input.len())
-            .map(|i| input.get(i).map(daft_hash::compute_crc32))
-            .collect();
         let name = input.name().to_string();
-        Ok(
-            Int64Array::from_iter(Field::new(name, DataType::Int64), result.into_iter())
-                .into_series(),
+        Ok(Int64Array::from_iter(
+            Field::new(name, DataType::Int64),
+            (0..input.len()).map(|i| input.get(i).map(daft_hash::compute_crc32)),
         )
+        .into_series())
     }
 
     fn get_return_field(
