@@ -2,8 +2,8 @@ use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::arrow::comparison::build_multi_array_is_equal, prelude::*};
 use daft_dsl::{
-    AggExpr, WindowBoundary, WindowFrame,
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    AggExpr, WindowBoundary, WindowExpr, WindowFrame,
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
 };
 use daft_groupby::IntoGroups;
 
@@ -279,7 +279,7 @@ impl RecordBatch {
     pub fn window_agg_dynamic_frame_col(
         &self,
         name: &str,
-        agg_expr: &BoundAggExpr,
+        window_expr: &BoundWindowExpr,
         order_by: &[BoundExpr],
         descending: &[bool],
         min_periods: usize,
@@ -300,15 +300,14 @@ impl RecordBatch {
             ));
         }
 
-        let child_exprs = agg_expr
+        let child_exprs = window_expr
             .as_ref()
             .children()
             .into_iter()
             .map(BoundExpr::new_unchecked)
             .collect::<Vec<_>>();
         let sources = self.eval_expression_list(&child_exprs)?;
-        // Check if we can initialize an incremental state
-        match create_window_agg_state(&sources, agg_expr, total_rows)? {
+        match create_window_agg_state(&sources, window_expr, total_rows)? {
             Some(agg_state) => {
                 if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
@@ -335,10 +334,14 @@ impl RecordBatch {
                 }
             }
             None => {
+                let agg_expr = match window_expr.as_ref() {
+                    WindowExpr::Agg(agg) => BoundAggExpr::new_unchecked(agg.clone()),
+                    _ => unreachable!("non-incremental fallback only handles Agg variants"),
+                };
                 if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
                     self.window_agg_range_col(
-                        agg_expr,
+                        &agg_expr,
                         name,
                         dtype,
                         &frame.start,
@@ -351,7 +354,7 @@ impl RecordBatch {
                 } else {
                     let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
                     self.window_agg_rows_col(
-                        agg_expr,
+                        &agg_expr,
                         name,
                         dtype,
                         start,

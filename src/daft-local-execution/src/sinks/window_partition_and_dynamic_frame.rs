@@ -5,7 +5,7 @@ use common_metrics::ops::NodeType;
 use daft_core::{datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     WindowFrame,
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
 use daft_groupby::IntoGroups;
 use daft_micropartition::MicroPartition;
@@ -25,7 +25,7 @@ use crate::{
 };
 
 struct WindowPartitionAndDynamicFrameParams {
-    aggregations: Vec<BoundAggExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
     min_periods: usize,
     aliases: Vec<String>,
     partition_by: Vec<BoundExpr>,
@@ -57,7 +57,7 @@ pub struct WindowPartitionAndDynamicFrameSink {
 impl WindowPartitionAndDynamicFrameSink {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        aggregations: &[BoundAggExpr],
+        window_exprs: &[BoundWindowExpr],
         min_periods: usize,
         aliases: &[String],
         partition_by: &[BoundExpr],
@@ -70,7 +70,7 @@ impl WindowPartitionAndDynamicFrameSink {
         Ok(Self {
             window_partition_and_dynamic_frame_params: Arc::new(
                 WindowPartitionAndDynamicFrameParams {
-                    aggregations: aggregations.to_vec(),
+                    window_exprs: window_exprs.to_vec(),
                     min_periods,
                     aliases: aliases.to_vec(),
                     partition_by: partition_by.to_vec(),
@@ -182,17 +182,17 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                     )?;
 
                                     let new_cols: Vec<Series> = params
-                                        .aggregations
+                                        .window_exprs
                                         .iter()
                                         .zip(params.aliases.iter())
-                                        .map(|(agg_expr, name)| -> DaftResult<Series> {
-                                            let dtype = agg_expr
+                                        .map(|(window_expr, name)| -> DaftResult<Series> {
+                                            let dtype = window_expr
                                                 .as_ref()
                                                 .to_field(&params.original_schema)?
                                                 .dtype;
                                             partition.window_agg_dynamic_frame_col(
                                                 name,
-                                                agg_expr,
+                                                window_expr,
                                                 &params.order_by,
                                                 &params.descending,
                                                 params.min_periods,
@@ -253,7 +253,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
         display.push(format!(
             "WindowPartitionAndDynamicFrame: {}",
             self.window_partition_and_dynamic_frame_params
-                .aggregations
+                .window_exprs
                 .iter()
                 .map(|e| e.to_string())
                 .join(", ")
