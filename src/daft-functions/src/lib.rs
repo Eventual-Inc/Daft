@@ -4,6 +4,7 @@
 )]
 pub mod coalesce;
 pub mod concat_ws;
+pub mod crypto;
 pub mod distance;
 pub mod float;
 pub mod hash;
@@ -22,6 +23,7 @@ pub mod uuid;
 pub mod vector_utils;
 
 use common_error::DaftError;
+use crypto::{Crc32Function, Md5Function, Sha1Function, Sha2Function, XxHash64Function};
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
 use length::Length;
@@ -75,11 +77,37 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
+        // Crypto/hash functions
+        parent.add_fn(Md5Function);
+        parent.add_fn(Sha1Function);
+        parent.add_fn(Sha2Function);
+        parent.add_fn(XxHash64Function);
+        parent.add_fn(Crc32Function);
+>>>>>>> 8beb69497 (feat: implement hash/crypto functions (md5, sha1, sha2, xxhash64, crc32))
+    }
+}
+=======
         parent.add_fn(Uuid);
         parent.add_fn(UuidV7);
         parent.add_fn(ExtractMinuteUuid7);
         parent.add_fn(ExtractHourUuid7);
         parent.add_fn(ExtractDayUuid7);
         parent.add_fn(ExtractMonthUuid7);
+        // Crypto/hash functions
+        parent.add_fn(Md5Function);
+        parent.add_fn(Sha1Function);
+        parent.add_fn(Sha2Function);
+        parent.add_fn(XxHash64Function);
+        parent.add_fn(Crc32Function);
+    }
+}
+=======
+        // Crypto/hash functions
+        parent.add_fn(Md5Function);
+        parent.add_fn(Sha1Function);
+        parent.add_fn(Sha2Function);
+        parent.add_fn(XxHash64Function);
+        parent.add_fn(Crc32Function);
+>>>>>>> 8beb69497 (feat: implement hash/crypto functions (md5, sha1, sha2, xxhash64, crc32))
     }
 }

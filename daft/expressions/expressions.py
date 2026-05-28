@@ -1367,6 +1367,49 @@ class Expression:
 
         return simhash(self, ngram_size=ngram_size, hash_function=hash_function)
 
+    def md5(self) -> Expression:
+        """Computes the MD5 hash of this expression and returns a hex string.
+
+        Tip: See Also
+            [`daft.functions.md5`](https://docs.daft.ai/en/stable/api/functions/md5/)
+        """
+        from daft.functions import md5
+
+        return md5(self)
+
+    def sha1_hex(self) -> Expression:
+        """Computes the SHA-1 hash of this expression and returns a hex string.
+
+        Tip: See Also
+            [`daft.functions.sha1_hex`](https://docs.daft.ai/en/stable/api/functions/sha1_hex/)
+        """
+        from daft.functions import sha1_hex
+
+        return sha1_hex(self)
+
+    def sha2_hex(self, bit_length: int = 256) -> Expression:
+        """Computes the SHA-2 hash of this expression and returns a hex string.
+
+        Args:
+            bit_length (int): The bit length of the hash (0, 224, 256, 384, or 512). Defaults to 256.
+
+        Tip: See Also
+            [`daft.functions.sha2_hex`](https://docs.daft.ai/en/stable/api/functions/sha2_hex/)
+        """
+        from daft.functions import sha2_hex
+
+        return sha2_hex(self, bit_length=bit_length)
+
+    def crc32(self) -> Expression:
+        """Computes the CRC32 checksum of this expression and returns an Int64.
+
+        Tip: See Also
+            [`daft.functions.crc32`](https://docs.daft.ai/en/stable/api/functions/crc32/)
+        """
+        from daft.functions import crc32
+
+        return crc32(self)
+
     def hamming_distance(self, other: Expression) -> Expression:
         """Compute the bitwise Hamming distance between two hash fingerprints.
 
