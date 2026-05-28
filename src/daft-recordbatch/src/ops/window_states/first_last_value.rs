@@ -109,10 +109,10 @@ impl WindowAggStateOps for LastValueWindowState {
     }
 
     fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        if let Some(last) = self.last_idx {
-            if last < end_idx {
-                self.last_idx = None;
-            }
+        if let Some(last) = self.last_idx
+            && last < end_idx
+        {
+            self.last_idx = None;
         }
         Ok(())
     }

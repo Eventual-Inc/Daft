@@ -31,49 +31,65 @@ def make_df(values: list) -> daft.DataFrame:
 
 def test_last_value_rejected_in_global_agg():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.agg(col("x").last_value())
 
 
 def test_last_value_standalone_rejected_in_global_agg():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.agg(last_value(col("x")))
 
 
 def test_first_value_rejected_in_global_agg():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.agg(col("x").first_value())
 
 
 def test_first_value_standalone_rejected_in_global_agg():
     df = daft.from_pydict({"x": [1, 2, 3]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.agg(first_value(col("x")))
 
 
 def test_last_value_rejected_in_groupby_agg():
     df = daft.from_pydict({"x": [1, 2, 3], "g": ["a", "b", "a"]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.groupby("g").agg(col("x").last_value())
 
 
 def test_last_value_standalone_rejected_in_groupby_agg():
     df = daft.from_pydict({"x": [1, 2, 3], "g": ["a", "b", "a"]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.groupby("g").agg(last_value(col("x")))
 
 
 def test_first_value_rejected_in_groupby_agg():
     df = daft.from_pydict({"x": [1, 2, 3], "g": ["a", "b", "a"]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.groupby("g").agg(col("x").first_value())
 
 
 def test_first_value_standalone_rejected_in_groupby_agg():
     df = daft.from_pydict({"x": [1, 2, 3], "g": ["a", "b", "a"]})
-    with pytest.raises(DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"):
+    with pytest.raises(
+        DaftCoreException, match="Expressions in aggregations must be composed of non-nested aggregation expressions"
+    ):
         df.groupby("g").agg(first_value(col("x")))
 
 
