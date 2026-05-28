@@ -140,9 +140,16 @@ impl ScalarUDF for Sha2Function {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let Sha2Args { input, .. } = inputs.try_into()?;
+        let Sha2Args { input, bit_length } = inputs.try_into()?;
         let input = input.to_field(schema)?;
         validate_input_type(&input.dtype, "sha2")?;
+        // Validate bit_length at schema-analysis time to surface errors early
+        if !matches!(bit_length, 0 | 224 | 256 | 384 | 512) {
+            return Err(DaftError::ValueError(format!(
+                "sha2() bit_length must be 0, 224, 256, 384, or 512, got {}",
+                bit_length
+            )));
+        }
         Ok(Field::new(input.name, DataType::Utf8))
     }
 }
@@ -192,8 +199,11 @@ impl ScalarUDF for XxHash64Function {
         for series in &input {
             let bytes_series = input_to_bytes(series)?;
             for i in 0..num_rows {
-                let data = bytes_series.get(i).unwrap_or(b"");
-                hashes[i] = daft_hash::compute_xxhash64_seeded(data, hashes[i]);
+                // In Spark, null columns do not update the running hash — the seed is
+                // forwarded unchanged. Only hash when data is non-null.
+                if let Some(data) = bytes_series.get(i) {
+                    hashes[i] = daft_hash::compute_xxhash64_seeded(data, hashes[i]);
+                }
             }
         }
 
