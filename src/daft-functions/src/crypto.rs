@@ -29,7 +29,7 @@ impl ScalarUDF for Md5Function {
         let Md5Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
         let result: Vec<Option<String>> = (0..input.len())
-            .map(|i| input.get(i).map(|bytes| daft_hash::compute_md5(bytes)))
+            .map(|i| input.get(i).map(daft_hash::compute_md5))
             .collect();
         let name = input.name().to_string();
         Ok(Utf8Array::from_iter(&name, result.into_iter()).into_series())
@@ -73,7 +73,7 @@ impl ScalarUDF for Sha1Function {
         let Sha1Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
         let result: Vec<Option<String>> = (0..input.len())
-            .map(|i| input.get(i).map(|bytes| daft_hash::compute_sha1(bytes)))
+            .map(|i| input.get(i).map(daft_hash::compute_sha1))
             .collect();
         let name = input.name().to_string();
         Ok(Utf8Array::from_iter(&name, result.into_iter()).into_series())
@@ -254,7 +254,7 @@ impl ScalarUDF for Crc32Function {
         let Crc32Args { input } = inputs.try_into()?;
         let input = input_to_bytes(&input)?;
         let result: Vec<Option<i64>> = (0..input.len())
-            .map(|i| input.get(i).map(|bytes| daft_hash::compute_crc32(bytes)))
+            .map(|i| input.get(i).map(daft_hash::compute_crc32))
             .collect();
         let name = input.name().to_string();
         Ok(
@@ -363,7 +363,7 @@ fn input_to_bytes(series: &Series) -> DaftResult<BytesAccessor> {
             Ok(BytesAccessor {
                 data: BytesData::Utf8(data),
                 len,
-                name: name.to_string(),
+                name,
             })
         }
     }
