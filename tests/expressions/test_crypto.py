@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-
-import pytest
-
 import daft
 from daft import col
-from daft.functions import md5, sha1_hex, sha2_hex, xxhash64, crc32
+from daft.functions import crc32, md5, sha1_hex, sha2_hex, xxhash64
 
 
 class TestMd5:
@@ -219,34 +215,34 @@ class TestCrc32:
 
 class TestSqlIntegration:
     def test_md5_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT md5(data) as data FROM df").to_pydict()["data"]
         assert result[0] is not None
         assert len(result[0]) == 32
 
     def test_sha1_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT sha1(data) as data FROM df").to_pydict()["data"]
         assert result[0] is not None
         assert len(result[0]) == 40
 
     def test_sha2_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT sha2(data, bit_length:=256) as data FROM df").to_pydict()["data"]
         assert result[0] is not None
         assert len(result[0]) == 64
 
     def test_xxhash64_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT xxhash64(data) as data FROM df").to_pydict()["data"]
         assert isinstance(result[0], int)
 
     def test_crc32_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT crc32(data) as data FROM df").to_pydict()["data"]
         assert isinstance(result[0], int)
 
-    def test_crc32_sql(self):
-        df = daft.from_pydict({"data": ["hello"]})
+    def test_crc32_sql_known_value(self):
+        df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
         result = daft.sql("SELECT crc32(data) as data FROM df").to_pydict()["data"]
         assert result[0] == 907060870
