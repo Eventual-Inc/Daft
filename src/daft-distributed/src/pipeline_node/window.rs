@@ -129,7 +129,7 @@ pub(crate) struct WindowNodePartitionAndDynamicFrame {
     nulls_first: Vec<bool>,
     frame: WindowFrame,
     min_periods: usize,
-    agg_exprs: Vec<BoundAggExpr>,
+    window_exprs: Vec<BoundWindowExpr>,
 }
 
 impl WindowNodePartitionAndDynamicFrame {
@@ -144,7 +144,7 @@ impl WindowNodePartitionAndDynamicFrame {
             self.min_periods,
             self.base.config.schema.clone(),
             StatsState::NotMaterialized,
-            self.agg_exprs.clone(),
+            self.window_exprs.clone(),
             self.base.aliases.clone(),
             LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
@@ -171,8 +171,8 @@ impl WindowNodePartitionAndDynamicFrame {
             format!("Frame: {:?}", self.frame),
             format!("Min periods: {}", self.min_periods),
             format!(
-                "Agg exprs: {}",
-                self.agg_exprs.iter().map(|e| e.to_string()).join(", ")
+                "Window exprs: {}",
+                self.window_exprs.iter().map(|e| e.to_string()).join(", ")
             ),
         ]
     }
@@ -291,21 +291,18 @@ impl WindowNode {
                 nulls_first,
                 window_exprs,
             })),
-            (true, true, true) => {
-                let agg_exprs = window_to_agg_exprs(window_exprs)?;
-                Ok(Self::PartitionAndDynamicFrame(
-                    WindowNodePartitionAndDynamicFrame {
-                        base,
-                        partition_by,
-                        order_by,
-                        descending,
-                        nulls_first,
-                        frame: frame.unwrap(),
-                        min_periods,
-                        agg_exprs,
-                    },
-                ))
-            }
+            (true, true, true) => Ok(Self::PartitionAndDynamicFrame(
+                WindowNodePartitionAndDynamicFrame {
+                    base,
+                    partition_by,
+                    order_by,
+                    descending,
+                    nulls_first,
+                    frame: frame.unwrap(),
+                    min_periods,
+                    window_exprs,
+                },
+            )),
             (false, true, false) => Ok(Self::OrderByOnly(WindowNodeOrderByOnly {
                 base,
                 order_by,
