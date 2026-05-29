@@ -23,9 +23,9 @@ All shuffle algorithms are only used by the distributed (Ray) runner. The native
 
 ### `auto` — what it actually does
 
-`auto` is not "pick the best of three." It only chooses between `map_reduce` and `pre_shuffle_merge`. The decision is the geometric mean of input and output partition counts: if `sqrt(input_partitions × output_partitions) > pre_shuffle_merge_partition_threshold` (default `200`), Daft uses `pre_shuffle_merge`; otherwise `map_reduce`.
+Under `auto`, Daft chooses between `map_reduce` and `pre_shuffle_merge` based on the geometric mean of input and output partition counts. If `sqrt(input_partitions × output_partitions) > pre_shuffle_merge_partition_threshold` (default `200`), Daft uses `pre_shuffle_merge`; otherwise `map_reduce`.
 
-`auto` will **not** switch to `flight_shuffle` for you. When it sees a shuffle that is likely to hit the object-store ceiling — input size ≥ 10 GiB or partition product ≥ 500,000 — it prints a hint in the query plan telling you to flip it on. The opt-in is intentional: `flight_shuffle` needs you to choose where the spill files go.
+`auto` does not automatically switch to `flight_shuffle`, because `flight_shuffle` requires the user to choose where spill files go (`flight_shuffle_dirs`). Instead, when Daft sees a shuffle likely to hit the object-store ceiling — input size ≥ 10 GiB or partition product ≥ 500,000 — it prints a hint in the query plan with the configuration to enable.
 
 ### Why `map_reduce` falls over at scale
 
@@ -38,7 +38,7 @@ All shuffle algorithms are only used by the distributed (Ray) runner. The native
 | 4096 × 4096 | 16.8M | ~50 GB  |
 | 8192 × 8192 | 67M   | ~200 GB |
 
-At `4096 × 4096` the driver is holding 50 GB of pointers before a single row of your data has moved — usually an OOM on a normal head node, sometimes a scheduler stall first. `pre_shuffle_merge` softens the cost by reducing `M` (it coalesces small input partitions before the shuffle), but it can't change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, which collapses head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
+At `4096 × 4096` the driver holds 50 GB of pointers before any data has moved, which typically manifests as a head-node OOM or as a scheduler stall before workers receive work. `pre_shuffle_merge` reduces this cost by coalescing small input partitions before the shuffle, lowering `M`, but it cannot change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, which reduces head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
 
 If you see any of these symptoms on a large shuffle, you're almost certainly hitting the object-store ceiling and should switch to `flight_shuffle`:
 
@@ -83,14 +83,13 @@ Arrow IPC compression for the spill files. One of `"lz4"`, `"zstd"`, or `"none"`
 
 ## Choosing between algorithms
 
-A rough decision tree:
+For most workloads, leaving `shuffle_algorithm="auto"` and letting Daft decide is the right call. Override when:
 
-1. **Small shuffle, default cluster?** Leave it on `auto`. Don't tune.
-2. **`auto` printed a hint about `flight_shuffle` in your query plan?** Flip to `flight_shuffle` and set `flight_shuffle_dirs`. That's exactly what the hint is for.
-3. **Head-node OOMs or stalls on a large shuffle, no hint?** Still `flight_shuffle` — the hint thresholds are conservative.
-4. **You want fine control of the object-store path?** Use `map_reduce` for small partition counts and `pre_shuffle_merge` when partition product is large but data is small. These are mostly useful for benchmarking the two paths.
+- **`auto` printed a `flight_shuffle` hint in your query plan.** Enable `flight_shuffle` and set `flight_shuffle_dirs` to a fast local disk. The hint is emitted precisely when this is the recommended path.
+- **A large shuffle is OOMing the head node or stalling the scheduler, with no hint shown.** The hint thresholds are conservative; enabling `flight_shuffle` is still the right move.
+- **You want to compare the object-store paths directly.** Set `shuffle_algorithm="map_reduce"` for small partition counts, or `"pre_shuffle_merge"` when the partition product is large but total bytes are moderate. These are primarily useful for benchmarking.
 
-If you're not sure which side of the line your shuffle is on, run it once with `auto` — the hint message in the query plan tells you what Daft thinks.
+If you are unsure whether your shuffle has crossed the thresholds, run it once with `auto`; the hint message in the query plan will indicate whether `flight_shuffle` is recommended.
 
 ## Related
 
