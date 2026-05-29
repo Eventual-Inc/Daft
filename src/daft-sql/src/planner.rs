@@ -9,6 +9,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
+use daft_core::utils::supertype::try_get_collection_supertype;
 use daft_dsl::{
     Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
     functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
@@ -1943,7 +1944,45 @@ impl SQLPlanner<'_> {
 
                 Ok(lit(s))
             }
-            SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
+            SQLExpr::Struct { values, fields } => {
+                if values.is_empty() {
+                    invalid_operation_err!("Struct constructor requires at least one value")
+                }
+                if !fields.is_empty() && fields.len() != values.len() {
+                    invalid_operation_err!(
+                        "Struct constructor has {} fields but {} values",
+                        fields.len(),
+                        values.len()
+                    )
+                }
+
+                let struct_values = values
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, value)| {
+                        let (mut expr, named_field) = match value {
+                            SQLExpr::Named { expr, name } => {
+                                (self.plan_expr(expr.as_ref())?, Some(name.value.clone()))
+                            }
+                            _ => (self.plan_expr(value)?, None),
+                        };
+                        let field_name = if let Some(field) = fields.get(idx) {
+                            let dtype = sql_dtype_to_dtype(&field.field_type)?;
+                            expr = expr.cast(&dtype);
+                            field
+                                .field_name
+                                .as_ref()
+                                .map_or_else(|| format!("f{idx}"), |name| name.value.clone())
+                        } else {
+                            named_field.unwrap_or_else(|| format!("f{idx}"))
+                        };
+
+                        Ok(expr.alias(field_name))
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+                Ok(daft_functions::to_struct::to_struct(struct_values))
+            }
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
             SQLExpr::Dictionary(dict) => {
                 let entries = dict
@@ -1951,16 +1990,60 @@ impl SQLPlanner<'_> {
                     .map(|entry| {
                         let key = entry.key.value.clone();
                         let value = self.plan_expr(&entry.value)?;
-                        let value = value.as_literal().ok_or_else(|| {
-                            PlannerError::invalid_operation("Dictionary value is not a literal")
-                        })?;
-                        Ok((key, value.clone()))
+                        Ok(value.alias(key))
                     })
-                    .collect::<SQLPlannerResult<_>>()?;
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                Ok(Expr::Literal(Literal::Struct(entries)).arced())
+                Ok(daft_functions::to_struct::to_struct(entries).alias("literal"))
             }
-            SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
+            SQLExpr::Map(map) => {
+                if map.entries.is_empty() {
+                    invalid_operation_err!("Map constructor requires at least one entry")
+                }
+
+                let key_exprs = map
+                    .entries
+                    .iter()
+                    .map(|entry| self.plan_expr(&entry.key))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                let value_exprs = map
+                    .entries
+                    .iter()
+                    .map(|entry| self.plan_expr(&entry.value))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+                let schema = self.current_plan_ref().schema();
+                let key_type = try_get_collection_supertype(
+                    key_exprs
+                        .iter()
+                        .map(|expr| expr.get_type(&schema))
+                        .collect::<DaftResult<Vec<_>>>()?,
+                )?;
+                let value_type = try_get_collection_supertype(
+                    value_exprs
+                        .iter()
+                        .map(|expr| expr.get_type(&schema))
+                        .collect::<DaftResult<Vec<_>>>()?,
+                )?;
+
+                let kv_structs = key_exprs
+                    .into_iter()
+                    .zip(value_exprs)
+                    .map(|(key, value)| {
+                        daft_functions::to_struct::to_struct(vec![
+                            key.cast(&key_type).alias("key"),
+                            value.cast(&value_type).alias("value"),
+                        ])
+                    })
+                    .collect::<Vec<_>>();
+
+                let map_dtype = DataType::Map {
+                    key: Box::new(key_type),
+                    value: Box::new(value_type),
+                };
+
+                Ok(Expr::List(kv_structs).arced().cast(&map_dtype))
+            }
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
                 if access_chain.len() == 1 {
                     match &access_chain[0] {

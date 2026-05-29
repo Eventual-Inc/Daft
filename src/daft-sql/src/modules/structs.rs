@@ -10,6 +10,7 @@ impl SQLModule for SQLModuleStructs {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("struct_get", StructGet);
         parent.add_fn("struct_extract", StructGet);
+        parent.add_fn("named_struct", NamedStruct);
     }
 }
 
@@ -41,5 +42,45 @@ impl SQLFunction for StructGet {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["input", "field"]
+    }
+}
+
+pub struct NamedStruct;
+
+impl SQLFunction for NamedStruct {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+        if inputs.is_empty() || inputs.len() % 2 != 0 {
+            invalid_operation_err!("named_struct requires name/value pairs")
+        }
+
+        let mut struct_values = Vec::with_capacity(inputs.len() / 2);
+        for pair in inputs.chunks(2) {
+            let name_expr = planner.plan_function_arg(&pair[0])?.into_inner();
+            let name = name_expr
+                .as_literal()
+                .and_then(|lit| lit.as_str())
+                .ok_or_else(|| {
+                    crate::error::PlannerError::invalid_operation(
+                        "named_struct field names must be string literals",
+                    )
+                })?;
+
+            let value = planner.plan_function_arg(&pair[1])?.into_inner();
+            struct_values.push(value.alias(name));
+        }
+
+        Ok(daft_functions::to_struct::to_struct(struct_values))
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Builds a struct from alternating field names and values.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["field_name", "value"]
     }
 }
