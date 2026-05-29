@@ -1341,7 +1341,9 @@ class DataFrame:
                     )
 
         io_config = (
-            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+            _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+            if io_config is None
+            else io_config
         )
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
