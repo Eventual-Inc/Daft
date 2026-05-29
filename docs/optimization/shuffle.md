@@ -1,33 +1,34 @@
 # Shuffle Algorithms
 
-A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and cross-cluster group-bys. Shuffles only happen on the distributed (Ray) runner — the native (single-machine) runner executes the entire pipeline in one process and has no shuffle step. With `M` input partitions and `N` output partitions a shuffle is `M × N` logical transfers — modest at `64 × 64`, 16.7 million at `4096 × 4096`. How Daft executes that movement is controlled by the `shuffle_algorithm` config option, and the right choice depends on how big the shuffle is.
+A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. Shuffles only happen on the distributed (Ray) runner; the native (single-machine) runner executes the entire query in one process and has no shuffle step. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.7 million at `4096 × 4096`. The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is.
 
-This page covers when each algorithm applies and how to tune the disk-based one. If you're here because you're picking a partition count for `repartition` or thinking about batch size, start with [Partitioning and Batching](partitioning.md) — partition count is the input to shuffle cost, and `into_batches` controls the units shuffles produce.
+If you're picking a partition count for `repartition` or thinking about batch size, start with [Partitioning and Batching](partitioning.md). Partition count is the input to shuffle cost, and `into_batches` controls the batch sizes shuffles produce.
 
 > **TL;DR**
 >
-> - Stay on the default `shuffle_algorithm="auto"` for typical jobs — Daft picks between `map_reduce` and `pre_shuffle_merge` based on partition count.
+> - Stay on the default `shuffle_algorithm="auto"` for most queries. Daft picks between `map_reduce` and `pre_shuffle_merge` based on partition count.
 > - If your shuffle is **>10 GB of data** or **>500K partition slots** (`input_partitions × output_partitions`), switch to `flight_shuffle`. Daft prints a hint in the query plan when it sees one.
-> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at fast local disk — it defaults to `["/tmp"]`, which is rarely the right choice on a real cluster. Enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
+> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at a fast local disk. The default is `["/tmp"]`. Enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
 
-## The four algorithms
+## Shuffle algorithms
+
+`shuffle_algorithm` takes four values: `auto` (the default) and three concrete algorithms. `auto` selects between `map_reduce` and `pre_shuffle_merge` at plan time; any of the three concrete options can also be set directly.
 
 | `shuffle_algorithm` | Data plane | Best for |
 |---|---|---|
-| `auto` *(default)* | `map_reduce` or `pre_shuffle_merge`, chosen at plan time | Most jobs. Hints at `flight_shuffle` when the shuffle gets too big. |
-| `map_reduce` | Ray object store, one object per `(input, output)` slot | Small-to-medium shuffles (≲ a few GB) with modest partition counts. |
-| `pre_shuffle_merge` | Ray object store, but inputs are merged first to cut slot count | Shuffles where `input_partitions × output_partitions` is large but total bytes are still moderate. |
-| `flight_shuffle` | Local disk + Arrow Flight gRPC between workers | Large shuffles (≳ 10 GB or thousands of partitions on each side). Avoids the head-node bookkeeping wall. |
+| `map_reduce` | Ray object store, one object per `(input, output)` slot | Small to medium shuffles with moderate partition counts. |
+| `pre_shuffle_merge` | Ray object store, with input partitions merged first to reduce slot count | Shuffles where `input_partitions × output_partitions` is large but total bytes are moderate. |
+| `flight_shuffle` | Local disk plus Arrow Flight gRPC between workers | Large shuffles (≳ 10 GB or thousands of partitions on each side). Avoids the head-node bookkeeping cost. |
 
-### `auto` — what it actually does
+### How `auto` chooses
 
-Under `auto`, Daft chooses between `map_reduce` and `pre_shuffle_merge` based on the geometric mean of input and output partition counts. If `sqrt(input_partitions × output_partitions) > pre_shuffle_merge_partition_threshold` (default `200`), Daft uses `pre_shuffle_merge`; otherwise `map_reduce`.
+Under `auto`, Daft picks between `map_reduce` and `pre_shuffle_merge` based on the geometric mean of input and output partition counts. If `sqrt(input_partitions × output_partitions) > pre_shuffle_merge_partition_threshold` (default `200`), Daft uses `pre_shuffle_merge`; otherwise `map_reduce`.
 
-`auto` does not automatically switch to `flight_shuffle`, because `flight_shuffle` requires the user to choose where spill files go (`flight_shuffle_dirs`). Instead, when Daft sees a shuffle likely to hit the object-store ceiling — input size ≥ 10 GiB or partition product ≥ 500,000 — it prints a hint in the query plan with the configuration to enable.
+`auto` does not switch to `flight_shuffle` automatically, because `flight_shuffle` requires the user to choose where spill files go (`flight_shuffle_dirs`). When Daft sees a shuffle likely to hit the object-store ceiling (input size ≥ 10 GiB or partition product ≥ 500,000), it prints a hint in the query plan with the configuration to enable.
 
 ### Why `map_reduce` falls over at scale
 
-`map_reduce` writes one Ray object per `(input, output)` slot, and each tracked object costs about 3 KB of metadata on the Ray driver. Multiply that by `M × N`:
+`map_reduce` writes one Ray object per `(input, output)` slot, and each tracked object costs about 3 KB of metadata on the Ray driver. Multiply by `M × N`:
 
 | Mappers × Reducers | Slots  | Head-node metadata |
 |---|---|---|
@@ -36,13 +37,13 @@ Under `auto`, Daft chooses between `map_reduce` and `pre_shuffle_merge` based on
 | 4096 × 4096 | 16.8M | ~50 GB  |
 | 8192 × 8192 | 67M   | ~200 GB |
 
-At `4096 × 4096` the driver holds 50 GB of pointers before any data has moved, which typically manifests as a head-node OOM or as a scheduler stall before workers receive work. `pre_shuffle_merge` reduces this cost by coalescing small input partitions before the shuffle, lowering `M`, but it cannot change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, which reduces head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
+At `4096 × 4096` the driver holds 50 GB of pointers before any data has moved, which usually shows up as a head-node OOM or as a scheduler stall. `pre_shuffle_merge` reduces this cost by coalescing small input partitions before the shuffle, lowering `M`, but it can't change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, reducing head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
 
-If you see any of these symptoms on a large shuffle, you're almost certainly hitting the object-store ceiling and should switch to `flight_shuffle`:
+Symptoms that point to `flight_shuffle`:
 
-- Head node OOMs or runs out of memory before workers are saturated.
-- The job hangs in "scheduling" with workers idle.
-- `df.repartition(N, ...)` with `N` in the thousands silently never starts moving data.
+- Head node OOM, or high memory pressure on the head node.
+- Slow scheduling of tasks, with workers idle.
+- A high volume of Ray object store spill messages in the worker logs.
 
 ## Turning on `flight_shuffle`
 
@@ -56,16 +57,16 @@ daft.context.set_execution_config(
 )
 ```
 
-This applies to every shuffle in the session. There is no per-DataFrame override.
+This applies to every shuffle in the session.
 
 ### `flight_shuffle_dirs`
 
-Local directories where Daft writes shuffle spill files (one combined Arrow IPC file per map task). Defaults to `["/tmp"]`, which works for small experiments but is rarely the right choice on a real cluster.
+Local directories where Daft writes shuffle spill files. Defaults to `["/tmp"]`.
 
-- **Point this at the fastest local disk you have.** On AWS that's the local NVMe on instances like `i8ge.*` / `i4i.*`; on Kubernetes it's whatever's mounted from the underlying node-local SSD.
+- **Point this at the fastest local disk you have.** On AWS that means the local NVMe on instances like `i8ge.*` or `i4i.*`. On Kubernetes it's whatever is mounted from node-local SSD.
 - **Give it more than one device when you can.** Daft round-robins writes across the list, so two NVMe volumes roughly double aggregate write bandwidth.
-- **Size it for the shuffle, not the dataset.** Plan for `dataset_size ÷ compression_ratio` of free space per node. A 10 TB shuffle uncompressed across 32 workers is ~310 GB of spill per worker; at `zstd` 3× it's closer to 100 GB.
-- Daft cleans the dirs up when the query exits. There is no manual cleanup step.
+- **Size it for the shuffle, not the dataset.** Plan for `dataset_size ÷ compression_ratio` of free space per node. A 10 TB shuffle uncompressed across 32 workers is about 310 GB of spill per worker; at `zstd` 3× it's closer to 100 GB.
+- Daft cleans the dirs up when the query exits.
 
 ### `flight_shuffle_compression`
 
@@ -73,24 +74,24 @@ Arrow IPC compression for the spill files. One of `"lz4"`, `"zstd"`, or `"none"`
 
 | Storage | Recommended | Why |
 |---|---|---|
-| Local NVMe | `"none"` | The disk isn't the bottleneck — compression just spends CPU you'd rather give the map task. |
-| gp3 EBS / network-attached | `"zstd"` | Compresses ~3× before the write, roughly tripling effective volume bandwidth. |
+| Local NVMe | `"none"` | The disk isn't the bottleneck. Compression spends CPU that the map task can use instead. |
+| gp3 EBS or network-attached | `"zstd"` | Compresses about 3× before the write, roughly tripling effective volume bandwidth. |
 | HDD or slow shared FS | `"zstd"` | Same reasoning, more pronounced. |
 
-`"lz4"` is the lighter middle ground if `zstd` shows up as CPU-bound in your profile.
+`"lz4"` is a lighter middle ground if `zstd` shows up as CPU-bound in your profile.
 
 ## Choosing between algorithms
 
-For most workloads, leaving `shuffle_algorithm="auto"` and letting Daft decide is the right call. Override when:
+For most queries, leave `shuffle_algorithm="auto"`. Override when:
 
-- **`auto` printed a `flight_shuffle` hint in your query plan.** Enable `flight_shuffle` and set `flight_shuffle_dirs` to a fast local disk. The hint is emitted precisely when this is the recommended path.
-- **A large shuffle is OOMing the head node or stalling the scheduler, with no hint shown.** The hint thresholds are conservative; enabling `flight_shuffle` is still the right move.
-- **You want to compare the object-store paths directly.** Set `shuffle_algorithm="map_reduce"` for small partition counts, or `"pre_shuffle_merge"` when the partition product is large but total bytes are moderate. These are primarily useful for benchmarking.
+- **`auto` printed a `flight_shuffle` hint in your query plan.** Enable `flight_shuffle` and set `flight_shuffle_dirs` to a fast local disk.
+- **A large shuffle is OOMing the head node or stalling the scheduler, with no hint shown.** The hint thresholds are conservative; switch to `flight_shuffle` anyway.
+- **You want to compare the object-store paths directly.** Set `shuffle_algorithm="map_reduce"` for small partition counts, or `"pre_shuffle_merge"` when the partition product is large but total bytes are moderate. These are mainly useful for benchmarking.
 
-If you are unsure whether your shuffle has crossed the thresholds, run it once with `auto`; the hint message in the query plan will indicate whether `flight_shuffle` is recommended.
+If you're unsure whether your shuffle has crossed the thresholds, run it once with `auto` and read the hint in the query plan.
 
 ## Related
 
-- [Partitioning and Batching](partitioning.md) — how to pick the number of partitions for `repartition` (the input to shuffle cost) and how `into_batches` controls batch sizes within a partition.
-- [Managing Memory Usage](memory.md) — general memory tuning, including reducer-side memory.
-- [Join Strategies](join-strategies.md) — hash joins are one of the main shuffle producers; this page explains when each join strategy triggers one.
+- [Partitioning and Batching](partitioning.md): how to pick the number of partitions for `repartition` (the input to shuffle cost) and how `into_batches` controls batch sizes within a partition.
+- [Managing Memory Usage](memory.md): general memory tuning, including reducer-side memory.
+- [Join Strategies](join-strategies.md): hash joins are one of the main shuffle producers. Covers when each join strategy triggers one.
