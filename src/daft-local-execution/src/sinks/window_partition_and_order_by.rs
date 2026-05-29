@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
-use daft_core::{datatypes::UInt64Array, prelude::*};
+use daft_core::prelude::*;
 use daft_dsl::{
     Expr, WindowExpr,
     expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
-use daft_groupby::IntoGroups;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -17,7 +16,9 @@ use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
     },
-    window_base::{WindowBaseState, WindowSinkParams},
+    window_base::{
+        WindowBaseState, WindowSinkParams, partition_into_groups, sort_and_materialize_groups,
+    },
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -148,30 +149,29 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         }
 
                         per_partition_tasks.spawn(async move {
-                            let input_data = RecordBatch::concat(&all_partitions)?;
+                            let groups =
+                                partition_into_groups(&all_partitions, &params.partition_by)?;
+                            let full_data = {
+                                let batches = all_partitions;
+                                RecordBatch::concat(&batches)?
+                            };
+                            let partitions = sort_and_materialize_groups(
+                                groups,
+                                full_data,
+                                &params.order_by,
+                                &params.descending,
+                                &params.nulls_first,
+                            )?;
 
-                            if input_data.is_empty() {
+                            if partitions.is_empty() {
                                 return Ok(RecordBatch::empty(Some(
                                     params.original_schema.clone(),
                                 )));
                             }
 
-                            let groupby_table =
-                                input_data.eval_expression_list(&params.partition_by)?;
-                            let (_, groupvals_indices) = groupby_table.make_groups()?;
-
-                            let grouped_results: Vec<RecordBatch> = groupvals_indices
-                                .iter()
-                                .map(|indices| -> DaftResult<RecordBatch> {
-                                    let indices_arr =
-                                        UInt64Array::from_vec("indices", indices.to_vec());
-                                    let partition = input_data.take(&indices_arr)?;
-                                    let partition = partition.sort(
-                                        &params.order_by,
-                                        &params.descending,
-                                        &params.nulls_first,
-                                    )?;
-
+                            let grouped_results: Vec<RecordBatch> = partitions
+                                .into_iter()
+                                .map(|partition| -> DaftResult<RecordBatch> {
                                     let new_cols: Vec<Series> = params
                                         .window_exprs
                                         .iter()
