@@ -1,6 +1,6 @@
 # Shuffle Algorithms
 
-A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and cross-cluster group-bys. With `M` input partitions and `N` output partitions it is `M × N` logical transfers — modest at `64 × 64`, 16.7 million at `4096 × 4096`. How Daft executes that movement is controlled by the `shuffle_algorithm` config option, and the right choice depends on how big the shuffle is.
+A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and cross-cluster group-bys. Shuffles only happen on the distributed (Ray) runner — the native (single-machine) runner executes the entire pipeline in one process and has no shuffle step. With `M` input partitions and `N` output partitions a shuffle is `M × N` logical transfers — modest at `64 × 64`, 16.7 million at `4096 × 4096`. How Daft executes that movement is controlled by the `shuffle_algorithm` config option, and the right choice depends on how big the shuffle is.
 
 This page covers when each algorithm applies and how to tune the disk-based one. If you're here because you're picking a partition count for `repartition` or thinking about batch size, start with [Partitioning and Batching](partitioning.md) — partition count is the input to shuffle cost, and `into_batches` controls the units shuffles produce.
 
@@ -11,8 +11,6 @@ This page covers when each algorithm applies and how to tune the disk-based one.
 > - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at fast local disk — it defaults to `["/tmp"]`, which is rarely the right choice on a real cluster. Enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
 
 ## The four algorithms
-
-All shuffle algorithms are only used by the distributed (Ray) runner. The native runner shuffles in-memory inside one process and ignores this setting.
 
 | `shuffle_algorithm` | Data plane | Best for |
 |---|---|---|
