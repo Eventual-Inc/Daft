@@ -1,6 +1,6 @@
 # Shuffle Algorithms
 
-A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. Shuffles only happen on the distributed (Ray) runner; the native (single-machine) runner executes the entire query in one process and has no shuffle step. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.7 million at `4096 × 4096`. The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is.
+A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. Shuffles only happen on the distributed (Ray) runner; the native (single-machine) runner executes the entire query in one process and has no shuffle step. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.8 million at `4096 × 4096`. The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is.
 
 If you're picking a partition count for `repartition` or thinking about batch size, start with [Partitioning and Batching](partitioning.md). Partition count is the input to shuffle cost, and `into_batches` controls the batch sizes shuffles produce.
 
@@ -70,11 +70,11 @@ Local directories where Daft writes shuffle spill files. Defaults to `["/tmp"]`.
 
 ### `flight_shuffle_compression`
 
-Arrow IPC compression for the spill files. One of `"lz4"`, `"zstd"`, or `"none"` (default).
+Arrow IPC compression for the spill files. Set to `"lz4"` or `"zstd"`; defaults to `None` (uncompressed).
 
 | Storage | Recommended | Why |
 |---|---|---|
-| Local NVMe | `"none"` | The disk isn't the bottleneck. Compression spends CPU that the map task can use instead. |
+| Local NVMe | `None` | The disk isn't the bottleneck. Compression spends CPU that the map task can use instead. |
 | gp3 EBS or network-attached | `"zstd"` | Compresses about 3× before the write, roughly tripling effective volume bandwidth. |
 | HDD or slow shared FS | `"zstd"` | Same reasoning, more pronounced. |
 

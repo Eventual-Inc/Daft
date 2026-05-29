@@ -22,7 +22,7 @@ Daft supports two partitioning strategies:
 
 !!! tip "How the shuffle is executed"
 
-    `repartition`, hash joins, and cross-cluster group-bys are all *shuffles* — all-to-all data movement between partitions. The number of partitions you pick here is the input to that cost. Once your shuffle is large (>10 GB, or thousands of partitions on each side), how Daft executes the movement also matters: see [Shuffle Algorithms](shuffle.md) for when to switch to `flight_shuffle`.
+    `repartition`, hash joins, sorts, and groupbys are all *shuffles*: all-to-all data movement between partitions. The number of partitions you pick here is the input to that cost. Once your shuffle is large (>10 GB, or thousands of partitions on each side), how Daft executes the movement also matters: see [Shuffle Algorithms](shuffle.md) for when to switch to `flight_shuffle`.
 
 ## Batching: Size-Based Splitting
 
