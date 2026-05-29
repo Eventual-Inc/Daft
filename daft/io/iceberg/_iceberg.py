@@ -21,8 +21,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
-    """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
+def _convert_iceberg_file_io_properties_to_io_config(
+    props: dict[str, Any], location: str | None = None
+) -> IOConfig | None:
+    """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py.
+
+    For an ``oss://`` ``location`` (Alibaba Cloud OSS, S3-compatible), the IOConfig gets
+    virtual-hosted addressing and an ``oss``->``s3`` alias so the S3 filesystem resolves
+    ``oss://`` paths -- applied even with no IO properties (e.g. env-var credentials).
+    """
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
     any_props_set = False
@@ -35,6 +42,8 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
                 return property_value
         return None
 
+    is_oss = location is not None and get_protocol_from_path(location) == "oss"
+
     io_config = IOConfig(
         s3=S3Config(
             endpoint_url=get_first_property_value("s3.endpoint"),
@@ -42,6 +51,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
             key_id=get_first_property_value("s3.access-key-id", "client.access-key-id"),
             access_key=get_first_property_value("s3.secret-access-key", "client.secret-access-key"),
             session_token=get_first_property_value("s3.session-token", "client.session-token"),
+            force_virtual_addressing=True if is_oss else None,
         ),
         azure=AzureConfig(
             storage_account=get_first_property_value("adls.account-name", "adlfs.account-name"),
@@ -55,31 +65,13 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
             project_id=get_first_property_value("gcs.project-id"),
             token=get_first_property_value("gcs.oauth2.token"),
         ),
+        protocol_aliases={"oss": "s3"} if is_oss else None,
     )
 
-    return io_config if any_props_set else None
-
-
-def _enable_oss_io_config(io_config: IOConfig | None, location: str | None) -> IOConfig | None:
-    """Apply the S3-compatible settings an ``oss://`` table needs to ``io_config``.
-
-    The ``oss://`` scheme (Alibaba Cloud OSS) is S3-compatible: aliasing it to
-    ``s3`` and enabling virtual-hosted-style addressing lets the existing S3
-    filesystem resolve ``oss://`` paths -- no OSS-specific backend is involved.
-
-    Runs on the IOConfig Daft derives from the table, or a fresh one when the
-    table exposes no IO properties (e.g. environment-variable credentials).
-    Pass an explicit ``io_config`` to ``read_iceberg``/``write_iceberg`` to opt out.
-    """
-    if location is None or get_protocol_from_path(location) != "oss":
+    if is_oss:
+        logger.debug("oss:// table detected; applying S3-compatible settings to the IOConfig")
         return io_config
-    if io_config is None:
-        io_config = IOConfig()
-    logger.debug("oss:// table detected; applying S3-compatible settings to the IOConfig")
-    return io_config.replace(
-        s3=io_config.s3.replace(force_virtual_addressing=True),
-        protocol_aliases={"oss": "s3"},
-    )
+    return io_config if any_props_set else None
 
 
 @PublicAPI
@@ -134,7 +126,7 @@ def read_iceberg(
         table = StaticTable.from_metadata(metadata_location=table)
 
     io_config = (
-        _enable_oss_io_config(_convert_iceberg_file_io_properties_to_io_config(table.io.properties), table.location())
+        _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
         if io_config is None
         else io_config
     )

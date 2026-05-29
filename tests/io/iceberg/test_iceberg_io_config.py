@@ -1,38 +1,56 @@
 from __future__ import annotations
 
-from daft.io import IOConfig, S3Config
-from daft.io.iceberg._iceberg import _enable_oss_io_config
+from daft.io.iceberg._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
 
-def test_enable_oss_io_config_oss_location():
+def test_oss_location_applies_settings():
     """An oss:// table location enables virtual-hosted addressing and the oss->s3 alias."""
-    io_config = IOConfig(s3=S3Config(endpoint_url="http://oss-cn-hangzhou.aliyuncs.com", key_id="ak"))
-    result = _enable_oss_io_config(io_config, "oss://my-bucket/warehouse/db/table")
+    props = {"s3.endpoint": "http://oss-cn-hangzhou.aliyuncs.com", "s3.access-key-id": "ak"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "oss://my-bucket/warehouse/db/table")
     assert result is not None
     assert result.s3.force_virtual_addressing is True
     assert result.protocol_aliases == {"oss": "s3"}
-    # Unrelated S3 settings are preserved.
+    # Table properties are still applied.
     assert result.s3.endpoint_url == "http://oss-cn-hangzhou.aliyuncs.com"
     assert result.s3.key_id == "ak"
 
 
-def test_enable_oss_io_config_oss_location_no_derived_config():
-    """An oss:// table with no derived IOConfig still gets the OSS settings.
+def test_oss_location_no_props():
+    """An oss:// table with no IO properties still gets the OSS settings.
 
     Covers credentials supplied via the environment rather than table properties.
     """
-    result = _enable_oss_io_config(None, "oss://my-bucket/warehouse/db/table")
+    result = _convert_iceberg_file_io_properties_to_io_config({}, "oss://my-bucket/warehouse/db/table")
     assert result is not None
     assert result.s3.force_virtual_addressing is True
     assert result.protocol_aliases == {"oss": "s3"}
 
 
-def test_enable_oss_io_config_non_oss_location_unchanged():
-    """A non-oss:// table location leaves the IOConfig untouched."""
-    io_config = IOConfig(s3=S3Config(endpoint_url="https://s3.us-west-2.amazonaws.com"))
-    assert _enable_oss_io_config(io_config, "s3://my-bucket/warehouse/db/table") is io_config
+def test_non_oss_location_with_props():
+    """A non-oss:// location with properties leaves the OSS settings off."""
+    props = {"s3.endpoint": "https://s3.us-west-2.amazonaws.com"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "s3://my-bucket/warehouse/db/table")
+    assert result is not None
+    assert result.s3.force_virtual_addressing is False
+    assert result.protocol_aliases == {}
+    assert result.s3.endpoint_url == "https://s3.us-west-2.amazonaws.com"
 
 
-def test_enable_oss_io_config_non_oss_location_none_passthrough():
-    """A non-oss:// location with no IOConfig passes None through unchanged."""
-    assert _enable_oss_io_config(None, "s3://my-bucket/warehouse/db/table") is None
+def test_non_oss_location_no_props_returns_none():
+    """A non-oss:// location with no properties yields no IOConfig."""
+    assert _convert_iceberg_file_io_properties_to_io_config({}, "s3://my-bucket/warehouse/db/table") is None
+
+
+def test_no_location_with_props():
+    """With no location (default), properties still convert and OSS settings stay off."""
+    props = {"s3.endpoint": "https://s3.us-west-2.amazonaws.com"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props)
+    assert result is not None
+    assert result.s3.force_virtual_addressing is False
+    assert result.protocol_aliases == {}
+    assert result.s3.endpoint_url == "https://s3.us-west-2.amazonaws.com"
+
+
+def test_no_location_no_props_returns_none():
+    """With no location (default) and no properties, no IOConfig is produced."""
+    assert _convert_iceberg_file_io_properties_to_io_config({}) is None
