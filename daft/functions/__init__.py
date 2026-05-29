@@ -284,6 +284,8 @@ from .window import (
     over,
     lag,
     lead,
+    first_value,
+    last_value,
 )
 
 __all__ = [
@@ -386,6 +388,7 @@ __all__ = [
     "fill_nan",
     "fill_null",
     "find",
+    "first_value",
     "floor",
     "format",
     "from_unixtime",
@@ -418,6 +421,7 @@ __all__ = [
     "json_tuple",
     "lag",
     "last_day",
+    "last_value",
     "lead",
     "left",
     "length",
