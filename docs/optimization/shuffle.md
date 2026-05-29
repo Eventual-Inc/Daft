@@ -8,7 +8,7 @@ This page covers when each algorithm applies and how to tune the disk-based one.
 >
 > - Stay on the default `shuffle_algorithm="auto"` for typical jobs — Daft picks between `map_reduce` and `pre_shuffle_merge` based on partition count.
 > - If your shuffle is **>10 GB of data** or **>500K partition slots** (`input_partitions × output_partitions`), switch to `flight_shuffle`. Daft prints a hint in the query plan when it sees one.
-> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at fast local disk; enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
+> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at fast local disk — it defaults to `["/tmp"]`, which is rarely the right choice on a real cluster. Enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
 
 ## The four algorithms
 
