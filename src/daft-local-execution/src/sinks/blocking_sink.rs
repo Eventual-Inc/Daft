@@ -253,9 +253,13 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     if let Some((ref store, _, file_format)) = checkpoint {
                         let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
                         if !file_metadata.is_empty() {
+                            let num_files = file_metadata.len() as u64;
                             store
                                 .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
                                 .await?;
+                            per_input
+                                .runtime_stats
+                                .add_checkpoint_files_staged(num_files);
                         }
                     }
 
@@ -285,6 +289,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             }
             if let Some((store, _, _)) = &checkpoint {
                 store.checkpoint(checkpoint_id.as_ref().unwrap()).await?;
+                per_input.runtime_stats.add_checkpoints_sealed(1);
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
             Ok(TaskResult::Finalized)
