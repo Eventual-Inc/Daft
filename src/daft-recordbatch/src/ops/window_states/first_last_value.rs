@@ -38,12 +38,10 @@ impl WindowAggStateOps for FirstValueWindowState {
     }
 
     fn remove(&mut self, _start_idx: usize, end_idx: usize) -> DaftResult<()> {
-        while let Some(&front) = self.deque.front() {
-            if front < end_idx {
-                self.deque.pop_front();
-            } else {
-                break;
-            }
+        while let Some(&front) = self.deque.front()
+            && front < end_idx
+        {
+            self.deque.pop_front();
         }
         Ok(())
     }
