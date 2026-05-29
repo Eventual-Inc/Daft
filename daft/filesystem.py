@@ -22,7 +22,15 @@ class PyArrowFSWithExpiry:
     expiry: datetime | None
 
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], PyArrowFSWithExpiry] = {}
+_CACHED_FSES: dict[tuple[str, str], PyArrowFSWithExpiry] = {}
+
+
+def _io_config_cache_key(io_config: IOConfig | None) -> str:
+    # IOConfig.__eq__ is identity-based on the PyO3 wrapper, so two semantically-equal
+    # configs constructed at different times miss the dict. Key on the content-repr
+    # instead; the cached entry's `expiry` field still drives refresh-credentials
+    # invalidation.
+    return "None" if io_config is None else repr(io_config)
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -32,8 +40,9 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     """
     global _CACHED_FSES
 
-    if (protocol, io_config) in _CACHED_FSES:
-        fs = _CACHED_FSES[(protocol, io_config)]
+    key = (protocol, _io_config_cache_key(io_config))
+    if key in _CACHED_FSES:
+        fs = _CACHED_FSES[key]
 
         if fs.expiry is None or fs.expiry > datetime.now(timezone.utc):
             return fs.fs
@@ -45,7 +54,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
+    _CACHED_FSES[(protocol, _io_config_cache_key(io_config))] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
