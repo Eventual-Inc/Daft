@@ -10,9 +10,9 @@ use crate::datatypes::{DataType, TimeUnit};
 
 fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     match (tu_l, tu_r) {
-        (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => TimeUnit::Microseconds,
-        (_, TimeUnit::Milliseconds) => TimeUnit::Milliseconds,
-        _ => *tu_l,
+        (TimeUnit::Nanoseconds, _) | (_, TimeUnit::Nanoseconds) => TimeUnit::Nanoseconds,
+        (TimeUnit::Microseconds, _) | (_, TimeUnit::Microseconds) => TimeUnit::Microseconds,
+        _ => TimeUnit::Milliseconds,
     }
 }
 
