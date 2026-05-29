@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from datetime import timedelta, timezone
 
 import pytest
 
@@ -292,3 +293,27 @@ def test_timestamptz_vs_timestamp_comparison():
     ).collect()
     result = actual.to_pydict()
     assert result["is_equal"] == [True]
+
+
+def test_timestamptz_vs_timestamp_comparison_non_utc_offset():
+    """Non-trivial comparison with a non-UTC offset.
+
+    With localize semantics (epoch is preserved, just tagged with the
+    target timezone), a naive timestamp and a timezone-aware timestamp
+    with a non-zero UTC offset should NOT be equal when their epochs
+    differ by the offset amount.
+    """
+    tz_plus_0530 = timezone(timedelta(hours=5, minutes=30))
+    df = daft.from_pydict(
+        {
+            "ts_naive": [datetime.datetime(2022, 1, 1, 0, 0, 0)],
+            "ts_aware": [datetime.datetime(2022, 1, 1, 0, 0, 0, tzinfo=tz_plus_0530)],
+        }
+    )
+    actual = daft.sql(
+        "SELECT ts_naive = ts_aware AS is_equal FROM df",
+        df=df,
+    ).collect()
+    result = actual.to_pydict()
+    # Epochs differ by 5.5 hours (localize, not convert)
+    assert result["is_equal"] == [False]
