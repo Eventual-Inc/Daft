@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import datetime
 
+import pytest
+
 import daft
+from daft import DataType
 from daft.functions import date_add, date_diff, date_trunc, strftime
 
 
@@ -244,3 +247,48 @@ def test_date_comparison():
     expected = date_df.filter(daft.col("date") == "2020-01-01").select("date").to_pydict()
     actual = daft.sql("select date from date_df where date == '2020-01-01'").to_pydict()
     assert actual == expected
+
+
+def test_cast_to_timestamptz():
+    """CAST to TIMESTAMPTZ should produce Timestamp with UTC timezone."""
+    df = daft.from_pydict({"ts": ["2022-01-01 00:00:00"]})
+    actual = daft.sql("SELECT CAST(ts AS TIMESTAMPTZ) AS ts FROM df", df=df).collect()
+    assert actual.schema()["ts"].dtype == DataType.timestamp("us", "UTC")
+
+
+def test_cast_to_timestamp_with_time_zone():
+    """CAST to TIMESTAMP WITH TIME ZONE should produce Timestamp with UTC timezone."""
+    df = daft.from_pydict({"ts": ["2022-01-01 00:00:00"]})
+    actual = daft.sql("SELECT CAST(ts AS TIMESTAMP WITH TIME ZONE) AS ts FROM df", df=df).collect()
+    assert actual.schema()["ts"].dtype == DataType.timestamp("us", "UTC")
+
+
+def test_cast_to_timetz_should_error():
+    """CAST to TIMETZ should raise an error because Arrow Time64 doesn't support timezone."""
+    df = daft.from_pydict({"t": ["00:00:00"]})
+    with pytest.raises(Exception, match="timezone is not supported"):
+        daft.sql("SELECT CAST(t AS TIMETZ) AS t FROM df", df=df).collect()
+
+
+def test_cast_to_time_with_time_zone_should_error():
+    """CAST to TIME WITH TIME ZONE should raise an error."""
+    df = daft.from_pydict({"t": ["00:00:00"]})
+    with pytest.raises(Exception, match="timezone is not supported"):
+        daft.sql("SELECT CAST(t AS TIME WITH TIME ZONE) AS t FROM df", df=df).collect()
+
+
+def test_timestamptz_vs_timestamp_comparison():
+    """TIMESTAMPTZ vs TIMESTAMP comparison should work via supertype promotion."""
+    df = daft.from_pydict({"ts": ["2022-01-01 00:00:00"]})
+    actual = daft.sql(
+        """
+        SELECT
+            CAST(ts AS TIMESTAMPTZ) AS ts_tz,
+            CAST(ts AS TIMESTAMP) AS ts_naive,
+            CAST(ts AS TIMESTAMPTZ) = CAST(ts AS TIMESTAMP) AS is_equal
+        FROM df
+        """,
+        df=df,
+    ).collect()
+    result = actual.to_pydict()
+    assert result["is_equal"] == [True]

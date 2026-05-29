@@ -191,6 +191,17 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let tu = get_time_units(tu_l, tu_r);
                 Some(DataType::Timestamp(tu, Some("UTC".to_string())))
             }
+            // None and Some(tz) timezone mix: promote None to the given timezone
+            // This handles the case where a timezone-naive Timestamp is compared
+            // with a timezone-aware Timestamp (e.g., TIMESTAMP vs TIMESTAMPTZ).
+            // Values are reinterpreted as if already in the target timezone (localize, not convert).
+            (DataType::Timestamp(tu_l, Some(tz)), DataType::Timestamp(tu_r, None))
+            | (DataType::Timestamp(tu_l, None), DataType::Timestamp(tu_r, Some(tz)))
+                if !tz.is_empty() =>
+            {
+                let tu = get_time_units(tu_l, tu_r);
+                Some(DataType::Timestamp(tu, Some(tz.clone())))
+            }
             // None and Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
             (DataType::Timestamp(tu_l, tz_l), DataType::Timestamp(tu_r, tz_r)) if
@@ -256,6 +267,99 @@ mod tests {
     #[test]
     fn check_bad_arrow_type() -> DaftResult<()> {
         let result = get_supertype(&DataType::Utf8, &DataType::Binary);
+        assert_eq!(result, None);
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_none_vs_utc() -> DaftResult<()> {
+        // TIMESTAMP vs TIMESTAMPTZ: should promote None to the given timezone
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Microseconds, None),
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
+        );
+        assert_eq!(
+            result,
+            Some(DataType::Timestamp(
+                TimeUnit::Microseconds,
+                Some("UTC".to_string())
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_utc_vs_none() -> DaftResult<()> {
+        // TIMESTAMPTZ vs TIMESTAMP: should promote None to the given timezone
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
+            &DataType::Timestamp(TimeUnit::Microseconds, None),
+        );
+        assert_eq!(
+            result,
+            Some(DataType::Timestamp(
+                TimeUnit::Microseconds,
+                Some("UTC".to_string())
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_none_vs_non_utc_tz() -> DaftResult<()> {
+        // TIMESTAMP vs TIMESTAMP with non-UTC timezone
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Microseconds, None),
+            &DataType::Timestamp(TimeUnit::Milliseconds, Some("+05:30".to_string())),
+        );
+        assert_eq!(
+            result,
+            Some(DataType::Timestamp(
+                TimeUnit::Microseconds,
+                Some("+05:30".to_string())
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_same_none() -> DaftResult<()> {
+        // Two timezone-naive timestamps
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Milliseconds, None),
+            &DataType::Timestamp(TimeUnit::Microseconds, None),
+        );
+        assert_eq!(
+            result,
+            Some(DataType::Timestamp(TimeUnit::Microseconds, None))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_two_different_tz() -> DaftResult<()> {
+        // Two different timezoned timestamps -> UTC
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("US/Eastern".to_string())),
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("Asia/Shanghai".to_string())),
+        );
+        assert_eq!(
+            result,
+            Some(DataType::Timestamp(
+                TimeUnit::Microseconds,
+                Some("UTC".to_string())
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn check_timestamp_empty_tz_vs_none() -> DaftResult<()> {
+        // Empty timezone string with guard: new arm doesn't match, falls through to None
+        let result = get_supertype(
+            &DataType::Timestamp(TimeUnit::Microseconds, Some(String::new())),
+            &DataType::Timestamp(TimeUnit::Microseconds, None),
+        );
         assert_eq!(result, None);
         Ok(())
     }
