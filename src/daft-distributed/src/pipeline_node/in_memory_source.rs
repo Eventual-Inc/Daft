@@ -44,10 +44,14 @@ impl InMemorySourceNode {
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
 
+        let clustering_spec = info.clustering_spec.clone().unwrap_or_else(|| {
+            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions))
+        });
+
         let config = PipelineNodeConfig::new(
             info.source_schema.clone(),
             plan_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
+            clustering_spec,
         );
         Self {
             config,

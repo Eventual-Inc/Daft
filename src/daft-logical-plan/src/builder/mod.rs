@@ -46,7 +46,10 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
-    partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, HashRepartitionConfig, RandomShuffleConfig,
+        RepartitionSpec,
+    },
     sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
@@ -158,6 +161,56 @@ impl LogicalPlanBuilder {
             }
             other => Err(DaftError::ValueError(format!(
                 "with_checkpoint can only be called on a Source node, got: {}",
+                other.name()
+            ))),
+        }
+    }
+
+    pub fn assume_clustered_by(&self, cols: Vec<ExprRef>) -> DaftResult<Self> {
+        for expr in &cols {
+            match expr.as_ref() {
+                Expr::Column(_) => {}
+                other => {
+                    return Err(DaftError::ValueError(format!(
+                        "assume_clustered_by only accepts column references, got: {other}"
+                    )));
+                }
+            }
+        }
+
+        match self.plan.as_ref() {
+            LogicalPlan::Source(source) => match source.source_info.as_ref() {
+                SourceInfo::InMemory(info) => {
+                    for expr in &cols {
+                        let name = expr.name();
+                        if source.output_schema.get_field(name).is_err() {
+                            return Err(DaftError::ValueError(format!(
+                                "assume_clustered_by: column '{name}' not found in schema"
+                            )));
+                        }
+                    }
+                    let num_partitions = info.num_partitions;
+                    let clustering_spec = Arc::new(ClusteringSpec::Hash(
+                        HashClusteringConfig::new(num_partitions, cols),
+                    ));
+                    let new_info = InMemoryInfo {
+                        clustering_spec: Some(clustering_spec),
+                        ..info.clone()
+                    };
+                    let new_source = source
+                        .clone()
+                        .with_source_info(Arc::new(SourceInfo::InMemory(new_info)));
+                    Ok(self.with_new_plan(LogicalPlan::Source(new_source)))
+                }
+                SourceInfo::Physical(_) | SourceInfo::GlobScan(_) => {
+                    Err(DaftError::ValueError(
+                        "assume_clustered_by only applies to in-memory DataFrames; for file-backed sources the clustering spec is read from source metadata automatically".to_string(),
+                    ))
+                }
+                SourceInfo::PlaceHolder(_) => unreachable!(),
+            },
+            other => Err(DaftError::ValueError(format!(
+                "assume_clustered_by must be called before any operations on the DataFrame, got: {}",
                 other.name()
             ))),
         }
@@ -1296,6 +1349,13 @@ impl PyLogicalPlanBuilder {
         daft_planning_config: PyDaftPlanningConfig,
     ) -> PyResult<Self> {
         Ok(self.builder.with_config(daft_planning_config.config).into())
+    }
+
+    pub fn assume_clustered_by(&self, cols: Vec<PyExpr>) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .assume_clustered_by(pyexprs_to_exprs(cols))?
+            .into())
     }
 
     pub fn select(&self, to_select: Vec<PyExpr>) -> PyResult<Self> {

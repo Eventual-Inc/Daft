@@ -149,6 +149,11 @@ class LogicalPlanBuilder:
         builder = self._builder.with_checkpoint(config)
         return LogicalPlanBuilder(builder)
 
+    def assume_clustered_by(self, cols: list[Expression]) -> LogicalPlanBuilder:
+        col_pyexprs = [expr._expr for expr in cols]
+        builder = self._builder.assume_clustered_by(col_pyexprs)
+        return LogicalPlanBuilder(builder)
+
     def with_columns(self, columns: list[Expression]) -> LogicalPlanBuilder:
         column_pyexprs = [expr._expr for expr in columns]
         builder = self._builder.with_columns(column_pyexprs)

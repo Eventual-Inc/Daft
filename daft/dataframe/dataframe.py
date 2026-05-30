@@ -3521,6 +3521,23 @@ class DataFrame:
         builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
 
+    def assume_clustered_by(self, cols: ManyColumnsInputType) -> "DataFrame":
+        """Asserts that this in-memory DataFrame is already hash-partitioned by the given columns.
+
+        Incorrect assertions will cause the query planner to skip necessary shuffles,
+        producing silently wrong results.
+
+        Args:
+            cols: column name(s) or expression(s) to assert as the partition key.
+                  Only simple column references are accepted.
+
+        Returns:
+            DataFrame: same data, with clustering metadata annotated.
+        """
+        exprs = column_inputs_to_expressions(cols)
+        builder = self._builder.assume_clustered_by(exprs)
+        return DataFrame(builder)
+
     @DataframePublicAPI
     def limit(self, num: int) -> "DataFrame":
         """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``.
