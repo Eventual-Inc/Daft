@@ -7,7 +7,7 @@ from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
 import daft
-from daft.filesystem import _infer_filesystem
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
 
 HAS_S3 = bool(
@@ -99,7 +99,7 @@ def raw_bytes_mcap_dataset_path(tmp_path_factory):
 def data_from_s3():
     s3_file_path = "s3://kamui/las/mcap/test.mcap"
     io_config = _get_s3_io_config()
-    file_path, fs, _ = _infer_filesystem(s3_file_path, io_config)
+    [file_path], fs = _resolve_paths_and_filesystem(s3_file_path, io_config)
     with fs.open_output_stream(file_path) as f:
         writer = Writer(f)
         schema = writer.register_msgdef(datatype="std_msgs/msg/String", msgdef_text="string data")

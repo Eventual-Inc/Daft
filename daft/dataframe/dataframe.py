@@ -1341,7 +1341,9 @@ class DataFrame:
                     )
 
         io_config = (
-            _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+            _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+            if io_config is None
+            else io_config
         )
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -3853,7 +3855,7 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
-        strategy: Literal["backward", "forward"] = "backward",
+        strategy: Literal["backward", "forward", "nearest"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
@@ -3867,7 +3869,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
-            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp.
+            strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; For tie-breaking, prefer the larger/forward value.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).

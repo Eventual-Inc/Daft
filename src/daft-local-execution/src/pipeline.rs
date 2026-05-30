@@ -576,13 +576,13 @@ fn physical_plan_to_pipeline(
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
-                aggregations,
+                functions,
                 *min_periods,
                 aliases,
                 partition_by,

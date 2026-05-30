@@ -522,6 +522,25 @@ def test_write_parquet_success_file(tmp_path_factory):
     assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
 
 
+@pytest.mark.parametrize("use_native", [True, False])
+def test_write_parquet_with_trailing_slash(tmp_path, use_native):
+    # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
+    # write_parquet with a trailing-slash root_dir used to produce
+    # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
+    # with ArrowInvalid: Empty path component.
+    from daft.context import execution_config_ctx
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    with execution_config_ctx(native_parquet_writer=use_native):
+        manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
+
+    assert manifest["path"], "no files written"
+    for written_path in manifest["path"]:
+        assert "//" not in written_path, written_path
+
+    assert daft.read_parquet(str(tmp_path)).to_pydict() == {"x": [1, 2, 3]}
+
+
 def _column_codecs(parquet_path: str) -> dict[str, str]:
     meta = papq.ParquetFile(parquet_path).metadata
     rg = meta.row_group(0)

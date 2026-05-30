@@ -448,13 +448,21 @@ class RayRunnerIO(runner_io.RunnerIO):
                 for arrow_field in arrow_schema
             ]
         )
-        block_refs = ds.get_internal_block_refs()
 
         # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
         # which can iterate on Ray Dataset blocks and materialize as-needed
+        if RAY_VERSION >= (2, 33, 0):
+            # iter_internal_ref_bundles() was added in Ray 2.33.0 to replace the now-deprecated get_internal_block_refs().
+            block_refs = (
+                block_ref for ref_bundle in ds.iter_internal_ref_bundles() for block_ref in ref_bundle.block_refs
+            )
+        else:
+            block_refs = ds.get_internal_block_refs()
+
         daft_micropartitions = [
-            _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
+            _make_daft_partition_from_ray_dataset_blocks.remote(block_ref, daft_schema) for block_ref in block_refs
         ]
+
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):

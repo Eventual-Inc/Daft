@@ -72,6 +72,7 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Shuffle Algorithms](optimization/shuffle.md)
         * [Join Strategies](optimization/join-strategies.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
