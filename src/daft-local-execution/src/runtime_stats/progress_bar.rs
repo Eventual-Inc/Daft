@@ -133,9 +133,10 @@ impl IndicatifProgressBarManager {
         let mut sorted_ids: Vec<NodeID> = node_info_map.keys().copied().collect();
         sorted_ids.sort_unstable();
         for (display_idx, node_id) in sorted_ids.into_iter().enumerate() {
-            if let Some(node_info) = node_info_map.get(&node_id) {
-                manager.make_new_bar(node_id, display_idx + 1, node_info.as_ref(), max_name_len);
-            }
+            let node_info = node_info_map
+                .get(&node_id)
+                .expect("sorted_ids was built from node_info_map keys");
+            manager.make_new_bar(node_id, display_idx + 1, node_info.as_ref(), max_name_len);
         }
 
         manager
@@ -306,18 +307,19 @@ mod python {
                 let mut sorted_ids: Vec<NodeID> = node_info_map.keys().copied().collect();
                 sorted_ids.sort_unstable();
                 for node_id in sorted_ids {
-                    if let Some(node_info) = node_info_map.get(&node_id) {
-                        let bar_format = format!(
-                            "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
-                            prefix = node_info.name
-                        );
+                    let node_info = node_info_map
+                        .get(&node_id)
+                        .expect("sorted_ids was built from node_info_map keys");
+                    let bar_format = format!(
+                        "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
+                        prefix = node_info.name
+                    );
 
-                        let pb_id = pb_object.call_method1("make_new_bar", (bar_format,))?;
-                        let pb_id = pb_id.extract::<usize>()?;
+    let pb_id = pb_object.call_method1("make_new_bar", (bar_format,))?;
+    let pb_id = pb_id.extract::<usize>()?;
 
-                        node_id_to_pb_id.insert(node_info.id, pb_id);
-                    }
-                }
+    node_id_to_pb_id.insert(node_info.id, pb_id);
+}
 
                 DaftResult::Ok(Self {
                     inner: Arc::new(pb_object.into()),
