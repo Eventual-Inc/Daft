@@ -3,7 +3,7 @@ use std::{cmp::max, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
 use daft_logical_plan::{
-    ClusteringSpec, JoinStrategy, JoinType,
+    JoinStrategy, JoinType,
     ops::Join,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::ApproxStats,
@@ -77,17 +77,18 @@ impl LogicalPlanToPipelineNodeTranslator {
         left_size_bytes: usize,
         right_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        let left_spec = left.config().clustering_spec.as_ref();
-        let right_spec = right.config().clustering_spec.as_ref();
+        let left_spec = &left.config().clustering_spec;
+        let right_spec = &right.config().clustering_spec;
 
-        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
+        // Clustering keys are bound, just like the join keys, so compare them directly.
+        let is_left_hash_partitioned = left_spec.is_hash()
             && is_partition_compatible(
-                &left_spec.partition_by(),
+                left_spec.partition_by().iter().map(|e| e.inner()),
                 left_on.iter().map(|e| e.inner()),
             );
-        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
+        let is_right_hash_partitioned = right_spec.is_hash()
             && is_partition_compatible(
-                &right_spec.partition_by(),
+                right_spec.partition_by().iter().map(|e| e.inner()),
                 right_on.iter().map(|e| e.inner()),
             );
         let num_left_partitions = left_spec.num_partitions();

@@ -10,6 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
+        clustering::BoundClusteringSpec,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -44,7 +45,7 @@ impl RepartitionNode {
         num_partitions: usize,
         backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
@@ -53,22 +54,24 @@ impl RepartitionNode {
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
-        let config = PipelineNodeConfig::new(
-            schema.clone(),
-            plan_config.config.clone(),
-            repartition_spec
-                .to_clustering_spec(child.config().clustering_spec.num_partitions())
-                .into(),
-        );
+        // The logical->pipeline boundary for repartition clustering: bind the (possibly
+        // resolved-by-name) repartition keys against the input schema once.
+        let clustering_spec = BoundClusteringSpec::from_repartition_spec(
+            &repartition_spec,
+            child.config().clustering_spec.num_partitions(),
+            &child.config().schema,
+        )?;
+        let config =
+            PipelineNodeConfig::new(schema.clone(), plan_config.config.clone(), clustering_spec);
 
-        Self {
+        Ok(Self {
             config,
             context: context.clone(),
             repartition_spec,
             shuffle_backend: ShuffleBackend::new(&context, schema, backend),
             num_partitions,
             child,
-        }
+        })
     }
 
     async fn execution_loop(

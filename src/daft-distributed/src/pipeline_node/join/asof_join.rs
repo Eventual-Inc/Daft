@@ -7,7 +7,7 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
-use daft_logical_plan::{AsofJoinStrategy, partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::{AsofJoinStrategy, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
@@ -15,7 +15,7 @@ use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
         sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -73,15 +73,10 @@ impl AsofJoinNode {
             NodeType::AsofJoin,
             NodeCategory::BlockingSink,
         );
-        let partition_cols = left_by
-            .iter()
-            .map(BoundExpr::inner)
-            .cloned()
-            .collect::<Vec<_>>();
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            Arc::new(HashClusteringConfig::new(num_partitions, partition_cols).into()),
+            BoundClusteringSpec::hash(num_partitions, left_by.clone()),
         );
         Self {
             config,

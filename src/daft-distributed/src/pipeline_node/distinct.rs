@@ -3,10 +3,12 @@ use std::sync::Arc;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
+use super::{
+    DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
+};
 use crate::{
     pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
@@ -41,12 +43,9 @@ impl DistinctNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(
-                HashClusteringConfig::new(
-                    child.config().clustering_spec.num_partitions(),
-                    columns.clone().into_iter().map(|e| e.into()).collect(),
-                )
-                .into(),
+            BoundClusteringSpec::hash(
+                child.config().clustering_spec.num_partitions(),
+                columns.clone(),
             ),
         );
         Self {

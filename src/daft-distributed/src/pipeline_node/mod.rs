@@ -5,6 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use clustering::BoundClusteringSpec;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
     DisplayLevel,
@@ -20,7 +21,7 @@ use common_metrics::{
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
@@ -39,6 +40,7 @@ use crate::{
 #[cfg(feature = "python")]
 mod actor_udf;
 mod aggregate;
+pub(crate) mod clustering;
 mod concat;
 mod distinct;
 mod explode;
@@ -249,14 +251,14 @@ impl MaterializedOutput {
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
-    pub clustering_spec: ClusteringSpecRef,
+    pub clustering_spec: BoundClusteringSpec,
 }
 
 impl PipelineNodeConfig {
     pub fn new(
         schema: SchemaRef,
         execution_config: Arc<DaftExecutionConfig>,
-        clustering_spec: ClusteringSpecRef,
+        clustering_spec: BoundClusteringSpec,
     ) -> Self {
         Self {
             schema,
@@ -519,7 +521,7 @@ pub(crate) mod tests {
         ops::{NodeCategory, NodeType},
     };
     use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-    use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+    use daft_logical_plan::stats::StatsState;
     use daft_schema::schema::Schema;
     use futures::{StreamExt, stream};
 
@@ -538,7 +540,7 @@ pub(crate) mod tests {
                 config: PipelineNodeConfig::new(
                     Arc::new(Schema::empty()),
                     Arc::new(DaftExecutionConfig::default()),
-                    Arc::new(ClusteringSpec::unknown()),
+                    BoundClusteringSpec::unknown(0),
                 ),
                 context: PipelineNodeContext::new(
                     0,

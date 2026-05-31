@@ -8,13 +8,14 @@ use common_metrics::{
 };
 use daft_io::utils::group_glob_paths;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_scan::Pushdowns;
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 
 use super::{
-    DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext, scan_source::SourceStats,
+    DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext,
+    clustering::BoundClusteringSpec, scan_source::SourceStats,
 };
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl, TaskBuilderStream},
@@ -53,7 +54,7 @@ impl GlobScanSourceNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(1)),
+            BoundClusteringSpec::unknown(1),
         );
 
         let glob_paths = if plan_config.config.enable_multi_glob_path_tasks {

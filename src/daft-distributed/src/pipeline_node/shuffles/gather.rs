@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
@@ -11,6 +11,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::BoundClusteringSpec,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -49,7 +50,7 @@ impl GatherNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            Arc::new(UnknownClusteringConfig::new(1).into()),
+            BoundClusteringSpec::unknown(1),
         );
         let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
         Self {

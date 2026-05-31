@@ -10,7 +10,7 @@ use common_metrics::{
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
@@ -145,12 +145,10 @@ impl UDFNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            translate_clustering_spec(
-                child.config().clustering_spec.clone(),
-                &passthrough_columns,
-                &child.config().schema,
-                &schema,
-            ),
+            child
+                .config()
+                .clustering_spec
+                .translate_through_projection(&passthrough_columns, &schema),
         );
         Self {
             config,
