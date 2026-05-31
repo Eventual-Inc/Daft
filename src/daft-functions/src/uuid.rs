@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use arrow_array::builder::FixedSizeBinaryBuilder;
+use chrono::{DateTime, Datelike};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, FromArrow, Schema, UuidArray},
+    prelude::{DataType, Field, FixedSizeBinaryArray, FromArrow, Int64Array, Schema, UuidArray},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
     ExprRef,
     functions::{
-        FunctionArgs, ScalarUDF,
+        FunctionArgs, ScalarUDF, UnaryArg,
         scalar::{EvalContext, ScalarFn},
     },
 };
@@ -17,6 +18,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid as RustUuid;
 
 const UUID_LEN: i32 = 16;
+
+/// Number of bytes in a UUID (128 bits).
+const UUID_BYTES: usize = 16;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Uuid;
@@ -111,6 +115,169 @@ pub fn uuidv7() -> ExprRef {
     ScalarFn::builtin(UuidV7, vec![]).into()
 }
 
+// ---------------------------------------------------------------------------
+// UUIDv7 timestamp-extraction partition transforms.
+//
+// A UUIDv7 packs a 48-bit big-endian Unix-millisecond timestamp in its first 6
+// bytes (RFC 9562 §5.7). These functions decode that timestamp and bucket it,
+// mirroring the Iceberg-style partition transforms (`partition_hours`, etc.):
+//   - minute / hour / day: count of units since the Unix epoch (floor division)
+//   - month: calendar months since 1970-01 (== (year-1970)*12 + (month-1)),
+//            matching `partition_months`.
+// The input is a UUID (`DataType::Uuid`) or a `FixedSizeBinary(16)`; the output
+// is `Int64`. The UUID *version*/*variant* bits do not affect the result — only
+// the leading 48 timestamp bits are read — but inputs are expected to be v7.
+// ---------------------------------------------------------------------------
+
+/// Which UUIDv7 timestamp bucket to extract.
+#[derive(Clone, Copy)]
+enum Uuid7Unit {
+    Minute,
+    Hour,
+    Day,
+    Month,
+}
+
+/// Reads the 48-bit big-endian Unix-millisecond timestamp from the first 6 bytes
+/// of a UUIDv7.
+#[inline]
+fn ms_from_uuid7(bytes: &[u8]) -> i64 {
+    debug_assert!(bytes.len() >= 6);
+    (i64::from(bytes[0]) << 40)
+        | (i64::from(bytes[1]) << 32)
+        | (i64::from(bytes[2]) << 24)
+        | (i64::from(bytes[3]) << 16)
+        | (i64::from(bytes[4]) << 8)
+        | i64::from(bytes[5])
+}
+
+/// Buckets a UUIDv7 millisecond timestamp into the requested unit. Returns `None`
+/// only if the (always non-negative, 48-bit) timestamp is somehow out of chrono's
+/// representable range, which cannot happen for real UUIDv7 values.
+#[inline]
+fn bucket_uuid7(bytes: &[u8], unit: Uuid7Unit) -> Option<i64> {
+    let ms = ms_from_uuid7(bytes);
+    match unit {
+        Uuid7Unit::Minute => Some(ms.div_euclid(60_000)),
+        Uuid7Unit::Hour => Some(ms.div_euclid(3_600_000)),
+        Uuid7Unit::Day => Some(ms.div_euclid(86_400_000)),
+        Uuid7Unit::Month => DateTime::from_timestamp_millis(ms)
+            .map(|dt| (i64::from(dt.year()) - 1970) * 12 + (i64::from(dt.month()) - 1)),
+    }
+}
+
+/// Returns the input's bytes as a `FixedSizeBinaryArray`, accepting either a
+/// `DataType::Uuid` (read through its physical array) or a `FixedSizeBinary(16)`.
+fn uuid7_fixed_size_binary<'a>(
+    input: &'a Series,
+    fn_name: &str,
+) -> DaftResult<&'a FixedSizeBinaryArray> {
+    match input.data_type() {
+        DataType::Uuid => Ok(&input.downcast::<UuidArray>()?.physical),
+        DataType::FixedSizeBinary(UUID_BYTES) => input.downcast::<FixedSizeBinaryArray>(),
+        other => Err(DaftError::TypeError(format!(
+            "Expected input to '{fn_name}' to be a Uuid or FixedSizeBinary(16), got {other}"
+        ))),
+    }
+}
+
+fn extract_uuid7(input: &Series, unit: Uuid7Unit, fn_name: &str) -> DaftResult<Series> {
+    let bytes = uuid7_fixed_size_binary(input, fn_name)?;
+    let field = Field::new(input.name(), DataType::Int64);
+    let result = Int64Array::from_iter(
+        field,
+        bytes
+            .into_iter()
+            .map(|b| b.and_then(|b| bucket_uuid7(b, unit))),
+    );
+    Ok(result.into_series())
+}
+
+/// Validates the input dtype and returns the `Int64` output field. Shared by all
+/// four extraction functions' `get_return_field`.
+fn uuid7_return_field(
+    inputs: FunctionArgs<ExprRef>,
+    schema: &Schema,
+    fn_name: &str,
+) -> DaftResult<Field> {
+    let UnaryArg { input } = inputs.try_into()?;
+    let field = input.to_field(schema)?;
+    match field.dtype {
+        DataType::Uuid | DataType::FixedSizeBinary(UUID_BYTES) => {
+            Ok(Field::new(field.name, DataType::Int64))
+        }
+        other => Err(DaftError::TypeError(format!(
+            "Expected input to '{fn_name}' to be a Uuid or FixedSizeBinary(16), got {other}"
+        ))),
+    }
+}
+
+/// Generates a ScalarUDF struct + builder fn for a UUIDv7 extraction transform.
+macro_rules! impl_uuid7_extract {
+    ($struct:ident, $builder:ident, $name:literal, $unit:expr, $doc:literal) => {
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $struct;
+
+        #[typetag::serde]
+        impl ScalarUDF for $struct {
+            fn name(&self) -> &'static str {
+                $name
+            }
+
+            fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+                extract_uuid7(&input, $unit, $name)
+            }
+
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                uuid7_return_field(inputs, schema, $name)
+            }
+
+            fn docstring(&self) -> &'static str {
+                $doc
+            }
+        }
+
+        #[must_use]
+        pub fn $builder(input: ExprRef) -> ExprRef {
+            ScalarFn::builtin($struct, vec![input]).into()
+        }
+    };
+}
+
+impl_uuid7_extract!(
+    ExtractMinuteUuid7,
+    extract_minute_uuid7,
+    "extract_minute_uuid7",
+    Uuid7Unit::Minute,
+    "Extracts the number of minutes since the Unix epoch from the timestamp embedded in a UUIDv7."
+);
+impl_uuid7_extract!(
+    ExtractHourUuid7,
+    extract_hour_uuid7,
+    "extract_hour_uuid7",
+    Uuid7Unit::Hour,
+    "Extracts the number of hours since the Unix epoch from the timestamp embedded in a UUIDv7."
+);
+impl_uuid7_extract!(
+    ExtractDayUuid7,
+    extract_day_uuid7,
+    "extract_day_uuid7",
+    Uuid7Unit::Day,
+    "Extracts the number of days since the Unix epoch from the timestamp embedded in a UUIDv7."
+);
+impl_uuid7_extract!(
+    ExtractMonthUuid7,
+    extract_month_uuid7,
+    "extract_month_uuid7",
+    Uuid7Unit::Month,
+    "Extracts the number of calendar months since 1970-01 from the timestamp embedded in a UUIDv7."
+);
+
 fn uuid_series_from_builder(mut builder: FixedSizeBinaryBuilder) -> DaftResult<Series> {
     Ok(
         UuidArray::from_arrow(Field::new("", DataType::Uuid), Arc::new(builder.finish()))?
@@ -153,5 +320,130 @@ mod tests {
         for idx in 1..array.len() {
             assert!(array.value(idx - 1) < array.value(idx));
         }
+    }
+
+    /// Builds a 16-byte UUIDv7-shaped value with the given ms timestamp in the
+    /// leading 48 bits. The remaining bytes (including version/variant) are set
+    /// to a non-zero pattern to prove they don't affect extraction.
+    fn uuid7_bytes(ms: u64) -> [u8; 16] {
+        let mut b = [0xABu8; 16];
+        b[0] = ((ms >> 40) & 0xFF) as u8;
+        b[1] = ((ms >> 32) & 0xFF) as u8;
+        b[2] = ((ms >> 24) & 0xFF) as u8;
+        b[3] = ((ms >> 16) & 0xFF) as u8;
+        b[4] = ((ms >> 8) & 0xFF) as u8;
+        b[5] = (ms & 0xFF) as u8;
+        // version 7 nibble and variant bits, as a real UUIDv7 would have
+        b[6] = 0x70 | (b[6] & 0x0F);
+        b[8] = 0x80 | (b[8] & 0x3F);
+        b
+    }
+
+    #[test]
+    fn ms_from_uuid7_reads_leading_48_bits() {
+        assert_eq!(ms_from_uuid7(&uuid7_bytes(0)), 0);
+        assert_eq!(ms_from_uuid7(&uuid7_bytes(1)), 1);
+        // 2024-01-01T00:00:00Z
+        let ms = 1_704_067_200_000;
+        assert_eq!(ms_from_uuid7(&uuid7_bytes(ms)), ms as i64);
+        // Maximum 48-bit value.
+        let max48 = (1u64 << 48) - 1;
+        assert_eq!(ms_from_uuid7(&uuid7_bytes(max48)), max48 as i64);
+    }
+
+    #[test]
+    fn ms_extraction_ignores_version_and_variant_bytes() {
+        // Bytes 6 and 8 carry version/variant; they must not leak into the result.
+        let a = uuid7_bytes(1_704_067_200_000);
+        let mut b = a;
+        b[6] = 0x7F;
+        b[8] = 0xBF;
+        b[15] = 0x00;
+        assert_eq!(ms_from_uuid7(&a), ms_from_uuid7(&b));
+    }
+
+    #[test]
+    fn bucket_minute_hour_day_floor_divide() {
+        // 2024-01-01T00:00:00Z = 1704067200000 ms.
+        let ms = 1_704_067_200_000u64;
+        let b = uuid7_bytes(ms);
+        assert_eq!(
+            bucket_uuid7(&b, Uuid7Unit::Minute),
+            Some(ms as i64 / 60_000)
+        );
+        assert_eq!(
+            bucket_uuid7(&b, Uuid7Unit::Hour),
+            Some(ms as i64 / 3_600_000)
+        );
+        assert_eq!(
+            bucket_uuid7(&b, Uuid7Unit::Day),
+            Some(ms as i64 / 86_400_000)
+        );
+        // Epoch maps everything to 0.
+        let z = uuid7_bytes(0);
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Minute), Some(0));
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Hour), Some(0));
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Day), Some(0));
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Month), Some(0));
+    }
+
+    #[test]
+    fn bucket_minute_hour_day_known_values() {
+        // 90 minutes after epoch.
+        let ms = 90 * 60_000;
+        let b = uuid7_bytes(ms);
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Minute), Some(90));
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Hour), Some(1)); // floor(90/60)
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Day), Some(0));
+    }
+
+    #[test]
+    fn bucket_month_is_calendar_months_since_epoch() {
+        // 1970-01 => 0
+        assert_eq!(bucket_uuid7(&uuid7_bytes(0), Uuid7Unit::Month), Some(0));
+        // 1970-02-01T00:00:00Z = 2678400000 ms => month index 1
+        assert_eq!(
+            bucket_uuid7(&uuid7_bytes(2_678_400_000), Uuid7Unit::Month),
+            Some(1)
+        );
+        // 2024-03-15T12:00:00Z => (2024-1970)*12 + (3-1) = 648 + 2 = 650
+        // 2024-03-15T12:00:00Z = 1710504000000 ms
+        assert_eq!(
+            bucket_uuid7(&uuid7_bytes(1_710_504_000_000), Uuid7Unit::Month),
+            Some(650)
+        );
+    }
+
+    #[test]
+    fn extract_uuid7_over_series_with_nulls() {
+        use daft_core::prelude::FixedSizeBinaryArray;
+
+        let ms_a = 1_704_067_200_000u64; // 2024-01-01
+        let ms_b = 1_710_504_000_000u64; // 2024-03-15
+        let a = uuid7_bytes(ms_a);
+        let b = uuid7_bytes(ms_b);
+        let values: Vec<Option<&[u8]>> = vec![Some(a.as_slice()), None, Some(b.as_slice())];
+        let arr =
+            FixedSizeBinaryArray::from_iter("id", values.into_iter(), UUID_BYTES).into_series();
+
+        let hours = extract_uuid7(&arr, Uuid7Unit::Hour, "extract_hour_uuid7").unwrap();
+        assert_eq!(hours.data_type(), &DataType::Int64);
+        let got: Vec<Option<i64>> = hours.i64().unwrap().into_iter().collect();
+        assert_eq!(
+            got,
+            vec![
+                Some(ms_a as i64 / 3_600_000),
+                None,
+                Some(ms_b as i64 / 3_600_000)
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_uuid7_rejects_non_uuid_input() {
+        let s = Int64Array::from_iter(Field::new("x", DataType::Int64), [Some(1i64)].into_iter())
+            .into_series();
+        let err = extract_uuid7(&s, Uuid7Unit::Hour, "extract_hour_uuid7");
+        assert!(err.is_err());
     }
 }
