@@ -17,10 +17,8 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid as RustUuid;
 
-const UUID_LEN: i32 = 16;
-
 /// Number of bytes in a UUID (128 bits).
-const UUID_BYTES: usize = 16;
+const UUID_LEN: usize = 16;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Uuid;
@@ -34,7 +32,7 @@ impl ScalarUDF for Uuid {
     fn call(&self, _inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
         let len = ctx.row_count;
 
-        let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN);
+        let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN as i32);
         for _ in 0..len {
             builder.append_value(RustUuid::new_v4())?;
         }
@@ -141,8 +139,7 @@ enum Uuid7Unit {
 /// Reads the 48-bit big-endian Unix-millisecond timestamp from the first 6 bytes
 /// of a UUIDv7.
 #[inline]
-fn ms_from_uuid7(bytes: &[u8]) -> i64 {
-    debug_assert!(bytes.len() >= 6);
+fn ms_from_uuid7(bytes: &[u8; UUID_LEN]) -> i64 {
     (i64::from(bytes[0]) << 40)
         | (i64::from(bytes[1]) << 32)
         | (i64::from(bytes[2]) << 24)
@@ -155,7 +152,7 @@ fn ms_from_uuid7(bytes: &[u8]) -> i64 {
 /// only if the (always non-negative, 48-bit) timestamp is somehow out of chrono's
 /// representable range, which cannot happen for real UUIDv7 values.
 #[inline]
-fn bucket_uuid7(bytes: &[u8], unit: Uuid7Unit) -> Option<i64> {
+fn bucket_uuid7(bytes: &[u8; UUID_LEN], unit: Uuid7Unit) -> Option<i64> {
     let ms = ms_from_uuid7(bytes);
     match unit {
         Uuid7Unit::Minute => Some(ms.div_euclid(60_000)),
@@ -174,7 +171,7 @@ fn uuid7_fixed_size_binary<'a>(
 ) -> DaftResult<&'a FixedSizeBinaryArray> {
     match input.data_type() {
         DataType::Uuid => Ok(&input.downcast::<UuidArray>()?.physical),
-        DataType::FixedSizeBinary(UUID_BYTES) => input.downcast::<FixedSizeBinaryArray>(),
+        DataType::FixedSizeBinary(UUID_LEN) => input.downcast::<FixedSizeBinaryArray>(),
         other => Err(DaftError::TypeError(format!(
             "Expected input to '{fn_name}' to be a Uuid or FixedSizeBinary(16), got {other}"
         ))),
@@ -186,9 +183,11 @@ fn extract_uuid7(input: &Series, unit: Uuid7Unit, fn_name: &str) -> DaftResult<S
     let field = Field::new(input.name(), DataType::Int64);
     let result = Int64Array::from_iter(
         field,
-        bytes
-            .into_iter()
-            .map(|b| b.and_then(|b| bucket_uuid7(b, unit))),
+        bytes.into_iter().map(|b| {
+            // `uuid7_fixed_size_binary` guarantees each value is exactly 16 bytes wide.
+            b.and_then(|b| <&[u8; UUID_LEN]>::try_from(b).ok())
+                .and_then(|b| bucket_uuid7(b, unit))
+        }),
     );
     Ok(result.into_series())
 }
@@ -203,7 +202,7 @@ fn uuid7_return_field(
     let UnaryArg { input } = inputs.try_into()?;
     let field = input.to_field(schema)?;
     match field.dtype {
-        DataType::Uuid | DataType::FixedSizeBinary(UUID_BYTES) => {
+        DataType::Uuid | DataType::FixedSizeBinary(UUID_LEN) => {
             Ok(Field::new(field.name, DataType::Int64))
         }
         other => Err(DaftError::TypeError(format!(
@@ -212,71 +211,133 @@ fn uuid7_return_field(
     }
 }
 
-/// Generates a ScalarUDF struct + builder fn for a UUIDv7 extraction transform.
-macro_rules! impl_uuid7_extract {
-    ($struct:ident, $builder:ident, $name:literal, $unit:expr, $doc:literal) => {
-        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-        pub struct $struct;
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ExtractMinuteUuid7;
 
-        #[typetag::serde]
-        impl ScalarUDF for $struct {
-            fn name(&self) -> &'static str {
-                $name
-            }
+#[typetag::serde]
+impl ScalarUDF for ExtractMinuteUuid7 {
+    fn name(&self) -> &'static str {
+        "extract_minute_uuid7"
+    }
 
-            fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
-                let UnaryArg { input } = inputs.try_into()?;
-                extract_uuid7(&input, $unit, $name)
-            }
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
+        extract_uuid7(&input, Uuid7Unit::Minute, self.name())
+    }
 
-            fn get_return_field(
-                &self,
-                inputs: FunctionArgs<ExprRef>,
-                schema: &Schema,
-            ) -> DaftResult<Field> {
-                uuid7_return_field(inputs, schema, $name)
-            }
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        uuid7_return_field(inputs, schema, self.name())
+    }
 
-            fn docstring(&self) -> &'static str {
-                $doc
-            }
-        }
-
-        #[must_use]
-        pub fn $builder(input: ExprRef) -> ExprRef {
-            ScalarFn::builtin($struct, vec![input]).into()
-        }
-    };
+    fn docstring(&self) -> &'static str {
+        "Extracts the number of minutes since the Unix epoch from the timestamp embedded in a UUIDv7."
+    }
 }
 
-impl_uuid7_extract!(
-    ExtractMinuteUuid7,
-    extract_minute_uuid7,
-    "extract_minute_uuid7",
-    Uuid7Unit::Minute,
-    "Extracts the number of minutes since the Unix epoch from the timestamp embedded in a UUIDv7."
-);
-impl_uuid7_extract!(
-    ExtractHourUuid7,
-    extract_hour_uuid7,
-    "extract_hour_uuid7",
-    Uuid7Unit::Hour,
-    "Extracts the number of hours since the Unix epoch from the timestamp embedded in a UUIDv7."
-);
-impl_uuid7_extract!(
-    ExtractDayUuid7,
-    extract_day_uuid7,
-    "extract_day_uuid7",
-    Uuid7Unit::Day,
-    "Extracts the number of days since the Unix epoch from the timestamp embedded in a UUIDv7."
-);
-impl_uuid7_extract!(
-    ExtractMonthUuid7,
-    extract_month_uuid7,
-    "extract_month_uuid7",
-    Uuid7Unit::Month,
-    "Extracts the number of calendar months since 1970-01 from the timestamp embedded in a UUIDv7."
-);
+#[must_use]
+pub fn extract_minute_uuid7(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(ExtractMinuteUuid7, vec![input]).into()
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ExtractHourUuid7;
+
+#[typetag::serde]
+impl ScalarUDF for ExtractHourUuid7 {
+    fn name(&self) -> &'static str {
+        "extract_hour_uuid7"
+    }
+
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
+        extract_uuid7(&input, Uuid7Unit::Hour, self.name())
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        uuid7_return_field(inputs, schema, self.name())
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Extracts the number of hours since the Unix epoch from the timestamp embedded in a UUIDv7."
+    }
+}
+
+#[must_use]
+pub fn extract_hour_uuid7(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(ExtractHourUuid7, vec![input]).into()
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ExtractDayUuid7;
+
+#[typetag::serde]
+impl ScalarUDF for ExtractDayUuid7 {
+    fn name(&self) -> &'static str {
+        "extract_day_uuid7"
+    }
+
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
+        extract_uuid7(&input, Uuid7Unit::Day, self.name())
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        uuid7_return_field(inputs, schema, self.name())
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Extracts the number of days since the Unix epoch from the timestamp embedded in a UUIDv7."
+    }
+}
+
+#[must_use]
+pub fn extract_day_uuid7(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(ExtractDayUuid7, vec![input]).into()
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ExtractMonthUuid7;
+
+#[typetag::serde]
+impl ScalarUDF for ExtractMonthUuid7 {
+    fn name(&self) -> &'static str {
+        "extract_month_uuid7"
+    }
+
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
+        let UnaryArg { input } = inputs.try_into()?;
+        extract_uuid7(&input, Uuid7Unit::Month, self.name())
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        uuid7_return_field(inputs, schema, self.name())
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Extracts the number of calendar months since 1970-01 from the timestamp embedded in a UUIDv7."
+    }
+}
+
+#[must_use]
+pub fn extract_month_uuid7(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(ExtractMonthUuid7, vec![input]).into()
+}
 
 fn uuid_series_from_builder(mut builder: FixedSizeBinaryBuilder) -> DaftResult<Series> {
     Ok(
@@ -286,7 +347,7 @@ fn uuid_series_from_builder(mut builder: FixedSizeBinaryBuilder) -> DaftResult<S
 }
 
 fn uuid_v7_kernel(len: usize) -> DaftResult<FixedSizeBinaryBuilder> {
-    let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN);
+    let mut builder = FixedSizeBinaryBuilder::with_capacity(len, UUID_LEN as i32);
 
     for _ in 0..len {
         builder.append_value(RustUuid::now_v7())?;
@@ -416,15 +477,12 @@ mod tests {
 
     #[test]
     fn extract_uuid7_over_series_with_nulls() {
-        use daft_core::prelude::FixedSizeBinaryArray;
-
         let ms_a = 1_704_067_200_000u64; // 2024-01-01
         let ms_b = 1_710_504_000_000u64; // 2024-03-15
         let a = uuid7_bytes(ms_a);
         let b = uuid7_bytes(ms_b);
         let values: Vec<Option<&[u8]>> = vec![Some(a.as_slice()), None, Some(b.as_slice())];
-        let arr =
-            FixedSizeBinaryArray::from_iter("id", values.into_iter(), UUID_BYTES).into_series();
+        let arr = FixedSizeBinaryArray::from_iter("id", values.into_iter(), UUID_LEN).into_series();
 
         let hours = extract_uuid7(&arr, Uuid7Unit::Hour, "extract_hour_uuid7").unwrap();
         assert_eq!(hours.data_type(), &DataType::Int64);
