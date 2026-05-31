@@ -1,15 +1,16 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
+use common_error::DaftResult;
 use common_metrics::{
     BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
-use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
+use daft_scan::{ClusteringKeys, Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::KeyValue;
@@ -98,8 +99,8 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
-        clustering_keys: Option<Vec<ExprRef>>,
-    ) -> Self {
+        clustering_keys: Option<ClusteringKeys>,
+    ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
@@ -109,25 +110,25 @@ impl ScanSourceNode {
             NodeCategory::Source,
         );
         let num_partitions = scan_tasks.len();
-        // If the source declared how its output is hash-clustered, surface that to the planner so
-        // downstream group-by / window / distinct can skip the shuffle. The declared keys are
-        // unbound (resolved-by-name) column references; bind them against the output schema to get
-        // a `BoundClusteringSpec`. If they don't bind (a misdeclaration), fall back to Unknown
-        // rather than failing the plan. Otherwise keep the historical Unknown clustering.
+        // If the source declared a clustering, lower it to a concrete `BoundClusteringSpec` by
+        // attaching the partition count and binding the declared keys against the output schema.
+        // Binding a key that the source's schema doesn't contain is a misdeclaration — surface it
+        // as an error rather than silently dropping the clustering, since acting on a wrong
+        // declaration would be a correctness bug. A source that declares nothing keeps the
+        // historical Unknown clustering.
         let clustering_spec = match clustering_keys {
-            Some(keys) if !keys.is_empty() => match BoundExpr::bind_all(&keys, &schema) {
-                Ok(bound) => ClusteringStrategy::Explicit(BoundClusteringSpec::hash(num_partitions, bound)),
-                Err(_) => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
-            },
-            _ => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
+            Some(ClusteringKeys::Hash(keys)) => {
+                ClusteringStrategy::Explicit(BoundClusteringSpec::hash(num_partitions, BoundExpr::bind_all(&keys, &schema)?))
+            }
+            None => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         };
         let config = PipelineNodeConfig::new(schema, plan_config.config.clone(), clustering_spec);
-        Self {
+        Ok(Self {
             config,
             context,
             pushdowns,
             scan_tasks,
-        }
+        })
     }
 
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
@@ -345,7 +346,8 @@ mod tests {
             Arc::new(scan_tasks),
             schema,
             None,
-        );
+        )
+        .unwrap();
 
         DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
     }

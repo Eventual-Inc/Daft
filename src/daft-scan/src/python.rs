@@ -1227,6 +1227,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib_scan_info::PyPartitionField>()?;
     parent.add_class::<pylib_scan_info::PyPartitionTransform>()?;
     parent.add_class::<pylib_scan_info::PyPushdowns>()?;
+    parent.add_class::<crate::clustering::PyClusteringKeys>()?;
     parent.add_class::<PyDataSource>()?;
     parent.add_class::<PyDataSourceTask>()?;
 

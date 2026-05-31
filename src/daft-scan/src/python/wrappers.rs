@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use daft_dsl::{ExprRef, python::PyExpr};
 use daft_recordbatch::python::PyRecordBatch;
 use daft_schema::{python::schema::PySchema, schema::SchemaRef};
 use futures::StreamExt;
@@ -16,8 +15,9 @@ use super::{
     pylib_scan_info::{PyPartitionField, PyPushdowns},
 };
 use crate::{
-    DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-    ScanTask, ScanTaskRef, SourceConfig,
+    ClusteringKeys, DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource,
+    ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
+    clustering::PyClusteringKeys,
     pushdowns::SupportsPushdownFilters,
     source::{DataSource, DataSourceTask, DataSourceTaskStream, ReadOptions, RecordBatchStream},
     storage_config::StorageConfig,
@@ -52,7 +52,7 @@ pub struct PyDataSourceWrapper {
     name: String,
     schema: SchemaRef,
     partition_fields: Vec<PartitionField>,
-    clustering_keys: Option<Vec<ExprRef>>,
+    clustering_keys: Option<ClusteringKeys>,
 }
 
 impl PyDataSourceWrapper {
@@ -84,24 +84,19 @@ impl PyDataSourceWrapper {
             })
             .unwrap_or_default();
 
-        // A source may declare how its output is hash-clustered at execution time. The Python
-        // `ClusteringSpec` proxy holds the keys on its `_spec` (PyClusteringSpec); we read them
-        // back as expressions here since daft-scan cannot name the downstream ClusteringSpec.
-        let clustering_keys: Option<Vec<ExprRef>> = {
-            let spec = source
-                .call_method0(intern!(source.py(), "get_clustering_spec"))
-                .expect("DataSource.get_clustering_spec should never fail");
-            if spec.is_none() {
-                None
-            } else {
-                let exprs: Vec<PyExpr> = spec
-                    .getattr(intern!(source.py(), "_spec"))
-                    .and_then(|s| s.call_method0(intern!(source.py(), "partition_by")))
-                    .and_then(|by| by.extract())
-                    .expect("ClusteringSpec must expose partition_by() -> list[Expression]");
-                Some(exprs.into_iter().map(|e| e.expr).collect())
-            }
-        };
+        // A source may declare how its output is clustered at execution time via
+        // `get_clustering_spec()`, whose returned `ClusteringSpec` proxy holds a
+        // `ClusteringKeys` on its `_keys` attribute. This is a brand-new user-implemented API, so
+        // any failure (a raised exception, a missing/renamed attribute) degrades gracefully to
+        // "no declared clustering" — the optimizer stays conservative rather than panicking,
+        // mirroring how `get_partition_fields` uses `unwrap_or_default` above.
+        let clustering_keys: Option<ClusteringKeys> = source
+            .call_method0(intern!(source.py(), "get_clustering_spec"))
+            .ok()
+            .filter(|spec| !spec.is_none())
+            .and_then(|spec| spec.getattr(intern!(source.py(), "_keys")).ok())
+            .and_then(|keys| keys.extract::<PyClusteringKeys>().ok())
+            .map(ClusteringKeys::from);
 
         Self {
             source: source.unbind(),
@@ -252,7 +247,7 @@ impl ScanOperator for PyDataSourceWrapper {
         &self.partition_fields
     }
 
-    fn clustering_keys(&self) -> Option<Vec<ExprRef>> {
+    fn clustering_keys(&self) -> Option<ClusteringKeys> {
         self.clustering_keys.clone()
     }
 

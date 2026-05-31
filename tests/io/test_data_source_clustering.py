@@ -168,3 +168,10 @@ def test_subset_groupby_is_correct():
     assert not _has_shuffle(df)  # group_by (a, b) ⊇ clustering (a) => no shuffle
     result = df.sort(["a", "b"]).to_pydict()
     assert result == {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [15, 20, 30, 41]}
+
+
+def test_misdeclared_clustering_key_raises(table: pa.Table):
+    """A clustering key absent from the source schema is a misdeclaration and raises in planning."""
+    df = ClusteredSource(table, ClusteringSpec.hash("not_a_column")).read().groupby("a").sum("c")
+    with pytest.raises(Exception):
+        df.explain(show_all=True, file=io.StringIO())

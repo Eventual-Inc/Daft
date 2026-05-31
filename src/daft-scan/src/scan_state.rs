@@ -5,11 +5,10 @@ use std::{
 };
 
 use common_display::{DisplayAs, DisplayLevel};
-use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{PartitionField, Pushdowns, ScanOperatorRef, ScanTaskRef};
+use crate::{ClusteringKeys, PartitionField, Pushdowns, ScanOperatorRef, ScanTaskRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScanState {
@@ -118,12 +117,10 @@ pub struct PhysicalScanInfo {
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
-    /// Hash-clustering keys declared by the source, if any. `None` means the source makes no
-    /// execution-time clustering guarantee. The keys are (possibly expression-valued)
-    /// `ExprRef`s; the planner builds the concrete `ClusteringSpec::Hash` from them once the
-    /// partition count is known. Kept as raw exprs because daft-scan cannot name the
-    /// `ClusteringSpec` type, which lives in the downstream daft-logical-plan crate.
-    pub clustering_keys: Option<Vec<ExprRef>>,
+    /// How the source declares its output is clustered at execution time, if at all. `None` means
+    /// no clustering guarantee. The planner attaches the partition count (from the number of scan
+    /// tasks) to produce a concrete clustering spec when the source is lowered.
+    pub clustering_keys: Option<ClusteringKeys>,
 }
 
 impl PhysicalScanInfo {
@@ -133,7 +130,7 @@ impl PhysicalScanInfo {
         source_schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
         pushdowns: Pushdowns,
-        clustering_keys: Option<Vec<ExprRef>>,
+        clustering_keys: Option<ClusteringKeys>,
     ) -> Self {
         Self {
             scan_state: ScanState::Operator(scan_op),

@@ -180,7 +180,11 @@ impl Source {
                 if let Some(clustering_keys) = clustering_keys {
                     res.push(format!(
                         "Clustering keys = [{}]",
-                        clustering_keys.iter().map(|k| format!("{k}")).join(", ")
+                        clustering_keys
+                            .keys()
+                            .iter()
+                            .map(|k| format!("{k}"))
+                            .join(", ")
                     ));
                 }
                 res.extend(pushdowns.multiline_display());

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.daft import ClusteringSpec as _PyClusteringSpec
+from daft.daft import ClusteringKeys as _PyClusteringKeys
 from daft.expressions import Expression, col
 
 if TYPE_CHECKING:
@@ -24,23 +24,20 @@ class ClusteringSpec:
 
     Keys may be column names or arbitrary :class:`~daft.expressions.Expression` values. Use the
     same expression on both the declaration and the downstream operator so they compare equal.
-
-    Warning:
-        This API is early in its development and is subject to change.
     """
 
-    _spec: _PyClusteringSpec
+    _keys: _PyClusteringKeys
 
     def __init__(self) -> None:
         raise NotImplementedError("Use ClusteringSpec.hash(...) to construct a ClusteringSpec.")
 
     def __repr__(self) -> str:
-        return self._spec.__repr__()
+        return self._keys.__repr__()
 
     @classmethod
-    def _from_pyclusteringspec(cls, spec: _PyClusteringSpec) -> ClusteringSpec:
+    def _from_clustering_keys(cls, keys: _PyClusteringKeys) -> ClusteringSpec:
         out = cls.__new__(cls)
-        out._spec = spec
+        out._keys = keys
         return out
 
     @staticmethod
@@ -59,4 +56,4 @@ class ClusteringSpec:
             >>> spec = ClusteringSpec.hash("producer", col("id") % 100)
         """
         exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
-        return ClusteringSpec._from_pyclusteringspec(_PyClusteringSpec.hash([e._expr for e in exprs]))
+        return ClusteringSpec._from_clustering_keys(_PyClusteringKeys.hash([e._expr for e in exprs]))
