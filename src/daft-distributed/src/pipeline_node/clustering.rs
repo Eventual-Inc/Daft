@@ -95,6 +95,40 @@ impl BoundClusteringSpec {
     /// (passed through, or as part of a larger expression the projection materializes); otherwise
     /// the spec downgrades to `Unknown`. Both `self` and `projection` are bound against the input
     /// schema; output keys are bound against `output_schema`.
+    ///
+    /// # How it works
+    ///
+    /// Clustering keys are bound against the *input* schema, but the output's clustering must be
+    /// expressed against the *output* schema. So we build a lookup from "expression the projection
+    /// computes" → "output column that holds it", then rewrite each clustering key through it.
+    ///
+    /// Worked example — input clustered by `[col#0, col#1 % 4]`, projection
+    /// `[col#0, col#2 AS "v", (col#1 % 4) AS "bucket"]` producing output schema `[k, v, bucket]`:
+    ///
+    /// ```text
+    ///   projection entry            map key (alias stripped)   →   output column
+    ///   ----------------            ------------------------       -------------
+    ///   col#0                       col#0                      →   col#0   (passthrough "k")
+    ///   col#2 AS "v"                col#2                      →   col#1   ("v")
+    ///   (col#1 % 4) AS "bucket"     col#1 % 4                  →   col#2   ("bucket")
+    ///
+    ///   clustering key   lookup / rewrite                       result
+    ///   --------------   ----------------                       ------
+    ///   col#0            matches map key col#0                  col#0
+    ///   col#1 % 4        matches map key col#1 % 4              col#2
+    ///
+    ///   => output clustering = Hash([col#0, col#2])
+    /// ```
+    ///
+    /// ## Why the alias is stripped from the map key
+    ///
+    /// A projection entry is `<expr> AS <name>`, carrying two separate facts: the *value* it
+    /// computes (`<expr>`) and the *output column* it lands in (`<name>`). A clustering key is a
+    /// bare partition expression with no alias (e.g. `col#1 % 4`). To match it we key the map on
+    /// the alias-stripped expression — `Alias(col#1 % 4, "bucket")` would never structurally equal
+    /// the bare key `col#1 % 4`, so keeping the alias would miss the match and force a needless
+    /// downgrade to `Unknown`. The alias is still used, via `.name()`, to locate the output column
+    /// the key is rewritten *to*.
     pub fn translate_through_projection(
         &self,
         projection: &[BoundExpr],
@@ -106,9 +140,10 @@ impl BoundClusteringSpec {
             Self::Hash { by, .. } | Self::Range { by, .. } => by,
         };
 
-        // Map each projected expression (outer alias stripped) to the output column it
-        // materializes. Both the projection and the clustering keys reference the input schema, so
-        // a surviving key matches one of these entries structurally.
+        // Build the "computed expression -> output column" lookup. The key is the projected
+        // expression with its outer alias stripped (clustering keys are alias-free, so this is the
+        // form they must match against); the value is the bound output column, located via the
+        // entry's output name (which *does* honor the alias).
         let mut projected_to_output: HashMap<ExprRef, ExprRef> = HashMap::new();
         for proj in projection {
             let (inner, _) = proj.inner().unwrap_alias();
