@@ -38,14 +38,13 @@ impl ProjectNode {
             NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            schema.clone(),
             plan_config.config.clone(),
             translate_clustering_spec(
                 child.config().clustering_spec.clone(),
-                &projection
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
+                &projection,
+                &child.config().schema,
+                &schema,
             ),
         );
         Self {

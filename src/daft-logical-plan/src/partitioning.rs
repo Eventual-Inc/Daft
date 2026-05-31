@@ -1,12 +1,9 @@
-use std::{fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use daft_dsl::{
-    Column, ExprRef, ResolvedColumn,
-    expr::{VLLMExpr, bound_expr::BoundExpr},
-    functions::{FunctionArgs, scalar::ScalarFn},
-};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_dsl::{Column, Expr, ExprRef, bound_col, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
-use indexmap::IndexMap;
+use daft_schema::schema::Schema;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -267,205 +264,106 @@ impl ClusteringSpec {
     }
 }
 
+/// Propagates a clustering spec through a projection.
+///
+/// Given the clustering of a node's input and the projection applied on top of it, produces the
+/// clustering of the projection's output. A clustering key survives if every column it references
+/// is still produced by the projection (either passed through, or as part of a larger expression
+/// the projection materializes); otherwise the spec downgrades to `Unknown`.
+///
+/// Operates entirely on **bound** expressions. The `projection` is already bound (that is how the
+/// distributed pipeline carries it), and the input clustering keys — which various producers store
+/// as resolved-by-name or bound — are normalized to bound columns against `input_schema` up front
+/// (binding is idempotent for already-bound columns). Output keys are bound against
+/// `output_schema`.
 pub fn translate_clustering_spec(
     input_clustering_spec: Arc<ClusteringSpec>,
-    projection: &Vec<ExprRef>,
+    projection: &[BoundExpr],
+    input_schema: &Schema,
+    output_schema: &Schema,
 ) -> Arc<ClusteringSpec> {
-    // Given an input clustering spec, and a new projection,
-    // produce the new clustering spec.
-
     use crate::partitioning::ClusteringSpec::*;
+    let num_partitions = input_clustering_spec.num_partitions();
+    let unknown = || ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)).into();
+
     match input_clustering_spec.as_ref() {
-        // If the scheme is vacuous, the result partition spec is the same.
+        // If the scheme is vacuous, the result clustering spec is the same.
         Random(_) | Unknown(_) => input_clustering_spec,
-        // Otherwise, need to reevaluate the partition scheme for each expression.
         Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
-            // See what columns the projection directly translates into new columns.
-            let mut old_colname_to_new_colname = IndexMap::new();
-            for expr in projection {
-                if let Some(oldname) = expr.input_mapping() {
-                    let newname = expr.name().to_string();
-                    // Add the oldname -> newname mapping,
-                    // but don't overwrite any existing identity mappings (e.g. "a" -> "a").
-                    if old_colname_to_new_colname.get(&oldname) != Some(&oldname) {
-                        old_colname_to_new_colname.insert(oldname, newname);
-                    }
-                }
+            // Normalize the input clustering keys to bound columns against the input schema.
+            // Idempotent for already-bound columns, so this accepts clustering specs from any
+            // producer (resolved-by-name from repartition/scan, or already-bound from
+            // window/distinct/join).
+            let Ok(bound_keys) = BoundExpr::bind_all(by, input_schema) else {
+                return unknown();
+            };
+
+            // Map each projected expression (outer alias stripped) to the output column it
+            // materializes. Both the projection and the bound clustering keys reference the input
+            // schema, so a surviving key will structurally match one of these entries.
+            let mut projected_to_output: HashMap<ExprRef, ExprRef> = HashMap::new();
+            for proj in projection {
+                let (inner, _) = proj.inner().unwrap_alias();
+                let Ok(out_index) = output_schema.get_index(proj.inner().name()) else {
+                    continue;
+                };
+                let out_col = bound_col(out_index, output_schema[out_index].clone());
+                projected_to_output.entry(inner).or_insert(out_col);
             }
 
-            // Then, see if we can fully translate the clustering spec.
-            let maybe_new_clustering_spec = by
+            let translated: Option<Vec<ExprRef>> = bound_keys
                 .iter()
-                .map(|e| translate_clustering_spec_expr(e, &old_colname_to_new_colname))
-                .collect::<std::result::Result<Vec<_>, _>>();
-            maybe_new_clustering_spec.map_or_else(
-                |()| {
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(
-                        input_clustering_spec.num_partitions(),
-                    ))
-                    .into()
-                },
-                |new_clustering_spec: Vec<ExprRef>| match input_clustering_spec.as_ref() {
-                    Range(RangeClusteringConfig {
-                        num_partitions,
-                        descending,
-                        ..
-                    }) => ClusteringSpec::Range(RangeClusteringConfig::new(
-                        *num_partitions,
-                        new_clustering_spec,
-                        descending.clone(),
-                    ))
-                    .into(),
-                    Hash(HashClusteringConfig { num_partitions, .. }) => ClusteringSpec::Hash(
-                        HashClusteringConfig::new(*num_partitions, new_clustering_spec),
+                .map(|key| translate_bound_clustering_key(key.inner(), &projected_to_output))
+                .collect();
+
+            match translated {
+                None => unknown(),
+                Some(new_by) => match input_clustering_spec.as_ref() {
+                    Range(RangeClusteringConfig { descending, .. }) => ClusteringSpec::Range(
+                        RangeClusteringConfig::new(num_partitions, new_by, descending.clone()),
                     )
                     .into(),
+                    Hash(_) => {
+                        ClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, new_by))
+                            .into()
+                    }
                     _ => unreachable!(),
                 },
-            )
+            }
         }
     }
 }
 
-fn translate_clustering_spec_expr(
-    clustering_spec_expr: &ExprRef,
-    old_colname_to_new_colname: &IndexMap<String, String>,
-) -> std::result::Result<ExprRef, ()> {
-    // Given a single expression of an input clustering spec,
-    // translate it to a new expression in the given projection.
-    // Returns:
-    //  - Ok(expr) with expr being the translation, or
-    //  - Err(()) if no translation is possible in the new projection.
-
-    use daft_dsl::{Expr, binary_op};
-
-    match clustering_spec_expr.as_ref() {
-        Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-            match old_colname_to_new_colname.get(name.as_ref()) {
-                Some(newname) => Ok(daft_dsl::resolved_col(newname.as_str())),
-                None => Err(()),
+/// Rewrites a bound clustering-key expression so its column references point at the projection's
+/// output columns. Returns `None` if the key references an input column that the projection drops
+/// (and so cannot be expressed downstream).
+fn translate_bound_clustering_key(
+    key: &ExprRef,
+    projected_to_output: &HashMap<ExprRef, ExprRef>,
+) -> Option<ExprRef> {
+    let mut dropped_column = false;
+    let result = key
+        .clone()
+        .transform_down(|e| {
+            // If this whole sub-expression is materialized as an output column, reference that
+            // column and stop descending. Handles both passthrough columns and aliased computed
+            // expressions (e.g. `f(col("id")) AS h` lets a key `f(col("id"))` become `col("h")`).
+            if let Some(out_col) = projected_to_output.get(&e) {
+                return Ok(Transformed::new(
+                    out_col.clone(),
+                    true,
+                    TreeNodeRecursion::Jump,
+                ));
             }
-        }
-        Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Subquery(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Exists(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Alias(child, name) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.alias(name.clone()))
-        }
-        Expr::BinaryOp { op, left, right } => {
-            let newleft = translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
-            let newright = translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
-            Ok(binary_op(*op, newleft, newright))
-        }
-        Expr::Cast(child, dtype) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.cast(dtype))
-        }
-        Expr::Function { func, inputs } => {
-            let new_inputs = inputs
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::Function {
-                func: func.clone(),
-                inputs: new_inputs,
+            // A bound column not materialized in the output can't be expressed after the projection.
+            if matches!(e.as_ref(), Expr::Column(Column::Bound(_))) {
+                dropped_column = true;
+                return Ok(Transformed::new(e, false, TreeNodeRecursion::Stop));
             }
-            .into())
-        }
-        Expr::ScalarFn(ScalarFn::Builtin(func)) => {
-            let mut func = func.clone();
-            let new_inputs = func
-                .inputs
-                .iter()
-                .map(|arg| {
-                    arg.map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                        .transpose()
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            func.inputs = FunctionArgs::new_unchecked(new_inputs);
-            Ok(func.into())
-        }
-        Expr::Not(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.not())
-        }
-        Expr::IsNull(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.is_null())
-        }
-        Expr::NotNull(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.not_null())
-        }
-        Expr::FillNull(child, fill_value) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newfill = translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
-            Ok(newchild.fill_null(newfill))
-        }
-        Expr::IsIn(child, items) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newitems = items
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(newchild.is_in(newitems))
-        }
-        Expr::List(items) => {
-            let new_items = items
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::List(new_items).into())
-        }
-        Expr::Between(child, lower, upper) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newlower = translate_clustering_spec_expr(lower, old_colname_to_new_colname)?;
-            let newupper = translate_clustering_spec_expr(upper, old_colname_to_new_colname)?;
-            Ok(newchild.between(newlower, newupper))
-        }
-        Expr::IfElse {
-            if_true,
-            if_false,
-            predicate,
-        } => {
-            let newtrue = translate_clustering_spec_expr(if_true, old_colname_to_new_colname)?;
-            let newfalse = translate_clustering_spec_expr(if_false, old_colname_to_new_colname)?;
-            let newpred = translate_clustering_spec_expr(predicate, old_colname_to_new_colname)?;
-
-            Ok(newpred.if_else(newtrue, newfalse))
-        }
-        Expr::InSubquery(expr, subquery) => {
-            let expr = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
-
-            Ok(expr.in_subquery(subquery.clone()))
-        }
-        Expr::ScalarFn(ScalarFn::Python(udf)) => {
-            let new_children = udf
-                .args()
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                udf.with_new_children(new_children),
-            ))))
-        }
-        Expr::VLLM(VLLMExpr { input, .. }) => {
-            let new_input = translate_clustering_spec_expr(input, old_colname_to_new_colname)?;
-            Ok(Arc::new(
-                clustering_spec_expr.with_new_children(vec![new_input]),
-            ))
-        }
-        Expr::Coalesce(inputs) => {
-            let new_inputs = inputs
-                .iter()
-                .map(|input| translate_clustering_spec_expr(input, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::Coalesce(new_inputs).into())
-        }
-        // Cannot have agg exprs or references to other tables in clustering specs.
-        Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
-    }
+            Ok(Transformed::no(e))
+        })
+        .expect("clustering key rewrite is infallible");
+    (!dropped_column).then_some(result.data)
 }
 
 impl Default for ClusteringSpec {
@@ -587,5 +485,146 @@ impl UnknownClusteringConfig {
 impl Default for UnknownClusteringConfig {
     fn default() -> Self {
         Self::new(1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::{DataType, Operator};
+    use daft_dsl::{binary_op, bound_col, lit, resolved_col};
+    use daft_schema::{field::Field, schema::Schema};
+
+    use super::*;
+
+    fn schema(fields: &[(&str, DataType)]) -> Schema {
+        let fields: Vec<Field> = fields
+            .iter()
+            .map(|(n, d)| Field::new(*n, d.clone()))
+            .collect();
+        Schema::new(fields)
+    }
+
+    fn field(name: &str, dtype: DataType) -> Field {
+        Field::new(name, dtype)
+    }
+
+    fn bound(index: usize, name: &str, dtype: DataType) -> ExprRef {
+        bound_col(index, field(name, dtype))
+    }
+
+    fn bexpr(e: ExprRef) -> BoundExpr {
+        BoundExpr::new_unchecked(e)
+    }
+
+    fn hash_spec(by: Vec<ExprRef>) -> Arc<ClusteringSpec> {
+        ClusteringSpec::Hash(HashClusteringConfig::new(4, by)).into()
+    }
+
+    fn hour_of(id: ExprRef) -> ExprRef {
+        binary_op(Operator::FloorDivide, id, lit(3_600_000i64))
+    }
+
+    #[test]
+    fn resolved_keys_passthrough_and_expression_alias() {
+        // Input clustered by (producer, hour(id)) declared with resolved-by-name keys (as a
+        // repartition or scan source would). A projection passes the columns through and
+        // materializes the hour bucket as `h`. The clustering must follow:
+        //   Hash([producer, id // 3_600_000]) -> Hash([producer, h]).
+        let input_schema = schema(&[
+            ("producer", DataType::Utf8),
+            ("id", DataType::Int64),
+            ("ts", DataType::Int64),
+        ]);
+        let output_schema = schema(&[
+            ("producer", DataType::Utf8),
+            ("id", DataType::Int64),
+            ("ts", DataType::Int64),
+            ("h", DataType::Int64),
+        ]);
+        let clustering = hash_spec(vec![resolved_col("producer"), hour_of(resolved_col("id"))]);
+        let projection = vec![
+            bexpr(bound(0, "producer", DataType::Utf8)),
+            bexpr(bound(1, "id", DataType::Int64)),
+            bexpr(bound(2, "ts", DataType::Int64)),
+            bexpr(hour_of(bound(1, "id", DataType::Int64)).alias("h")),
+        ];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert_eq!(
+            out.partition_by(),
+            vec![
+                bound(0, "producer", DataType::Utf8),
+                bound(3, "h", DataType::Int64),
+            ]
+        );
+    }
+
+    #[test]
+    fn already_bound_keys_are_handled_idempotently() {
+        // Input clustering keys are already bound (as window/distinct/join produce them).
+        let input_schema = schema(&[("a", DataType::Int64), ("b", DataType::Int64)]);
+        let output_schema = schema(&[
+            ("a", DataType::Int64),
+            ("b", DataType::Int64),
+            ("x", DataType::Int64),
+        ]);
+        let clustering = hash_spec(vec![
+            bound(0, "a", DataType::Int64),
+            bound(1, "b", DataType::Int64),
+        ]);
+        let projection = vec![
+            bexpr(bound(0, "a", DataType::Int64)),
+            bexpr(bound(1, "b", DataType::Int64)),
+            bexpr(binary_op(Operator::Plus, bound(0, "a", DataType::Int64), lit(1i64)).alias("x")),
+        ];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert_eq!(
+            out.partition_by(),
+            vec![
+                bound(0, "a", DataType::Int64),
+                bound(1, "b", DataType::Int64)
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_unchanged_when_leaf_preserved_without_alias() {
+        // The leaf column survives but the expression is not materialized; the key stays an
+        // expression, rebased onto the output column.
+        let input_schema = schema(&[("id", DataType::Int64), ("other", DataType::Int64)]);
+        let output_schema = schema(&[("id", DataType::Int64)]);
+        let clustering = hash_spec(vec![hour_of(resolved_col("id"))]);
+        let projection = vec![bexpr(bound(0, "id", DataType::Int64))];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert_eq!(
+            out.partition_by(),
+            vec![hour_of(bound(0, "id", DataType::Int64))]
+        );
+    }
+
+    #[test]
+    fn downgrades_to_unknown_when_a_referenced_column_is_dropped() {
+        // The clustering key references `id`, which the projection drops.
+        let input_schema = schema(&[("id", DataType::Int64), ("other", DataType::Int64)]);
+        let output_schema = schema(&[("other", DataType::Int64)]);
+        let clustering = hash_spec(vec![hour_of(resolved_col("id"))]);
+        let projection = vec![bexpr(bound(1, "other", DataType::Int64))];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert!(matches!(out.as_ref(), ClusteringSpec::Unknown(_)));
+    }
+
+    #[test]
+    fn unknown_input_is_preserved() {
+        let input_schema = schema(&[("a", DataType::Int64)]);
+        let output_schema = schema(&[("a", DataType::Int64)]);
+        let clustering = ClusteringSpec::unknown_with_num_partitions(8).into();
+        let projection = vec![bexpr(bound(0, "a", DataType::Int64))];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert!(matches!(out.as_ref(), ClusteringSpec::Unknown(_)));
+        assert_eq!(out.num_partitions(), 8);
     }
 }

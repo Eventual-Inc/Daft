@@ -143,14 +143,13 @@ impl UDFNode {
             NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            schema.clone(),
             plan_config.config.clone(),
             translate_clustering_spec(
                 child.config().clustering_spec.clone(),
-                &passthrough_columns
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
+                &passthrough_columns,
+                &child.config().schema,
+                &schema,
             ),
         );
         Self {
