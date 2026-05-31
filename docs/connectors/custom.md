@@ -162,6 +162,11 @@ data_source = TextFileDataSource([sample_file])
 
 ### Optional: Declaring Clustering to Skip Shuffles
 
+Clustering is an *execution-time* property: it describes how rows are distributed across the
+in-memory partitions a query runs over. It is distinct from *storage* partitioning (the on-disk
+layout declared via `get_partition_fields()`, e.g. Hive/Iceberg directories) — a source can be laid
+out one way on disk yet emit partitions clustered another way.
+
 If your source already emits data that is hash-partitioned by some keys — for example, each
 [`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask) corresponds to exactly one
 `(producer, hour)` group — you can tell Daft by overriding `get_clustering_spec()`. Daft then
@@ -187,28 +192,23 @@ key follows a projection that materializes it as a derived column, so the cluste
 even after a `with_column`:
 
 ```python
-def hour_bucket(id_expr):
-    # deterministic function of the column, e.g. extract an hour bucket from a UUIDv7 id
-    return id_expr // 3_600_000
+def hour_bucket(ts: "daft.Expression") -> "daft.Expression":
+    # bucket a unix-epoch timestamp (in seconds) into hourly buckets
+    return ts // 3600
 
 
 class EventSource(DataSource):
     def get_clustering_spec(self) -> ClusteringSpec | None:
-        return ClusteringSpec.hash(col("producer"), hour_bucket(col("id")))
+        return ClusteringSpec.hash(col("producer"), hour_bucket(col("ts")))
 
 
 df = (
     EventSource().read()
-    .with_column("hour", hour_bucket(col("id")))  # materialize the expression key as a column
+    .with_column("hour", hour_bucket(col("ts")))  # materialize the expression key as a column
     .groupby("producer", "hour")                   # covered by the declared clustering => no shuffle
     .sum("value")
 )
 ```
-
-You can confirm the shuffle was elided with `df.explain(show_all=True)`: the physical plan over a
-clustered source shows the aggregate/window directly above the scan, with no `Shuffle` node in
-between. A source that returns `None` (the default) makes no clustering guarantee, so the shuffle
-is inserted as usual.
 
 !!! note "Shuffle elision applies to the distributed runner"
 
