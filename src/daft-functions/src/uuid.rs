@@ -148,18 +148,21 @@ fn ms_from_uuid7(bytes: &[u8; UUID_LEN]) -> i64 {
         | i64::from(bytes[5])
 }
 
-/// Buckets a UUIDv7 millisecond timestamp into the requested unit. Returns `None`
-/// only if the (always non-negative, 48-bit) timestamp is somehow out of chrono's
-/// representable range, which cannot happen for real UUIDv7 values.
+/// Buckets a UUIDv7 millisecond timestamp into the requested unit.
 #[inline]
-fn bucket_uuid7(bytes: &[u8; UUID_LEN], unit: Uuid7Unit) -> Option<i64> {
+fn bucket_uuid7(bytes: &[u8; UUID_LEN], unit: Uuid7Unit) -> i64 {
     let ms = ms_from_uuid7(bytes);
     match unit {
-        Uuid7Unit::Minute => Some(ms.div_euclid(60_000)),
-        Uuid7Unit::Hour => Some(ms.div_euclid(3_600_000)),
-        Uuid7Unit::Day => Some(ms.div_euclid(86_400_000)),
-        Uuid7Unit::Month => DateTime::from_timestamp_millis(ms)
-            .map(|dt| (i64::from(dt.year()) - 1970) * 12 + (i64::from(dt.month()) - 1)),
+        Uuid7Unit::Minute => ms.div_euclid(60_000),
+        Uuid7Unit::Hour => ms.div_euclid(3_600_000),
+        Uuid7Unit::Day => ms.div_euclid(86_400_000),
+        // A 48-bit (always non-negative) millisecond timestamp is always within
+        // chrono's representable range, so this never fails for a real UUIDv7.
+        Uuid7Unit::Month => {
+            let dt = DateTime::from_timestamp_millis(ms)
+                .expect("48-bit millisecond timestamp is always representable");
+            (i64::from(dt.year()) - 1970) * 12 + (i64::from(dt.month()) - 1)
+        }
     }
 }
 
@@ -184,9 +187,13 @@ fn extract_uuid7(input: &Series, unit: Uuid7Unit, fn_name: &str) -> DaftResult<S
     let result = Int64Array::from_iter(
         field,
         bytes.into_iter().map(|b| {
-            // `uuid7_fixed_size_binary` guarantees each value is exactly 16 bytes wide.
-            b.and_then(|b| <&[u8; UUID_LEN]>::try_from(b).ok())
-                .and_then(|b| bucket_uuid7(b, unit))
+            b.map(|b| {
+                // `uuid7_fixed_size_binary` guarantees each value is exactly 16 bytes wide.
+                let bytes: &[u8; UUID_LEN] = b
+                    .try_into()
+                    .expect("FixedSizeBinary(16) values are always 16 bytes");
+                bucket_uuid7(bytes, unit)
+            })
         }),
     );
     Ok(result.into_series())
@@ -428,24 +435,15 @@ mod tests {
         // 2024-01-01T00:00:00Z = 1704067200000 ms.
         let ms = 1_704_067_200_000u64;
         let b = uuid7_bytes(ms);
-        assert_eq!(
-            bucket_uuid7(&b, Uuid7Unit::Minute),
-            Some(ms as i64 / 60_000)
-        );
-        assert_eq!(
-            bucket_uuid7(&b, Uuid7Unit::Hour),
-            Some(ms as i64 / 3_600_000)
-        );
-        assert_eq!(
-            bucket_uuid7(&b, Uuid7Unit::Day),
-            Some(ms as i64 / 86_400_000)
-        );
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Minute), ms as i64 / 60_000);
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Hour), ms as i64 / 3_600_000);
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Day), ms as i64 / 86_400_000);
         // Epoch maps everything to 0.
         let z = uuid7_bytes(0);
-        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Minute), Some(0));
-        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Hour), Some(0));
-        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Day), Some(0));
-        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Month), Some(0));
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Minute), 0);
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Hour), 0);
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Day), 0);
+        assert_eq!(bucket_uuid7(&z, Uuid7Unit::Month), 0);
     }
 
     #[test]
@@ -453,25 +451,25 @@ mod tests {
         // 90 minutes after epoch.
         let ms = 90 * 60_000;
         let b = uuid7_bytes(ms);
-        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Minute), Some(90));
-        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Hour), Some(1)); // floor(90/60)
-        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Day), Some(0));
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Minute), 90);
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Hour), 1); // floor(90/60)
+        assert_eq!(bucket_uuid7(&b, Uuid7Unit::Day), 0);
     }
 
     #[test]
     fn bucket_month_is_calendar_months_since_epoch() {
         // 1970-01 => 0
-        assert_eq!(bucket_uuid7(&uuid7_bytes(0), Uuid7Unit::Month), Some(0));
+        assert_eq!(bucket_uuid7(&uuid7_bytes(0), Uuid7Unit::Month), 0);
         // 1970-02-01T00:00:00Z = 2678400000 ms => month index 1
         assert_eq!(
             bucket_uuid7(&uuid7_bytes(2_678_400_000), Uuid7Unit::Month),
-            Some(1)
+            1
         );
         // 2024-03-15T12:00:00Z => (2024-1970)*12 + (3-1) = 648 + 2 = 650
         // 2024-03-15T12:00:00Z = 1710504000000 ms
         assert_eq!(
             bucket_uuid7(&uuid7_bytes(1_710_504_000_000), Uuid7Unit::Month),
-            Some(650)
+            650
         );
     }
 
