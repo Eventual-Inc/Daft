@@ -1184,6 +1184,14 @@ class ScanOperatorHandle:
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
+class ClusteringSpec:
+    """Declares how a DataSource's output is hash-clustered at execution time."""
+
+    @staticmethod
+    def hash(exprs: list[PyExpr]) -> ClusteringSpec: ...
+    def partition_by(self) -> list[PyExpr]: ...
+    def __repr__(self) -> str: ...
+
 class PyPartitionField:
     """Partitioning Field of a Scan Source such as Hive or Iceberg."""
 
