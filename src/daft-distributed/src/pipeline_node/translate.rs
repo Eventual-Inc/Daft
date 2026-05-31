@@ -164,6 +164,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 info.pushdowns.clone(),
                                 scan_tasks,
                                 source.output_schema.clone(),
+                                info.clustering_keys.clone(),
                             )),
                             &self.meter,
                         )

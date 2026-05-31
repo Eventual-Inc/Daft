@@ -6,6 +6,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
@@ -97,6 +98,7 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
+        clustering_keys: Option<Vec<ExprRef>>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
@@ -106,11 +108,20 @@ impl ScanSourceNode {
             NodeType::ScanTask,
             NodeCategory::Source,
         );
-        let config = PipelineNodeConfig::new(
-            schema,
-            plan_config.config.clone(),
-            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(scan_tasks.len())),
-        );
+        let num_partitions = scan_tasks.len();
+        // If the source declared how its output is hash-clustered, surface that to the planner so
+        // downstream group-by / window / distinct can skip the shuffle. The declared keys are
+        // unbound (resolved-by-name) column references; bind them against the output schema to get
+        // a `BoundClusteringSpec`. If they don't bind (a misdeclaration), fall back to Unknown
+        // rather than failing the plan. Otherwise keep the historical Unknown clustering.
+        let clustering_spec = match clustering_keys {
+            Some(keys) if !keys.is_empty() => match BoundExpr::bind_all(&keys, &schema) {
+                Ok(bound) => ClusteringStrategy::Explicit(BoundClusteringSpec::hash(num_partitions, bound)),
+                Err(_) => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
+            },
+            _ => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
+        };
+        let config = PipelineNodeConfig::new(schema, plan_config.config.clone(), clustering_spec);
         Self {
             config,
             context,
@@ -327,8 +338,14 @@ mod tests {
             .collect();
 
         let plan_config = test_plan_config();
-        let scan_source_node =
-            ScanSourceNode::new(0, &plan_config, pushdowns, Arc::new(scan_tasks), schema);
+        let scan_source_node = ScanSourceNode::new(
+            0,
+            &plan_config,
+            pushdowns,
+            Arc::new(scan_tasks),
+            schema,
+            None,
+        );
 
         DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
     }
