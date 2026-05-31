@@ -627,4 +627,52 @@ mod tests {
         assert!(matches!(out.as_ref(), ClusteringSpec::Unknown(_)));
         assert_eq!(out.num_partitions(), 8);
     }
+
+    fn mod_of(e: ExprRef) -> ExprRef {
+        binary_op(Operator::Modulus, e, lit(100i64))
+    }
+
+    #[test]
+    fn non_injective_projection_does_not_fabricate_clustering() {
+        // Input clustered by `a`. Projecting `mod(a) AS b` and dropping `a` must NOT claim the
+        // output is clustered by `b`: rows with equal `mod(a)` need not share a partition. The
+        // key `a` is no longer expressible, so the spec downgrades to Unknown.
+        let input_schema = schema(&[("a", DataType::Int64)]);
+        let output_schema = schema(&[("b", DataType::Int64)]);
+        let clustering = hash_spec(vec![resolved_col("a")]);
+        let projection = vec![bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b"))];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert!(matches!(out.as_ref(), ClusteringSpec::Unknown(_)));
+    }
+
+    #[test]
+    fn clustering_follows_the_key_not_a_non_injective_derivative() {
+        // Input clustered by `a`, projection keeps `a` and also adds `mod(a) AS b`. The clustering
+        // must stay on `a` (the passed-through key), never the coarser `b`.
+        let input_schema = schema(&[("a", DataType::Int64)]);
+        let output_schema = schema(&[("a", DataType::Int64), ("b", DataType::Int64)]);
+        let clustering = hash_spec(vec![resolved_col("a")]);
+        let projection = vec![
+            bexpr(bound(0, "a", DataType::Int64)),
+            bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b")),
+        ];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert_eq!(out.partition_by(), vec![bound(0, "a", DataType::Int64)]);
+    }
+
+    #[test]
+    fn clustering_on_expression_follows_exact_materialization() {
+        // When the clustering key *is* the (possibly non-injective) expression, materializing that
+        // exact expression as a column carries the clustering: every row's `b` equals `mod(a)`, so
+        // Hash([mod(a)]) becomes Hash([b]). This is sound regardless of injectivity.
+        let input_schema = schema(&[("a", DataType::Int64)]);
+        let output_schema = schema(&[("b", DataType::Int64)]);
+        let clustering = hash_spec(vec![mod_of(resolved_col("a"))]);
+        let projection = vec![bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b"))];
+
+        let out = translate_clustering_spec(clustering, &projection, &input_schema, &output_schema);
+        assert_eq!(out.partition_by(), vec![bound(0, "b", DataType::Int64)]);
+    }
 }
