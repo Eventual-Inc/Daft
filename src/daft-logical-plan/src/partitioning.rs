@@ -431,6 +431,16 @@ impl PyClusteringSpec {
         }
     }
 
+    /// Returns the clustering keys. Used by the scan bridge to thread the declared
+    /// expressions across the crate boundary (daft-scan cannot name `ClusteringSpec`).
+    pub fn partition_by(&self) -> Vec<daft_dsl::python::PyExpr> {
+        self.spec
+            .partition_by()
+            .into_iter()
+            .map(daft_dsl::python::PyExpr::from)
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "ClusteringSpec({})",

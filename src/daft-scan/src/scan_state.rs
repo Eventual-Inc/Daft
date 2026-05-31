@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_display::{DisplayAs, DisplayLevel};
+use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
@@ -117,6 +118,12 @@ pub struct PhysicalScanInfo {
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
+    /// Hash-clustering keys declared by the source, if any. `None` means the source makes no
+    /// execution-time clustering guarantee. The keys are (possibly expression-valued)
+    /// `ExprRef`s; the planner builds the concrete `ClusteringSpec::Hash` from them once the
+    /// partition count is known. Kept as raw exprs because daft-scan cannot name the
+    /// `ClusteringSpec` type, which lives in the downstream daft-logical-plan crate.
+    pub clustering_keys: Option<Vec<ExprRef>>,
 }
 
 impl PhysicalScanInfo {
@@ -126,12 +133,14 @@ impl PhysicalScanInfo {
         source_schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
         pushdowns: Pushdowns,
+        clustering_keys: Option<Vec<ExprRef>>,
     ) -> Self {
         Self {
             scan_state: ScanState::Operator(scan_op),
             source_schema,
             partitioning_keys,
             pushdowns,
+            clustering_keys,
         }
     }
 
@@ -142,6 +151,7 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,
+            clustering_keys: self.clustering_keys.clone(),
         }
     }
 
@@ -152,6 +162,7 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns: self.pushdowns.clone(),
+            clustering_keys: self.clustering_keys.clone(),
         }
     }
 }

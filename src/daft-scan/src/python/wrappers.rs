@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
+use daft_dsl::{ExprRef, python::PyExpr};
 use daft_recordbatch::python::PyRecordBatch;
 use daft_schema::{python::schema::PySchema, schema::SchemaRef};
 use futures::StreamExt;
@@ -51,6 +52,7 @@ pub struct PyDataSourceWrapper {
     name: String,
     schema: SchemaRef,
     partition_fields: Vec<PartitionField>,
+    clustering_keys: Option<Vec<ExprRef>>,
 }
 
 impl PyDataSourceWrapper {
@@ -82,11 +84,31 @@ impl PyDataSourceWrapper {
             })
             .unwrap_or_default();
 
+        // A source may declare how its output is hash-clustered at execution time. The Python
+        // `ClusteringSpec` proxy holds the keys on its `_spec` (PyClusteringSpec); we read them
+        // back as expressions here since daft-scan cannot name the downstream ClusteringSpec.
+        let clustering_keys: Option<Vec<ExprRef>> = {
+            let spec = source
+                .call_method0(intern!(source.py(), "get_clustering_spec"))
+                .expect("DataSource.get_clustering_spec should never fail");
+            if spec.is_none() {
+                None
+            } else {
+                let exprs: Vec<PyExpr> = spec
+                    .getattr(intern!(source.py(), "_spec"))
+                    .and_then(|s| s.call_method0(intern!(source.py(), "partition_by")))
+                    .and_then(|by| by.extract())
+                    .expect("ClusteringSpec must expose partition_by() -> list[Expression]");
+                Some(exprs.into_iter().map(|e| e.expr).collect())
+            }
+        };
+
         Self {
             source: source.unbind(),
             name,
             schema,
             partition_fields,
+            clustering_keys,
         }
     }
 
@@ -228,6 +250,10 @@ impl ScanOperator for PyDataSourceWrapper {
 
     fn partitioning_keys(&self) -> &[PartitionField] {
         &self.partition_fields
+    }
+
+    fn clustering_keys(&self) -> Option<Vec<ExprRef>> {
+        self.clustering_keys.clone()
     }
 
     fn file_path_column(&self) -> Option<&str> {

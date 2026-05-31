@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 
 use crate::{PartitionField, Pushdowns, ScanTaskRef, Statistics, SupportsPushdownFilters};
@@ -14,6 +15,16 @@ pub trait ScanOperator: Send + Sync + Debug {
 
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
+
+    /// Declares how this source's output is hash-clustered at execution time, as a list of
+    /// (possibly expression-valued) keys: every row with the same hash of these keys lives in
+    /// the same execution partition. Returning `None` (the default) means the source makes no
+    /// clustering guarantee and downstream operators must shuffle. This is distinct from
+    /// `partitioning_keys`, which describes on-disk storage layout for value injection.
+    fn clustering_keys(&self) -> Option<Vec<ExprRef>> {
+        None
+    }
+
     fn file_path_column(&self) -> Option<&str>;
     // Although generated fields are often added to the partition spec, generated fields and
     // partition fields are handled differently:
