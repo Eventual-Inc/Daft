@@ -81,16 +81,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right_spec = &right.config().clustering_spec;
 
         // Clustering keys are bound, just like the join keys, so compare them directly.
-        let is_left_hash_partitioned = left_spec.is_hash()
-            && is_partition_compatible(
-                left_spec.partition_by().iter().map(|e| e.inner()),
-                left_on.iter().map(|e| e.inner()),
-            );
-        let is_right_hash_partitioned = right_spec.is_hash()
-            && is_partition_compatible(
-                right_spec.partition_by().iter().map(|e| e.inner()),
-                right_on.iter().map(|e| e.inner()),
-            );
+        let is_left_hash_partitioned =
+            left_spec.is_hash() && is_partition_compatible(left_spec.partition_by(), &left_on);
+        let is_right_hash_partitioned =
+            right_spec.is_hash() && is_partition_compatible(right_spec.partition_by(), &right_on);
         let num_left_partitions = left_spec.num_partitions();
         let num_right_partitions = right_spec.num_partitions();
 

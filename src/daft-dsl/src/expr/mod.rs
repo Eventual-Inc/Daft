@@ -2563,15 +2563,10 @@ impl Expr {
     }
 }
 
-// Check if one set of columns is a reordering of the other
-pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
-where
-    A: IntoIterator<Item = &'a ExprRef>,
-    B: IntoIterator<Item = &'a ExprRef>,
-{
-    // sort a and b by name
-    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
-    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
+/// Returns whether two sets of bound partition columns are equal (order-independent).
+pub fn is_partition_compatible(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
+    let a_set: HashSet<&BoundExpr> = a.iter().collect();
+    let b_set: HashSet<&BoundExpr> = b.iter().collect();
     a_set == b_set
 }
 

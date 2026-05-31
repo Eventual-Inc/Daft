@@ -105,10 +105,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         // The clustering keys are already bound (to the input node's schema), so compare them
         // directly against the operator's bound partition columns.
         let is_compatible = match input_clustering_spec {
-            BoundClusteringSpec::Hash { by, .. } => is_partition_compatible(
-                by.iter().map(|e| e.inner()),
-                partition_columns.iter().map(|e| e.inner()),
-            ),
+            BoundClusteringSpec::Hash { by, .. } => is_partition_compatible(by, partition_columns),
             _ => false,
         };
 
