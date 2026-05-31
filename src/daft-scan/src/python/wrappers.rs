@@ -85,16 +85,16 @@ impl PyDataSourceWrapper {
             .unwrap_or_default();
 
         // A source may declare how its output is clustered at execution time via
-        // `get_clustering_spec()`, whose returned `ClusteringSpec` proxy holds a
-        // `ClusteringKeys` on its `_keys` attribute. This is a brand-new user-implemented API, so
+        // `get_clustering_keys()`, whose returned `ClusteringKeys` proxy holds the bound
+        // `PyClusteringKeys` on its `_keys` attribute. This is a brand-new user-implemented API, so
         // any failure (a raised exception, a missing/renamed attribute) degrades gracefully to
         // "no declared clustering" — the optimizer stays conservative rather than panicking,
         // mirroring how `get_partition_fields` uses `unwrap_or_default` above.
         let clustering_keys: Option<ClusteringKeys> = source
-            .call_method0(intern!(source.py(), "get_clustering_spec"))
+            .call_method0(intern!(source.py(), "get_clustering_keys"))
             .ok()
-            .filter(|spec| !spec.is_none())
-            .and_then(|spec| spec.getattr(intern!(source.py(), "_keys")).ok())
+            .filter(|keys| !keys.is_none())
+            .and_then(|keys| keys.getattr(intern!(source.py(), "_keys")).ok())
             .and_then(|keys| keys.extract::<PyClusteringKeys>().ok())
             .map(ClusteringKeys::from);
 

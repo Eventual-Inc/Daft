@@ -1,4 +1,4 @@
-"""Tests for DataSource.get_clustering_spec() and shuffle elision.
+"""Tests for DataSource.get_clustering_keys() and shuffle elision.
 
 A custom ``DataSource`` can declare how its output is hash-clustered at execution
 time. When the keys a downstream ``groupby`` / ``Window.partition_by`` / ``distinct``
@@ -20,7 +20,7 @@ import pytest
 
 from daft import Window, col
 from daft.functions import row_number
-from daft.io.clustering import ClusteringSpec
+from daft.io.clustering import ClusteringKeys
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
@@ -52,7 +52,7 @@ class _InMemoryTask(DataSourceTask):
 class ClusteredSource(DataSource):
     """In-memory source that emits two tasks and optionally declares its clustering."""
 
-    def __init__(self, table: pa.Table, clustering: ClusteringSpec | None) -> None:
+    def __init__(self, table: pa.Table, clustering: ClusteringKeys | None) -> None:
         self._table = table
         self._clustering = clustering
 
@@ -64,7 +64,7 @@ class ClusteredSource(DataSource):
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._table.schema)
 
-    def get_clustering_spec(self) -> ClusteringSpec | None:
+    def get_clustering_keys(self) -> ClusteringKeys | None:
         return self._clustering
 
     async def get_tasks(self, pushdowns) -> AsyncIterator[DataSourceTask]:
@@ -93,36 +93,36 @@ def test_no_declaration_still_shuffles(table: pa.Table):
 
 
 def test_groupby_exact_match_no_shuffle(table: pa.Table):
-    df = ClusteredSource(table, ClusteringSpec.hash("a", "b")).read().groupby("a", "b").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("a", "b")).read().groupby("a", "b").sum("c")
     assert not _has_shuffle(df)
 
 
 def test_window_exact_match_no_shuffle(table: pa.Table):
-    source = ClusteredSource(table, ClusteringSpec.hash("a", "b"))
+    source = ClusteredSource(table, ClusteringKeys.hash("a", "b"))
     df = source.read().with_column("rn", row_number().over(Window().partition_by("a", "b").order_by("c")))
     assert not _has_shuffle(df)
 
 
 def test_distinct_exact_match_no_shuffle(table: pa.Table):
-    df = ClusteredSource(table, ClusteringSpec.hash("a", "b")).read().distinct()
+    df = ClusteredSource(table, ClusteringKeys.hash("a", "b")).read().distinct()
     assert not _has_shuffle(df)
 
 
 def test_window_subset_no_shuffle(table: pa.Table):
     """partition_by ⊇ clustering keys: the operator groups refine the input distribution."""
-    source = ClusteredSource(table, ClusteringSpec.hash("a", "b"))
+    source = ClusteredSource(table, ClusteringKeys.hash("a", "b"))
     df = source.read().with_column("rn", row_number().over(Window().partition_by("a", "b", "c").order_by("c")))
     assert not _has_shuffle(df)
 
 
 def test_groupby_subset_no_shuffle(table: pa.Table):
-    df = ClusteredSource(table, ClusteringSpec.hash("a", "b")).read().groupby("a", "b", "c").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("a", "b")).read().groupby("a", "b", "c").sum("c")
     assert not _has_shuffle(df)
 
 
 def test_unsound_inverse_still_shuffles(table: pa.Table):
     """Input clustered by a richer key set than the operator partitions by must still shuffle."""
-    df = ClusteredSource(table, ClusteringSpec.hash("a", "b", "c")).read().groupby("a", "b").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("a", "b", "c")).read().groupby("a", "b").sum("c")
     assert _has_shuffle(df)
 
 
@@ -135,7 +135,7 @@ def test_expression_clustering_through_project_no_shuffle():
             "ts": [1, 2, 3, 4],
         }
     )
-    source = ClusteredSource(table, ClusteringSpec.hash(col("producer"), _hour_bucket(col("id"))))
+    source = ClusteredSource(table, ClusteringKeys.hash(col("producer"), _hour_bucket(col("id"))))
     # Materialize the hour bucket as a derived column, then group by it.
     df = source.read().with_column("__h", _hour_bucket(col("id"))).groupby("producer", "__h").sum("ts")
     assert not _has_shuffle(df)
@@ -143,7 +143,7 @@ def test_expression_clustering_through_project_no_shuffle():
 
 def test_clustering_query_is_correct(table: pa.Table):
     """The shuffle-free plan still computes the correct result."""
-    df = ClusteredSource(table, ClusteringSpec.hash("a", "b")).read().groupby("a", "b").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("a", "b")).read().groupby("a", "b").sum("c")
     result = df.sort(["a", "b"]).to_pydict()
     assert result == {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [10, 20, 30, 40]}
 
@@ -164,7 +164,7 @@ def test_subset_groupby_is_correct():
             "c": [10, 5, 20, 30, 40, 1],
         }
     )
-    df = ClusteredSource(table, ClusteringSpec.hash("a")).read().groupby("a", "b").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("a")).read().groupby("a", "b").sum("c")
     assert not _has_shuffle(df)  # group_by (a, b) ⊇ clustering (a) => no shuffle
     result = df.sort(["a", "b"]).to_pydict()
     assert result == {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [15, 20, 30, 41]}
@@ -172,6 +172,6 @@ def test_subset_groupby_is_correct():
 
 def test_misdeclared_clustering_key_raises(table: pa.Table):
     """A clustering key absent from the source schema is a misdeclaration and raises in planning."""
-    df = ClusteredSource(table, ClusteringSpec.hash("not_a_column")).read().groupby("a").sum("c")
+    df = ClusteredSource(table, ClusteringKeys.hash("not_a_column")).read().groupby("a").sum("c")
     with pytest.raises(Exception):
         df.explain(show_all=True, file=io.StringIO())

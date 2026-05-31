@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
     from daft.dataframe import DataFrame
-    from daft.io.clustering import ClusteringSpec
+    from daft.io.clustering import ClusteringKeys
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
     from daft.recordbatch import RecordBatch
@@ -53,13 +53,13 @@ class DataSource(ABC):
         """Returns the partitioning fields for this data source."""
         return []
 
-    def get_clustering_spec(self) -> ClusteringSpec | None:
+    def get_clustering_keys(self) -> ClusteringKeys | None:
         """Declares how this source's output is distributed at execution time.
 
         Returning ``None`` (the default) means the source makes no clustering guarantee, so
         downstream ``groupby`` / ``Window.partition_by`` / ``distinct`` operators will shuffle
-        as usual. Override this to return a
-        :class:`~daft.io.clustering.ClusteringSpec` when the source knows its output is already
+        as usual. Override this to return
+        :class:`~daft.io.clustering.ClusteringKeys` when the source knows its output is already
         hash-partitioned — e.g. when each ``DataSourceTask`` corresponds to exactly one
         ``(producer, hour)`` group — so the optimizer can skip those shuffles.
 

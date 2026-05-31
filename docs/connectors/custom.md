@@ -169,22 +169,22 @@ out one way on disk yet emit partitions clustered another way.
 
 If your source already emits data that is hash-partitioned by some keys — for example, each
 [`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask) corresponds to exactly one
-`(producer, hour)` group — you can tell Daft by overriding `get_clustering_spec()`. Daft then
+`(producer, hour)` group — you can tell Daft by overriding `get_clustering_keys()`. Daft then
 skips the shuffle it would otherwise insert before a downstream `groupby`, `Window.partition_by`,
 or `distinct` whose keys are *covered by* (equal to, or a superset of) the declared clustering.
 
 ```python
 from daft import col
-from daft.io.clustering import ClusteringSpec
+from daft.io.clustering import ClusteringKeys
 from daft.io.source import DataSource
 
 
 class ClusteredSource(DataSource):
     # ... name / schema / get_tasks as above ...
 
-    def get_clustering_spec(self) -> ClusteringSpec | None:
+    def get_clustering_keys(self) -> ClusteringKeys | None:
         # Each task emits exactly one (a, b) group, so the output is hash-partitioned by (a, b).
-        return ClusteringSpec.hash("a", "b")
+        return ClusteringKeys.hash("a", "b")
 ```
 
 Keys may be column names or arbitrary [`Expression`](../api/expressions.md)s. An expression-valued
@@ -198,8 +198,8 @@ def hour_bucket(ts: "daft.Expression") -> "daft.Expression":
 
 
 class EventSource(DataSource):
-    def get_clustering_spec(self) -> ClusteringSpec | None:
-        return ClusteringSpec.hash(col("producer"), hour_bucket(col("ts")))
+    def get_clustering_keys(self) -> ClusteringKeys | None:
+        return ClusteringKeys.hash(col("producer"), hour_bucket(col("ts")))
 
 
 df = (
@@ -218,7 +218,7 @@ df = (
 
 !!! warning "Clustering must hold for every task"
 
-    Daft trusts the declaration. Only override `get_clustering_spec()` if every row with the same
+    Daft trusts the declaration. Only override `get_clustering_keys()` if every row with the same
     hash of the declared keys is genuinely produced within a single task; otherwise results may be
     incorrect. Declaring a sort order within partitions is not yet supported.
 
