@@ -146,3 +146,25 @@ def test_clustering_query_is_correct(table: pa.Table):
     df = ClusteredSource(table, ClusteringSpec.hash("a", "b")).read().groupby("a", "b").sum("c")
     result = df.sort(["a", "b"]).to_pydict()
     assert result == {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [10, 20, 30, 40]}
+
+
+def test_subset_groupby_is_correct():
+    """A group-by whose keys are a strict superset of the clustering computes correct groups.
+
+    The source is clustered by ``a`` (each ``a`` value lives entirely within one task), and we
+    group by ``(a, b)`` — a superset. Each ``(a, b)`` group is therefore contained within a single
+    partition, so the single-stage local aggregation must still produce complete groups. Multiple
+    rows share an ``(a, b)`` group here to exercise the local accumulation.
+    """
+    # Two tasks split at the midpoint: task 0 holds all a=1 rows, task 1 all a=2 rows.
+    table = pa.table(
+        {
+            "a": [1, 1, 1, 2, 2, 2],
+            "b": [1, 1, 2, 1, 2, 2],
+            "c": [10, 5, 20, 30, 40, 1],
+        }
+    )
+    df = ClusteredSource(table, ClusteringSpec.hash("a")).read().groupby("a", "b").sum("c")
+    assert not _has_shuffle(df)  # group_by (a, b) ⊇ clustering (a) => no shuffle
+    result = df.sort(["a", "b"]).to_pydict()
+    assert result == {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [15, 20, 30, 41]}
