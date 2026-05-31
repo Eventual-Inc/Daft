@@ -6,7 +6,7 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef}
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpecExt};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},

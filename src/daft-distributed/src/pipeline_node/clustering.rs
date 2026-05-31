@@ -1,93 +1,42 @@
+//! Execution-time clustering for pipeline nodes.
+//!
+//! [`BoundClusteringSpec`] is the bound (`T = BoundExpr`) instantiation of the generic
+//! [`daft_logical_plan::partitioning::ClusteringSpec`]. The logical plan only ever deals with the
+//! resolved-by-name form (`ClusteringSpec`); binding happens here, at the logical -> pipeline
+//! boundary, so every downstream check (`needs_hash_repartition`, join co-partitioning) can compare
+//! bound expressions directly instead of re-binding on the fly.
+//!
+//! The bound-specific operations live in [`BoundClusteringSpecExt`]: an inherent `impl` is
+//! impossible because `ClusteringSpec` is defined in another crate (orphan rule), so they are
+//! provided as an extension trait on the alias.
+
 use std::collections::HashMap;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_dsl::{Column, Expr, ExprRef, bound_col, expr::bound_expr::BoundExpr};
-use daft_logical_plan::partitioning::RepartitionSpec;
+use daft_logical_plan::partitioning::{
+    ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
+    RepartitionSpec, UnknownClusteringConfig,
+};
 use daft_schema::schema::Schema;
 
 /// Execution-time clustering of a pipeline node's output, expressed entirely in **bound**
-/// expressions.
-///
-/// Unlike the logical [`daft_logical_plan::partitioning::ClusteringSpec`], which is schema-agnostic
-/// (resolved-by-name) so it can survive logical-plan rewrites, the pipeline operates on a fixed,
-/// post-optimization schema where columns are referenced by bound index. Binding the clustering
-/// keys once — at the point each pipeline node is built — lets every downstream check
-/// (`needs_hash_repartition`, join co-partitioning) compare bound expressions directly instead of
-/// re-binding on the fly.
-#[derive(Clone, Debug)]
-pub(crate) enum BoundClusteringSpec {
-    Hash {
-        num_partitions: usize,
-        by: Vec<BoundExpr>,
-    },
-    Range {
-        num_partitions: usize,
-        by: Vec<BoundExpr>,
-        descending: Vec<bool>,
-    },
-    Random {
-        num_partitions: usize,
-    },
-    Unknown {
-        num_partitions: usize,
-    },
-}
+/// expressions. See the module docs for the difference between the logical and bound forms.
+pub(crate) type BoundClusteringSpec = ClusteringSpec<BoundExpr>;
 
-impl BoundClusteringSpec {
-    pub fn unknown(num_partitions: usize) -> Self {
-        Self::Unknown { num_partitions }
-    }
-
-    pub fn hash(num_partitions: usize, by: Vec<BoundExpr>) -> Self {
-        Self::Hash { num_partitions, by }
-    }
-
-    pub fn num_partitions(&self) -> usize {
-        match self {
-            Self::Hash { num_partitions, .. }
-            | Self::Range { num_partitions, .. }
-            | Self::Random { num_partitions }
-            | Self::Unknown { num_partitions } => *num_partitions,
-        }
-    }
-
-    /// The clustering keys, or an empty slice for `Random` / `Unknown`.
-    pub fn partition_by(&self) -> &[BoundExpr] {
-        match self {
-            Self::Hash { by, .. } | Self::Range { by, .. } => by,
-            Self::Random { .. } | Self::Unknown { .. } => &[],
-        }
-    }
-
-    pub fn is_hash(&self) -> bool {
-        matches!(self, Self::Hash { .. })
-    }
-
+/// Bound-specific operations on a [`BoundClusteringSpec`]. These cross the logical -> pipeline
+/// boundary (binding against a schema, rewriting bound columns through a projection) and so can't
+/// live on the schema-agnostic logical `ClusteringSpec`.
+pub(crate) trait BoundClusteringSpecExt: Sized {
     /// Builds a bound clustering spec from a logical [`RepartitionSpec`], binding any unbound
     /// (resolved-by-name) keys against `schema`. This is the logical -> pipeline boundary for
     /// clustering produced by an explicit repartition.
-    pub fn from_repartition_spec(
+    fn from_repartition_spec(
         spec: &RepartitionSpec,
         num_partitions: usize,
         schema: &Schema,
-    ) -> DaftResult<Self> {
-        Ok(match spec {
-            RepartitionSpec::Hash(c) => Self::Hash {
-                num_partitions: c.num_partitions.unwrap_or(num_partitions),
-                by: BoundExpr::bind_all(&c.by, schema)?,
-            },
-            RepartitionSpec::Range(c) => Self::Range {
-                num_partitions: c.num_partitions.unwrap_or(num_partitions),
-                // Range repartition keys are already bound.
-                by: c.by.clone(),
-                descending: c.descending.clone(),
-            },
-            RepartitionSpec::Random(c) => Self::Random {
-                num_partitions: c.num_partitions.unwrap_or(num_partitions),
-            },
-        })
-    }
+    ) -> DaftResult<Self>;
 
     /// Propagates this clustering through a projection, producing the output's clustering.
     ///
@@ -129,15 +78,46 @@ impl BoundClusteringSpec {
     /// the bare key `col#1 % 4`, so keeping the alias would miss the match and force a needless
     /// downgrade to `Unknown`. The alias is still used, via `.name()`, to locate the output column
     /// the key is rewritten *to*.
-    pub fn translate_through_projection(
+    fn translate_through_projection(
+        &self,
+        projection: &[BoundExpr],
+        output_schema: &Schema,
+    ) -> Self;
+}
+
+impl BoundClusteringSpecExt for BoundClusteringSpec {
+    fn from_repartition_spec(
+        spec: &RepartitionSpec,
+        num_partitions: usize,
+        schema: &Schema,
+    ) -> DaftResult<Self> {
+        Ok(match spec {
+            RepartitionSpec::Hash(c) => Self::Hash(HashClusteringConfig::new(
+                c.num_partitions.unwrap_or(num_partitions),
+                BoundExpr::bind_all(&c.by, schema)?,
+            )),
+            RepartitionSpec::Range(c) => Self::Range(RangeClusteringConfig::new(
+                c.num_partitions.unwrap_or(num_partitions),
+                // Range repartition keys are already bound.
+                c.by.clone(),
+                c.descending.clone(),
+            )),
+            RepartitionSpec::Random(c) => Self::Random(RandomClusteringConfig::new(
+                c.num_partitions.unwrap_or(num_partitions),
+            )),
+        })
+    }
+
+    fn translate_through_projection(
         &self,
         projection: &[BoundExpr],
         output_schema: &Schema,
     ) -> Self {
         let num_partitions = self.num_partitions();
         let by = match self {
-            Self::Random { .. } | Self::Unknown { .. } => return self.clone(),
-            Self::Hash { by, .. } | Self::Range { by, .. } => by,
+            Self::Random(_) | Self::Unknown(_) => return self.clone(),
+            Self::Hash(HashClusteringConfig { by, .. })
+            | Self::Range(RangeClusteringConfig { by, .. }) => by,
         };
 
         // Build the "computed expression -> output column" lookup. The key is the projected
@@ -151,6 +131,10 @@ impl BoundClusteringSpec {
                 continue;
             };
             let out_col = bound_col(out_index, output_schema[out_index].clone());
+            // First projection of a given inner expression wins. In the degenerate case where the
+            // same sub-expression is projected twice (e.g. once as a passthrough and once under an
+            // alias), this keys the clustering off whichever appears first — both reference the
+            // same value, so the choice only affects which output column name the key adopts.
             projected_to_output.entry(inner).or_insert(out_col);
         }
 
@@ -163,17 +147,12 @@ impl BoundClusteringSpec {
             .collect();
 
         match translated {
-            None => Self::Unknown { num_partitions },
+            None => Self::Unknown(UnknownClusteringConfig::new(num_partitions)),
             Some(new_by) => match self {
-                Self::Range { descending, .. } => Self::Range {
-                    num_partitions,
-                    by: new_by,
-                    descending: descending.clone(),
-                },
-                _ => Self::Hash {
-                    num_partitions,
-                    by: new_by,
-                },
+                Self::Range(RangeClusteringConfig { descending, .. }) => Self::Range(
+                    RangeClusteringConfig::new(num_partitions, new_by, descending.clone()),
+                ),
+                _ => Self::Hash(HashClusteringConfig::new(num_partitions, new_by)),
             },
         }
     }
@@ -289,7 +268,7 @@ mod tests {
             BoundClusteringSpec::hash(4, vec![bexpr(hour_of(bound(0, "id", DataType::Int64)))]);
         let projection = vec![bexpr(bound(1, "other", DataType::Int64))];
         let out = clustering.translate_through_projection(&projection, &output_schema);
-        assert!(matches!(out, BoundClusteringSpec::Unknown { .. }));
+        assert!(matches!(out, BoundClusteringSpec::Unknown(_)));
     }
 
     #[test]
@@ -299,7 +278,7 @@ mod tests {
         let clustering = BoundClusteringSpec::hash(4, vec![bexpr(bound(0, "a", DataType::Int64))]);
         let projection = vec![bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b"))];
         let out = clustering.translate_through_projection(&projection, &output_schema);
-        assert!(matches!(out, BoundClusteringSpec::Unknown { .. }));
+        assert!(matches!(out, BoundClusteringSpec::Unknown(_)));
     }
 
     #[test]

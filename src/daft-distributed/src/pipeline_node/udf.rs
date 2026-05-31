@@ -15,7 +15,7 @@ use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
 
-use super::PipelineNodeImpl;
+use super::{PipelineNodeImpl, clustering::BoundClusteringSpecExt};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,

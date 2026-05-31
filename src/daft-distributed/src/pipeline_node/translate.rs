@@ -21,10 +21,10 @@ use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, clustering::BoundClusteringSpec, concat::ConcatNode,
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        glob_scan_source::GlobScanSourceNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
+        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
+        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
         scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
@@ -104,9 +104,10 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         // The clustering keys are already bound (to the input node's schema), so compare them
         // directly against the operator's bound partition columns.
-        let is_compatible = match input_clustering_spec {
-            BoundClusteringSpec::Hash { by, .. } => is_partition_compatible(by, partition_columns),
-            _ => false,
+        let is_compatible = if input_clustering_spec.is_hash() {
+            is_partition_compatible(input_clustering_spec.partition_by(), partition_columns)
+        } else {
+            false
         };
 
         Ok(is_compatible)

@@ -207,17 +207,27 @@ impl RangeRepartitionConfig {
     }
 }
 
-/// Partition scheme for Daft DataFrame.
+/// Partition scheme for Daft DataFrame, generic over the expression type `T` used for its
+/// clustering keys.
+///
+/// Two instantiations exist:
+/// * [`ClusteringSpec`] (`T = ExprRef`, the default) — the logical, schema-agnostic form. Keys are
+///   resolved-by-name so the spec survives logical-plan rewrites.
+/// * `BoundClusteringSpec` (`T = BoundExpr`) — the execution-time form used by the distributed
+///   pipeline, where keys are bound against a fixed, post-optimization schema by column index.
+///   It is defined (along with the logical -> pipeline binding/translation logic) in
+///   `daft-distributed`; the logical plan only ever deals with the resolved-by-name form.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ClusteringSpec {
-    Range(RangeClusteringConfig),
-    Hash(HashClusteringConfig),
+pub enum ClusteringSpec<T = ExprRef> {
+    Range(RangeClusteringConfig<T>),
+    Hash(HashClusteringConfig<T>),
     Random(RandomClusteringConfig),
     Unknown(UnknownClusteringConfig),
 }
 
 pub type ClusteringSpecRef = Arc<ClusteringSpec>;
-impl ClusteringSpec {
+
+impl<T> ClusteringSpec<T> {
     pub fn var_name(&self) -> &'static str {
         match self {
             Self::Range(_) => "Range",
@@ -236,14 +246,29 @@ impl ClusteringSpec {
         }
     }
 
-    pub fn partition_by(&self) -> Vec<ExprRef> {
+    /// The clustering keys, or an empty slice for `Random` / `Unknown`.
+    pub fn partition_by(&self) -> &[T] {
         match self {
-            Self::Range(RangeClusteringConfig { by, .. }) => by.clone(),
-            Self::Hash(HashClusteringConfig { by, .. }) => by.clone(),
-            _ => vec![],
+            Self::Range(RangeClusteringConfig { by, .. }) => by,
+            Self::Hash(HashClusteringConfig { by, .. }) => by,
+            Self::Random(_) | Self::Unknown(_) => &[],
         }
     }
 
+    pub fn is_hash(&self) -> bool {
+        matches!(self, Self::Hash(_))
+    }
+
+    pub fn unknown(num_partitions: usize) -> Self {
+        Self::Unknown(UnknownClusteringConfig::new(num_partitions))
+    }
+
+    pub fn hash(num_partitions: usize, by: Vec<T>) -> Self {
+        Self::Hash(HashClusteringConfig::new(num_partitions, by))
+    }
+}
+
+impl<T: Display> ClusteringSpec<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Range(conf) => conf.multiline_display(),
@@ -252,62 +277,56 @@ impl ClusteringSpec {
             Self::Unknown(conf) => conf.multiline_display(),
         }
     }
-
-    pub fn unknown() -> Self {
-        Self::Unknown(UnknownClusteringConfig::new(0))
-    }
-
-    pub fn unknown_with_num_partitions(num_partitions: usize) -> Self {
-        Self::Unknown(UnknownClusteringConfig::new(num_partitions))
-    }
 }
 
-impl Default for ClusteringSpec {
+impl<T> Default for ClusteringSpec<T> {
     fn default() -> Self {
         Self::Unknown(UnknownClusteringConfig::new(1))
     }
 }
 
-impl From<RangeClusteringConfig> for ClusteringSpec {
-    fn from(value: RangeClusteringConfig) -> Self {
+impl<T> From<RangeClusteringConfig<T>> for ClusteringSpec<T> {
+    fn from(value: RangeClusteringConfig<T>) -> Self {
         Self::Range(value)
     }
 }
 
-impl From<HashClusteringConfig> for ClusteringSpec {
-    fn from(value: HashClusteringConfig) -> Self {
+impl<T> From<HashClusteringConfig<T>> for ClusteringSpec<T> {
+    fn from(value: HashClusteringConfig<T>) -> Self {
         Self::Hash(value)
     }
 }
 
-impl From<RandomClusteringConfig> for ClusteringSpec {
+impl<T> From<RandomClusteringConfig> for ClusteringSpec<T> {
     fn from(value: RandomClusteringConfig) -> Self {
         Self::Random(value)
     }
 }
 
-impl From<UnknownClusteringConfig> for ClusteringSpec {
+impl<T> From<UnknownClusteringConfig> for ClusteringSpec<T> {
     fn from(value: UnknownClusteringConfig) -> Self {
         Self::Unknown(value)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct RangeClusteringConfig {
+pub struct RangeClusteringConfig<T = ExprRef> {
     pub num_partitions: usize,
-    pub by: Vec<ExprRef>,
+    pub by: Vec<T>,
     pub descending: Vec<bool>,
 }
 
-impl RangeClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+impl<T> RangeClusteringConfig<T> {
+    pub fn new(num_partitions: usize, by: Vec<T>, descending: Vec<bool>) -> Self {
         Self {
             num_partitions,
             by,
             descending,
         }
     }
+}
 
+impl<T: Display> RangeClusteringConfig<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         let pairs = self
@@ -323,16 +342,18 @@ impl RangeClusteringConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct HashClusteringConfig {
+pub struct HashClusteringConfig<T = ExprRef> {
     pub num_partitions: usize,
-    pub by: Vec<ExprRef>,
+    pub by: Vec<T>,
 }
 
-impl HashClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>) -> Self {
+impl<T> HashClusteringConfig<T> {
+    pub fn new(num_partitions: usize, by: Vec<T>) -> Self {
         Self { num_partitions, by }
     }
+}
 
+impl<T: Display> HashClusteringConfig<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Num partitions = {}", self.num_partitions));

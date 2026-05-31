@@ -10,7 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
-        clustering::BoundClusteringSpec,
+        clustering::{BoundClusteringSpec, BoundClusteringSpecExt},
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
