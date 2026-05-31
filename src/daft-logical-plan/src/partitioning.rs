@@ -3,6 +3,8 @@ use std::{fmt::Display, sync::Arc};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Repartitioning specification.
@@ -404,3 +406,43 @@ impl Default for UnknownClusteringConfig {
         Self::new(1)
     }
 }
+
+/// Python-facing handle for declaring a [`ClusteringSpec`] from a custom `DataSource`.
+///
+/// The number of partitions is not known at declaration time (it is determined by the
+/// number of scan tasks the source produces), so `hash` records a placeholder count of 0;
+/// the planner fills in the real partition count when the source is lowered.
+#[cfg(feature = "python")]
+#[pyclass(module = "daft.daft", name = "ClusteringSpec", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyClusteringSpec {
+    pub spec: ClusteringSpecRef,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyClusteringSpec {
+    /// Declares that the source's output is hash-partitioned by `exprs`.
+    #[staticmethod]
+    pub fn hash(exprs: Vec<daft_dsl::python::PyExpr>) -> Self {
+        let by = exprs.into_iter().map(|e| e.expr).collect::<Vec<_>>();
+        Self {
+            spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(0, by))),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ClusteringSpec({})",
+            self.spec.multiline_display().join(", ")
+        )
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<PyClusteringSpec> for ClusteringSpecRef {
+    fn from(value: PyClusteringSpec) -> Self {
+        value.spec
+    }
+}
+
