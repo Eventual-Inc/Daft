@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use daft_ext::{
     helpers::_codegen::{
-        Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array,
-        LargeBinaryArray, LargeStringArray, UInt64Array,
+        Array, ArrayRef, BooleanArray, FixedSizeListArray, FixedSizeListBuilder, Float32Array,
+        Float64Array, Int32Array, Int32Type, Int64Array, LargeBinaryArray, LargeListArray,
+        LargeStringArray, PrimitiveBuilder, UInt64Array,
     },
     prelude::*,
 };
@@ -299,4 +300,170 @@ fn aliased_func(x: i32) -> i32 {
 fn test_name_override() {
     let name = DaftScalarFunction::name(&AliasedFunc);
     assert_eq!(name.to_str().unwrap(), "my_custom_name");
+}
+
+// ── Vec<T> (LargeList) input ───────────────────────────────────────
+
+#[daft_func]
+fn sum_list(xs: Vec<i32>) -> i64 {
+    xs.iter().map(|&x| x as i64).sum()
+}
+
+#[test]
+fn test_vec_input() {
+    let input: ArrayRef = Arc::new(LargeListArray::from_iter_primitive::<Int32Type, _, _>(
+        vec![
+            Some(vec![Some(1), Some(2), Some(3)]),
+            Some(vec![Some(4), Some(5)]),
+            Some(vec![]),
+        ],
+    ));
+    let result = call_unary(&SumList, input).unwrap();
+    let arr = result.as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(arr.values().as_ref(), &[6, 9, 0]);
+}
+
+#[test]
+fn test_vec_input_null_propagation() {
+    let input: ArrayRef = Arc::new(LargeListArray::from_iter_primitive::<Int32Type, _, _>(
+        vec![Some(vec![Some(1), Some(2)]), None, Some(vec![Some(10)])],
+    ));
+    let result = call_unary(&SumList, input).unwrap();
+    let arr = result.as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(arr.value(0), 3);
+    assert!(arr.is_null(1));
+    assert_eq!(arr.value(2), 10);
+}
+
+// ── Vec<T> (LargeList) return ──────────────────────────────────────
+
+#[daft_func]
+fn range_list(n: i32) -> Vec<i64> {
+    (0..n as i64).collect()
+}
+
+#[test]
+fn test_vec_return() {
+    let input: ArrayRef = Arc::new(Int32Array::from(vec![3, 0, 2]));
+    let result = call_unary(&RangeList, input).unwrap();
+    let arr = result.as_any().downcast_ref::<LargeListArray>().unwrap();
+
+    let row0 = arr.value(0);
+    assert_eq!(
+        row0.as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .values()
+            .as_ref(),
+        &[0, 1, 2]
+    );
+    let row1 = arr.value(1);
+    assert!(
+        row1.as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .is_empty()
+    );
+    let row2 = arr.value(2);
+    assert_eq!(
+        row2.as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .values()
+            .as_ref(),
+        &[0, 1]
+    );
+}
+
+#[test]
+fn test_vec_return_null_propagation() {
+    let input: ArrayRef = Arc::new(Int32Array::from(vec![Some(2), None, Some(1)]));
+    let result = call_unary(&RangeList, input).unwrap();
+    let arr = result.as_any().downcast_ref::<LargeListArray>().unwrap();
+    assert!(!arr.is_null(0));
+    assert!(arr.is_null(1));
+    assert!(!arr.is_null(2));
+}
+
+// ── [T; N] (FixedSizeList) input ───────────────────────────────────
+
+#[daft_func]
+fn fixed_sum(xs: [i32; 3]) -> i32 {
+    xs.iter().sum()
+}
+
+fn fixed_i32_array(rows: Vec<Option<[i32; 3]>>) -> ArrayRef {
+    let mut builder = FixedSizeListBuilder::new(PrimitiveBuilder::<Int32Type>::new(), 3);
+    for row in rows {
+        match row {
+            Some(vals) => {
+                for v in vals {
+                    builder.values().append_value(v);
+                }
+                builder.append(true);
+            }
+            None => {
+                for _ in 0..3 {
+                    builder.values().append_null();
+                }
+                builder.append(false);
+            }
+        }
+    }
+    Arc::new(builder.finish())
+}
+
+#[test]
+fn test_fixed_array_input() {
+    let input = fixed_i32_array(vec![Some([1, 2, 3]), Some([10, 20, 30])]);
+    let result = call_unary(&FixedSum, input).unwrap();
+    let arr = result.as_any().downcast_ref::<Int32Array>().unwrap();
+    assert_eq!(arr.values().as_ref(), &[6, 60]);
+}
+
+#[test]
+fn test_fixed_array_input_null_propagation() {
+    let input = fixed_i32_array(vec![Some([1, 2, 3]), None, Some([4, 5, 6])]);
+    let result = call_unary(&FixedSum, input).unwrap();
+    let arr = result.as_any().downcast_ref::<Int32Array>().unwrap();
+    assert_eq!(arr.value(0), 6);
+    assert!(arr.is_null(1));
+    assert_eq!(arr.value(2), 15);
+}
+
+// ── [T; N] (FixedSizeList) return ──────────────────────────────────
+
+#[daft_func]
+fn pair(x: f64) -> [f64; 2] {
+    [x, x * 2.0]
+}
+
+#[test]
+fn test_fixed_array_return() {
+    let input: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 5.0]));
+    let result = call_unary(&Pair, input).unwrap();
+    let arr = result
+        .as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .unwrap();
+    assert_eq!(arr.value_length(), 2);
+
+    let row0 = arr.value(0);
+    assert_eq!(
+        row0.as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap()
+            .values()
+            .as_ref(),
+        &[1.0, 2.0]
+    );
+    let row1 = arr.value(1);
+    assert_eq!(
+        row1.as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap()
+            .values()
+            .as_ref(),
+        &[5.0, 10.0]
+    );
 }

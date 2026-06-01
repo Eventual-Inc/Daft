@@ -31,7 +31,7 @@ fn primitive_input(arrow_type: TokenStream, data_type: TokenStream) -> TypeMappi
                     format!("expected PrimitiveArray<{}>", stringify!(#arrow_type))
                 ))?
         },
-        value_at: quote! { .value(__i) },
+        value_at: quote! { __arr.value(__i) },
     }
 }
 
@@ -102,7 +102,7 @@ pub fn map_input_type(ty: &Type) -> syn::Result<TypeMapping> {
                         "expected BooleanArray".into()
                     ))?
             },
-            value_at: quote! { .value(__i) },
+            value_at: quote! { __arr.value(__i) },
         }),
         "& str" => Ok(TypeMapping {
             data_type: quote! { #cg::DataType::LargeUtf8 },
@@ -113,7 +113,7 @@ pub fn map_input_type(ty: &Type) -> syn::Result<TypeMapping> {
                         "expected LargeStringArray".into()
                     ))?
             },
-            value_at: quote! { .value(__i) },
+            value_at: quote! { __arr.value(__i) },
         }),
         "& [u8]" => Ok(TypeMapping {
             data_type: quote! { #cg::DataType::LargeBinary },
@@ -124,7 +124,7 @@ pub fn map_input_type(ty: &Type) -> syn::Result<TypeMapping> {
                         "expected LargeBinaryArray".into()
                     ))?
             },
-            value_at: quote! { .value(__i) },
+            value_at: quote! { __arr.value(__i) },
         }),
         _ => {
             // Try Vec<T> → LargeListArray
@@ -147,6 +147,13 @@ fn map_vec_input(inner_ty: &Type) -> syn::Result<TypeMapping> {
     let cg = cg();
     let inner = map_input_type(inner_ty)?;
     let inner_data_type = &inner.data_type;
+    let arrow_ty = primitive_arrow_type(inner_ty).ok_or_else(|| {
+        syn::Error::new(
+            inner_ty.span(),
+            "#[daft_func] only supports `Vec<T>` where T is a primitive numeric type \
+             (i8–i64, u8–u64, f32, f64)",
+        )
+    })?;
     Ok(TypeMapping {
         data_type: quote! {
             #cg::DataType::LargeList(
@@ -160,11 +167,12 @@ fn map_vec_input(inner_ty: &Type) -> syn::Result<TypeMapping> {
                     "expected LargeListArray".into()
                 ))?
         },
+        // `__arr` is the downcast `&LargeListArray` bound at the call site.
         value_at: quote! { {
-            let __list_arr = #cg::Array::slice(&#cg::LargeListArray::value(__arr, __i), 0, #cg::Array::len(&#cg::LargeListArray::value(__arr, __i)));
-            let __inner = __list_arr
+            let __sub = #cg::LargeListArray::value(__arr, __i);
+            let __inner = __sub
                 .as_any()
-                .downcast_ref::<#cg::PrimitiveArray<_>>()
+                .downcast_ref::<#cg::PrimitiveArray<#arrow_ty>>()
                 .expect("expected primitive inner array");
             __inner.values().iter().copied().collect::<Vec<_>>()
         } },
@@ -175,6 +183,13 @@ fn map_fixed_array_input(elem: &Type, len_expr: &syn::Expr) -> syn::Result<TypeM
     let cg = cg();
     let inner = map_input_type(elem)?;
     let inner_data_type = &inner.data_type;
+    let arrow_ty = primitive_arrow_type(elem).ok_or_else(|| {
+        syn::Error::new(
+            elem.span(),
+            "#[daft_func] only supports `[T; N]` where T is a primitive numeric type \
+             (i8–i64, u8–u64, f32, f64)",
+        )
+    })?;
     Ok(TypeMapping {
         data_type: quote! {
             #cg::DataType::FixedSizeList(
@@ -189,14 +204,14 @@ fn map_fixed_array_input(elem: &Type, len_expr: &syn::Expr) -> syn::Result<TypeM
                     "expected FixedSizeListArray".into()
                 ))?
         },
+        // `__arr` is the downcast `&FixedSizeListArray` bound at the call site.
         value_at: quote! { {
-            let __fsl_values = #cg::FixedSizeListArray::values(__arr);
-            let __inner = __fsl_values
+            let __sub = #cg::FixedSizeListArray::value(__arr, __i);
+            let __inner = __sub
                 .as_any()
-                .downcast_ref::<#cg::PrimitiveArray<_>>()
+                .downcast_ref::<#cg::PrimitiveArray<#arrow_ty>>()
                 .expect("expected primitive inner array");
-            let __offset = __i * (#len_expr as usize);
-            ::std::array::from_fn(|__j| __inner.value(__offset + __j))
+            ::std::array::from_fn(|__j| __inner.value(__j))
         } },
     })
 }
@@ -281,6 +296,13 @@ fn map_vec_return(inner_ty: &Type) -> syn::Result<ReturnTypeMapping> {
     let cg = cg();
     let inner_ret = map_return_type(inner_ty)?;
     let inner_data_type = &inner_ret.data_type;
+    let arrow_ty = primitive_arrow_type(inner_ty).ok_or_else(|| {
+        syn::Error::new(
+            inner_ty.span(),
+            "#[daft_func] only supports returning `Vec<T>` where T is a primitive numeric type \
+             (i8–i64, u8–u64, f32, f64)",
+        )
+    })?;
     Ok(ReturnTypeMapping {
         data_type: quote! {
             #cg::DataType::LargeList(
@@ -289,7 +311,7 @@ fn map_vec_return(inner_ty: &Type) -> syn::Result<ReturnTypeMapping> {
         },
         builder_init: quote! {
             let mut __builder = #cg::LargeListBuilder::new(
-                #cg::PrimitiveBuilder::<_>::new()
+                #cg::PrimitiveBuilder::<#arrow_ty>::new()
             );
         },
         append_value: quote! {
@@ -307,6 +329,13 @@ fn map_fixed_array_return(elem: &Type, len_expr: &syn::Expr) -> syn::Result<Retu
     let cg = cg();
     let inner_ret = map_return_type(elem)?;
     let inner_data_type = &inner_ret.data_type;
+    let arrow_ty = primitive_arrow_type(elem).ok_or_else(|| {
+        syn::Error::new(
+            elem.span(),
+            "#[daft_func] only supports returning `[T; N]` where T is a primitive numeric type \
+             (i8–i64, u8–u64, f32, f64)",
+        )
+    })?;
     Ok(ReturnTypeMapping {
         data_type: quote! {
             #cg::DataType::FixedSizeList(
@@ -316,7 +345,7 @@ fn map_fixed_array_return(elem: &Type, len_expr: &syn::Expr) -> syn::Result<Retu
         },
         builder_init: quote! {
             let mut __builder = #cg::FixedSizeListBuilder::new(
-                #cg::PrimitiveBuilder::<_>::new(),
+                #cg::PrimitiveBuilder::<#arrow_ty>::new(),
                 #len_expr,
             );
         },
@@ -326,7 +355,14 @@ fn map_fixed_array_return(elem: &Type, len_expr: &syn::Expr) -> syn::Result<Retu
             }
             __builder.append(true);
         },
-        append_null: quote! { __builder.append_null(); },
+        // `FixedSizeListBuilder` has no `append_null`; a null row is N null
+        // inner values followed by `append(false)`.
+        append_null: quote! {
+            for _ in 0..(#len_expr as usize) {
+                __builder.values().append_null();
+            }
+            __builder.append(false);
+        },
         finish: quote! { #cg::Arc::new(__builder.finish()) as #cg::ArrayRef },
     })
 }
@@ -367,4 +403,27 @@ fn unwrap_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
 
 fn type_to_string(ty: &Type) -> String {
     quote!(#ty).to_string()
+}
+
+/// Returns the arrow primitive type token (e.g. `Int32Type`) for a primitive
+/// numeric Rust type, or `None` if `ty` is not a supported primitive.
+///
+/// Used by the list-valued mappings (`Vec<T>`, `[T; N]`) which need the concrete
+/// element type to build/downcast the inner `PrimitiveArray`/`PrimitiveBuilder`.
+fn primitive_arrow_type(ty: &Type) -> Option<TokenStream> {
+    let cg = cg();
+    let arrow = match type_to_string(ty).as_str() {
+        "i8" => quote! { #cg::Int8Type },
+        "i16" => quote! { #cg::Int16Type },
+        "i32" => quote! { #cg::Int32Type },
+        "i64" => quote! { #cg::Int64Type },
+        "u8" => quote! { #cg::UInt8Type },
+        "u16" => quote! { #cg::UInt16Type },
+        "u32" => quote! { #cg::UInt32Type },
+        "u64" => quote! { #cg::UInt64Type },
+        "f32" => quote! { #cg::Float32Type },
+        "f64" => quote! { #cg::Float64Type },
+        _ => return None,
+    };
+    Some(arrow)
 }

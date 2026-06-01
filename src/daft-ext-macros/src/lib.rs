@@ -156,7 +156,6 @@ fn daft_func_batch_impl(
     let return_dtype = &args.return_dtype;
 
     let ffi_name_str = args.name.unwrap_or_else(|| fn_name.to_string());
-    let fn_name_str = fn_name.to_string();
     let mut name_bytes = ffi_name_str.clone().into_bytes();
     name_bytes.push(0);
     let name_lit = Literal::byte_string(&name_bytes);
@@ -197,12 +196,12 @@ fn daft_func_batch_impl(
                     return Err(::daft_ext::prelude::DaftError::TypeError(
                         format!(
                             "{}: expected {} argument(s), got {}",
-                            #fn_name_str, #param_count, args.len()
+                            #ffi_name_str, #param_count, args.len()
                         ),
                     ));
                 }
                 let name = if args.is_empty() {
-                    #fn_name_str.to_string()
+                    #ffi_name_str.to_string()
                 } else {
                     ::daft_ext::prelude::import_field(&args[0])?
                         .name()
@@ -223,7 +222,7 @@ fn daft_func_batch_impl(
                     return Err(::daft_ext::prelude::DaftError::TypeError(
                         format!(
                             "{}: expected {} argument(s) in call, got {}",
-                            #fn_name_str, #param_count, args.len()
+                            #ffi_name_str, #param_count, args.len()
                         ),
                     ));
                 }
@@ -235,7 +234,7 @@ fn daft_func_batch_impl(
                 #(#param_bindings)*
                 let result = #fn_name(#(#call_args),*)?;
 
-                ::daft_ext::prelude::export_array(result, #fn_name_str)
+                ::daft_ext::prelude::export_array(result, #ffi_name_str)
             }
         }
     })
@@ -253,10 +252,12 @@ fn daft_func_batch_impl(
 /// # Supported types
 ///
 /// Inputs: `i8`–`i64`, `u8`–`u64`, `f32`, `f64`, `bool`, `&str`, `&[u8]`,
-///         and `Option<T>` of any of these.
+///         `Vec<T>` / `[T; N]` of a primitive numeric `T`, and `Option<T>`
+///         of any of these.
 ///
 /// Returns: `i8`–`i64`, `u8`–`u64`, `f32`, `f64`, `bool`, `String`,
-///          `Option<T>`, or `DaftResult<T>` / `DaftResult<Option<T>>`.
+///          `Vec<T>` / `[T; N]` of a primitive numeric `T`, `Option<T>`,
+///          or `DaftResult<T>` / `DaftResult<Option<T>>`.
 ///
 /// # Example
 ///
@@ -416,18 +417,23 @@ fn daft_func_impl(
             let val_var = &p.name;
             let value_at = &p.mapping.value_at;
             if p.is_optional {
-                // Pass Option<T> to user function
+                // Pass Option<T> to user function. `value_at` is a self-contained
+                // expression that reads the row at `__i` from the bound `__arr`.
                 quote! {
                     let #val_var = if #cg::Array::is_null(#arr_var, __i) {
                         None
                     } else {
-                        Some(#arr_var #value_at)
+                        let __arr = #arr_var;
+                        Some(#value_at)
                     };
                 }
             } else {
-                // Non-optional: extract value, null check done separately
+                // Non-optional: extract value, null check done separately.
                 quote! {
-                    let #val_var = #arr_var #value_at;
+                    let #val_var = {
+                        let __arr = #arr_var;
+                        #value_at
+                    };
                 }
             }
         })

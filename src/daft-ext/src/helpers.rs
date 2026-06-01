@@ -72,7 +72,7 @@ macro_rules! impl_helpers {
                 LargeListArray, LargeStringArray, PrimitiveArray,
                 builder::{
                     BooleanBuilder, FixedSizeListBuilder, LargeBinaryBuilder, LargeListBuilder,
-                    LargeStringBuilder, PrimitiveBuilder, StringBuilder,
+                    LargeStringBuilder, PrimitiveBuilder,
                 },
                 types::{
                     ArrowPrimitiveType, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type,
