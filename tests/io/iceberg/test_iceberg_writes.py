@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
 import pyarrow.fs as pafs
@@ -76,6 +78,25 @@ def local_catalog(tmpdir):
     catalog.create_namespace("default")
     yield catalog
     catalog.engine.dispose()
+
+
+def test_read_iceberg_accepts_pathlike_metadata(local_catalog):
+    table = local_catalog.create_table(
+        "default.pathlike_metadata",
+        Schema(NestedField(field_id=1, name="x", type=LongType())),
+    )
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df.write_iceberg(table)
+    table.refresh()
+
+    parsed = urlparse(table.metadata_location)
+    assert parsed.scheme == "file"
+
+    metadata_path = Path(unquote(parsed.path))
+    read_back = daft.read_iceberg(metadata_path)
+
+    assert df.to_arrow() == read_back.to_arrow().sort_by("x")
 
 
 @pytest.fixture(
