@@ -233,7 +233,7 @@ impl AsyncFileWriter for SingleFileWriter {
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
         // Guard: if no non-empty input was ever written, the underlying parquet
-        // file_writer was never initialised and closing it would panic.
+        // file writer was never initialized and closing it would panic.
         if self.has_written
             && let Some(result) = self.writer.close().await?
         {

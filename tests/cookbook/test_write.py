@@ -63,12 +63,13 @@ def test_parquet_write_single_file_creates_parent_dirs(tmp_path, with_morsel_siz
     reason="single_file is only supported on the native runner",
 )
 def test_parquet_write_single_file_large_does_not_split(tmp_path, with_morsel_size):
-    # Data bigger than default target_filesize should still produce a single file.
-    rows = 100_000
+    # Shrink target_filesize so a small df still exceeds it and exercises the no-split path.
+    rows = 1_000
     df = daft.from_pydict({"x": list(range(rows)), "y": ["hello" * 100] * rows})
 
     out_path = tmp_path / "big.parquet"
-    df.write_parquet(out_path.as_posix(), single_file=True)
+    with daft.execution_config_ctx(parquet_target_filesize=1024):
+        df.write_parquet(out_path.as_posix(), single_file=True)
 
     assert out_path.is_file()
     assert daft.read_parquet(out_path.as_posix()).count_rows() == rows
@@ -81,7 +82,7 @@ def test_parquet_write_single_file_large_does_not_split(tmp_path, with_morsel_si
 def test_parquet_write_single_file_empty(tmp_path, with_morsel_size):
     # Empty DataFrame must not panic when single_file=True. CommitWriteSink emits an
     # empty parquet file at the exact path so reads round-trip.
-    df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]}).where(daft.lit(False))
+    df = daft.from_pydict({"x": [], "y": []})
 
     out_path = tmp_path / "empty.parquet"
     df.write_parquet(out_path.as_posix(), single_file=True)
