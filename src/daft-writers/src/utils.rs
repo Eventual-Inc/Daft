@@ -15,46 +15,6 @@ pub(crate) fn build_filename(
     file_idx: usize,
     suffix: &str,
 ) -> DaftResult<PathBuf> {
-    build_filename_impl(
-        source_type,
-        root_dir,
-        partition_values,
-        file_idx,
-        suffix,
-        false,
-    )
-}
-
-/// Helper function to build the filename for the output file, with an option to treat
-/// `root_dir` as the exact target file path (no partition dir, no UUID).
-pub(crate) fn build_filename_single(source_type: &SourceType, path: &str) -> DaftResult<PathBuf> {
-    build_filename_impl(source_type, path, None, 0, "", true)
-}
-
-fn build_filename_impl(
-    source_type: &SourceType,
-    root_dir: &str,
-    partition_values: Option<&RecordBatch>,
-    file_idx: usize,
-    suffix: &str,
-    single_file: bool,
-) -> DaftResult<PathBuf> {
-    if single_file {
-        return match source_type {
-            SourceType::File => {
-                let stripped = daft_io::strip_file_uri_to_path(root_dir).unwrap_or(root_dir);
-                Ok(PathBuf::from(stripped))
-            }
-            source if source.supports_native_writer() => {
-                let ObjectPath { bucket, key, .. } = daft_io::utils::parse_object_url(root_dir)?;
-                Ok(PathBuf::from(format!("{}/{}", bucket, key)))
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Unsupported source type: {:?}",
-                source_type
-            ))),
-        };
-    }
     let partition_path = get_partition_path(partition_values)?;
     let filename = generate_filename(file_idx, suffix);
 
@@ -62,6 +22,25 @@ fn build_filename_impl(
         SourceType::File => build_local_file_path(root_dir, partition_path, filename),
         source if source.supports_native_writer() => {
             build_object_path(root_dir, partition_path, filename)
+        }
+        _ => Err(DaftError::ValueError(format!(
+            "Unsupported source type: {:?}",
+            source_type
+        ))),
+    }
+}
+
+/// Helper function to build the filename for the output file, treating `path` as the
+/// exact target file path (no partition dir, no UUID).
+pub(crate) fn build_filename_single(source_type: &SourceType, path: &str) -> DaftResult<PathBuf> {
+    match source_type {
+        SourceType::File => {
+            let stripped = daft_io::strip_file_uri_to_path(path).unwrap_or(path);
+            Ok(PathBuf::from(stripped))
+        }
+        source if source.supports_native_writer() => {
+            let ObjectPath { bucket, key, .. } = daft_io::utils::parse_object_url(path)?;
+            Ok(PathBuf::from(format!("{}/{}", bucket, key)))
         }
         _ => Err(DaftError::ValueError(format!(
             "Unsupported source type: {:?}",
