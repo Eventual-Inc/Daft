@@ -357,11 +357,8 @@ macro_rules! define_any_value_accum {
             }
 
             fn finalize(self, name: &str) -> DaftResult<Series> {
-                let values: Vec<Option<$native>> = self
-                    .accumulators
-                    .into_iter()
-                    .map(|opt| opt.unwrap_or(None))
-                    .collect();
+                let values: Vec<Option<$native>> =
+                    self.accumulators.into_iter().map(Option::flatten).collect();
                 let has_nulls = values.iter().any(|v| v.is_none());
                 if has_nulls {
                     Ok(DataArray::<$daft_type>::from_iter(
@@ -1913,6 +1910,17 @@ mod tests {
     #[test]
     fn test_inline_any_value_i8_matches_fallback() {
         let (rb, group_by, schema) = make_i8_val_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::AnyValue(resolved_col("val"), true), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_any_value_all_nulls_matches_fallback() {
+        let (rb, group_by, schema) = make_all_null_vals_test_batch();
         let bound_agg = vec![
             BoundAggExpr::try_new(AggExpr::AnyValue(resolved_col("val"), true), &schema).unwrap(),
         ];
