@@ -80,3 +80,22 @@ def test_expression_projection_preserves_clustering():
         .sum("c")
     )
     assert _num_shuffles(df) == 1
+
+
+def test_rename_projection_preserves_clustering(clustered):
+    # Renaming a clustering key (a -> id) rewrites the clustering to Hash([id, b]), so the
+    # groupby on the renamed keys still reuses it instead of adding a shuffle.
+    df = clustered.select(col("a").alias("id"), "b", "c").groupby("id", "b").sum("c")
+    assert _num_shuffles(df) == 1
+
+
+def test_rename_projection_preserves_clustering_is_correct(clustered):
+    df = clustered.select(col("a").alias("id"), "b", "c").groupby("id", "b").sum("c")
+    assert df.sort(["id", "b"]).to_pydict() == {"id": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [10, 20, 30, 40]}
+
+
+def test_dropped_clustering_key_forces_repartition(clustered):
+    # Dropping a clustering key (b) downgrades the clustering to Unknown, so the groupby must
+    # repartition on top of the original shuffle: two shuffles total.
+    df = clustered.select("a", "c").groupby("a").sum("c")
+    assert _num_shuffles(df) == 2
