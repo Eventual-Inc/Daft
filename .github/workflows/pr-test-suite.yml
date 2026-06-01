@@ -1510,7 +1510,7 @@ jobs:
           --head ${GITHUB_SHA} \
           --base-lockfile /tmp/base-Cargo.lock \
           --head-lockfile Cargo.lock \
-          --max-new 25 \
+          --max-new 50 \
           --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
     - name: Post sticky PR comment
       if: github.event.pull_request.head.repo.full_name == github.repository
