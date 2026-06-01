@@ -708,7 +708,15 @@ mod tests {
     use std::sync::Arc;
 
     use common_io_config::GCSConfig;
-    use google_cloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
+    use google_cloud_storage::{
+        client::ClientConfig,
+        http::objects::upload::{Media, UploadObjectRequest, UploadType},
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::oneshot,
+    };
 
     use crate::{
         google_cloud::{GCSSource, is_delete_not_found_status},
@@ -768,6 +776,159 @@ mod tests {
 
         let result = client.delete("gs://daft-public-data-gs/", None).await;
         assert!(matches!(result, Err(crate::Error::NotAFile { .. })));
+    }
+
+    async fn mock_gcs_delete_client(
+        status: u16,
+        body: impl Into<String>,
+    ) -> crate::Result<(Arc<GCSSource>, oneshot::Receiver<String>)> {
+        let listener =
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|source| crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?;
+        let endpoint = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|source| crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?
+        );
+        let (request_tx, request_rx) = oneshot::channel();
+        let mut request_tx = Some(request_tx);
+        let body = body.into();
+
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 1024];
+                loop {
+                    let n = stream.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+
+                if let Some(tx) = request_tx.take() {
+                    let request = String::from_utf8_lossy(&request).to_string();
+                    let first_line = request.lines().next().unwrap_or_default().to_string();
+                    let _ = tx.send(first_line);
+                }
+
+                let reason = match status {
+                    204 => "No Content",
+                    404 => "Not Found",
+                    410 => "Gone",
+                    500 => "Internal Server Error",
+                    _ => "Unknown",
+                };
+                let response = if body.is_empty() {
+                    format!("HTTP/1.1 {status} {reason}\r\nConnection: close\r\n\r\n")
+                } else {
+                    format!(
+                        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.flush().await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+
+        let config = GCSConfig {
+            anonymous: true,
+            num_tries: 0,
+            ..Default::default()
+        };
+        let http = reqwest_middleware::ClientBuilder::new(
+            reqwest_middleware::reqwest::ClientBuilder::default()
+                .no_proxy()
+                .build()
+                .map_err(|source| crate::Error::UnableToCreateClient {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?,
+        )
+        .build();
+        let client_config = ClientConfig {
+            storage_endpoint: endpoint,
+            token_source_provider: None,
+            http: Some(http),
+            ..Default::default()
+        };
+
+        Ok((
+            GCSSource::client_from_config(&config, client_config)?,
+            request_rx,
+        ))
+    }
+
+    fn gcs_error_body(code: u16, message: &'static str) -> String {
+        format!(
+            r#"{{"error":{{"code":{code},"message":"{message}","errors":[{{"domain":"global","message":"{message}","reason":"test"}}]}}}}"#
+        )
+    }
+
+    #[tokio::test]
+    async fn test_delete_sends_request_to_gcs_mock() -> crate::Result<()> {
+        let (client, request_rx) = mock_gcs_delete_client(204, "").await?;
+
+        client
+            .delete("gs://test-bucket/path/to/object.parquet", None)
+            .await?;
+
+        assert_eq!(
+            request_rx.await.unwrap(),
+            "DELETE /storage/v1/b/test-bucket/o/path%2Fto%2Fobject.parquet HTTP/1.1"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_treats_mock_gcs_not_found_as_success() -> crate::Result<()> {
+        for (status, body) in [
+            (404, gcs_error_body(404, "not found")),
+            (410, gcs_error_body(410, "gone")),
+        ] {
+            let (client, request_rx) = mock_gcs_delete_client(status, body).await?;
+
+            client
+                .delete("gs://test-bucket/already-deleted.parquet", None)
+                .await?;
+
+            assert_eq!(
+                request_rx.await.unwrap(),
+                "DELETE /storage/v1/b/test-bucket/o/already-deleted.parquet HTTP/1.1"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_returns_error_for_mock_gcs_server_error() -> crate::Result<()> {
+        let body = gcs_error_body(500, "server error");
+        let (client, request_rx) = mock_gcs_delete_client(500, body).await?;
+
+        let result = client
+            .delete("gs://test-bucket/failing-delete.parquet", None)
+            .await;
+
+        assert_eq!(
+            request_rx.await.unwrap(),
+            "DELETE /storage/v1/b/test-bucket/o/failing-delete.parquet HTTP/1.1"
+        );
+        assert!(matches!(result, Err(crate::Error::UnableToOpenFile { .. })));
+        Ok(())
     }
 
     fn gcs_write_test_config() -> GCSConfig {
