@@ -2,7 +2,7 @@ use std::{ffi::CStr, sync::Arc};
 
 use arrow_array::{Array, ArrayRef};
 use arrow_schema::{DataType, Field};
-use daft_ext::prelude::*;
+use daft_ext::{daft_extension, prelude::*};
 
 // ── Module ──────────────────────────────────────────────────────────
 
