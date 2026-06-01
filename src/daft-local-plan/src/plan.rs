@@ -688,7 +688,7 @@ impl LocalPhysicalPlan {
         min_periods: usize,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<BoundAggExpr>,
+        functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -702,7 +702,7 @@ impl LocalPhysicalPlan {
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         })
@@ -1623,7 +1623,7 @@ impl LocalPhysicalPlan {
                     frame,
                     min_periods,
                     schema,
-                    aggregations,
+                    functions,
                     aliases,
                     context,
                     ..
@@ -1637,7 +1637,7 @@ impl LocalPhysicalPlan {
                     *min_periods,
                     schema.clone(),
                     StatsState::NotMaterialized,
-                    aggregations.clone(),
+                    functions.clone(),
                     aliases.clone(),
                     context.clone(),
                 ),
@@ -2458,7 +2458,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub min_periods: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<BoundAggExpr>,
+    pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
     pub context: LocalNodeContext,
 }

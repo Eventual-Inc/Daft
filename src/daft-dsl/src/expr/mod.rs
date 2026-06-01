@@ -526,6 +526,12 @@ pub enum WindowExpr {
         offset: isize,
         default: Option<ExprRef>,
     },
+
+    #[display("first_value({_0}, ignore_nulls={_1})")]
+    FirstValue(ExprRef, bool),
+
+    #[display("last_value({_0}, ignore_nulls={_1})")]
+    LastValue(ExprRef, bool),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -1133,6 +1139,7 @@ impl WindowExpr {
                 offset: _,
                 default: _,
             } => input.name(),
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => expr.name(),
         }
     }
 
@@ -1156,6 +1163,18 @@ impl WindowExpr {
                 };
                 FieldID::new(format!("{child_id}.offset(offset={offset}{default_part})"))
             }
+            Self::FirstValue(expr, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.first_value(ignore_nulls={ignore_nulls})"
+                ))
+            }
+            Self::LastValue(expr, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.last_value(ignore_nulls={ignore_nulls})"
+                ))
+            }
         }
     }
 
@@ -1176,6 +1195,7 @@ impl WindowExpr {
                 }
                 children
             }
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => vec![expr.clone()],
         }
     }
 
@@ -1208,6 +1228,14 @@ impl WindowExpr {
                     default,
                 }
             }
+            Self::FirstValue(_, ignore_nulls) => {
+                assert_eq!(children.len(), 1);
+                Self::FirstValue(children.first().unwrap().clone(), *ignore_nulls)
+            }
+            Self::LastValue(_, ignore_nulls) => {
+                assert_eq!(children.len(), 1);
+                Self::LastValue(children.first().unwrap().clone(), *ignore_nulls)
+            }
         }
     }
 
@@ -1222,6 +1250,10 @@ impl WindowExpr {
                 offset: _,
                 default: _,
             } => input.to_field(schema),
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_ref(), field.dtype))
+            }
         }
     }
 }
@@ -1406,6 +1438,14 @@ impl Expr {
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
+    }
+
+    pub fn first_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::WindowFunction(WindowExpr::FirstValue(self, ignore_nulls)).into()
+    }
+
+    pub fn last_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::WindowFunction(WindowExpr::LastValue(self, ignore_nulls)).into()
     }
 
     pub fn skew(self: ExprRef) -> ExprRef {

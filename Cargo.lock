@@ -3055,6 +3055,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow",
  "arrow-array 57.3.0",
  "arrow-buffer 57.3.0",
  "arrow-ipc",

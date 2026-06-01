@@ -20,6 +20,10 @@ Daft supports two partitioning strategies:
 
 **Default behavior:** Daft typically creates one partition per input file. Global operators like joins and aggregations may dynamically repartition data to satisfy their clustering requirements.
 
+!!! tip "How the shuffle is executed"
+
+    `repartition`, hash joins, sorts, and groupbys are all *shuffles*: all-to-all data movement between partitions. The number of partitions you pick here is the input to that cost. Once your shuffle is large (>10 GB, or thousands of partitions on each side), how Daft executes the movement also matters: see [Shuffle Algorithms](shuffle.md) for when to switch to `flight_shuffle`.
+
 ## Batching: Size-Based Splitting
 
 Batching work on all runners (distributed and native). Unlike partitions, batches don't split data into a fixed count—instead, they split by size (number of rows). This is useful when you don't know your cluster or machine size ahead of time, but you know how many rows work well for a specific operation.

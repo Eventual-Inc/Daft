@@ -14,6 +14,7 @@ from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
     FlightPartitionRef,
+    FlightPartitions,
     Input,
     LocalPhysicalPlan,
     NativeExecutor,
@@ -176,7 +177,7 @@ class RaySwordfishActor:
         **inputs: (
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
-    ) -> AsyncGenerator[MicroPartition | FlightPartitionRef | SwordfishTaskMetadata, None]:
+    ) -> AsyncGenerator[MicroPartition | FlightPartitions | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
@@ -195,6 +196,7 @@ class RaySwordfishActor:
                 context,
                 False,
             )
+            partition_refs: list[FlightPartitionRef] = []
             metas = []
             is_flight_shuffle = False
             # Coalesce small MicroPartition outputs to reduce head-node ObjectRef pressure. Skip
@@ -216,7 +218,7 @@ class RaySwordfishActor:
                 if isinstance(partition, FlightPartitionRef):
                     is_flight_shuffle = True
                     metas.append(PartitionMetadata.from_flight_partition_ref(partition))
-                    yield partition
+                    partition_refs.append(partition)
                     continue
                 if not isinstance(partition, PyMicroPartition):
                     break
@@ -231,6 +233,10 @@ class RaySwordfishActor:
                 buf_bytes += mp.size_bytes() or target_bytes
                 if buf_bytes >= target_bytes:
                     yield flush()
+
+            # batch flight partition refs before sending the scheduler
+            if partition_refs:
+                yield FlightPartitions(partition_refs)
 
             if buf:
                 yield flush()
@@ -291,11 +297,19 @@ class RaySwordfishTaskHandle:
             results = [result for result in self.result_handle]
             metadata_ref = results.pop()
             task_metadata: SwordfishTaskMetadata = await metadata_ref
-            assert len(results) == len(task_metadata.partition_metadatas)
 
             if task_metadata.is_flight_shuffle:
-                flight_part_refs = await asyncio.gather(*results)
-                return RayTaskResult.success_flight(flight_part_refs, task_metadata.stats)
+                flight_partitions = await asyncio.gather(*results)
+
+                assert len(flight_partitions) == 1, (
+                    f"Expected exactly 1 FlightPartitions batch per finalize, got {len(flight_partitions)}. "
+                    "Each blocking-sink finalize must produce a single FlightPartitionRefs output."
+                )
+                refs = [ref for fp in flight_partitions for ref in fp.partitions]
+                assert len(refs) == len(task_metadata.partition_metadatas)
+                return RayTaskResult.success_flight(refs, task_metadata.stats)
+
+            assert len(results) == len(task_metadata.partition_metadatas)
 
             return RayTaskResult.success_ray(
                 [
