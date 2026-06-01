@@ -44,6 +44,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("var", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var_samp", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var_pop", AggExpr::Var(nil, 0));
+        parent.add_fn("array_agg", AggExpr::List(Arc::new(Expr::Literal(Literal::Null))));
         parent.add_fn("string_join", SQLStringJoin { distinct: false });
         parent.add_fn("string_join_distinct", SQLStringJoin { distinct: true });
     }
@@ -107,6 +108,7 @@ impl SQLFunction for AggExpr {
             Self::Var(_, _) => static_docs::VAR_DOCSTRING.to_string(),
             Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
             Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
+            Self::List(_) => "Collects input values into an array/list.".to_string(),
             Self::StringJoin(_, _, _) => {
                 "Concatenate strings with optional delimiter and optional DISTINCT semantics"
                     .to_string()
@@ -131,6 +133,7 @@ impl SQLFunction for AggExpr {
             | Self::BoolOr(_) => &["input"],
             Self::StringJoin(_, _, _) => &["input", "delimiter"],
             Self::Percentile(_, _) => &["input", "percentage"],
+            Self::List(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -272,7 +275,10 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             Ok(args[0].clone().bool_or())
         }
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
-        AggExpr::List(_) => unsupported_sql_err!("list"),
+        AggExpr::List(_) => {
+            ensure!(args.len() == 1, "array_agg takes exactly one argument");
+            Ok(args[0].clone().agg_list())
+        }
         AggExpr::Concat(_, _) => unsupported_sql_err!("concat"),
         AggExpr::StringJoin(_, _, _) => unsupported_sql_err!("string_join"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),

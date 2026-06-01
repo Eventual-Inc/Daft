@@ -154,6 +154,35 @@ def test_string_join_sql():
     }
 
 
+def test_array_agg_sql():
+    df = daft.from_pydict(
+        {
+            "g": [1, 1, 2],
+            "x": [10, 20, 30],
+        }
+    )
+
+    actual_grouped = daft.sql(
+        """
+    SELECT
+        g,
+        array_agg(x) AS xs
+    FROM df
+    GROUP BY g
+    ORDER BY g
+    """,
+        df=df,
+    ).to_pydict()
+
+    assert actual_grouped == {
+        "g": [1, 2],
+        "xs": [[10, 20], [30]],
+    }
+
+    actual_global = daft.sql("SELECT array_agg(x) AS xs FROM df", df=df).to_pydict()
+    assert actual_global == {"xs": [[10, 20, 30]]}
+
+
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [
