@@ -57,10 +57,10 @@ class File:
         url: str,
         io_config: IOConfig | None = None,
         media_type: MediaType = MediaType.unknown(),
-        offset: int | None = None,
-        length: int | None = None,
+        position: int | None = None,
+        size: int | None = None,
     ) -> None:
-        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, offset, length))  # type: ignore
+        self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
     def open(self, buffer_size: int | None = None) -> PyDaftFile:
         return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
@@ -111,16 +111,20 @@ class File:
         return self._inner.name()
 
     @property
-    def offset(self) -> int | None:
-        """The byte offset for range reads, or None for full-file reads."""
-        return self._inner.offset()
-
-    @property
-    def length(self) -> int | None:
-        """The byte length for range reads, or None for full-file reads."""
-        return self._inner.length()
+    def position(self) -> int | None:
+        """The starting byte position for range reads, or None for full-file reads."""
+        return self._inner.position()
 
     def size(self) -> int:
+        """The size of the file in bytes.
+
+        For range reads this is the requested byte size;
+        otherwise it is derived from the underlying file.
+        """
+        range_size = self._inner.size()
+        if range_size is not None:
+            return range_size
+
         return PyDaftFile._from_file_reference(self._inner, buffer_size=BUFFER_SNIFF).size()
 
     def mime_type(self) -> str:
