@@ -80,7 +80,7 @@ def local_catalog(tmpdir):
     catalog.engine.dispose()
 
 
-def test_read_iceberg_accepts_pathlike_metadata(local_catalog):
+def test_read_iceberg_accepts_pathlike_metadata(local_catalog, patch_scan_task_file_path_scheme):
     table = local_catalog.create_table(
         "default.pathlike_metadata",
         Schema(NestedField(field_id=1, name="x", type=LongType())),
