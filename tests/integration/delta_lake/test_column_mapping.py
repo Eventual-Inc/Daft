@@ -332,6 +332,76 @@ def test_deltalake_read_column_mapping_malformed_no_field_ids(tmp_path):
         daft.read_deltalake(str(path))
 
 
+def test_deltalake_read_column_mapping_stats_pruning(tmp_path):
+    """Stats keyed by physical names get translated to logical names for predicate pushdown.
+
+    Two files with disjoint ranges; a predicate matching one file's range should return only
+    that file's rows. Exercises the min/max rename in `to_scan_tasks`.
+    """
+    pytest.importorskip("deltalake")
+    path = tmp_path / "cm_stats"
+    path.mkdir()
+    (path / "_delta_log").mkdir()
+
+    phys_schema = pa.schema([pa.field("col-aaa", pa.int64(), metadata={b"PARQUET:field_id": b"1"})])
+    pq.write_table(pa.table({"col-aaa": [1, 2, 3]}, schema=phys_schema), path / "f1.parquet")
+    pq.write_table(pa.table({"col-aaa": [10, 11, 12]}, schema=phys_schema), path / "f2.parquet")
+
+    schema_str = json.dumps(
+        {
+            "type": "struct",
+            "fields": [
+                {
+                    "name": "a",
+                    "type": "long",
+                    "nullable": True,
+                    "metadata": {
+                        "delta.columnMapping.id": 1,
+                        "delta.columnMapping.physicalName": "col-aaa",
+                    },
+                }
+            ],
+        }
+    )
+
+    def _add(name: str, lo: int, hi: int) -> dict:
+        return {
+            "add": {
+                "path": name,
+                "partitionValues": {},
+                "size": (path / name).stat().st_size,
+                "modificationTime": 0,
+                "dataChange": True,
+                # Stats keys use PHYSICAL names per Delta spec.
+                "stats": json.dumps({"numRecords": 3, "minValues": {"col-aaa": lo}, "maxValues": {"col-aaa": hi}}),
+            }
+        }
+
+    actions = [
+        {"protocol": {"minReaderVersion": 2, "minWriterVersion": 5}},
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": schema_str,
+                "partitionColumns": [],
+                "configuration": {
+                    "delta.columnMapping.mode": "name",
+                    "delta.columnMapping.maxColumnId": "1",
+                },
+                "createdTime": 0,
+            }
+        },
+        _add("f1.parquet", 1, 3),
+        _add("f2.parquet", 10, 12),
+    ]
+    (path / "_delta_log" / "00000000000000000000.json").write_text("\n".join(json.dumps(a) for a in actions))
+
+    result = daft.read_deltalake(str(path)).where(daft.col("a") == 2).to_arrow()
+    expected = pa.table({"a": pa.array([2], type=pa.int64())})
+    assert_pyarrow_tables_equal(result, expected)
+
+
 def test_deltalake_read_column_mapping_nested_struct(tmp_path):
     """Read a column-mapped table with a top-level struct column.
 
