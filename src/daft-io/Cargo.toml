@@ -25,6 +25,7 @@ itertools = {workspace = true}
 log = {workspace = true}
 opendal = {workspace = true, features = [
   "executors-tokio",  # Use tokio for async execution
+  "auto-register-services",  # Auto-register service schemes at startup via ctor
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
   "services-obs",  # Huawei Cloud Object Storage
