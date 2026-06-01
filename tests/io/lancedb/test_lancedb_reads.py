@@ -97,6 +97,21 @@ def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, 
     assert result["big_int"] == expected_big_ints
 
 
+def test_lancedb_reads_appended_versions(tmp_path):
+    dataset_path = str(tmp_path / "versioned.lance")
+    initial = {"vector": [[0.0, 0.5], [1.0, 1.5]], "big_int": [0, 1]}
+    appended = {"vector": [[2.0, 2.5]], "big_int": [2]}
+
+    lance.write_dataset(pa.Table.from_pydict(initial), dataset_path)
+    lance.write_dataset(pa.Table.from_pydict(appended), dataset_path, mode="append")
+
+    assert daft.read_lance(dataset_path, version=1).sort("big_int").to_pydict() == initial
+    assert daft.read_lance(dataset_path, version=2).sort("big_int").to_pydict() == {
+        "vector": initial["vector"] + appended["vector"],
+        "big_int": initial["big_int"] + appended["big_int"],
+    }
+
+
 def test_lancedb_with_version(lance_dataset_path):
     df = daft.read_lance(uri=lance_dataset_path, version=1)
     assert df.to_pydict() == data
