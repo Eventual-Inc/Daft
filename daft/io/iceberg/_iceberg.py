@@ -74,10 +74,44 @@ def _convert_iceberg_file_io_properties_to_io_config(
     return io_config if any_props_set else None
 
 
+def _resolve_ref_snapshot_id(table: "PyIcebergTable", ref_name: str, ref_kind: str) -> int:
+    from pyiceberg.table.refs import SnapshotRefType  # pyiceberg is an optional dependency
+
+    expected_ref_type = SnapshotRefType.BRANCH if ref_kind == "branch" else SnapshotRefType.TAG
+    ref = table.refs().get(ref_name)
+
+    if ref is None:
+        raise ValueError(f"Iceberg {ref_kind} {ref_name!r} does not exist")
+
+    if ref.snapshot_ref_type != expected_ref_type:
+        raise ValueError(f"Iceberg {ref_kind} {ref_name!r} is a {ref.snapshot_ref_type.value}")
+
+    return ref.snapshot_id
+
+
+def _resolve_snapshot_id(
+    table: "PyIcebergTable",
+    snapshot_id: int | None,
+    branch: str | None,
+    tag: str | None,
+) -> int | None:
+    if sum(value is not None for value in (snapshot_id, branch, tag)) > 1:
+        raise ValueError("Only one of snapshot_id, branch, or tag may be provided")
+
+    if branch is not None:
+        return _resolve_ref_snapshot_id(table, branch, "branch")
+    if tag is not None:
+        return _resolve_ref_snapshot_id(table, tag, "tag")
+
+    return snapshot_id
+
+
 @PublicAPI
 def read_iceberg(
     table: Union[str, "PyIcebergTable"],
     snapshot_id: int | None = None,
+    branch: str | None = None,
+    tag: str | None = None,
     io_config: IOConfig | None = None,
     checkpoint: "CheckpointConfig | None" = None,
 ) -> DataFrame:
@@ -88,6 +122,8 @@ def read_iceberg(
             such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
             created using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
+        branch (str, optional): Iceberg branch name to query. Cannot be combined with ``snapshot_id`` or ``tag``.
+        tag (str, optional): Iceberg tag name to query. Cannot be combined with ``snapshot_id`` or ``branch``.
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
@@ -124,6 +160,8 @@ def read_iceberg(
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, str):
         table = StaticTable.from_metadata(metadata_location=table)
+
+    snapshot_id = _resolve_snapshot_id(table, snapshot_id, branch, tag)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())

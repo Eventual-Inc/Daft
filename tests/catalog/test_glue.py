@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock, patch
 
 import boto3
 import botocore
@@ -470,6 +471,34 @@ def test_glue_iceberg_table_from_table_info_3(glue_catalog):
     }
     with pytest.raises(ValueError, match="expected 'ICEBERG'"):
         GlueIcebergTable.from_table_info(glue_catalog, table_info)
+
+
+def test_glue_iceberg_table_read_options(glue_catalog):
+    table = GlueIcebergTable.__new__(GlueIcebergTable)
+    table._catalog = glue_catalog
+    table._table = {"Name": "test_iceberg_table"}
+    table._io_config = None
+    table._pyiceberg_table = Mock()
+
+    assert GlueIcebergTable._read_options == {"snapshot_id", "branch", "tag"}
+
+    with pytest.raises(ValueError, match="Unsupported option"):
+        table.read(invalid_option="main")
+
+    with patch("daft.io.iceberg._iceberg.read_iceberg") as mock_read_iceberg:
+        mock_df = Mock()
+        mock_read_iceberg.return_value = mock_df
+
+        result = table.read(branch="main")
+
+        assert result is mock_df
+        mock_read_iceberg.assert_called_once_with(
+            table=table._pyiceberg_table,
+            snapshot_id=None,
+            branch="main",
+            tag=None,
+            io_config=None,
+        )
 
 
 ###

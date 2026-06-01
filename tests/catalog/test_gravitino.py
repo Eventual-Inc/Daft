@@ -452,8 +452,10 @@ class TestGravitinoTable:
         assert gravitino_table.name == "test_table"
 
     def test_read_options_attribute(self):
-        """Test _read_options on the Iceberg subclass includes snapshot_id."""
+        """Test _read_options on the Iceberg subclass includes snapshot selection options."""
         assert "snapshot_id" in GravitinoIcebergTable._read_options
+        assert "branch" in GravitinoIcebergTable._read_options
+        assert "tag" in GravitinoIcebergTable._read_options
 
     def test_write_options_attribute(self):
         """Test _write_options on the Iceberg subclass is a set."""
@@ -471,6 +473,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=None,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -486,6 +490,38 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=12345,
+            branch=None,
+            tag=None,
+            io_config=gravitino_table._inner.io_config,
+        )
+
+    @patch("daft.catalog.__gravitino._catalog.read_iceberg")
+    def test_read_iceberg_table_with_branch_and_tag(self, mock_read_iceberg, gravitino_table, mock_pyiceberg_table):
+        """Test reading an Iceberg table with branch and tag options."""
+        mock_df = Mock()
+        mock_read_iceberg.return_value = mock_df
+
+        result = gravitino_table.read(branch="audit")
+
+        assert result is mock_df
+        mock_read_iceberg.assert_called_once_with(
+            table=mock_pyiceberg_table,
+            snapshot_id=None,
+            branch="audit",
+            tag=None,
+            io_config=gravitino_table._inner.io_config,
+        )
+
+        mock_read_iceberg.reset_mock()
+
+        result = gravitino_table.read(tag="v1")
+
+        assert result is mock_df
+        mock_read_iceberg.assert_called_once_with(
+            table=mock_pyiceberg_table,
+            snapshot_id=None,
+            branch=None,
+            tag="v1",
             io_config=gravitino_table._inner.io_config,
         )
 

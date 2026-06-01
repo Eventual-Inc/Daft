@@ -178,7 +178,7 @@ class GravitinoIcebergTable(GravitinoTable):
     """GravitinoIcebergTable is for Gravitino tables with format starting with 'ICEBERG'."""
 
     _pyiceberg_table: PyIcebergTable
-    _read_options: set[str] = {"snapshot_id"}
+    _read_options: set[str] = {"snapshot_id", "branch", "tag"}
     _write_options: set[str] = set()
 
     @classmethod
@@ -195,6 +195,8 @@ class GravitinoIcebergTable(GravitinoTable):
         return read_iceberg(
             table=self._pyiceberg_table,
             snapshot_id=options.get("snapshot_id"),
+            branch=options.get("branch"),
+            tag=options.get("tag"),
             io_config=self._inner.io_config,
         )
 
