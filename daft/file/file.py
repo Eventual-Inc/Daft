@@ -116,15 +116,7 @@ class File:
         return self._inner.position()
 
     def size(self) -> int:
-        """The size of the file in bytes.
-
-        For range reads this is the requested byte size;
-        otherwise it is derived from the underlying file.
-        """
-        range_size = self._inner.size()
-        if range_size is not None:
-            return range_size
-
+        """The size of the file in bytes, derived from the underlying file."""
         return PyDaftFile._from_file_reference(self._inner, buffer_size=BUFFER_SNIFF).size()
 
     def mime_type(self) -> str:

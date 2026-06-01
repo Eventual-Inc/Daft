@@ -316,7 +316,7 @@ def test_file_path_expression_method():
 def test_file_position_and_size_properties():
     f = daft.File("s3://bucket/blob", position=100, size=50)
     assert f.position == 100
-    assert f.size() == 50
+    assert f._inner.size() == 50
 
 
 def test_file_position_and_size_default_to_none():
@@ -332,6 +332,7 @@ def test_file_byte_range_read(tmp_path: Path):
     temp_file.write_bytes(data)
 
     f = daft.File(str(temp_file.absolute()), position=4, size=6)
+    assert f.size() == 6
     with f.open() as fh:
         result = fh.read()
     assert result == b"456789"
