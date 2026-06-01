@@ -193,6 +193,9 @@ jobs:
           uv pip install "pyiceberg==0.7.0"
         fi
 
+    - name: Build hello extension (for extension tests)
+      run: cargo build --release --manifest-path examples/hello/Cargo.toml
+
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
       run: |
