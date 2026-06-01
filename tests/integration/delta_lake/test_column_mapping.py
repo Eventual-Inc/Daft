@@ -46,16 +46,26 @@ def _physical_schema(
     )
 
 
-def _add_action(path: str, size: int, partition_values: dict[str, str]) -> dict:
-    return {
-        "add": {
-            "path": path,
-            "partitionValues": partition_values,
-            "size": size,
-            "modificationTime": 0,
-            "dataChange": True,
-        }
+def _add_action(
+    path: str,
+    size: int,
+    partition_values: dict[str, str] | None = None,
+    stats: dict | None = None,
+) -> dict:
+    """Build a Delta `add` action. `stats` keys must use PHYSICAL names per Delta spec."""
+    action: dict = {
+        "path": path,
+        "size": size,
+        "modificationTime": 0,
+        "dataChange": True,
     }
+
+    if partition_values is not None:
+        action["partitionValues"] = partition_values
+    if stats is not None:
+        action["stats"] = json.dumps(stats)
+
+    return {"add": action}
 
 
 def _write_cm_table(
@@ -117,13 +127,13 @@ def _write_cm_table(
                 _add_action(
                     file_rel,
                     (path / file_rel).stat().st_size,
-                    {p: str(v) for p, v in zip(phys_part_keys, key)},
+                    partition_values={p: str(v) for p, v in zip(phys_part_keys, key)},
                 )
             )
     else:
         file_rel = f"part-{uuid.uuid4().hex}.parquet"
         pq.write_table(physical_table, path / file_rel)
-        add_entries.append(_add_action(file_rel, (path / file_rel).stat().st_size, {}))
+        add_entries.append(_add_action(file_rel, (path / file_rel).stat().st_size))
 
     protocol: dict = {
         "protocol": {
@@ -274,7 +284,7 @@ def _write_nested_struct_cm_table(path: pathlib.Path) -> pa.Table:
 
     file_rel = f"part-{uuid.uuid4().hex}.parquet"
     pq.write_table(physical_table, path / file_rel)
-    add = _add_action(file_rel, (path / file_rel).stat().st_size, {})
+    add = _add_action(file_rel, (path / file_rel).stat().st_size)
 
     actions = [
         {
@@ -365,17 +375,11 @@ def test_deltalake_read_column_mapping_stats_pruning(tmp_path):
     )
 
     def _add(name: str, lo: int, hi: int) -> dict:
-        return {
-            "add": {
-                "path": name,
-                "partitionValues": {},
-                "size": (path / name).stat().st_size,
-                "modificationTime": 0,
-                "dataChange": True,
-                # Stats keys use PHYSICAL names per Delta spec.
-                "stats": json.dumps({"numRecords": 3, "minValues": {"col-aaa": lo}, "maxValues": {"col-aaa": hi}}),
-            }
-        }
+        return _add_action(
+            name,
+            (path / name).stat().st_size,
+            stats={"numRecords": 3, "minValues": {"col-aaa": lo}, "maxValues": {"col-aaa": hi}},
+        )
 
     actions = [
         {"protocol": {"minReaderVersion": 2, "minWriterVersion": 5}},
