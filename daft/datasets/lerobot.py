@@ -1,7 +1,7 @@
 """LeRobot Dataset v3.0 helpers for `daft.datasets`.
 
-This module reads the file-based LeRobot v3 layout (``meta/episodes``, ``data``,
-``videos``) and exposes episode-level scans plus frame expansion utilities.
+This module reads the file-based LeRobot v3 layout (`meta/episodes`, `data`,
+`videos`) and exposes episode-level scans plus frame expansion utilities.
 
 See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for format details.
 """
@@ -9,15 +9,15 @@ See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for format details.
 from __future__ import annotations
 
 import re
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+import json
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import daft
 from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
-from daft.exceptions import DaftCoreException
-from daft.expressions import Expression, col, lit
+from daft.expressions import col, lit
 from daft.file import VideoFile
+from daft.exceptions import DaftCoreException
 from daft.functions import lpad
 from daft.functions.file_ import video_file
 from daft.udf import func
@@ -27,75 +27,16 @@ if TYPE_CHECKING:
     from daft.dataframe import DataFrame
 
 
-# Column names used by Hugging Face LeRobot v3 metadata / data shards.
-_DATA_CHUNK_CANDIDATES = ("data/chunk_index", "data_chunk_index")
-_DATA_FILE_CANDIDATES = ("data/file_index", "data_file_index")
-
-_DATA_PATH_COL = "lerobot_data_parquet_path"
-
-
-def _is_probable_hf_repo_id(uri: str) -> bool:
-    return bool(re.fullmatch(r"[\w.-]+/[\w.-]+", uri))
-
 
 def _normalize_dataset_root(uri: str) -> str:
     """Return a canonical dataset root prefix (no trailing slash) for path joins."""
     u = uri.strip()
-    if _is_probable_hf_repo_id(u):
+    # Input looks like a Hugging Face repo ID, i.e. "org/name"
+    is_hf_repo_id = bool(re.fullmatch(r"[\w.-]+/[\w.-]+", uri))
+
+    if is_hf_repo_id:
         u = f"hf://datasets/{u}"
     return u.rstrip("/")
-
-
-def _https_base_for_hf_datasets_root(root: str) -> str | None:
-    if not root.startswith("hf://datasets/"):
-        return None
-    repo_id = root.removeprefix("hf://datasets/")
-    return f"https://huggingface.co/datasets/{repo_id}/resolve/main"
-
-
-def _pick_first_column(df: DataFrame, candidates: tuple[str, ...]) -> str:
-    names = set(df.column_names)
-    for c in candidates:
-        if c in names:
-            return c
-    raise ValueError(
-        "Expected one of columns "
-        + ", ".join(repr(c) for c in candidates)
-        + f" in episodes dataframe, but found columns: {sorted(names)}"
-    )
-
-
-def _data_parquet_path_expr(root_expr: Expression, chunk_col: str, file_col: str) -> Expression:
-    """Build ``{root}/data/chunk-XXX/file-YYY.parquet``."""
-    chunk_str = lpad(col(chunk_col).cast(DataType.string), 3, "0")
-    file_str = lpad(col(file_col).cast(DataType.string), 3, "0")
-    return (
-        root_expr.cast(DataType.string) + lit("/data/chunk-") + chunk_str + lit("/file-") + file_str + lit(".parquet")
-    )
-
-
-def _video_mp4_path_expr(root_expr: Expression, video_key: str) -> Expression:
-    """Build ``{root}/videos/{video_key}/chunk-XXX/file-YYY.mp4`` from episode parquet columns."""
-    chunk_col = f"videos/{video_key}/chunk_index"
-    file_col = f"videos/{video_key}/file_index"
-    chunk_str = lpad(col(chunk_col).cast(DataType.string), 3, "0")
-    file_str = lpad(col(file_col).cast(DataType.string), 3, "0")
-    return (
-        root_expr.cast(DataType.string)
-        + lit(f"/videos/{video_key}/chunk-")
-        + chunk_str
-        + lit("/file-")
-        + file_str
-        + lit(".mp4")
-    )
-
-
-def _video_feature_keys(features: dict[str, Any]) -> tuple[str, ...]:
-    keys: list[str] = []
-    for name, meta in sorted(features.items()):
-        if isinstance(meta, dict) and meta.get("dtype") == "video":
-            keys.append(name)
-    return tuple(keys)
 
 
 @func(return_dtype=DataType.image())
@@ -169,183 +110,110 @@ def _decode_lerobot_video_timestamp(
     return closest_img
 
 
-def _assert_episodes_have_video_cols(episodes: DataFrame, video_keys: tuple[str, ...]) -> None:
-    names = episodes.column_names
-    missing = [
-        candidate
-        for vk in video_keys
-        for candidate in (
-            f"videos/{vk}/chunk_index",
-            f"videos/{vk}/file_index",
-            f"videos/{vk}/from_timestamp",
-        )
-        if candidate not in names
-    ]
-    if missing:
-        raise ValueError(
-            "Episodes dataframe is missing LeRobot video index columns needed for decoding: "
-            + ", ".join(repr(x) for x in missing)
-        )
+class Feature(TypedDict):
+    dtype: str
+
+class LeRobotInfo(TypedDict):
+    codebase_version: str
+    data_path: str
+    video_path: str
+    features: dict[str, Feature]
+
+
+def _read_info(normalized_uri: str, io_config: IOConfig | None = None) -> LeRobotInfo:
+    with daft.open_file(f"{normalized_uri}/meta/info.json", io_config=io_config) as f:
+        info = cast(LeRobotInfo, json.load(f))
+        if info["codebase_version"] != "v3.0":
+            raise ValueError("`daft.datasets.lerobot` currently only supports LeRobot datasets of v3 and above")
+        return info
 
 
 @PublicAPI
-def read_episodes(dataset_uri: str, io_config: IOConfig | None = None) -> DataFrame:
+def read(
+    dataset_uri: str,
+    io_config: IOConfig | None = None,
+    include_stats: bool = False,
+    load_video_frames: str | list[str] | bool = False,
+) -> DataFrame:
+    """Read LeRobot v3 episode metadata as a lazy DataFrame (one row per frame with episode metadata)."""
+    root = _normalize_dataset_root(dataset_uri)
+
+    episode_df = daft.datasets.lerobot.read_episodes(dataset_uri, io_config=io_config, include_stats=include_stats)
+    frame_df = daft.read_parquet(f"{root}/data/**")
+    df = episode_df.join(frame_df, on=["episode_index"])
+    df = df.exclude("data/chunk_index", "data/file_index")
+
+    # Load video frames into memory
+    if load_video_frames is not False:
+        if load_video_frames is True:
+            video_keys = []  # TODO
+        elif isinstance(load_video_frames, str):
+            video_keys = [load_video_frames]
+        elif isinstance(load_video_frames, list) and all(isinstance(k, str) for k in load_video_frames):
+            video_keys = load_video_frames
+        else:
+            raise ValueError("TODO")
+
+        # To increase parallelism, reduce batch size
+        df = df.into_batches(16)  # TODO: Set it in the batch UDF instead?
+        for k in video_keys:
+            # TODO: Optimize by using a batch UDF to avoid opening the same video multiple times
+            df = df.with_column(k, get_video_frame_by_idx(f"videos/{k}/video", col("frame_idx")))
+            df = df.exclude(f"videos/{k}/video")
+
+        # TODO: What about raw images, what do i do about them? Is that a thing in LeRobot v3
+
+    return df
+
+
+@PublicAPI
+def read_episodes(
+    dataset_uri: str,
+    io_config: IOConfig | None = None,
+    include_meta: bool = False,
+    include_stats: bool = False,
+    include_video_metadata: bool = False,
+) -> DataFrame:
     """Read LeRobot v3 episode metadata as a lazy DataFrame (one row per episode).
 
-    This reads ``meta/episodes/**/*.parquet`` under the dataset root.
+    This reads the `meta/episodes/**/*.parquet` path under the dataset root.
 
     Args:
-        dataset_uri: Local directory, ``hf://datasets/org/name`` URI, or bare
-            ``org/name`` which is treated as a Hub dataset id.
+        dataset_uri: Huggingface repo id (`org/name`),
+            or a local / remote directory (`s3://...`, `hf://datasets/...`)
         io_config: Optional IO configuration for remote reads.
 
     Returns:
-        Lazy episode metadata DataFrame.
+        Lazy DataFrame of episode metadata.
     """
     root = _normalize_dataset_root(dataset_uri)
-    return daft.read_parquet(f"{root}/meta/episodes/**/*.parquet", io_config=io_config)
+    info = _read_info(root, io_config=io_config)
 
+    # TODO: What is the `meta` episodes into used for? How is it different from the `videos` info?
+    df = daft.read_parquet(f"{root}/meta/episodes/**/*.parquet", io_config=io_config)
+    if not include_meta:
+        df = df.exclude(*(c for c in df.column_names if c.startswith("meta/")))
+    if not include_stats:
+        df = df.exclude(*(c for c in df.column_names if c.startswith("stats/")))
+    
+    # Get the video keys
+    video_keys = set(name for name, feat_info in info["features"].items() if feat_info["dtype"] == "video")
 
-@PublicAPI
-def read_frames(dataset_uri: str, io_config: IOConfig | None = None) -> DataFrame:
-    """Read all frame data from a LeRobot v3 dataset into a lazy DataFrame (one row per frame).
+    for key in video_keys:
+        file_name_expr = (
+            lit(f"{root}/videos/{key}/chunk-")
+            + lpad(col(f"videos/{key}/chunk_index").cast(DataType.string), 3, "0")    
+            + lit("/file-")
+            + lpad(col(f"videos/{key}/file_index").cast(DataType.string), 3, "0")
+            + lit(".mp4")
+        )
 
-    This reads the ``data/chunk-XXX/file-YYY.parquet`` under the dataset root. If you only need a subset of the frames, use :func:`load_episode_frames` instead from a filtered episodes dataframe from :func:`read_episodes`.
+        df = df.with_column(f"videos/{key}/video", video_file(file_name_expr, verify=False, io_config=io_config))
 
-    Args:
-        dataset_uri: Same dataset root as passed to :func:`read_episodes` (local path,
-            ``hf://datasets/org/name``, or bare ``org/name`` Hub id).
-        io_config: Optional IO configuration for remote reads.
+    if not include_video_metadata:
+        df = df.exclude(*(c for c in df.column_names if c.startswith("videos/") and not c.endswith("/video")))
 
-    Returns:
-        Lazy DataFrame of frame metadata.
-    """
-    root = _normalize_dataset_root(dataset_uri)
-    return daft.read_parquet(f"{root}/data/**/*.parquet", io_config=io_config)
-
-
-@PublicAPI
-def load_episode_frames(
-    episodes: DataFrame,
-    dataset_uri: str,
-    *,
-    io_config: IOConfig | None = None,
-    columns: list[str] | None = None,
-    decode_videos: bool = False,
-    video_keys: list[str] | None = None,
-    timestamp_tolerance_seconds: float = 1e-4,
-    decode_image_width: int | None = None,
-    decode_image_height: int | None = None,
-) -> DataFrame:
-    """Expand filtered episode rows into frame-level rows from ``data/`` Parquet shards.
-
-    This executes a small eager step to discover distinct shard paths from the
-    current logical plan, then lazily reads only those Parquet files and keeps
-    rows whose ``episode_index`` appears in ``episodes``.
-
-    Optionally decodes MP4 shards under ``videos/<feature_key>/chunk-XXX/file-YYY.mp4`` into
-    :class:`~daft.datatype.DataType` ``image()`` columns keyed by LeRobot ``feature_key`` strings
-    (typically ``dtype: "video"`` entries in ``meta/info.json``), using the episode-level
-    ``videos/<key>/from_timestamp``, ``videos/<key>/chunk_index``, and ``videos/<key>/file_index``
-    fields plus row ``timestamp`` values (matching how ``LeRobotDataset`` aligns frames).
-
-    Preconditions:
-    - ``episodes`` must include either ``data/chunk_index`` / ``data/file_index``
-      (canonical LeRobot v3) or the ``data_chunk_index`` / ``data_file_index`` spelling.
-
-    Args:
-        episodes: Episode-level dataframe (typically filtered) from :func:`read_episodes`.
-        dataset_uri: Same dataset root as passed to :func:`read_episodes` (local path,
-            ``hf://datasets/org/name``, or bare ``org/name`` Hub id).
-        io_config: Optional IO configuration for remote reads.
-        columns: Optional projection of frame columns (passed to :meth:`daft.DataFrame.select`).
-        decode_videos: When ``True``, add decoded camera images for each declared ``video_keys`` subset.
-            Requires PyAV and Pillow plus per-episode columns ``videos/<key>/{chunk_index,file_index,from_timestamp}``.
-        video_keys: Subset of video feature keys from ``meta/info.json`` (must have ``dtype: "video"``).
-            When ``None`` and ``decode_videos`` is enabled, all video features are decoded.
-        timestamp_tolerance_seconds: Maximum |PTS - (from_timestamp + timestamp)| in seconds (LeRobot default is ~1e-4).
-        decode_image_width: If set with ``decode_image_height``, nearest-neighbor resize decoded frames.
-        decode_image_height: See ``decode_image_width``.
-
-    Returns:
-        Lazy frame-level dataframe.
-    """
-    root = _normalize_dataset_root(dataset_uri)
-    root_expr = lit(root)
-
-    chunk_col = _pick_first_column(episodes, _DATA_CHUNK_CANDIDATES)
-    file_col = _pick_first_column(episodes, _DATA_FILE_CANDIDATES)
-
-    with_paths = episodes.with_column(
-        _DATA_PATH_COL,
-        _data_parquet_path_expr(root_expr, chunk_col, file_col),
-    )
-
-    paths = with_paths.select(_DATA_PATH_COL).distinct().to_pydict()[_DATA_PATH_COL]
-    if len(paths) == 0:
-        empty_cols = list(columns) if columns is not None else ["episode_index", "frame_index", "timestamp"]
-        return daft.from_pydict({c: [] for c in empty_cols})
-
-    frames = daft.read_parquet(paths, io_config=io_config)
-
-    decode_w = decode_image_width or 0
-    decode_h = decode_image_height or 0
-    if (decode_image_width is None) != (decode_image_height is None):
-        raise ValueError("decode_image_width and decode_image_height must both be set or both omitted.")
-
-    if decode_videos:
-        info = read_info(root)
-        meta_vkeys = _video_feature_keys(info.get("features", {}))
-        if video_keys is None:
-            selected_vkeys = meta_vkeys
-        else:
-            unknown = sorted(set(video_keys) - set(meta_vkeys))
-            if unknown:
-                raise ValueError(
-                    "video_keys contains keys not declared as dtype 'video' in meta/info.json: "
-                    + ", ".join(repr(k) for k in unknown)
-                )
-            selected_vkeys = tuple(video_keys)
-
-        if selected_vkeys:
-            if "timestamp" not in frames.column_names:
-                raise ValueError(
-                    "decode_videos requires a `timestamp` column on frame rows (LeRobot v3 Parquet default)."
-                )
-            _assert_episodes_have_video_cols(episodes, selected_vkeys)
-
-            join_cols = ["episode_index"]
-            for vk in selected_vkeys:
-                join_cols.extend(
-                    [
-                        f"videos/{vk}/chunk_index",
-                        f"videos/{vk}/file_index",
-                        f"videos/{vk}/from_timestamp",
-                    ]
-                )
-            vid_meta = episodes.select(*join_cols).distinct()
-            frames = frames.join(vid_meta, on="episode_index", how="inner")
-
-            for vk in selected_vkeys:
-                frames = frames.with_column(
-                    vk,
-                    _decode_lerobot_video_timestamp(
-                        video_file(
-                            _video_mp4_path_expr(root_expr, vk),
-                            io_config=io_config,
-                        ),
-                        col(f"videos/{vk}/from_timestamp"),
-                        col("timestamp"),
-                        lit(timestamp_tolerance_seconds),
-                        lit(decode_w),
-                        lit(decode_h),
-                    ),
-                )
-
-    if columns is not None:
-        frames = frames.select(*columns)
-    allowed = with_paths.select("episode_index").distinct()
-    return frames.join(allowed, on="episode_index", how="inner")
+    return df
 
 
 @PublicAPI
@@ -357,27 +225,16 @@ def read_tasks(dataset_uri: str, io_config: IOConfig | None = None) -> DataFrame
     """
     root = _normalize_dataset_root(dataset_uri)
 
-    https_base = _https_base_for_hf_datasets_root(root)
-    if https_base is not None:
-        pq_url = f"{https_base}/meta/tasks.parquet"
-        try:
-            return daft.read_parquet(pq_url, io_config=io_config)
-        except (OSError, DaftCoreException, FileNotFoundError):
-            return daft.read_json(f"{root}/meta/tasks.jsonl", io_config=io_config)
-
-    pq_path = Path(root) / "meta" / "tasks.parquet"
-    if pq_path.is_file():
-        return daft.read_parquet(str(pq_path), io_config=io_config)
-
-    jsonl_path = Path(root) / "meta" / "tasks.jsonl"
-    if jsonl_path.is_file():
-        return daft.read_json(str(jsonl_path), io_config=io_config)
-
-    raise FileNotFoundError(f"No tasks metadata found under {root}/meta (tasks.parquet or tasks.jsonl)")
+    pq_url = f"{root}/meta/tasks.parquet"
+    try:
+        return daft.read_parquet(pq_url, io_config=io_config)
+    except (OSError, DaftCoreException, FileNotFoundError):
+        return daft.read_json(f"{root}/meta/tasks.jsonl", io_config=io_config)
 
 
 __all__ = [
     "load_episode_frames",
+    "read",
     "read_episodes",
     "read_tasks",
 ]
