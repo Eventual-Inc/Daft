@@ -1,7 +1,60 @@
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import MagicMock
+
+import pytest
+
 import daft.runners.flotilla as flotilla
 from daft.context import execution_config_ctx
+from daft.runners.flotilla import RaySwordfishTaskHandle
+from tests.conftest import get_tests_daft_runner_name
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="flotilla-specific behavior")
+def test_swordfish_task_handle_cancel_does_not_fail_ray_task(monkeypatch):
+    """Regression: cancelling a swordfish task must not surface it as FAILED in Ray.
+
+    Cancellation used to go through `ray.cancel(result_handle)`, which Ray
+    records as a FAILED entry in its task table. The handle now routes
+    through `actor.cancel_input.remote(...)`, which closes the per-input
+    result channel inside the worker so `run_plan` returns cleanly — the
+    Ray task ends FINISHED.
+
+    The test tolerates both the pre-fix and post-fix constructor /
+    coroutine shapes of `RaySwordfishTaskHandle` so the failure on pre-fix
+    code reads `must not call ray.cancel` (the actual contract) instead
+    of a `TypeError` on the missing kwargs.
+    """
+    import inspect
+
+    ray_cancel_calls = []
+    monkeypatch.setattr(
+        "daft.runners.flotilla.ray.cancel",
+        lambda *a, **kw: ray_cancel_calls.append((a, kw)),
+    )
+
+    actor = MagicMock()
+    actor.cancel_input.remote.side_effect = lambda *a, **kw: asyncio.sleep(0)
+
+    params = inspect.signature(RaySwordfishTaskHandle).parameters
+    kwargs = {"result_handle": MagicMock()}
+    if "actor_handle" in params:
+        kwargs["actor_handle"] = actor
+    if "task_id" in params:
+        kwargs["task_id"] = 42
+    if "plan_fingerprint" in params:
+        kwargs["plan_fingerprint"] = 7
+    handle = RaySwordfishTaskHandle(**kwargs)
+
+    # Pre-fix `cancel` is sync; post-fix it's async. Handle either shape.
+    result = handle.cancel()
+    if asyncio.iscoroutine(result):
+        asyncio.run(result)
+
+    assert not ray_cancel_calls, "RaySwordfishTaskHandle.cancel must not call ray.cancel"
+    if "actor_handle" in params:
+        actor.cancel_input.remote.assert_called_once_with(7, 42)
 
 
 def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
