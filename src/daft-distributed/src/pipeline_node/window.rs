@@ -8,13 +8,16 @@ use daft_dsl::{
     window_to_agg_exprs,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -259,13 +262,10 @@ impl WindowNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(
-                HashClusteringConfig::new(
-                    child.config().clustering_spec.num_partitions(),
-                    partition_by.clone().into_iter().map(|e| e.into()).collect(),
-                )
-                .into(),
-            ),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(
+                child.config().clustering_spec.num_partitions(),
+                partition_by.clone(),
+            )),
         );
 
         let base = WindowNodeBase::new(config, context, aliases, child);

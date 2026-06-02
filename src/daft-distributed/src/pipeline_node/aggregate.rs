@@ -22,8 +22,9 @@ use daft_schema::{
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        TaskBuilderStream, project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, TaskBuilderStream, project::ProjectNode,
+        translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -78,9 +79,9 @@ impl AggregateNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            // Often child is a repartition node
-            // TODO: Be more specific if group_by columns overlap with partitioning columns
-            child.config().clustering_spec.clone(),
+            // Often the child is a repartition node.
+            // TODO: Be more specific if group_by columns overlap with partitioning columns.
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

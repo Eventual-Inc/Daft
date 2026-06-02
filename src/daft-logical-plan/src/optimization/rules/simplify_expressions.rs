@@ -68,7 +68,7 @@ mod test {
                 output_schema: schema.clone(),
                 source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                     source_schema: schema,
-                    clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                    clustering_spec: Arc::new(ClusteringSpec::unknown(0)),
                 })),
                 stats_state: StatsState::NotMaterialized,
                 checkpoint: None,
