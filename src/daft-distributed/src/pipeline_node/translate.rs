@@ -6,11 +6,12 @@ use common_metrics::Meter;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
+    clustering_is_covered_by,
     expr::{
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    is_partition_compatible, resolved_col,
+    resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -102,10 +103,13 @@ impl LogicalPlanToPipelineNodeTranslator {
             return Ok(true);
         }
 
-        // The clustering keys are already bound (to the input node's schema), so compare them
-        // directly against the operator's bound partition columns.
+        // The clustering keys are already bound (to the input node's schema). We can skip the
+        // shuffle if partitioning by the operator's columns keeps that clustering intact — the
+        // partition columns exactly match the input clustering or are a superset of it (each
+        // operator group is then contained within a single input partition).
+        // `clustering_is_covered_by` handles both cases.
         let is_compatible = if input_clustering_spec.is_hash() {
-            is_partition_compatible(input_clustering_spec.partition_by(), partition_columns)
+            clustering_is_covered_by(input_clustering_spec.partition_by(), partition_columns)
         } else {
             false
         };
@@ -160,7 +164,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 info.pushdowns.clone(),
                                 scan_tasks,
                                 source.output_schema.clone(),
-                            )),
+                                info.clustering_keys.clone(),
+                            )?),
                             &self.meter,
                         )
                     }

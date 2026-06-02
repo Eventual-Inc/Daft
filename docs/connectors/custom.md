@@ -160,6 +160,68 @@ data_source = TextFileDataSource([sample_file])
 (Showing first 5 of 5 rows)
 ```
 
+### Optional: Declaring Clustering to Skip Shuffles
+
+Clustering is an *execution-time* property: it describes how rows are distributed across the
+in-memory partitions a query runs over. It is distinct from *storage* partitioning (the on-disk
+layout declared via `get_partition_fields()`, e.g. Hive/Iceberg directories) — a source can be laid
+out one way on disk yet emit partitions clustered another way.
+
+If your source already emits data that is hash-partitioned by some keys — for example, each
+[`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask) corresponds to exactly one
+`(producer, hour)` group — you can tell Daft by overriding `get_clustering_keys()`. Daft then
+skips the shuffle it would otherwise insert before a downstream `groupby`, `Window.partition_by`,
+or `distinct` whose keys are *covered by* (equal to, or a superset of) the declared clustering.
+
+```python
+from daft import col
+from daft.io.clustering import ClusteringKeys
+from daft.io.source import DataSource
+
+
+class ClusteredSource(DataSource):
+    # ... name / schema / get_tasks as above ...
+
+    def get_clustering_keys(self) -> ClusteringKeys | None:
+        # Each task emits exactly one (a, b) group, so the output is hash-partitioned by (a, b).
+        return ClusteringKeys.hash("a", "b")
+```
+
+Keys may be column names or arbitrary [`Expression`](../api/expressions.md)s. An expression-valued
+key follows a projection that materializes it as a derived column, so the clustering is preserved
+even after a `with_column`:
+
+```python
+def hour_bucket(ts: "daft.Expression") -> "daft.Expression":
+    # bucket a unix-epoch timestamp (in seconds) into hourly buckets
+    return ts // 3600
+
+
+class EventSource(DataSource):
+    def get_clustering_keys(self) -> ClusteringKeys | None:
+        return ClusteringKeys.hash(col("producer"), hour_bucket(col("ts")))
+
+
+df = (
+    EventSource().read()
+    .with_column("hour", hour_bucket(col("ts")))  # materialize the expression key as a column
+    .groupby("producer", "hour")                   # covered by the declared clustering => no shuffle
+    .sum("value")
+)
+```
+
+!!! note "Shuffle elision applies to the distributed runner"
+
+    Daft only inserts these shuffles when running distributed (e.g. on Ray); the single-node
+    runner already executes the operators locally. The declaration is therefore a no-op for local
+    execution and only changes plans for distributed runs.
+
+!!! warning "Clustering must hold for every task"
+
+    Daft trusts the declaration. Only override `get_clustering_keys()` if every row with the same
+    hash of the declared keys is genuinely produced within a single task; otherwise results may be
+    incorrect. Declaring a sort order within partitions is not yet supported.
+
 ## Writing to a Custom Data Sink
 
 ### Step 1: Implement the `DataSink` Interface

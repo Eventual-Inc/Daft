@@ -206,11 +206,13 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
+        let clustering_keys = scan_operator.0.clustering_keys();
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
+            clustering_keys,
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
         if let Some(file_path_column) = &scan_operator.0.file_path_column()
