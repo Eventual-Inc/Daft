@@ -183,6 +183,56 @@ def test_array_agg_sql():
     assert actual_global == {"xs": [[10, 20, 30]]}
 
 
+def test_array_agg_order_by_sql():
+    df = daft.from_pydict(
+        {
+            "g": [1, 1, 1, 2, 2],
+            "x": [2, 1, 3, 2, 1],
+        }
+    )
+
+    actual_asc = daft.sql(
+        """
+    SELECT
+        g,
+        array_agg(x ORDER BY x) AS xs
+    FROM df
+    GROUP BY g
+    ORDER BY g
+    """,
+        df=df,
+    ).to_pydict()
+
+    assert actual_asc == {
+        "g": [1, 2],
+        "xs": [[1, 2, 3], [1, 2]],
+    }
+
+    actual_desc = daft.sql(
+        """
+    SELECT
+        g,
+        array_agg(x ORDER BY x DESC) AS xs
+    FROM df
+    GROUP BY g
+    ORDER BY g
+    """,
+        df=df,
+    ).to_pydict()
+
+    assert actual_desc == {
+        "g": [1, 2],
+        "xs": [[3, 2, 1], [2, 1]],
+    }
+
+
+def test_array_agg_order_by_expression_mismatch():
+    df = daft.from_pydict({"g": [1, 1], "x": [1, 2], "y": [2, 1]})
+
+    with pytest.raises(Exception, match="array_agg ORDER BY currently supports ordering by the aggregated expression only"):
+        daft.sql("SELECT g, array_agg(x ORDER BY y) AS xs FROM df GROUP BY g", df=df).collect()
+
+
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [

@@ -11,7 +11,7 @@ use daft_dsl::{
         BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs,
         ScalarFunctionFactory, ScalarUDF,
     },
-    null_lit, unresolved_col,
+    lit, null_lit, unresolved_col,
 };
 use daft_functions_utf8::{LStrip, RStrip, Strip};
 use daft_session::{ScalarFunction as SessionFunction, Session};
@@ -518,8 +518,8 @@ impl SQLPlanner<'_> {
         // );
 
         // recurse on function arguments
-        let args = match &func.args {
-            sqlparser::ast::FunctionArguments::None => vec![],
+        let (args, argument_clauses) = match &func.args {
+            sqlparser::ast::FunctionArguments::None => (vec![], vec![]),
             sqlparser::ast::FunctionArguments::Subquery(_) => {
                 unsupported_sql_err!("subquery function argument")
             }
@@ -557,10 +557,7 @@ impl SQLPlanner<'_> {
                     (_, DuplicateTreatment::All) => (),
                 }
 
-                if !args.clauses.is_empty() {
-                    unsupported_sql_err!("function arguments with clauses");
-                }
-                args.args.clone()
+                (args.args.clone(), args.clauses.clone())
             }
         };
 
@@ -578,7 +575,63 @@ impl SQLPlanner<'_> {
             })
         } else {
             // validate input argument arity and return the validated expression.
-            fn_match.to_expr(&args, self)
+            let expr = fn_match.to_expr(&args, self)?;
+
+            if fn_name == "array_agg" {
+                if argument_clauses.len() > 1 {
+                    unsupported_sql_err!("array_agg supports at most one argument clause");
+                }
+                if let Some(clause) = argument_clauses.first() {
+                    let order_by = match clause {
+                        sqlparser::ast::FunctionArgumentClause::OrderBy(order_by) => order_by,
+                        _ => {
+                            unsupported_sql_err!(
+                                "array_agg only supports ORDER BY as an argument clause"
+                            )
+                        }
+                    };
+
+                    if order_by.len() != 1 {
+                        unsupported_sql_err!(
+                            "array_agg ORDER BY supports exactly one expression"
+                        );
+                    }
+
+                    let order = &order_by[0];
+                    let Some(arg_expr) = args.first() else {
+                        unsupported_sql_err!("array_agg requires one argument");
+                    };
+
+                    let arg_expr = match arg_expr {
+                        FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => expr,
+                        _ => {
+                            unsupported_sql_err!(
+                                "array_agg ORDER BY requires an unnamed expression argument"
+                            )
+                        }
+                    };
+
+                    if &order.expr != arg_expr {
+                        unsupported_sql_err!(
+                            "array_agg ORDER BY currently supports ordering by the aggregated expression only"
+                        );
+                    }
+
+                    let order_options = order.options;
+                    let desc = order_options.asc.is_some_and(|asc| !asc);
+                    let nulls_first = order_options.nulls_first.unwrap_or(desc);
+
+                    return Ok(daft_functions_list::sort(
+                        expr,
+                        Some(lit(desc)),
+                        Some(lit(nulls_first)),
+                    ));
+                }
+            } else if !argument_clauses.is_empty() {
+                unsupported_sql_err!("function arguments with clauses");
+            }
+
+            Ok(expr)
         }
     }
 
