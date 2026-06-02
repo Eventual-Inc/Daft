@@ -60,7 +60,10 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
     def visit_alias(self, expr: Expression, alias: str) -> Any:
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: Any, try_cast: bool) -> None:
+    def visit_cast(self, expr: Expression, dtype: Any) -> None:
+        return None
+
+    def visit_try_cast(self, expr: Expression, dtype: Any) -> None:
         return None
 
     def visit_coalesce(self, args: list[Expression]) -> None:

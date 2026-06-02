@@ -66,7 +66,10 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
     def visit_alias(self, expr: Expression, alias: str) -> BooleanExpression:
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> BooleanExpression:
+    def visit_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
+        return self.visit(expr)
+
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> BooleanExpression:
