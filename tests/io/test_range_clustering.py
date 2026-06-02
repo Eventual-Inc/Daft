@@ -166,6 +166,44 @@ def test_hint_persists_through_projection(left_table, right_table):
     assert result["label"] == ["p", "p", "q", "q", "r", "r"]
 
 
+def test_sort_by_join_key_skips_repartition():
+    """Sorting both sides by the join key emits a range clustering hint from the Sort node.
+
+    The asof join skips the range repartition even without an explicit ClusteringKeys hint.
+    """
+    import daft
+
+    left = daft.from_pydict({"ts": [1, 2, 3, 4, 5, 6], "val": [10, 20, 30, 40, 50, 60]}).repartition(2).sort("ts")
+    right = (
+        daft.from_pydict({"ts": [4, 5, 6, 7, 8, 9], "label": ["a", "b", "c", "d", "e", "f"]}).repartition(2).sort("ts")
+    )
+    df = left.join_asof(right, on="ts", by=[])
+    assert not _needs_repartition(df)
+    result = df.sort("ts").to_pydict()
+    assert result["ts"] == [1, 2, 3, 4, 5, 6]
+    assert result["label"] == [None, None, None, "a", "b", "c"]
+
+
+def test_sort_by_wrong_column_still_repartitions():
+    """Sorting by a column other than the join key emits a range hint on the wrong key.
+
+    The asof join must still range-repartition its inputs.
+    """
+    import daft
+
+    left = daft.from_pydict({"ts": [1, 2, 3, 4, 5, 6], "val": [10, 20, 30, 40, 50, 60]}).repartition(2).sort("val")
+    right = (
+        daft.from_pydict({"ts": [4, 5, 6, 7, 8, 9], "label": ["a", "b", "c", "d", "e", "f"]})
+        .repartition(2)
+        .sort("label")
+    )
+    df = left.join_asof(right, on="ts", by=[])
+    assert _needs_repartition(df)
+    result = df.sort("ts").to_pydict()
+    assert result["ts"] == [1, 2, 3, 4, 5, 6]
+    assert result["label"] == [None, None, None, "a", "b", "c"]
+
+
 # ---------------------------------------------------------------------------
 # Negative tests — repartition must still fire, or planning must raise
 # ---------------------------------------------------------------------------

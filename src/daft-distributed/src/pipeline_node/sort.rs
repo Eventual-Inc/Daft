@@ -9,14 +9,14 @@ use common_metrics::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleBackend};
 use daft_logical_plan::{
-    partitioning::{RangeRepartitionConfig, RepartitionSpec},
+    partitioning::{RangeClusteringConfig, RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
 };
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::{Schema, SchemaRef};
 use futures::{TryStreamExt, future::try_join_all};
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
@@ -454,7 +454,11 @@ impl SortNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            ClusteringStrategy::Passthrough { child: &child },
+            ClusteringStrategy::Explicit(BoundClusteringSpec::Range(RangeClusteringConfig::new(
+                child.config().clustering_spec.num_partitions(),
+                sort_by.clone(),
+                descending.clone(),
+            ))),
         );
         Self {
             config,
