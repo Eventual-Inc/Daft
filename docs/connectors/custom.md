@@ -167,6 +167,10 @@ in-memory partitions a query runs over. It is distinct from *storage* partitioni
 layout declared via `get_partition_fields()`, e.g. Hive/Iceberg directories) — a source can be laid
 out one way on disk yet emit partitions clustered another way.
 
+Two clustering hints are available:
+
+#### Hash clustering
+
 If your source already emits data that is hash-partitioned by some keys — for example, each
 [`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask) corresponds to exactly one
 `(producer, hour)` group — you can tell Daft by overriding `get_clustering_keys()`. Daft then
@@ -210,6 +214,21 @@ df = (
 )
 ```
 
+#### Range clustering
+
+If your source already emits data where each task covers a non-overlapping range of values *and*
+rows within each task are sorted ascending by those columns, you can tell Daft by returning
+`ClusteringKeys.range()`
+
+```python
+class TimeSeriesSource(DataSource):
+    # ... name / schema / get_tasks as above ...
+
+    def get_clustering_keys(self) -> ClusteringKeys | None:
+        # Each task holds a non-overlapping ts range, sorted ascending.
+        return ClusteringKeys.range("ts")
+```
+
 !!! note "Shuffle elision applies to the distributed runner"
 
     Daft only inserts these shuffles when running distributed (e.g. on Ray); the single-node
@@ -218,9 +237,11 @@ df = (
 
 !!! warning "Clustering must hold for every task"
 
-    Daft trusts the declaration. Only override `get_clustering_keys()` if every row with the same
-    hash of the declared keys is genuinely produced within a single task; otherwise results may be
-    incorrect. Declaring a sort order within partitions is not yet supported.
+    Daft trusts the declaration. For hash clustering, every row with the same hash of the declared
+    keys must be produced within a single task. For range clustering, each task must cover a
+    genuinely non-overlapping range and rows within each task must be sorted ascending — only
+    ascending order is supported for range hints. Incorrectly overriding `get_clustering_keys()`
+    will likely lead to incorrect results.
 
 ## Writing to a Custom Data Sink
 

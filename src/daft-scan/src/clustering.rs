@@ -13,6 +13,11 @@ pub enum ClusteringKeys {
     /// Hash-partitioned by these keys: every row with the same hash of the keys lives in the same
     /// execution partition.
     Hash(Vec<ExprRef>),
+    /// Each partition covers a non-overlapping
+    /// range of values and rows within each partition are sorted in ascending order by the declared
+    /// columns. Both guarantees must hold together — range partitioning alone does not imply
+    /// sorted, and sorted alone does not imply non-overlapping ranges.
+    Range(Vec<ExprRef>),
 }
 
 impl ClusteringKeys {
@@ -20,10 +25,14 @@ impl ClusteringKeys {
         Self::Hash(keys)
     }
 
+    pub fn range(keys: Vec<ExprRef>) -> Self {
+        Self::Range(keys)
+    }
+
     /// The clustering key expressions.
     pub fn keys(&self) -> &[ExprRef] {
         match self {
-            Self::Hash(keys) => keys,
+            Self::Hash(keys) | Self::Range(keys) => keys,
         }
     }
 }
@@ -45,7 +54,6 @@ mod python {
 
     #[pymethods]
     impl PyClusteringKeys {
-        /// Declares hash-clustering by `exprs`.
         #[staticmethod]
         fn hash(exprs: Vec<PyExpr>) -> Self {
             Self {
@@ -53,10 +61,21 @@ mod python {
             }
         }
 
+        #[staticmethod]
+        fn range(exprs: Vec<PyExpr>) -> Self {
+            Self {
+                keys: ClusteringKeys::Range(exprs.into_iter().map(|e| e.expr).collect()),
+            }
+        }
+
         fn __repr__(&self) -> String {
-            let ClusteringKeys::Hash(keys) = &self.keys;
+            let (variant, keys) = match &self.keys {
+                ClusteringKeys::Hash(keys) => ("hash", keys),
+                ClusteringKeys::Range(keys) => ("range", keys),
+            };
             format!(
-                "ClusteringKeys.hash({})",
+                "ClusteringKeys.{}({})",
+                variant,
                 keys.iter()
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()

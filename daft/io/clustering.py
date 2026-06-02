@@ -29,7 +29,9 @@ class ClusteringKeys:
     _keys: _PyClusteringKeys
 
     def __init__(self) -> None:
-        raise NotImplementedError("Use ClusteringKeys.hash(...) to construct ClusteringKeys.")
+        raise NotImplementedError(
+            "Use ClusteringKeys.hash(...) or ClusteringKeys.range(...) to construct ClusteringKeys."
+        )
 
     def __repr__(self) -> str:
         return self._keys.__repr__()
@@ -57,3 +59,25 @@ class ClusteringKeys:
         """
         exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
         return ClusteringKeys._from_clustering_keys(_PyClusteringKeys.hash([e._expr for e in exprs]))
+
+    @staticmethod
+    def range(*cols: str | Expression) -> ClusteringKeys:
+        """Declares that the source's output is range-partitioned and sorted ascending by ``cols``.
+
+        Each partition covers a non-overlapping range of values and rows within each partition
+        are sorted in ascending order by the declared columns.
+
+        Note:
+            This hint only applies to data sorted in **ascending** order.
+
+        Column-name strings are interpreted as column references.
+
+        Args:
+            cols: The clustering keys, as column names or expressions.
+
+        Examples:
+            >>> from daft.io.clustering import ClusteringKeys
+            >>> keys = ClusteringKeys.range("ts_ns")
+        """
+        exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
+        return ClusteringKeys._from_clustering_keys(_PyClusteringKeys.range([e._expr for e in exprs]))

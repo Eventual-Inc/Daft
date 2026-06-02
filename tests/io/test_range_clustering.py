@@ -35,9 +35,6 @@ pytestmark = pytest.mark.skipif(
     reason="range clustering shuffle elision only applies to the distributed planner (ray runner)",
 )
 
-# Tests that rely on ClusteringKeys.range() are skipped until the feature is implemented.
-range_hint_not_implemented = pytest.mark.skip(reason="ClusteringKeys.range() is not yet implemented")
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -142,7 +139,6 @@ def test_no_declaration_repartitions_by_default(left_table, right_table):
 # ---------------------------------------------------------------------------
 
 
-@range_hint_not_implemented
 def test_exact_key_match_no_repartition():
     """Both sides declare range on the join key → repartition skipped and result is correct."""
     hint = ClusteringKeys.range("ts")
@@ -158,7 +154,6 @@ def test_exact_key_match_no_repartition():
     assert result["label"] == [None, None, None, "a", "b", "c"]
 
 
-@range_hint_not_implemented
 def test_hint_persists_through_projection(left_table, right_table):
     """A with_column between the source and the asof join must not drop the range hint."""
     hint = ClusteringKeys.range("ts")
@@ -176,17 +171,25 @@ def test_hint_persists_through_projection(left_table, right_table):
 # ---------------------------------------------------------------------------
 
 
-@range_hint_not_implemented
 def test_wrong_column_still_repartitions(left_table, right_table):
-    """Declaring range on a column that doesn't match the join key → repartition still needed."""
-    hint = ClusteringKeys.range("val")  # 'val' is not the join key
+    """Declaring range on a column that exists on one side but not the other raises at plan time."""
+    hint = ClusteringKeys.range("val")
+    left = RangeClusteredSource(left_table, hint).read()
+    right = RangeClusteredSource(right_table, hint).read()
+    df = left.join_asof(right, on="ts", by=[])
+    with pytest.raises(DaftCoreException, match='Column "val" not found in schema'):
+        df.explain(show_all=True, file=io.StringIO())
+
+
+def test_column_in_schema_but_not_join_key_still_repartitions(left_table, right_table):
+    """Declaring range on a column that exists in both schemas but isn't the join key → repartition still needed."""
+    hint = ClusteringKeys.range("a")
     left = RangeClusteredSource(left_table, hint).read()
     right = RangeClusteredSource(right_table, hint).read()
     df = left.join_asof(right, on="ts", by=[])
     assert _needs_repartition(df)
 
 
-@range_hint_not_implemented
 def test_range_key_subset_of_composite_still_repartitions(left_table, right_table):
     """Source range key [ts] is a subset of the composite join key [a, ts] → repartition still needed.
 
@@ -201,7 +204,6 @@ def test_range_key_subset_of_composite_still_repartitions(left_table, right_tabl
     assert _needs_repartition(df)
 
 
-@range_hint_not_implemented
 def test_range_key_superset_of_composite_still_repartitions(left_table, right_table):
     """Source range key [a, ts] is a superset of the join key [ts] → repartition still needed.
 
@@ -216,7 +218,6 @@ def test_range_key_superset_of_composite_still_repartitions(left_table, right_ta
     assert _needs_repartition(df)
 
 
-@range_hint_not_implemented
 def test_only_one_side_hinted_still_repartitions(left_table, right_table):
     """Only the left side has a range hint; both sides must be hinted to skip repartition."""
     hint = ClusteringKeys.range("ts")
@@ -226,7 +227,6 @@ def test_only_one_side_hinted_still_repartitions(left_table, right_table):
     assert _needs_repartition(df)
 
 
-@range_hint_not_implemented
 def test_misdeclared_column_raises(left_table, right_table):
     """Declaring a clustering key that doesn't exist in the schema raises at plan time."""
     hint = ClusteringKeys.range("not_a_column")

@@ -120,6 +120,9 @@ impl ScanSourceNode {
             Some(ClusteringKeys::Hash(keys)) => ClusteringStrategy::Explicit(
                 BoundClusteringSpec::hash(num_partitions, BoundExpr::bind_all(&keys, &schema)?),
             ),
+            Some(ClusteringKeys::Range(keys)) => ClusteringStrategy::Explicit(
+                BoundClusteringSpec::range(num_partitions, BoundExpr::bind_all(&keys, &schema)?),
+            ),
             None => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         };
         let config = PipelineNodeConfig::new(schema, plan_config.config.clone(), clustering_spec);
