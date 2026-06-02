@@ -99,3 +99,18 @@ def test_dropped_clustering_key_forces_repartition(clustered):
     # repartition on top of the original shuffle: two shuffles total.
     df = clustered.select("a", "c").groupby("a").sum("c")
     assert _num_shuffles(df) == 2
+
+
+def test_actor_udf_projection_adds_no_shuffle(clustered):
+    # An actor-pool UDF project is also a projection and must propagate clustering. Here the
+    # passthrough keys (a, b) land at different output indices than the UDF's input, so the
+    # clustering has to be rewritten to the new positions rather than passed through verbatim.
+    # `x` is consumed by the aggregation so the UDF survives column pruning.
+    @daft.cls(max_concurrency=1)
+    class AddOne:
+        def __call__(self, x: int) -> int:
+            return x + 1
+
+    add_one = AddOne()
+    df = clustered.select(add_one(col("c")).alias("x"), "a", "b").groupby("a", "b").sum("x")
+    assert _num_shuffles(df) == 1
