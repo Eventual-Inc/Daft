@@ -100,7 +100,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let input_clustering_spec = &input_node.config().clustering_spec;
         // If there is only one partition, we can skip the shuffle
         if input_clustering_spec.num_partitions() == 1 {
-            return Ok(true);
+            return Ok(false);
         }
 
         // The clustering keys are already bound (to the input node's schema). We can skip the
