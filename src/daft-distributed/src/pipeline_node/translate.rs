@@ -114,7 +114,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             false
         };
 
-        Ok(is_compatible)
+        Ok(!is_compatible)
     }
 }
 
@@ -434,7 +434,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_node = self.curr_node.pop().unwrap();
 
                 // Check if we can elide the repartition
-                if Self::needs_hash_repartition(&input_node, &columns)? {
+                if !Self::needs_hash_repartition(&input_node, &columns)? {
                     DistributedPipelineNode::new(
                         Arc::new(DistinctNode::new(
                             self.get_next_pipeline_node_id(),
@@ -498,7 +498,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let input_size_bytes = window.input.materialized_stats().approx_stats.size_bytes;
                 let repartition = if partition_by.is_empty() {
                     self.gen_gather_node(input_node, input_size_bytes)
-                } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
+                } else if !Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
                     self.gen_repartition_node(
