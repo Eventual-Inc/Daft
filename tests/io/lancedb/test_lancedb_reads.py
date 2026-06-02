@@ -139,6 +139,24 @@ def test_lancedb_with_version(lance_dataset_path):
             )
 
 
+def test_lancedb_with_tag_version(tmp_path):
+    dataset_path = str(tmp_path / "tagged_version.lance")
+    lance.write_dataset(pa.Table.from_pydict({"id": [1, 2]}), dataset_path)
+
+    tags = getattr(lance.dataset(dataset_path), "tags", None)
+    if tags is None or not hasattr(tags, "create"):
+        pytest.skip("Lance tags API is not available")
+    tags.create("v1", 1)
+
+    lance.write_dataset(pa.Table.from_pydict({"id": [3]}), dataset_path, mode="append")
+
+    latest_df = daft.read_lance(dataset_path)
+    tagged_df = daft.read_lance(dataset_path, version="v1")
+
+    assert latest_df.sort("id").to_pydict() == {"id": [1, 2, 3]}
+    assert tagged_df.sort("id").to_pydict() == {"id": [1, 2]}
+
+
 def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     """Test parallelism parameter reduces scan tasks by merging fragments."""
     df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=3)
