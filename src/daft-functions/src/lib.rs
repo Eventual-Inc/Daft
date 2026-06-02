@@ -8,6 +8,7 @@ pub mod distance;
 pub mod float;
 pub mod hash;
 pub mod length;
+pub mod md5;
 pub mod minhash;
 pub mod monotonically_increasing_id;
 pub mod numeric;
@@ -25,6 +26,7 @@ use common_error::DaftError;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
 use length::Length;
+use md5::Md5Function;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
@@ -71,6 +73,7 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(MinHashFunction);
         parent.add_fn(SimHashFunction);
         parent.add_fn(Length);
+        parent.add_fn(Md5Function);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
         parent.add_fn(Uuid);

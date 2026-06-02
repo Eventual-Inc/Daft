@@ -45,6 +45,12 @@ def test_select_expr_functions():
     assert_eq(actual, expect)
 
 
+def test_select_md5_function():
+    actual = daft.sql("SELECT md5('abc') AS h").collect()
+    expect = daft.from_pydict({"h": ["900150983cd24fb0d6963f7d28e17f72"]})
+    assert_eq(actual, expect)
+
+
 def test_select_struct_lit():
     actual = daft.sql("select {'a': 'hello'}").collect()
     expect = daft.from_pydict({"literal": [{"a": "hello"}]})
