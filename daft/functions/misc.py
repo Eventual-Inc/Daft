@@ -51,7 +51,7 @@ def monotonically_increasing_id() -> Expression:
 
 
 def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
-    """Generates a column of UUID strings.
+    """Generates a column of UUID values.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
     (e.g. two separate columns) are independent and will produce different values. By default,
@@ -72,11 +72,30 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
         True
         >>> df.schema()["u2"].dtype == daft.DataType.uuid()
         True
+
+        UUIDv7 stores a 48-bit Unix millisecond timestamp in the first 6 bytes.
+        You can cast UUID values to binary and slice the byte layout for validation:
+
+        >>> from daft import col, DataType
+        >>> from daft.functions import slice, timestamp_millis
+        >>> df = daft.from_pydict({"row_id": list(range(100))})  # doctest: +SKIP
+        >>> parsed = (  # doctest: +SKIP
+        ...     df.with_column("uuid_v7", uuid(version="v7"))
+        ...     .with_column("binary_uuid_v7", col("uuid_v7").cast(DataType.binary()))
+        ...     .with_column("timestamp_bytes", slice(col("binary_uuid_v7"), 0, 6))
+        ...     .with_column("version_rand_a", slice(col("binary_uuid_v7"), 6, 8))
+        ...     .with_column("variant_rand_b", slice(col("binary_uuid_v7"), 8, 16))
+        ...     .with_column(
+        ...         "timestamp_ms",
+        ...         col("timestamp_bytes").apply(lambda b: int.from_bytes(b, "big"), return_dtype=DataType.int64()),
+        ...     )
+        ...     .with_column("timestamp", timestamp_millis(col("timestamp_ms")))
+        ... )
     """
     if version == "v4":
         return Expression._call_builtin_scalar_fn("uuid")
     if version == "v7":
-        return Expression._call_builtin_scalar_fn("uuidv7")
+        return Expression._call_builtin_scalar_fn("uuid", version)
     raise ValueError("`version` must be 'v4' or 'v7'")
 
 
