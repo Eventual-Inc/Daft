@@ -13,8 +13,8 @@ use futures::StreamExt;
 use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream, clustering::BoundClusteringSpec,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -67,7 +67,7 @@ impl HashJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::hash(num_partitions, partition_cols),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(num_partitions, partition_cols)),
         );
         Self {
             config,

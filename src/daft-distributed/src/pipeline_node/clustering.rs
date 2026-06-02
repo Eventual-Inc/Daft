@@ -6,9 +6,10 @@
 //! boundary, so every downstream check (`needs_hash_repartition`, join co-partitioning) can compare
 //! bound expressions directly instead of re-binding on the fly.
 //!
-//! The bound-specific operations live in [`BoundClusteringSpecExt`]: an inherent `impl` is
-//! impossible because `ClusteringSpec` is defined in another crate (orphan rule), so they are
-//! provided as an extension trait on the alias.
+//! Pipeline nodes never call these helpers directly. Every node establishes its output clustering
+//! by passing a [`ClusteringStrategy`](super::ClusteringStrategy) to `PipelineNodeConfig::new`,
+//! which routes to the functions below. That keeps the choice explicit and impossible to forget —
+//! see the `ClusteringStrategy` docs.
 
 use std::collections::HashMap;
 
@@ -25,136 +26,123 @@ use daft_schema::schema::Schema;
 /// expressions. See the module docs for the difference between the logical and bound forms.
 pub(crate) type BoundClusteringSpec = ClusteringSpec<BoundExpr>;
 
-/// Bound-specific operations on a [`BoundClusteringSpec`]. These cross the logical -> pipeline
-/// boundary (binding against a schema, rewriting bound columns through a projection) and so can't
-/// live on the schema-agnostic logical `ClusteringSpec`.
-pub(crate) trait BoundClusteringSpecExt: Sized {
-    /// Builds a bound clustering spec from a logical [`RepartitionSpec`], binding any unbound
-    /// (resolved-by-name) keys against `schema`. This is the logical -> pipeline boundary for
-    /// clustering produced by an explicit repartition.
-    fn from_repartition_spec(
-        spec: &RepartitionSpec,
-        num_partitions: usize,
-        schema: &Schema,
-    ) -> DaftResult<Self>;
-
-    /// Propagates this clustering through a projection, producing the output's clustering.
-    ///
-    /// A clustering key survives if every column it references is still produced by the projection
-    /// (passed through, or as part of a larger expression the projection materializes); otherwise
-    /// the spec downgrades to `Unknown`. Both `self` and `projection` are bound against the input
-    /// schema; output keys are bound against `output_schema`.
-    ///
-    /// # How it works
-    ///
-    /// Clustering keys are bound against the *input* schema, but the output's clustering must be
-    /// expressed against the *output* schema. So we build a lookup from "expression the projection
-    /// computes" → "output column that holds it", then rewrite each clustering key through it.
-    ///
-    /// Worked example — input clustered by `[col#0, col#1 % 4]`, projection
-    /// `[col#0, col#2 AS "v", (col#1 % 4) AS "bucket"]` producing output schema `[k, v, bucket]`:
-    ///
-    /// ```text
-    ///   projection entry            map key (alias stripped)   →   output column
-    ///   ----------------            ------------------------       -------------
-    ///   col#0                       col#0                      →   col#0   (passthrough "k")
-    ///   col#2 AS "v"                col#2                      →   col#1   ("v")
-    ///   (col#1 % 4) AS "bucket"     col#1 % 4                  →   col#2   ("bucket")
-    ///
-    ///   clustering key   lookup / rewrite                       result
-    ///   --------------   ----------------                       ------
-    ///   col#0            matches map key col#0                  col#0
-    ///   col#1 % 4        matches map key col#1 % 4              col#2
-    ///
-    ///   => output clustering = Hash([col#0, col#2])
-    /// ```
-    ///
-    /// ## Why the alias is stripped from the map key
-    ///
-    /// A projection entry is `<expr> AS <name>`, carrying two separate facts: the *value* it
-    /// computes (`<expr>`) and the *output column* it lands in (`<name>`). A clustering key is a
-    /// bare partition expression with no alias (e.g. `col#1 % 4`). To match it we key the map on
-    /// the alias-stripped expression — `Alias(col#1 % 4, "bucket")` would never structurally equal
-    /// the bare key `col#1 % 4`, so keeping the alias would miss the match and force a needless
-    /// downgrade to `Unknown`. The alias is still used, via `.name()`, to locate the output column
-    /// the key is rewritten *to*.
-    fn translate_through_projection(
-        &self,
-        projection: &[BoundExpr],
-        output_schema: &Schema,
-    ) -> Self;
+/// Builds a bound clustering spec from a logical [`RepartitionSpec`], binding any unbound
+/// (resolved-by-name) keys against `schema`. This is the logical -> pipeline boundary for
+/// clustering produced by an explicit repartition; it backs
+/// [`ClusteringStrategy::Repartition`](super::ClusteringStrategy::Repartition).
+pub(super) fn clustering_from_repartition_spec(
+    spec: &RepartitionSpec,
+    num_partitions: usize,
+    schema: &Schema,
+) -> DaftResult<BoundClusteringSpec> {
+    Ok(match spec {
+        RepartitionSpec::Hash(c) => BoundClusteringSpec::Hash(HashClusteringConfig::new(
+            c.num_partitions.unwrap_or(num_partitions),
+            BoundExpr::bind_all(&c.by, schema)?,
+        )),
+        RepartitionSpec::Range(c) => BoundClusteringSpec::Range(RangeClusteringConfig::new(
+            c.num_partitions.unwrap_or(num_partitions),
+            // Range repartition keys are already bound.
+            c.by.clone(),
+            c.descending.clone(),
+        )),
+        RepartitionSpec::Random(c) => BoundClusteringSpec::Random(RandomClusteringConfig::new(
+            c.num_partitions.unwrap_or(num_partitions),
+        )),
+    })
 }
 
-impl BoundClusteringSpecExt for BoundClusteringSpec {
-    fn from_repartition_spec(
-        spec: &RepartitionSpec,
-        num_partitions: usize,
-        schema: &Schema,
-    ) -> DaftResult<Self> {
-        Ok(match spec {
-            RepartitionSpec::Hash(c) => Self::Hash(HashClusteringConfig::new(
-                c.num_partitions.unwrap_or(num_partitions),
-                BoundExpr::bind_all(&c.by, schema)?,
-            )),
-            RepartitionSpec::Range(c) => Self::Range(RangeClusteringConfig::new(
-                c.num_partitions.unwrap_or(num_partitions),
-                // Range repartition keys are already bound.
-                c.by.clone(),
-                c.descending.clone(),
-            )),
-            RepartitionSpec::Random(c) => Self::Random(RandomClusteringConfig::new(
-                c.num_partitions.unwrap_or(num_partitions),
-            )),
-        })
+/// Propagates `input`'s clustering through a projection, producing the output's clustering. This
+/// backs [`ClusteringStrategy::Projection`](super::ClusteringStrategy::Projection).
+///
+/// A clustering key survives if every column it references is still produced by the projection
+/// (passed through, or as part of a larger expression the projection materializes); otherwise the
+/// spec downgrades to `Unknown`. Both `input` and `projection` are bound against the input schema;
+/// output keys are bound against `output_schema`.
+///
+/// # How it works
+///
+/// Clustering keys are bound against the *input* schema, but the output's clustering must be
+/// expressed against the *output* schema. So we build a lookup from "expression the projection
+/// computes" → "output column that holds it", then rewrite each clustering key through it.
+///
+/// Worked example — input clustered by `[col#0, col#1 % 4]`, projection
+/// `[col#0, col#2 AS "v", (col#1 % 4) AS "bucket"]` producing output schema `[k, v, bucket]`:
+///
+/// ```text
+///   projection entry            map key (alias stripped)   →   output column
+///   ----------------            ------------------------       -------------
+///   col#0                       col#0                      →   col#0   (passthrough "k")
+///   col#2 AS "v"                col#2                      →   col#1   ("v")
+///   (col#1 % 4) AS "bucket"     col#1 % 4                  →   col#2   ("bucket")
+///
+///   clustering key   lookup / rewrite                       result
+///   --------------   ----------------                       ------
+///   col#0            matches map key col#0                  col#0
+///   col#1 % 4        matches map key col#1 % 4              col#2
+///
+///   => output clustering = Hash([col#0, col#2])
+/// ```
+///
+/// ## Why the alias is stripped from the map key
+///
+/// A projection entry is `<expr> AS <name>`, carrying two separate facts: the *value* it computes
+/// (`<expr>`) and the *output column* it lands in (`<name>`). A clustering key is a bare partition
+/// expression with no alias (e.g. `col#1 % 4`). To match it we key the map on the alias-stripped
+/// expression — `Alias(col#1 % 4, "bucket")` would never structurally equal the bare key
+/// `col#1 % 4`, so keeping the alias would miss the match and force a needless downgrade to
+/// `Unknown`. The alias is still used, via `.name()`, to locate the output column the key is
+/// rewritten *to*.
+pub(super) fn translate_clustering_through_projection(
+    input: &BoundClusteringSpec,
+    projection: &[BoundExpr],
+    output_schema: &Schema,
+) -> BoundClusteringSpec {
+    let num_partitions = input.num_partitions();
+    let by = match input {
+        BoundClusteringSpec::Random(_) | BoundClusteringSpec::Unknown(_) => return input.clone(),
+        BoundClusteringSpec::Hash(HashClusteringConfig { by, .. })
+        | BoundClusteringSpec::Range(RangeClusteringConfig { by, .. }) => by,
+    };
+
+    // Build the "computed expression -> output column" lookup. The key is the projected
+    // expression with its outer alias stripped (clustering keys are alias-free, so this is the
+    // form they must match against); the value is the bound output column, located via the
+    // entry's output name (which *does* honor the alias).
+    let mut projected_to_output: HashMap<ExprRef, ExprRef> = HashMap::new();
+    for proj in projection {
+        let (inner, _) = proj.inner().unwrap_alias();
+        let Ok(out_index) = output_schema.get_index(proj.inner().name()) else {
+            continue;
+        };
+        let out_col = bound_col(out_index, output_schema[out_index].clone());
+        // First projection of a given inner expression wins. In the degenerate case where the
+        // same sub-expression is projected twice (e.g. once as a passthrough and once under an
+        // alias), this keys the clustering off whichever appears first — both reference the
+        // same value, so the choice only affects which output column name the key adopts.
+        projected_to_output.entry(inner).or_insert(out_col);
     }
 
-    fn translate_through_projection(
-        &self,
-        projection: &[BoundExpr],
-        output_schema: &Schema,
-    ) -> Self {
-        let num_partitions = self.num_partitions();
-        let by = match self {
-            Self::Random(_) | Self::Unknown(_) => return self.clone(),
-            Self::Hash(HashClusteringConfig { by, .. })
-            | Self::Range(RangeClusteringConfig { by, .. }) => by,
-        };
+    let translated: Option<Vec<BoundExpr>> = by
+        .iter()
+        .map(|key| {
+            translate_bound_clustering_key(key.inner(), &projected_to_output)
+                .map(BoundExpr::new_unchecked)
+        })
+        .collect();
 
-        // Build the "computed expression -> output column" lookup. The key is the projected
-        // expression with its outer alias stripped (clustering keys are alias-free, so this is the
-        // form they must match against); the value is the bound output column, located via the
-        // entry's output name (which *does* honor the alias).
-        let mut projected_to_output: HashMap<ExprRef, ExprRef> = HashMap::new();
-        for proj in projection {
-            let (inner, _) = proj.inner().unwrap_alias();
-            let Ok(out_index) = output_schema.get_index(proj.inner().name()) else {
-                continue;
-            };
-            let out_col = bound_col(out_index, output_schema[out_index].clone());
-            // First projection of a given inner expression wins. In the degenerate case where the
-            // same sub-expression is projected twice (e.g. once as a passthrough and once under an
-            // alias), this keys the clustering off whichever appears first — both reference the
-            // same value, so the choice only affects which output column name the key adopts.
-            projected_to_output.entry(inner).or_insert(out_col);
-        }
-
-        let translated: Option<Vec<BoundExpr>> = by
-            .iter()
-            .map(|key| {
-                translate_bound_clustering_key(key.inner(), &projected_to_output)
-                    .map(BoundExpr::new_unchecked)
-            })
-            .collect();
-
-        match translated {
-            None => Self::Unknown(UnknownClusteringConfig::new(num_partitions)),
-            Some(new_by) => match self {
-                Self::Range(RangeClusteringConfig { descending, .. }) => Self::Range(
-                    RangeClusteringConfig::new(num_partitions, new_by, descending.clone()),
-                ),
-                _ => Self::Hash(HashClusteringConfig::new(num_partitions, new_by)),
-            },
-        }
+    match translated {
+        None => BoundClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
+        Some(new_by) => match input {
+            BoundClusteringSpec::Range(RangeClusteringConfig { descending, .. }) => {
+                BoundClusteringSpec::Range(RangeClusteringConfig::new(
+                    num_partitions,
+                    new_by,
+                    descending.clone(),
+                ))
+            }
+            _ => BoundClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, new_by)),
+        },
     }
 }
 
@@ -251,7 +239,7 @@ mod tests {
             bexpr(bound(2, "ts", DataType::Int64)),
             bexpr(hour_of(bound(1, "id", DataType::Int64)).alias("h")),
         ];
-        let out = clustering.translate_through_projection(&projection, &output_schema);
+        let out = translate_clustering_through_projection(&clustering, &projection, &output_schema);
         assert_eq!(
             keys(&out),
             vec![
@@ -267,7 +255,7 @@ mod tests {
         let clustering =
             BoundClusteringSpec::hash(4, vec![bexpr(hour_of(bound(0, "id", DataType::Int64)))]);
         let projection = vec![bexpr(bound(1, "other", DataType::Int64))];
-        let out = clustering.translate_through_projection(&projection, &output_schema);
+        let out = translate_clustering_through_projection(&clustering, &projection, &output_schema);
         assert!(matches!(out, BoundClusteringSpec::Unknown(_)));
     }
 
@@ -277,7 +265,7 @@ mod tests {
         let output_schema = schema(&[("b", DataType::Int64)]);
         let clustering = BoundClusteringSpec::hash(4, vec![bexpr(bound(0, "a", DataType::Int64))]);
         let projection = vec![bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b"))];
-        let out = clustering.translate_through_projection(&projection, &output_schema);
+        let out = translate_clustering_through_projection(&clustering, &projection, &output_schema);
         assert!(matches!(out, BoundClusteringSpec::Unknown(_)));
     }
 
@@ -290,7 +278,7 @@ mod tests {
             bexpr(bound(0, "a", DataType::Int64)),
             bexpr(mod_of(bound(0, "a", DataType::Int64)).alias("b")),
         ];
-        let out = clustering.translate_through_projection(&projection, &output_schema);
+        let out = translate_clustering_through_projection(&clustering, &projection, &output_schema);
         assert_eq!(keys(&out), vec![bound(0, "a", DataType::Int64)]);
     }
 }

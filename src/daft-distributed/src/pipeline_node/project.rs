@@ -6,9 +6,12 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef}
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpecExt};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -38,12 +41,12 @@ impl ProjectNode {
             NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
-            schema.clone(),
+            schema,
             plan_config.config.clone(),
-            child
-                .config()
-                .clustering_spec
-                .translate_through_projection(&projection, &schema),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &projection,
+            },
         );
         Self {
             config,

@@ -14,7 +14,7 @@ use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 
 use super::{
-    DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext,
+    ClusteringStrategy, DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext,
     clustering::BoundClusteringSpec, scan_source::SourceStats,
 };
 use crate::{
@@ -54,7 +54,7 @@ impl GlobScanSourceNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(1),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
 
         let glob_paths = if plan_config.config.enable_multi_glob_path_tasks {

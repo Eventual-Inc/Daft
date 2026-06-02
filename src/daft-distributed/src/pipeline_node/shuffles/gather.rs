@@ -9,8 +9,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         clustering::BoundClusteringSpec,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
@@ -50,7 +50,7 @@ impl GatherNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(1),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
         let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
         Self {

@@ -15,11 +15,11 @@ use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
 
-use super::{PipelineNodeImpl, clustering::BoundClusteringSpecExt};
+use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        TaskBuilderStream, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -143,12 +143,12 @@ impl UDFNode {
             NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
-            schema.clone(),
+            schema,
             plan_config.config.clone(),
-            child
-                .config()
-                .clustering_spec
-                .translate_through_projection(&passthrough_columns, &schema),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &passthrough_columns,
+            },
         );
         Self {
             config,

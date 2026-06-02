@@ -12,8 +12,8 @@ use futures::{StreamExt, stream::select};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream, clustering::BoundClusteringSpec,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -51,7 +51,7 @@ impl CrossJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(num_partitions),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
 
         Self {

@@ -6,8 +6,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream, clustering::BoundClusteringSpec,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -41,10 +41,10 @@ impl ConcatNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(
                 child.config().clustering_spec.num_partitions()
                     + other.config().clustering_spec.num_partitions(),
-            ),
+            )),
         );
 
         Self {

@@ -8,9 +8,9 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
-        clustering::{BoundClusteringSpec, BoundClusteringSpecExt},
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::clustering_from_repartition_spec,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -56,13 +56,16 @@ impl RepartitionNode {
         );
         // The logical->pipeline boundary for repartition clustering: bind the (possibly
         // resolved-by-name) repartition keys against the input schema once.
-        let clustering_spec = BoundClusteringSpec::from_repartition_spec(
+        let clustering_spec = clustering_from_repartition_spec(
             &repartition_spec,
             child.config().clustering_spec.num_partitions(),
             &child.config().schema,
         )?;
-        let config =
-            PipelineNodeConfig::new(schema.clone(), plan_config.config.clone(), clustering_spec);
+        let config = PipelineNodeConfig::new(
+            schema.clone(),
+            plan_config.config.clone(),
+            ClusteringStrategy::Repartition(clustering_spec),
+        );
 
         Ok(Self {
             config,

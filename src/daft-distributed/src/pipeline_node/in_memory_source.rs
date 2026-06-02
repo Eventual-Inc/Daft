@@ -14,7 +14,9 @@ use super::{
     scan_source::SourceStats,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, TaskBuilderStream},
+    pipeline_node::{
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig, TaskBuilderStream,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::stats::RuntimeStatsRef,
@@ -50,7 +52,7 @@ impl InMemorySourceNode {
         let config = PipelineNodeConfig::new(
             info.source_schema.clone(),
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(num_partitions),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
         Self {
             config,

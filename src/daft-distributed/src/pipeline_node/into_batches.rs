@@ -14,8 +14,8 @@ use futures::StreamExt;
 use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -106,7 +106,9 @@ impl IntoBatchesNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(child.config().clustering_spec.num_partitions().max(2)),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(
+                child.config().clustering_spec.num_partitions().max(2),
+            )),
         );
         Self {
             config,

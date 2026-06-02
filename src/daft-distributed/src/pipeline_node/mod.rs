@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use clustering::BoundClusteringSpec;
+use clustering::{BoundClusteringSpec, translate_clustering_through_projection};
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
     DisplayLevel,
@@ -20,6 +20,7 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -247,6 +248,31 @@ impl MaterializedOutput {
     }
 }
 
+/// The sanctioned ways a pipeline node may establish its output [`BoundClusteringSpec`]. Every
+/// `PipelineNodeConfig::new` call must pass one of these, so deriving a node's clustering is an
+/// explicit, reviewable decision rather than an ad-hoc expression that's easy to get wrong or
+/// forget (e.g. cloning the child's spec verbatim through a column-reordering projection). Adding
+/// a new pipeline node forces its author to pick the right strategy here.
+pub(super) enum ClusteringStrategy<'a> {
+    /// Output is clustered exactly like `child` — for ops that preserve both the clustering keys
+    /// and the partition layout (filter, limit, sample, sink, ...).
+    Passthrough { child: &'a DistributedPipelineNode },
+    /// The child's clustering rewritten through this node's `projection`. Keys that survive the
+    /// projection are kept (rewritten to their output positions); any key whose columns the
+    /// projection drops downgrades the spec to `Unknown`. For project / UDF / actor-UDF nodes.
+    Projection {
+        child: &'a DistributedPipelineNode,
+        projection: &'a [BoundExpr],
+    },
+    /// Clustering established by an explicit repartition. Build the spec with
+    /// [`clustering_from_repartition_spec`], which binds the (possibly resolved-by-name)
+    /// repartition keys against the input schema.
+    Repartition(BoundClusteringSpec),
+    /// The node sets its output clustering explicitly — a brand-new clustering or `Unknown`
+    /// (sources, joins, shuffles, aggregations).
+    Explicit(BoundClusteringSpec),
+}
+
 #[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
@@ -258,8 +284,19 @@ impl PipelineNodeConfig {
     pub fn new(
         schema: SchemaRef,
         execution_config: Arc<DaftExecutionConfig>,
-        clustering_spec: BoundClusteringSpec,
+        clustering: ClusteringStrategy<'_>,
     ) -> Self {
+        let clustering_spec = match clustering {
+            ClusteringStrategy::Passthrough { child } => child.config().clustering_spec.clone(),
+            ClusteringStrategy::Projection { child, projection } => {
+                translate_clustering_through_projection(
+                    &child.config().clustering_spec,
+                    projection,
+                    &schema,
+                )
+            }
+            ClusteringStrategy::Repartition(spec) | ClusteringStrategy::Explicit(spec) => spec,
+        };
         Self {
             schema,
             execution_config,
@@ -540,7 +577,7 @@ pub(crate) mod tests {
                 config: PipelineNodeConfig::new(
                     Arc::new(Schema::empty()),
                     Arc::new(DaftExecutionConfig::default()),
-                    BoundClusteringSpec::unknown(0),
+                    ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(0)),
                 ),
                 context: PipelineNodeContext::new(
                     0,

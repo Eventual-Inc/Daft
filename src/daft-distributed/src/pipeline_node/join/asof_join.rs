@@ -14,9 +14,9 @@ use futures::{TryStreamExt, future::try_join_all};
 use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
-        sort::range_repartition_two_sides,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::BoundClusteringSpec, sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -76,7 +76,10 @@ impl AsofJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::hash(num_partitions, left_by.clone()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(
+                num_partitions,
+                left_by.clone(),
+            )),
         );
         Self {
             config,

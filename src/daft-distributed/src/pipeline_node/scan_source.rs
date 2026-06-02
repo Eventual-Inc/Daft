@@ -14,8 +14,8 @@ use futures::{StreamExt, stream};
 use opentelemetry::KeyValue;
 
 use super::{
-    PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-    clustering::BoundClusteringSpec,
+    ClusteringStrategy, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    TaskBuilderStream, clustering::BoundClusteringSpec,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
@@ -109,7 +109,7 @@ impl ScanSourceNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(scan_tasks.len()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(scan_tasks.len())),
         );
         Self {
             config,

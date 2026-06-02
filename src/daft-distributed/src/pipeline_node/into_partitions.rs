@@ -11,7 +11,8 @@ use futures::StreamExt;
 use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -53,7 +54,7 @@ impl IntoPartitionsNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            BoundClusteringSpec::unknown(num_partitions),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
         let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
 
