@@ -28,8 +28,12 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...         print(f"Alias: {alias}")
         ...         self.visit(expr)
         ...
-        ...     def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> None:
+        ...     def visit_cast(self, expr: Expression, dtype: DataType) -> None:
         ...         print(f"Cast: {dtype}")
+        ...         self.visit(expr)
+        ...
+        ...     def visit_try_cast(self, expr: Expression, dtype: DataType) -> None:
+        ...         print(f"TryCast: {dtype}")
         ...         self.visit(expr)
         ...
         ...     def visit_function(self, name: str, args: list[Expression]) -> None:
@@ -74,8 +78,13 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...
 
     @abstractmethod
-    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> R:
+    def visit_cast(self, expr: Expression, dtype: DataType) -> R:
         """Visit a cast expression."""
+        ...
+
+    @abstractmethod
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> R:
+        """Visit a try_cast expression."""
         ...
 
     @abstractmethod
@@ -170,7 +179,10 @@ class _ColumnVisitor(ExpressionVisitor[set[str]]):
     def visit_alias(self, expr: Expression, alias: str) -> set[str]:
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: DataType, try_cast: bool) -> set[str]:
+    def visit_cast(self, expr: Expression, dtype: DataType) -> set[str]:
+        return self.visit(expr)
+
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> set[str]:
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> set[str]:
