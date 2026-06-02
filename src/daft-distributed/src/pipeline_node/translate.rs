@@ -22,10 +22,10 @@ use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
-        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
-        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
-        into_partitions::IntoPartitionsNode, limit::LimitNode,
+        DistributedPipelineNode, NodeID, clustering::BoundClusteringSpec, concat::ConcatNode,
+        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
+        glob_scan_source::GlobScanSourceNode, in_memory_source::InMemorySourceNode,
+        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
         scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
@@ -118,10 +118,10 @@ impl LogicalPlanToPipelineNodeTranslator {
     }
 
     /// Returns true when the input node must be range-repartitioned before an operation that
-    /// requires its data sorted and range-partitioned by `partition_columns`.
+    /// requires its data sorted and range-partitioned (ascending) by `partition_columns`.
     ///
-    /// False when the input already carries a [`BoundClusteringSpec::Range`] whose keys exactly
-    /// match `partition_columns`, meaning a range shuffle can be skipped.
+    /// False when the input already carries a [`BoundClusteringSpec::Range`] whose keys match
+    /// `partition_columns` positionally and are all ascending, meaning the shuffle can be skipped.
     pub(crate) fn needs_range_repartition(
         input_node: &DistributedPipelineNode,
         partition_columns: &[BoundExpr],
@@ -130,10 +130,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         if spec.num_partitions() == 1 {
             return true;
         }
-        if !spec.is_range() {
+        let BoundClusteringSpec::Range(range_config) = spec else {
             return true;
-        }
-        !is_exact_range_partition_match(spec.partition_by(), partition_columns)
+        };
+        let keys_match = is_exact_range_partition_match(&range_config.by, partition_columns);
+        let is_ascending = range_config.descending.iter().all(|d| !d);
+        !(keys_match && is_ascending)
     }
 }
 
