@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 @PublicAPI
 def read_parquet(
-    path: str | os.PathLike[str] | list[str | os.PathLike[str]],
+    path: str | os.PathLike[str] | list[str] | list[os.PathLike[str]],
     row_groups: list[list[int]] | None = None,
     infer_schema: bool = True,
     schema: dict[str, DataType] | None = None,
@@ -38,7 +38,7 @@ def read_parquet(
     """Creates a DataFrame from Parquet file(s).
 
     Args:
-        path (str | os.PathLike | list[str | os.PathLike]): Path to Parquet file (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
+        path (str | os.PathLike | list[str] | list[os.PathLike]): Path to Parquet file (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
         infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
@@ -73,10 +73,11 @@ def read_parquet(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from empty list of Parquet filepaths")
 
+    normalized_path: str | list[str]
     if isinstance(path, list):
-        path = [os.fspath(p) for p in path]
+        normalized_path = [os.fspath(p) for p in path]
     else:
-        path = os.fspath(path)
+        normalized_path = os.fspath(path)
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
@@ -89,9 +90,9 @@ def read_parquet(
 
     pytimeunit = coerce_int96_timestamp_unit._timeunit if coerce_int96_timestamp_unit is not None else None
 
-    if isinstance(path, list) and row_groups is not None and len(path) != len(row_groups):
+    if isinstance(normalized_path, list) and row_groups is not None and len(normalized_path) != len(row_groups):
         raise ValueError("row_groups must be the same length as the list of paths provided.")
-    if isinstance(row_groups, list) and not isinstance(path, list):
+    if isinstance(row_groups, list) and not isinstance(normalized_path, list):
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
     file_format_config = FileFormatConfig.from_parquet_config(
@@ -100,7 +101,7 @@ def read_parquet(
     storage_config = StorageConfig(multithreaded_io, io_config)
 
     builder = get_tabular_files_scan(
-        path=path,
+        path=normalized_path,
         infer_schema=infer_schema,
         schema=schema,
         file_format_config=file_format_config,
