@@ -182,8 +182,8 @@ impl LogicalPlanToPipelineNodeTranslator {
         right_stats: &ApproxStats,
     ) -> DaftResult<DistributedPipelineNode> {
         // Determine the number of hash partitions — same logic as gen_hash_join_nodes.
-        let left_spec = left.config().clustering_spec.as_ref();
-        let right_spec = right.config().clustering_spec.as_ref();
+        let left_spec = &left.config().clustering_spec;
+        let right_spec = &right.config().clustering_spec;
 
         let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
             && is_exact_partition_match(left_spec.partition_by(), &left_on);

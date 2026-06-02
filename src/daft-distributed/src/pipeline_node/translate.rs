@@ -21,7 +21,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{
     JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
-    partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_scan::{ScanState, scan_task_iters};
 use daft_schema::schema::Schema;

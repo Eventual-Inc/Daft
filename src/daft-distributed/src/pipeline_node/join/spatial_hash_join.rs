@@ -14,8 +14,9 @@ use futures::StreamExt;
 use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -77,13 +78,15 @@ impl SpatialHashJoinNode {
         let partition_cols = left_on
             .iter()
             .chain(right_on.iter())
-            .map(BoundExpr::inner)
             .cloned()
             .collect::<Vec<_>>();
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            Arc::new(HashClusteringConfig::new(num_partitions, partition_cols).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::Hash(HashClusteringConfig::new(
+                num_partitions,
+                partition_cols,
+            ))),
         );
         Self {
             config,
