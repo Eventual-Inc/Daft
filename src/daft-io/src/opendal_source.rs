@@ -30,6 +30,10 @@ impl OpenDALSource {
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
+        // Ensure all compiled-in OpenDAL services are registered in the global
+        // OperatorRegistry. This is a no-op after the first call.
+        opendal::init_default_registry();
+
         let operator =
             Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
                 super::Error::UnableToCreateClient {
