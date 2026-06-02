@@ -259,12 +259,21 @@ impl<T> ClusteringSpec<T> {
         matches!(self, Self::Hash(_))
     }
 
+    pub fn is_range(&self) -> bool {
+        matches!(self, Self::Range(_))
+    }
+
     pub fn unknown(num_partitions: usize) -> Self {
         Self::Unknown(UnknownClusteringConfig::new(num_partitions))
     }
 
     pub fn hash(num_partitions: usize, by: Vec<T>) -> Self {
         Self::Hash(HashClusteringConfig::new(num_partitions, by))
+    }
+
+    pub fn range(num_partitions: usize, by: Vec<T>) -> Self {
+        let descending = vec![false; by.len()];
+        Self::Range(RangeClusteringConfig::new(num_partitions, by, descending))
     }
 }
 

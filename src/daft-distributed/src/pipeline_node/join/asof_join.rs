@@ -17,6 +17,7 @@ use crate::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
         PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         clustering::BoundClusteringSpec, sort::range_repartition_two_sides,
+        translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -43,6 +44,7 @@ pub(crate) struct AsofJoinNode {
     right_on: BoundExpr,
     strategy: AsofJoinStrategy,
     num_partitions: usize,
+    needs_range_repartition: bool,
 
     left: DistributedPipelineNode,
     right: DistributedPipelineNode,
@@ -81,6 +83,22 @@ impl AsofJoinNode {
                 left_by.clone(),
             )),
         );
+        let left_composite: Vec<BoundExpr> = left_by
+            .iter()
+            .chain(std::iter::once(&left_on))
+            .cloned()
+            .collect();
+        let right_composite: Vec<BoundExpr> = right_by
+            .iter()
+            .chain(std::iter::once(&right_on))
+            .cloned()
+            .collect();
+        let needs_range_repartition =
+            LogicalPlanToPipelineNodeTranslator::needs_range_repartition(&left, &left_composite)
+                || LogicalPlanToPipelineNodeTranslator::needs_range_repartition(
+                    &right,
+                    &right_composite,
+                );
         Self {
             config,
             context,
@@ -90,6 +108,7 @@ impl AsofJoinNode {
             right_on,
             strategy,
             num_partitions,
+            needs_range_repartition,
             left,
             right,
         }
@@ -580,6 +599,10 @@ impl PipelineNodeImpl for AsofJoinNode {
         res.push(format!("Left on: {}", self.left_on));
         res.push(format!("Right on: {}", self.right_on));
         res.push(format!("Num partitions: {}", self.num_partitions));
+        res.push(format!(
+            "Needs range repartition: {}",
+            self.needs_range_repartition
+        ));
         res
     }
 

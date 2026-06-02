@@ -11,7 +11,7 @@ use daft_dsl::{
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    resolved_col,
+    is_exact_partition_match, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -115,6 +115,25 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         Ok(is_compatible)
+    }
+
+    /// Returns true when the input node must be range-repartitioned before an operation that
+    /// requires its data sorted and range-partitioned by `partition_columns`.
+    ///
+    /// False when the input already carries a [`BoundClusteringSpec::Range`] whose keys exactly
+    /// match `partition_columns`, meaning a range shuffle can be skipped.
+    pub(crate) fn needs_range_repartition(
+        input_node: &DistributedPipelineNode,
+        partition_columns: &[BoundExpr],
+    ) -> bool {
+        let spec = &input_node.config().clustering_spec;
+        if spec.num_partitions() == 1 {
+            return true;
+        }
+        if !spec.is_range() {
+            return true;
+        }
+        !is_exact_partition_match(spec.partition_by(), partition_columns)
     }
 }
 
