@@ -117,25 +117,26 @@ impl LogicalPlanToPipelineNodeTranslator {
         Ok(is_compatible)
     }
 
-    /// Returns true when the input node must be range-repartitioned before an operation that
-    /// requires its data sorted and range-partitioned (ascending) by `partition_columns`.
+    /// Returns true when the input already carries a [`BoundClusteringSpec::Range`] whose keys
+    /// match `partition_columns` positionally and are all ascending, meaning the range repartition
+    /// shuffle can be skipped.
     ///
-    /// False when the input already carries a [`BoundClusteringSpec::Range`] whose keys match
-    /// `partition_columns` positionally and are all ascending, meaning the shuffle can be skipped.
-    pub(crate) fn needs_range_repartition(
+    /// False when the input must be range-repartitioned before an operation that requires its data
+    /// sorted and range-partitioned (ascending) by `partition_columns`.
+    pub(crate) fn can_skip_range_repartition(
         input_node: &DistributedPipelineNode,
         partition_columns: &[BoundExpr],
     ) -> bool {
         let spec = &input_node.config().clustering_spec;
         if spec.num_partitions() == 1 {
-            return true;
+            return false;
         }
         let BoundClusteringSpec::Range(range_config) = spec else {
-            return true;
+            return false;
         };
         let keys_match = is_exact_range_partition_match(&range_config.by, partition_columns);
         let is_ascending = range_config.descending.iter().all(|d| !d);
-        !(keys_match && is_ascending)
+        keys_match && is_ascending
     }
 }
 

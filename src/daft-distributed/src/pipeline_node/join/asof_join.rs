@@ -44,7 +44,7 @@ pub(crate) struct AsofJoinNode {
     right_on: BoundExpr,
     strategy: AsofJoinStrategy,
     num_partitions: usize,
-    needs_range_repartition: bool,
+    can_skip_range_repartition: bool,
 
     left: DistributedPipelineNode,
     right: DistributedPipelineNode,
@@ -93,9 +93,9 @@ impl AsofJoinNode {
             .chain(std::iter::once(&right_on))
             .cloned()
             .collect();
-        let needs_range_repartition =
-            LogicalPlanToPipelineNodeTranslator::needs_range_repartition(&left, &left_composite)
-                || LogicalPlanToPipelineNodeTranslator::needs_range_repartition(
+        let can_skip_range_repartition =
+            LogicalPlanToPipelineNodeTranslator::can_skip_range_repartition(&left, &left_composite)
+                && LogicalPlanToPipelineNodeTranslator::can_skip_range_repartition(
                     &right,
                     &right_composite,
                 );
@@ -108,7 +108,7 @@ impl AsofJoinNode {
             right_on,
             strategy,
             num_partitions,
-            needs_range_repartition,
+            can_skip_range_repartition,
             left,
             right,
         }
@@ -600,8 +600,8 @@ impl PipelineNodeImpl for AsofJoinNode {
         res.push(format!("Right on: {}", self.right_on));
         res.push(format!("Num partitions: {}", self.num_partitions));
         res.push(format!(
-            "Needs range repartition: {}",
-            self.needs_range_repartition
+            "Can skip range repartition: {}",
+            self.can_skip_range_repartition
         ));
         res
     }
