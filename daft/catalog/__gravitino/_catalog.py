@@ -252,7 +252,6 @@ class GravitinoPostgresTable(GravitinoTable):
     """GravitinoPostgresTable is for Gravitino Postgres tables with provider contains 'postgres'."""
 
     _postgres_table: PostgresTable
-    _read_options: set[str] = set()
     _write_options: set[str] = {"enable_rls"}
 
     @classmethod
@@ -265,8 +264,10 @@ class GravitinoPostgresTable(GravitinoTable):
         return t
 
     def read(self, **options: Any) -> DataFrame:
-        Table._validate_options("Gravitino read", options, self._read_options)
-        return self._postgres_table.read()
+        from daft.catalog.__postgres import PostgresTable
+
+        Table._validate_options("Gravitino read", options, PostgresTable._read_options)
+        return self._postgres_table.read(**options)
 
     def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Gravitino write", options, self._write_options)
@@ -330,7 +331,6 @@ def _open_postgres_table(table_info: GravitinoTableInfo) -> PostgresTable:
     table_name = f"{table_info.schema}.{table_info.name}"
 
     catalog = Catalog.from_postgres(connection, extensions=filtered_extensions)
-
     table = catalog.get_table(table_name)
     if not isinstance(table, PostgresTable):
         raise GravitinoTableTypeError(f"Expected PostgresTable, got {type(table).__name__}.")
