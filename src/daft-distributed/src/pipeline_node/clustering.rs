@@ -28,8 +28,8 @@ pub(crate) type BoundClusteringSpec = ClusteringSpec<BoundExpr>;
 
 /// Builds a bound clustering spec from a logical [`RepartitionSpec`], binding any unbound
 /// (resolved-by-name) keys against `schema`. This is the logical -> pipeline boundary for
-/// clustering produced by an explicit repartition; it backs
-/// [`ClusteringStrategy::Repartition`](super::ClusteringStrategy::Repartition).
+/// clustering produced by an explicit repartition; pass the result as
+/// [`ClusteringStrategy::Explicit`](super::ClusteringStrategy::Explicit).
 pub(super) fn clustering_from_repartition_spec(
     spec: &RepartitionSpec,
     num_partitions: usize,

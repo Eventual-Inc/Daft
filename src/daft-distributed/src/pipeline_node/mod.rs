@@ -264,12 +264,10 @@ pub(super) enum ClusteringStrategy<'a> {
         child: &'a DistributedPipelineNode,
         projection: &'a [BoundExpr],
     },
-    /// Clustering established by an explicit repartition. Build the spec with
-    /// [`clustering_from_repartition_spec`], which binds the (possibly resolved-by-name)
-    /// repartition keys against the input schema.
-    Repartition(BoundClusteringSpec),
     /// The node sets its output clustering explicitly — a brand-new clustering or `Unknown`
-    /// (sources, joins, shuffles, aggregations).
+    /// (sources, joins, shuffles, aggregations). For clustering established by an explicit
+    /// repartition, build the spec with [`clustering_from_repartition_spec`] (which binds the
+    /// possibly resolved-by-name repartition keys against the input schema) and pass it here.
     Explicit(BoundClusteringSpec),
 }
 
@@ -295,7 +293,7 @@ impl PipelineNodeConfig {
                     &schema,
                 )
             }
-            ClusteringStrategy::Repartition(spec) | ClusteringStrategy::Explicit(spec) => spec,
+            ClusteringStrategy::Explicit(spec) => spec,
         };
         Self {
             schema,

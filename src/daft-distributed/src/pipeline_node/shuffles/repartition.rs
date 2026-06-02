@@ -64,7 +64,7 @@ impl RepartitionNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            ClusteringStrategy::Repartition(clustering_spec),
+            ClusteringStrategy::Explicit(clustering_spec),
         );
 
         Ok(Self {
