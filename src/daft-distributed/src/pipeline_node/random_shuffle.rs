@@ -14,8 +14,8 @@ use daft_schema::schema::SchemaRef;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -60,7 +60,7 @@ impl RandomShuffleNode {
         let config = PipelineNodeConfig::new(
             output_schema.clone(),
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         let shuffle_backend = ShuffleBackend::new(&context, output_schema, backend);
         Self {

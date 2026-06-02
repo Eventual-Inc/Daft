@@ -146,7 +146,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 num_partitions,
                 backend,
                 child_node,
-            )),
+            )?),
             &self.meter,
         ))
     }

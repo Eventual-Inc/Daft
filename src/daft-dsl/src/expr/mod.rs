@@ -2594,16 +2594,45 @@ impl Expr {
     }
 }
 
-// Check if one set of columns is a reordering of the other
-pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
-where
-    A: IntoIterator<Item = &'a ExprRef>,
-    B: IntoIterator<Item = &'a ExprRef>,
-{
-    // sort a and b by name
-    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
-    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
+/// Returns true when the two sets of bound columns are exactly equal (order-independent).
+///
+/// This is the strict relation required by two-input operators such as hash joins,
+/// where *both* sides must be partitioned by precisely the same key set so that
+/// matching keys collide in the same partition. For single-input operators that only
+/// need their groups to stay partition-local, prefer [`clustering_is_covered_by`].
+pub fn is_exact_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
+    let a_set: HashSet<&BoundExpr> = a.iter().collect();
+    let b_set: HashSet<&BoundExpr> = b.iter().collect();
     a_set == b_set
+}
+
+/// Returns true when `op_partition_cols` ⊇ `input_clustering_cols`.
+///
+/// In that case partitioning by `op_partition_cols` keeps the existing clustering intact:
+/// every key the input is clustered on also appears in the operator's partition keys, so the
+/// operator's per-group output is a *refinement* of the input's distribution. Any group the
+/// operator forms is fully contained within a single input partition, so a single-input
+/// operator (group-by / window / distinct) can run partition-locally without a shuffle. Exact
+/// equality is the special case where the two sets coincide, handled as an early-exit via
+/// [`is_exact_partition_match`].
+///
+/// The relation is one-sided. If the input is clustered on `[a, b, c]` but the operator
+/// only partitions by `[a, b]`, an `(a, b)` group may be split across partitions (rows
+/// with different `c` hash elsewhere), so this returns false and a shuffle is required.
+pub fn clustering_is_covered_by(
+    input_clustering_cols: &[BoundExpr],
+    op_partition_cols: &[BoundExpr],
+) -> bool {
+    // Exact match is the special case where both sets coincide.
+    if is_exact_partition_match(input_clustering_cols, op_partition_cols) {
+        return true;
+    }
+    // An empty input clustering covers nothing meaningful (e.g. Unknown); treat as not covered.
+    if input_clustering_cols.is_empty() {
+        return false;
+    }
+    let op_set: HashSet<&BoundExpr> = op_partition_cols.iter().collect();
+    input_clustering_cols.iter().all(|k| op_set.contains(k))
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {

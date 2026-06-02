@@ -2,6 +2,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
@@ -76,7 +77,7 @@ def _convert_iceberg_file_io_properties_to_io_config(
 
 @PublicAPI
 def read_iceberg(
-    table: Union[str, "PyIcebergTable"],
+    table: Union[str, os.PathLike[str], "PyIcebergTable"],
     snapshot_id: int | None = None,
     io_config: IOConfig | None = None,
     checkpoint: "CheckpointConfig | None" = None,
@@ -84,9 +85,10 @@ def read_iceberg(
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
-            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
-            created using the PyIceberg library.
+        table (str, os.PathLike, or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs
+            to object stores such as ``s3://`` or ``gs://``) or a
+            [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created
+            using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
@@ -122,8 +124,8 @@ def read_iceberg(
     from daft.io.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
-    if isinstance(table, str):
-        table = StaticTable.from_metadata(metadata_location=table)
+    if isinstance(table, (str, os.PathLike)):
+        table = StaticTable.from_metadata(metadata_location=os.fspath(table))
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())

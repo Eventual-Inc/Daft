@@ -11,12 +11,13 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeVisitor}
 use daft_core::join::JoinSide;
 use daft_dsl::{
     Expr,
+    clustering_is_covered_by,
     expr::{
         Column,
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    is_partition_compatible, resolved_col,
+    resolved_col,
 };
 use daft_logical_plan::{
     JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -184,21 +185,16 @@ impl LogicalPlanToPipelineNodeTranslator {
             return Ok(true);
         }
 
-        // Check if input is hash partitioned
-        if !matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_)) {
-            return Ok(false);
-        }
-
-        // Check if the partition columns are compatible
-        let is_compatible = is_partition_compatible(
-            BoundExpr::bind_all(
-                &input_clustering_spec.partition_by(),
-                &input_node.config().schema,
-            )?
-            .iter()
-            .map(|e| e.inner()),
-            partition_columns.iter().map(|e| e.inner()),
-        );
+        // The clustering keys are already bound (to the input node's schema). We can skip the
+        // shuffle if partitioning by the operator's columns keeps that clustering intact — the
+        // partition columns exactly match the input clustering or are a superset of it (each
+        // operator group is then contained within a single input partition).
+        // `clustering_is_covered_by` handles both cases.
+        let is_compatible = if input_clustering_spec.is_hash() {
+            clustering_is_covered_by(input_clustering_spec.partition_by(), partition_columns)
+        } else {
+            false
+        };
 
         Ok(is_compatible)
     }
@@ -407,7 +403,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 info.pushdowns.clone(),
                                 scan_tasks,
                                 source.output_schema.clone(),
-                            )),
+                                info.clustering_keys.clone(),
+                            )?),
                             &self.meter,
                         )
                     }
