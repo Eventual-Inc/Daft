@@ -2585,6 +2585,14 @@ pub fn is_exact_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
     a_set == b_set
 }
 
+/// Returns true when the two sequences of bound keys are identical position-by-position.
+///
+/// Use this instead of [`is_exact_partition_match`] wherever key **order** is semantically
+/// significant.
+pub fn is_exact_range_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x == y)
+}
+
 /// Returns true when `op_partition_cols` ⊇ `input_clustering_cols`.
 ///
 /// In that case partitioning by `op_partition_cols` keeps the existing clustering intact:

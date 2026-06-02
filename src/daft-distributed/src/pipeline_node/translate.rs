@@ -11,7 +11,7 @@ use daft_dsl::{
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    is_exact_partition_match, resolved_col,
+    is_exact_partition_match, is_exact_range_partition_match, resolved_col,
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
@@ -133,7 +133,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         if !spec.is_range() {
             return true;
         }
-        !is_exact_partition_match(spec.partition_by(), partition_columns)
+        !is_exact_range_partition_match(spec.partition_by(), partition_columns)
     }
 }
 
