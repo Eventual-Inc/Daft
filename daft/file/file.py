@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import warnings
 from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
@@ -59,7 +60,27 @@ class File:
         media_type: MediaType = MediaType.unknown(),
         position: int | None = None,
         size: int | None = None,
+        offset: int | None = None,
+        length: int | None = None,
     ) -> None:
+        if offset is not None:
+            warnings.warn(
+                "`offset` is deprecated; use `position` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if position is None:
+                position = offset
+
+        if length is not None:
+            warnings.warn(
+                "`length` is deprecated; use `size` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if size is None:
+                size = length
+
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
     def open(self, buffer_size: int | None = None) -> PyDaftFile:
@@ -114,6 +135,30 @@ class File:
     def position(self) -> int | None:
         """The starting byte position for range reads, or None for full-file reads."""
         return self._inner.position()
+
+    @property
+    def offset(self) -> int | None:
+        """Deprecated alias for `position`. The byte offset for range reads, or None for full-file reads."""
+        warnings.warn(
+            "`File.offset` is deprecated; use `File.position` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._inner.position()
+
+    @property
+    def length(self) -> int | None:
+        """Deprecated alias for the byte-range read window size, or None for full-file reads.
+
+        Note: this returns the requested range size (caller intent), not the derived file
+        size. Use `File.size()` for the actual file size.
+        """
+        warnings.warn(
+            "`File.length` is deprecated; use `File.size()` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._inner.size()
 
     def size(self) -> int:
         """The size of the file in bytes, derived from the underlying file."""

@@ -325,6 +325,21 @@ def test_file_position_and_size_default_to_none():
     assert f._inner.size() is None
 
 
+def test_file_offset_and_length_backwards_compat():
+    # `offset`/`length` are deprecated aliases for `position`/`size`, kept for
+    # backwards compatibility. They emit a DeprecationWarning but still work.
+    with pytest.warns(DeprecationWarning):
+        f = daft.File("s3://bucket/blob", offset=100, length=50)
+    with pytest.warns(DeprecationWarning):
+        assert f.offset == 100
+    with pytest.warns(DeprecationWarning):
+        assert f.length == 50
+
+    # New names map to the same underlying values.
+    assert f.position == 100
+    assert f._inner.size() == 50
+
+
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
 def test_file_byte_range_read(tmp_path: Path):
     data = b"0123456789abcdef"
