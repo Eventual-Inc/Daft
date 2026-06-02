@@ -25,14 +25,12 @@ itertools = {workspace = true}
 log = {workspace = true}
 opendal = {workspace = true, features = [
   "executors-tokio",  # Use tokio for async execution
-  "auto-register-services",  # Auto-register service schemes at startup via ctor
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
   "services-obs",  # Huawei Cloud Object Storage
   "services-memory",  # In-memory backend (used for testing)
   "services-fs",  # Local filesystem (used for integration testing)
-  "services-github",  # GitHub repository contents
-  "services-goosefs"  # GooseFS distributed caching file system
+  "services-github"  # GitHub repository contents
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
