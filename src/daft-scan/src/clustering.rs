@@ -36,7 +36,7 @@ mod python {
     use super::ClusteringKeys;
 
     /// Python handle for [`ClusteringKeys`], returned by a custom `DataSource`'s
-    /// `get_clustering_spec()`.
+    /// `get_clustering_keys()`.
     #[pyclass(module = "daft.daft", name = "ClusteringKeys", frozen, from_py_object)]
     #[derive(Debug, Clone)]
     pub struct PyClusteringKeys {

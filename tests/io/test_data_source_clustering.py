@@ -13,7 +13,7 @@ only under the ray runner, like the other distributed shuffle tests.
 from __future__ import annotations
 
 import io
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 
 import pyarrow as pa
 import pytest
@@ -22,7 +22,7 @@ from daft import Window, col
 from daft.functions import row_number
 from daft.io.clustering import ClusteringKeys
 from daft.io.source import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 from tests.conftest import get_tests_daft_runner_name
 
@@ -45,8 +45,8 @@ class _InMemoryTask(DataSourceTask):
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._table.schema)
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        yield MicroPartition.from_arrow(self._table)
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        yield RecordBatch.from_arrow_table(self._table)
 
 
 class ClusteredSource(DataSource):
