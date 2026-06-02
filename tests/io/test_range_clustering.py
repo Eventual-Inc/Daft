@@ -23,6 +23,7 @@ import pyarrow as pa
 import pytest
 
 from daft import col
+from daft.exceptions import DaftCoreException
 from daft.io.clustering import ClusteringKeys
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
@@ -142,13 +143,19 @@ def test_no_declaration_repartitions_by_default(left_table, right_table):
 
 
 @range_hint_not_implemented
-def test_exact_key_match_no_repartition(left_table, right_table):
-    """Both sides declare range on the exact join key → repartition skipped."""
+def test_exact_key_match_no_repartition():
+    """Both sides declare range on the join key → repartition skipped and result is correct."""
     hint = ClusteringKeys.range("ts")
-    left = RangeClusteredSource(left_table, hint).read()
-    right = RangeClusteredSource(right_table, hint).read()
+    left = RangeClusteredSource(pa.table({"ts": [1, 2, 3, 4, 5, 6], "val": [10, 20, 30, 40, 50, 60]}), hint).read()
+    right = RangeClusteredSource(
+        pa.table({"ts": [4, 5, 6, 7, 8, 9], "label": ["a", "b", "c", "d", "e", "f"]}), hint
+    ).read()
     df = left.join_asof(right, on="ts", by=[])
     assert not _needs_repartition(df)
+    result = df.sort(["ts"]).to_pydict()
+    # left ts=1,2,3 have no right match (right starts at 4); left ts=4,5,6 match right ts=4,5,6
+    assert result["ts"] == [1, 2, 3, 4, 5, 6]
+    assert result["label"] == [None, None, None, "a", "b", "c"]
 
 
 @range_hint_not_implemented
@@ -159,6 +166,9 @@ def test_hint_persists_through_projection(left_table, right_table):
     right = RangeClusteredSource(right_table, hint).read().with_column("upper", col("label"))
     df = left.join_asof(right, on="ts", by=[])
     assert not _needs_repartition(df)
+    result = df.sort(["ts"]).to_pydict()
+    assert result["ts"] == [1, 2, 3, 4, 5, 6]
+    assert result["label"] == ["p", "p", "q", "q", "r", "r"]
 
 
 # ---------------------------------------------------------------------------
@@ -223,25 +233,5 @@ def test_misdeclared_column_raises(left_table, right_table):
     left = RangeClusteredSource(left_table, hint).read()
     right = RangeClusteredSource(right_table, hint).read()
     df = left.join_asof(right, on="ts", by=[])
-    with pytest.raises(Exception):
+    with pytest.raises(DaftCoreException, match='Column "not_a_column" not found in schema'):
         df.explain(show_all=True, file=io.StringIO())
-
-
-# ---------------------------------------------------------------------------
-# Correctness test
-# ---------------------------------------------------------------------------
-
-
-@range_hint_not_implemented
-def test_result_is_correct(left_table, right_table):
-    """The shuffle-free plan still produces the correct asof join result."""
-    hint = ClusteringKeys.range("ts")
-    left = RangeClusteredSource(left_table, hint).read()
-    right = RangeClusteredSource(right_table, hint).read()
-    df = left.join_asof(right, on="ts", by=[])
-    assert not _needs_repartition(df)
-
-    result = df.sort(["ts"]).to_pydict()
-    assert result["ts"] == [1, 2, 3, 4, 5, 6]
-    # Each left row matched to the most recent right row with ts <= left.ts
-    assert result["label"] == ["p", "p", "q", "q", "r", "r"]
