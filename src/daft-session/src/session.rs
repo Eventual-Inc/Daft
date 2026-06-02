@@ -626,7 +626,7 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                clustering_spec: Arc::new(ClusteringSpec::unknown(0)),
             })),
         ))
         .arced()

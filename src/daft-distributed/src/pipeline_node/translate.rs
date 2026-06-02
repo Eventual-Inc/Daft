@@ -14,7 +14,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
-    partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
+    partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_scan::{ScanState, scan_task_iters};
 use daft_schema::schema::Schema;
@@ -102,21 +102,13 @@ impl LogicalPlanToPipelineNodeTranslator {
             return Ok(true);
         }
 
-        // Check if input is hash partitioned
-        if !matches!(input_clustering_spec.as_ref(), ClusteringSpec::Hash(_)) {
-            return Ok(false);
-        }
-
-        // Check if the partition columns are compatible
-        let is_compatible = is_partition_compatible(
-            BoundExpr::bind_all(
-                &input_clustering_spec.partition_by(),
-                &input_node.config().schema,
-            )?
-            .iter()
-            .map(|e| e.inner()),
-            partition_columns.iter().map(|e| e.inner()),
-        );
+        // The clustering keys are already bound (to the input node's schema), so compare them
+        // directly against the operator's bound partition columns.
+        let is_compatible = if input_clustering_spec.is_hash() {
+            is_partition_compatible(input_clustering_spec.partition_by(), partition_columns)
+        } else {
+            false
+        };
 
         Ok(is_compatible)
     }

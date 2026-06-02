@@ -7,13 +7,16 @@ use common_metrics::{
     snapshot::SourceSnapshot,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::KeyValue;
 
-use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
+use super::{
+    ClusteringStrategy, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    TaskBuilderStream, clustering::BoundClusteringSpec,
+};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
@@ -106,9 +109,7 @@ impl ScanSourceNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(
-                scan_tasks.len(),
-            )),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(scan_tasks.len())),
         );
         Self {
             config,
