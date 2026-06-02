@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import io
 import os
+import pathlib
 import tempfile
 import uuid
 
@@ -32,6 +33,23 @@ def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, pap
         file = os.path.join(directory_name, "tempfile")
         papq.write_table(data, file, row_group_size=row_group_size, **papq_write_table_kwargs)
         yield file
+
+
+def test_read_parquet_accepts_pathlike(tmp_path: pathlib.Path):
+    path = tmp_path / "data.parquet"
+    papq.write_table(pa.Table.from_pydict({"foo": [1, 2, 3]}), path)
+
+    assert daft.read_parquet(path).to_pydict() == {"foo": [1, 2, 3]}
+
+
+def test_read_parquet_accepts_pathlike_list(tmp_path: pathlib.Path):
+    paths = []
+    for i in range(3):
+        path = tmp_path / f"data-{i}.parquet"
+        papq.write_table(pa.Table.from_pydict({"foo": [i]}), path)
+        paths.append(path)
+
+    assert daft.read_parquet(paths).sort("foo").to_pydict() == {"foo": [0, 1, 2]}
 
 
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
