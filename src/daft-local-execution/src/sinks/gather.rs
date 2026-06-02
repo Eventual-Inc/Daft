@@ -17,6 +17,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    runtime_stats::ShuffleWriteRuntimeStats,
 };
 
 pub(crate) struct RayGatherState {
@@ -174,6 +175,7 @@ impl GatherSink {
 
 impl BlockingSink for GatherSink {
     type State = GatherState;
+    type Stats = ShuffleWriteRuntimeStats;
 
     #[instrument(skip_all, name = "GatherSink::sink")]
     fn sink(

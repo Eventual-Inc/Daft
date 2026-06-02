@@ -10,7 +10,9 @@ use smallvec::SmallVec;
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
     JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
-    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, SHUFFLE_BYTES_IN_KEY,
+    SHUFFLE_BYTES_WRITTEN_KEY, SHUFFLE_FINALIZE_DURATION_KEY, SHUFFLE_PARTITIONS_WRITTEN_KEY,
+    SHUFFLE_ROWS_IN_KEY, SHUFFLE_ROWS_WRITTEN_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -438,6 +440,65 @@ impl WriteSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+pub struct ShuffleWriteSnapshot {
+    pub cpu_us: u64,
+    pub rows_in: u64,
+    pub rows_written: u64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_written: u64,
+    pub partitions_written: u64,
+    // Wall time inside finalize(); complements cpu_us, which only covers sink() calls.
+    pub finalize_duration_us: u64,
+    pub num_tasks: u64,
+}
+
+impl StatSnapshotImpl for ShuffleWriteSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
+    fn to_stats(&self) -> Stats {
+        stats![
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            SHUFFLE_ROWS_IN_KEY; Stat::Count(self.rows_in),
+            SHUFFLE_ROWS_WRITTEN_KEY; Stat::Count(self.rows_written),
+            SHUFFLE_BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            SHUFFLE_BYTES_WRITTEN_KEY; Stat::Bytes(self.bytes_written),
+            SHUFFLE_PARTITIONS_WRITTEN_KEY; Stat::Count(self.partitions_written),
+            SHUFFLE_FINALIZE_DURATION_KEY; Stat::Duration(Duration::from_micros(self.finalize_duration_us)),
+            NUM_TASKS_KEY; Stat::Count(self.num_tasks),
+        ]
+    }
+
+    fn to_message(&self) -> String {
+        format!(
+            "{} rows in, {} rows written, {} written, {} partitions written",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_written),
+            HumanBytes(self.bytes_written),
+            HumanCount(self.partitions_written),
+        )
+    }
+}
+
+impl ShuffleWriteSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_written: self.rows_written + other.rows_written,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_written: self.bytes_written + other.bytes_written,
+            partitions_written: self.partitions_written + other.partitions_written,
+            finalize_duration_us: self.finalize_duration_us + other.finalize_duration_us,
+            num_tasks: self.num_tasks + other.num_tasks,
+        }
+    }
+}
+
 #[enum_dispatch(StatSnapshotImpl)]
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
@@ -448,6 +509,7 @@ pub enum StatSnapshot {
     Udf(UdfSnapshot),
     Join(JoinSnapshot),
     Write(WriteSnapshot),
+    ShuffleWrite(ShuffleWriteSnapshot),
 }
 
 impl StatSnapshot {
@@ -461,6 +523,7 @@ impl StatSnapshot {
             (Self::Udf(a), Self::Udf(b)) => Self::Udf(a.merge(b)),
             (Self::Join(a), Self::Join(b)) => Self::Join(a.merge(b)),
             (Self::Write(a), Self::Write(b)) => Self::Write(a.merge(b)),
+            (Self::ShuffleWrite(a), Self::ShuffleWrite(b)) => Self::ShuffleWrite(a.merge(b)),
             (s, _) => s,
         }
     }
@@ -482,6 +545,16 @@ mod tests {
                 })
             })
             .expect("num_tasks key should be present in to_stats output")
+    }
+
+    /// Helper for asserting that a `to_stats()` rendering contains an expected key/value.
+    /// Panics with a descriptive message if the key is absent.
+    fn stat_for_key<'a>(stats: &'a Stats, key: &str) -> &'a Stat {
+        stats
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, stat)| stat)
+            .unwrap_or_else(|| panic!("expected key {} in stats: {:?}", key, stats))
     }
 
     #[test]
@@ -629,6 +702,29 @@ mod tests {
                 }),
                 3,
             ),
+            (
+                StatSnapshot::ShuffleWrite(ShuffleWriteSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_in: 0,
+                    bytes_written: 0,
+                    partitions_written: 0,
+                    finalize_duration_us: 0,
+                }),
+                StatSnapshot::ShuffleWrite(ShuffleWriteSnapshot {
+                    num_tasks: 3,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_in: 0,
+                    bytes_written: 0,
+                    partitions_written: 0,
+                    finalize_duration_us: 0,
+                }),
+                5,
+            ),
         ];
 
         for (a, b, expected) in cases {
@@ -639,5 +735,79 @@ mod tests {
                 "merged snapshot: {merged:?}"
             );
         }
+    }
+
+    #[test]
+    fn shuffle_write_snapshot_merge_sums_all_fields() {
+        let a = ShuffleWriteSnapshot {
+            cpu_us: 1,
+            rows_in: 2,
+            rows_written: 3,
+            bytes_in: 4,
+            bytes_written: 5,
+            partitions_written: 6,
+            finalize_duration_us: 7,
+            num_tasks: 8,
+        };
+        let b = ShuffleWriteSnapshot {
+            cpu_us: 10,
+            rows_in: 20,
+            rows_written: 30,
+            bytes_in: 40,
+            bytes_written: 50,
+            partitions_written: 60,
+            finalize_duration_us: 70,
+            num_tasks: 80,
+        };
+        let merged = a.merge(&b);
+        assert_eq!(merged.cpu_us, 11);
+        assert_eq!(merged.rows_in, 22);
+        assert_eq!(merged.rows_written, 33);
+        assert_eq!(merged.bytes_in, 44);
+        assert_eq!(merged.bytes_written, 55);
+        assert_eq!(merged.partitions_written, 66);
+        assert_eq!(merged.finalize_duration_us, 77);
+        assert_eq!(merged.num_tasks, 88);
+    }
+
+    #[test]
+    fn shuffle_write_snapshot_to_stats_includes_all_fields() {
+        let snap = ShuffleWriteSnapshot {
+            cpu_us: 1_000_000,
+            rows_in: 100,
+            rows_written: 200,
+            bytes_in: 1024,
+            bytes_written: 2048,
+            partitions_written: 4,
+            finalize_duration_us: 750_000,
+            num_tasks: 5,
+        };
+        let stats = snap.to_stats();
+        assert_eq!(
+            stat_for_key(&stats, DURATION_KEY),
+            &Stat::Duration(Duration::from_micros(1_000_000))
+        );
+        assert_eq!(stat_for_key(&stats, SHUFFLE_ROWS_IN_KEY), &Stat::Count(100));
+        assert_eq!(
+            stat_for_key(&stats, SHUFFLE_ROWS_WRITTEN_KEY),
+            &Stat::Count(200)
+        );
+        assert_eq!(
+            stat_for_key(&stats, SHUFFLE_BYTES_IN_KEY),
+            &Stat::Bytes(1024)
+        );
+        assert_eq!(
+            stat_for_key(&stats, SHUFFLE_BYTES_WRITTEN_KEY),
+            &Stat::Bytes(2048)
+        );
+        assert_eq!(
+            stat_for_key(&stats, SHUFFLE_PARTITIONS_WRITTEN_KEY),
+            &Stat::Count(4)
+        );
+        assert_eq!(
+            stat_for_key(&stats, SHUFFLE_FINALIZE_DURATION_KEY),
+            &Stat::Duration(Duration::from_micros(750_000))
+        );
+        assert_eq!(stat_for_key(&stats, NUM_TASKS_KEY), &Stat::Count(5));
     }
 }
