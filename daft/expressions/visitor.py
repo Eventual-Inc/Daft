@@ -82,10 +82,12 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit a cast expression."""
         ...
 
-    @abstractmethod
     def visit_try_cast(self, expr: Expression, dtype: DataType) -> R:
-        """Visit a try_cast expression."""
-        ...
+        """Visit a try_cast expression.
+
+        Default implementation delegates to visit_cast for backwards compatibility.
+        """
+        return self.visit_cast(expr, dtype)
 
     @abstractmethod
     def visit_function(self, name: str, args: list[Expression]) -> R:
