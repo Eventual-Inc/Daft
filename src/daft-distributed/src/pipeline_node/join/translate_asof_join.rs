@@ -77,10 +77,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         )?;
 
         if asof_join.assume_sorted_and_aligned {
-            return Err(common_error::DaftError::NotImplemented(
+            Err(common_error::DaftError::NotImplemented(
                 "_assume_sorted_and_aligned=True: AsofJoinAlignedNode is not yet implemented"
                     .to_string(),
-            ));
+            ))
         } else {
             self.gen_asof_join_nodes(
                 left_node,
