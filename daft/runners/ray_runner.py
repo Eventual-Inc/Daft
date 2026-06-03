@@ -542,10 +542,12 @@ class RayRunner(Runner[ray.ObjectRef]):
         self,
         address: str | None,
         force_client_mode: bool = False,
+        worker_startup_timeout: int | None = None,
     ) -> None:
         super().__init__()
 
         self.ray_address = address
+        self.worker_startup_timeout = worker_startup_timeout if worker_startup_timeout is not None else 120
 
         if ray.is_initialized():
             if address is not None:
@@ -653,7 +655,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             heartbeat.start()
 
             if self.flotilla_plan_runner is None:
-                self.flotilla_plan_runner = FlotillaRunner()
+                self.flotilla_plan_runner = FlotillaRunner(
+                    worker_startup_timeout=self.worker_startup_timeout,
+                )
 
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(

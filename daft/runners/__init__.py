@@ -66,6 +66,7 @@ def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
     force_client_mode: bool = False,
+    worker_startup_timeout: int | None = None,
 ) -> Runner[PartitionT]:
     """Configure Daft to execute dataframes using the Ray distributed computing framework.
 
@@ -73,6 +74,7 @@ def set_runner_ray(
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
         noop_if_initialized: If True, skip initialization if Ray is already running.
         force_client_mode: If True, forces Ray to run in client mode.
+        worker_startup_timeout: Timeout in seconds for Ray worker actors to report their addresses during startup.
 
     Returns:
         Runner[PartitionT]: A runner object with the Ray runner's configurations.
@@ -84,4 +86,5 @@ def set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         force_client_mode=force_client_mode,
+        worker_startup_timeout=worker_startup_timeout,
     )
