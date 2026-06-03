@@ -83,6 +83,9 @@ def _metric_duration_us(stats: dict[str, Metric]) -> float:
 
     value = float(metric["value"])
     unit = metric["unit"]
+    if unit is None:
+        raise ValueError("Duration metric unit is missing")
+
     if unit in ("us", "µs"):
         return value
     if unit == "ms":
@@ -236,8 +239,6 @@ class ExecutionMetadata:
                     lines.append(f"{title} - {', '.join(details)}")
                 else:
                     lines.append(f"{title} - {duration}")
-        else:
-            lines.append("No operator metrics were recorded.")
 
         warnings_out = []
         if not nodes:

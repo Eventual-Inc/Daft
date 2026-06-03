@@ -364,6 +364,7 @@ class DataFrame:
         Args:
             top_n: Number of slowest operators to show. Defaults to 5.
             file: Location to print the output to, or defaults to None which uses Python's default print location.
+            show_details: If True, include per-operator row and byte counts alongside durations. Defaults to False.
 
         Examples:
             >>> import daft
@@ -373,7 +374,7 @@ class DataFrame:
             >>>
             >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
             >>> # show basic information
-            >>> df.profile()
+            >>> df.profile()  # doctest: +SKIP
         """
         if top_n < 1:
             raise ValueError("top_n must be at least 1")
