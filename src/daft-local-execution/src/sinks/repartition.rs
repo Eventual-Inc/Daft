@@ -68,7 +68,20 @@ impl RepartitionAccState {
         let pre_repartitioned = std::mem::take(&mut self.pre_repartitioned);
         self.pre_repartitioned_size_bytes = 0;
 
+        // Fuse the buffered morsels into one record batch before partitioning.
+        // `partition_by_*` partitions each batch separately, so a B-batch input
+        // yields B fragments per output partition; accumulated across flushes
+        // at high partition counts, per-fragment overhead dwarfs the data (a
+        // ~1.7GB map input reached 40+GB resident at 8192 partitions and
+        // OOM-killed the worker). One fused batch yields exactly one fragment
+        // per partition per flush, and hashes faster than dozens of small ones.
         let concated = MicroPartition::concat(pre_repartitioned)?;
+        let concated = match concated.concat_or_get()? {
+            Some(fused) => {
+                MicroPartition::new_loaded(concated.schema(), Arc::new(vec![fused]), None)
+            }
+            None => return Ok(()),
+        };
         let num_partitions = self.num_partitions();
 
         let partitioned = match &self.repartition_spec {
