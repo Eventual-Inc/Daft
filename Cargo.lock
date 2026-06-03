@@ -3109,7 +3109,6 @@ dependencies = [
  "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "indexmap",
