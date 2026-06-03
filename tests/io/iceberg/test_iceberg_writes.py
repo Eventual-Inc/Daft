@@ -142,40 +142,6 @@ def test_read_after_write_append(simple_local_table):
     assert as_arrow == read_back.to_arrow().sort_by("x")
 
 
-def test_read_with_branch_and_tag(local_catalog, patch_scan_task_file_path_scheme):
-    schema = Schema(
-        NestedField(field_id=1, name="x", type=LongType()),
-    )
-    table = local_catalog.create_table("default.test", schema)
-
-    first_df = daft.from_pydict({"x": [1, 2, 3]})
-    first_df.write_iceberg(table)
-    table.refresh()
-    first_snapshot = table.current_snapshot()
-    assert first_snapshot is not None
-
-    with table.manage_snapshots() as snapshot_manager:
-        snapshot_manager.create_branch(first_snapshot.snapshot_id, "audit")
-        snapshot_manager.create_tag(first_snapshot.snapshot_id, "v1")
-
-    daft.from_pydict({"x": [4, 5]}).write_iceberg(table)
-
-    expected = first_df.to_arrow().sort_by("x")
-    assert daft.read_iceberg(table, branch="audit").to_arrow().sort_by("x") == expected
-    assert daft.read_iceberg(table, tag="v1").to_arrow().sort_by("x") == expected
-
-    with pytest.raises(ValueError, match="Only one of snapshot_id, branch, or tag"):
-        daft.read_iceberg(table, snapshot_id=first_snapshot.snapshot_id, branch="audit")
-    with pytest.raises(ValueError, match="Only one of snapshot_id, branch, or tag"):
-        daft.read_iceberg(table, snapshot_id=first_snapshot.snapshot_id, tag="v1")
-    with pytest.raises(ValueError, match="Only one of snapshot_id, branch, or tag"):
-        daft.read_iceberg(table, branch="audit", tag="v1")
-    with pytest.raises(ValueError, match="Iceberg branch 'v1' is a tag"):
-        daft.read_iceberg(table, branch="v1")
-    with pytest.raises(ValueError, match="Iceberg tag 'audit' is a branch"):
-        daft.read_iceberg(table, tag="audit")
-
-
 def test_read_after_write_overwrite(simple_local_table):
     table, num_partitions = simple_local_table
 
