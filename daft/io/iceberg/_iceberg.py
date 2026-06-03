@@ -1,12 +1,15 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+import logging
+import os
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
+from daft.filesystem import get_protocol_from_path
 from daft.io._checkpoint import attach_checkpoint
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -16,8 +19,18 @@ if TYPE_CHECKING:
     from daft.checkpoint import CheckpointConfig
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
-    """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
+logger = logging.getLogger(__name__)
+
+
+def _convert_iceberg_file_io_properties_to_io_config(
+    props: dict[str, Any], location: str | None = None
+) -> IOConfig | None:
+    """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py.
+
+    For an ``oss://`` ``location`` (Alibaba Cloud OSS, S3-compatible), the IOConfig gets
+    virtual-hosted addressing and an ``oss``->``s3`` alias so the S3 filesystem resolves
+    ``oss://`` paths -- applied even with no IO properties (e.g. env-var credentials).
+    """
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
     any_props_set = False
@@ -30,6 +43,8 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
                 return property_value
         return None
 
+    is_oss = location is not None and get_protocol_from_path(location) == "oss"
+
     io_config = IOConfig(
         s3=S3Config(
             endpoint_url=get_first_property_value("s3.endpoint"),
@@ -37,6 +52,7 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
             key_id=get_first_property_value("s3.access-key-id", "client.access-key-id"),
             access_key=get_first_property_value("s3.secret-access-key", "client.secret-access-key"),
             session_token=get_first_property_value("s3.session-token", "client.session-token"),
+            force_virtual_addressing=True if is_oss else None,
         ),
         azure=AzureConfig(
             storage_account=get_first_property_value("adls.account-name", "adlfs.account-name"),
@@ -50,14 +66,18 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
             project_id=get_first_property_value("gcs.project-id"),
             token=get_first_property_value("gcs.oauth2.token"),
         ),
+        protocol_aliases={"oss": "s3"} if is_oss else None,
     )
 
+    if is_oss:
+        logger.debug("oss:// table detected; applying S3-compatible settings to the IOConfig")
+        return io_config
     return io_config if any_props_set else None
 
 
 @PublicAPI
 def read_iceberg(
-    table: Union[str, "PyIcebergTable"],
+    table: Union[str, os.PathLike[str], "PyIcebergTable"],
     snapshot_id: int | None = None,
     io_config: IOConfig | None = None,
     checkpoint: "CheckpointConfig | None" = None,
@@ -65,9 +85,10 @@ def read_iceberg(
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
-            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
-            created using the PyIceberg library.
+        table (str, os.PathLike, or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs
+            to object stores such as ``s3://`` or ``gs://``) or a
+            [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created
+            using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
@@ -103,11 +124,13 @@ def read_iceberg(
     from daft.io.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
-    if isinstance(table, str):
-        table = StaticTable.from_metadata(metadata_location=table)
+    if isinstance(table, (str, os.PathLike)):
+        table = StaticTable.from_metadata(metadata_location=os.fspath(table))
 
     io_config = (
-        _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config
+        _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+        if io_config is None
+        else io_config
     )
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

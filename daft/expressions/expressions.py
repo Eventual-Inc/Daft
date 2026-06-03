@@ -1497,6 +1497,26 @@ class Expression:
 
         return over(self, window)
 
+    def first_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the first value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the first non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import first_value
+
+        return first_value(self, ignore_nulls=ignore_nulls)
+
+    def last_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the last value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the last non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import last_value
+
+        return last_value(self, ignore_nulls=ignore_nulls)
+
     def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 

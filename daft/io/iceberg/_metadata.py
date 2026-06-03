@@ -18,9 +18,6 @@ from pyiceberg.transforms import (
 from pyiceberg.transforms import (
     MonthTransform as IcebergMonthTransform,
 )
-from pyiceberg.transforms import (
-    Transform as IcebergTransform,
-)
 from pyiceberg.transforms import TruncateTransform as IcebergTruncateTransform
 from pyiceberg.transforms import YearTransform as IcebergYearTransform
 
@@ -32,6 +29,7 @@ if TYPE_CHECKING:
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableMetadata as IcebergTableMetadata
+    from pyiceberg.transforms import Transform as IcebergTransform
     from pyiceberg.types import IcebergType
 
 

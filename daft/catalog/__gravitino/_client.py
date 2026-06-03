@@ -266,14 +266,20 @@ class GravitinoClient:
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
 
+            table_catalog = self.load_catalog(catalog_name)
+            catalog_properties = table_catalog.properties
+            merged_properties = catalog_properties.copy()
+            merged_properties.update(properties)
+            merged_provider = table_data.get("provider") or table_catalog.provider
+
             table_info = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
-                table_type=table_data.get("provider", ""),
+                table_type=merged_provider,
                 storage_location=storage_location,
                 format=properties.get("format", "ICEBERG"),
-                properties=properties,
+                properties=merged_properties,
             )
 
         except requests.exceptions.HTTPError as e:

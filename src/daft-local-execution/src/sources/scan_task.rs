@@ -13,7 +13,9 @@ use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
+use daft_parquet::read::{
+    ParquetBulkReadOptions, ParquetSchemaInferenceOptions, read_parquet_bulk,
+};
 use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
 use futures::{FutureExt, Stream, StreamExt};
 use tracing::instrument;
@@ -373,24 +375,15 @@ async fn get_delete_map(
                 .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
                 .map(|path| (path, vec![]))
                 .collect::<std::collections::HashMap<_, _>>();
-            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
-            let result = read_parquet_bulk_async(
-                delete_files.into_iter().collect(),
-                columns_to_read,
-                None,
-                None,
-                None,
-                None,
-                io_client,
-                None,
-                get_compute_pool_num_threads(),
-                ParquetSchemaInferenceOptions::new(None),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
+            let opts = ParquetBulkReadOptions {
+                columns: Some(vec!["file_path".to_string(), "pos".to_string()]),
+                schema_infer: ParquetSchemaInferenceOptions::new(None),
+                num_parallel_tasks: get_compute_pool_num_threads(),
+                ..Default::default()
+            };
+            let result =
+                read_parquet_bulk(delete_files.into_iter().collect(), io_client, None, opts)
+                    .await?;
 
             for table_result in result {
                 let table = table_result?;

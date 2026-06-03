@@ -11,7 +11,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{
         RuntimeStats,
@@ -47,7 +47,7 @@ impl StageCheckpointKeysNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

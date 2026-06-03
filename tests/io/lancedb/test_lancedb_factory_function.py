@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from daft_lance.lance_scan import _lancedb_table_factory_function
 
-from daft.io.lance.lance_scan import _lancedb_table_factory_function
 from daft.recordbatch import RecordBatch
 
 # Import-or-skip lance once at module level so individual tests don't need to do this
@@ -26,40 +25,6 @@ def _build_large_lance_dataset(tmp_path_factory):
         lance.write_dataset(tbl, tmp_dir, mode=mode)
         total += 5
     return str(tmp_dir)
-
-
-def test_importerror_when_lance_missing():
-    # Ensure lance is not already imported and make importing it fail within the factory
-    import builtins
-    import sys
-
-    saved = sys.modules.pop("lance", None)
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "lance":
-            raise ImportError("No lance")
-        return real_import(name, *args, **kwargs)
-
-    try:
-        with patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ImportError) as ei:
-                list(
-                    _lancedb_table_factory_function(
-                        ds_uri="/does/not/matter",
-                        open_kwargs=None,
-                        fragment_ids=[0],
-                        required_columns=None,
-                        filter=None,
-                        limit=None,
-                    )
-                )
-        assert "Unable to import the `lance` package" in str(ei.value)
-        assert "pip install daft[lance]" in str(ei.value)
-    finally:
-        if saved is not None:
-            sys.modules["lance"] = saved
 
 
 @pytest.mark.parametrize("num_frags", [1, 2, 4])

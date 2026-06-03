@@ -582,3 +582,26 @@ def test_flight_gather_mixed_empty_inputs(flight_shuffle_ctx):
 
         top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
         assert top == sorted(expected_rows, reverse=True)[:5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle hints are emitted by the distributed (ray) translator",
+)
+def test_high_fanout_shuffle_hints_user_to_use_flight_shuffle():
+    # `daft.range(..., partitions=N)` (not `into_partitions(N)`) because the DropRepartition
+    # rule collapses `into_partitions(N).repartition(N, ...)` into one repartition over the
+    # 1-partition base, eliminating the 800×800 fan-out we're trying to trigger.
+    with daft.execution_config_ctx(shuffle_algorithm="auto"):
+        df = daft.range(800, partitions=800).repartition(800, "id")
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+    output = buf.getvalue()
+
+    expected_hint = (
+        "Shuffle with many partitions (800 × 800 = 640000 pieces, ~1.83 GiB of head-node memory). "
+        "`flight_shuffle` writes shuffle data to disk and scales better. Enable: "
+        'daft.context.set_execution_config(shuffle_algorithm="flight_shuffle", '
+        'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
+    )
+    assert expected_hint in output, output

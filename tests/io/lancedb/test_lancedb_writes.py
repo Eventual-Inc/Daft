@@ -179,18 +179,6 @@ def test_lancedb_write_with_create_append_mode(lance_dataset_path):
     assert ds.schema == schema
 
 
-def test_create_mode_fails_when_target_is_file(lance_dataset_path):
-    """When mode="create" and the target path points to a file, write_lance should fail fast."""
-    # Create a file at the target path
-    file_path = os.path.join(lance_dataset_path, "existing_file.txt")
-    with open(file_path, "w") as f:
-        f.write("test content")
-
-    df = daft.from_pydict(data1)
-    with pytest.raises(FileExistsError, match="Target path points to a file, cannot create a dataset here"):
-        df.write_lance(file_path, mode="create")
-
-
 def test_create_mode_fails_when_dataset_is_exists(lance_dataset_path):
     """When mode="create" and the target dataset already exists, write_lance should fail."""
     df = daft.from_pydict(data1)

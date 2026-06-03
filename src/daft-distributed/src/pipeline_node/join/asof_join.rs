@@ -7,16 +7,16 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
-use daft_logical_plan::{AsofJoinStrategy, partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::{AsofJoinStrategy, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
 use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        sort::range_repartition_two_sides,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::BoundClusteringSpec, sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -28,8 +28,10 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const PER_WORKER_CARRYOVER_PHASE: &str = "per_worker_carryover";
-const PER_PARTITION_CARRYOVER_PHASE: &str = "per_partition_carryover";
+const PARTIAL_CARRYOVER_BACKWARD_PHASE: &str = "partial_carryover_backward";
+const FINAL_CARRYOVER_BACKWARD_PHASE: &str = "final_carryover_backward";
+const PARTIAL_CARRYOVER_FORWARD_PHASE: &str = "partial_carryover_forward";
+const FINAL_CARRYOVER_FORWARD_PHASE: &str = "final_carryover_forward";
 
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
@@ -71,15 +73,13 @@ impl AsofJoinNode {
             NodeType::AsofJoin,
             NodeCategory::BlockingSink,
         );
-        let partition_cols = left_by
-            .iter()
-            .map(BoundExpr::inner)
-            .cloned()
-            .collect::<Vec<_>>();
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            Arc::new(HashClusteringConfig::new(num_partitions, partition_cols).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(
+                num_partitions,
+                left_by.clone(),
+            )),
         );
         Self {
             config,
@@ -99,7 +99,7 @@ impl AsofJoinNode {
         self: &Arc<Self>,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
-        carryover_mo: Option<MaterializedOutput>,
+        carryovers: (Option<MaterializedOutput>, Option<MaterializedOutput>),
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
@@ -128,7 +128,11 @@ impl AsofJoinNode {
             .flat_map(|output| output.into_inner().0)
             .collect::<Vec<_>>();
 
-        if let Some(carryover) = carryover_mo {
+        let (backward_carryover, forward_carryover) = carryovers;
+        if let Some(carryover) = backward_carryover {
+            right_psets.extend(carryover.into_inner().0);
+        }
+        if let Some(carryover) = forward_carryover {
             right_psets.extend(carryover.into_inner().0);
         }
 
@@ -166,7 +170,12 @@ impl AsofJoinNode {
 
         if num_partitions == 1 {
             return self
-                .create_and_submit_join_task(left_materialized, right_materialized, None, result_tx)
+                .create_and_submit_join_task(
+                    left_materialized,
+                    right_materialized,
+                    (None, None),
+                    result_tx,
+                )
                 .await;
         }
 
@@ -187,59 +196,52 @@ impl AsofJoinNode {
         )
         .await?;
 
-        let descending = matches!(self.strategy, AsofJoinStrategy::Backward);
-
-        let per_worker_carryover_tasks = self.create_per_worker_carryover_tasks(
-            right_partitioned_outputs.clone(),
-            descending,
-            task_id_counter,
-            scheduler_handle,
-        )?;
-
-        let per_worker_carryover_outputs: Vec<Vec<MaterializedOutput>> =
-            try_join_all(per_worker_carryover_tasks.into_iter().map(try_join_all))
-                .await?
-                .into_iter()
-                .map(|bucket| bucket.into_iter().flatten().collect())
-                .collect();
-
-        let per_partition_carryover_tasks = self.create_per_partition_carryover_tasks(
-            per_worker_carryover_outputs,
-            descending,
-            task_id_counter,
-            scheduler_handle,
-        )?;
-
-        let mut per_partition_carryover_outputs: Vec<Option<MaterializedOutput>> =
-            try_join_all(per_partition_carryover_tasks.into_iter().map(|t| async {
-                match t {
-                    Some(task) => task.await.map(|mo| mo.filter(|m| m.num_rows() > 0)),
-                    None => Ok(None),
-                }
-            }))
-            .await?;
-
-        match self.strategy {
+        // backward_carryovers[i] = max of bucket i (forward-propagated): used as carryover for bucket i+1.
+        // forward_carryovers[i]  = min of bucket i (backward-propagated): used as carryover for bucket i-1.
+        let (backward_carryovers, forward_carryovers) = match self.strategy {
             AsofJoinStrategy::Backward => {
-                // Forward-propagate: if bucket i has no carryover, inherit from bucket i-1.
-                for i in 1..per_partition_carryover_outputs.len() {
-                    if per_partition_carryover_outputs[i].is_none() {
-                        let prev = per_partition_carryover_outputs[i - 1].clone();
-                        per_partition_carryover_outputs[i] = prev;
-                    }
-                }
+                let backward_carryovers = self
+                    .compute_carryovers(
+                        right_partitioned_outputs.clone(),
+                        true,
+                        task_id_counter,
+                        scheduler_handle,
+                    )
+                    .await?;
+                (
+                    backward_carryovers,
+                    vec![None::<MaterializedOutput>; num_partitions],
+                )
             }
             AsofJoinStrategy::Forward => {
-                // Backward-propagate: if bucket i has no carryover, inherit from bucket i+1.
-                let n = per_partition_carryover_outputs.len();
-                for i in (0..n.saturating_sub(1)).rev() {
-                    if per_partition_carryover_outputs[i].is_none() {
-                        let next = per_partition_carryover_outputs[i + 1].clone();
-                        per_partition_carryover_outputs[i] = next;
-                    }
-                }
+                let forward_carryovers = self
+                    .compute_carryovers(
+                        right_partitioned_outputs.clone(),
+                        false,
+                        task_id_counter,
+                        scheduler_handle,
+                    )
+                    .await?;
+                (
+                    vec![None::<MaterializedOutput>; num_partitions],
+                    forward_carryovers,
+                )
             }
-        }
+            AsofJoinStrategy::Nearest => tokio::try_join!(
+                self.compute_carryovers(
+                    right_partitioned_outputs.clone(),
+                    true,
+                    task_id_counter,
+                    scheduler_handle,
+                ),
+                self.compute_carryovers(
+                    right_partitioned_outputs.clone(),
+                    false,
+                    task_id_counter,
+                    scheduler_handle,
+                ),
+            )?,
+        };
 
         let left_partition_groups =
             crate::utils::transpose::transpose_materialized_outputs_from_vec(
@@ -253,34 +255,92 @@ impl AsofJoinNode {
                 num_partitions,
             );
 
-        let get_carryover = |i: usize| match self.strategy {
-            AsofJoinStrategy::Backward => {
-                if i == 0 {
-                    None
-                } else {
-                    per_partition_carryover_outputs[i - 1].clone()
-                }
-            }
-            AsofJoinStrategy::Forward => {
-                if i == num_partitions - 1 {
-                    None
-                } else {
-                    per_partition_carryover_outputs[i + 1].clone()
-                }
-            }
-        };
-
         for (i, (left_group, right_group)) in left_partition_groups
             .into_iter()
             .zip(right_partition_groups)
             .enumerate()
         {
-            let carryover = get_carryover(i);
-            self.create_and_submit_join_task(left_group, right_group, carryover, result_tx)
+            let carryovers = (
+                if i == 0 {
+                    None
+                } else {
+                    backward_carryovers[i - 1].clone()
+                },
+                if i == num_partitions - 1 {
+                    None
+                } else {
+                    forward_carryovers[i + 1].clone()
+                },
+            );
+            self.create_and_submit_join_task(left_group, right_group, carryovers, result_tx)
                 .await?;
         }
 
         Ok(())
+    }
+
+    /// Runs one top_n carryover pass over the right partitioned outputs.
+    ///
+    /// `is_strategy_backward=true` runs a backward pass: picks the per-partition max and fills gaps left-to-right.
+    /// `is_strategy_backward=false` runs a forward pass: picks the per-partition min and fills gaps right-to-left.
+    async fn compute_carryovers(
+        &self,
+        right_partitioned_outputs: Vec<MaterializedOutput>,
+        is_strategy_backward: bool,
+        task_id_counter: &TaskIDCounter,
+        scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<Vec<Option<MaterializedOutput>>> {
+        let descending = is_strategy_backward;
+        let propagate_forward = is_strategy_backward;
+
+        let partial_carryover_tasks = self.create_partial_carryover_tasks(
+            right_partitioned_outputs,
+            descending,
+            task_id_counter,
+            scheduler_handle,
+        )?;
+
+        let partial_carryovers: Vec<Vec<MaterializedOutput>> =
+            try_join_all(partial_carryover_tasks.into_iter().map(try_join_all))
+                .await?
+                .into_iter()
+                .map(|bucket| bucket.into_iter().flatten().collect())
+                .collect();
+
+        let final_carryover_tasks = self.create_final_carryover_tasks(
+            partial_carryovers,
+            descending,
+            task_id_counter,
+            scheduler_handle,
+        )?;
+
+        let mut final_carryovers: Vec<Option<MaterializedOutput>> =
+            try_join_all(final_carryover_tasks.into_iter().map(|t| async {
+                match t {
+                    Some(task) => task.await.map(|mo| mo.filter(|m| m.num_rows() > 0)),
+                    None => Ok(None),
+                }
+            }))
+            .await?;
+
+        let n = final_carryovers.len();
+        if propagate_forward {
+            for i in 1..n {
+                if final_carryovers[i].is_none() {
+                    let prev = final_carryovers[i - 1].clone();
+                    final_carryovers[i] = prev;
+                }
+            }
+        } else {
+            for i in (0..n.saturating_sub(1)).rev() {
+                if final_carryovers[i].is_none() {
+                    let next = final_carryovers[i + 1].clone();
+                    final_carryovers[i] = next;
+                }
+            }
+        }
+
+        Ok(final_carryovers)
     }
 
     async fn execution_loop(
@@ -317,7 +377,7 @@ impl AsofJoinNode {
 
         if right_materialized.is_empty() {
             return self
-                .create_and_submit_join_task(left_materialized, vec![], None, &result_tx)
+                .create_and_submit_join_task(left_materialized, vec![], (None, None), &result_tx)
                 .await;
         }
 
@@ -360,9 +420,8 @@ impl AsofJoinNode {
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<SubmittedTask> {
         let composite_keys = self.right_composite_key();
+        let n_keys = composite_keys.len();
         let node_id = self.node_id();
-        let descending = vec![descending; composite_keys.len()];
-        let nulls_first = vec![false; composite_keys.len()];
 
         let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
             inputs,
@@ -374,8 +433,8 @@ impl AsofJoinNode {
         let plan = LocalPhysicalPlan::top_n(
             in_memory_scan,
             composite_keys,
-            descending,
-            nulls_first,
+            vec![descending; n_keys],
+            vec![false; n_keys],
             1,
             None,
             StatsState::NotMaterialized,
@@ -383,17 +442,22 @@ impl AsofJoinNode {
         );
 
         SwordfishTaskBuilder::new(plan, self, node_id)
+            // Forward (min) and backward (max) carryover tasks have identical top_n plans but
+            // compute different results, so give them distinct fingerprints to avoid
+            // sharing a worker pipeline and producing incorrect outputs.
+            .extend_fingerprint(u32::from(descending))
             .with_psets(node_id, psets)
             .with_strategy(strategy)
             .build(self.context().query_idx, task_id_counter)
             .submit(scheduler_handle)
     }
 
-    /// Creates top_n(limit=1) tasks per (bucket, worker) pair.
-    /// `descending=true` picks the max row per bucket (backward carryover); `false` picks the min (forward carryover).
+    /// For each (partition, worker) pair, computes top_n(1) over that partition's data local to that worker.
+    /// Tasks are pinned via worker affinity so no data movement occurs.
+    /// `descending=true` picks the max (backward carryover); `false` picks the min (forward carryover).
     ///
-    /// Returns `Vec<Vec<SubmittedTask>>` where outer index = bucket_idx, inner = per-worker tasks.
-    fn create_per_worker_carryover_tasks(
+    /// Returns `Vec<Vec<SubmittedTask>>` where outer index = partition_idx, inner = one task per worker.
+    fn create_partial_carryover_tasks(
         &self,
         materialized_outputs: Vec<MaterializedOutput>,
         descending: bool,
@@ -418,10 +482,15 @@ impl AsofJoinNode {
                     .map(|splits| splits[bucket_idx].clone())
                     .collect();
 
+                let phase = if descending {
+                    PARTIAL_CARRYOVER_BACKWARD_PHASE
+                } else {
+                    PARTIAL_CARRYOVER_FORWARD_PHASE
+                };
                 let submitted = self.submit_top1_carryover_task(
                     mos_for_bucket,
                     descending,
-                    PER_WORKER_CARRYOVER_PHASE,
+                    phase,
                     Some(SchedulingStrategy::WorkerAffinity {
                         worker_id: worker_id.clone(),
                         soft: false,
@@ -438,21 +507,21 @@ impl AsofJoinNode {
         Ok(tasks_by_bucket)
     }
 
-    /// Creates a single top_n(limit=1) task per partition over the per-worker top-1 outputs,
-    /// yielding the global extreme (max or min) per partitions (determined by the descending parameter).
+    /// For each partition, reduces the per-worker partial top_n(1) results into a single global top_n(1).
+    /// `descending=true` picks the max (backward carryover); `false` picks the min (forward carryover).
     ///
     /// Returns `Vec<Option<SubmittedTask>>` where `None` means the partition had no data.
-    fn create_per_partition_carryover_tasks(
+    fn create_final_carryover_tasks(
         &self,
-        per_worker_carryover_mos: Vec<Vec<MaterializedOutput>>,
+        partial_carryovers: Vec<Vec<MaterializedOutput>>,
         descending: bool,
         task_id_counter: &TaskIDCounter,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<Vec<Option<SubmittedTask>>> {
-        per_worker_carryover_mos
+        partial_carryovers
             .into_iter()
-            .map(|worker_mos| {
-                let non_empty: Vec<MaterializedOutput> = worker_mos
+            .map(|per_worker_mos| {
+                let non_empty: Vec<MaterializedOutput> = per_worker_mos
                     .into_iter()
                     .filter(|mo| mo.num_rows() > 0)
                     .collect();
@@ -461,10 +530,15 @@ impl AsofJoinNode {
                     return Ok(None);
                 }
 
+                let phase = if descending {
+                    FINAL_CARRYOVER_BACKWARD_PHASE
+                } else {
+                    FINAL_CARRYOVER_FORWARD_PHASE
+                };
                 self.submit_top1_carryover_task(
                     non_empty,
                     descending,
-                    PER_PARTITION_CARRYOVER_PHASE,
+                    phase,
                     None,
                     task_id_counter,
                     scheduler_handle,

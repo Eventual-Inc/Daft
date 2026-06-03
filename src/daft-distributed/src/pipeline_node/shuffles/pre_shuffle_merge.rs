@@ -7,8 +7,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -47,7 +47,7 @@ impl PreShuffleMergeNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
 
         Self {

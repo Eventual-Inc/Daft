@@ -81,8 +81,6 @@ def read_json(
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
-        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
-            By default, Daft will automatically construct a FileSystem instance internally.
         json_read_options (JsonReadOptions, optional): JSON-specific configs to apply when reading the file
         read_options (TableReadOptions, optional): Non-format-specific options for reading the file
 
@@ -119,8 +117,6 @@ def read_parquet(
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
-        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
-            By default, Daft will automatically construct a FileSystem instance internally.
         read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
@@ -186,8 +182,6 @@ def read_csv(
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         schema (Schema): Daft schema to read the CSV file into
-        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
-            By default, Daft will automatically construct a FileSystem instance internally.
         csv_options (TableParseCSVOptions, optional): CSV-specific configs to apply when reading the file
         read_options (TableReadOptions, optional): Options for reading the file
 

@@ -15,6 +15,7 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
+from daft.io.writer import ParquetFileWriter
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 
@@ -519,3 +520,157 @@ def test_write_parquet_success_file(tmp_path_factory):
 
     assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
     assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
+
+
+@pytest.mark.parametrize("use_native", [True, False])
+def test_write_parquet_with_trailing_slash(tmp_path, use_native):
+    # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
+    # write_parquet with a trailing-slash root_dir used to produce
+    # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
+    # with ArrowInvalid: Empty path component.
+    from daft.context import execution_config_ctx
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    with execution_config_ctx(native_parquet_writer=use_native):
+        manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
+
+    assert manifest["path"], "no files written"
+    for written_path in manifest["path"]:
+        assert "//" not in written_path, written_path
+
+    assert daft.read_parquet(str(tmp_path)).to_pydict() == {"x": [1, 2, 3]}
+
+
+def _column_codecs(parquet_path: str) -> dict[str, str]:
+    meta = papq.ParquetFile(parquet_path).metadata
+    rg = meta.row_group(0)
+    return {rg.column(i).path_in_schema: rg.column(i).compression for i in range(rg.num_columns)}
+
+
+def test_write_parquet_global_compression_honored_on_native_writer(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(str(tmp_path), compression="zstd")
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "ZSTD"
+    assert codecs["b"] == "ZSTD"
+
+
+def test_write_parquet_per_column_compression(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [1.0, 2.0, 3.0]})
+    df.write_parquet(
+        str(tmp_path),
+        compression="zstd",
+        column_compression={"a": "snappy", "b": "none"},
+    )
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "SNAPPY"
+    assert codecs["b"] == "UNCOMPRESSED"
+    assert codecs["c"] == "ZSTD"
+
+
+def test_write_parquet_invalid_codec_raises(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(Exception, match="unsupported parquet compression"):
+        df.write_parquet(str(tmp_path), compression="bogus")
+
+
+def _make_parquet_writer(tmp_path, compression, column_compression):
+    return ParquetFileWriter(
+        root_dir=str(tmp_path),
+        file_idx=0,
+        compression=compression,
+        column_compression=column_compression,
+    )
+
+
+def test_resolve_column_compression_flat_schema(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"a": "snappy", "b": "none"},
+    )
+    schema = pa.schema([("a", pa.int64()), ("b", pa.string()), ("c", pa.float64())])
+    assert writer._resolve_column_compression(schema) == {
+        "a": "snappy",
+        "b": "none",
+        "c": "zstd",
+    }
+
+
+def test_resolve_column_compression_default_is_none_string(tmp_path):
+    # When the user omits `compression`, self.compression is normalized to "none"
+    # (never the Python None), so unmatched leaves fall back to a valid codec.
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression=None,
+        column_compression={"a": "snappy"},
+    )
+    schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
+    assert writer._resolve_column_compression(schema) == {"a": "snappy", "b": "none"}
+
+
+def test_resolve_column_compression_struct_nesting(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"s.x": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("s", pa.struct([("x", pa.int64()), ("y", pa.string())])),
+        ]
+    )
+    assert writer._resolve_column_compression(schema) == {
+        "a": "zstd",
+        "s.x": "snappy",
+        "s.y": "zstd",
+    }
+
+
+def test_resolve_column_compression_list_top_level_ok(tmp_path):
+    # Overrides at the top-level list column are fine; only leaves nested
+    # *inside* list/large_list/map types are unsupported on the PyArrow path.
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"items": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("items", pa.list_(pa.struct([("x", pa.int64())]))),
+        ]
+    )
+    assert writer._resolve_column_compression(schema) == {"a": "zstd", "items": "snappy"}
+
+
+def test_resolve_column_compression_nested_in_list_raises(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"items.list.element.x": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("items", pa.list_(pa.struct([("x", pa.int64())]))),
+        ]
+    )
+    with pytest.raises(ValueError, match="do not match any leaf column"):
+        writer._resolve_column_compression(schema)
+
+
+def test_resolve_column_compression_unknown_key_raises(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"does_not_exist": "snappy"},
+    )
+    schema = pa.schema([("a", pa.int64())])
+    with pytest.raises(ValueError, match="does_not_exist"):
+        writer._resolve_column_compression(schema)

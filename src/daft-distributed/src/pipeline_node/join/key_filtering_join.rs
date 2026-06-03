@@ -18,8 +18,8 @@ use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -167,7 +167,7 @@ impl KeyFilteringJoinNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            left_child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &left_child },
         );
         let right_schema = right_child.config().schema.clone();
         Self {
@@ -269,7 +269,7 @@ impl KeyFilteringJoinNode {
         let mut first_error = None;
         while let Some(result) = running_tasks.join_next().await {
             match result? {
-                Ok(()) => {}
+                Ok(_) => {}
                 Err(err) if first_error.is_none() => first_error = Some(err),
                 Err(_) => {}
             }

@@ -29,6 +29,7 @@ if "COV_CORE_SOURCE" in os.environ:
 from daft.daft import build_type as _build_type
 from daft.daft import version as _version
 from daft.daft import refresh_logger as _refresh_logger
+from daft.daft import get_loaded_extension_paths
 
 
 def get_version() -> str:
@@ -159,7 +160,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile
+from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -253,6 +254,7 @@ __all__ = [
     "get_catalog",
     "get_context",
     "get_function",
+    "get_loaded_extension_paths",
     "get_or_create_runner",
     "get_or_infer_runner_type",
     "get_provider",
@@ -269,6 +271,7 @@ __all__ = [
     "load_extension",
     "method",
     "metrics",
+    "open_file",
     "planning_config_ctx",
     "range",
     "read_csv",

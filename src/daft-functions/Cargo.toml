@@ -6,6 +6,7 @@ daft-hash = {workspace = true}
 xxhash-rust = {workspace = true}
 arrow-array = {workspace = true}
 arrow-buffer = {workspace = true}
+chrono = {workspace = true}
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 typetag = {workspace = true}
