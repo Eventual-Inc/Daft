@@ -36,6 +36,16 @@ pub(crate) fn register_cleanup(
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 }
 
+/// `partition_ref_id` layout: `(input_id << 32) | partition_idx`.
+fn input_id_from_ref(flight_ref: &FlightPartitionRef) -> u32 {
+    (flight_ref.partition_ref_id >> 32) as u32
+}
+
+/// `partition_ref_id` layout: `(input_id << 32) | partition_idx`.
+fn partition_idx_from_ref(flight_ref: &FlightPartitionRef) -> u32 {
+    (flight_ref.partition_ref_id & 0xFFFF_FFFF) as u32
+}
+
 /// Fold a stream of flight-shuffle map outputs into one read input per partition.
 ///
 /// Each map task emits one `FlightPartitionRef` per output partition, so collecting them
@@ -68,8 +78,7 @@ pub(crate) async fn fold_outputs_from_stream(
         inputs_by_server
             .entry(flight_ref.server_address.clone())
             .or_default()
-            // High 32 bits of partition_ref_id = map input id.
-            .push((flight_ref.partition_ref_id >> 32) as u32);
+            .push(input_id_from_ref(flight_ref));
     }
 
     let inputs_by_server = Arc::new(inputs_by_server);
@@ -93,16 +102,12 @@ pub(crate) fn read_inputs_from_refs(
             .as_any()
             .downcast_ref::<FlightPartitionRef>()
             .expect("expected flight partition ref");
-        // partition_ref_id = (input_id << 32) | partition_idx.
         groups
-            .entry((
-                flight_ref.shuffle_id,
-                (flight_ref.partition_ref_id & 0xFFFF_FFFF) as u32,
-            ))
+            .entry((flight_ref.shuffle_id, partition_idx_from_ref(flight_ref)))
             .or_default()
             .entry(flight_ref.server_address.clone())
             .or_default()
-            .push((flight_ref.partition_ref_id >> 32) as u32);
+            .push(input_id_from_ref(flight_ref));
     }
 
     groups
