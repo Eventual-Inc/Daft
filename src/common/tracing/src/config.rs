@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use opentelemetry::{Key, KeyValue};
 // These match the OTEL_EXPORTER_OTLP_* environment variables from:
 // https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/#endpoint-configuration
 use opentelemetry_otlp::{
@@ -7,6 +8,7 @@ use opentelemetry_otlp::{
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, Protocol,
 };
+use opentelemetry_sdk::{Resource, resource::EnvResourceDetector};
 
 /// Environment variable for the general OTLP endpoint.
 pub const ENV_OLD_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
@@ -106,5 +108,128 @@ impl Config {
         self.metrics_export_interval_ms
             .map(Duration::from_millis)
             .unwrap_or(Duration::from_millis(500))
+    }
+
+    pub fn resource(&self) -> Resource {
+        let env_resource = Resource::builder_empty()
+            .with_detector(Box::new(EnvResourceDetector::new()))
+            .build();
+        let service_name = std::env::var("OTEL_SERVICE_NAME")
+            .ok()
+            .filter(|name| !name.is_empty())
+            .or_else(|| {
+                env_resource
+                    .get(&Key::new("service.name"))
+                    .map(|value| value.to_string())
+            })
+            .unwrap_or_else(|| "daft".to_string());
+
+        Resource::builder_empty()
+            .with_attributes(
+                env_resource
+                    .iter()
+                    .map(|(key, value)| KeyValue::new(key.clone(), value.clone())),
+            )
+            .with_service_name(service_name)
+            .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use opentelemetry::{Key, Value};
+
+    use super::*;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_env_vars<R>(vars: &[(&str, Option<&str>)], f: impl FnOnce() -> R) -> R {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous_values: Vec<_> = vars
+            .iter()
+            .map(|(name, _)| (*name, std::env::var(name).ok()))
+            .collect();
+
+        for (name, value) in vars {
+            match value {
+                Some(value) => unsafe { std::env::set_var(name, value) },
+                None => unsafe { std::env::remove_var(name) },
+            }
+        }
+
+        let result = f();
+
+        for (name, value) in previous_values {
+            match value {
+                Some(value) => unsafe { std::env::set_var(name, value) },
+                None => unsafe { std::env::remove_var(name) },
+            }
+        }
+
+        result
+    }
+
+    #[test]
+    fn resource_defaults_to_daft_service_name() {
+        with_env_vars(
+            &[
+                ("OTEL_SERVICE_NAME", None),
+                ("OTEL_RESOURCE_ATTRIBUTES", None),
+            ],
+            || {
+                let resource = Config::from_env().resource();
+                assert_eq!(
+                    resource.get(&Key::new("service.name")),
+                    Some(Value::from("daft"))
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn resource_uses_otel_service_name_env() {
+        with_env_vars(
+            &[
+                ("OTEL_SERVICE_NAME", Some("daft-ray-worker")),
+                ("OTEL_RESOURCE_ATTRIBUTES", None),
+            ],
+            || {
+                let resource = Config::from_env().resource();
+                assert_eq!(
+                    resource.get(&Key::new("service.name")),
+                    Some(Value::from("daft-ray-worker"))
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn resource_includes_otel_resource_attributes() {
+        with_env_vars(
+            &[
+                ("OTEL_SERVICE_NAME", None),
+                (
+                    "OTEL_RESOURCE_ATTRIBUTES",
+                    Some("deployment.environment=staging,service.version=0.7.14"),
+                ),
+            ],
+            || {
+                let resource = Config::from_env().resource();
+                assert_eq!(
+                    resource.get(&Key::new("deployment.environment")),
+                    Some(Value::from("staging"))
+                );
+                assert_eq!(
+                    resource.get(&Key::new("service.version")),
+                    Some(Value::from("0.7.14"))
+                );
+                assert_eq!(
+                    resource.get(&Key::new("service.name")),
+                    Some(Value::from("daft"))
+                );
+            },
+        );
     }
 }
