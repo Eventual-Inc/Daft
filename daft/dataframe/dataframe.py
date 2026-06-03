@@ -350,7 +350,12 @@ class DataFrame:
         return None
 
     @DataframePublicAPI
-    def profile(self, top_n: int = 5, file: io.IOBase | None = None) -> None:
+    def profile(
+        self,
+        top_n: int = 5,
+        file: io.IOBase | None = None,
+        show_details: bool = False,
+    ) -> None:
         """Prints a concise profile summary for a materialized DataFrame.
 
         The profile is based on the execution metrics collected when the DataFrame was materialized. This method does
@@ -363,7 +368,12 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
-            >>> df.profile()  # doctest: +SKIP
+            >>> # show details like Total Time, Rows read and other metric
+            >>> df.profile(top_n=3, show_details=True)  # doctest: +SKIP
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
+            >>> # show basic information
+            >>> df.profile()
         """
         if top_n < 1:
             raise ValueError("top_n must be at least 1")
@@ -372,7 +382,7 @@ class DataFrame:
         if self._metadata is None:
             raise ValueError("Profile is not available because execution metadata was not recorded")
 
-        print(self._metadata.format_profile(top_n=top_n), file=file)
+        print(self._metadata.format_profile(top_n=top_n, show_details=show_details), file=file)
 
     def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
