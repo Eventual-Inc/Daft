@@ -839,7 +839,7 @@ impl LogicalPlan {
                     left_on,
                     right_on,
                     strategy,
-                    assume_aligned_partitions,
+                    assume_sorted_and_aligned,
                     ..
                 }) => {
                     use daft_dsl::{Column, Expr, ResolvedColumn};
@@ -866,7 +866,7 @@ impl LogicalPlan {
                             right_on.clone(),
                             right_cols_to_drop,
                             *strategy,
-                            *assume_aligned_partitions,
+                            *assume_sorted_and_aligned,
                         )
                         .unwrap(),
                     )

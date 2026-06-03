@@ -83,7 +83,7 @@ pub struct AsofJoin {
     pub strategy: AsofJoinStrategy,
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
-    pub assume_aligned_partitions: bool,
+    pub assume_sorted_and_aligned: bool,
 }
 
 impl AsofJoin {
@@ -97,7 +97,7 @@ impl AsofJoin {
         right_on: ExprRef,
         right_cols_to_drop: HashSet<String>,
         strategy: AsofJoinStrategy,
-        assume_aligned_partitions: bool,
+        assume_sorted_and_aligned: bool,
     ) -> logical_plan::Result<Self> {
         let output_schema =
             infer_asof_join_schema(&left.schema(), &right.schema(), &right_cols_to_drop)?;
@@ -114,7 +114,7 @@ impl AsofJoin {
             strategy,
             output_schema,
             stats_state: StatsState::NotMaterialized,
-            assume_aligned_partitions,
+            assume_sorted_and_aligned,
         })
     }
 

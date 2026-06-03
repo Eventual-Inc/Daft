@@ -326,7 +326,7 @@ class LogicalPlanBuilder:
         strategy: AsofJoinStrategy,
         prefix: str | None = None,
         suffix: str | None = None,
-        assume_aligned_partitions: bool = False,
+        assume_sorted_and_aligned: bool = False,
     ) -> LogicalPlanBuilder:
         """Asof join (logical plan). Each left row matches the nearest right row according to the chosen strategy."""
         builder = self._builder.join_asof(
@@ -338,7 +338,7 @@ class LogicalPlanBuilder:
             strategy,
             prefix,
             suffix,
-            assume_aligned_partitions,
+            assume_sorted_and_aligned,
         )
         return LogicalPlanBuilder(builder)
 

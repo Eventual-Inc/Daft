@@ -76,7 +76,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             &right_node.config().schema,
         )?;
 
-        if asof_join.assume_aligned_partitions {
+        if asof_join.assume_sorted_and_aligned {
             todo!("AsofJoinAlignedNode: not yet implemented")
         } else {
             self.gen_asof_join_nodes(
