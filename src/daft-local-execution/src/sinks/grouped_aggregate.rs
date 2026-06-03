@@ -13,7 +13,7 @@ use daft_dsl::expr::{
 };
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use tracing::{Span, instrument};
+use tracing::{Instrument, Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
@@ -97,11 +97,14 @@ impl AggStrategy {
             let partial_agg_exprs = params.partial_agg_exprs.clone();
             let group_by = params.group_by.clone();
             let final_group_by = params.final_group_by.clone();
-            tasks.spawn(async move {
-                let agged = shard.agg(&partial_agg_exprs, &group_by)?;
-                let partitioned = agged.partition_by_hash(&final_group_by, num_slots)?;
-                DaftResult::Ok(partitioned)
-            });
+            tasks.spawn(
+                async move {
+                    let agged = shard.agg(&partial_agg_exprs, &group_by)?;
+                    let partitioned = agged.partition_by_hash(&final_group_by, num_slots)?;
+                    DaftResult::Ok(partitioned)
+                }
+                .instrument(Span::current()),
+            );
         }
 
         let shard_results: Vec<Vec<MicroPartition>> = tasks
