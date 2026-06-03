@@ -1,6 +1,5 @@
 pub mod dashboard;
 mod debug;
-// pub mod eventlog;
 pub mod events;
 #[cfg(feature = "python")]
 pub mod python;

@@ -1,5 +1,7 @@
 import { createContext, useContext } from "react";
 
+import type { RunnerInfo } from "@/app/query/types";
+
 export type PendingStatus = {
   status: "Pending";
   start_sec: number;
@@ -64,14 +66,6 @@ export type QueryStatusName =
   | "Failed"
   | "Canceled"
   | "Dead";
-
-export type RunnerInfo = {
-  name: string;
-  version?: string | null;
-  distributed: boolean;
-  dashboard_url?: string | null;
-  task_events_enabled?: boolean | null;
-};
 
 export type QuerySummary = {
   id: string;
