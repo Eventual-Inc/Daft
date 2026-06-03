@@ -193,7 +193,7 @@ class ExecutionMetadata:
             )
         return profile_nodes
 
-    def format_profile(self, top_n: int = 5) -> str:
+    def format_profile(self, top_n: int = 5, show_details: bool = False) -> str:
         """Return a concise query profile summary from execution metrics."""
         nodes = self._profile_nodes()
         # total_operator_us is the sum of duration_us across all nodes, which may be less than total query duration
@@ -217,16 +217,25 @@ class ExecutionMetadata:
 
         if slowest_nodes:
             for index, node in enumerate(slowest_nodes, start=1):
-                details = [
-                    _format_duration(node.duration_us),
-                    f"rows in: {_format_count(node.rows_in)}",
-                    f"rows out: {_format_count(node.rows_out)}",
-                ]
-                if node.bytes_read is not None:
-                    details.append(f"bytes read: {_format_bytes(node.bytes_read)}")
-                elif node.bytes_in is not None or node.bytes_out is not None:
-                    details.append(f"bytes in/out: {_format_bytes(node.bytes_in)} / {_format_bytes(node.bytes_out)}")
-                lines.append(f"{index}. {node.name} ({node.node_type}) - {', '.join(details)}")
+                title = f"{index}. {node.name} ({node.node_type})"
+                duration = _format_duration(node.duration_us)
+                if show_details:
+                    details = [
+                        duration,
+                        f"rows in: {_format_count(node.rows_in)}",
+                        f"rows out: {_format_count(node.rows_out)}",
+                    ]
+
+                    if node.bytes_read is not None:
+                        details.append(f"bytes read: {_format_bytes(node.bytes_read)}")
+                    elif node.bytes_in is not None or node.bytes_out is not None:
+                        details.append(
+                            f"bytes in/out: {_format_bytes(node.bytes_in)} / {_format_bytes(node.bytes_out)}"
+                        )
+
+                    lines.append(f"{title} - {', '.join(details)}")
+                else:
+                    lines.append(f"{title} - {duration}")
         else:
             lines.append("No operator metrics were recorded.")
 
