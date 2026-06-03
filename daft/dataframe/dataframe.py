@@ -3858,6 +3858,7 @@ class DataFrame:
         strategy: Literal["backward", "forward", "nearest"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
+        _assume_aligned_partitions: bool = False,
     ) -> "DataFrame":
         """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
 
@@ -3950,6 +3951,7 @@ class DataFrame:
             strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
+            assume_aligned_partitions=_assume_aligned_partitions,
         )
         return DataFrame(builder)
 

@@ -76,15 +76,19 @@ impl LogicalPlanToPipelineNodeTranslator {
             &right_node.config().schema,
         )?;
 
-        self.gen_asof_join_nodes(
-            left_node,
-            right_node,
-            left_by,
-            right_by,
-            left_on,
-            right_on,
-            asof_join.strategy,
-            asof_join.output_schema.clone(),
-        )
+        if asof_join.assume_aligned_partitions {
+            todo!("AsofJoinAlignedNode: not yet implemented")
+        } else {
+            self.gen_asof_join_nodes(
+                left_node,
+                right_node,
+                left_by,
+                right_by,
+                left_on,
+                right_on,
+                asof_join.strategy,
+                asof_join.output_schema.clone(),
+            )
+        }
     }
 }
