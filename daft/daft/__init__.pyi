@@ -2612,22 +2612,26 @@ class PyQueryMetadata:
     output_schema: PySchema
     unoptimized_plan: str
     runner: str
-    ray_dashboard_url: str | None
+    dashboard_url: str | None
     entrypoint: str | None
     python_version: str | None
     daft_version: str | None
-    ray_version: str | None
+    runner_version: str | None
+    distributed: bool
+    task_events_enabled: bool | None
 
     def __init__(
         self,
         output_schema: PySchema,
         unoptimized_plan: str,
         runner: str,
-        ray_dashboard_url: str | None = None,
+        dashboard_url: str | None = None,
         entrypoint: str | None = None,
         python_version: str | None = None,
         daft_version: str | None = None,
-        ray_version: str | None = None,
+        runner_version: str | None = None,
+        distributed: bool = False,
+        task_events_enabled: bool | None = None,
     ) -> None: ...
 
 class PyQueryResult:

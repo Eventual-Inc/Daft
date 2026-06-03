@@ -602,6 +602,8 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
+        task_events_raw = os.environ.get("DAFT_TASK_EVENTS_ENABLED")
+        task_events_enabled = task_events_raw.strip().lower() in ("1", "true") if task_events_raw is not None else False
 
         # Log Dashboard URL if configured
         if dashboard_url:
@@ -637,11 +639,13 @@ class RayRunner(Runner[ray.ObjectRef]):
                         output_schema._schema,
                         unoptimized_plan_json,
                         "Ray (Flotilla)",
-                        ray_dashboard_url,
-                        entrypoint,
+                        dashboard_url=ray_dashboard_url,
+                        entrypoint=entrypoint,
                         python_version=platform.python_version(),
                         daft_version=daft.get_version(),
-                        ray_version=ray.__version__,
+                        runner_version=ray.__version__,
+                        distributed=True,
+                        task_events_enabled=task_events_enabled,
                     ),
                 )
                 ctx._notify_optimization_start(query_id)

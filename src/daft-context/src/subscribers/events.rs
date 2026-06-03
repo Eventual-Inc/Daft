@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_metrics::{
     NodeID, QueryID, QueryPlan, StatSnapshot, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
@@ -74,6 +75,67 @@ impl From<&NodeInfo> for OperatorMeta {
             origin_node_id: info.node_origin_id,
             node_phase: info.node_phase.clone(),
             context: info.context.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionConfig {
+    pub default_morsel_size: usize,
+    pub scantask_max_parallel: usize,
+    pub min_cpu_per_task: f64,
+
+    pub enable_scan_task_split_and_merge: bool,
+    pub scan_tasks_min_size_bytes: usize,
+    pub scan_tasks_max_size_bytes: usize,
+    pub max_sources_per_scan_task: usize,
+    pub parquet_split_row_groups_max_files: usize,
+
+    pub broadcast_join_size_bytes_threshold: usize,
+    pub hash_join_partition_size_leniency: f64,
+
+    pub shuffle_algorithm: String,
+    pub shuffle_aggregation_default_partitions: usize,
+    pub pre_shuffle_merge_threshold: usize,
+    pub pre_shuffle_merge_partition_threshold: usize,
+
+    pub partial_aggregation_threshold: usize,
+    pub high_cardinality_aggregation_threshold: f64,
+
+    pub maintain_order: bool,
+
+    pub enable_dynamic_batching: bool,
+    pub dynamic_batching_strategy: String,
+}
+
+impl From<&DaftExecutionConfig> for ExecutionConfig {
+    fn from(config: &DaftExecutionConfig) -> Self {
+        Self {
+            default_morsel_size: config.default_morsel_size.get(),
+            scantask_max_parallel: config.scantask_max_parallel,
+            min_cpu_per_task: config.min_cpu_per_task,
+
+            enable_scan_task_split_and_merge: config.enable_scan_task_split_and_merge,
+            scan_tasks_min_size_bytes: config.scan_tasks_min_size_bytes,
+            scan_tasks_max_size_bytes: config.scan_tasks_max_size_bytes,
+            max_sources_per_scan_task: config.max_sources_per_scan_task,
+            parquet_split_row_groups_max_files: config.parquet_split_row_groups_max_files,
+
+            broadcast_join_size_bytes_threshold: config.broadcast_join_size_bytes_threshold,
+            hash_join_partition_size_leniency: config.hash_join_partition_size_leniency,
+
+            shuffle_algorithm: config.shuffle_algorithm.clone(),
+            shuffle_aggregation_default_partitions: config.shuffle_aggregation_default_partitions,
+            pre_shuffle_merge_threshold: config.pre_shuffle_merge_threshold,
+            pre_shuffle_merge_partition_threshold: config.pre_shuffle_merge_partition_threshold,
+
+            partial_aggregation_threshold: config.partial_aggregation_threshold,
+            high_cardinality_aggregation_threshold: config.high_cardinality_aggregation_threshold,
+
+            maintain_order: config.maintain_order,
+
+            enable_dynamic_batching: config.enable_dynamic_batching,
+            dynamic_batching_strategy: config.dynamic_batching_strategy.clone(),
         }
     }
 }
@@ -169,6 +231,7 @@ pub struct OptimizationCompleteEvent {
 pub struct ExecStartEvent {
     pub header: EventHeader,
     pub physical_plan: QueryPlan,
+    // pub execution_config: Option<ExecutionConfig>,
 }
 
 #[derive(Debug, Clone)]
