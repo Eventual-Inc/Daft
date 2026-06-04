@@ -1,6 +1,8 @@
 # Shuffle Algorithms
 
-A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. Shuffles only happen on the distributed (Ray) runner; the native (single-machine) runner executes the entire query in one process and has no shuffle step. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.8 million at `4096 × 4096`. The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is.
+A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.8 million at `4096 × 4096`.
+
+The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is. Shuffles only happen on the distributed (Ray) runner — the native (single-machine) runner executes the entire query in one process and has no shuffle step.
 
 If you're picking a partition count for `repartition` or thinking about batch size, start with [Partitioning and Batching](partitioning.md). Partition count is the input to shuffle cost, and `into_batches` controls the batch sizes shuffles produce.
 
@@ -37,7 +39,9 @@ Under `auto`, Daft picks between `map_reduce` and `pre_shuffle_merge` based on t
 | 4096 × 4096 | 16.8M | ~50 GB  |
 | 8192 × 8192 | 67M   | ~200 GB |
 
-At `4096 × 4096` the driver holds 50 GB of pointers before any data has moved, which usually shows up as a head-node OOM or as a scheduler stall. `pre_shuffle_merge` reduces this cost by coalescing small input partitions before the shuffle, lowering `M`, but it can't change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, reducing head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
+At `4096 × 4096` the driver holds 50 GB of pointers before any data has moved, which usually shows up as a head-node OOM or as a scheduler stall.
+
+`pre_shuffle_merge` reduces this cost by coalescing small input partitions before the shuffle, lowering `M`, but it can't change the underlying `M × N` shape. `flight_shuffle` writes shuffle bytes to local disk and serves them between workers over Arrow Flight, reducing head-node cost from `M × N × 3 KB` to roughly `(M + N) × 200 B` of descriptors.
 
 Symptoms that point to `flight_shuffle`:
 
@@ -70,7 +74,9 @@ Local directories where Daft writes shuffle spill files. Defaults to `["/tmp"]`.
 
 ### `flight_shuffle_compression`
 
-Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"`, or `"none"`. A frame is compressed once on the map side and stays compressed across the disk write, the disk read, and the wire — decompression happens only at the reducer — so compression pays off whenever storage or network bandwidth, not CPU, is the bottleneck.
+Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"`, or `"none"`.
+
+A frame is compressed once on the map side and stays compressed across the disk write, the disk read, and the wire; decompression happens only at the reducer. Compression therefore pays off whenever storage or network bandwidth — not CPU — is the bottleneck.
 
 | Storage | Recommended | Why |
 |---|---|---|
