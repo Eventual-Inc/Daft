@@ -76,8 +76,6 @@ Local directories where Daft writes shuffle spill files. Defaults to `["/tmp"]`.
 
 Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"`, or `"none"`.
 
-A frame is compressed once on the map side and stays compressed across the disk write, the disk read, and the wire; decompression happens only at the reducer. Compression therefore pays off whenever storage or network bandwidth — not CPU — is the bottleneck.
-
 | Storage | Recommended | Why |
 |---|---|---|
 | Local NVMe | `"lz4"` (default) | Cheap enough on CPU that it wins even when disk isn't the ceiling — about 10% in our benchmarks. |
