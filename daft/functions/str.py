@@ -1672,17 +1672,17 @@ def jaro_similarity(left: Expression, right: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
         >>> df = df.with_column("similarity", jaro_similarity(df["x"], df["y"]))
         >>> df.collect()
-        ╭────────┬──────────┬────────────╮
-        │ x      ┆ y        ┆ similarity │
-        │ ---    ┆ ---      ┆ ---        │
-        │ String ┆ String   ┆ Float64    │
-        ╞════════╪══════════╪════════════╡
-        │ martha ┆ marhta   ┆ 0.944444   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ dwayne ┆ duane    ┆ 0.822222   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ dixon  ┆ dicksonx ┆ 0.766667   │
-        ╰────────┴──────────┴────────────╯
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9444444444444445 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8222222222222223 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.7666666666666666 │
+        ╰────────┴──────────┴────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
@@ -1710,17 +1710,17 @@ def jaro_winkler_similarity(left: Expression, right: Expression) -> Expression:
         >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
         >>> df = df.with_column("similarity", jaro_winkler_similarity(df["x"], df["y"]))
         >>> df.collect()
-        ╭────────┬──────────┬────────────╮
-        │ x      ┆ y        ┆ similarity │
-        │ ---    ┆ ---      ┆ ---        │
-        │ String ┆ String   ┆ Float64    │
-        ╞════════╪══════════╪════════════╡
-        │ martha ┆ marhta   ┆ 0.961111   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ dwayne ┆ duane    ┆ 0.840000   │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ dixon  ┆ dicksonx ┆ 0.813333   │
-        ╰────────┴──────────┴────────────╯
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9611111111111111 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8400000000000001 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.8133333333333332 │
+        ╰────────┴──────────┴────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """

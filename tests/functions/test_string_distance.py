@@ -1,4 +1,5 @@
 """Tests for string distance/similarity functions (issue #6794)."""
+
 from __future__ import annotations
 
 import pytest
@@ -41,10 +42,12 @@ class TestLevenshteinDistance:
         assert distances == [0, 0, 0]
 
     def test_single_char_edits(self):
-        df = daft.from_pydict({
-            "a": ["cat", "cat", "cat"],
-            "b": ["hat", "cats", "at"],
-        })
+        df = daft.from_pydict(
+            {
+                "a": ["cat", "cat", "cat"],
+                "b": ["hat", "cats", "at"],
+            }
+        )
         result = df.with_column("dist", levenshtein_distance(col("a"), col("b"))).collect()
         distances = result.to_pydict()["dist"]
         # substitution, insertion, deletion

@@ -67,9 +67,7 @@ pub(crate) fn compute_jaro_similarity(left: &str, right: &str) -> f64 {
         k += 1;
     }
 
-    (matches / s1_len as f64
-        + matches / s2_len as f64
-        + (matches - transpositions / 2.0) / matches)
+    (matches / s1_len as f64 + matches / s2_len as f64 + (matches - transpositions / 2.0) / matches)
         / 3.0
 }
 

@@ -97,8 +97,8 @@ impl ScalarUDF for DamerauLevenshteinDistance {
                 }
 
                 let field = Arc::new(Field::new(self.name(), DataType::Int64));
-                let result =
-                    Int64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
+                let result = Int64Array::from_field_and_values(field, values)
+                    .with_nulls(validity.finish())?;
                 Ok(result.into_series())
             })
         })
