@@ -35,38 +35,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         }
     }
 
-    /// Pick the shuffle backend for a repartition, considering partition counts for `"auto"` mode.
-    ///
-    /// In `"auto"` mode, flight shuffle is selected when the geometric mean of
-    /// `input_num_partitions * target_num_partitions` exceeds
-    /// `flight_shuffle_partition_threshold`, which signals a shuffle large enough to risk
-    /// exhausting Ray object-store memory.
-    pub(crate) fn select_backend_for_repartition(
-        &self,
-        input_num_partitions: usize,
-        target_num_partitions: usize,
-    ) -> DistributedShuffleBackend {
-        let algo = self.plan_config.config.shuffle_algorithm.as_str();
-        let use_flight = algo == "flight_shuffle"
-            || (algo == "auto" && {
-                let geometric_mean =
-                    ((input_num_partitions * target_num_partitions) as f64).sqrt() as usize;
-                geometric_mean
-                    > self
-                        .plan_config
-                        .config
-                        .flight_shuffle_partition_threshold
-            });
-        if use_flight {
-            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
-                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
-                ..Default::default()
-            })
-        } else {
-            DistributedShuffleBackend::Ray
-        }
-    }
-
     pub fn gen_repartition_node(
         &mut self,
         repartition_spec: RepartitionSpec,
@@ -74,19 +42,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         child: DistributedPipelineNode,
         input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        let input_num_partitions = child.config().clustering_spec.num_partitions();
-        let target_num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => config
-                .num_partitions
-                .unwrap_or(input_num_partitions),
-            RepartitionSpec::Random(config) => config
-                .num_partitions
-                .unwrap_or(input_num_partitions),
-            RepartitionSpec::Range(config) => config
-                .num_partitions
-                .unwrap_or(input_num_partitions),
-        };
-        let backend = self.select_backend_for_repartition(input_num_partitions, target_num_partitions);
+        let backend = self.select_backend();
         self.gen_repartition_node_with_backend(
             repartition_spec,
             schema,
@@ -166,16 +122,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
-                // If auto would select flight_shuffle, skip pre-shuffle merge since
-                // flight shuffle handles its own merging/spilling.
-                if geometric_mean
-                    > self
-                        .plan_config
-                        .config
-                        .flight_shuffle_partition_threshold
-                {
-                    return Ok(false);
-                }
                 Ok(geometric_mean
                     > self
                         .plan_config
@@ -196,8 +142,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             return input_node;
         }
 
-        let input_num_partitions = input_node.config().clustering_spec.num_partitions();
-        let backend = self.select_backend_for_repartition(input_num_partitions, 1);
+        let backend = self.select_backend();
 
         self.maybe_warn_large_shuffle(&backend, input_size_bytes, input_num_partitions, 1);
 

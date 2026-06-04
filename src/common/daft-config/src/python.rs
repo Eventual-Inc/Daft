@@ -123,7 +123,6 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
-        flight_shuffle_partition_threshold=None,
         flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
         hash_join_spill_threshold_bytes=None,
@@ -164,7 +163,6 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
-        flight_shuffle_partition_threshold: Option<usize>,
         flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
         hash_join_spill_threshold_bytes: Option<usize>,
@@ -308,10 +306,6 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
-        }
-
-        if let Some(flight_shuffle_partition_threshold) = flight_shuffle_partition_threshold {
-            config.flight_shuffle_partition_threshold = flight_shuffle_partition_threshold;
         }
 
         if let Some(flight_shuffle_compression) = flight_shuffle_compression {
