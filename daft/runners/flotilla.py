@@ -405,8 +405,7 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def _get_worker_startup_timeout() -> int:
-    return get_context().daft_execution_config.worker_startup_timeout
+DEFAULT_WORKER_STARTUP_TIMEOUT = 120
 
 
 def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
@@ -428,7 +427,10 @@ def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
         logger.warning("Failed to attach remote event log subscriber: %s", e)
 
 
-def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+def start_ray_workers(
+    existing_worker_ids: list[str],
+    worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
+) -> list[RaySwordfishWorker]:
     event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
     dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
     task_events_enabled = os.environ.get("DAFT_TASK_EVENTS_ENABLED")
@@ -481,14 +483,13 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
-    actor_startup_timeout = _get_worker_startup_timeout()
     try:
         ip_addresses = ray.get(
             [actor.get_address.remote() for _, actor in actors],
-            timeout=actor_startup_timeout,
+            timeout=worker_startup_timeout,
         )
     except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
+        raise RuntimeError(f"Failed to get IP addresses for actors within {worker_startup_timeout} seconds")
 
     handles = []
     for (node, actor), ip_address in zip(actors, ip_addresses):
@@ -521,6 +522,7 @@ class RemoteFlotillaRunner:
         self,
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
+        worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
     ) -> None:
         _load_extensions_from_env()
         if dashboard_url:
@@ -546,7 +548,7 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        self.plan_runner = DistributedPhysicalPlanRunner(worker_startup_timeout)
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
@@ -670,7 +672,7 @@ class FlotillaRunner:
         the extension to existing workers.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
 
@@ -708,7 +710,9 @@ class FlotillaRunner:
             flotilla_options["runtime_env"] = {"env_vars": runner_env_vars}
 
         self.runner = RemoteFlotillaRunner.options(**flotilla_options).remote(  # type: ignore
-            dashboard_url=dashboard_url, event_log_dir=event_log_dir
+            dashboard_url=dashboard_url,
+            event_log_dir=event_log_dir,
+            worker_startup_timeout=worker_startup_timeout,
         )
         self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
 
