@@ -75,6 +75,7 @@ def set_runner_ray(
         noop_if_initialized: If True, skip initialization if Ray is already running.
         force_client_mode: If True, forces Ray to run in client mode.
         worker_startup_timeout: Timeout in seconds for Ray worker actors to report their addresses during startup.
+            Can also be configured via the ``DAFT_RAY_WORKER_STARTUP_TIMEOUT`` environment variable.
 
     Returns:
         Runner[PartitionT]: A runner object with the Ray runner's configurations.

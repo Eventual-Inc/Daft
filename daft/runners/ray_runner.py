@@ -22,7 +22,7 @@ from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
 from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
-from daft.runners.flotilla import FlotillaRunner
+from daft.runners.flotilla import DEFAULT_WORKER_STARTUP_TIMEOUT, FlotillaRunner
 from daft.runners.heartbeat import Heartbeat
 from daft.runners.query_id import emit_query_id
 from daft.scarf_telemetry import track_runner_on_scarf
@@ -547,7 +547,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         super().__init__()
 
         self.ray_address = address
-        self.worker_startup_timeout = worker_startup_timeout if worker_startup_timeout is not None else 120
+        self.worker_startup_timeout = (
+            worker_startup_timeout if worker_startup_timeout is not None else DEFAULT_WORKER_STARTUP_TIMEOUT
+        )
 
         if ray.is_initialized():
             if address is not None:
