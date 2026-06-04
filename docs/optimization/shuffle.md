@@ -8,7 +8,7 @@ If you're picking a partition count for `repartition` or thinking about batch si
 >
 > - Stay on the default `shuffle_algorithm="auto"` for most queries. Daft picks between `map_reduce` and `pre_shuffle_merge` based on partition count.
 > - If your shuffle is **>10 GB of data** or **>500K partition slots** (`input_partitions × output_partitions`), switch to `flight_shuffle`. Daft prints a hint in the query plan when it sees one.
-> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at a fast local disk. The default is `["/tmp"]`. Enable `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
+> - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at a fast local disk. The default is `["/tmp"]`. Spill files are `lz4`-compressed by default; set `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
 
 ## Shuffle algorithms
 
@@ -53,7 +53,7 @@ import daft
 daft.context.set_execution_config(
     shuffle_algorithm="flight_shuffle",
     flight_shuffle_dirs=["/mnt/nvme0", "/mnt/nvme1"],  # round-robins across them
-    flight_shuffle_compression=None,                    # set to "lz4" or "zstd" on slower disk
+    flight_shuffle_compression="lz4",                   # the default; set "zstd" on slower disk
 )
 ```
 
@@ -65,20 +65,20 @@ Local directories where Daft writes shuffle spill files. Defaults to `["/tmp"]`.
 
 - **Point this at the fastest local disk you have.** On AWS that means the local NVMe on instances like `i8ge.*` or `i4i.*`. On Kubernetes it's whatever is mounted from node-local SSD.
 - **Give it more than one device when you can.** Daft round-robins writes across the list, so two NVMe volumes roughly double aggregate write bandwidth.
-- **Size it for the shuffle, not the dataset.** Plan for `dataset_size ÷ compression_ratio` of free space per node. A 10 TB shuffle uncompressed across 32 workers is about 310 GB of spill per worker; at `zstd` 3× it's closer to 100 GB.
+- **Size it for the shuffle, not the dataset.** Plan for `dataset_size ÷ compression_ratio` of free space per node. A 10 TB shuffle across 32 workers is about 310 GB of spill per worker uncompressed; at the default `lz4` (~2×) it's closer to 155 GB, and at `zstd` (~3×) closer to 100 GB.
 - Daft cleans the dirs up when the query exits.
 
 ### `flight_shuffle_compression`
 
-Arrow IPC compression for the spill files. Set to `"lz4"` or `"zstd"`; defaults to `None` (uncompressed).
+Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"`, or `"none"`. A frame is compressed once on the map side and stays compressed across the disk write, the disk read, and the wire — decompression happens only at the reducer — so compression pays off whenever storage or network bandwidth, not CPU, is the bottleneck.
 
 | Storage | Recommended | Why |
 |---|---|---|
-| Local NVMe | `None` | The disk isn't the bottleneck. Compression spends CPU that the map task can use instead. |
-| gp3 EBS or network-attached | `"zstd"` | Compresses about 3× before the write, roughly tripling effective volume bandwidth. |
+| Local NVMe | `"lz4"` (default) | Cheap enough on CPU that it wins even when disk isn't the ceiling — about 10% in our benchmarks. |
+| gp3 EBS or network-attached | `"zstd"` | When bandwidth is the limit, compression is the biggest knob available — over 2× faster than uncompressed — and zstd's tighter ratio consistently beats lz4. |
 | HDD or slow shared FS | `"zstd"` | Same reasoning, more pronounced. |
 
-`"lz4"` is a lighter middle ground if `zstd` shows up as CPU-bound in your profile.
+Set `"none"` only if you're CPU-bound on very fast storage — for example, several local NVMe drives whose aggregate bandwidth outruns what the CPU can compress through.
 
 ## Choosing between algorithms
 
