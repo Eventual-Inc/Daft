@@ -203,7 +203,13 @@ class TestAlignedAsofJoinBackwardCorrectness:
         # Partition by composite key (g, ts): g=None in p0 (empty right), g="X" in p1.
         lp0 = pa.table({"g": pa.array([None, None], type=pa.string()), "ts": [3, 5], "v": [2, 4]})
         lp1 = pa.table({"g": ["X", "X"], "ts": [3, 5], "v": [1, 3]})
-        rp0 = pa.table({"g": pa.array([], type=pa.string()), "ts": pa.array([], type=pa.int64()), "w": pa.array([], type=pa.int64())})
+        rp0 = pa.table(
+            {
+                "g": pa.array([], type=pa.string()),
+                "ts": pa.array([], type=pa.int64()),
+                "w": pa.array([], type=pa.int64()),
+            }
+        )
         rp1 = pa.table({"g": ["X", "X"], "ts": [2, 4], "w": [20, 40]})
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
@@ -231,7 +237,13 @@ class TestAlignedAsofJoinBackwardCorrectness:
         lp0 = pa.table({"entity": ["A", "A", "A"], "ts": [3, 7, 10], "v": [1, 2, 3]})
         lp1 = pa.table({"entity": ["B", "B", "B"], "ts": [15, 20, 25], "v": [4, 5, 6]})
         rp0 = pa.table({"entity": ["A", "A"], "ts": [2, 8], "w": [20, 80]})
-        rp1 = pa.table({"entity": pa.array([], type=pa.string()), "ts": pa.array([], type=pa.int64()), "w": pa.array([], type=pa.int64())})
+        rp1 = pa.table(
+            {
+                "entity": pa.array([], type=pa.string()),
+                "ts": pa.array([], type=pa.int64()),
+                "w": pa.array([], type=pa.int64()),
+            }
+        )
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
         result = left.join_asof(right, _assume_sorted_and_aligned=True, on="ts", by="entity").sort(["entity", "ts"])
@@ -454,7 +466,13 @@ class TestAlignedAsofJoinForwardCorrectness:
         # Partition by composite key (g, ts): g=None in p0 (empty right), g="X" in p1.
         lp0 = pa.table({"g": pa.array([None, None], type=pa.string()), "ts": [3, 5], "v": [2, 4]})
         lp1 = pa.table({"g": ["X", "X"], "ts": [3, 5], "v": [1, 3]})
-        rp0 = pa.table({"g": pa.array([], type=pa.string()), "ts": pa.array([], type=pa.int64()), "w": pa.array([], type=pa.int64())})
+        rp0 = pa.table(
+            {
+                "g": pa.array([], type=pa.string()),
+                "ts": pa.array([], type=pa.int64()),
+                "w": pa.array([], type=pa.int64()),
+            }
+        )
         rp1 = pa.table({"g": ["X", "X"], "ts": [4, 6], "w": [40, 60]})
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
@@ -735,7 +753,13 @@ class TestAlignedAsofJoinNearestNullHandling:
         # Partition by composite key (g, ts): g=None in p0 (empty right), g="X" in p1.
         lp0 = pa.table({"g": pa.array([None, None], type=pa.string()), "ts": [3, 5], "v": [2, 4]})
         lp1 = pa.table({"g": ["X", "X"], "ts": [3, 5], "v": [1, 3]})
-        rp0 = pa.table({"g": pa.array([], type=pa.string()), "ts": pa.array([], type=pa.int64()), "w": pa.array([], type=pa.int64())})
+        rp0 = pa.table(
+            {
+                "g": pa.array([], type=pa.string()),
+                "ts": pa.array([], type=pa.int64()),
+                "w": pa.array([], type=pa.int64()),
+            }
+        )
         rp1 = pa.table({"g": ["X", "X"], "ts": [2, 4], "w": [20, 40]})
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
@@ -790,7 +814,13 @@ class TestAlignedAsofJoinNearestWithBy:
         # Partition by composite key (entity, ts): entity A in p0 (no right data), entity B in p1.
         lp0 = pa.table({"entity": ["A", "A"], "ts": [5, 10], "v": [1, 2]})
         lp1 = pa.table({"entity": ["B", "B"], "ts": [5, 10], "v": [3, 4]})
-        rp0 = pa.table({"entity": pa.array([], type=pa.string()), "ts": pa.array([], type=pa.int64()), "w": pa.array([], type=pa.int64())})
+        rp0 = pa.table(
+            {
+                "entity": pa.array([], type=pa.string()),
+                "ts": pa.array([], type=pa.int64()),
+                "w": pa.array([], type=pa.int64()),
+            }
+        )
         rp1 = pa.table({"entity": ["B", "B"], "ts": [4, 9], "w": [40, 90]})
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
