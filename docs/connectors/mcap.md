@@ -131,6 +131,9 @@ Each row describes a scoped read:
 |--------|------|-------------|
 | `file_path` | `string` | MCAP file path to read |
 | `topic` | `string` | Topic to read |
+| `schema_name` | `string` | MCAP schema name, such as a ROS2 message type |
+| `schema_encoding` | `string` | Schema encoding stored in the MCAP file |
+| `message_encoding` | `string` | Channel message encoding |
 | `window_index` | `int64` | Zero-based window index for this file/topic |
 | `window_count` | `int64` | Number of windows planned for this file/topic |
 | `start_time` | `int64` | Inclusive log-time lower bound |

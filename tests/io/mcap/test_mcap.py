@@ -324,6 +324,44 @@ def test_mcap_plan_reads_can_resume_from_planned_windows(robotics_mcap_dataset_p
     assert total_rows == 400
 
 
+def test_mcap_plan_reads_collapses_single_timestamp_windows(tmp_path):
+    file_path = tmp_path / "single_timestamp.mcap"
+    topic = "/robot0/imu"
+    with open(file_path, "wb") as f:
+        writer = MCAPWriter(f)
+        writer.start()
+        schema_id = writer.register_schema(name="robotics/RawBytes", encoding="protobuf", data=b"")
+        channel_id = writer.register_channel(topic=topic, message_encoding="cdr", schema_id=schema_id)
+        for i in range(25):
+            writer.add_message(
+                channel_id=channel_id,
+                log_time=1_000_000,
+                publish_time=1_000_000 + i,
+                sequence=i,
+                data=b"\x00\x01",
+            )
+        writer.finish()
+
+    plan_pdf = daft.plan_mcap_reads(str(file_path), max_messages_per_task=10).to_pandas()
+
+    assert len(plan_pdf) == 1
+    row = plan_pdf.iloc[0]
+    assert row["topic"] == topic
+    assert row["window_index"] == 0
+    assert row["window_count"] == 1
+    assert row["start_time"] == 1_000_000
+    assert row["end_time"] == 1_000_001
+    assert row["estimated_message_count"] == 25
+
+    replay_pdf = daft.read_mcap(
+        row["file_path"],
+        topics=[row["topic"]],
+        start_time=row["start_time"],
+        end_time=row["end_time"],
+    ).to_pandas()
+    assert len(replay_pdf) == 25
+
+
 def test_mcap_plan_reads_validates_target_window_size(mcap_dataset_path):
     with pytest.raises(ValueError, match="max_messages_per_task"):
         daft.plan_mcap_reads(mcap_dataset_path, max_messages_per_task=0)
@@ -406,12 +444,13 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
     assert pdf[pdf["topic"] == topic1]["log_time"].min() >= 1000
 
 
-def test_mcap_topic_start_time_resolver_errors_are_not_swallowed(mcap_dataset_path):
+def test_mcap_topic_start_time_resolver_errors_fall_back_to_unscoped_reads(mcap_dataset_path):
     def broken_resolver(path: str) -> dict[str, int]:
         raise RuntimeError(f"cannot inspect keyframes for {path}")
 
-    with pytest.raises(RuntimeError, match="cannot inspect keyframes"):
-        daft.read_mcap(
-            str(mcap_dataset_path),
-            topic_start_time_resolver=broken_resolver,
-        ).collect()
+    pdf = daft.read_mcap(
+        str(mcap_dataset_path),
+        topic_start_time_resolver=broken_resolver,
+    ).to_pandas()
+
+    assert len(pdf) == 100
