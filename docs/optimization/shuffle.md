@@ -79,8 +79,8 @@ Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"
 | Storage | Recommended | Why |
 |---|---|---|
 | Local NVMe | `"lz4"` (default) | Cheap enough on CPU that it wins even when disk isn't the ceiling — about 10% in our benchmarks. |
-| gp3 EBS or network-attached | `"zstd"` | When bandwidth is the limit, compression is the biggest knob available — over 2× faster than uncompressed — and zstd's tighter ratio consistently beats lz4. |
-| HDD or slow shared FS | `"zstd"` | Same reasoning, more pronounced. |
+| gp3 EBS or network-attached | `"zstd"` | When bandwidth is the limit, compression is the biggest knob available — worth ~2.3× over uncompressed — and zstd's tighter ratio consistently beats lz4. |
+| HDD or slow shared FS, or a network-constrained cluster | `"zstd"` | Same reasoning: bytes are the bottleneck. |
 
 Set `"none"` only if you're CPU-bound on very fast storage — for example, several local NVMe drives whose aggregate bandwidth outruns what the CPU can compress through.
 
