@@ -1,6 +1,6 @@
 # Shuffle Algorithms
 
-A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys. With `M` input partitions and `N` output partitions, a shuffle is `M × N` logical transfers: 4,096 at `64 × 64`, 16.8 million at `4096 × 4096`.
+A *shuffle* is the all-to-all data movement behind [`df.repartition(...)`][daft.DataFrame.repartition], hash joins, sorts, and groupbys.
 
 The `shuffle_algorithm` config option controls how Daft executes that movement, and the right choice depends on how big the shuffle is. Shuffles only happen on the distributed (Ray) runner — the native (single-machine) runner executes the entire query in one process and has no shuffle step.
 
@@ -30,7 +30,7 @@ Under `auto`, Daft picks between `map_reduce` and `pre_shuffle_merge` based on t
 
 ### Why `map_reduce` falls over at scale
 
-`map_reduce` writes one Ray object per `(input, output)` slot, and each tracked object costs about 3 KB of metadata on the Ray driver. Multiply by `M × N`:
+`map_reduce` writes one Ray object per `(input, output)` slot, and each tracked object costs about 3 KB of metadata on the Ray driver. Multiply by `M` mappers × `N` reducers:
 
 | Mappers × Reducers | Slots  | Head-node metadata |
 |---|---|---|
