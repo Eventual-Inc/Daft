@@ -10,6 +10,7 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{AsofJoinStrategy, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
+use itertools::Itertools;
 
 use super::stats::BasicJoinStats;
 use crate::{
@@ -554,7 +555,6 @@ impl PipelineNodeImpl for AsofJoinAlignedNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        use itertools::Itertools;
         let mut res = vec!["AsofJoin (assume_sorted_and_aligned)".to_string()];
         res.push(format!(
             "Left by: [{}]",
