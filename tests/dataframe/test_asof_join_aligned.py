@@ -1007,7 +1007,7 @@ class TestAlignedAsofJoinValidation:
         rp1a, rp1b = split(rp1, "ts", 5)
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1a, rp1b, name="right")
-        with pytest.raises(DaftCoreException, match="partition count mismatch at execution time"):
+        with pytest.raises(DaftCoreException, match="AsofJoinAligned: partition count mismatch at execution time"):
             left.join_asof(right, _assume_sorted_and_aligned=True, on="ts").collect()
 
     def test_scan_task_split_and_merge_enabled_raises(self):
@@ -1019,5 +1019,8 @@ class TestAlignedAsofJoinValidation:
         left = aligned(lp0, lp1, name="left")
         right = aligned(rp0, rp1, name="right")
         with execution_config_ctx(enable_scan_task_split_and_merge=True):
-            with pytest.raises(Exception, match="enable_scan_task_split_and_merge"):
+            with pytest.raises(
+                RuntimeError,
+                match="_assume_sorted_and_aligned=True is incompatible with enable_scan_task_split_and_merge=True",
+            ):
                 left.join_asof(right, _assume_sorted_and_aligned=True, on="ts").collect()
