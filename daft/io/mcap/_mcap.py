@@ -280,6 +280,13 @@ def _empty_mcap_read_plan() -> DataFrame:
     return from_arrow(pa.Table.from_pylist([], schema=schema))
 
 
+def _required_int(row: dict[str, object], key: str) -> int:
+    value = row.get(key)
+    if isinstance(value, int):
+        return value
+    raise ValueError(f"MCAP manifest field {key!r} must be an integer, got {value!r}")
+
+
 @PublicAPI
 def plan_mcap_reads(
     path: str,
@@ -325,18 +332,18 @@ def plan_mcap_reads(
 
     plan_rows: list[dict[str, object]] = []
     for manifest in manifest_rows:
-        message_count = int(manifest["message_count"])
+        message_count = _required_int(manifest, "message_count")
         first_log_time = manifest["first_log_time"]
         last_log_time = manifest["last_log_time"]
         if message_count <= 0 or first_log_time is None or last_log_time is None:
             continue
 
         window_count = max(1, math.ceil(message_count / max_messages_per_task))
-        start_bound = int(first_log_time)
-        end_bound = int(last_log_time) + 1
+        start_bound = _required_int(manifest, "first_log_time")
+        end_bound = _required_int(manifest, "last_log_time") + 1
         window_width = max(1, math.ceil((end_bound - start_bound) / window_count))
         base_count, remainder = divmod(message_count, window_count)
-        total_payload_size = int(manifest["total_message_size"])
+        total_payload_size = _required_int(manifest, "total_message_size")
 
         for window_index in range(window_count):
             window_start = start_bound + window_index * window_width
