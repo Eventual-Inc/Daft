@@ -2361,6 +2361,46 @@ class Expression:
 
         return hamming_distance_str(self, other)
 
+    def levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Levenshtein edit distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/levenshtein_distance/)
+        """
+        from daft.functions import levenshtein_distance
+
+        return levenshtein_distance(self, other)
+
+    def jaro_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_similarity/)
+        """
+        from daft.functions import jaro_similarity
+
+        return jaro_similarity(self, other)
+
+    def jaro_winkler_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro-Winkler similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_winkler_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_winkler_similarity/)
+        """
+        from daft.functions import jaro_winkler_similarity
+
+        return jaro_winkler_similarity(self, other)
+
+    def damerau_levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Damerau-Levenshtein distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.damerau_levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/damerau_levenshtein_distance/)
+        """
+        from daft.functions import damerau_levenshtein_distance
+
+        return damerau_levenshtein_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
