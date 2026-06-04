@@ -1770,3 +1770,228 @@ def damerau_levenshtein_distance(left: Expression, right: Expression) -> Express
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("damerau_levenshtein_distance", left, right)
+
+
+def translate(
+    expr: Expression,
+    from_str: str | Expression,
+    to_str: str | Expression,
+) -> Expression:
+    """Translates characters in the input string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+    Characters in 'from_str' without a corresponding character in 'to_str' are removed.
+    This is compatible with Spark's translate function.
+
+    Args:
+        expr: The string expression to translate
+        from_str: Characters to be replaced
+        to_str: Replacement characters
+
+    Returns:
+        Expression: a String expression with characters translated
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import translate
+        >>> df = daft.from_pydict({"x": ["AaBbCc", "hello", "world"]})
+        >>> df = df.select(translate(df["x"], "abc", "123"))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A1B2C3 │
+        ├╌╌╌╌╌╌╌╌┤
+        │ hello  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ world  │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("translate", expr, from_str, to_str)
+
+
+def substring_index(
+    expr: Expression,
+    delim: str | Expression,
+    count: int | Expression,
+) -> Expression:
+    """Returns the substring from string before count occurrences of the delimiter.
+
+    If count is positive, returns everything to the left of the final delimiter (counting from left).
+    If count is negative, returns everything to the right of the final delimiter (counting from right).
+    This is compatible with Spark's substring_index function.
+
+    Args:
+        expr: The string expression
+        delim: The delimiter string
+        count: The number of occurrences of the delimiter
+
+    Returns:
+        Expression: a String expression with the substring result
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import substring_index
+        >>> df = daft.from_pydict({"x": ["www.apache.org", "a.b.c.d"]})
+        >>> df = df.select(substring_index(df["x"], ".", 2))
+        >>> df.show()
+        ╭────────────╮
+        │ x          │
+        │ ---        │
+        │ String     │
+        ╞════════════╡
+        │ www.apache │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a.b        │
+        ╰────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("substring_index", expr, delim, count)
+
+
+def soundex(expr: Expression) -> Expression:
+    """Returns the Soundex code of the string.
+
+    Soundex is a phonetic algorithm that produces a 4-character code representing
+    the sound of the string. This is compatible with Spark's soundex function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: a String expression with the Soundex code
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import soundex
+        >>> df = daft.from_pydict({"x": ["Robert", "Rupert", "Smith"]})
+        >>> df = df.select(soundex(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ S530   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("soundex", expr)
+
+
+def ascii_func(expr: Expression) -> Expression:
+    """Returns the ASCII numeric value of the first character of the string.
+
+    Returns 0 for empty strings. This is compatible with Spark's ascii function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: an Int32 expression with the ASCII value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import ascii_func
+        >>> df = daft.from_pydict({"x": ["A", "abc", ""]})
+        >>> df = df.select(ascii_func(df["x"]))
+        >>> df.show()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int32 │
+        ╞═══════╡
+        │ 65    │
+        ├╌╌╌╌╌╌╌┤
+        │ 97    │
+        ├╌╌╌╌╌╌╌┤
+        │ 0     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("ascii", expr)
+
+
+def chr(expr: Expression) -> Expression:
+    """Converts an ASCII numeric value to a character.
+
+    Returns the character corresponding to the ASCII code.
+    This is compatible with Spark's chr function.
+
+    Args:
+        expr: An integer expression representing the ASCII code
+
+    Returns:
+        Expression: a String expression with the character
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import chr
+        >>> df = daft.from_pydict({"x": [65, 97, 48]})
+        >>> df = df.select(chr(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("chr", expr)
+
+
+def space(expr: Expression) -> Expression:
+    """Returns a string consisting of n space characters.
+
+    This is compatible with Spark's space function.
+
+    Args:
+        expr: An integer expression representing the number of spaces
+
+    Returns:
+        Expression: a String expression with n spaces
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import space
+        >>> df = daft.from_pydict({"x": [1, 3, 5]})
+        >>> df = df.select(space(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("space", expr)

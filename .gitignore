@@ -74,3 +74,4 @@ CLAUDE.local.md
 .claude/**/*.md
 .claude/worktrees/
 .beads
+1.log
