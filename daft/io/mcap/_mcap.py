@@ -338,10 +338,11 @@ def plan_mcap_reads(
         if message_count <= 0 or first_log_time is None or last_log_time is None:
             continue
 
-        window_count = max(1, math.ceil(message_count / max_messages_per_task))
         start_bound = _required_int(manifest, "first_log_time")
         end_bound = _required_int(manifest, "last_log_time") + 1
-        window_width = max(1, math.ceil((end_bound - start_bound) / window_count))
+        time_range_width = max(1, end_bound - start_bound)
+        window_count = min(max(1, math.ceil(message_count / max_messages_per_task)), time_range_width)
+        window_width = max(1, math.ceil(time_range_width / window_count))
         base_count, remainder = divmod(message_count, window_count)
         total_payload_size = _required_int(manifest, "total_message_size")
 
@@ -492,7 +493,10 @@ class MCAPSource(DataSource):
         for file_path in self._file_paths:
             keyframes: dict[str, int] | None = None
             if self._topic_start_time_resolver is not None:
-                keyframes = self._topic_start_time_resolver(file_path)
+                try:
+                    keyframes = self._topic_start_time_resolver(file_path)
+                except Exception:
+                    keyframes = None
 
             if not keyframes:
                 yield MCAPSourceTask(
