@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
-use arrow_buffer::NullBufferBuilder;
-use daft_core::prelude::{Int64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
 
-const NULL_SENTINEL: i64 = 0;
+use crate::utils::{binary_str_distance, binary_str_distance_to_field};
 
 /// Compute the Damerau-Levenshtein distance (optimal string alignment variant).
 /// This extends Levenshtein by also allowing transposition of two adjacent characters
@@ -70,34 +66,12 @@ impl ScalarUDF for DamerauLevenshteinDistance {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let left = inputs.required(0)?.cast(&DataType::Utf8)?;
-        let right = inputs.required(1)?.cast(&DataType::Utf8)?;
-
-        left.with_utf8_array(|left| {
-            right.with_utf8_array(|right| {
-                let len = left.len();
-                let mut values = Vec::with_capacity(len);
-                let mut validity = NullBufferBuilder::new(len);
-
-                for i in 0..len {
-                    match (left.get(i), right.get(i)) {
-                        (Some(l), Some(r)) => {
-                            values.push(compute_damerau_levenshtein_distance(l, r));
-                            validity.append_non_null();
-                        }
-                        _ => {
-                            values.push(NULL_SENTINEL);
-                            validity.append_null();
-                        }
-                    }
-                }
-
-                let field = Arc::new(Field::new(self.name(), DataType::Int64));
-                let result = Int64Array::from_field_and_values(field, values)
-                    .with_nulls(validity.finish())?;
-                Ok(result.into_series())
-            })
-        })
+        binary_str_distance::<daft_core::datatypes::Int64Type, _>(
+            inputs,
+            self.name(),
+            DataType::Int64,
+            compute_damerau_levenshtein_distance,
+        )
     }
 
     fn get_return_field(
@@ -105,33 +79,15 @@ impl ScalarUDF for DamerauLevenshteinDistance {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2,
-            SchemaMismatch: "Expected 2 inputs, but received {}",
-            inputs.len()
-        );
-
-        let left = inputs.required(0)?.to_field(schema)?;
-        let right = inputs.required(1)?.to_field(schema)?;
-
-        ensure!(
-            left.dtype.is_string() || left.dtype == DataType::Null,
-            TypeError: "First argument must be a string, got {}",
-            left.dtype
-        );
-        ensure!(
-            right.dtype.is_string() || right.dtype == DataType::Null,
-            TypeError: "Second argument must be a string, got {}",
-            right.dtype
-        );
-
-        Ok(Field::new(self.name(), DataType::Int64))
+        binary_str_distance_to_field(inputs, schema, self.name(), DataType::Int64)
     }
 
     fn docstring(&self) -> &'static str {
         "Compute the Damerau-Levenshtein distance between two strings. This extends the \
         Levenshtein distance by also counting transpositions of two adjacent characters \
-        as a single edit operation. Returns null when either input is null."
+        as a single edit operation. This computes the Optimal String Alignment (OSA) \
+        variant, which may differ from true Damerau-Levenshtein for inputs with \
+        overlapping transpositions. Returns null when either input is null."
     }
 }
 

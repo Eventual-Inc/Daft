@@ -1,9 +1,11 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow::array::{Datum, Scalar};
+use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::{DataArray, iterator::Utf8Iter},
+    datatypes::DaftPrimitiveType,
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -246,4 +248,85 @@ pub(crate) fn binary_utf8_to_field(
         TypeError: "invalid argument type for '{fn_name}'"
     );
     Ok(Field::new(input.name, return_dtype))
+}
+
+/// Evaluate a pairwise string distance/similarity function over two string inputs.
+///
+/// Casts both inputs to Utf8, iterates row-by-row tracking nulls, and produces a
+/// numeric output array of type `T`. Returns null for a row when either input is null.
+/// Shared by the string distance/similarity UDFs (levenshtein, jaro, jaro-winkler,
+/// damerau-levenshtein) to avoid duplicating the cast/iterate/null-track/build logic.
+pub(crate) fn binary_str_distance<T, F>(
+    inputs: FunctionArgs<Series>,
+    name: &'static str,
+    return_dtype: DataType,
+    compute: F,
+) -> DaftResult<Series>
+where
+    T: DaftPrimitiveType,
+    T::Native: Default,
+    F: Fn(&str, &str) -> T::Native,
+    DataArray<T>: IntoSeries,
+{
+    let left = inputs.required(0)?.cast(&DataType::Utf8)?;
+    let right = inputs.required(1)?.cast(&DataType::Utf8)?;
+    let field = Arc::new(Field::new(name, return_dtype));
+
+    left.with_utf8_array(|left| {
+        right.with_utf8_array(|right| {
+            let len = left.len();
+            let mut values = Vec::with_capacity(len);
+            let mut validity = NullBufferBuilder::new(len);
+
+            for i in 0..len {
+                match (left.get(i), right.get(i)) {
+                    (Some(l), Some(r)) => {
+                        values.push(compute(l, r));
+                        validity.append_non_null();
+                    }
+                    _ => {
+                        values.push(T::Native::default());
+                        validity.append_null();
+                    }
+                }
+            }
+
+            let result = DataArray::<T>::from_field_and_values(field.clone(), values)
+                .with_nulls(validity.finish())?;
+            Ok(result.into_series())
+        })
+    })
+}
+
+/// Compute the return field for a pairwise string distance/similarity function.
+///
+/// Validates that both arguments are string-typed (or Null) and returns a field with
+/// the given `return_dtype`. Shared by the string distance/similarity UDFs.
+pub(crate) fn binary_str_distance_to_field(
+    inputs: FunctionArgs<ExprRef>,
+    schema: &Schema,
+    name: &'static str,
+    return_dtype: DataType,
+) -> DaftResult<Field> {
+    ensure!(
+        inputs.len() == 2,
+        SchemaMismatch: "Expected 2 inputs, but received {}",
+        inputs.len()
+    );
+
+    let left = inputs.required(0)?.to_field(schema)?;
+    let right = inputs.required(1)?.to_field(schema)?;
+
+    ensure!(
+        left.dtype.is_string() || left.dtype == DataType::Null,
+        TypeError: "First argument must be a string, got {}",
+        left.dtype
+    );
+    ensure!(
+        right.dtype.is_string() || right.dtype == DataType::Null,
+        TypeError: "Second argument must be a string, got {}",
+        right.dtype
+    );
+
+    Ok(Field::new(name, return_dtype))
 }

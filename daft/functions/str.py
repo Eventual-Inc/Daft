@@ -1734,13 +1734,20 @@ def damerau_levenshtein_distance(left: Expression, right: Expression) -> Express
     adjacent characters as a single edit operation (in addition to insertions,
     deletions, and substitutions).
 
+    Note:
+        This computes the Optimal String Alignment (OSA) variant, which does not
+        allow a substring to be edited more than once. Results may differ from the
+        true Damerau-Levenshtein distance for inputs with overlapping transpositions
+        (e.g., ``"CA"`` to ``"ABC"`` is 3 under OSA but 2 under true
+        Damerau-Levenshtein). OSA does not satisfy the triangle inequality.
+
     Args:
         left: The left string expression to compare.
         right: The right string expression to compare against.
 
     Returns:
-        The Damerau-Levenshtein distance for each pair of strings. Returns null when
-        either input is null.
+        The Damerau-Levenshtein (OSA) distance for each pair of strings. Returns null
+        when either input is null.
 
     Examples:
         >>> import daft

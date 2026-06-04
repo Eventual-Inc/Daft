@@ -1,11 +1,7 @@
-use std::sync::Arc;
-
-use arrow_buffer::NullBufferBuilder;
-use daft_core::prelude::{Float64Array, IntoSeries};
 use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use serde::{Deserialize, Serialize};
 
-const NULL_SENTINEL: f64 = 0.0;
+use crate::utils::{binary_str_distance, binary_str_distance_to_field};
 
 /// Compute Jaro similarity between two strings.
 /// Returns a value between 0.0 (no similarity) and 1.0 (identical).
@@ -85,34 +81,12 @@ impl ScalarUDF for JaroSimilarity {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let left = inputs.required(0)?.cast(&DataType::Utf8)?;
-        let right = inputs.required(1)?.cast(&DataType::Utf8)?;
-
-        left.with_utf8_array(|left| {
-            right.with_utf8_array(|right| {
-                let len = left.len();
-                let mut values = Vec::with_capacity(len);
-                let mut validity = NullBufferBuilder::new(len);
-
-                for i in 0..len {
-                    match (left.get(i), right.get(i)) {
-                        (Some(l), Some(r)) => {
-                            values.push(compute_jaro_similarity(l, r));
-                            validity.append_non_null();
-                        }
-                        _ => {
-                            values.push(NULL_SENTINEL);
-                            validity.append_null();
-                        }
-                    }
-                }
-
-                let field = Arc::new(Field::new(self.name(), DataType::Float64));
-                let result = Float64Array::from_field_and_values(field, values)
-                    .with_nulls(validity.finish())?;
-                Ok(result.into_series())
-            })
-        })
+        binary_str_distance::<daft_core::datatypes::Float64Type, _>(
+            inputs,
+            self.name(),
+            DataType::Float64,
+            compute_jaro_similarity,
+        )
     }
 
     fn get_return_field(
@@ -120,27 +94,7 @@ impl ScalarUDF for JaroSimilarity {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        ensure!(
-            inputs.len() == 2,
-            SchemaMismatch: "Expected 2 inputs, but received {}",
-            inputs.len()
-        );
-
-        let left = inputs.required(0)?.to_field(schema)?;
-        let right = inputs.required(1)?.to_field(schema)?;
-
-        ensure!(
-            left.dtype.is_string() || left.dtype == DataType::Null,
-            TypeError: "First argument must be a string, got {}",
-            left.dtype
-        );
-        ensure!(
-            right.dtype.is_string() || right.dtype == DataType::Null,
-            TypeError: "Second argument must be a string, got {}",
-            right.dtype
-        );
-
-        Ok(Field::new(self.name(), DataType::Float64))
+        binary_str_distance_to_field(inputs, schema, self.name(), DataType::Float64)
     }
 
     fn docstring(&self) -> &'static str {
