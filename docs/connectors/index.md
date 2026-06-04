@@ -361,6 +361,8 @@ See also [Apache Kafka](kafka.md) for detailed integration.
 
 | Function                           | Description                                  |
 |------------------------------------|----------------------------------------------|
+| [`inspect_mcap`][daft.io.inspect_mcap] | Inspect MCAP topic manifests and payload statistics |
+| [`plan_mcap_reads`][daft.io.plan_mcap_reads] | Plan topic/time read windows for large MCAP logs |
 | [`read_mcap`][daft.io.read_mcap]   | Read MCAP files into a DataFrame             |
 
 See also [MCAP](mcap.md) for detailed integration.
