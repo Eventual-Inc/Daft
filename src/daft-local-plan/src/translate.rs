@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::join::JoinStrategy;
+use daft_core::{join::JoinStrategy, prelude::SchemaRef};
 use daft_dsl::{
+    ExprRef,
     expr::{
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
     join::normalize_join_keys,
-    resolved_col, window_to_agg_exprs,
+    lit, resolved_col, window_to_agg_exprs,
 };
-use daft_functions::random::random_int_expr;
+use daft_functions::{hash::hash as hash_expr, random::random_int_expr};
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::{ScanState, ScanTaskRef};
@@ -24,6 +25,21 @@ pub fn translate(
 ) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     let mut source_counter = SourceIdCounter::default();
     translate_helper(plan, &mut source_counter, psets)
+}
+
+fn shuffle_sort_by(schema: &SchemaRef, seed: Option<u64>) -> Vec<ExprRef> {
+    if let Some(seed) = seed {
+        let mut columns = schema.field_names().map(resolved_col);
+        if let Some(first) = columns.next() {
+            let mut row_hash = hash_expr(first, Some(lit(seed)), None);
+            for column in columns {
+                row_hash = hash_expr(column, Some(row_hash), None);
+            }
+            return vec![row_hash];
+        }
+    }
+
+    vec![random_int_expr(i64::MIN, i64::MAX, seed)]
 }
 
 fn translate_helper(
@@ -392,7 +408,7 @@ fn translate_helper(
         LogicalPlan::Shuffle(shuffle) => {
             let (input_plan, inputs) = translate_helper(&shuffle.input, source_counter, psets)?;
             let sort_by = BoundExpr::bind_all(
-                &[random_int_expr(i64::MIN, i64::MAX, shuffle.seed)],
+                &shuffle_sort_by(input_plan.schema(), shuffle.seed),
                 input_plan.schema(),
             )?;
             Ok((

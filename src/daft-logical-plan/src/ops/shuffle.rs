@@ -54,9 +54,7 @@ impl Shuffle {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![String::from(
-            "Shuffle: random row order (via random_int + sort)",
-        )];
+        let mut res = vec![String::from("Shuffle: random row order")];
         res.push(format!("Seed = {:?}", self.seed));
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
