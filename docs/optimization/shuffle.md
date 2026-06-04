@@ -26,7 +26,7 @@ If you're picking a partition count for `repartition` or thinking about batch si
 
 Under `auto`, Daft picks between `map_reduce` and `pre_shuffle_merge` based on the geometric mean of input and output partition counts. If `sqrt(input_partitions × output_partitions) > pre_shuffle_merge_partition_threshold` (default `200`), Daft uses `pre_shuffle_merge`; otherwise `map_reduce`.
 
-`auto` does not switch to `flight_shuffle` automatically, because `flight_shuffle` requires the user to choose where spill files go (`flight_shuffle_dirs`). When Daft sees a shuffle likely to hit the object-store ceiling (input size ≥ 10 GiB or partition product ≥ 500,000), it prints a hint in the query plan with the configuration to enable.
+`auto` does not switch to `flight_shuffle` automatically, because spilling a large shuffle to the default `flight_shuffle_dirs` of `["/tmp"]` — often a small or slow root volume — could fill the disk or underperform. Instead, when Daft sees a shuffle likely to hit the object-store ceiling (input size ≥ 10 GiB or partition product ≥ 500,000), it prints a hint in the query plan with the configuration to enable.
 
 ### Why `map_reduce` falls over at scale
 
