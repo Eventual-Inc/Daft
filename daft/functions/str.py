@@ -1745,7 +1745,7 @@ def damerau_levenshtein_distance(left: Expression, right: Expression) -> Express
     Examples:
         >>> import daft
         >>> from daft.functions import damerau_levenshtein_distance
-        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "abd", "abc"]})
+        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "acb", "abc"]})
         >>> df = df.with_column("distance", damerau_levenshtein_distance(df["x"], df["y"]))
         >>> df.collect()
         ╭────────┬────────┬──────────╮
@@ -1755,7 +1755,7 @@ def damerau_levenshtein_distance(left: Expression, right: Expression) -> Express
         ╞════════╪════════╪══════════╡
         │ abc    ┆ bac    ┆ 1        │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ abc    ┆ abd    ┆ 1        │
+        │ abc    ┆ acb    ┆ 1        │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │        ┆ abc    ┆ 3        │
         ╰────────┴────────┴──────────╯

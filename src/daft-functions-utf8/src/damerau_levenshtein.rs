@@ -27,8 +27,8 @@ fn compute_damerau_levenshtein_distance(left: &str, right: &str) -> i64 {
     // Full matrix needed for transposition lookback
     let mut matrix = vec![vec![0i64; m + 1]; n + 1];
 
-    for i in 0..=n {
-        matrix[i][0] = i as i64;
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[0] = i as i64;
     }
     for j in 0..=m {
         matrix[0][j] = j as i64;
@@ -36,11 +36,7 @@ fn compute_damerau_levenshtein_distance(left: &str, right: &str) -> i64 {
 
     for i in 1..=n {
         for j in 1..=m {
-            let cost = if left_chars[i - 1] == right_chars[j - 1] {
-                0
-            } else {
-                1
-            };
+            let cost = i64::from(left_chars[i - 1] != right_chars[j - 1]);
 
             matrix[i][j] = (matrix[i - 1][j] + 1) // deletion
                 .min(matrix[i][j - 1] + 1) // insertion

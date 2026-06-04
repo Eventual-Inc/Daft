@@ -36,11 +36,7 @@ fn compute_levenshtein_distance(left: &str, right: &str) -> i64 {
     for i in 1..=long_len {
         curr_row[0] = i as i64;
         for j in 1..=short_len {
-            let cost = if longer[i - 1] == shorter[j - 1] {
-                0
-            } else {
-                1
-            };
+            let cost = i64::from(longer[i - 1] != shorter[j - 1]);
             curr_row[j] = (prev_row[j] + 1) // deletion
                 .min(curr_row[j - 1] + 1) // insertion
                 .min(prev_row[j - 1] + cost); // substitution

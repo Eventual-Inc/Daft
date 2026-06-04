@@ -25,7 +25,7 @@ fn compute_jaro_winkler_similarity(left: &str, right: &str) -> f64 {
 
     let p = 0.1; // Standard Winkler scaling factor
 
-    jaro + (prefix_len as f64 * p * (1.0 - jaro))
+    (prefix_len as f64 * p).mul_add(1.0 - jaro, jaro)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
