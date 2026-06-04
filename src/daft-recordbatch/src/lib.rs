@@ -604,7 +604,8 @@ impl RecordBatch {
         Self::concat(tables)
     }
 
-    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: impl AsRef<[T]>) -> DaftResult<Self> {
+        let tables = tables.as_ref();
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 RecordBatch to perform concat".to_string(),
@@ -2111,7 +2112,7 @@ mod test {
             Utf8Array::from_slice("b", &["z"]).into_series(),
         ])?;
 
-        let expected = RecordBatch::concat(&[&first, &second])?;
+        let expected = RecordBatch::concat([&first, &second])?;
 
         let schema = first.schema.to_arrow()?;
         let mut buffer = Vec::new();

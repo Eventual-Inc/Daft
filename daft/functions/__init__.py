@@ -220,6 +220,10 @@ from .partition import (
     partition_years,
     partition_iceberg_bucket,
     partition_iceberg_truncate,
+    extract_minute_uuid7,
+    extract_hour_uuid7,
+    extract_day_uuid7,
+    extract_month_uuid7,
 )
 from .spatial import (
     great_circle_distance,
@@ -402,6 +406,10 @@ __all__ = [
     "exp",
     "explode",
     "expm1",
+    "extract_day_uuid7",
+    "extract_hour_uuid7",
+    "extract_minute_uuid7",
+    "extract_month_uuid7",
     "factorial",
     "file",
     "file_path",

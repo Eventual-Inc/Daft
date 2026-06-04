@@ -20,7 +20,6 @@ use tokio::task::JoinSet;
 use crate::{
     Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
     error::{CheckpointError, CheckpointResult},
-    types::FileFormat,
 };
 
 fn rfc3339_from(t: SystemTime) -> String {
@@ -57,6 +56,14 @@ struct Manifest {
     committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
+}
+
+/// On-disk wire format for a batch of `FileMetadata`, written by one
+/// `stage_files()` call. Tagged-enum versioning — add `V2(...)` to evolve;
+/// do not modify `V1`.
+#[derive(Serialize, Deserialize)]
+enum FileMetadataBatch {
+    V1 { files: Vec<FileMetadata> },
 }
 
 struct StagedEntry {
@@ -187,73 +194,31 @@ impl S3CheckpointStore {
 
     /// Packs all `files` into a single blob written by one `stage_files()` call.
     ///
-    /// Format: `[count: u32 LE] ([fmt_len: u32 LE] [fmt_json: UTF-8] [data_len: u32 LE] [data...]) * count`
-    /// `fmt_json` is the serde_json encoding of `FileFormat` (e.g. `"iceberg"`).
-    /// New `FileFormat` variants are handled automatically via serde — no manual tag registry.
+    /// Wire format: bincode (legacy config) over [`FileMetadataBatch`], a
+    /// versioned tagged enum. Today's only variant is `V1 { files }`. To
+    /// evolve, add a `V2(...)` variant — do not mutate `V1`. Old readers
+    /// fail loudly on unknown variants (correct default for forward-compat).
     fn encode_file_metadata(files: &[FileMetadata]) -> CheckpointResult<Vec<u8>> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&(files.len() as u32).to_le_bytes());
-        for f in files {
-            let fmt_json =
-                serde_json::to_vec(&f.format).map_err(|e| CheckpointError::Internal {
-                    message: format!("failed to serialize FileFormat: {e}"),
-                })?;
-            out.extend_from_slice(&(fmt_json.len() as u32).to_le_bytes());
-            out.extend_from_slice(&fmt_json);
-            out.extend_from_slice(&(f.data.len() as u32).to_le_bytes());
-            out.extend_from_slice(&f.data);
-        }
-        Ok(out)
+        let batch = FileMetadataBatch::V1 {
+            files: files.to_vec(),
+        };
+        bincode::serde::encode_to_vec(&batch, bincode::config::legacy()).map_err(|e| {
+            CheckpointError::Internal {
+                message: format!("failed to encode FileMetadata batch: {e}"),
+            }
+        })
     }
 
     fn decode_file_metadata(bytes: &[u8]) -> CheckpointResult<Vec<FileMetadata>> {
-        if bytes.len() < 4 {
-            return Err(CheckpointError::Internal {
-                message: "file metadata blob too short".to_string(),
-            });
+        let (batch, _): (FileMetadataBatch, _) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::legacy()).map_err(|e| {
+                CheckpointError::Internal {
+                    message: format!("failed to decode FileMetadata batch: {e}"),
+                }
+            })?;
+        match batch {
+            FileMetadataBatch::V1 { files } => Ok(files),
         }
-        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
-        let mut pos = 4;
-        let mut result = Vec::with_capacity(count);
-        for _ in 0..count {
-            if pos + 4 > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at format length".to_string(),
-                });
-            }
-            let fmt_len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-            pos += 4;
-            if pos + fmt_len > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at format bytes".to_string(),
-                });
-            }
-            let format: FileFormat =
-                serde_json::from_slice(&bytes[pos..pos + fmt_len]).map_err(|e| {
-                    CheckpointError::Internal {
-                        message: format!("failed to deserialize FileFormat: {e}"),
-                    }
-                })?;
-            pos += fmt_len;
-            if pos + 4 > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at data length".to_string(),
-                });
-            }
-            let data_len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-            pos += 4;
-            if pos + data_len > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata data truncated".to_string(),
-                });
-            }
-            result.push(FileMetadata::new(
-                format,
-                bytes[pos..pos + data_len].to_vec(),
-            ));
-            pos += data_len;
-        }
-        Ok(result)
     }
 
     fn parse_id_from_manifest_path(&self, path: &str) -> Option<CheckpointId> {
@@ -774,6 +739,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::types::FileFormat;
 
     #[test]
     fn test_encode_decode_file_metadata_roundtrip() {
@@ -801,21 +767,22 @@ mod tests {
     #[test]
     fn test_encode_decode_file_metadata_empty_batch() {
         let encoded = S3CheckpointStore::encode_file_metadata(&[]).unwrap();
-        // Just the count field — 4 zero bytes.
-        assert_eq!(encoded, vec![0, 0, 0, 0]);
         let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();
         assert!(decoded.is_empty());
     }
 
     #[test]
-    fn test_decode_file_metadata_unknown_format() {
-        // count=1, fmt_len=9, fmt_json=`"unknown"`, data_len=0
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        let fmt = b"\"unknown\"";
-        bytes.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(fmt);
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+    fn test_decode_file_metadata_unknown_variant() {
+        // Simulate a future writer emitting a V2-tagged blob. Today's
+        // decoder only knows V1; must fail loudly, not silently misread.
+        #[derive(Serialize)]
+        enum FutureBatch {
+            #[allow(dead_code)]
+            V1Placeholder,
+            V2(u32),
+        }
+        let bytes =
+            bincode::serde::encode_to_vec(FutureBatch::V2(42), bincode::config::legacy()).unwrap();
         let err = S3CheckpointStore::decode_file_metadata(&bytes).unwrap_err();
         assert!(matches!(err, CheckpointError::Internal { .. }));
     }
@@ -827,13 +794,17 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_file_metadata_truncated_format() {
-        // count=1, fmt_len=20 but only 4 bytes follow
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&20u32.to_le_bytes());
-        bytes.extend_from_slice(b"abcd");
-        let err = S3CheckpointStore::decode_file_metadata(&bytes).unwrap_err();
+    fn test_decode_file_metadata_truncated() {
+        let batch = vec![FileMetadata::new(FileFormat::Iceberg, vec![1, 2, 3, 4])];
+        let mut encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
+        encoded.truncate(encoded.len() - 2);
+        let err = S3CheckpointStore::decode_file_metadata(&encoded).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_decode_file_metadata_garbage() {
+        let err = S3CheckpointStore::decode_file_metadata(&[0xff; 32]).unwrap_err();
         assert!(matches!(err, CheckpointError::Internal { .. }));
     }
 

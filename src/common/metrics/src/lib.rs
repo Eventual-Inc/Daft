@@ -125,6 +125,11 @@ pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
+// Checkpoint metrics
+pub const CHECKPOINT_FILES_STAGED_KEY: &str = "checkpoint.files_staged";
+pub const CHECKPOINTS_SEALED_KEY: &str = "checkpoint.sealed";
+pub const CHECKPOINT_KEYS_STAGED_KEY: &str = "checkpoint.keys_staged";
+
 // Join metrics
 pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";
 pub const JOIN_BUILD_BYTES_INSERTED_KEY: &str = "bytes.join.build_inserted";
@@ -164,6 +169,9 @@ pub const UNIT_BYTES: &str = "By";
 pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
 pub const UNIT_PERCENT: &str = "%";
+pub const UNIT_FILES: &str = "{file}";
+pub const UNIT_CHECKPOINTS: &str = "{checkpoint}";
+pub const UNIT_KEYS: &str = "{key}";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

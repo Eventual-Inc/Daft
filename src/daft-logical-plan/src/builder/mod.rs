@@ -772,6 +772,7 @@ impl LogicalPlanBuilder {
         right_on: ExprRef,
         strategy: AsofJoinStrategy,
         options: JoinOptions,
+        assume_sorted_and_aligned: bool,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -810,6 +811,7 @@ impl LogicalPlanBuilder {
             right_on,
             right_cols_to_drop,
             strategy,
+            assume_sorted_and_aligned,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -1602,7 +1604,7 @@ impl PyLogicalPlanBuilder {
         Ok(result.into())
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix))]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix, assume_sorted_and_aligned=false))]
     pub fn join_asof(
         &self,
         right: &Self,
@@ -1613,6 +1615,7 @@ impl PyLogicalPlanBuilder {
         strategy: AsofJoinStrategy,
         prefix: Option<String>,
         suffix: Option<String>,
+        assume_sorted_and_aligned: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1624,6 +1627,7 @@ impl PyLogicalPlanBuilder {
                 right_on.into(),
                 strategy,
                 JoinOptions { prefix, suffix },
+                assume_sorted_and_aligned,
             )?
             .into())
     }

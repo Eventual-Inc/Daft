@@ -3,7 +3,7 @@
 //! [`BoundClusteringSpec`] is the bound (`T = BoundExpr`) instantiation of the generic
 //! [`daft_logical_plan::partitioning::ClusteringSpec`]. The logical plan only ever deals with the
 //! resolved-by-name form (`ClusteringSpec`); binding happens here, at the logical -> pipeline
-//! boundary, so every downstream check (`needs_hash_repartition`, join co-partitioning) can compare
+//! boundary, so every downstream check (`can_skip_hash_repartition`, join co-partitioning) can compare
 //! bound expressions directly instead of re-binding on the fly.
 //!
 //! Pipeline nodes never call these helpers directly. Every node establishes its output clustering
