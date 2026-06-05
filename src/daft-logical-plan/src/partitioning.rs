@@ -263,6 +263,13 @@ impl<T> ClusteringSpec<T> {
         matches!(self, Self::Range(_))
     }
 
+    pub fn descending(&self) -> &[bool] {
+        match self {
+            Self::Range(RangeClusteringConfig { descending, .. }) => descending,
+            _ => &[],
+        }
+    }
+
     pub fn unknown(num_partitions: usize) -> Self {
         Self::Unknown(UnknownClusteringConfig::new(num_partitions))
     }

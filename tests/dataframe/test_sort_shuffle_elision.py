@@ -110,6 +110,7 @@ def test_no_declaration_repartitions_by_default(source_table):
     """Without a clustering hint a sort always range-repartitions its inputs."""
     df = RangeClusteredSource(source_table, None).read().sort("ts")
     assert _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +154,18 @@ def test_sort_on_sort_skips_repartition():
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
 
 
+def test_descending_declared_descending_sort_skips_repartition():
+    """Declaring descending range and sorting descending → direction matches, skip repartition.
+
+    Partition 0 holds ts [4,5,6] (higher range) and partition 1 holds ts [1,2,3] (lower range)
+    """
+    hint = ClusteringKeys.range("ts", descending=True)
+    table = pa.table({"ts": [5, 4, 6, 2, 1, 3], "val": [50, 40, 60, 20, 10, 30]})
+    df = RangeClusteredSource(table, hint).read().sort("ts", desc=True)
+    assert not _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [6, 5, 4, 3, 2, 1]
+
+
 # ---------------------------------------------------------------------------
 # Negative tests — repartition must still fire, or planning must raise
 # ---------------------------------------------------------------------------
@@ -171,6 +184,7 @@ def test_wrong_column_still_repartitions(source_table):
     hint = ClusteringKeys.range("val")
     df = RangeClusteredSource(source_table, hint).read().sort("ts")
     assert _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
 
 
 def test_sort_on_sort_different_key_repartitions():
@@ -178,6 +192,7 @@ def test_sort_on_sort_different_key_repartitions():
     df = daft.from_pydict({"ts": [4, 2, 6, 1, 3, 5], "val": [40, 20, 60, 10, 30, 50]}).repartition(2).sort("ts")
     df2 = df.sort("val")
     assert _sort_needs_repartition(df2)
+    assert df2.to_pydict()["val"] == [10, 20, 30, 40, 50, 60]
 
 
 def test_multi_column_partial_key_match_repartitions():
@@ -189,6 +204,7 @@ def test_multi_column_partial_key_match_repartitions():
     table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
     df = RangeClusteredSource(table, hint).read().sort("ts")
     assert _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
 
 
 def test_multi_column_exact_match_skips_repartition():
@@ -199,3 +215,24 @@ def test_multi_column_exact_match_skips_repartition():
     assert not _sort_needs_repartition(df)
     result = df.to_pydict()
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
+
+
+def test_ascending_declared_descending_sort_repartitions(source_table):
+    """Declaring ascending range but sorting descending → direction mismatch, must repartition."""
+    hint = ClusteringKeys.range("ts")  # descending=False (default)
+    df = RangeClusteredSource(source_table, hint).read().sort("ts", desc=True)
+    assert _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [6, 5, 4, 3, 2, 1]
+
+
+def test_multi_column_mixed_direction_repartitions(source_table):
+    """Declaring all-ascending range but sorting with mixed directions → must repartition.
+
+    A single descending=False flag expands to [False, False] for both keys. A sort with
+    descending=[False, True] doesn't match, so the shuffle cannot be skipped.
+    """
+    hint = ClusteringKeys.range("ts", "val")  # descending=False → [False, False]
+    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
+    df = RangeClusteredSource(table, hint).read().sort(["ts", "val"], desc=[False, True])
+    assert _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]

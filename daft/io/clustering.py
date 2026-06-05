@@ -61,19 +61,26 @@ class ClusteringKeys:
         return ClusteringKeys._from_clustering_keys(_PyClusteringKeys.hash([e._expr for e in exprs]))
 
     @staticmethod
-    def range(*cols: str | Expression) -> ClusteringKeys:
+    def range(*cols: str | Expression, descending: bool = False) -> ClusteringKeys:
         """Declares that the source's output is range-partitioned by ``cols``.
 
-        Each partition covers a non-overlapping range of values for the declared columns.
+        Each partition covers a non-overlapping range of values for the declared columns in the
+        declared direction. ``descending`` applies uniformly to all keys. No guarantee is required
+        about the sort order of rows within each partition.
 
         Column-name strings are interpreted as column references.
 
         Args:
             cols: The clustering keys, as column names or expressions.
+            descending: If ``True``, partitions are ordered from highest to lowest values.
+                Defaults to ``False`` (ascending partition order).
 
         Examples:
             >>> from daft.io.clustering import ClusteringKeys
             >>> keys = ClusteringKeys.range("ts_ns")
+            >>> keys_desc = ClusteringKeys.range("ts_ns", descending=True)
         """
         exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
-        return ClusteringKeys._from_clustering_keys(_PyClusteringKeys.range([e._expr for e in exprs]))
+        return ClusteringKeys._from_clustering_keys(
+            _PyClusteringKeys.range([e._expr for e in exprs], descending=descending)
+        )

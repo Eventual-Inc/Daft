@@ -13,9 +13,13 @@ pub enum ClusteringKeys {
     /// Hash-partitioned by these keys: every row with the same hash of the keys lives in the same
     /// execution partition.
     Hash(Vec<ExprRef>),
-    /// Each partition covers a non-overlapping range of values for the declared columns. No
-    /// guarantee is made about the sort order of rows within each partition.
-    Range(Vec<ExprRef>),
+    /// Each partition covers a non-overlapping range of values for the declared columns in the
+    /// declared direction. `descending` applies uniformly to all keys. No guarantee is made about
+    /// the sort order of rows within each partition.
+    Range {
+        keys: Vec<ExprRef>,
+        descending: bool,
+    },
 }
 
 impl ClusteringKeys {
@@ -23,14 +27,15 @@ impl ClusteringKeys {
         Self::Hash(keys)
     }
 
-    pub fn range(keys: Vec<ExprRef>) -> Self {
-        Self::Range(keys)
+    pub fn range(keys: Vec<ExprRef>, descending: bool) -> Self {
+        Self::Range { keys, descending }
     }
 
     /// The clustering key expressions.
     pub fn keys(&self) -> &[ExprRef] {
         match self {
-            Self::Hash(keys) | Self::Range(keys) => keys,
+            Self::Hash(keys) => keys,
+            Self::Range { keys, .. } => keys,
         }
     }
 }
@@ -60,25 +65,34 @@ mod python {
         }
 
         #[staticmethod]
-        fn range(exprs: Vec<PyExpr>) -> Self {
+        #[pyo3(signature = (exprs, descending = false))]
+        fn range(exprs: Vec<PyExpr>, descending: bool) -> Self {
             Self {
-                keys: ClusteringKeys::Range(exprs.into_iter().map(|e| e.expr).collect()),
+                keys: ClusteringKeys::Range {
+                    keys: exprs.into_iter().map(|e| e.expr).collect(),
+                    descending,
+                },
             }
         }
 
         fn __repr__(&self) -> String {
-            let (variant, keys) = match &self.keys {
-                ClusteringKeys::Hash(keys) => ("hash", keys),
-                ClusteringKeys::Range(keys) => ("range", keys),
-            };
-            format!(
-                "ClusteringKeys.{}({})",
-                variant,
-                keys.iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            match &self.keys {
+                ClusteringKeys::Hash(keys) => format!(
+                    "ClusteringKeys.hash({})",
+                    keys.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ClusteringKeys::Range { keys, descending } => format!(
+                    "ClusteringKeys.range({}, descending={})",
+                    keys.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    descending
+                ),
+            }
         }
     }
 

@@ -9,7 +9,7 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::RangeClusteringConfig, stats::StatsState};
 use daft_scan::{ClusteringKeys, Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
@@ -120,9 +120,13 @@ impl ScanSourceNode {
             Some(ClusteringKeys::Hash(keys)) => ClusteringStrategy::Explicit(
                 BoundClusteringSpec::hash(num_partitions, BoundExpr::bind_all(&keys, &schema)?),
             ),
-            Some(ClusteringKeys::Range(keys)) => ClusteringStrategy::Explicit(
-                BoundClusteringSpec::range(num_partitions, BoundExpr::bind_all(&keys, &schema)?),
-            ),
+            Some(ClusteringKeys::Range { keys, descending }) => {
+                let bound_keys = BoundExpr::bind_all(&keys, &schema)?;
+                let descending_flags = vec![descending; bound_keys.len()];
+                ClusteringStrategy::Explicit(BoundClusteringSpec::Range(
+                    RangeClusteringConfig::new(num_partitions, bound_keys, descending_flags),
+                ))
+            }
             None => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         };
         let config = PipelineNodeConfig::new(schema, plan_config.config.clone(), clustering_spec);
