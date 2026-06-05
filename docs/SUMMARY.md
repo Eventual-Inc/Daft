@@ -82,7 +82,7 @@
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
-    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
+    * [Community <sup>↗</sup>](https://daft.ai/slack)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples

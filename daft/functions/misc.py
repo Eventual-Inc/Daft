@@ -189,6 +189,45 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
 
 
+def try_cast(expr: Expression, dtype: DataTypeLike) -> Expression:
+    """Attempts to cast an expression to the given datatype, returning null on failure.
+
+    Unlike `cast`, this function does not raise an error when the conversion fails.
+    Instead, it returns null for values that cannot be converted.
+
+    Returns:
+        Expression: Expression with the specified new datatype, with null for failed conversions
+
+    Note:
+        - If a string is provided, it will use the sql engine to parse the string into a data type.
+        - A python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pydict({"str_val": ["1", "2", "abc", None]})
+        >>> df = df.select(df["str_val"].try_cast(daft.DataType.int64()))
+        >>> df.show()
+        ╭─────────╮
+        │ str_val │
+        │ ---     │
+        │ Int64   │
+        ╞═════════╡
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    dtype = DataType._infer(dtype)
+    expr = Expression._to_expression(expr)
+    return Expression._from_pyexpr(expr._expr.try_cast(dtype._dtype))
+
+
 def is_null(expr: Expression) -> Expression:
     """Checks if values in the Expression are Null (a special value indicating missing data).
 

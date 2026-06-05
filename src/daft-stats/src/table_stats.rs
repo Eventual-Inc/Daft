@@ -149,9 +149,14 @@ impl TableStatistics {
                     _ => Ok(ColumnRangeStatistics::Missing),
                 }
             }
-            Expr::Cast(col, dtype) => self
-                .eval_expression(&BoundExpr::new_unchecked(col.clone()))?
-                .cast(dtype),
+            Expr::Cast(col, dtype, try_cast) => {
+                let stats = self.eval_expression(&BoundExpr::new_unchecked(col.clone()))?;
+                if *try_cast {
+                    Ok(stats.cast(dtype).unwrap_or(ColumnRangeStatistics::Missing))
+                } else {
+                    stats.cast(dtype)
+                }
+            }
             _ => Ok(ColumnRangeStatistics::Missing),
         }
     }
