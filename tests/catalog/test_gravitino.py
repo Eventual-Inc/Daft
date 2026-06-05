@@ -503,6 +503,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=None,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -518,6 +520,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=12345,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
