@@ -61,7 +61,10 @@ impl ExecutionStats {
 
     /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
-        type Decoded = (Vec<(Arc<NodeInfo>, StatSnapshot)>, Vec<(String, String, bool)>);
+        type Decoded = (
+            Vec<(Arc<NodeInfo>, StatSnapshot)>,
+            Vec<(String, String, bool)>,
+        );
         let ((nodes, skipped_corrupt_files), _): (Decoded, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {

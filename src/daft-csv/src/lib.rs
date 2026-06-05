@@ -62,8 +62,7 @@ impl From<Error> for DaftError {
                 if let csv_async::ErrorKind::Io(io_err) = source.into_kind() {
                     Self::IoError(io_err)
                 } else {
-                    Self::External(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    Self::External(Box::new(std::io::Error::other(
                         "CSV IO error kind mismatch (csv_async)",
                     )))
                 }
@@ -72,8 +71,7 @@ impl From<Error> for DaftError {
                 if let csv::ErrorKind::Io(io_err) = source.into_kind() {
                     Self::IoError(io_err)
                 } else {
-                    Self::External(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    Self::External(Box::new(std::io::Error::other(
                         "CSV IO error kind mismatch (csv)",
                     )))
                 }
