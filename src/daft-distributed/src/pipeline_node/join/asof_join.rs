@@ -76,10 +76,7 @@ impl AsofJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(
-                num_partitions,
-                left_by.clone(),
-            )),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
         Self {
             config,
