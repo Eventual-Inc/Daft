@@ -25,6 +25,7 @@ const TAB_TRIGGER_CLS = "rounded-none bg-transparent px-4 py-2.5 text-sm font-me
 const MetaField = ({
   label,
   value,
+  rows,
   href,
   mono,
   title,
@@ -32,7 +33,9 @@ const MetaField = ({
   wrap = false,
 }: {
   label: string;
-  value: string;
+  value?: string;
+  /** Stacked label→value lines; takes precedence over `value`. */
+  rows?: { label: string; value: string }[];
   href?: string;
   mono?: boolean;
   title?: string;
@@ -43,7 +46,20 @@ const MetaField = ({
     <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
       {label}
     </p>
-    {href ? (
+    {rows ? (
+      <div className="space-y-0.5">
+        {rows.map((r) => (
+          <p
+            key={r.label}
+            className={`${main.className} text-sm ${mono ? "font-mono" : ""} text-zinc-100 truncate`}
+            title={`${r.label} ${r.value}`}
+          >
+            <span className="text-zinc-500">{r.label} </span>
+            {r.value}
+          </p>
+        ))}
+      </div>
+    ) : href ? (
       <a
         href={href}
         target="_blank"
@@ -264,9 +280,16 @@ function QueryPageInner() {
             {(query.python_version || query.runner.version) ? (
               <MetaField
                 label="Versions"
-                value={[query.python_version && `Python ${query.python_version}`, query.runner.version && `${query.runner.name} ${query.runner.version}`].filter(Boolean).join(" | ")}
-                mono
                 align="right"
+                mono
+                rows={[
+                  query.python_version && { label: "Python", value: query.python_version },
+                  query.runner.version && {
+                    // "Ray (Flotilla)" -> "Ray"; the Engine cell already shows "Flotilla".
+                    label: query.runner.name.split(" (")[0],
+                    value: query.runner.version,
+                  },
+                ].filter(Boolean) as { label: string; value: string }[]}
               />
             ) : (
               <div />
