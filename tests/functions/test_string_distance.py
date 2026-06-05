@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft import col
+from daft import col, lit
 from daft.functions import (
     damerau_levenshtein_distance,
     jaro_similarity,
@@ -57,6 +57,32 @@ class TestLevenshteinDistance:
         df = daft.from_pydict({"a": ["kitten"], "b": ["sitting"]})
         result = df.with_column("dist", col("a").levenshtein_distance(col("b"))).collect()
         assert result.to_pydict()["dist"] == [3]
+
+
+class TestScalarBroadcast:
+    """Scalar broadcasting on either side (column-scalar, scalar-column)."""
+
+    def test_column_scalar(self):
+        df = daft.from_pydict({"a": ["kitten", "sitting", "kitten"]})
+        result = df.with_column("dist", levenshtein_distance(col("a"), lit("kitten"))).collect()
+        assert result.to_pydict()["dist"] == [0, 3, 0]
+
+    def test_scalar_column(self):
+        df = daft.from_pydict({"a": ["kitten", "sitting", "kitten"]})
+        result = df.with_column("dist", levenshtein_distance(lit("kitten"), col("a"))).collect()
+        assert result.to_pydict()["dist"] == [0, 3, 0]
+
+    def test_scalar_column_similarity(self):
+        df = daft.from_pydict({"a": ["martha", "martha"]})
+        result = df.with_column("sim", jaro_similarity(lit("marhta"), col("a"))).collect()
+        sims = result.to_pydict()["sim"]
+        assert sims[0] == pytest.approx(0.944444, rel=1e-4)
+        assert sims[1] == pytest.approx(0.944444, rel=1e-4)
+
+    def test_column_scalar_null_scalar(self):
+        df = daft.from_pydict({"a": ["kitten", "sitting"]})
+        result = df.with_column("dist", levenshtein_distance(col("a"), lit(None))).collect()
+        assert result.to_pydict()["dist"] == [None, None]
 
 
 class TestJaroSimilarity:

@@ -252,8 +252,10 @@ pub(crate) fn binary_utf8_to_field(
 
 /// Evaluate a pairwise string distance/similarity function over two string inputs.
 ///
-/// Casts both inputs to Utf8, iterates row-by-row tracking nulls, and produces a
-/// numeric output array of type `T`. Returns null for a row when either input is null.
+/// Casts both inputs to Utf8, then iterates row-by-row tracking nulls and produces a
+/// numeric output array of type `T`. Supports scalar broadcasting on either side
+/// (column-column, column-scalar, scalar-column) via `parse_inputs` and
+/// `create_broadcasted_str_iter`. Returns null for a row when either input is null.
 /// Shared by the string distance/similarity UDFs (levenshtein, jaro, jaro-winkler,
 /// damerau-levenshtein) to avoid duplicating the cast/iterate/null-track/build logic.
 pub(crate) fn binary_str_distance<T, F>(
@@ -270,16 +272,30 @@ where
 {
     let left = inputs.required(0)?.cast(&DataType::Utf8)?;
     let right = inputs.required(1)?.cast(&DataType::Utf8)?;
-    let field = Arc::new(Field::new(name, return_dtype));
+    let field = Arc::new(Field::new(name, return_dtype.clone()));
 
     left.with_utf8_array(|left| {
         right.with_utf8_array(|right| {
-            let len = left.len();
-            let mut values = Vec::with_capacity(len);
-            let mut validity = NullBufferBuilder::new(len);
+            let (is_full_null, expected_size) = parse_inputs(left, &[right])
+                .map_err(|e| DaftError::ValueError(format!("Error in {name}: {e}")))?;
 
-            for i in 0..len {
-                match (left.get(i), right.get(i)) {
+            if is_full_null {
+                return Ok(
+                    DataArray::<T>::full_null(name, &return_dtype, expected_size).into_series(),
+                );
+            }
+            if expected_size == 0 {
+                return Ok(DataArray::<T>::empty(name, &return_dtype).into_series());
+            }
+
+            let left_iter = create_broadcasted_str_iter(left, expected_size);
+            let right_iter = create_broadcasted_str_iter(right, expected_size);
+
+            let mut values = Vec::with_capacity(expected_size);
+            let mut validity = NullBufferBuilder::new(expected_size);
+
+            for (l, r) in left_iter.zip(right_iter) {
+                match (l, r) {
                     (Some(l), Some(r)) => {
                         values.push(compute(l, r));
                         validity.append_non_null();
