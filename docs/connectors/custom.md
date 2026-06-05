@@ -217,15 +217,19 @@ df = (
 #### Range clustering
 
 If your source already emits data where each task covers a non-overlapping range of values for
-those columns, you can tell Daft by returning `ClusteringKeys.range()`
+those columns, you can tell Daft by returning `ClusteringKeys.range()`. Pass `descending=True`
+if partitions are ordered from highest to lowest values.
 
 ```python
 class TimeSeriesSource(DataSource):
     # ... name / schema / get_tasks as above ...
 
     def get_clustering_keys(self) -> ClusteringKeys | None:
-        # Each task holds a non-overlapping ts range.
+        # Each task holds a non-overlapping ts range (ascending partition order).
         return ClusteringKeys.range("ts")
+
+    # Or, if partitions are ordered high-to-low:
+    # return ClusteringKeys.range("ts", descending=True)
 ```
 
 !!! note "Shuffle elision applies to the distributed runner"
