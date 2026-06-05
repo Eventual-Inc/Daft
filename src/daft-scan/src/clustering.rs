@@ -13,10 +13,8 @@ pub enum ClusteringKeys {
     /// Hash-partitioned by these keys: every row with the same hash of the keys lives in the same
     /// execution partition.
     Hash(Vec<ExprRef>),
-    /// Each partition covers a non-overlapping
-    /// range of values and rows within each partition are sorted in ascending order by the declared
-    /// columns. Both guarantees must hold together — range partitioning alone does not imply
-    /// sorted, and sorted alone does not imply non-overlapping ranges.
+    /// Each partition covers a non-overlapping range of values for the declared columns. No
+    /// guarantee is made about the sort order of rows within each partition.
     Range(Vec<ExprRef>),
 }
 

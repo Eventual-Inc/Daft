@@ -6,7 +6,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::{expr::bound_expr::BoundExpr, is_exact_range_partition_match};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleBackend};
 use daft_logical_plan::{
     partitioning::{RangeClusteringConfig, RangeRepartitionConfig, RepartitionSpec},
@@ -419,6 +419,14 @@ pub(crate) async fn range_repartition_two_sides(
     ))
 }
 
+fn needs_range_repartition(child: &DistributedPipelineNode, sort_by: &[BoundExpr]) -> bool {
+    let spec = &child.config().clustering_spec;
+    if !spec.is_range() {
+        return true;
+    }
+    !is_exact_range_partition_match(spec.partition_by(), sort_by)
+}
+
 pub(crate) struct SortNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -426,6 +434,7 @@ pub(crate) struct SortNode {
     sort_by: Vec<BoundExpr>,
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
+    needs_range_repartition: bool,
     child: DistributedPipelineNode,
 }
 
@@ -451,6 +460,7 @@ impl SortNode {
             NodeCategory::BlockingSink,
         );
 
+        let needs_range_repartition = needs_range_repartition(&child, &sort_by);
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
@@ -466,6 +476,7 @@ impl SortNode {
             sort_by,
             descending,
             nulls_first,
+            needs_range_repartition,
             child,
         }
     }
@@ -488,6 +499,33 @@ impl SortNode {
             .await?;
 
         if materialized_outputs.is_empty() {
+            return Ok(());
+        }
+
+        // Input is already range-partitioned by the sort keys: skip sample + repartition and
+        // sort each partition locally in place.
+        if !self.needs_range_repartition {
+            for mo in materialized_outputs {
+                let (in_memory_scan, psets) =
+                    MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                        vec![mo],
+                        self.config.schema.clone(),
+                        self.node_id(),
+                        FINAL_SORT_PHASE,
+                    );
+                let plan = LocalPhysicalPlan::sort(
+                    in_memory_scan,
+                    self.sort_by.clone(),
+                    self.descending.clone(),
+                    self.nulls_first.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(self.node_id() as usize))
+                        .with_phase(FINAL_SORT_PHASE),
+                );
+                let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                    .with_psets(self.node_id(), psets);
+                let _ = result_tx.send(task).await;
+            }
             return Ok(());
         }
 
@@ -620,6 +658,10 @@ impl PipelineNodeImpl for SortNode {
         res.push(format!(
             "Nulls first = {}",
             self.nulls_first.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Needs range repartition: {}",
+            self.needs_range_repartition
         ));
         res
     }
