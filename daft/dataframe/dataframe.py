@@ -12,8 +12,6 @@ import os
 import pathlib
 import typing
 import warnings
-
-logger = logging.getLogger(__name__)
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -207,18 +205,20 @@ class DataFrame:
             return self._metadata.to_recordbatch() if self._metadata else None
 
     @property
-    def skipped_corrupt_files(self) -> list[tuple[str, str]]:
+    def skipped_corrupt_files(self) -> list[tuple[str, str, bool]]:
         """Files skipped during the last execution due to ignore_corrupt_files=True.
 
-        Returns a list of ``(path, reason)`` tuples for every file that was skipped.
-        Only available after the DataFrame has been collected (e.g. via ``.collect()``).
+        Returns a list of ``(path, reason, partial)`` tuples. ``partial`` is ``True``
+        when some batches were already emitted before corruption was detected (the file
+        was not fully skipped). Only available after ``.collect()``.
 
         Example::
 
             df = daft.read_parquet("s3://bucket/data/", ignore_corrupt_files=True)
             df.collect()
-            for path, reason in df.skipped_corrupt_files:
-                print(f"Skipped {path}: {reason}")
+            for path, reason, partial in df.skipped_corrupt_files:
+                tag = " (partial)" if partial else ""
+                print(f"Skipped{tag} {path}: {reason}")
         """
         if self._result_cache is None:
             raise ValueError("skipped_corrupt_files is not available until the DataFrame has been collected")
@@ -5381,7 +5381,7 @@ class DataFrame:
             self._metadata.write_mermaid()
             skipped = self._metadata.skipped_corrupt_files if self._metadata else []
             if skipped:
-                paths = "\n".join(f"  - {path}" for path, _ in skipped)
+                paths = "\n".join(f"  - {path}{' (partial)' if partial else ''}" for path, _, partial in skipped)
                 logger.warning(
                     "%d file(s) were skipped due to corruption or being missing "
                     "(ignore_corrupt_files=True). Use df.skipped_corrupt_files for details.\n%s",

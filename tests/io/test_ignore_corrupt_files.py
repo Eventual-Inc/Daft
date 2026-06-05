@@ -1,4 +1,4 @@
-"""Tests for ignore_corrupt_files in read_parquet, read_csv, read_iceberg, and read_lance."""
+"""Tests for ignore_corrupt_files in read_parquet, read_csv, and read_iceberg."""
 
 from __future__ import annotations
 
@@ -94,9 +94,10 @@ def test_parquet_ignore_corrupt_skips_and_reports(tmp_path):
 
     skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
-    path, reason = skipped[0]
+    path, reason, partial = skipped[0]
     assert _basename(path) == "bad.parquet"
     assert reason
+    assert not partial
 
 
 def test_parquet_ignore_corrupt_false_raises(tmp_path):
@@ -133,7 +134,7 @@ def test_parquet_ignore_corrupt_schema_inference_fallback(tmp_path):
 
     assert "col_a" in df.schema().column_names()
     assert sorted(df.to_pydict()["col_a"]) == [7, 8, 9]
-    assert any(_basename(p) == "aaa_bad.parquet" for p, _ in df.skipped_corrupt_files)
+    assert any(_basename(p) == "aaa_bad.parquet" for p, _, _ in df.skipped_corrupt_files)
 
 
 def test_parquet_ignore_corrupt_count_correct(tmp_path):
@@ -146,7 +147,7 @@ def test_parquet_ignore_corrupt_count_correct(tmp_path):
 
 
 def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
-    """File with valid footer but corrupt row-group data is skipped via ArrowRsError string matching."""
+    """File with valid footer but corrupt row-group data is skipped via CorruptFile variant."""
     d = str(tmp_path)
     _write_parquet(d, "good.parquet", {"a": [10, 20, 30]})
     _write_parquet_valid_footer_corrupt_data(d, "zzz_bad_rowgroup.parquet")
@@ -157,14 +158,9 @@ def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
     assert sorted(df.to_pydict()["a"]) == [10, 20, 30]
     skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
-    path, reason = skipped[0]
+    path, reason, _partial = skipped[0]
     assert _basename(path) == "zzz_bad_rowgroup.parquet"
-    # The footer is intact, so the file fails during row-group decoding.
-    # parquet-rs surfaces this as "Parquet error: ..." inside an ArrowRsError,
-    # which is caught by the string-matching branch in is_parquet_corrupt.
-    assert "Parquet error" in reason or "EOF" in reason or "bad magic" in reason, (
-        f"Expected a parquet-rs decode error in reason, got: {reason!r}"
-    )
+    assert reason
 
 
 def test_parquet_ignore_corrupt_all_corrupt_raises(tmp_path):
@@ -188,7 +184,7 @@ def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
-    skipped_names = {_basename(p) for p, _ in df.skipped_corrupt_files}
+    skipped_names = {_basename(p) for p, _, _ in df.skipped_corrupt_files}
     assert skipped_names == {"bad1.parquet", "bad2.parquet"}
 
 
@@ -209,9 +205,10 @@ def test_csv_ignore_corrupt_skips_and_reports(tmp_path):
 
     skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
-    path, reason = skipped[0]
+    path, reason, partial = skipped[0]
     assert _basename(path) == "zzz_bad.csv"
     assert reason
+    assert not partial
 
 
 def test_csv_ignore_corrupt_false_raises(tmp_path):
@@ -249,7 +246,7 @@ def test_csv_ignore_corrupt_field_count_mismatch(tmp_path):
     result = df.to_pydict()
     assert sorted(result["a"]) == [1, 3]
     assert sorted(result["b"]) == [2, 4]
-    assert any(_basename(p) == "zzz_bad.csv" for p, _ in df.skipped_corrupt_files)
+    assert any(_basename(p) == "zzz_bad.csv" for p, _, _ in df.skipped_corrupt_files)
 
 
 def test_csv_ignore_corrupt_all_corrupt_raises(tmp_path):
@@ -280,7 +277,7 @@ def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
-    skipped_names = {_basename(p) for p, _ in df.skipped_corrupt_files}
+    skipped_names = {_basename(p) for p, _, _ in df.skipped_corrupt_files}
     assert skipped_names == {"zzz_bad1.csv", "zzz_bad2.csv"}
 
 
@@ -341,8 +338,9 @@ def test_iceberg_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
 
     skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
-    _, reason = skipped[0]
+    _, reason, partial = skipped[0]
     assert reason
+    assert not partial
 
 
 def test_iceberg_ignore_corrupt_false_raises(local_iceberg_catalog):

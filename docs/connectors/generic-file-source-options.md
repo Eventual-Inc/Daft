@@ -1,6 +1,6 @@
 # Generic File Source Options
 
-These options apply to all file-based readers (`read_parquet`, `read_csv`, `read_iceberg`). They are not tied to any single connector or format.
+These options apply to `read_parquet`, `read_csv`, and `read_iceberg`. They are not tied to any single connector or format. Other readers (`read_json`, `read_warc`, `read_text`) do not support these options.
 
 ## Ignoring Corrupt Files
 
@@ -72,10 +72,13 @@ After materializing the dataframe with `.collect()`, the `skipped_corrupt_files`
 df = daft.read_parquet("s3://my-bucket/data/**/*.parquet", ignore_corrupt_files=True)
 df.collect()
 
-skipped = df.skipped_corrupt_files  # list[tuple[str, str]]
-for path, reason in skipped:
-    print(f"Skipped: {path}\n  Reason: {reason}")
+skipped = df.skipped_corrupt_files  # list[tuple[str, str, bool]]
+for path, reason, partial in skipped:
+    tag = " (partial)" if partial else ""
+    print(f"Skipped{tag}: {path}\n  Reason: {reason}")
 ```
+
+Each entry is a `(path, reason, partial)` tuple. When `partial` is `True`, some batches from the file were already emitted before the corruption was detected — the file was not fully skipped. This can happen when corruption appears in a later row group.
 
 `skipped_corrupt_files` is available after calling `.collect()` on the dataframe. Other execution methods such as `.count_rows()` do not populate this property, because they operate on an internal dataframe rather than materializing the original one.
 
@@ -95,8 +98,8 @@ if skipped:
     send_alert(f"{len(skipped)} file(s) skipped during nightly run", details=skipped)
 
     # Option 2: push to a dead-letter queue for later reprocessing
-    for path, reason in skipped:
-        dead_letter_queue.put({"path": path, "reason": reason, "run": TODAY})
+    for path, reason, partial in skipped:
+        dead_letter_queue.put({"path": path, "reason": reason, "partial": partial, "run": TODAY})
 ```
 
 This pattern — **errors visible, impact contained, tooling to fix** — lets automated batch jobs complete reliably while still surfacing problems for human review.
@@ -114,3 +117,6 @@ This pattern — **errors visible, impact contained, tooling to fix** — lets a
 
 !!! note "Iceberg delete files"
     Corruption in Iceberg *delete files* is not covered. If a delete file is unreadable, Daft will raise an error regardless of `ignore_corrupt_files`. Delete files are small metadata structures and corruption there generally indicates a more serious catalog inconsistency.
+
+!!! note "Count pushdown"
+    When `ignore_corrupt_files` is enabled for Parquet, count pushdown is disabled. This means `df.count()` will read all row-group data instead of using the metadata-only optimization, which may be slower on large datasets.

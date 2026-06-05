@@ -131,7 +131,8 @@ impl From<Error> for DaftError {
             | Error::FileTooSmall { .. }
             | Error::InvalidParquetFooterSize { .. }
             | Error::ParquetMetadata { .. }
-            | Error::ParquetColumnDecode { .. } => Self::CorruptFile(err.to_string()),
+            | Error::ParquetColumnDecode { .. }
+            | Error::Arrow { .. } => Self::CorruptFile(err.to_string()),
             _ => Self::External(err.into()),
         }
     }

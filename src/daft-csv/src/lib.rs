@@ -59,19 +59,23 @@ impl From<Error> for DaftError {
         match err {
             Error::IOError { source } => source.into(),
             Error::CSVError { source } => {
-                // is_io_error() was true — extract the inner io::Error.
                 if let csv_async::ErrorKind::Io(io_err) = source.into_kind() {
                     Self::IoError(io_err)
                 } else {
-                    unreachable!("is_io_error() returned true but kind is not Io")
+                    Self::External(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "CSV IO error kind mismatch (csv_async)",
+                    )))
                 }
             }
             Error::SyncCSVError { source } => {
-                // io kind check was true — extract the inner io::Error.
                 if let csv::ErrorKind::Io(io_err) = source.into_kind() {
                     Self::IoError(io_err)
                 } else {
-                    unreachable!("csv io kind check was true but kind is not Io")
+                    Self::External(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "CSV IO error kind mismatch (csv)",
+                    )))
                 }
             }
             _ => Self::External(err.into()),

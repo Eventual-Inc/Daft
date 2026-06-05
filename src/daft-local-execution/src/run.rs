@@ -168,7 +168,7 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
-    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 #[cfg_attr(

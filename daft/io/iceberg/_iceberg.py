@@ -131,6 +131,9 @@ def read_iceberg(
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
+        ignore_corrupt_files (bool): If True, silently skip corrupt or unreadable data files
+            instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files``
+            after collection. Defaults to False.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table

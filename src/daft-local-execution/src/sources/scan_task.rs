@@ -32,7 +32,7 @@ use crate::{
     },
 };
 
-type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
 
 pub struct ScanTaskSource {
     receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,

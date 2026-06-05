@@ -276,7 +276,7 @@ pub struct BuilderContext {
             daft_dsl::expr::bound_expr::BoundExpr,
         )>,
     >,
-    pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 impl BuilderContext {

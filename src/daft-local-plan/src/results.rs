@@ -18,8 +18,8 @@ pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
-    /// Files skipped due to `ignore_corrupt_files=True`: (path, reason).
-    pub skipped_corrupt_files: Vec<(String, String)>,
+    /// Files skipped due to `ignore_corrupt_files=True`: (path, reason, partial).
+    pub skipped_corrupt_files: Vec<(String, String, bool)>,
 }
 
 impl ExecutionStats {
@@ -35,12 +35,12 @@ impl ExecutionStats {
 
     pub fn with_skipped_corrupt_files(
         mut self,
-        skipped_corrupt_files: Vec<(String, String)>,
+        skipped_corrupt_files: Vec<(String, String, bool)>,
     ) -> Self {
         let mut seen = std::collections::HashSet::new();
         self.skipped_corrupt_files = skipped_corrupt_files
             .into_iter()
-            .filter(|(path, _)| seen.insert(path.clone()))
+            .filter(|(path, _, _)| seen.insert(path.clone()))
             .collect();
         self
     }
@@ -61,7 +61,7 @@ impl ExecutionStats {
 
     /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
-        type Decoded = (Vec<(Arc<NodeInfo>, StatSnapshot)>, Vec<(String, String)>);
+        type Decoded = (Vec<(Arc<NodeInfo>, StatSnapshot)>, Vec<(String, String, bool)>);
         let ((nodes, skipped_corrupt_files), _): (Decoded, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {

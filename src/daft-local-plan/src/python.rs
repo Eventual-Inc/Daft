@@ -139,7 +139,7 @@ impl PyExecutionStats {
     }
 
     #[getter]
-    pub fn skipped_corrupt_files(&self) -> Vec<(String, String)> {
+    pub fn skipped_corrupt_files(&self) -> Vec<(String, String, bool)> {
         self.inner.skipped_corrupt_files.clone()
     }
 }

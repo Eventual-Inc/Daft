@@ -30,7 +30,8 @@ use tokio_util::io::StreamReader;
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
-type SkippedCorruptFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector =
+    Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
 
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
@@ -204,21 +205,27 @@ pub async fn stream_csv(
     match stream_result {
         Ok(stream) => {
             if ignore_corrupt_files {
-                // Level 2: filter per-chunk errors that indicate format corruption
-                // (e.g. bad encoding or wrong field count discovered mid-stream).
                 let uri_for_warn = uri.clone();
                 let skipped_corrupt_files_inner = skipped_corrupt_files.clone();
+                let saw_ok = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let filtered = stream.filter_map(move |result| {
                     let uri_w = uri_for_warn.clone();
                     let skipped = skipped_corrupt_files_inner.clone();
+                    let saw = saw_ok.clone();
                     futures::future::ready(match result {
-                        Ok(batch) => Some(Ok(batch)),
+                        Ok(batch) => {
+                            saw.store(true, std::sync::atomic::Ordering::Relaxed);
+                            Some(Ok(batch))
+                        }
                         Err(ref e) if is_csv_corrupt(e) => {
-                            log::warn!("Skipping corrupt CSV chunk in {uri_w}: {e}");
+                            let partial = saw.load(std::sync::atomic::Ordering::Relaxed);
+                            log::warn!(
+                                "Skipping corrupt CSV chunk in {uri_w} (partial={partial}): {e}"
+                            );
                             if let Some(ref collector) = skipped
                                 && let Ok(mut v) = collector.lock()
                             {
-                                v.push((uri_w, e.to_string()));
+                                v.push((uri_w, e.to_string(), partial));
                             }
                             None
                         }
@@ -230,13 +237,12 @@ pub async fn stream_csv(
                 Ok(Box::pin(stream))
             }
         }
-        // Level 1: file-open / schema-inference errors (format error or truncated file).
         Err(ref e) if ignore_corrupt_files && is_csv_corrupt(e) => {
             log::warn!("Skipping unreadable/corrupt CSV file {uri}: {e}");
             if let Some(ref collector) = skipped_corrupt_files
                 && let Ok(mut v) = collector.lock()
             {
-                v.push((uri, e.to_string()));
+                v.push((uri, e.to_string(), false));
             }
             Ok(Box::pin(futures::stream::empty()))
         }

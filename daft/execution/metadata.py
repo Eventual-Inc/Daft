@@ -103,10 +103,12 @@ class ExecutionMetadata:
         return RecordBatch._from_pyrecordbatch(self._py.to_recordbatch())
 
     @property
-    def skipped_corrupt_files(self) -> list[tuple[str, str]]:
+    def skipped_corrupt_files(self) -> list[tuple[str, str, bool]]:
         """Files skipped during execution due to ignore_corrupt_files=True.
 
-        Returns a list of (path, reason) tuples for every file that was skipped.
+        Returns a list of (path, reason, partial) tuples. ``partial=True`` means
+        some batches were already emitted before corruption was detected; the file
+        was not fully skipped.
         """
         return self._py.skipped_corrupt_files
 

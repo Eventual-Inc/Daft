@@ -15,7 +15,7 @@ use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
 
-type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
 
 /// Dispatches a ScanTask to the appropriate reader based on its SourceConfig,
 /// returning a stream of RecordBatches.
@@ -115,8 +115,6 @@ async fn read_parquet(
             io_stats,
             cfg.field_id_mapping.clone(),
             aggregation,
-            cfg.ignore_corrupt_files,
-            skipped_corrupt_files,
         )
         .await;
     }
@@ -158,8 +156,6 @@ async fn count_pushdown_stream(
     io_stats: IOStatsRef,
     field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
     aggregation: &daft_dsl::ExprRef,
-    ignore_corrupt_files: bool,
-    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     daft_parquet::read::stream_parquet_count_pushdown(
         url,
@@ -167,8 +163,6 @@ async fn count_pushdown_stream(
         Some(io_stats),
         field_id_mapping,
         aggregation,
-        ignore_corrupt_files,
-        skipped_corrupt_files,
     )
     .await
 }

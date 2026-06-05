@@ -129,7 +129,7 @@ pub struct StatisticsManager {
     /// events. Empty for the `Default` impl used in tests that don't
     /// exercise the global event bus.
     query_id: QueryID,
-    skipped_corrupt_files: Mutex<Vec<(String, String)>>,
+    skipped_corrupt_files: Mutex<Vec<(String, String, bool)>>,
 }
 
 impl StatisticsManager {
