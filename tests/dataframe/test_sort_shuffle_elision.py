@@ -195,23 +195,21 @@ def test_sort_on_sort_different_key_repartitions():
     assert df2.to_pydict()["val"] == [10, 20, 30, 40, 50, 60]
 
 
-def test_multi_column_partial_key_match_repartitions():
+def test_multi_column_partial_key_match_repartitions(source_table):
     """Declaring range on [ts, val] but sorting only by [ts] → repartition still needed.
 
     The clustering keys must exactly match the sort keys; a superset does not qualify.
     """
     hint = ClusteringKeys.range("ts", "val")
-    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
-    df = RangeClusteredSource(table, hint).read().sort("ts")
+    df = RangeClusteredSource(source_table, hint).read().sort("ts")
     assert _sort_needs_repartition(df)
     assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
 
 
-def test_multi_column_exact_match_skips_repartition():
+def test_multi_column_exact_match_skips_repartition(source_table):
     """Declaring range on both sort keys causes the sort to skip its repartition."""
     hint = ClusteringKeys.range("ts", "val")
-    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
-    df = RangeClusteredSource(table, hint).read().sort(["ts", "val"])
+    df = RangeClusteredSource(source_table, hint).read().sort(["ts", "val"])
     assert not _sort_needs_repartition(df)
     result = df.to_pydict()
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
@@ -232,7 +230,6 @@ def test_multi_column_mixed_direction_repartitions(source_table):
     descending=[False, True] doesn't match, so the shuffle cannot be skipped.
     """
     hint = ClusteringKeys.range("ts", "val")  # descending=False → [False, False]
-    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
-    df = RangeClusteredSource(table, hint).read().sort(["ts", "val"], desc=[False, True])
+    df = RangeClusteredSource(source_table, hint).read().sort(["ts", "val"], desc=[False, True])
     assert _sort_needs_repartition(df)
     assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
