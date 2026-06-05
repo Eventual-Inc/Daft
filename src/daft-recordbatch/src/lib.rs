@@ -47,7 +47,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
-pub use ops::{get_column_by_name, get_columns_by_name};
+pub use ops::{asof_join_sorted, get_column_by_name, get_columns_by_name};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]

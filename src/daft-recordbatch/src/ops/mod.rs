@@ -13,4 +13,4 @@ mod unpivot;
 mod window;
 mod window_states;
 
-pub use joins::{get_column_by_name, get_columns_by_name};
+pub use joins::{asof_join::asof_join_sorted, get_column_by_name, get_columns_by_name};

@@ -144,6 +144,7 @@ impl AsofJoinNode {
             self.left_on.clone(),
             self.right_on.clone(),
             self.strategy,
+            false,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),

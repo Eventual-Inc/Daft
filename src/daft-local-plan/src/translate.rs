@@ -534,6 +534,7 @@ fn translate_helper(
                     left_on,
                     right_on,
                     asof_join.strategy,
+                    asof_join.assume_sorted_and_aligned,
                     asof_join.output_schema.clone(),
                     asof_join.stats_state.clone(),
                     LocalNodeContext::default(),

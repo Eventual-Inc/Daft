@@ -47,7 +47,8 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{
-        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+        AsofJoinOperator, AsofJoinSortedOperator, CrossJoinOperator, HashJoinOperator, JoinNode,
+        SortMergeJoinOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -1369,34 +1370,58 @@ fn physical_plan_to_pipeline(
             right_on,
             schema,
             strategy,
+            assume_sorted_and_aligned,
             stats_state,
             context,
         }) => {
             let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
             let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
 
-            let asof_join_op = AsofJoinOperator::new(
-                left_by.clone(),
-                right_by.clone(),
-                left_on.clone(),
-                right_on.clone(),
-                *strategy,
-                left.schema().clone(),
-                schema.clone(),
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: "AsofJoin",
-            })?;
-
-            JoinNode::new(
-                Arc::new(asof_join_op),
-                left_node,
-                right_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            if *assume_sorted_and_aligned {
+                let op = AsofJoinSortedOperator::new(
+                    left_by.clone(),
+                    right_by.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *strategy,
+                    left.schema().clone(),
+                    schema.clone(),
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: "AsofJoinSorted",
+                })?;
+                JoinNode::new(
+                    Arc::new(op),
+                    left_node,
+                    right_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            } else {
+                let op = AsofJoinOperator::new(
+                    left_by.clone(),
+                    right_by.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    *strategy,
+                    left.schema().clone(),
+                    schema.clone(),
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: "AsofJoin",
+                })?;
+                JoinNode::new(
+                    Arc::new(op),
+                    left_node,
+                    right_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            }
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
