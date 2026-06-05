@@ -57,6 +57,40 @@ def _write_parquet_valid_footer_corrupt_data(directory: str, name: str) -> str:
     return path
 
 
+def _write_parquet_partial_corrupt(directory: str, name: str) -> str:
+    """Write a multi-row-group Parquet file where only the second row group is corrupt.
+
+    Row group 0 is valid and readable; row group 1 has its column data
+    overwritten with 0xFF.  The footer (and therefore metadata for both
+    row groups) remains intact, so the reader will successfully decode
+    row group 0 before hitting corruption in row group 1.
+    """
+    import struct
+
+    path = os.path.join(directory, name)
+    schema = pa.schema([("a", pa.int64())])
+    writer = papq.ParquetWriter(path, schema)
+    writer.write_table(pa.table({"a": [1, 2, 3]}))  # row group 0
+    writer.write_table(pa.table({"a": [4, 5, 6]}))  # row group 1
+    writer.close()
+
+    metadata = papq.read_metadata(path)
+    rg1_offset = metadata.row_group(1).column(0).data_page_offset
+
+    with open(path, "rb") as f:
+        data = bytearray(f.read())
+
+    footer_len = struct.unpack_from("<i", data, len(data) - 8)[0]
+    footer_start = len(data) - 8 - footer_len
+
+    for i in range(rg1_offset, footer_start):
+        data[i] = 0xFF
+
+    with open(path, "wb") as f:
+        f.write(bytes(data))
+    return path
+
+
 def _write_csv(directory: str, name: str, content: str) -> str:
     path = os.path.join(directory, name)
     with open(path, "w") as f:
@@ -161,6 +195,28 @@ def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
     path, reason, _partial = skipped[0]
     assert _basename(path) == "zzz_bad_rowgroup.parquet"
     assert reason
+
+
+def test_parquet_ignore_corrupt_partial_read(tmp_path):
+    """File with valid first row group and corrupt second row group reports partial=True."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [10, 20, 30]})
+    _write_parquet_partial_corrupt(d, "partial.parquet")
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    result = sorted(df.to_pydict()["a"])
+    # good.parquet contributes [10, 20, 30]; first row group of partial.parquet contributes [1, 2, 3]
+    assert 10 in result and 20 in result and 30 in result
+    assert 1 in result and 2 in result and 3 in result
+
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, partial = skipped[0]
+    assert _basename(path) == "partial.parquet"
+    assert reason
+    assert partial
 
 
 def test_parquet_ignore_corrupt_all_corrupt_raises(tmp_path):
