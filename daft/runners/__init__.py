@@ -73,6 +73,7 @@ def set_runner_ray(
     downscale_idle_seconds: int | None = None,
     min_survivor_workers: int | None = None,
     pending_release_exclude_seconds: int | None = None,
+    worker_startup_timeout: int | None = None,
 ) -> Runner[PartitionT]:
     """Configure Daft to execute dataframes using the Ray distributed computing framework.
 
@@ -90,6 +91,8 @@ def set_runner_ray(
         pending_release_exclude_seconds: Grace period (TTL) for recently-released worker IDs during
             worker discovery, to prevent the autoscaler from immediately respawning them. If not
             provided, falls back to ``DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS`` (default: 120).
+        worker_startup_timeout: Timeout in seconds for Ray worker actors to report their addresses during startup.
+            Can also be configured via the ``DAFT_RAY_WORKER_STARTUP_TIMEOUT`` environment variable.
 
     Returns:
         Runner[PartitionT]: A runner object with the Ray runner's configurations.
@@ -119,4 +122,5 @@ def set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
         force_client_mode=force_client_mode,
+        worker_startup_timeout=worker_startup_timeout,
     )

@@ -75,6 +75,25 @@ print(daft.runners._get_runner().name)
         assert result.stdout.decode().strip() == "None\nray"
 
 
+def test_set_runner_ray_worker_startup_timeout():
+    """Test that worker startup timeout is configured on the Ray runner."""
+    script = """
+import daft
+daft.set_runner_ray(worker_startup_timeout=321)
+runner = daft.runners._get_runner()
+print(runner.name)
+print(runner.worker_startup_timeout)
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
+        assert result.stdout.decode().strip() == "ray\n321"
+
+
 def test_implicit_set_runner_ray():
     """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Ray."""
     implicit_set_runner_script_ray = """
@@ -150,6 +169,29 @@ print(daft.runners._get_runner().name)
             env={"DAFT_RUNNER": daft_runner_envvar, "RAY_DISABLE_DASHBOARD": "1"},
         )
         assert result.stdout.decode().strip() == daft_runner_envvar
+
+
+def test_ray_worker_startup_timeout_env_var():
+    """Test that Ray runner worker startup timeout can be configured from the environment."""
+    script = """
+import daft
+df = daft.from_pydict({"foo": [1, 2, 3]})
+runner = daft.runners._get_runner()
+print(runner.name)
+print(runner.worker_startup_timeout)
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            env={
+                "DAFT_RUNNER": "ray",
+                "DAFT_RAY_WORKER_STARTUP_TIMEOUT": "321",
+                "RAY_DISABLE_DASHBOARD": "1",
+            },
+        )
+        assert result.stdout.decode().strip() == "ray\n321"
 
 
 def test_in_ray_job():
@@ -333,12 +375,3 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
         assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()
-
-
-def test_set_worker_startup_timeout():
-    original_timeout = daft.context.get_context().daft_execution_config.worker_startup_timeout
-
-    with daft.execution_config_ctx(worker_startup_timeout=321):
-        assert daft.context.get_context().daft_execution_config.worker_startup_timeout == 321
-
-    assert daft.context.get_context().daft_execution_config.worker_startup_timeout == original_timeout

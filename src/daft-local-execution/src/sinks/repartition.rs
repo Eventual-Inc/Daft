@@ -8,6 +8,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
+use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
     oneshot_writer::write_partitions_one_shot, server::flight_server::ShuffleFlightServer,
     shuffle_cache::CHUNK_TARGET_BYTES,
@@ -31,8 +32,8 @@ const REPARTITION_MAX_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024; // 256 
 /// Per-(worker, input) accumulator. Morsels are buffered until they cross
 /// the sink's threshold, then fused and partitioned in one pass.
 pub(crate) struct RepartitionAccState {
-    post_repartitioned: Vec<Vec<MicroPartition>>,
-    pre_repartitioned: Vec<MicroPartition>,
+    post_repartitioned: Vec<Vec<RecordBatch>>,
+    pre_repartitioned: Vec<RecordBatch>,
     pre_repartitioned_size_bytes: usize,
     bound_keys: Vec<BoundExpr>,
     repartition_spec: RepartitionSpec,
@@ -68,7 +69,7 @@ impl RepartitionAccState {
         let pre_repartitioned = std::mem::take(&mut self.pre_repartitioned);
         self.pre_repartitioned_size_bytes = 0;
 
-        let concated = MicroPartition::concat(pre_repartitioned)?;
+        let concated = RecordBatch::concat(pre_repartitioned)?;
         let num_partitions = self.num_partitions();
 
         let partitioned = match &self.repartition_spec {
@@ -203,7 +204,9 @@ impl BlockingSink for RepartitionSink {
                 async move {
                     let input_bytes = input.size_bytes();
                     state.pre_repartitioned_size_bytes += input_bytes;
-                    state.pre_repartitioned.push(input);
+                    state
+                        .pre_repartitioned
+                        .extend(input.record_batches().iter().cloned());
 
                     if state.pre_repartitioned_size_bytes >= buffer_threshold_bytes {
                         state.flush_pre_partitioned()?;
@@ -355,9 +358,9 @@ fn flatten_per_partition(
                 .iter_mut()
                 .flat_map(|state| std::mem::take(&mut state.post_repartitioned[partition_idx]))
                 .collect::<Vec<_>>();
-            MicroPartition::concat_or_empty(chunks, schema.clone())
+            MicroPartition::new_loaded(schema.clone(), Arc::new(chunks), None)
         })
-        .collect::<DaftResult<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
     Ok((per_partition, input_id))
 }
