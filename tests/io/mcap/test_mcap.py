@@ -189,7 +189,7 @@ def test_mcap_read_s3(data_from_s3):
 
     assert len(pdf) == 100
     assert pdf["sequence"].nunique() == 100
-    assert pdf["data"].startswith("Chatter #").all()
+    assert pdf["data"].str.startswith("Chatter #").all()
 
 
 @pytest.mark.parametrize("raw_bytes_mcap_dataset_path", ["raw_bytes_mcap_dataset_path"], indirect=True)
