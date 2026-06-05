@@ -53,11 +53,7 @@ class _InMemoryTask(DataSourceTask):
 
 
 class RangeClusteredSource(DataSource):
-    """Emits two tasks with non-overlapping ranges and an optional clustering hint.
-
-    Always emits exactly two tasks regardless of data size, so there are always two partitions
-    at plan time and the repartition decision is observable via explain() regardless of row count.
-    """
+    """Emits two tasks with non-overlapping ranges and an optional clustering hint."""
 
     def __init__(self, table: pa.Table, clustering: ClusteringKeys | None) -> None:
         self._table = table
@@ -95,10 +91,12 @@ def _sort_needs_repartition(df) -> bool:
 
 @pytest.fixture
 def source_table() -> pa.Table:
+    # Values are shuffled within each partition (rows 0-2 → ts [1,3], rows 3-5 → ts [4,6])
+    # so tests verify non-overlapping range partitioning, not pre-sorted order.
     return pa.table(
         {
-            "ts": [1, 2, 3, 4, 5, 6],
-            "val": [10, 20, 30, 40, 50, 60],
+            "ts": [2, 1, 3, 5, 4, 6],
+            "val": [20, 10, 30, 50, 40, 60],
         }
     )
 
@@ -122,6 +120,15 @@ def test_no_declaration_repartitions_by_default(source_table):
 def test_exact_key_match_skips_repartition(source_table):
     """Declaring range on the sort key causes the sort to skip its repartition."""
     hint = ClusteringKeys.range("ts")
+    df = RangeClusteredSource(source_table, hint).read().sort("ts")
+    assert not _sort_needs_repartition(df)
+    result = df.to_pydict()
+    assert result["ts"] == [1, 2, 3, 4, 5, 6]
+
+
+def test_col_expression_key_skips_repartition(source_table):
+    """ClusteringKeys.range accepts col() expressions, not just string names."""
+    hint = ClusteringKeys.range(col("ts"))
     df = RangeClusteredSource(source_table, hint).read().sort("ts")
     assert not _sort_needs_repartition(df)
     result = df.to_pydict()
@@ -179,7 +186,7 @@ def test_multi_column_partial_key_match_repartitions():
     The clustering keys must exactly match the sort keys; a superset does not qualify.
     """
     hint = ClusteringKeys.range("ts", "val")
-    table = pa.table({"ts": [1, 2, 3, 4, 5, 6], "val": [10, 20, 30, 40, 50, 60]})
+    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
     df = RangeClusteredSource(table, hint).read().sort("ts")
     assert _sort_needs_repartition(df)
 
@@ -187,7 +194,7 @@ def test_multi_column_partial_key_match_repartitions():
 def test_multi_column_exact_match_skips_repartition():
     """Declaring range on both sort keys causes the sort to skip its repartition."""
     hint = ClusteringKeys.range("ts", "val")
-    table = pa.table({"ts": [1, 2, 3, 4, 5, 6], "val": [10, 20, 30, 40, 50, 60]})
+    table = pa.table({"ts": [2, 1, 3, 5, 4, 6], "val": [20, 10, 30, 50, 40, 60]})
     df = RangeClusteredSource(table, hint).read().sort(["ts", "val"])
     assert not _sort_needs_repartition(df)
     result = df.to_pydict()
