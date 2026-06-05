@@ -62,13 +62,9 @@ class ClusteringKeys:
 
     @staticmethod
     def range(*cols: str | Expression) -> ClusteringKeys:
-        """Declares that the source's output is range-partitioned and sorted ascending by ``cols``.
+        """Declares that the source's output is range-partitioned by ``cols``.
 
-        Each partition covers a non-overlapping range of values and rows within each partition
-        are sorted in ascending order by the declared columns.
-
-        Note:
-            This hint only applies to data sorted in **ascending** order.
+        Each partition covers a non-overlapping range of values for the declared columns.
 
         Column-name strings are interpreted as column references.
 

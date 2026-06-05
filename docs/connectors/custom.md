@@ -216,16 +216,15 @@ df = (
 
 #### Range clustering
 
-If your source already emits data where each task covers a non-overlapping range of values *and*
-rows within each task are sorted ascending by those columns, you can tell Daft by returning
-`ClusteringKeys.range()`
+If your source already emits data where each task covers a non-overlapping range of values for
+those columns, you can tell Daft by returning `ClusteringKeys.range()`
 
 ```python
 class TimeSeriesSource(DataSource):
     # ... name / schema / get_tasks as above ...
 
     def get_clustering_keys(self) -> ClusteringKeys | None:
-        # Each task holds a non-overlapping ts range, sorted ascending.
+        # Each task holds a non-overlapping ts range.
         return ClusteringKeys.range("ts")
 ```
 
@@ -239,9 +238,8 @@ class TimeSeriesSource(DataSource):
 
     Daft trusts the declaration. For hash clustering, every row with the same hash of the declared
     keys must be produced within a single task. For range clustering, each task must cover a
-    genuinely non-overlapping range and rows within each task must be sorted ascending — only
-    ascending order is supported for range hints. Incorrectly overriding `get_clustering_keys()`
-    will likely lead to incorrect results.
+    genuinely non-overlapping range of values for the declared columns. Incorrectly overriding
+    `get_clustering_keys()` will likely lead to incorrect results.
 
 ## Writing to a Custom Data Sink
 

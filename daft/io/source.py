@@ -65,8 +65,8 @@ class DataSource(ABC):
           is already hash-partitioned — e.g. when each ``DataSourceTask`` corresponds to exactly
           one ``(producer, hour)`` group - allows the optimizer to skip hash shuffles
         - :meth:`~daft.io.clustering.ClusteringKeys.range` — when each task covers a
-          non-overlapping range of values and rows within each task are sorted ascending by the
-          declared keys - allows the optimizer to skip range shuffles
+          non-overlapping range of values for the declared keys - allows the optimizer to skip
+          range shuffles
 
         Note that this is distinct from :meth:`get_partition_fields`, which describes on-disk
         storage layout for per-row value injection, not execution-time clustering.

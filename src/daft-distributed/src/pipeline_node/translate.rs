@@ -116,7 +116,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         Ok(is_compatible)
     }
-
 }
 
 impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {

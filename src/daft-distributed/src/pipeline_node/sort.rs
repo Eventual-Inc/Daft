@@ -502,8 +502,8 @@ impl SortNode {
             return Ok(());
         }
 
-        // Input is already range-partitioned by the sort keys: skip sample + repartition and
-        // sort each partition locally in place.
+        // Input is already range-partitioned by the sort keys: partitions cover non-overlapping
+        // ranges so no cross-partition shuffle is needed. Sort each partition locally in place.
         if !self.needs_range_repartition {
             for mo in materialized_outputs {
                 let (in_memory_scan, psets) =

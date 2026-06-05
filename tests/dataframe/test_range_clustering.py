@@ -1,6 +1,6 @@
 """Tests for ClusteringKeys.range() shuffle elision in distributed sorts.
 
-A custom ``DataSource`` can declare that its output is range-partitioned and sorted by declaring
+A custom ``DataSource`` can declare that its output is range-partitioned by declaring
 ``ClusteringKeys.range(*cols)``. When a distributed sort is applied over such a source using the
 same key(s), the planner skips the expensive sample + range-repartition step and sorts each
 partition locally in place.
@@ -53,7 +53,7 @@ class _InMemoryTask(DataSourceTask):
 
 
 class RangeClusteredSource(DataSource):
-    """Emits two tasks with non-overlapping, sorted ranges and an optional clustering hint.
+    """Emits two tasks with non-overlapping ranges and an optional clustering hint.
 
     Always emits exactly two tasks regardless of data size, so there are always two partitions
     at plan time and the repartition decision is observable via explain() regardless of row count.
