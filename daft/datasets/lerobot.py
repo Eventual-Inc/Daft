@@ -20,12 +20,12 @@ from daft.file import VideoFile
 from daft.exceptions import DaftCoreException
 from daft.functions import lpad
 from daft.functions.file_ import video_file
+from daft.functions.video import get_video_frame_by_idx
 from daft.udf import func
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
-
 
 
 def _normalize_dataset_root(uri: str) -> str:
@@ -152,7 +152,7 @@ def read(
         elif isinstance(load_video_frames, list) and all(isinstance(k, str) for k in load_video_frames):
             video_keys = load_video_frames
         else:
-            raise ValueError("TODO")
+            raise ValueError(f"Invalid value provided for argument load_video_frames=`{load_video_frames}`")
 
         # To increase parallelism, reduce batch size
         df = df.into_batches(16)  # TODO: Set it in the batch UDF instead?

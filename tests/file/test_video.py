@@ -338,3 +338,24 @@ def test_video_frames_expression_sample_interval(sample_video_path):
 
     result = df.to_pydict()["frames"][0]
     assert len(result) == 10
+
+
+def test_get_frame_by_idx(sample_video_path):
+    """get_frame_by_idx returns the same frame as frames() for a given index."""
+    import numpy as np
+
+    file = daft.VideoFile(sample_video_path)
+    all_frames = list(file.frames())
+
+    for idx in (0, 1, 50, 150, 289):
+        expected = all_frames[idx]["data"]
+        actual = file.get_frame_by_idx(idx)
+        np.testing.assert_array_equal(np.array(actual), np.array(expected))
+
+
+def test_get_frame_by_idx_out_of_range(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(IndexError):
+        file.get_frame_by_idx(290)
+    with pytest.raises(IndexError):
+        file.get_frame_by_idx(-1)
