@@ -5,7 +5,7 @@ The Daft Dashboard is a web UI for inspecting Daft query execution. Daft scripts
 The dashboard ships pre-built with the `daft` Python package — `pip install daft` is all you need, no separate install step or extra dependencies.
 
 !!! note
-    The dashboard is under active development. Some operational ergonomics (persistence, compatibility, authentication) are still evolving — feedback is welcome on the [Daft Slack](http://www.daft.ai/slack) or [GitHub](https://github.com/Eventual-Inc/Daft/issues).
+    The dashboard is under active development. Some operational ergonomics (persistence, compatibility, authentication) are still evolving — feedback is welcome on the [Daft Slack](https://daft.ai/slack) or [GitHub](https://github.com/Eventual-Inc/Daft/issues).
 
 ## How It Works
 

@@ -27,6 +27,7 @@ struct RayWorkerManagerState {
     max_resources_requested: ResourceRequest,
     last_autoscale_request_time: Option<Instant>,
     autoscale_interval_secs: Duration,
+    worker_startup_timeout: usize,
 }
 
 impl RayWorkerManagerState {
@@ -52,7 +53,7 @@ impl RayWorkerManagerState {
             let ray_workers = flotilla_module
                 .call_method1(
                     pyo3::intern!(py, "start_ray_workers"),
-                    (existing_worker_ids,),
+                    (existing_worker_ids, self.worker_startup_timeout),
                 )?
                 .extract::<Vec<RaySwordfishWorker>>()?;
 
@@ -73,7 +74,7 @@ pub(crate) struct RayWorkerManager {
 }
 
 impl RayWorkerManager {
-    pub fn new() -> Self {
+    pub fn new(worker_startup_timeout: usize) -> Self {
         Self {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
@@ -86,6 +87,7 @@ impl RayWorkerManager {
                         .and_then(|val| val.parse::<u64>().ok())
                         .unwrap_or(DEFAULT_AUTOSCALE_INTERVAL_SECS),
                 ),
+                worker_startup_timeout,
             })),
         }
     }

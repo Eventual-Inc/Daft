@@ -497,6 +497,19 @@ class Expression:
 
         return cast(self, dtype)
 
+    def try_cast(self, dtype: DataTypeLike) -> Expression:
+        """Attempts to cast an expression to the given datatype, returning null on failure.
+
+        Unlike `cast`, this method does not raise an error when the conversion fails.
+        Instead, it returns null for values that cannot be converted.
+
+        Tip: See Also
+            [`daft.functions.try_cast`](https://docs.daft.ai/en/stable/api/functions/try_cast/)
+        """
+        from daft.functions import try_cast
+
+        return try_cast(self, dtype)
+
     if TYPE_CHECKING:
 
         def as_int8(self) -> Expression: ...

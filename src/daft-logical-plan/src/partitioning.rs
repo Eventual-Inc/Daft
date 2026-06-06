@@ -1,12 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
-use daft_dsl::{
-    Column, ExprRef, ResolvedColumn,
-    expr::{VLLMExpr, bound_expr::BoundExpr},
-    functions::{FunctionArgs, scalar::ScalarFn},
-};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -212,17 +207,27 @@ impl RangeRepartitionConfig {
     }
 }
 
-/// Partition scheme for Daft DataFrame.
+/// Partition scheme for Daft DataFrame, generic over the expression type `T` used for its
+/// clustering keys.
+///
+/// Two instantiations exist:
+/// * [`ClusteringSpec`] (`T = ExprRef`, the default) — the logical, schema-agnostic form. Keys are
+///   resolved-by-name so the spec survives logical-plan rewrites.
+/// * `BoundClusteringSpec` (`T = BoundExpr`) — the execution-time form used by the distributed
+///   pipeline, where keys are bound against a fixed, post-optimization schema by column index.
+///   It is defined (along with the logical -> pipeline binding/translation logic) in
+///   `daft-distributed`; the logical plan only ever deals with the resolved-by-name form.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ClusteringSpec {
-    Range(RangeClusteringConfig),
-    Hash(HashClusteringConfig),
+pub enum ClusteringSpec<T = ExprRef> {
+    Range(RangeClusteringConfig<T>),
+    Hash(HashClusteringConfig<T>),
     Random(RandomClusteringConfig),
     Unknown(UnknownClusteringConfig),
 }
 
 pub type ClusteringSpecRef = Arc<ClusteringSpec>;
-impl ClusteringSpec {
+
+impl<T> ClusteringSpec<T> {
     pub fn var_name(&self) -> &'static str {
         match self {
             Self::Range(_) => "Range",
@@ -241,14 +246,29 @@ impl ClusteringSpec {
         }
     }
 
-    pub fn partition_by(&self) -> Vec<ExprRef> {
+    /// The clustering keys, or an empty slice for `Random` / `Unknown`.
+    pub fn partition_by(&self) -> &[T] {
         match self {
-            Self::Range(RangeClusteringConfig { by, .. }) => by.clone(),
-            Self::Hash(HashClusteringConfig { by, .. }) => by.clone(),
-            _ => vec![],
+            Self::Range(RangeClusteringConfig { by, .. }) => by,
+            Self::Hash(HashClusteringConfig { by, .. }) => by,
+            Self::Random(_) | Self::Unknown(_) => &[],
         }
     }
 
+    pub fn is_hash(&self) -> bool {
+        matches!(self, Self::Hash(_))
+    }
+
+    pub fn unknown(num_partitions: usize) -> Self {
+        Self::Unknown(UnknownClusteringConfig::new(num_partitions))
+    }
+
+    pub fn hash(num_partitions: usize, by: Vec<T>) -> Self {
+        Self::Hash(HashClusteringConfig::new(num_partitions, by))
+    }
+}
+
+impl<T: Display> ClusteringSpec<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Range(conf) => conf.multiline_display(),
@@ -257,263 +277,56 @@ impl ClusteringSpec {
             Self::Unknown(conf) => conf.multiline_display(),
         }
     }
-
-    pub fn unknown() -> Self {
-        Self::Unknown(UnknownClusteringConfig::new(0))
-    }
-
-    pub fn unknown_with_num_partitions(num_partitions: usize) -> Self {
-        Self::Unknown(UnknownClusteringConfig::new(num_partitions))
-    }
 }
 
-pub fn translate_clustering_spec(
-    input_clustering_spec: Arc<ClusteringSpec>,
-    projection: &Vec<ExprRef>,
-) -> Arc<ClusteringSpec> {
-    // Given an input clustering spec, and a new projection,
-    // produce the new clustering spec.
-
-    use crate::partitioning::ClusteringSpec::*;
-    match input_clustering_spec.as_ref() {
-        // If the scheme is vacuous, the result partition spec is the same.
-        Random(_) | Unknown(_) => input_clustering_spec,
-        // Otherwise, need to reevaluate the partition scheme for each expression.
-        Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
-            // See what columns the projection directly translates into new columns.
-            let mut old_colname_to_new_colname = IndexMap::new();
-            for expr in projection {
-                if let Some(oldname) = expr.input_mapping() {
-                    let newname = expr.name().to_string();
-                    // Add the oldname -> newname mapping,
-                    // but don't overwrite any existing identity mappings (e.g. "a" -> "a").
-                    if old_colname_to_new_colname.get(&oldname) != Some(&oldname) {
-                        old_colname_to_new_colname.insert(oldname, newname);
-                    }
-                }
-            }
-
-            // Then, see if we can fully translate the clustering spec.
-            let maybe_new_clustering_spec = by
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, &old_colname_to_new_colname))
-                .collect::<std::result::Result<Vec<_>, _>>();
-            maybe_new_clustering_spec.map_or_else(
-                |()| {
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(
-                        input_clustering_spec.num_partitions(),
-                    ))
-                    .into()
-                },
-                |new_clustering_spec: Vec<ExprRef>| match input_clustering_spec.as_ref() {
-                    Range(RangeClusteringConfig {
-                        num_partitions,
-                        descending,
-                        ..
-                    }) => ClusteringSpec::Range(RangeClusteringConfig::new(
-                        *num_partitions,
-                        new_clustering_spec,
-                        descending.clone(),
-                    ))
-                    .into(),
-                    Hash(HashClusteringConfig { num_partitions, .. }) => ClusteringSpec::Hash(
-                        HashClusteringConfig::new(*num_partitions, new_clustering_spec),
-                    )
-                    .into(),
-                    _ => unreachable!(),
-                },
-            )
-        }
-    }
-}
-
-fn translate_clustering_spec_expr(
-    clustering_spec_expr: &ExprRef,
-    old_colname_to_new_colname: &IndexMap<String, String>,
-) -> std::result::Result<ExprRef, ()> {
-    // Given a single expression of an input clustering spec,
-    // translate it to a new expression in the given projection.
-    // Returns:
-    //  - Ok(expr) with expr being the translation, or
-    //  - Err(()) if no translation is possible in the new projection.
-
-    use daft_dsl::{Expr, binary_op};
-
-    match clustering_spec_expr.as_ref() {
-        Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-            match old_colname_to_new_colname.get(name.as_ref()) {
-                Some(newname) => Ok(daft_dsl::resolved_col(newname.as_str())),
-                None => Err(()),
-            }
-        }
-        Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Subquery(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Exists(_) => Ok(clustering_spec_expr.clone()),
-        Expr::Alias(child, name) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.alias(name.clone()))
-        }
-        Expr::BinaryOp { op, left, right } => {
-            let newleft = translate_clustering_spec_expr(left, old_colname_to_new_colname)?;
-            let newright = translate_clustering_spec_expr(right, old_colname_to_new_colname)?;
-            Ok(binary_op(*op, newleft, newright))
-        }
-        Expr::Cast(child, dtype) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.cast(dtype))
-        }
-        Expr::Function { func, inputs } => {
-            let new_inputs = inputs
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::Function {
-                func: func.clone(),
-                inputs: new_inputs,
-            }
-            .into())
-        }
-        Expr::ScalarFn(ScalarFn::Builtin(func)) => {
-            let mut func = func.clone();
-            let new_inputs = func
-                .inputs
-                .iter()
-                .map(|arg| {
-                    arg.map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                        .transpose()
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            func.inputs = FunctionArgs::new_unchecked(new_inputs);
-            Ok(func.into())
-        }
-        Expr::Not(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.not())
-        }
-        Expr::IsNull(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.is_null())
-        }
-        Expr::NotNull(child) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            Ok(newchild.not_null())
-        }
-        Expr::FillNull(child, fill_value) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newfill = translate_clustering_spec_expr(fill_value, old_colname_to_new_colname)?;
-            Ok(newchild.fill_null(newfill))
-        }
-        Expr::IsIn(child, items) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newitems = items
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(newchild.is_in(newitems))
-        }
-        Expr::List(items) => {
-            let new_items = items
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::List(new_items).into())
-        }
-        Expr::Between(child, lower, upper) => {
-            let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newlower = translate_clustering_spec_expr(lower, old_colname_to_new_colname)?;
-            let newupper = translate_clustering_spec_expr(upper, old_colname_to_new_colname)?;
-            Ok(newchild.between(newlower, newupper))
-        }
-        Expr::IfElse {
-            if_true,
-            if_false,
-            predicate,
-        } => {
-            let newtrue = translate_clustering_spec_expr(if_true, old_colname_to_new_colname)?;
-            let newfalse = translate_clustering_spec_expr(if_false, old_colname_to_new_colname)?;
-            let newpred = translate_clustering_spec_expr(predicate, old_colname_to_new_colname)?;
-
-            Ok(newpred.if_else(newtrue, newfalse))
-        }
-        Expr::InSubquery(expr, subquery) => {
-            let expr = translate_clustering_spec_expr(expr, old_colname_to_new_colname)?;
-
-            Ok(expr.in_subquery(subquery.clone()))
-        }
-        Expr::ScalarFn(ScalarFn::Python(udf)) => {
-            let new_children = udf
-                .args()
-                .iter()
-                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(Expr::ScalarFn(ScalarFn::Python(
-                udf.with_new_children(new_children),
-            ))))
-        }
-        Expr::VLLM(VLLMExpr { input, .. }) => {
-            let new_input = translate_clustering_spec_expr(input, old_colname_to_new_colname)?;
-            Ok(Arc::new(
-                clustering_spec_expr.with_new_children(vec![new_input]),
-            ))
-        }
-        Expr::Coalesce(inputs) => {
-            let new_inputs = inputs
-                .iter()
-                .map(|input| translate_clustering_spec_expr(input, old_colname_to_new_colname))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Expr::Coalesce(new_inputs).into())
-        }
-        // Cannot have agg exprs or references to other tables in clustering specs.
-        Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
-    }
-}
-
-impl Default for ClusteringSpec {
+impl<T> Default for ClusteringSpec<T> {
     fn default() -> Self {
         Self::Unknown(UnknownClusteringConfig::new(1))
     }
 }
 
-impl From<RangeClusteringConfig> for ClusteringSpec {
-    fn from(value: RangeClusteringConfig) -> Self {
+impl<T> From<RangeClusteringConfig<T>> for ClusteringSpec<T> {
+    fn from(value: RangeClusteringConfig<T>) -> Self {
         Self::Range(value)
     }
 }
 
-impl From<HashClusteringConfig> for ClusteringSpec {
-    fn from(value: HashClusteringConfig) -> Self {
+impl<T> From<HashClusteringConfig<T>> for ClusteringSpec<T> {
+    fn from(value: HashClusteringConfig<T>) -> Self {
         Self::Hash(value)
     }
 }
 
-impl From<RandomClusteringConfig> for ClusteringSpec {
+impl<T> From<RandomClusteringConfig> for ClusteringSpec<T> {
     fn from(value: RandomClusteringConfig) -> Self {
         Self::Random(value)
     }
 }
 
-impl From<UnknownClusteringConfig> for ClusteringSpec {
+impl<T> From<UnknownClusteringConfig> for ClusteringSpec<T> {
     fn from(value: UnknownClusteringConfig) -> Self {
         Self::Unknown(value)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct RangeClusteringConfig {
+pub struct RangeClusteringConfig<T = ExprRef> {
     pub num_partitions: usize,
-    pub by: Vec<ExprRef>,
+    pub by: Vec<T>,
     pub descending: Vec<bool>,
 }
 
-impl RangeClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+impl<T> RangeClusteringConfig<T> {
+    pub fn new(num_partitions: usize, by: Vec<T>, descending: Vec<bool>) -> Self {
         Self {
             num_partitions,
             by,
             descending,
         }
     }
+}
 
+impl<T: Display> RangeClusteringConfig<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         let pairs = self
@@ -529,16 +342,18 @@ impl RangeClusteringConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct HashClusteringConfig {
+pub struct HashClusteringConfig<T = ExprRef> {
     pub num_partitions: usize,
-    pub by: Vec<ExprRef>,
+    pub by: Vec<T>,
 }
 
-impl HashClusteringConfig {
-    pub fn new(num_partitions: usize, by: Vec<ExprRef>) -> Self {
+impl<T> HashClusteringConfig<T> {
+    pub fn new(num_partitions: usize, by: Vec<T>) -> Self {
         Self { num_partitions, by }
     }
+}
 
+impl<T: Display> HashClusteringConfig<T> {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Num partitions = {}", self.num_partitions));

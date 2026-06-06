@@ -17,7 +17,10 @@ use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
-use super::{NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats};
+use super::{
+    ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    udf::UdfStats,
+};
 use crate::{
     pipeline_node::{DistributedPipelineNode, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
@@ -151,7 +154,10 @@ impl ActorUDF {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &passthrough_columns,
+            },
         );
         let (udf_expr, required_columns) = remap_used_cols(udf_expr);
         Ok(Self {

@@ -39,6 +39,25 @@ After a table is loaded as the `table` object, reading it into a DataFrame is ex
     df = daft.read_iceberg(table)
     ```
 
+Daft can also read a named Iceberg branch or tag. Branch, tag, and snapshot ID
+reads are mutually exclusive.
+
+=== "🐍 Python"
+
+    ```python
+    # Create branch/tag references with PyIceberg
+    table.refresh()
+    snapshot = table.current_snapshot()
+
+    with table.manage_snapshots() as snapshot_manager:
+        snapshot_manager.create_branch(snapshot.snapshot_id, "audit")
+        snapshot_manager.create_tag(snapshot.snapshot_id, "v1")
+
+    # Read the branch or tag with Daft
+    branch_df = daft.read_iceberg(table, branch="audit")
+    tag_df = daft.read_iceberg(table, tag="v1")
+    ```
+
 Any subsequent filter operations on the Daft `df` DataFrame object will be correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
 
 === "🐍 Python"

@@ -13,8 +13,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -71,7 +71,7 @@ impl SortMergeJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            left.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &left },
         );
         Self {
             config,
