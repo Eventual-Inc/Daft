@@ -23,9 +23,9 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
-/// Minimum input rows before the `AggThenPartition` strategy fans a single morsel
-/// out across multiple shard tasks. Smaller inputs run the existing single-threaded
-/// path so the per-task overhead doesn't dominate.
+/// Minimum input rows before the sharded `AggThenPartition` / `PartitionThenAgg`
+/// strategies fan a single morsel out across multiple shard tasks. Smaller inputs
+/// run the existing single-threaded path so the per-task overhead doesn't dominate.
 const SHARD_THRESHOLD: usize = 32_768;
 
 /// Number of shard tasks spawned per morsel when the input crosses
