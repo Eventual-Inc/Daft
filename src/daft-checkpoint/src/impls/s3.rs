@@ -45,14 +45,14 @@ enum ManifestStatus {
 
 /// Written to `{prefix}/{id}/manifest.json` by `checkpoint()`.
 ///
-/// Presence of this file marks the checkpoint as sealed. `mark_committed()` overwrites
+/// Presence of this file transitions the checkpoint to `Checkpointed`. `mark_committed()` overwrites
 /// it with `committed_at` set, transitioning the checkpoint to the `Committed` state.
 #[derive(Clone, Serialize, Deserialize)]
 struct Manifest {
     checkpoint_id: String,
     status: ManifestStatus,
     created_at: String,
-    sealed_at: String,
+    checkpointed_at: String,
     committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
@@ -104,7 +104,7 @@ impl StagedEntry {
 ///     files/
 ///       0000.bin          ← FileMetadata blob; one file per stage_files() call
 ///       ...
-///     manifest.json       ← written by checkpoint(); presence = sealed;
+///     manifest.json       ← written by checkpoint(); presence = Checkpointed;
 ///                           overwritten by mark_committed() with committed_at set
 /// ```
 pub struct S3CheckpointStore {
@@ -263,10 +263,10 @@ impl S3CheckpointStore {
         Self::put_bytes(&self.client, &path, raw).await
     }
 
-    /// Ensures the checkpoint is not yet sealed, then atomically reserves index
+    /// Ensures the checkpoint is not yet `Checkpointed`, then atomically reserves index
     /// slots by calling `update` inside the staged lock.
     ///
-    /// Returns `AlreadySealed` if `manifest.json` already exists for this ID
+    /// Returns `AlreadyCheckpointed` if `manifest.json` already exists for this ID
     /// and the ID is not tracked in the in-memory staged map (i.e., this
     /// process didn't stage it).
     async fn reserve_slots(
@@ -285,7 +285,7 @@ impl S3CheckpointStore {
 
         // First call for this ID — check S3 to catch post-restart misuse.
         match self.read_manifest(id).await {
-            Ok(_) => return Err(CheckpointError::AlreadySealed { id: id.clone() }),
+            Ok(_) => return Err(CheckpointError::AlreadyCheckpointed { id: id.clone() }),
             Err(CheckpointError::CheckpointNotFound { .. }) => {}
             Err(e) => return Err(e),
         }
@@ -297,12 +297,12 @@ impl S3CheckpointStore {
         Ok(update(entry))
     }
 
-    /// Returns all sealed manifests (checkpointed + committed) as `(id, manifest)`
+    /// Returns all visible manifests (`Checkpointed` + `Committed`) as `(id, manifest)`
     /// pairs. Re-globs and re-reads on every call — there is intentionally no
     /// cache. The store is observed across processes (workers write, drivers
     /// read), so a cached snapshot in one process would silently miss writes
     /// committed by another.
-    async fn sealed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
+    async fn checkpointed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
         let ids: Vec<CheckpointId> = manifest_paths
             .iter()
@@ -426,11 +426,11 @@ impl S3CheckpointStore {
         Ok(())
     }
 
-    /// Enumerate paths of sealed (checkpointed or committed) key parquet files.
-    pub async fn sealed_file_paths(&self) -> CheckpointResult<Vec<String>> {
-        let sealed = self.sealed_manifests().await?;
+    /// Enumerate paths of visible (`Checkpointed` or `Committed`) key parquet files.
+    pub async fn checkpointed_file_paths(&self) -> CheckpointResult<Vec<String>> {
+        let manifests = self.checkpointed_manifests().await?;
         let mut paths: Vec<String> = Vec::new();
-        for (id, manifest) in &sealed {
+        for (id, manifest) in &manifests {
             for i in 0..manifest.num_key_files {
                 paths.push(self.key_path(id, i));
             }
@@ -503,7 +503,7 @@ impl CheckpointStore for S3CheckpointStore {
             None => {
                 // No in-memory staged entry for this id. Two sub-cases, both
                 // handled as a no-op success:
-                //   (a) Already sealed in a prior call — idempotent retry.
+                //   (a) Already `Checkpointed` in a prior call — idempotent retry.
                 //       read_manifest succeeds; nothing more to do.
                 //   (b) Never staged at all (e.g. 0-row source after the
                 //       anti-join — the sink generated an id but no SCKO or
@@ -527,12 +527,12 @@ impl CheckpointStore for S3CheckpointStore {
             r?;
         }
 
-        // manifest.json is written last — its presence is the atomic seal.
+        // manifest.json is written last — its presence atomically transitions the entry to Checkpointed.
         let manifest = Manifest {
             checkpoint_id: id.to_string(),
             status: ManifestStatus::Checkpointed,
             created_at: rfc3339_from(created_at),
-            sealed_at: rfc3339_from(SystemTime::now()),
+            checkpointed_at: rfc3339_from(SystemTime::now()),
             committed_at: None,
             num_key_files,
             num_file_files,
@@ -556,7 +556,7 @@ impl CheckpointStore for S3CheckpointStore {
         // Include both checkpointed and committed keys — all are needed for the
         // skip-on-rerun filter.
         let mut key_paths: Vec<String> = Vec::new();
-        for (id, manifest) in &self.sealed_manifests().await? {
+        for (id, manifest) in &self.checkpointed_manifests().await? {
             for i in 0..manifest.num_key_files {
                 key_paths.push(self.key_path(id, i));
             }
@@ -573,7 +573,7 @@ impl CheckpointStore for S3CheckpointStore {
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>> {
         let mut file_paths: Vec<String> = Vec::new();
-        for (id, manifest) in &self.sealed_manifests().await? {
+        for (id, manifest) in &self.checkpointed_manifests().await? {
             if manifest.status == ManifestStatus::Committed {
                 continue; // Already committed to the catalog — files no longer needed.
             }
@@ -622,7 +622,7 @@ impl CheckpointStore for S3CheckpointStore {
             id.clone(),
             status,
             system_time_from_rfc3339(&manifest.created_at)?,
-            Some(system_time_from_rfc3339(&manifest.sealed_at)?),
+            Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
             manifest
                 .committed_at
                 .as_deref()
@@ -634,20 +634,20 @@ impl CheckpointStore for S3CheckpointStore {
     async fn list_checkpoints(
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Checkpoint>>> {
-        let sealed = self.sealed_manifests().await?;
-        let sealed_ids: std::collections::HashSet<&CheckpointId> =
-            sealed.iter().map(|(id, _)| id).collect();
+        let manifests = self.checkpointed_manifests().await?;
+        let manifest_ids: std::collections::HashSet<&CheckpointId> =
+            manifests.iter().map(|(id, _)| id).collect();
 
         let mut checkpoints: Vec<Checkpoint> = Vec::new();
 
         // Staged entries — skip any id that already has a manifest on S3, as the
-        // sealed state is authoritative and takes precedence over the in-memory entry.
+        // `Checkpointed` state is authoritative and takes precedence over the in-memory entry.
         {
             let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
             for (id, entry) in staged.iter() {
-                if sealed_ids.contains(id) {
+                if manifest_ids.contains(id) {
                     continue;
                 }
                 checkpoints.push(Checkpoint::new(
@@ -660,7 +660,7 @@ impl CheckpointStore for S3CheckpointStore {
             }
         }
 
-        for (id, manifest) in &sealed {
+        for (id, manifest) in &manifests {
             let status = if manifest.status == ManifestStatus::Committed {
                 CheckpointStatus::Committed
             } else {
@@ -670,7 +670,7 @@ impl CheckpointStore for S3CheckpointStore {
                 id.clone(),
                 status,
                 system_time_from_rfc3339(&manifest.created_at)?,
-                Some(system_time_from_rfc3339(&manifest.sealed_at)?),
+                Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
                 manifest
                     .committed_at
                     .as_deref()
@@ -689,7 +689,7 @@ impl CheckpointStore for S3CheckpointStore {
             return Ok(());
         }
 
-        // Read all manifests concurrently — also validates each checkpoint is sealed.
+        // Read all manifests concurrently — also validates each checkpoint has reached `Checkpointed`.
         // Use join_all (not try_join_all) so we can map errors to specific types.
         let results = join_all(ids.iter().map(|id| self.read_manifest(id))).await;
 
@@ -867,7 +867,7 @@ mod tests {
             checkpoint_id: "task-0-checkpoint-abc".to_string(),
             status: ManifestStatus::Checkpointed,
             created_at: now.clone(),
-            sealed_at: now.clone(),
+            checkpointed_at: now.clone(),
             committed_at: None,
             num_key_files: 3,
             num_file_files: 1,
@@ -877,7 +877,7 @@ mod tests {
         assert_eq!(decoded.checkpoint_id, manifest.checkpoint_id);
         assert_eq!(decoded.status, ManifestStatus::Checkpointed);
         assert_eq!(decoded.created_at, now);
-        assert_eq!(decoded.sealed_at, now);
+        assert_eq!(decoded.checkpointed_at, now);
         assert_eq!(decoded.committed_at, None);
         assert_eq!(decoded.num_key_files, 3);
         assert_eq!(decoded.num_file_files, 1);
@@ -890,7 +890,7 @@ mod tests {
             checkpoint_id: "task-0-checkpoint-abc".to_string(),
             status: ManifestStatus::Committed,
             created_at: now.clone(),
-            sealed_at: now.clone(),
+            checkpointed_at: now.clone(),
             committed_at: Some(now.clone()),
             num_key_files: 1,
             num_file_files: 0,
