@@ -8,7 +8,7 @@ use common_display::{DisplayAs, DisplayLevel};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{PartitionField, Pushdowns, ScanOperatorRef, ScanTaskRef};
+use crate::{ClusteringKeys, PartitionField, Pushdowns, ScanOperatorRef, ScanTaskRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScanState {
@@ -117,6 +117,10 @@ pub struct PhysicalScanInfo {
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
+    /// How the source declares its output is clustered at execution time, if at all. `None` means
+    /// no clustering guarantee. The planner attaches the partition count (from the number of scan
+    /// tasks) to produce a concrete clustering spec when the source is lowered.
+    pub clustering_keys: Option<ClusteringKeys>,
 }
 
 impl PhysicalScanInfo {
@@ -126,12 +130,14 @@ impl PhysicalScanInfo {
         source_schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
         pushdowns: Pushdowns,
+        clustering_keys: Option<ClusteringKeys>,
     ) -> Self {
         Self {
             scan_state: ScanState::Operator(scan_op),
             source_schema,
             partitioning_keys,
             pushdowns,
+            clustering_keys,
         }
     }
 
@@ -142,6 +148,7 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,
+            clustering_keys: self.clustering_keys.clone(),
         }
     }
 
@@ -152,6 +159,7 @@ impl PhysicalScanInfo {
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns: self.pushdowns.clone(),
+            clustering_keys: self.clustering_keys.clone(),
         }
     }
 }

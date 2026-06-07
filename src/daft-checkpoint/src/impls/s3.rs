@@ -20,7 +20,6 @@ use tokio::task::JoinSet;
 use crate::{
     Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
     error::{CheckpointError, CheckpointResult},
-    types::FileFormat,
 };
 
 fn rfc3339_from(t: SystemTime) -> String {
@@ -46,17 +45,25 @@ enum ManifestStatus {
 
 /// Written to `{prefix}/{id}/manifest.json` by `checkpoint()`.
 ///
-/// Presence of this file marks the checkpoint as sealed. `mark_committed()` overwrites
+/// Presence of this file transitions the checkpoint to `Checkpointed`. `mark_committed()` overwrites
 /// it with `committed_at` set, transitioning the checkpoint to the `Committed` state.
 #[derive(Clone, Serialize, Deserialize)]
 struct Manifest {
     checkpoint_id: String,
     status: ManifestStatus,
     created_at: String,
-    sealed_at: String,
+    checkpointed_at: String,
     committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
+}
+
+/// On-disk wire format for a batch of `FileMetadata`, written by one
+/// `stage_files()` call. Tagged-enum versioning — add `V2(...)` to evolve;
+/// do not modify `V1`.
+#[derive(Serialize, Deserialize)]
+enum FileMetadataBatch {
+    V1 { files: Vec<FileMetadata> },
 }
 
 struct StagedEntry {
@@ -97,7 +104,7 @@ impl StagedEntry {
 ///     files/
 ///       0000.bin          ← FileMetadata blob; one file per stage_files() call
 ///       ...
-///     manifest.json       ← written by checkpoint(); presence = sealed;
+///     manifest.json       ← written by checkpoint(); presence = Checkpointed;
 ///                           overwritten by mark_committed() with committed_at set
 /// ```
 pub struct S3CheckpointStore {
@@ -187,73 +194,31 @@ impl S3CheckpointStore {
 
     /// Packs all `files` into a single blob written by one `stage_files()` call.
     ///
-    /// Format: `[count: u32 LE] ([fmt_len: u32 LE] [fmt_json: UTF-8] [data_len: u32 LE] [data...]) * count`
-    /// `fmt_json` is the serde_json encoding of `FileFormat` (e.g. `"iceberg"`).
-    /// New `FileFormat` variants are handled automatically via serde — no manual tag registry.
+    /// Wire format: bincode (legacy config) over [`FileMetadataBatch`], a
+    /// versioned tagged enum. Today's only variant is `V1 { files }`. To
+    /// evolve, add a `V2(...)` variant — do not mutate `V1`. Old readers
+    /// fail loudly on unknown variants (correct default for forward-compat).
     fn encode_file_metadata(files: &[FileMetadata]) -> CheckpointResult<Vec<u8>> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&(files.len() as u32).to_le_bytes());
-        for f in files {
-            let fmt_json =
-                serde_json::to_vec(&f.format).map_err(|e| CheckpointError::Internal {
-                    message: format!("failed to serialize FileFormat: {e}"),
-                })?;
-            out.extend_from_slice(&(fmt_json.len() as u32).to_le_bytes());
-            out.extend_from_slice(&fmt_json);
-            out.extend_from_slice(&(f.data.len() as u32).to_le_bytes());
-            out.extend_from_slice(&f.data);
-        }
-        Ok(out)
+        let batch = FileMetadataBatch::V1 {
+            files: files.to_vec(),
+        };
+        bincode::serde::encode_to_vec(&batch, bincode::config::legacy()).map_err(|e| {
+            CheckpointError::Internal {
+                message: format!("failed to encode FileMetadata batch: {e}"),
+            }
+        })
     }
 
     fn decode_file_metadata(bytes: &[u8]) -> CheckpointResult<Vec<FileMetadata>> {
-        if bytes.len() < 4 {
-            return Err(CheckpointError::Internal {
-                message: "file metadata blob too short".to_string(),
-            });
+        let (batch, _): (FileMetadataBatch, _) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::legacy()).map_err(|e| {
+                CheckpointError::Internal {
+                    message: format!("failed to decode FileMetadata batch: {e}"),
+                }
+            })?;
+        match batch {
+            FileMetadataBatch::V1 { files } => Ok(files),
         }
-        let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
-        let mut pos = 4;
-        let mut result = Vec::with_capacity(count);
-        for _ in 0..count {
-            if pos + 4 > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at format length".to_string(),
-                });
-            }
-            let fmt_len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-            pos += 4;
-            if pos + fmt_len > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at format bytes".to_string(),
-                });
-            }
-            let format: FileFormat =
-                serde_json::from_slice(&bytes[pos..pos + fmt_len]).map_err(|e| {
-                    CheckpointError::Internal {
-                        message: format!("failed to deserialize FileFormat: {e}"),
-                    }
-                })?;
-            pos += fmt_len;
-            if pos + 4 > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata blob truncated at data length".to_string(),
-                });
-            }
-            let data_len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-            pos += 4;
-            if pos + data_len > bytes.len() {
-                return Err(CheckpointError::Internal {
-                    message: "file metadata data truncated".to_string(),
-                });
-            }
-            result.push(FileMetadata::new(
-                format,
-                bytes[pos..pos + data_len].to_vec(),
-            ));
-            pos += data_len;
-        }
-        Ok(result)
     }
 
     fn parse_id_from_manifest_path(&self, path: &str) -> Option<CheckpointId> {
@@ -298,10 +263,10 @@ impl S3CheckpointStore {
         Self::put_bytes(&self.client, &path, raw).await
     }
 
-    /// Ensures the checkpoint is not yet sealed, then atomically reserves index
+    /// Ensures the checkpoint is not yet `Checkpointed`, then atomically reserves index
     /// slots by calling `update` inside the staged lock.
     ///
-    /// Returns `AlreadySealed` if `manifest.json` already exists for this ID
+    /// Returns `AlreadyCheckpointed` if `manifest.json` already exists for this ID
     /// and the ID is not tracked in the in-memory staged map (i.e., this
     /// process didn't stage it).
     async fn reserve_slots(
@@ -320,7 +285,7 @@ impl S3CheckpointStore {
 
         // First call for this ID — check S3 to catch post-restart misuse.
         match self.read_manifest(id).await {
-            Ok(_) => return Err(CheckpointError::AlreadySealed { id: id.clone() }),
+            Ok(_) => return Err(CheckpointError::AlreadyCheckpointed { id: id.clone() }),
             Err(CheckpointError::CheckpointNotFound { .. }) => {}
             Err(e) => return Err(e),
         }
@@ -332,12 +297,12 @@ impl S3CheckpointStore {
         Ok(update(entry))
     }
 
-    /// Returns all sealed manifests (checkpointed + committed) as `(id, manifest)`
+    /// Returns all visible manifests (`Checkpointed` + `Committed`) as `(id, manifest)`
     /// pairs. Re-globs and re-reads on every call — there is intentionally no
     /// cache. The store is observed across processes (workers write, drivers
     /// read), so a cached snapshot in one process would silently miss writes
     /// committed by another.
-    async fn sealed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
+    async fn checkpointed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
         let ids: Vec<CheckpointId> = manifest_paths
             .iter()
@@ -461,11 +426,11 @@ impl S3CheckpointStore {
         Ok(())
     }
 
-    /// Enumerate paths of sealed (checkpointed or committed) key parquet files.
-    pub async fn sealed_file_paths(&self) -> CheckpointResult<Vec<String>> {
-        let sealed = self.sealed_manifests().await?;
+    /// Enumerate paths of visible (`Checkpointed` or `Committed`) key parquet files.
+    pub async fn checkpointed_file_paths(&self) -> CheckpointResult<Vec<String>> {
+        let manifests = self.checkpointed_manifests().await?;
         let mut paths: Vec<String> = Vec::new();
-        for (id, manifest) in &sealed {
+        for (id, manifest) in &manifests {
             for i in 0..manifest.num_key_files {
                 paths.push(self.key_path(id, i));
             }
@@ -538,7 +503,7 @@ impl CheckpointStore for S3CheckpointStore {
             None => {
                 // No in-memory staged entry for this id. Two sub-cases, both
                 // handled as a no-op success:
-                //   (a) Already sealed in a prior call — idempotent retry.
+                //   (a) Already `Checkpointed` in a prior call — idempotent retry.
                 //       read_manifest succeeds; nothing more to do.
                 //   (b) Never staged at all (e.g. 0-row source after the
                 //       anti-join — the sink generated an id but no SCKO or
@@ -562,12 +527,12 @@ impl CheckpointStore for S3CheckpointStore {
             r?;
         }
 
-        // manifest.json is written last — its presence is the atomic seal.
+        // manifest.json is written last — its presence atomically transitions the entry to Checkpointed.
         let manifest = Manifest {
             checkpoint_id: id.to_string(),
             status: ManifestStatus::Checkpointed,
             created_at: rfc3339_from(created_at),
-            sealed_at: rfc3339_from(SystemTime::now()),
+            checkpointed_at: rfc3339_from(SystemTime::now()),
             committed_at: None,
             num_key_files,
             num_file_files,
@@ -591,7 +556,7 @@ impl CheckpointStore for S3CheckpointStore {
         // Include both checkpointed and committed keys — all are needed for the
         // skip-on-rerun filter.
         let mut key_paths: Vec<String> = Vec::new();
-        for (id, manifest) in &self.sealed_manifests().await? {
+        for (id, manifest) in &self.checkpointed_manifests().await? {
             for i in 0..manifest.num_key_files {
                 key_paths.push(self.key_path(id, i));
             }
@@ -608,7 +573,7 @@ impl CheckpointStore for S3CheckpointStore {
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>> {
         let mut file_paths: Vec<String> = Vec::new();
-        for (id, manifest) in &self.sealed_manifests().await? {
+        for (id, manifest) in &self.checkpointed_manifests().await? {
             if manifest.status == ManifestStatus::Committed {
                 continue; // Already committed to the catalog — files no longer needed.
             }
@@ -657,7 +622,7 @@ impl CheckpointStore for S3CheckpointStore {
             id.clone(),
             status,
             system_time_from_rfc3339(&manifest.created_at)?,
-            Some(system_time_from_rfc3339(&manifest.sealed_at)?),
+            Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
             manifest
                 .committed_at
                 .as_deref()
@@ -669,20 +634,20 @@ impl CheckpointStore for S3CheckpointStore {
     async fn list_checkpoints(
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Checkpoint>>> {
-        let sealed = self.sealed_manifests().await?;
-        let sealed_ids: std::collections::HashSet<&CheckpointId> =
-            sealed.iter().map(|(id, _)| id).collect();
+        let manifests = self.checkpointed_manifests().await?;
+        let manifest_ids: std::collections::HashSet<&CheckpointId> =
+            manifests.iter().map(|(id, _)| id).collect();
 
         let mut checkpoints: Vec<Checkpoint> = Vec::new();
 
         // Staged entries — skip any id that already has a manifest on S3, as the
-        // sealed state is authoritative and takes precedence over the in-memory entry.
+        // `Checkpointed` state is authoritative and takes precedence over the in-memory entry.
         {
             let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
             for (id, entry) in staged.iter() {
-                if sealed_ids.contains(id) {
+                if manifest_ids.contains(id) {
                     continue;
                 }
                 checkpoints.push(Checkpoint::new(
@@ -695,7 +660,7 @@ impl CheckpointStore for S3CheckpointStore {
             }
         }
 
-        for (id, manifest) in &sealed {
+        for (id, manifest) in &manifests {
             let status = if manifest.status == ManifestStatus::Committed {
                 CheckpointStatus::Committed
             } else {
@@ -705,7 +670,7 @@ impl CheckpointStore for S3CheckpointStore {
                 id.clone(),
                 status,
                 system_time_from_rfc3339(&manifest.created_at)?,
-                Some(system_time_from_rfc3339(&manifest.sealed_at)?),
+                Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
                 manifest
                     .committed_at
                     .as_deref()
@@ -724,7 +689,7 @@ impl CheckpointStore for S3CheckpointStore {
             return Ok(());
         }
 
-        // Read all manifests concurrently — also validates each checkpoint is sealed.
+        // Read all manifests concurrently — also validates each checkpoint has reached `Checkpointed`.
         // Use join_all (not try_join_all) so we can map errors to specific types.
         let results = join_all(ids.iter().map(|id| self.read_manifest(id))).await;
 
@@ -774,6 +739,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::types::FileFormat;
 
     #[test]
     fn test_encode_decode_file_metadata_roundtrip() {
@@ -802,21 +768,22 @@ mod tests {
     #[test]
     fn test_encode_decode_file_metadata_empty_batch() {
         let encoded = S3CheckpointStore::encode_file_metadata(&[]).unwrap();
-        // Just the count field — 4 zero bytes.
-        assert_eq!(encoded, vec![0, 0, 0, 0]);
         let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();
         assert!(decoded.is_empty());
     }
 
     #[test]
-    fn test_decode_file_metadata_unknown_format() {
-        // count=1, fmt_len=9, fmt_json=`"unknown"`, data_len=0
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        let fmt = b"\"unknown\"";
-        bytes.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(fmt);
-        bytes.extend_from_slice(&0u32.to_le_bytes());
+    fn test_decode_file_metadata_unknown_variant() {
+        // Simulate a future writer emitting a V2-tagged blob. Today's
+        // decoder only knows V1; must fail loudly, not silently misread.
+        #[derive(Serialize)]
+        enum FutureBatch {
+            #[allow(dead_code)]
+            V1Placeholder,
+            V2(u32),
+        }
+        let bytes =
+            bincode::serde::encode_to_vec(FutureBatch::V2(42), bincode::config::legacy()).unwrap();
         let err = S3CheckpointStore::decode_file_metadata(&bytes).unwrap_err();
         assert!(matches!(err, CheckpointError::Internal { .. }));
     }
@@ -828,13 +795,17 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_file_metadata_truncated_format() {
-        // count=1, fmt_len=20 but only 4 bytes follow
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&20u32.to_le_bytes());
-        bytes.extend_from_slice(b"abcd");
-        let err = S3CheckpointStore::decode_file_metadata(&bytes).unwrap_err();
+    fn test_decode_file_metadata_truncated() {
+        let batch = vec![FileMetadata::new(FileFormat::Iceberg, vec![1, 2, 3, 4])];
+        let mut encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
+        encoded.truncate(encoded.len() - 2);
+        let err = S3CheckpointStore::decode_file_metadata(&encoded).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_decode_file_metadata_garbage() {
+        let err = S3CheckpointStore::decode_file_metadata(&[0xff; 32]).unwrap_err();
         assert!(matches!(err, CheckpointError::Internal { .. }));
     }
 
@@ -897,7 +868,7 @@ mod tests {
             checkpoint_id: "task-0-checkpoint-abc".to_string(),
             status: ManifestStatus::Checkpointed,
             created_at: now.clone(),
-            sealed_at: now.clone(),
+            checkpointed_at: now.clone(),
             committed_at: None,
             num_key_files: 3,
             num_file_files: 1,
@@ -907,7 +878,7 @@ mod tests {
         assert_eq!(decoded.checkpoint_id, manifest.checkpoint_id);
         assert_eq!(decoded.status, ManifestStatus::Checkpointed);
         assert_eq!(decoded.created_at, now);
-        assert_eq!(decoded.sealed_at, now);
+        assert_eq!(decoded.checkpointed_at, now);
         assert_eq!(decoded.committed_at, None);
         assert_eq!(decoded.num_key_files, 3);
         assert_eq!(decoded.num_file_files, 1);
@@ -920,7 +891,7 @@ mod tests {
             checkpoint_id: "task-0-checkpoint-abc".to_string(),
             status: ManifestStatus::Committed,
             created_at: now.clone(),
-            sealed_at: now.clone(),
+            checkpointed_at: now.clone(),
             committed_at: Some(now.clone()),
             num_key_files: 1,
             num_file_files: 0,

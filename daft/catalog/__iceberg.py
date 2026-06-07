@@ -247,7 +247,7 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
-    _read_options = {"snapshot_id"}
+    _read_options = {"snapshot_id", "branch", "tag"}
     _write_options: set[str] = set()
 
     def __init__(self) -> None:
@@ -271,7 +271,12 @@ class IcebergTable(Table):
 
     def read(self, **options: Any | None) -> DataFrame:
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)
-        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
+        return read_iceberg(
+            self._inner,
+            snapshot_id=options.get("snapshot_id"),
+            branch=options.get("branch"),
+            tag=options.get("tag"),
+        )
 
     def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Iceberg write", options, IcebergTable._write_options)

@@ -3882,6 +3882,7 @@ class DataFrame:
         strategy: Literal["backward", "forward", "nearest"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
+        _assume_sorted_and_aligned: bool = False,
     ) -> "DataFrame":
         """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
 
@@ -3894,6 +3895,12 @@ class DataFrame:
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
             strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; For tie-breaking, prefer the larger/forward value.
+            _assume_sorted_and_aligned: Asserts that both tables have the same number of
+                partitions with identical boundaries, and that rows within each partition are
+                sorted ascending by the on-key. Also requires
+                ``enable_scan_task_split_and_merge=False``. When these conditions hold, Daft
+                skips the distributed range-repartition shuffle and zips partitions by index.
+                Passing ``True`` when the conditions are not met produces incorrect results.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
@@ -3974,6 +3981,7 @@ class DataFrame:
             strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
+            assume_sorted_and_aligned=_assume_sorted_and_aligned,
         )
         return DataFrame(builder)
 

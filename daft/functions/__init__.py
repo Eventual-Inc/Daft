@@ -147,6 +147,7 @@ from .misc import (
     random_int,
     eq_null_safe,
     cast,
+    try_cast,
     is_null,
     not_null,
     fill_null,
@@ -220,6 +221,10 @@ from .partition import (
     partition_years,
     partition_iceberg_bucket,
     partition_iceberg_truncate,
+    extract_minute_uuid7,
+    extract_hour_uuid7,
+    extract_day_uuid7,
+    extract_month_uuid7,
 )
 from .spatial import great_circle_distance
 from .str import (
@@ -381,6 +386,10 @@ __all__ = [
     "exp",
     "explode",
     "expm1",
+    "extract_day_uuid7",
+    "extract_hour_uuid7",
+    "extract_minute_uuid7",
+    "extract_month_uuid7",
     "factorial",
     "file",
     "file_path",
@@ -562,6 +571,7 @@ __all__ = [
     "total_nanoseconds",
     "total_seconds",
     "trunc",
+    "try_cast",
     "try_compress",
     "try_decode",
     "try_decompress",

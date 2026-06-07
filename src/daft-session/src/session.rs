@@ -454,22 +454,32 @@ impl Session {
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
+            /// Set by a callback when registering a function/aggregate fails;
+            /// callbacks return non-zero to short-circuit init, and the caller
+            /// surfaces this error in preference to the bare init rc.
+            error: Option<DaftError>,
         }
 
         unsafe extern "C" fn define_function_cb(
             ctx: *mut c_void,
             ffi: FFI_ScalarFunction,
         ) -> c_int {
-            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
             let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
             let name = unsafe { CStr::from_ptr(name_ptr) }
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let factory = daft_ext_internal::function::into_scalar_function_factory(
+            let factory = match daft_ext_internal::function::into_scalar_function_factory(
                 ffi,
                 init_ctx.module.clone(),
-            );
+            ) {
+                Ok(f) => f,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
             let session = unsafe { &*init_ctx.session };
             session.attach_function(name, factory);
             0
@@ -479,33 +489,43 @@ impl Session {
             ctx: *mut c_void,
             ffi: FFI_AggregateFunction,
         ) -> c_int {
-            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
             let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
             let name = unsafe { CStr::from_ptr(name_ptr) }
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = daft_ext_internal::aggregate::into_aggregate_fn_handle(
+            let handle = match daft_ext_internal::aggregate::into_aggregate_fn_handle(
                 ffi,
                 init_ctx.module.clone(),
-            );
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
             let session = unsafe { &*init_ctx.session };
             session.attach_aggregate_function(name, handle);
             0
         }
 
-        let init_ctx = InitCtx {
+        let mut init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
+            error: None,
         };
 
         let mut ffi_ctx = FFI_SessionContext {
-            ctx: (&raw const init_ctx) as *mut c_void,
+            ctx: (&raw mut init_ctx).cast::<c_void>(),
             define_function: define_function_cb,
             define_aggregate_function: define_aggregate_function_cb,
         };
 
         let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };
+        if let Some(e) = init_ctx.error {
+            return Err(e);
+        }
         if rc != 0 {
             return Err(DaftError::InternalError(format!(
                 "extension init failed with code {rc}"
@@ -606,7 +626,7 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                clustering_spec: Arc::new(ClusteringSpec::unknown(0)),
             })),
         ))
         .arced()

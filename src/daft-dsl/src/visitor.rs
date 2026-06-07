@@ -27,7 +27,13 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::Alias(expr, alias) => visitor.visit_alias(expr, alias.to_string()),
         Expr::Agg(agg_expr) => visitor.visit_agg(agg_expr),
         Expr::BinaryOp { op, left, right } => visitor.visit_binary_op(op, left, right),
-        Expr::Cast(expr, data_type) => visitor.visit_cast(expr, data_type),
+        Expr::Cast(expr, data_type, try_cast) => {
+            if *try_cast {
+                visitor.visit_try_cast(expr, data_type)
+            } else {
+                visitor.visit_cast(expr, data_type)
+            }
+        }
         Expr::Function { func, inputs } => visitor.visit_function_expr(func, inputs),
         Expr::Over(window_expr, window_spec) => visitor.visit_over(window_expr, window_spec),
         Expr::WindowFunction(window_expr) => visitor.visit_window_function(window_expr),
@@ -91,6 +97,12 @@ impl<'py> PyVisitor<'py> {
 
     fn visit_cast(&self, expr: &ExprRef, data_type: &DataType) -> PyVisitorResult<'py> {
         let attr = "visit_cast";
+        let args = (self.to_expr(expr)?, self.to_data_type(data_type)?);
+        self.visitor.call_method1(attr, args)
+    }
+
+    fn visit_try_cast(&self, expr: &ExprRef, data_type: &DataType) -> PyVisitorResult<'py> {
+        let attr = "visit_try_cast";
         let args = (self.to_expr(expr)?, self.to_data_type(data_type)?);
         self.visitor.call_method1(attr, args)
     }

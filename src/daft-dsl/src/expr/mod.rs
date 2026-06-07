@@ -236,8 +236,8 @@ pub enum Expr {
         right: ExprRef,
     },
 
-    #[display("cast({_0} as {_1})")]
-    Cast(ExprRef, DataType),
+    #[display("{}", if *_2 { format!("try_cast({} as {})", _0, _1) } else { format!("cast({} as {})", _0, _1) })]
+    Cast(ExprRef, DataType, bool),
 
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
@@ -1315,7 +1315,11 @@ impl Expr {
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
-        Self::Cast(self, dtype.clone()).into()
+        Self::Cast(self, dtype.clone(), false).into()
+    }
+
+    pub fn try_cast(self: ExprRef, dtype: &DataType) -> ExprRef {
+        Self::Cast(self, dtype.clone(), true).into()
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
@@ -1571,9 +1575,10 @@ impl Expr {
             Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.cast({dtype})"))
+                let prefix = if *try_cast { "try_cast" } else { "cast" };
+                FieldID::new(format!("{child_id}.{prefix}({dtype})"))
             }
             Self::Not(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -1783,9 +1788,13 @@ impl Expr {
             Self::Literal(value) => Ok(format!("{value}")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.display_name(schema)?;
-                Ok(format!("{child_id} to {dtype}"))
+                if *try_cast {
+                    Ok(format!("{child_id} to {dtype} (try_cast)"))
+                } else {
+                    Ok(format!("{child_id} to {dtype}"))
+                }
             }
             Self::Not(expr) => {
                 let child_id = expr.display_name(schema)?;
@@ -1937,9 +1946,10 @@ impl Expr {
             Self::NotNull(..) => {
                 Self::NotNull(children.first().expect("Should have 1 child").clone())
             }
-            Self::Cast(.., dtype) => Self::Cast(
+            Self::Cast(.., dtype, try_cast) => Self::Cast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
+                *try_cast,
             ),
             Self::InSubquery(_, subquery) => Self::InSubquery(
                 children.first().expect("Should have 1 child").clone(),
@@ -2076,7 +2086,7 @@ impl Expr {
         match self {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
+            Self::Cast(expr, dtype, _try_cast) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
                 plan_schema: Some(plan_schema),
@@ -2563,16 +2573,45 @@ impl Expr {
     }
 }
 
-// Check if one set of columns is a reordering of the other
-pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
-where
-    A: IntoIterator<Item = &'a ExprRef>,
-    B: IntoIterator<Item = &'a ExprRef>,
-{
-    // sort a and b by name
-    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
-    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
+/// Returns true when the two sets of bound columns are exactly equal (order-independent).
+///
+/// This is the strict relation required by two-input operators such as hash joins,
+/// where *both* sides must be partitioned by precisely the same key set so that
+/// matching keys collide in the same partition. For single-input operators that only
+/// need their groups to stay partition-local, prefer [`clustering_is_covered_by`].
+pub fn is_exact_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
+    let a_set: HashSet<&BoundExpr> = a.iter().collect();
+    let b_set: HashSet<&BoundExpr> = b.iter().collect();
     a_set == b_set
+}
+
+/// Returns true when `op_partition_cols` ⊇ `input_clustering_cols`.
+///
+/// In that case partitioning by `op_partition_cols` keeps the existing clustering intact:
+/// every key the input is clustered on also appears in the operator's partition keys, so the
+/// operator's per-group output is a *refinement* of the input's distribution. Any group the
+/// operator forms is fully contained within a single input partition, so a single-input
+/// operator (group-by / window / distinct) can run partition-locally without a shuffle. Exact
+/// equality is the special case where the two sets coincide, handled as an early-exit via
+/// [`is_exact_partition_match`].
+///
+/// The relation is one-sided. If the input is clustered on `[a, b, c]` but the operator
+/// only partitions by `[a, b]`, an `(a, b)` group may be split across partitions (rows
+/// with different `c` hash elsewhere), so this returns false and a shuffle is required.
+pub fn clustering_is_covered_by(
+    input_clustering_cols: &[BoundExpr],
+    op_partition_cols: &[BoundExpr],
+) -> bool {
+    // Exact match is the special case where both sets coincide.
+    if is_exact_partition_match(input_clustering_cols, op_partition_cols) {
+        return true;
+    }
+    // An empty input clustering covers nothing meaningful (e.g. Unknown); treat as not covered.
+    if input_clustering_cols.is_empty() {
+        return false;
+    }
+    let op_set: HashSet<&BoundExpr> = op_partition_cols.iter().collect();
+    input_clustering_cols.iter().all(|k| op_set.contains(k))
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {
@@ -2668,7 +2707,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
 
         // Pass through for expressions that wrap other expressions
-        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+        Expr::Cast(expr, _, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
 
         // Boolean literals
         Expr::Literal(lit) => match lit {

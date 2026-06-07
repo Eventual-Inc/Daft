@@ -1,11 +1,10 @@
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
-    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     ShuffleBackend as LocalShuffleBackend, ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
-use daft_partition_refs::FlightPartitionRef;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -123,15 +122,7 @@ impl ShuffleBackend {
                 SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
             }
             DistributedShuffleBackend::Flight(_) => {
-                let flight_refs = partition_refs
-                    .into_iter()
-                    .map(|p| {
-                        p.as_any()
-                            .downcast_ref::<FlightPartitionRef>()
-                            .expect("expected flight partition ref")
-                            .clone()
-                    })
-                    .collect::<Vec<_>>();
+                let read_inputs = flight::read_inputs_from_refs(partition_refs);
                 let shuffle_read = LocalPhysicalPlan::shuffle_read(
                     node_id,
                     self.schema.clone(),
@@ -140,22 +131,33 @@ impl ShuffleBackend {
                     LocalNodeContext::new(Some(node_id as usize)),
                 );
                 let plan = wrap_plan(shuffle_read);
-                SwordfishTaskBuilder::new(plan, node, node_id).with_flight_shuffle_reads(
-                    node_id,
-                    vec![FlightShuffleReadInput { refs: flight_refs }],
-                )
+                SwordfishTaskBuilder::new(plan, node, node_id)
+                    .with_flight_shuffle_reads(node_id, read_inputs)
             }
         }
     }
 
-    pub(crate) async fn emit_read_tasks(
+    /// Group a stream of map-task outputs into per-partition read tasks.
+    ///
+    /// The Ray backend transposes the full (tasks x partitions) matrix of object refs.
+    /// The flight backend folds the stream into per-server map-input lists shared by
+    /// all reduce tasks, keeping coordinator memory O(map_tasks + partitions) instead
+    /// of O(map_tasks x partitions).
+    pub(crate) async fn emit_read_tasks_from_stream(
         &self,
-        partition_groups: Vec<Vec<MaterializedOutput>>,
+        materialized_stream: impl futures::Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
+        num_partitions: usize,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         match &self.backend {
             DistributedShuffleBackend::Ray => {
+                let partition_groups =
+                    crate::utils::transpose::transpose_materialized_outputs_from_stream(
+                        materialized_stream,
+                        num_partitions,
+                    )
+                    .await?;
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -165,11 +167,17 @@ impl ShuffleBackend {
                 )
                 .await
             }
-            DistributedShuffleBackend::Flight(_) => {
+            DistributedShuffleBackend::Flight(cfg) => {
+                let read_inputs = flight::fold_outputs_from_stream(
+                    materialized_stream,
+                    num_partitions,
+                    cfg.shuffle_id,
+                )
+                .await?;
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
-                    partition_groups,
+                    read_inputs,
                     node,
                     result_tx,
                 )
