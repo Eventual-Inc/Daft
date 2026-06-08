@@ -72,6 +72,11 @@ def read_parquet(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from empty list of Parquet filepaths")
 
+    if not infer_schema and schema is None:
+        raise ValueError(
+            "Cannot read DataFrame with infer_schema=False and schema=None, please provide a schema or set infer_schema=True"
+        )
+
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
     multithreaded_io = (
