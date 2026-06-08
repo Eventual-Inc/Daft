@@ -616,3 +616,170 @@ def to_list(*items: Expression) -> Expression:
     """
     assert len(items) > 0, "List constructor requires at least one item"
     return Expression._from_pyexpr(list_([Expression._to_expression(i)._expr for i in items]))
+
+
+def list_compact(list_expr: Expression) -> Expression:
+    """Removes null values from each list, preserving the order of remaining elements.
+
+    Spark-compatible: equivalent to ``array_compact`` (also accessible by that SQL name).
+
+    Args:
+        list_expr (List Expression): The input list expression.
+
+    Returns:
+        Expression (List Expression): An expression with all null values removed from each list.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_compact
+        >>> df = daft.from_pydict({"a": [[1, None, 2, None, 3], [None, None], [1, 2]]})
+        >>> df.select(list_compact(df["a"])).show()
+        ╭─────────────╮
+        │ a           │
+        │ ---         │
+        │ List[Int64] │
+        ╞═════════════╡
+        │ [1, 2, 3]   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ []          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2]      │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_compact", list_expr)
+
+
+def list_position(list_expr: Expression, item: Expression) -> Expression:
+    """Returns the 1-based position of the first occurrence of ``item`` in each list, or 0 if not found.
+
+    Returns NULL if either the list or the item is NULL. Spark-compatible: equivalent to ``array_position``
+    (also accessible by that SQL name).
+
+    Args:
+        list_expr (List Expression): expression to search in.
+        item (Expression): value or column of values to search for.
+
+    Returns:
+        Expression (Int64 Expression): the 1-based position of ``item``, or 0 when not present.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_position
+        >>> df = daft.from_pydict({"a": [[1, 2, 3], [4, 5], [3, 3, 3]]})
+        >>> df.with_column("pos", list_position(df["a"], 3)).show()
+        ╭─────────────┬───────╮
+        │ a           ┆ pos   │
+        │ ---         ┆ ---   │
+        │ List[Int64] ┆ Int64 │
+        ╞═════════════╪═══════╡
+        │ [1, 2, 3]   ┆ 3     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [4, 5]      ┆ 0     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [3, 3, 3]   ┆ 1     │
+        ╰─────────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_position", list_expr, item)
+
+
+def list_except(list_expr: Expression, other: Expression) -> Expression:
+    """Returns the elements in ``list_expr`` that are not in ``other``, with duplicates removed.
+
+    Null values are ignored. The order of first occurrence from ``list_expr`` is preserved.
+    Spark-compatible: equivalent to ``array_except`` (also accessible by that SQL name).
+
+    Args:
+        list_expr (List Expression): the left-hand list.
+        other (List Expression): the right-hand list.
+
+    Returns:
+        Expression (List Expression): an expression with elements from ``list_expr`` not present in ``other``.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_except
+        >>> df = daft.from_pydict({"a": [[1, 2, 3], [1, 2, 3]], "b": [[2, 3, 4], [4, 5, 6]]})
+        >>> df.with_column("diff", list_except(df["a"], df["b"])).show()
+        ╭─────────────┬─────────────┬─────────────╮
+        │ a           ┆ b           ┆ diff        │
+        │ ---         ┆ ---         ┆ ---         │
+        │ List[Int64] ┆ List[Int64] ┆ List[Int64] │
+        ╞═════════════╪═════════════╪═════════════╡
+        │ [1, 2, 3]   ┆ [2, 3, 4]   ┆ [1]         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2, 3]   ┆ [4, 5, 6]   ┆ [1, 2, 3]   │
+        ╰─────────────┴─────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_except", list_expr, other)
+
+
+def list_intersect(list_expr: Expression, other: Expression) -> Expression:
+    """Returns an array of the elements in the intersection of two lists, with duplicates removed.
+
+    Null values are ignored. The order of first occurrence from ``list_expr`` is preserved.
+    Spark-compatible: equivalent to ``array_intersect`` (also accessible by that SQL name).
+
+    Args:
+        list_expr (List Expression): the left-hand list.
+        other (List Expression): the right-hand list.
+
+    Returns:
+        Expression (List Expression): an expression with elements that appear in both lists.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_intersect
+        >>> df = daft.from_pydict({"a": [[1, 2, 3], [1, 2, 3]], "b": [[2, 3, 4], [4, 5, 6]]})
+        >>> df.with_column("inter", list_intersect(df["a"], df["b"])).show()
+        ╭─────────────┬─────────────┬─────────────╮
+        │ a           ┆ b           ┆ inter       │
+        │ ---         ┆ ---         ┆ ---         │
+        │ List[Int64] ┆ List[Int64] ┆ List[Int64] │
+        ╞═════════════╪═════════════╪═════════════╡
+        │ [1, 2, 3]   ┆ [2, 3, 4]   ┆ [2, 3]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2, 3]   ┆ [4, 5, 6]   ┆ []          │
+        ╰─────────────┴─────────────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_intersect", list_expr, other)
+
+
+def list_union(list_expr: Expression, other: Expression) -> Expression:
+    """Returns an array of the elements in the union of two lists, with duplicates removed.
+
+    Null values are ignored. Order of first occurrence from ``list_expr`` then from ``other`` is preserved.
+    Spark-compatible: equivalent to ``array_union`` (also accessible by that SQL name).
+
+    Args:
+        list_expr (List Expression): the left-hand list.
+        other (List Expression): the right-hand list.
+
+    Returns:
+        Expression (List Expression): an expression with the union of unique elements.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_union
+        >>> df = daft.from_pydict({"a": [[1, 2, 3], [1, 2]], "b": [[2, 3, 4], [3, 4]]})
+        >>> df.with_column("union", list_union(df["a"], df["b"])).show()
+        ╭─────────────┬─────────────┬──────────────╮
+        │ a           ┆ b           ┆ union        │
+        │ ---         ┆ ---         ┆ ---          │
+        │ List[Int64] ┆ List[Int64] ┆ List[Int64]  │
+        ╞═════════════╪═════════════╪══════════════╡
+        │ [1, 2, 3]   ┆ [2, 3, 4]   ┆ [1, 2, 3, 4] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2]      ┆ [3, 4]      ┆ [1, 2, 3, 4] │
+        ╰─────────────┴─────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_union", list_expr, other)
