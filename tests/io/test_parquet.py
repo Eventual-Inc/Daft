@@ -14,6 +14,7 @@ import pytest
 
 import daft
 from daft.datatype import DataType, TimeUnit
+from daft.exceptions import DaftCoreException
 from daft.expressions import col
 from daft.io.writer import ParquetFileWriter
 from daft.logical.schema import Schema
@@ -139,6 +140,49 @@ def test_row_groups():
     assert df.count_rows() == 20
 
 
+def test_read_parquet_validates_arguments():
+    path = "tests/assets/parquet-data/mvp.parquet"
+
+    with pytest.raises(ValueError, match="Cannot read DataFrame from empty list of Parquet filepaths"):
+        daft.read_parquet([])
+
+    with pytest.raises(ValueError, match="row_groups must be the same length as the list of paths provided"):
+        daft.read_parquet([path], row_groups=[[0], [1]])
+
+    with pytest.raises(ValueError, match="row_groups are only supported when reading multiple"):
+        daft.read_parquet(path, row_groups=[[0]])
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot read DataFrame with infer_schema=False and schema=None",
+    ):
+        daft.read_parquet(path, infer_schema=False)
+
+
+def test_read_empty_pyarrow_parquet_file(tmp_path):
+    path = tmp_path / "empty.parquet"
+    table = pa.table(
+        {
+            "a": pa.array([], type=pa.int64()),
+            "b": pa.array([], type=pa.large_string()),
+        }
+    )
+    papq.write_table(table, path)
+
+    assert daft.read_parquet(str(path)).to_arrow() == table
+
+
+def test_read_parquet_row_group_edges(tmp_path):
+    path = tmp_path / "row_groups.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3, 4]}), path, row_group_size=2)
+
+    assert daft.read_parquet([str(path)], row_groups=[[1]]).to_pydict() == {"x": [3, 4]}
+    assert daft.read_parquet([str(path)], row_groups=[[]]).to_pydict() == {"x": []}
+
+    with pytest.raises(DaftCoreException, match="Row group index 2 out of bounds"):
+        daft.read_parquet([str(path)], row_groups=[[2]]).to_pydict()
+
+
 # Test fix for issue #2537.
 # This issue arose when the last row of a top-level column has a leaf field with values that span
 # more than one data page.
@@ -244,7 +288,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
 
     def test_parquet_helper(data_and_type, use_daft_writer):
         data, data_type = data_and_type
-        index_data = [x for x in range(0, len(data))]
+        index_data = [x for x in range(len(data))]
         file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
 
         # Test Daft roundtrip. Daft does not support the dictionary logical type, hence we skip
