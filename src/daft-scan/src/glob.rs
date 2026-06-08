@@ -219,10 +219,15 @@ impl GlobScanOperator {
                         field_id_mapping.clone(),
                     )
                     .await?;
+                    let total_uncompressed_size: usize = metadata
+                        .row_groups()
+                        .map(|(_, rg)| rg.total_byte_size())
+                        .sum();
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
                             length: metadata.num_rows(),
+                            size_bytes: Some(total_uncompressed_size),
                         },
                     ));
                     (schema, first_metadata, first_filepath)
