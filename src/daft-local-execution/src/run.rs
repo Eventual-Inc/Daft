@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -288,7 +291,6 @@ impl PyNativeExecutor {
 /// a different `InputSender` variant, which reached the `unreachable!` branch
 /// in `InputSender::send` (see GitHub issue #7087).
 fn next_auto_fingerprint() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
