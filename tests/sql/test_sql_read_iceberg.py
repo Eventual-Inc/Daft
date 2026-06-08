@@ -74,6 +74,16 @@ def test_sql_read_iceberg_branch_and_tag_with_schema_evolution(tmp_path):
             "x": [1, 2, 3, 4, 5, 6],
             "y": [None, None, None, None, "a", "b"],
         }
+        with pytest.raises(Exception, match="Only one of snapshot_id, branch, or tag may be provided") as exc_info:
+            daft.sql(
+                f"SELECT * FROM read_iceberg('{metadata_location}', "
+                f"snapshot_id => {first_snapshot_id}, branch => 'first_branch', tag => 'first_tag')"
+            )
+        assert exc_info.type.__name__ == "InvalidSQLException"
+        for ref_kind in ("branch", "tag"):
+            with pytest.raises(Exception, match=f"Iceberg {ref_kind} 'does_not_exist' does not exist") as exc_info:
+                daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', {ref_kind} => 'does_not_exist')")
+            assert exc_info.type.__name__ == "InvalidSQLException"
     finally:
         catalog.engine.dispose()
 

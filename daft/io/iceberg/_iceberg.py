@@ -90,7 +90,8 @@ def _resolve_ref_snapshot_id(table: "PyIcebergTable", ref_name: str, ref_kind: s
     return ref.snapshot_id
 
 
-def _resolve_snapshot_id(
+# Internal helper used by read_iceberg and the Rust SQL scan path; not a public API.
+def resolve_snapshot_id(
     table: "PyIcebergTable",
     snapshot_id: int | None,
     branch: str | None,
@@ -163,7 +164,7 @@ def read_iceberg(
     if isinstance(table, (str, os.PathLike)):
         table = StaticTable.from_metadata(metadata_location=os.fspath(table))
 
-    snapshot_id = _resolve_snapshot_id(table, snapshot_id, branch, tag)
+    snapshot_id = resolve_snapshot_id(table, snapshot_id, branch, tag)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())

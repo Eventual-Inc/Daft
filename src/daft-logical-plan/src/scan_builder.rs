@@ -412,7 +412,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
         let iceberg_helper_module = PyModule::import(py, "daft.io.iceberg._iceberg")?;
         let snapshot_id = iceberg_helper_module
-            .getattr("_resolve_snapshot_id")?
+            .getattr("resolve_snapshot_id")?
             .call1((&iceberg_table, snapshot_id, branch, tag))?;
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
