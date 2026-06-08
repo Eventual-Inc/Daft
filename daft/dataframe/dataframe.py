@@ -77,6 +77,7 @@ if TYPE_CHECKING:
     from daft.catalog.__unity._client import UnityCatalogTable
     from daft.checkpoint import IdempotentCommit
     from daft.convert import ArrowStreamExportable
+    from daft.dataframe.to_torch import DaftTorchDataLoader
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.sink import WriteResultType
@@ -601,7 +602,7 @@ class DataFrame:
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
-        Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
+        Each partition will be returned as a daft.MicroPartition object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
@@ -5829,6 +5830,61 @@ class DataFrame:
             df = self
 
         return DaftTorchIterableDataset(df)
+
+    @DataframePublicAPI
+    def to_torch_dataloader(
+        self,
+        batch_size: int = 1,
+        *,
+        drop_last: bool = False,
+        pin_memory: bool = False,
+        pin_memory_device: str = "",
+        prefetch_count: int = 0,
+    ) -> "DaftTorchDataLoader":
+        """Return a DataLoader-like iterator that streams batched partitions for PyTorch training.
+
+        Begins execution of the DataFrame when iterated. Each yielded batch is a dict mapping column
+        names to `torch.Tensor` values (or Python lists for non-numeric columns).
+
+        For row-level shuffling, use [``shuffle``][daft.DataFrame.shuffle] or
+        [``sample``][daft.DataFrame.sample] on the DataFrame before calling this method.
+
+        Note:
+            Batch sizing is best-effort. The last partition may be smaller than `batch_size` unless `drop_last=True`.
+
+        Args:
+            batch_size: Target number of rows per batch.
+            drop_last: If `True`, skip the final partition when it has fewer than `batch_size` rows.
+            pin_memory: If `True`, pin memory on returned tensors for faster GPU transfer.
+            pin_memory_device: Optional device for pinned memory (PyTorch 2.x).
+            prefetch_count: Number of batches loaded in advance. This will increase memory usage, but can
+            improve throughput.
+
+        Returns:
+            DaftTorchDataLoader: Iterable over batch dicts for use as
+            `for batch in df.to_torch_dataloader(batch_size): ...`
+
+        Examples:
+            >>> import daft
+            >>> import torch  # doctest: +SKIP
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4], "y": [5, 6, 7, 8]})
+            >>> for batch in df.to_torch_dataloader(batch_size=2):  # doctest: +SKIP
+            ...     assert batch["x"].shape == (2,)
+
+        Tip:
+            For the PyTorch `IterableDataset` + `DataLoader` composition, see
+            [``to_torch_iter_dataset``][daft.DataFrame.to_torch_iter_dataset].
+        """
+        from daft.dataframe.to_torch import DaftTorchDataLoader
+
+        return DaftTorchDataLoader(
+            self,
+            batch_size,
+            drop_last=drop_last,
+            pin_memory=pin_memory,
+            pin_memory_device=pin_memory_device,
+            prefetch_count=prefetch_count,
+        )
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
