@@ -580,7 +580,7 @@ fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
     } else if rhs_list.flat_child.data_type() == &DataType::Null {
         rhs_list.flat_child.cast(lhs_list.flat_child.data_type())?
     } else if lhs_list.flat_child.data_type() == &DataType::Null {
-        // Both effectively typed by rhs; we'll convert lhs's child below by re-using its empty content.
+        // Both effectively typed by rhs; we'll convert lhs's child below by reusing its empty content.
         rhs_list.flat_child.clone()
     } else {
         rhs_list.flat_child.cast(lhs_list.flat_child.data_type())?
