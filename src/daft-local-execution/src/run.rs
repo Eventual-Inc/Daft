@@ -282,6 +282,17 @@ impl PyNativeExecutor {
     }
 }
 
+/// Returns a fingerprint that is unique for each call when the caller does not
+/// supply one. Using a fixed value (e.g. 0) caused `NativeExecutor::run` to
+/// reuse the cached pipeline from a prior execution when the new plan requires
+/// a different `InputSender` variant, which reached the `unreachable!` branch
+/// in `InputSender::send` (see GitHub issue #7087).
+fn next_auto_fingerprint() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option<u32>) {
     let query_id = ctx
         .as_ref()
@@ -292,7 +303,7 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option
         .as_ref()
         .and_then(|c| c.get("plan_fingerprint"))
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
+        .unwrap_or_else(next_auto_fingerprint);
     let task_id = ctx
         .as_ref()
         .and_then(|c| c.get("task_id"))
