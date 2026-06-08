@@ -561,12 +561,19 @@ async fn stream_scan_task(
         ),
     };
 
-    if scan_task.sources.len() != 1 {
-        return Err(DaftError::TypeError(
-            "Streaming reads only supported for single source ScanTasks".to_string(),
-        ));
-    }
-    let source = scan_task.sources.first().unwrap();
+    let source = match scan_task.sources.as_slice() {
+        [] => {
+            return Err(DaftError::ValueError(
+                "ScanTask has no sources".to_string(),
+            ));
+        }
+        [single] => single,
+        _ => {
+            return Err(DaftError::TypeError(
+                "Streaming reads only supported for single source ScanTasks".to_string(),
+            ));
+        }
+    };
     let url = source.get_path();
     let io_config = Arc::new(
         scan_task
