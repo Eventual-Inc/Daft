@@ -141,7 +141,8 @@ dev = [
   # Hugging Face
   "huggingface-hub==1.16.1",
   # AI
-  "vllm==0.21.0",
+  # vllm (and its CUDA deps, e.g. nvidia-cudnn-frontend) ship no macOS/Windows wheels; gate to Linux.
+  "vllm==0.21.0; sys_platform == 'linux'",
   "openai==2.38.0",
   "google-genai==2.6.0",
   # AV
