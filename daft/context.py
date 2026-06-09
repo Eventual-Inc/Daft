@@ -6,14 +6,21 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from daft.daft import IOConfig, PyDaftContext, PyDaftExecutionConfig, PyDaftPlanningConfig, PyQueryResult
+from daft.daft import (
+    IOConfig,
+    PyDaftContext,
+    PyDaftEventLogConfig,
+    PyDaftExecutionConfig,
+    PyDaftPlanningConfig,
+    PyQueryResult,
+)
 from daft.daft import get_context as _get_context
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
     from daft.daft import PyQueryMetadata
-    from daft.runners.partitioning import PartitionT
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -44,6 +51,10 @@ class DaftContext:
     @property
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         return self._ctx._daft_planning_config
+
+    @property
+    def daft_event_log_config(self) -> PyDaftEventLogConfig:
+        return self._ctx._daft_event_log_config
 
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
         """Attaches a subscriber to this context.
@@ -95,13 +106,6 @@ class DaftContext:
 
     def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
         self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
-
-    def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
-        from daft.recordbatch.micropartition import MicroPartition
-
-        if not isinstance(result, MicroPartition):
-            raise ValueError("Query Managers only support the Native Runner for now")
-        self._ctx.notify_result_out(query_id, result._micropartition)
 
 
 def get_context() -> DaftContext:
@@ -234,11 +238,11 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
-    worker_startup_timeout: int | None = None,
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    flight_shuffle_compression: str | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -283,11 +287,11 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
-        worker_startup_timeout: Timeout for worker actors to report their addresses during startup. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to "lz4". Pass "none" to disable compression; passing Python None leaves the current config unchanged.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -325,13 +329,69 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
-            worker_startup_timeout=worker_startup_timeout,
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            flight_shuffle_compression=flight_shuffle_compression,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
         return ctx
+
+
+def set_event_log_config(
+    config: PyDaftEventLogConfig | None = None,
+    enabled: bool | None = None,
+    path: str | Path | None = None,
+) -> DaftContext:
+    """Globally sets configuration parameters which control Daft event logging.
+
+    These configuration values are used to control whether Daft emits event logs during query execution and
+    where those event logs are written.
+
+    This is an experimental feature.
+
+    Args:
+        config: A PyDaftEventLogConfig object to set the config to, before applying other kwargs. Defaults to None
+            which indicates that the old (current) config should be used.
+        enabled: Whether event logging should be enabled. Defaults to None, which leaves the current setting unchanged.
+        path: Directory where event logs should be written. Defaults to None, which leaves the current path unchanged.
+    """
+    ctx = get_context()
+    with ctx._lock:
+        old_config = ctx.daft_event_log_config if config is None else config
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = str(path)
+
+        new_config = old_config.with_config_values(**kwargs)
+        ctx._ctx._daft_event_log_config = new_config
+        return ctx
+
+
+@contextlib.contextmanager
+def event_log_ctx(
+    path: str | Path | None = None,
+    *,
+    enabled: bool = True,
+) -> Generator[None, None, None]:
+    """Context manager that temporarily sets event logging configuration.
+
+    This is an experimental feature.
+
+    Args:
+        path: Directory where event logs should be written while inside the context. Defaults to None, which leaves
+            the current path unchanged.
+        enabled: Whether event logging should be enabled while inside the context. Defaults to True.
+    """
+    original_config = get_context().daft_event_log_config
+    try:
+        kwargs: dict[str, Any] = {"enabled": enabled}
+        if path is not None:
+            kwargs["path"] = path
+        set_event_log_config(**kwargs)
+        yield
+    finally:
+        set_event_log_config(config=original_config)

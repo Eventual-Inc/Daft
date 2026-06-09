@@ -1,4 +1,4 @@
-//! [`ScanOperator`] for reading sealed checkpoint keys from file-backed stores.
+//! [`ScanOperator`] for reading checkpointed keys from file-backed stores.
 
 use std::sync::Arc;
 
@@ -90,11 +90,11 @@ impl ScanOperator for BlobStoreCheckpointedKeysScanOperator {
                             message: format!("failed to build S3CheckpointStore: {e}"),
                         }
                     })?;
-                store.sealed_file_paths().await
+                store.checkpointed_file_paths().await
             })
             .map_err(|e| {
                 DaftError::External(
-                    format!("failed to enumerate sealed checkpoint key files: {e}").into(),
+                    format!("failed to enumerate checkpointed key files: {e}").into(),
                 )
             })?;
 
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sealed_checkpoints_produce_one_task_per_key_file() {
+    async fn checkpointed_entries_produce_one_task_per_key_file() {
         let dir = tempfile::tempdir().unwrap();
         let (config, store) = make_store(dir.path());
 
@@ -194,7 +194,7 @@ mod tests {
         let id3 = CheckpointId::generate(2);
         store.stage_keys(&id3, keys(&["ignored"])).await.unwrap();
 
-        let mut expected_paths = store.sealed_file_paths().await.unwrap();
+        let mut expected_paths = store.checkpointed_file_paths().await.unwrap();
         expected_paths.sort();
 
         let op = BlobStoreCheckpointedKeysScanOperator::new(config, key_schema());
@@ -210,5 +210,36 @@ mod tests {
         task_paths.sort();
 
         assert_eq!(task_paths, expected_paths);
+    }
+
+    #[tokio::test]
+    async fn advertised_schema_is_passed_through_verbatim() {
+        // The scan operator advertises whatever schema is handed to it, so
+        // callers (the optimizer rule) are responsible for passing the
+        // canonical SEALED_KEYS_COLUMN name. Pin that the operator does
+        // expose the schema given at construction — a regression that
+        // rewrote the schema internally would silently break the anti-join's
+        // right-side resolution.
+        use common_checkpoint_config::SEALED_KEYS_COLUMN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (config, _store) = make_store(dir.path());
+
+        let canonical_schema = Arc::new(Schema::new(vec![Field::new(
+            SEALED_KEYS_COLUMN,
+            DataType::Utf8,
+        )]));
+        let op = BlobStoreCheckpointedKeysScanOperator::new(config, canonical_schema);
+
+        let advertised = op.schema();
+        assert_eq!(
+            advertised.len(),
+            1,
+            "expected single-column schema, got: {advertised:?}"
+        );
+        assert!(
+            advertised.get_field(SEALED_KEYS_COLUMN).is_ok(),
+            "advertised schema must carry the canonical column name; got: {advertised:?}"
+        );
     }
 }

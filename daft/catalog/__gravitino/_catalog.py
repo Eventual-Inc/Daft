@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import quote, urlparse
 
 from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
+from daft.catalog.__gravitino._client import GravitinoTableInfo
 from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
@@ -16,6 +18,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table as PyIcebergTable
 
+    from daft.catalog.__postgres import PostgresTable
     from daft.dataframe import DataFrame
     from daft.io import IOConfig
     from daft.io.partitioning import PartitionField
@@ -138,6 +141,10 @@ class GravitinoCatalog(Catalog):
             return False
 
 
+class GravitinoTableTypeError(TypeError):
+    pass
+
+
 class GravitinoTable(Table, ABC):
     """Base class for Gravitino table formats."""
 
@@ -155,7 +162,7 @@ class GravitinoTable(Table, ABC):
     def _from_obj(obj: object) -> GravitinoTable:
         """Returns a GravitinoTable if the given object can be adapted so."""
         if isinstance(obj, InnerTable):
-            for impl in (GravitinoIcebergTable, GravitinoParquetTable):
+            for impl in (GravitinoPostgresTable, GravitinoIcebergTable, GravitinoParquetTable):
                 try:
                     return impl._from_inner(obj)
                 except ValueError:
@@ -178,7 +185,7 @@ class GravitinoIcebergTable(GravitinoTable):
     """GravitinoIcebergTable is for Gravitino tables with format starting with 'ICEBERG'."""
 
     _pyiceberg_table: PyIcebergTable
-    _read_options: set[str] = {"snapshot_id"}
+    _read_options: set[str] = {"snapshot_id", "branch", "tag"}
     _write_options: set[str] = set()
 
     @classmethod
@@ -195,6 +202,8 @@ class GravitinoIcebergTable(GravitinoTable):
         return read_iceberg(
             table=self._pyiceberg_table,
             snapshot_id=options.get("snapshot_id"),
+            branch=options.get("branch"),
+            tag=options.get("tag"),
             io_config=self._inner.io_config,
         )
 
@@ -241,6 +250,35 @@ class GravitinoParquetTable(GravitinoTable):
         raise NotImplementedError("Writing PARQUET format tables is not yet supported")
 
 
+class GravitinoPostgresTable(GravitinoTable):
+    """GravitinoPostgresTable is for Gravitino Postgres tables with provider contains 'postgres'."""
+
+    _postgres_table: PostgresTable
+    _read_options: set[str] = set()
+    _write_options: set[str] = {"enable_rls"}
+
+    @classmethod
+    def _from_inner(cls, inner: InnerTable) -> GravitinoPostgresTable:
+        if "POSTGRES" not in inner.table_info.table_type.upper():
+            raise ValueError(f"""Expected Postgres table, got table_type={inner.table_info.table_type!r}""")
+        t = GravitinoPostgresTable.__new__(GravitinoPostgresTable)
+        t._inner = inner
+        t._postgres_table = _open_postgres_table(inner.table_info)
+        return t
+
+    def read(self, **options: Any) -> DataFrame:
+        Table._validate_options("Gravitino read", options, self._read_options)
+        return self._postgres_table.read()
+
+    def append(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Gravitino write", options, self._write_options)
+        self._postgres_table.append(df, **options)
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Gravitino write", options, self._write_options)
+        self._postgres_table.overwrite(df, **options)
+
+
 def _open_iceberg_table(storage_location: str, io_config: IOConfig | None) -> PyIcebergTable:
     """Load a PyIceberg Table from a storage directory via HadoopCatalog."""
     from pyiceberg.catalog.hadoop import HadoopCatalog
@@ -268,6 +306,37 @@ def _io_config_to_pyiceberg_props(io_config: IOConfig | None) -> dict[str, str]:
     if s3.region_name:
         props["s3.region"] = s3.region_name
     return props
+
+
+def _open_postgres_table(table_info: GravitinoTableInfo) -> PostgresTable:
+    from daft.catalog.__postgres import PostgresTable
+
+    required_keys = {"jdbc-url", "jdbc-user", "jdbc-password", "jdbc-database"}
+    if not required_keys.issubset(table_info.properties.keys()):
+        raise GravitinoTableTypeError(
+            "Expected Postgres properties, but jdbc-url, jdbc-user, jdbc-password or jdbc-database is empty."
+        )
+
+    url = table_info.properties.get("jdbc-url", "")
+    user = table_info.properties.get("jdbc-user", "")
+    password = table_info.properties.get("jdbc-password", "")
+    database = table_info.properties.get("jdbc-database", "")
+    extensions = table_info.properties.get("extensions", "").split(",")
+
+    filtered_extensions = [item for item in extensions if item] or None
+    parsed = urlparse(url.replace("jdbc:", "", 1))
+    scheme = parsed.scheme
+    netloc = parsed.netloc
+    pwd = quote(password, safe="")
+    connection = f"{scheme}://{user}:{pwd}@{netloc}/{database}"
+    table_name = f"{table_info.schema}.{table_info.name}"
+
+    catalog = Catalog.from_postgres(connection, extensions=filtered_extensions)
+
+    table = catalog.get_table(table_name)
+    if not isinstance(table, PostgresTable):
+        raise GravitinoTableTypeError(f"Expected PostgresTable, got {type(table).__name__}.")
+    return table
 
 
 def load_gravitino(

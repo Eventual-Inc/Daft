@@ -60,6 +60,17 @@ impl Series {
                 }
             }
             // floatX -> floatX (in line with numpy)
+            DataType::Float16 => {
+                let casted = self.cast(&DataType::Float32)?;
+                let result = match groups {
+                    Some(groups) => {
+                        DaftSumAggable::grouped_sum(&casted.downcast::<Float32Array>()?, groups)?
+                            .into_series()
+                    }
+                    None => DaftSumAggable::sum(&casted.downcast::<Float32Array>()?)?.into_series(),
+                };
+                result.cast(&DataType::Float16)
+            }
             DataType::Float32 => match groups {
                 Some(groups) => Ok(DaftSumAggable::grouped_sum(
                     &self.downcast::<Float32Array>()?,
@@ -123,6 +134,19 @@ impl Series {
                 }
             }
             // floatX -> floatX (in line with numpy)
+            DataType::Float16 => {
+                let casted = self.cast(&DataType::Float32)?;
+                let result = match groups {
+                    Some(groups) => DaftProductAggable::grouped_product(
+                        &casted.downcast::<Float32Array>()?,
+                        groups,
+                    )?
+                    .into_series(),
+                    None => DaftProductAggable::product(&casted.downcast::<Float32Array>()?)?
+                        .into_series(),
+                };
+                result.cast(&DataType::Float16)
+            }
             DataType::Float32 => match groups {
                 Some(groups) => Ok(DaftProductAggable::grouped_product(
                     &self.downcast::<Float32Array>()?,

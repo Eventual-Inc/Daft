@@ -362,6 +362,8 @@ impl BuilderContext {
             node_category,
             node_phase,
             context,
+            is_task_root: node_context.is_task_root,
+            is_task_leaf: node_context.is_task_leaf,
         }
     }
 }
@@ -574,13 +576,13 @@ fn physical_plan_to_pipeline(
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
-                aggregations,
+                functions,
                 *min_periods,
                 aliases,
                 partition_by,
@@ -865,6 +867,28 @@ fn physical_plan_to_pipeline(
         }) => {
             let (offset, limit) = (*offset, *limit);
             let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            StreamingSinkNode::new(
+                Arc::new(sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DistributedLimit(daft_local_plan::DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            stats_state,
+            context,
+            ..
+        }) => {
+            use crate::streaming_sink::distributed_limit::DistributedLimitSink;
+            let sink = DistributedLimitSink::new(actor_object.0.clone(), *limit, *offset);
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
@@ -1343,9 +1367,10 @@ fn physical_plan_to_pipeline(
             right_by,
             left_on,
             right_on,
+            schema,
+            strategy,
             stats_state,
             context,
-            ..
         }) => {
             let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
             let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
@@ -1355,9 +1380,13 @@ fn physical_plan_to_pipeline(
                 right_by.clone(),
                 left_on.clone(),
                 right_on.clone(),
+                *strategy,
                 left.schema().clone(),
-                right.schema().clone(),
-            );
+                schema.clone(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: "AsofJoin",
+            })?;
 
             JoinNode::new(
                 Arc::new(asof_join_op),
@@ -1609,17 +1638,25 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             match backend {
-                ShuffleBackend::Ray => BlockingSinkNode::new(
-                    Arc::new(RepartitionSink::new_ray(
+                ShuffleBackend::Ray => {
+                    let repartition_sink = RepartitionSink::new_ray(
+                        schema.clone(),
                         repartition_spec.clone(),
                         *num_partitions,
-                    )),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
+
+                    BlockingSinkNode::new(
+                        Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
                 ShuffleBackend::Flight {
                     shuffle_id,
                     shuffle_dirs,

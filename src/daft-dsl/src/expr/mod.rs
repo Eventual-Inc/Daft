@@ -236,8 +236,8 @@ pub enum Expr {
         right: ExprRef,
     },
 
-    #[display("cast({_0} as {_1})")]
-    Cast(ExprRef, DataType),
+    #[display("{}", if *_2 { format!("try_cast({} as {})", _0, _1) } else { format!("cast({} as {})", _0, _1) })]
+    Cast(ExprRef, DataType, bool),
 
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
@@ -479,8 +479,17 @@ pub enum AggExpr {
         inputs: Vec<ExprRef>,
     },
 
-    /// Planner-internal step 2: folds the Struct partial states from
-    /// `AggFnMap` per group and produces the final typed output.
+    /// Planner-internal: merges Struct partial states from `AggFnMap`
+    /// (or other `AggFnCombine` outputs) without finalizing.
+    /// Idempotent: combine(combine(s)) == combine(s).
+    #[display("{handle}.__combine({partial})")]
+    AggFnCombine {
+        handle: AggFnHandle,
+        partial: ExprRef,
+    },
+
+    /// Planner-internal final step: merges Struct partial states and
+    /// then finalizes to produce the typed output.
     #[display("{handle}.__reduce({partial})")]
     AggFnReduce {
         handle: AggFnHandle,
@@ -514,6 +523,12 @@ pub enum WindowExpr {
         offset: isize,
         default: Option<ExprRef>,
     },
+
+    #[display("first_value({_0}, ignore_nulls={_1})")]
+    FirstValue(ExprRef, bool),
+
+    #[display("last_value({_0}, ignore_nulls={_1})")]
+    LastValue(ExprRef, bool),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -591,6 +606,7 @@ impl AggExpr {
             Self::MapGroups { .. } => "Map Groups",
             Self::AggFn { .. } => "Extension Agg",
             Self::AggFnMap { .. } => "Extension Agg (Map)",
+            Self::AggFnCombine { .. } => "Extension Agg (Combine)",
             Self::AggFnReduce { .. } => "Extension Agg (Reduce)",
         }
     }
@@ -622,6 +638,7 @@ impl AggExpr {
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
             Self::AggFn { handle, .. }
             | Self::AggFnMap { handle, .. }
+            | Self::AggFnCombine { handle, .. }
             | Self::AggFnReduce { handle, .. } => handle.name(),
         }
     }
@@ -749,6 +766,12 @@ impl AggExpr {
                     .join(", ");
                 FieldID::new(format!("AggFnMap_{}({inputs_str})", handle.name()))
             }
+            Self::AggFnCombine {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnCombine_{}({partial_id})", handle.name()))
+            }
             Self::AggFnReduce {
                 handle, partial, ..
             } => {
@@ -784,7 +807,9 @@ impl AggExpr {
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
             Self::AggFn { inputs, .. } | Self::AggFnMap { inputs, .. } => inputs.clone(),
-            Self::AggFnReduce { partial, .. } => vec![partial.clone()],
+            Self::AggFnCombine { partial, .. } | Self::AggFnReduce { partial, .. } => {
+                vec![partial.clone()]
+            }
         }
     }
 
@@ -828,6 +853,10 @@ impl AggExpr {
             Self::AggFnMap { handle, inputs: _ } => Self::AggFnMap {
                 handle: handle.clone(),
                 inputs: children,
+            },
+            Self::AggFnCombine { handle, .. } => Self::AggFnCombine {
+                handle: handle.clone(),
+                partial: children.remove(0),
             },
             Self::AggFnReduce {
                 handle,
@@ -1060,6 +1089,7 @@ impl AggExpr {
                     DataType::Struct(state_fields),
                 ))
             }
+            Self::AggFnCombine { partial, .. } => partial.to_field(schema),
             Self::AggFnReduce { return_field, .. } => Ok(return_field.clone()),
         }
     }
@@ -1083,6 +1113,7 @@ impl WindowExpr {
                 offset: _,
                 default: _,
             } => input.name(),
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => expr.name(),
         }
     }
 
@@ -1106,6 +1137,18 @@ impl WindowExpr {
                 };
                 FieldID::new(format!("{child_id}.offset(offset={offset}{default_part})"))
             }
+            Self::FirstValue(expr, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.first_value(ignore_nulls={ignore_nulls})"
+                ))
+            }
+            Self::LastValue(expr, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.last_value(ignore_nulls={ignore_nulls})"
+                ))
+            }
         }
     }
 
@@ -1126,6 +1169,7 @@ impl WindowExpr {
                 }
                 children
             }
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => vec![expr.clone()],
         }
     }
 
@@ -1158,6 +1202,14 @@ impl WindowExpr {
                     default,
                 }
             }
+            Self::FirstValue(_, ignore_nulls) => {
+                assert_eq!(children.len(), 1);
+                Self::FirstValue(children.first().unwrap().clone(), *ignore_nulls)
+            }
+            Self::LastValue(_, ignore_nulls) => {
+                assert_eq!(children.len(), 1);
+                Self::LastValue(children.first().unwrap().clone(), *ignore_nulls)
+            }
         }
     }
 
@@ -1172,6 +1224,10 @@ impl WindowExpr {
                 offset: _,
                 default: _,
             } => input.to_field(schema),
+            Self::FirstValue(expr, _) | Self::LastValue(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_ref(), field.dtype))
+            }
         }
     }
 }
@@ -1259,7 +1315,11 @@ impl Expr {
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
-        Self::Cast(self, dtype.clone()).into()
+        Self::Cast(self, dtype.clone(), false).into()
+    }
+
+    pub fn try_cast(self: ExprRef, dtype: &DataType) -> ExprRef {
+        Self::Cast(self, dtype.clone(), true).into()
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
@@ -1356,6 +1416,14 @@ impl Expr {
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
         Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
+    }
+
+    pub fn first_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::WindowFunction(WindowExpr::FirstValue(self, ignore_nulls)).into()
+    }
+
+    pub fn last_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
+        Self::WindowFunction(WindowExpr::LastValue(self, ignore_nulls)).into()
     }
 
     pub fn skew(self: ExprRef) -> ExprRef {
@@ -1507,9 +1575,10 @@ impl Expr {
             Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.cast({dtype})"))
+                let prefix = if *try_cast { "try_cast" } else { "cast" };
+                FieldID::new(format!("{child_id}.{prefix}({dtype})"))
             }
             Self::Not(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -1719,9 +1788,13 @@ impl Expr {
             Self::Literal(value) => Ok(format!("{value}")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.display_name(schema)?;
-                Ok(format!("{child_id} to {dtype}"))
+                if *try_cast {
+                    Ok(format!("{child_id} to {dtype} (try_cast)"))
+                } else {
+                    Ok(format!("{child_id} to {dtype}"))
+                }
             }
             Self::Not(expr) => {
                 let child_id = expr.display_name(schema)?;
@@ -1873,9 +1946,10 @@ impl Expr {
             Self::NotNull(..) => {
                 Self::NotNull(children.first().expect("Should have 1 child").clone())
             }
-            Self::Cast(.., dtype) => Self::Cast(
+            Self::Cast(.., dtype, try_cast) => Self::Cast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
+                *try_cast,
             ),
             Self::InSubquery(_, subquery) => Self::InSubquery(
                 children.first().expect("Should have 1 child").clone(),
@@ -2012,7 +2086,7 @@ impl Expr {
         match self {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
+            Self::Cast(expr, dtype, _try_cast) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
                 plan_schema: Some(plan_schema),
@@ -2261,7 +2335,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
-                "uuid" => "",
+                "uuid" | "uuidv7" => "",
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -2499,16 +2573,45 @@ impl Expr {
     }
 }
 
-// Check if one set of columns is a reordering of the other
-pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
-where
-    A: IntoIterator<Item = &'a ExprRef>,
-    B: IntoIterator<Item = &'a ExprRef>,
-{
-    // sort a and b by name
-    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
-    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
+/// Returns true when the two sets of bound columns are exactly equal (order-independent).
+///
+/// This is the strict relation required by two-input operators such as hash joins,
+/// where *both* sides must be partitioned by precisely the same key set so that
+/// matching keys collide in the same partition. For single-input operators that only
+/// need their groups to stay partition-local, prefer [`clustering_is_covered_by`].
+pub fn is_exact_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
+    let a_set: HashSet<&BoundExpr> = a.iter().collect();
+    let b_set: HashSet<&BoundExpr> = b.iter().collect();
     a_set == b_set
+}
+
+/// Returns true when `op_partition_cols` ⊇ `input_clustering_cols`.
+///
+/// In that case partitioning by `op_partition_cols` keeps the existing clustering intact:
+/// every key the input is clustered on also appears in the operator's partition keys, so the
+/// operator's per-group output is a *refinement* of the input's distribution. Any group the
+/// operator forms is fully contained within a single input partition, so a single-input
+/// operator (group-by / window / distinct) can run partition-locally without a shuffle. Exact
+/// equality is the special case where the two sets coincide, handled as an early-exit via
+/// [`is_exact_partition_match`].
+///
+/// The relation is one-sided. If the input is clustered on `[a, b, c]` but the operator
+/// only partitions by `[a, b]`, an `(a, b)` group may be split across partitions (rows
+/// with different `c` hash elsewhere), so this returns false and a shuffle is required.
+pub fn clustering_is_covered_by(
+    input_clustering_cols: &[BoundExpr],
+    op_partition_cols: &[BoundExpr],
+) -> bool {
+    // Exact match is the special case where both sets coincide.
+    if is_exact_partition_match(input_clustering_cols, op_partition_cols) {
+        return true;
+    }
+    // An empty input clustering covers nothing meaningful (e.g. Unknown); treat as not covered.
+    if input_clustering_cols.is_empty() {
+        return false;
+    }
+    let op_set: HashSet<&BoundExpr> = op_partition_cols.iter().collect();
+    input_clustering_cols.iter().all(|k| op_set.contains(k))
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {
@@ -2604,7 +2707,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
 
         // Pass through for expressions that wrap other expressions
-        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+        Expr::Cast(expr, _, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
 
         // Boolean literals
         Expr::Literal(lit) => match lit {

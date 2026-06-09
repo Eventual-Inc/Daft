@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     pipeline_node::MaterializedOutput,
-    scheduling::task::{TaskContext, TaskResourceRequest},
+    scheduling::task::{TaskContext, TaskMetadata, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
 
@@ -26,7 +26,9 @@ use tokio_util::sync::CancellationToken;
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>);
-    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    /// Returns `(scheduled, cancelled)`. Cancelled tasks are popped from the
+    /// pending queue without being dispatched; caller emits terminal events.
+    fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>);
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
 }
@@ -34,7 +36,10 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 fn pending_tasks_in_priority_order<T: Task>(
     pending_tasks: &BinaryHeap<PendingTask<T>>,
 ) -> Vec<&PendingTask<T>> {
-    let mut ordered_tasks = pending_tasks.iter().collect::<Vec<_>>();
+    let mut ordered_tasks = pending_tasks
+        .iter()
+        .filter(|t| !t.is_cancelled())
+        .collect::<Vec<_>>();
     // Match the order that repeated BinaryHeap::pop() calls would produce.
     ordered_tasks.sort_unstable_by(|a, b| b.cmp(a));
     ordered_tasks
@@ -67,6 +72,10 @@ impl<T: Task> PendingTask<T> {
         self.task.task_context()
     }
 
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
+    }
+
     pub fn into_inner(
         self,
     ) -> (
@@ -75,6 +84,10 @@ impl<T: Task> PendingTask<T> {
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
+    }
+
+    fn task_metadata(&self) -> TaskMetadata {
+        self.task.task_metadata()
     }
 }
 

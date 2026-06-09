@@ -23,7 +23,7 @@ pub(crate) fn probe_anti_semi(
     let mut input_idxs = vec![vec![]; input_tables.len()];
     for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
         let join_keys = table.eval_expression_list(&params.probe_on)?;
-        let iter = probe_state.probe_exists(&join_keys)?;
+        let iter = probe_state.probe_exists(join_keys)?;
 
         for (probe_row_idx, matched) in iter.enumerate() {
             // 1. If this is a semi join, we keep the row if it matches.
@@ -59,7 +59,7 @@ pub(crate) fn probe_anti_semi_with_bitmap(
 ) -> DaftResult<()> {
     for table in input.record_batches() {
         let join_keys = table.eval_expression_list(&params.probe_on)?;
-        let idx_iter = probe_state.probe_indices(&join_keys)?;
+        let idx_iter = probe_state.probe_indices(join_keys)?;
 
         for inner_iter in idx_iter.flatten() {
             for (build_table_idx, build_row_idx) in inner_iter {

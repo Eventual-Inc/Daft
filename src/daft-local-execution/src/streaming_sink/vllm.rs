@@ -23,7 +23,7 @@ use tracing::Span;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::StaticBatchingStrategy,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
     streaming_sink::base::{
         StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
         StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -435,7 +435,7 @@ impl StreamingSink for VLLMSink {
         vec![format!("VLLM: {}", self.expr)]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         // TODO: lazy initialization because make_state is synchronous.
         let executor = if let Some(llm_actors) = &self.llm_actors {
             VLLMExecutor::new_distributed(llm_actors)?

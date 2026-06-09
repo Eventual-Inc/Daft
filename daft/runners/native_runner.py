@@ -30,6 +30,7 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSetCache,
 )
+from daft.runners.query_id import emit_query_id
 from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
@@ -91,6 +92,7 @@ class NativeRunner(Runner[MicroPartition]):
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
         query_id = generate_query_name()
+        emit_query_id(query_id)
         output_schema = builder.schema()
 
         entrypoint = "python " + " ".join(sys.argv)
@@ -159,10 +161,6 @@ class NativeRunner(Runner[MicroPartition]):
         try:
             while True:
                 result = next(results_gen)
-                try:
-                    ctx._notify_result_out(query_id, result.partition())
-                except Exception as e:
-                    logger.warning("Failed to send result out notification: %s", e)
                 yield result
         except GeneratorExit:
             # Generator was abandoned (e.g., .show() breaking out early after collecting

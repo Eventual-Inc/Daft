@@ -113,3 +113,16 @@ def test_regexp_replace(test_expression):
         name="regexp_replace",
         args=[regex, replace],
     )
+
+
+def test_hamming_distance_str(test_binary_expression):
+    left = ["ronald", "ronald", "ronald", "ronald", "ronald", None]
+    right = ["ronald", "renuld", "ronaldo", "r", None, None]
+    expected = [0, 2, None, None, None, None]
+
+    test_binary_expression(
+        left=left,
+        right=right,
+        name="hamming_distance_str",
+        expected=expected,
+    )

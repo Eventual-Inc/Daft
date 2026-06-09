@@ -180,12 +180,42 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
 
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
-    reason="shuffle tests are meant for the ray runner",
+    reason="distributed shuffle tests require the ray runner",
 )
-def test_random_shuffle_uses_ray_shuffle_path_under_flight_shuffle_config(flight_shuffle_ctx):
+def test_flight_random_shuffle(flight_shuffle_ctx):
+    """Ensures `df.shuffle(...)` produces a permutation of the input under the Flight backend."""
     with flight_shuffle_ctx():
         df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
-        shuffled = df.shuffle(seed=0).to_pydict()["id"]
+        shuffle_df = df.shuffle(seed=0)
+
+        buf = io.StringIO()
+        shuffle_df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "RandomShuffle(Flight)" in plan, f"expected RandomShuffle(Flight) in plan:\n{plan}"
+        assert "RandomShuffle(Ray)" not in plan, f"unexpected RandomShuffle(Ray) in plan:\n{plan}"
+
+        shuffled = shuffle_df.to_pydict()["id"]
+
+    assert sorted(shuffled) == list(range(32))
+    assert shuffled != list(range(32))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_ray_random_shuffle():
+    """Ensures `df.shuffle(...)` produces a permutation of the input under the Ray backend."""
+    df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
+    shuffle_df = df.shuffle(seed=0)
+
+    buf = io.StringIO()
+    shuffle_df.explain(show_all=True, file=buf)
+    plan = buf.getvalue()
+    assert "RandomShuffle(Ray)" in plan, f"expected RandomShuffle(Ray) in plan:\n{plan}"
+    assert "RandomShuffle(Flight)" not in plan, f"unexpected RandomShuffle(Flight) in plan:\n{plan}"
+
+    shuffled = shuffle_df.to_pydict()["id"]
 
     assert sorted(shuffled) == list(range(32))
     assert shuffled != list(range(32))
@@ -552,3 +582,26 @@ def test_flight_gather_mixed_empty_inputs(flight_shuffle_ctx):
 
         top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
         assert top == sorted(expected_rows, reverse=True)[:5]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle hints are emitted by the distributed (ray) translator",
+)
+def test_high_fanout_shuffle_hints_user_to_use_flight_shuffle():
+    # `daft.range(..., partitions=N)` (not `into_partitions(N)`) because the DropRepartition
+    # rule collapses `into_partitions(N).repartition(N, ...)` into one repartition over the
+    # 1-partition base, eliminating the 800×800 fan-out we're trying to trigger.
+    with daft.execution_config_ctx(shuffle_algorithm="auto"):
+        df = daft.range(800, partitions=800).repartition(800, "id")
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+    output = buf.getvalue()
+
+    expected_hint = (
+        "Shuffle with many partitions (800 × 800 = 640000 pieces, ~1.83 GiB of head-node memory). "
+        "`flight_shuffle` writes shuffle data to disk and scales better. Enable: "
+        'daft.context.set_execution_config(shuffle_algorithm="flight_shuffle", '
+        'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
+    )
+    assert expected_hint in output, output

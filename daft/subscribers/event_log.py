@@ -26,7 +26,6 @@ if TYPE_CHECKING:
         QueryFinished,
         QueryHeartbeat,
         QueryStarted,
-        ResultProduced,
         Stats,
     )
 
@@ -223,17 +222,6 @@ class EventLogSubscriber(Subscriber):
         self._write_event(event.query_id, "query_ended", payload)
         self._clear_query_state(event.query_id)
         self._close_query_file(event.query_id)
-
-    # Result
-
-    def on_result_produced(self, event: ResultProduced) -> None:
-        self._write_event(
-            event.query_id,
-            "result_produced",
-            {
-                "rows": event.num_rows,
-            },
-        )
 
     # Optimization
 

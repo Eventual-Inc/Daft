@@ -7,15 +7,22 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Meter, ops::NodeInfo};
+use common_metrics::{Meter, QueryID, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_context::{
+    get_context,
+    subscribers::{
+        Event, event_header,
+        events::{OperatorEndEvent, OperatorMeta, OperatorStartEvent},
+    },
+};
 use daft_local_plan::ExecutionStats;
 pub use stats::RuntimeStats;
 
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
     scheduling::{
-        task::{TaskContext, TaskName, TaskStatus},
+        task::{TaskContext, TaskMetadata, TaskName, TaskStatus},
         worker::WorkerId,
     },
     statistics::stats::RuntimeNodeManager,
@@ -29,9 +36,11 @@ pub(crate) enum TaskEvent {
     Submitted {
         context: TaskContext,
         name: TaskName,
+        metadata: TaskMetadata,
     },
     Scheduled {
         context: TaskContext,
+        worker_id: WorkerId,
     },
     Completed {
         context: TaskContext,
@@ -116,6 +125,10 @@ pub type StatisticsManagerRef = Arc<StatisticsManager>;
 pub struct StatisticsManager {
     runtime_node_managers: Arc<HashMap<NodeID, RuntimeNodeManager>>,
     subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
+    /// Query id used as the header on `OperatorStart` / `OperatorEnd`
+    /// events. Empty for the `Default` impl used in tests that don't
+    /// exercise the global event bus.
+    query_id: QueryID,
 }
 
 impl StatisticsManager {
@@ -123,6 +136,7 @@ impl StatisticsManager {
         pipeline_node: &DistributedPipelineNode,
         mut subscribers: Vec<Box<dyn StatisticsSubscriber>>,
         meter: &Meter,
+        query_id: QueryID,
     ) -> DaftResult<StatisticsManagerRef> {
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
@@ -134,6 +148,8 @@ impl StatisticsManager {
                 node_category: node.context().node_category.clone(),
                 node_phase: None,
                 context: HashMap::new(),
+                is_task_root: false,
+                is_task_leaf: false,
             });
             runtime_node_managers.insert(
                 node.node_id(),
@@ -151,10 +167,43 @@ impl StatisticsManager {
         Ok(Arc::new(Self {
             runtime_node_managers,
             subscribers: Mutex::new(subscribers),
+            query_id,
         }))
     }
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
+        // First, drive per-node lifecycle (Start/End) events. We do this
+        // *before* `RuntimeNodeManager::handle_task_event` so that
+        // `OperatorStart` is dispatched while subscribers see no task
+        // counters yet, mirroring the local-execution ordering.
+        match &event {
+            TaskEvent::Submitted { context, .. } => {
+                for node_id in &context.node_ids {
+                    let mgr = self
+                        .runtime_node_managers
+                        .get(node_id)
+                        .expect("No runtime stats found for node");
+                    if mgr.on_task_submitted() {
+                        self.dispatch_operator_start(mgr.node_info());
+                    }
+                }
+            }
+            TaskEvent::Completed { context, .. }
+            | TaskEvent::Failed { context, .. }
+            | TaskEvent::Cancelled { context } => {
+                for node_id in &context.node_ids {
+                    let mgr = self
+                        .runtime_node_managers
+                        .get(node_id)
+                        .expect("No runtime stats found for node");
+                    if mgr.on_task_finished() {
+                        self.dispatch_operator_end(mgr.node_info());
+                    }
+                }
+            }
+            TaskEvent::Scheduled { .. } => {}
+        }
+
         for node_id in &event.context().node_ids {
             let node_manager = self
                 .runtime_node_managers
@@ -169,6 +218,61 @@ impl StatisticsManager {
             subscriber.handle_event(&event)?;
         }
         Ok(())
+    }
+
+    /// Mark a distributed pipeline node as done producing tasks. Called
+    /// when the `TaskBuilderStream` returned by that node's `produce_tasks`
+    /// has been fully drained or dropped. If all in-flight tasks for the
+    /// node have already finished, this fires `OperatorEnd`.
+    pub fn notify_produce_complete(&self, node_id: NodeID) {
+        let Some(mgr) = self.runtime_node_managers.get(&node_id) else {
+            return;
+        };
+        if mgr.on_produce_complete() {
+            self.dispatch_operator_end(mgr.node_info());
+        }
+    }
+
+    /// Best-effort end-of-query flush: fire a synthetic `OperatorEnd` for
+    /// every node that fired `OperatorStart` but hasn't yet emitted End.
+    /// Use this on query teardown / shutdown paths where in-flight tasks
+    /// may have been aborted without producing terminal `TaskEvent`s
+    /// (which would have decremented `pending_tasks` and triggered End
+    /// naturally). Idempotent — already-ended nodes are skipped.
+    pub fn flush_started_operators(&self) {
+        for mgr in self.runtime_node_managers.values() {
+            if mgr.force_end() {
+                self.dispatch_operator_end(mgr.node_info());
+            }
+        }
+    }
+
+    fn dispatch_operator_start(&self, node_info: &Arc<NodeInfo>) {
+        let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
+        // Fire on the local (actor-process) context so dashboard /
+        // event-log subscribers running in the actor see the event.
+        // For Flotilla, `RemoteFlotillaRunner.__init__` propagates
+        // `DAFT_DASHBOARD_URL` and attaches a `DashboardSubscriber` to
+        // the actor's context, so events reach the dashboard server
+        // directly without round-tripping through the driver.
+        let event = Event::OperatorStart(OperatorStartEvent {
+            header: event_header(self.query_id.clone()),
+            operator: meta,
+        });
+        if let Err(e) = get_context().notify(&event) {
+            tracing::error!("Failed to notify operator start: {}", e);
+        }
+    }
+
+    fn dispatch_operator_end(&self, node_info: &Arc<NodeInfo>) {
+        let meta = Arc::new(OperatorMeta::from(node_info.as_ref()));
+        let event = Event::OperatorEnd(OperatorEndEvent {
+            header: event_header(self.query_id.clone()),
+            operator: meta,
+        });
+        if let Err(e) = get_context().notify(&event) {
+            tracing::error!("Failed to notify operator end: {}", e);
+        }
     }
 
     /// Collects accumulated stats from each node manager and returns them as an

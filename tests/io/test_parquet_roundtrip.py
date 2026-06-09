@@ -13,6 +13,8 @@ import pytest
 import daft
 from daft import DataType, Series, TimeUnit
 from daft.context import execution_config_ctx
+from daft.io.writer import ParquetFileWriter
+from daft.recordbatch.micropartition import MicroPartition
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -48,8 +50,11 @@ from tests.conftest import get_tests_daft_runner_name
             DataType.duration(TimeUnit.ms()),
         ),
         ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # TODO: Crashes when parsing fixed size lists
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
+        (
+            [[1, 2, 3], [4, 5, 6], None],
+            pa.list_(pa.int64(), list_size=3),
+            DataType.fixed_size_list(DataType.int64(), 3),
+        ),
         ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
         (
             [[("a", 1), ("b", 2)], [], None],
@@ -158,6 +163,46 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fixed_shape):
     assert before.to_arrow() == after.to_arrow()
 
 
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_roundtrip_embedding_type(tmp_path, native_parquet_writer):
+    expected_dtype = DataType.embedding(DataType.float32(), 3)
+    data = [
+        np.array([1.0, 2.0, 3.0], dtype=np.float32),
+        np.array([4.0, 5.0, 6.0], dtype=np.float32),
+        None,
+    ]
+    before = daft.from_pydict({"foo": Series.from_pylist(data)})
+    before = before.with_column("foo", before["foo"].cast(expected_dtype))
+
+    with execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        before.write_parquet(str(tmp_path))
+        after = daft.read_parquet(str(tmp_path))
+
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow().equals(after.to_arrow(), check_metadata=False)
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_roundtrip_image_type(tmp_path, native_parquet_writer):
+    expected_dtype = DataType.image("RGB", 2, 2)
+    data = [
+        np.zeros((2, 2, 3), dtype=np.uint8),
+        np.full((2, 2, 3), 255, dtype=np.uint8),
+        None,
+    ]
+    before = daft.from_pydict({"foo": Series.from_pylist(data, dtype=DataType.python())})
+    before = before.with_column("foo", before["foo"].cast(expected_dtype))
+
+    with execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        before.write_parquet(str(tmp_path))
+        after = daft.read_parquet(str(tmp_path))
+
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow().equals(after.to_arrow(), check_metadata=False)
+
+
 @pytest.mark.parametrize("has_none", [True, False])
 def test_roundtrip_boolean_rle(tmp_path, has_none):
     file_path = f"{tmp_path}/test.parquet"
@@ -226,6 +271,13 @@ def test_roundtrip_arrow_extension_type(tmp_path, uuid_ext_type, native_parquet_
     assert ba.equals(aa, check_metadata=False)
 
 
-# TODO: reading/writing:
-# 1. Embedding type
-# 2. Image type
+def test_parquet_file_writer_empty_micropartition(tmp_path):
+    empty = MicroPartition.from_arrow(pa.table({"id": pa.array([], type=pa.int64())}))
+    writer = ParquetFileWriter(root_dir=str(tmp_path), file_idx=0)
+    bytes_written = writer.write(empty)
+    assert bytes_written == 0
+    result = writer.close()
+
+    # Empty micropartition should result in an empty record batch.
+    assert len(result) == 0
+    assert "path" in result.schema().column_names()

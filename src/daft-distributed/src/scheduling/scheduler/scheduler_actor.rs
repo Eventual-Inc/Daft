@@ -82,6 +82,11 @@ where
                 self.statistics_manager.handle_event(TaskEvent::Submitted {
                     context: task.task_context(),
                     name: task.task.task_name().clone(),
+                    // TODO(perf): Avoid building TaskMetadata unless a subscriber/export path needs it.
+                    // This currently clones scan paths and estimates scan sizes for every submitted task,
+                    // even when task lifecycle event emission is disabled. The right fix likely belongs
+                    // in the task-event wiring layer rather than StatisticsSubscriber.
+                    metadata: task.task_metadata(),
                 })?;
             }
 
@@ -117,7 +122,12 @@ where
             }
 
             // 2: Get all tasks that are ready to be scheduled
-            let scheduled_tasks = self.scheduler.schedule_tasks();
+            let (scheduled_tasks, cancelled_tasks) = self.scheduler.schedule_tasks();
+            for task in &cancelled_tasks {
+                self.statistics_manager.handle_event(TaskEvent::Cancelled {
+                    context: task.task_context(),
+                })?;
+            }
             // 3: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
@@ -126,6 +136,7 @@ where
                 for task in &scheduled_tasks {
                     self.statistics_manager.handle_event(TaskEvent::Scheduled {
                         context: task.task().task_context(),
+                        worker_id: task.worker_id(),
                     })?;
                 }
 
@@ -294,14 +305,14 @@ impl<T: Task> SchedulerHandle<T> {
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
     cancel_token: CancellationToken,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(
         task: T,
         cancel_token: CancellationToken,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             task,
@@ -330,7 +341,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
     finished: bool,
 }
 
@@ -339,7 +350,7 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             _task_id: task_id,
@@ -363,16 +374,18 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(result)
             }
             // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(Ok(None))
             }
@@ -560,7 +573,8 @@ mod tests {
         let submittable_task = SubmittableTask::task_only(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         drop(submitted_task);
-        cancel_receiver.await.unwrap();
+        // Notifier may not fire if the scheduler filtered the task before dispatch.
+        let _ = cancel_receiver.await;
 
         test_context.cleanup().await?;
         Ok(())
@@ -630,7 +644,8 @@ mod tests {
         {
             if let Some(cancel_receiver) = maybe_cancel_receiver {
                 drop(submitted_task);
-                cancel_receiver.await.unwrap();
+                // Notifier may not fire if scheduler-side filtering kicked in.
+                let _ = cancel_receiver.await;
             } else {
                 let result = submitted_task.await?;
                 let partition = result.unwrap().partitions()[0].clone();

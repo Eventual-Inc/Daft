@@ -25,20 +25,20 @@ pub type CheckpointStoreRef = Arc<dyn CheckpointStore>;
 /// `staged → checkpointed → committed`
 ///
 /// - **Staged:** Keys and files written but not yet visible to readers.
-/// - **Checkpointed:** Sealed — keys and files are coupled and visible.
+/// - **Checkpointed:** Keys and files are coupled and visible.
 /// - **Committed:** Catalog commit succeeded — files no longer returned by
 ///   [`get_checkpointed_files`], but keys remain visible for skip-on-rerun.
 ///
 /// 1. [`stage_keys`] and [`stage_files`] accumulate data under a
 ///    [`CheckpointId`]. Staged data is invisible to readers.
-/// 2. [`checkpoint`] seals the checkpoint — its keys and files become visible
-///    to readers as an atomic unit.
+/// 2. [`checkpoint`] couples the staged keys and files into a single
+///    `Checkpointed` entry, making them visible to readers atomically.
 /// 3. [`mark_committed`] records that the checkpoint's files have been durably
 ///    committed to an external catalog.
 ///
 /// # Consistency
 ///
-/// Checkpoint data is append-only and immutable once sealed. Readers of
+/// Checkpoint data is append-only and immutable once `Checkpointed`. Readers of
 /// [`get_checkpointed_keys`] and [`get_checkpointed_files`] see a
 /// monotonically growing set — new checkpoints may appear between calls,
 /// but existing data never changes or disappears. No isolation between
@@ -63,13 +63,13 @@ pub trait CheckpointStore: Send + Sync {
     /// composite keys, etc.). Callers must stage consistent Series types
     /// (same schema) across calls for the same checkpoint.
     ///
-    /// Returns [`AlreadySealed`] if the checkpoint has already been sealed.
+    /// Returns [`AlreadyCheckpointed`] if `checkpoint()` has already been called for this id.
     ///
     /// **Not idempotent** — uses append semantics. Duplicate keys are not
     /// deduplicated because keys arrive incrementally in batches; dedup would
     /// add cost for no benefit at this layer.
     ///
-    /// [`AlreadySealed`]: crate::error::CheckpointError::AlreadySealed
+    /// [`AlreadyCheckpointed`]: crate::error::CheckpointError::AlreadyCheckpointed
     async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()>;
 
     /// Stage output file metadata into a checkpoint. May be called multiple
@@ -79,32 +79,44 @@ pub trait CheckpointStore: Send + Sync {
     /// Implicitly creates a `Staged` checkpoint entry on first call for a
     /// new ID, same as [`stage_keys`](Self::stage_keys).
     ///
-    /// Returns [`AlreadySealed`] if the checkpoint has already been sealed.
+    /// Returns [`AlreadyCheckpointed`] if `checkpoint()` has already been called for this id.
     ///
     /// **Not idempotent** — uses append semantics, same as [`stage_keys`](Self::stage_keys).
     ///
-    /// [`AlreadySealed`]: crate::error::CheckpointError::AlreadySealed
+    /// [`AlreadyCheckpointed`]: crate::error::CheckpointError::AlreadyCheckpointed
     async fn stage_files(
         &self,
         id: &CheckpointId,
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()>;
 
-    /// Checkpoint (seal) a staged entry — couples the staged keys and files, making them
-    /// visible to readers. No further staging is allowed after this call.
+    /// Transition a staged entry to `Checkpointed` — couples the staged keys
+    /// and files, making them visible to readers. No further staging is
+    /// allowed after this call.
     ///
-    /// Returns [`CheckpointNotFound`] if the ID was never staged.
+    /// **Idempotent and tolerant of unstaged ids.** No-op if the entry is
+    /// already `Checkpointed` (post-restart retry), and also a no-op if the
+    /// id was never staged (an empty pipeline run that auto-generated an id
+    /// but never produced any keys or files — checkpointing nothing is
+    /// checkpointing nothing). Callers that need to detect unstaged ids must do so via
+    /// [`get_checkpoint`](Self::get_checkpoint) or
+    /// [`list_checkpoints`](Self::list_checkpoints) instead.
     ///
-    /// **Idempotent** — no-op if the checkpoint has already been sealed.
     /// This supports retry after message loss (e.g., worker sends checkpoint,
-    /// acknowledgement is lost, worker retries).
-    ///
-    /// [`CheckpointNotFound`]: crate::error::CheckpointError::CheckpointNotFound
+    /// acknowledgement is lost, worker retries) and post-crash retry where
+    /// the in-memory staged state has been lost.
     async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()>;
 
     /// Stream all checkpointed source keys (both checkpointed and committed)
     /// as columnar [`Series`] chunks. Useful for building a filter to skip
     /// already-processed inputs on re-run.
+    ///
+    /// Each streamed [`Series`] is named
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN)
+    /// regardless of what column name was passed to [`stage_keys`](Self::stage_keys).
+    /// Implementations must rename on staging so the read side is stable
+    /// across renames of the source's key column — see
+    /// [`SEALED_KEYS_COLUMN`](common_checkpoint_config::SEALED_KEYS_COLUMN).
     async fn get_checkpointed_keys(
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Series>>>;
@@ -131,7 +143,7 @@ pub trait CheckpointStore: Send + Sync {
     /// [`get_checkpointed_files`](Self::get_checkpointed_files).
     ///
     /// **Idempotent** for already-committed checkpoints (no-op). Errors if a
-    /// checkpoint is still in `Staged` state (not yet sealed). This supports
+    /// checkpoint is still in `Staged` state. This supports
     /// crash recovery: if the caller crashes after committing some IDs but
     /// before finishing, a retry succeeds without error.
     ///

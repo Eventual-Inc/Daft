@@ -17,8 +17,11 @@ use crate::{
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Use a non-canonical input column name so every contract test that
+/// round-trips through `stage_keys` -> `get_checkpointed_keys` actually
+/// exercises the canonical-name rename inside the store impl.
 pub fn keys(values: &[&str]) -> Series {
-    Utf8Array::from_slice("key", values).into_series()
+    Utf8Array::from_slice("src_key", values).into_series()
 }
 
 pub fn file(data: &[u8]) -> FileMetadata {
@@ -85,7 +88,7 @@ pub async fn test_lifecycle(store: &dyn CheckpointStore) {
     assert_eq!(collect_key_strings(store).await, Vec::<String>::new());
     assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 
-    // Seal makes data visible
+    // checkpoint() makes data visible
     store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(store).await, vec!["a", "b"]);
     assert_eq!(
@@ -135,7 +138,7 @@ pub async fn test_idempotency(store: &dyn CheckpointStore) {
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.stage_files(&id, vec![file(b"f1")]).await.unwrap();
 
-    // Double seal
+    // Double checkpoint() — idempotent
     store.checkpoint(&id).await.unwrap();
     store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(store).await, vec!["a"]);
@@ -153,17 +156,14 @@ pub async fn test_idempotency(store: &dyn CheckpointStore) {
     assert_eq!(collect_key_strings(store).await, vec!["a"]);
     assert_eq!(collect_files(store).await, Vec::<FileMetadata>::new());
 
-    // seal() on committed is also a no-op
+    // checkpoint() on `Committed` is also a no-op
     store.checkpoint(&id).await.unwrap();
 }
 
 pub async fn test_error_paths(store: &dyn CheckpointStore) {
-    // Seal unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
+    // Calling checkpoint() on an unknown ID is a tolerated no-op (covers empty-pipeline-run
+    // flows where an id is auto-generated but never staged).
+    store.checkpoint(&CheckpointId::generate(0)).await.unwrap();
 
     // mark_committed unknown ID
     let err = store
@@ -172,26 +172,26 @@ pub async fn test_error_paths(store: &dyn CheckpointStore) {
         .unwrap_err();
     assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
 
-    // Stage after seal
+    // Stage after checkpoint() — should error
     let id = CheckpointId::generate(0);
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
     let err = store.stage_keys(&id, keys(&["b"])).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
     let err = store.stage_files(&id, vec![file(b"f")]).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
-    // Stage after commit (also AlreadySealed)
+    // Stage after commit (also AlreadyCheckpointed)
     store
         .mark_committed(std::slice::from_ref(&id))
         .await
         .unwrap();
     let err = store.stage_keys(&id, keys(&["c"])).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
-    // mark_committed on staged (not sealed)
+    // mark_committed on `Staged` (not yet `Checkpointed`)
     let id2 = CheckpointId::generate(0);
     store.stage_keys(&id2, keys(&["x"])).await.unwrap();
     let err = store.mark_committed(&[id2]).await.unwrap_err();
@@ -199,7 +199,7 @@ pub async fn test_error_paths(store: &dyn CheckpointStore) {
 }
 
 pub async fn test_orphaned_staged_entries(store: &dyn CheckpointStore) {
-    // Orphan: staged but never sealed (simulates crash)
+    // Orphan: `Staged` but never reached `Checkpointed` (simulates crash)
     let orphan_id = CheckpointId::generate(0);
     store
         .stage_keys(&orphan_id, keys(&["orphan"]))
@@ -244,17 +244,17 @@ pub async fn test_crud(store: &dyn CheckpointStore) {
         .unwrap_err();
     assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
 
-    // Stage → Sealed → Committed lifecycle via get_checkpoint
+    // Staged → Checkpointed → Committed lifecycle via get_checkpoint
     store.stage_keys(&id1, keys(&["a"])).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Staged);
-    assert!(ckpt.sealed_at.is_none());
+    assert!(ckpt.checkpointed_at.is_none());
     assert!(ckpt.committed_at.is_none());
 
     store.checkpoint(&id1).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
-    assert!(ckpt.sealed_at.is_some());
+    assert!(ckpt.checkpointed_at.is_some());
     assert!(ckpt.committed_at.is_none());
 
     store
@@ -263,10 +263,10 @@ pub async fn test_crud(store: &dyn CheckpointStore) {
         .unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Committed);
-    assert!(ckpt.sealed_at.is_some());
+    assert!(ckpt.checkpointed_at.is_some());
     assert!(ckpt.committed_at.is_some());
-    assert!(ckpt.sealed_at.unwrap() >= ckpt.created_at);
-    assert!(ckpt.committed_at.unwrap() >= ckpt.sealed_at.unwrap());
+    assert!(ckpt.checkpointed_at.unwrap() >= ckpt.created_at);
+    assert!(ckpt.committed_at.unwrap() >= ckpt.checkpointed_at.unwrap());
 
     // list_checkpoints with mixed states
     store.stage_keys(&id2, keys(&["b"])).await.unwrap();
@@ -304,11 +304,11 @@ pub async fn test_retry_after_partial_failure(store: &dyn CheckpointStore) {
     let good_id = CheckpointId::generate(0);
     let staged_id = CheckpointId::generate(0);
 
-    // good_id: fully sealed
+    // good_id: fully `Checkpointed`
     store.stage_keys(&good_id, keys(&["a"])).await.unwrap();
     store.checkpoint(&good_id).await.unwrap();
 
-    // staged_id: only staged (not sealed)
+    // staged_id: only `Staged` (no checkpoint() yet)
     store.stage_keys(&staged_id, keys(&["b"])).await.unwrap();
 
     // First attempt: partial failure — good_id commits, staged_id errors

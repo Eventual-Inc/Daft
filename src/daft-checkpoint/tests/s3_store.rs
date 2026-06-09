@@ -11,7 +11,7 @@ use daft_checkpoint::{
     impls::S3CheckpointStore,
 };
 use daft_core::{
-    datatypes::Utf8Array,
+    datatypes::{Int64Array, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_io::IOConfig;
@@ -27,13 +27,25 @@ use futures::TryStreamExt;
 /// `file:///absolute/path`.
 fn make_store() -> (tempfile::TempDir, S3CheckpointStore) {
     let dir = tempfile::tempdir().expect("failed to create temp dir");
-    let prefix = format!("file://{}", dir.path().display());
+    // Normalize to forward slashes and ensure the canonical triple-slash `file:///`
+    // form on Windows, where `display()` yields `C:\Users\...` without a leading slash.
+    let raw = dir.path().display().to_string().replace('\\', "/");
+    let prefix = if raw.starts_with('/') {
+        format!("file://{raw}")
+    } else {
+        format!("file:///{raw}")
+    };
     let store = S3CheckpointStore::new(prefix, Arc::new(IOConfig::default())).unwrap();
     (dir, store)
 }
 
+/// Use a non-canonical input column name so every test that round-trips
+/// through `stage_keys` -> `get_checkpointed_keys` actually exercises the
+/// canonical-name rename. If this returned a series already named
+/// `SEALED_KEYS_COLUMN`, the rename inside `stage_keys` would be a silent
+/// no-op and a regression that removed it would not be caught.
 fn keys(values: &[&str]) -> Series {
-    Utf8Array::from_slice("key", values).into_series()
+    Utf8Array::from_slice("src_key", values).into_series()
 }
 
 fn file(data: &[u8]) -> FileMetadata {
@@ -102,7 +114,7 @@ async fn test_lifecycle() {
     assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
 
-    // Seal makes data visible.
+    // checkpoint() makes data visible.
     store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
     assert_eq!(
@@ -194,13 +206,6 @@ async fn test_idempotency() {
 async fn test_error_paths() {
     let (_dir, store) = make_store();
 
-    // checkpoint() on an unknown ID
-    let err = store
-        .checkpoint(&CheckpointId::generate(0))
-        .await
-        .unwrap_err();
-    assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
-
     // mark_committed() on an unknown ID
     let err = store
         .mark_committed(&[CheckpointId::generate(0)])
@@ -211,16 +216,16 @@ async fn test_error_paths() {
         CheckpointError::CheckpointNotFound { .. } | CheckpointError::NotCheckpointed { .. }
     ));
 
-    // stage_keys after checkpoint() → AlreadySealed
+    // stage_keys after checkpoint() → AlreadyCheckpointed
     let id = CheckpointId::generate(0);
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
     let err = store.stage_keys(&id, keys(&["b"])).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
     let err = store.stage_files(&id, vec![file(b"f")]).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
     // mark_committed on staged (not yet checkpointed)
     let id2 = CheckpointId::generate(1);
@@ -321,15 +326,15 @@ async fn test_get_checkpoint_and_list() {
     store.stage_keys(&id1, keys(&["a"])).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Staged);
-    assert!(ckpt.sealed_at.is_none());
+    assert!(ckpt.checkpointed_at.is_none());
     assert!(ckpt.committed_at.is_none());
 
     store.checkpoint(&id1).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
-    assert!(ckpt.sealed_at.is_some());
+    assert!(ckpt.checkpointed_at.is_some());
     assert!(ckpt.committed_at.is_none());
-    assert!(ckpt.sealed_at.unwrap() >= ckpt.created_at);
+    assert!(ckpt.checkpointed_at.unwrap() >= ckpt.created_at);
 
     store
         .mark_committed(std::slice::from_ref(&id1))
@@ -377,7 +382,108 @@ async fn test_empty_inputs() {
 }
 
 // ---------------------------------------------------------------------------
-// 10. mark_committed: all IDs committed in a single concurrent batch
+// 10. stage_keys persists under the canonical column name regardless of input
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_stage_keys_renames_to_canonical_column() {
+    use common_checkpoint_config::SEALED_KEYS_COLUMN;
+
+    let (_dir, store) = make_store();
+    let id = CheckpointId::generate(0);
+
+    // Pass in a series whose field name is the source's column ("file_id"),
+    // not the canonical SEALED_KEYS_COLUMN ("key"). The store must rename it
+    // on the way in so the on-disk parquet uses the canonical name.
+    let source_named = Utf8Array::from_slice("file_id", &["a", "b", "c"]).into_series();
+    assert_eq!(source_named.name(), "file_id");
+    store.stage_keys(&id, source_named).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
+
+    // Read back via get_checkpointed_keys — every chunk's series field must
+    // be the canonical name, regardless of what the caller passed in.
+    let chunks: Vec<Series> = store
+        .get_checkpointed_keys()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    assert!(!chunks.is_empty(), "expected at least one chunk");
+    for chunk in &chunks {
+        assert_eq!(
+            chunk.name(),
+            SEALED_KEYS_COLUMN,
+            "stage_keys must persist under the canonical column name; got {:?}",
+            chunk.name(),
+        );
+    }
+
+    // The rename must not corrupt values — only the column name changes.
+    assert_eq!(collect_key_strings(&store).await, vec!["a", "b", "c"]);
+}
+
+// ---------------------------------------------------------------------------
+// 11. Non-Utf8 dtypes round-trip through stage_keys → get_checkpointed_keys
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_stage_keys_round_trip_preserves_int64_dtype_across_batches() {
+    use common_checkpoint_config::SEALED_KEYS_COLUMN;
+    use daft_schema::dtype::DataType;
+
+    let (_dir, store) = make_store();
+    let id = CheckpointId::generate(0);
+
+    // Stage two batches of Int64 keys under a non-canonical input column
+    // name. Verifies (a) non-Utf8 dtypes survive the parquet round-trip
+    // through `stage_keys`, (b) the canonical-name rename applies across
+    // multiple stage_keys calls in a single checkpoint, (c) values are
+    // preserved exactly (not coerced or truncated).
+    let batch1 = Int64Array::from_vec("src_id", vec![10i64, 20, 30]).into_series();
+    let batch2 = Int64Array::from_vec("src_id", vec![40i64, 50]).into_series();
+    assert_eq!(batch1.name(), "src_id");
+    assert_eq!(batch2.name(), "src_id");
+
+    store.stage_keys(&id, batch1).await.unwrap();
+    store.stage_keys(&id, batch2).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
+
+    let chunks: Vec<Series> = store
+        .get_checkpointed_keys()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    assert!(!chunks.is_empty(), "expected at least one chunk");
+
+    let mut values: Vec<i64> = Vec::new();
+    for chunk in &chunks {
+        assert_eq!(
+            chunk.name(),
+            SEALED_KEYS_COLUMN,
+            "rename must apply to every batch, got: {:?}",
+            chunk.name(),
+        );
+        assert_eq!(
+            chunk.data_type(),
+            &DataType::Int64,
+            "Int64 dtype must survive the parquet round-trip"
+        );
+        let arr = chunk.i64().expect("expected Int64 series");
+        for i in 0..arr.len() {
+            if let Some(v) = arr.get(i) {
+                values.push(v);
+            }
+        }
+    }
+    values.sort_unstable();
+    assert_eq!(values, vec![10, 20, 30, 40, 50]);
+}
+
+// ---------------------------------------------------------------------------
+// 12. mark_committed: all IDs committed in a single concurrent batch
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -478,25 +584,25 @@ async fn test_parquet_file_metadata_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
-// 14. sealed_file_paths visibility lifecycle
+// 14. checkpointed_file_paths visibility lifecycle
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_sealed_file_paths_lifecycle() {
+async fn test_checkpointed_file_paths_lifecycle() {
     let (_dir, store) = make_store();
 
     // Empty store → no paths.
-    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
 
     // Staged only → still no paths (staged-only keys must be invisible so the
     // current run doesn't wrongly skip work that was never durably recorded).
     let id = CheckpointId::generate(0);
     store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
-    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
 
-    // Sealed → at least one path.
+    // After checkpoint() → at least one path.
     store.checkpoint(&id).await.unwrap();
-    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(!store.checkpointed_file_paths().await.unwrap().is_empty());
 
     // After mark_committed, paths remain available — keys remain visible for
     // skip-on-rerun even after the associated files are committed.
@@ -504,5 +610,31 @@ async fn test_sealed_file_paths_lifecycle() {
         .mark_committed(std::slice::from_ref(&id))
         .await
         .unwrap();
-    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(!store.checkpointed_file_paths().await.unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// 15. checkpoint() on never-staged id is a tolerated no-op
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_checkpoint_on_never_staged_id_is_a_noop() {
+    let (_dir, store) = make_store();
+    let id = CheckpointId::generate(0);
+
+    // Empty-source case: pipeline produced 0 rows after the anti-join, sink
+    // generated an id but no SCKO/sink call ever staged keys or files. We
+    // succeed quietly rather than writing a content-less manifest — consumers
+    // can already tell "this id checkpointed nothing" from the absence of a manifest.
+    store.checkpoint(&id).await.unwrap();
+
+    let ckpt = store.get_checkpoint(&id).await;
+    assert!(matches!(
+        ckpt,
+        Err(CheckpointError::CheckpointNotFound { .. })
+    ));
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
+
+    // Idempotent retry — still a no-op.
+    store.checkpoint(&id).await.unwrap();
 }

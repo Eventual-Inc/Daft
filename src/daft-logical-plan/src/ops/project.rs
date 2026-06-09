@@ -312,10 +312,12 @@ fn replace_column_with_semantic_id(
                     )
             }
 
-            Expr::Cast(child, datatype) => {
+            Expr::Cast(child, datatype, try_cast) => {
                 replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(
-                        |transformed_child| Expr::Cast(transformed_child, datatype.clone()).into(),
+                        |transformed_child| {
+                            Expr::Cast(transformed_child, datatype.clone(), *try_cast).into()
+                        },
                         |_| e.clone(),
                     )
             }
@@ -709,6 +711,17 @@ fn replace_column_with_semantic_id_aggexpr(
                 Transformed::yes(AggExpr::AggFnMap {
                     handle,
                     inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFnCombine { handle, partial } => {
+            let t = replace_column_with_semantic_id(partial.clone(), subexprs_to_replace, schema);
+            if !t.transformed {
+                Transformed::no(AggExpr::AggFnCombine { handle, partial })
+            } else {
+                Transformed::yes(AggExpr::AggFnCombine {
+                    handle,
+                    partial: t.data,
                 })
             }
         }

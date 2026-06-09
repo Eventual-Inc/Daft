@@ -173,6 +173,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
         functions_registry.register::<daft_functions::random::RandomFunctions>();
+        functions_registry.register::<daft_geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
@@ -180,6 +181,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_file::Size);
         functions_registry.add_fn(daft_file::VideoFile);
         functions_registry.add_fn(daft_file::AudioFile);
+        functions_registry.add_fn(daft_file::ImageFile);
         functions_registry.add_fn(daft_file::GuessMimeType);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);

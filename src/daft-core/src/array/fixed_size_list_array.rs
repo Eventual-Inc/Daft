@@ -155,7 +155,9 @@ impl FixedSizeListArray {
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        let field = Arc::new(self.flat_child.field().to_arrow()?);
+        let mut field = self.flat_child.field().to_arrow()?;
+        field = field.with_name("item");
+        let field = Arc::new(field);
         let size = self.fixed_element_len() as i32;
         let values = self.flat_child.to_arrow()?;
         let nulls = self.nulls.clone();
@@ -335,7 +337,7 @@ mod tests {
             arrow_arr.data_type(),
             &arrow::datatypes::DataType::FixedSizeList(
                 Arc::new(arrow::datatypes::Field::new(
-                    "foo",
+                    "item",
                     arrow::datatypes::DataType::Int32,
                     true
                 )),

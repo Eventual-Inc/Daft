@@ -973,6 +973,95 @@ def test_bin_bad_input() -> None:
         table.eval_expression_list([bin(col("a"))])
 
 
+@pytest.mark.parametrize(
+    "value, from_base, to_base, expected",
+    [
+        pytest.param("3", 10, 2, "11", id="dec_to_bin"),
+        pytest.param("FF", 16, 10, "255", id="hex_to_dec"),
+        pytest.param("ff", 16, 10, "255", id="case_insensitive"),
+        pytest.param("ZZ", 36, 10, "1295", id="max_base"),
+        pytest.param("-15", 10, 16, "FFFFFFFFFFFFFFF1", id="neg_input_unsigned_out"),
+        pytest.param("-15", 10, -16, "-F", id="neg_input_signed_out"),
+        pytest.param("-1", 10, 16, "FFFFFFFFFFFFFFFF", id="neg_one_twos_complement"),
+        pytest.param("11abc", 10, 16, "B", id="invalid_suffix_truncates"),
+        pytest.param("ZZ", 16, 10, "0", id="all_invalid_chars"),
+        pytest.param("Z", 10, 16, "0", id="leading_invalid"),
+        pytest.param("-", 10, 16, "0", id="lone_minus_unsigned"),
+        pytest.param("-", 10, -16, "-0", id="lone_minus_signed"),
+        pytest.param("", 10, 16, None, id="empty"),
+        pytest.param("  FF  ", 16, 10, "255", id="whitespace_trim"),
+        pytest.param("FFFFFFFFFFFFFFFF", 16, 10, "18446744073709551615", id="u64_max"),
+        pytest.param("18446744073709551616", 10, 16, None, id="u64_overflow"),
+        pytest.param("-9223372036854775808", 10, 16, "8000000000000000", id="i64_min_two_complement"),
+        pytest.param("-9223372036854775809", 10, 16, None, id="below_i64_min_returns_null"),
+        pytest.param("-9223372036854775808", 10, -16, "-8000000000000000", id="i64_min_signed"),
+        pytest.param(None, 16, 10, None, id="null_input"),
+    ],
+)
+def test_conv(value: str | None, from_base: int, to_base: int, expected: str | None) -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([value], type=pa.string())})
+    result = table.eval_expression_list([conv(col("a"), from_base, to_base).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [expected]
+
+
+def test_conv_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([255, 7, 0, None], type=pa.int64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == ["FF", "7", "0", None]
+
+
+def test_conv_unsigned_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == ["0", "8000000000000000", "FFFFFFFFFFFFFFFF"]
+
+
+def test_conv_negative_int_input() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -255, -(2**63)], type=pa.int64())})
+    result = table.eval_expression_list([conv(col("a"), 10, 16).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [
+        "FFFFFFFFFFFFFFFF",
+        "FFFFFFFFFFFFFF01",
+        "8000000000000000",
+    ]
+
+
+@pytest.mark.parametrize(
+    "from_base, to_base",
+    [
+        pytest.param(1, 10, id="from_too_small"),
+        pytest.param(37, 10, id="from_too_large"),
+        pytest.param(10, 0, id="to_zero"),
+        pytest.param(10, 1, id="to_too_small"),
+        pytest.param(10, 37, id="to_too_large"),
+        pytest.param(10, -37, id="to_too_negative"),
+        pytest.param(-10, 16, id="from_negative"),
+    ],
+)
+def test_conv_invalid_base(from_base: int, to_base: int) -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": ["FF"]})
+    result = table.eval_expression_list([conv(col("a"), from_base, to_base).alias("r")])
+    assert result.get_column_by_name("r").to_pylist() == [None]
+
+
+def test_conv_bad_dtype() -> None:
+    from daft.functions import conv
+
+    table = MicroPartition.from_pydict({"a": [1.0, 2.5]})
+    with pytest.raises(ValueError, match="Expected input to conv to be string or integer"):
+        table.eval_expression_list([conv(col("a"), 10, 16)])
+
+
 def test_hypot() -> None:
     from daft.functions import hypot
 
@@ -999,3 +1088,101 @@ def test_hypot_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["a", "b"], "b": ["c", "d"]})
     with pytest.raises(ValueError, match="Expected inputs to hypot to be numeric"):
         table.eval_expression_list([hypot(col("a"), col("b"))])
+
+
+def test_pmod() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 10, 0, 5], "b": [3, 4, 5, 5]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [1, 2, 0, 0]
+
+
+def test_pmod_negative() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-7, 7, -7, -8], type=pa.int64()), "b": pa.array([3, -3, -3, -3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2, 1, -1, -2]
+
+
+def test_pmod_float() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7.5, -7.0, 1.0, -1.0], "b": [2.5, 3.0, -3.0, -3.0]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0.0, 2.0, 1.0, -1.0]
+
+
+def test_pmod_zero_divisor() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [7, 0, -3, 5], "b": [0, 0, 0, 2]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None, None, 1]
+
+
+def test_pmod_int_boundary() -> None:
+    from daft.functions import pmod
+
+    # i64::MIN exercises the wrapping path: i64::MIN % -1 would panic without
+    # wrapping_rem; pmod(i64::MIN, -1) is mathematically 0.
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([-(2**63), -(2**63)], type=pa.int64()), "b": pa.array([-1, 3], type=pa.int64())}
+    )
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "a, b, expected",
+    [
+        pytest.param(float("nan"), 3.0, float("nan"), id="nan_dividend"),
+        pytest.param(1.0, float("nan"), float("nan"), id="nan_divisor"),
+        pytest.param(float("inf"), 3.0, float("nan"), id="inf_dividend"),
+        pytest.param(1.0, float("inf"), 1.0, id="inf_divisor_positive_a"),
+        pytest.param(-1.0, float("inf"), float("nan"), id="inf_divisor_negative_a"),
+    ],
+)
+def test_pmod_float_nan_inf(a: float, b: float, expected: float) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": [a], "b": [b]})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    [value] = result.get_column_by_name("result").to_pylist()
+    if math.isnan(expected):
+        assert math.isnan(value)
+    else:
+        assert value == expected
+
+
+@pytest.mark.parametrize(
+    "a_arrow, b_arrow",
+    [
+        pytest.param(pa.int8(), pa.int8(), id="i8/i8"),
+        pytest.param(pa.int32(), pa.int64(), id="i32/i64"),
+        pytest.param(pa.int8(), pa.int32(), id="i8/i32"),
+        pytest.param(pa.uint16(), pa.uint32(), id="u16/u32"),
+    ],
+)
+def test_pmod_int_cross_width(a_arrow: pa.DataType, b_arrow: pa.DataType) -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": pa.array([7, 5, 0], type=a_arrow), "b": pa.array([3, 4, 2], type=b_arrow)})
+    result = table.eval_expression_list([pmod(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [1, 1, 0]
+
+
+def test_pmod_bad_input() -> None:
+    from daft.functions import pmod
+
+    table = MicroPartition.from_pydict({"a": ["x", "y"], "b": [1, 2]})
+    with pytest.raises(ValueError, match="Expected inputs to pmod to be numeric"):
+        table.eval_expression_list([pmod(col("a"), col("b"))])
