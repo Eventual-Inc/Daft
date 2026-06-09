@@ -189,7 +189,11 @@ impl StatisticsManager {
                 }
             }
             TaskEvent::Completed { context, .. }
-            | TaskEvent::Failed { context, .. }
+            | TaskEvent::Failed {
+                context,
+                retryable: false,
+                ..
+            }
             | TaskEvent::Cancelled { context } => {
                 for node_id in &context.node_ids {
                     let mgr = self
@@ -201,6 +205,9 @@ impl StatisticsManager {
                     }
                 }
             }
+            TaskEvent::Failed {
+                retryable: true, ..
+            } => {}
             TaskEvent::Scheduled { .. } => {}
         }
 
@@ -278,11 +285,18 @@ impl StatisticsManager {
     /// Collects accumulated stats from each node manager and returns them as an
     /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
     pub fn export_metrics(&self) -> ExecutionStats {
+        let mut wall_times: HashMap<u32, u64> = HashMap::new();
+
         let nodes: Vec<(Arc<NodeInfo>, _)> = self
             .runtime_node_managers
             .values()
-            .map(RuntimeNodeManager::export_snapshot)
+            .map(|manager| {
+                if let Some(wall_time) = manager.wall_time_us() {
+                    wall_times.insert(manager.node_id() as u32, wall_time);
+                }
+                manager.export_snapshot()
+            })
             .collect();
-        ExecutionStats::new("".into(), nodes)
+        ExecutionStats::new("".into(), nodes).with_wall_times(wall_times)
     }
 }
