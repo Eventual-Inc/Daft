@@ -414,6 +414,10 @@ impl PySeries {
         Ok(self.series.cast(&dtype.into())?.into())
     }
 
+    pub fn try_cast(&self, dtype: PyDataType) -> PyResult<Self> {
+        Ok(self.series.try_cast(&dtype.into())?.into())
+    }
+
     #[staticmethod]
     pub fn concat(series: Vec<Self>) -> PyResult<Self> {
         let series: Vec<_> = series.iter().map(|s| &s.series).collect();

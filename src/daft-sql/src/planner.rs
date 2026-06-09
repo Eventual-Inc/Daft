@@ -1660,6 +1660,16 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
                 Ok(expr.cast(&dtype))
             }
+            SQLExpr::Cast {
+                kind: CastKind::TryCast | CastKind::SafeCast,
+                expr,
+                data_type,
+                format: None,
+            } => {
+                let dtype = sql_dtype_to_dtype(data_type)?;
+                let expr = self.plan_expr(expr)?;
+                Ok(expr.try_cast(&dtype))
+            }
             SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq(lit(false))),
             SQLExpr::IsNotFalse(_) => Ok(self.plan_expr(expr)?.eq(lit(false)).not()),
             SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true))),

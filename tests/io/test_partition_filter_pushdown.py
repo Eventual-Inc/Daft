@@ -47,6 +47,9 @@ class ComparisonExtractor(PredicateVisitor[dict[str, Any]]):
     def visit_cast(self, expr: Expression, dtype: DataType) -> dict[str, Any]:
         return self.visit(expr)
 
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> dict[str, Any]:
+        return self.visit(expr)
+
     def visit_function(self, name: str, args: list[Expression]) -> dict[str, Any]:
         return {"op": "function", "name": name, "args": [self.visit(a) for a in args]}
 
