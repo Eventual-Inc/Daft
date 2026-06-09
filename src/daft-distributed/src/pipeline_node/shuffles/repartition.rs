@@ -18,10 +18,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_stream,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct RepartitionNode {
@@ -90,11 +87,8 @@ impl RepartitionNode {
             task_id_counter,
         );
 
-        let transposed_outputs =
-            transpose_materialized_outputs_from_stream(outputs, self.num_partitions).await?;
-
         self.shuffle_backend
-            .emit_read_tasks(transposed_outputs, self.as_ref(), result_tx)
+            .emit_read_tasks_from_stream(outputs, self.num_partitions, self.as_ref(), result_tx)
             .await
     }
 }

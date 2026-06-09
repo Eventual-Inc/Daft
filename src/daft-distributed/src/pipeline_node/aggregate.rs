@@ -374,7 +374,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         partition_by: Vec<BoundExpr>,
         input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        if Self::needs_hash_repartition(&input_node, &group_by)? {
+        if Self::can_skip_hash_repartition(&input_node, &group_by)? {
             let node_id = self.get_next_pipeline_node_id();
             return Ok(DistributedPipelineNode::new(
                 Arc::new(AggregateNode::new(

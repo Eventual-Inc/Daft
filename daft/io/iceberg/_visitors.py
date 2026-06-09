@@ -69,6 +69,9 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
     def visit_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
         return self.visit(expr)
 
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
+        return self.visit(expr)
+
     def visit_function(self, name: str, args: list[Expression]) -> BooleanExpression:
         raise ValueError(f"Iceberg does not support function '{name}' in filter expressions")
 
