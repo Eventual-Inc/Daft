@@ -233,6 +233,54 @@ def test_array_agg_order_by_expression_mismatch():
         daft.sql("SELECT g, array_agg(x ORDER BY y) AS xs FROM df GROUP BY g", df=df).collect()
 
 
+def test_first_sql():
+    df = daft.from_pydict(
+        {
+            "g": [1, 1, 2, 2, 3],
+            "x": [10, 20, 30, 40, 50],
+        }
+    )
+
+    expected_grouped = (
+        df.groupby("g")
+        .agg(col("x").any_value().alias("first_x"))
+        .sort("g")
+        .to_pydict()
+    )
+    actual_grouped = daft.sql(
+        """
+    SELECT
+        g,
+        first(x) AS first_x
+    FROM df
+    GROUP BY g
+    ORDER BY g
+    """,
+        df=df,
+    ).to_pydict()
+    assert actual_grouped == expected_grouped
+
+    actual_grouped_any_value = daft.sql(
+        """
+    SELECT
+        g,
+        any_value(x) AS first_x
+    FROM df
+    GROUP BY g
+    ORDER BY g
+    """,
+        df=df,
+    ).to_pydict()
+    assert actual_grouped_any_value == expected_grouped
+
+    expected_global = df.agg(col("x").any_value().alias("first_x")).to_pydict()
+    actual_global = daft.sql("SELECT first(x) AS first_x FROM df", df=df).to_pydict()
+    assert actual_global == expected_global
+
+    actual_global_any_value = daft.sql("SELECT any_value(x) AS first_x FROM df", df=df).to_pydict()
+    assert actual_global_any_value == expected_global
+
+
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [

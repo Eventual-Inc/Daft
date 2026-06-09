@@ -1064,9 +1064,13 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
             arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
             arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
-            arrow_schema::DataType::LargeBinary | arrow_schema::DataType::Binary => Self::Binary,
+            arrow_schema::DataType::LargeBinary
+            | arrow_schema::DataType::Binary
+            | arrow_schema::DataType::BinaryView => Self::Binary,
 
-            arrow_schema::DataType::LargeUtf8 | arrow_schema::DataType::Utf8 => Self::Utf8,
+            arrow_schema::DataType::LargeUtf8
+            | arrow_schema::DataType::Utf8
+            | arrow_schema::DataType::Utf8View => Self::Utf8,
 
             arrow_schema::DataType::FixedSizeList(field, size) => {
                 Self::FixedSizeList(Box::new(Field::try_from(field.as_ref())?.dtype), *size as _)

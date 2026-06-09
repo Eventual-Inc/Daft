@@ -43,8 +43,10 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("variance", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var", AggExpr::Var(nil.clone(), 1));
         parent.add_fn("var_samp", AggExpr::Var(nil.clone(), 1));
-        parent.add_fn("var_pop", AggExpr::Var(nil, 0));
+        parent.add_fn("var_pop", AggExpr::Var(nil.clone(), 0));
         parent.add_fn("array_agg", AggExpr::List(Arc::new(Expr::Literal(Literal::Null))));
+        parent.add_fn("first", AggExpr::AnyValue(nil.clone(), false));
+        parent.add_fn("any_value", AggExpr::AnyValue(nil.clone(), false));
         parent.add_fn("string_join", SQLStringJoin { distinct: false });
         parent.add_fn("string_join_distinct", SQLStringJoin { distinct: true });
     }
@@ -109,6 +111,10 @@ impl SQLFunction for AggExpr {
             Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
             Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
             Self::List(_) => "Collects input values into an array/list.".to_string(),
+            Self::AnyValue(_, _) => {
+                "Returns an arbitrary value from the input expression (aliases: first, any_value)."
+                    .to_string()
+            }
             Self::StringJoin(_, _, _) => {
                 "Concatenate strings with optional delimiter and optional DISTINCT semantics"
                     .to_string()
@@ -134,6 +140,7 @@ impl SQLFunction for AggExpr {
             Self::StringJoin(_, _, _) => &["input", "delimiter"],
             Self::Percentile(_, _) => &["input", "percentage"],
             Self::List(_) => &["input"],
+            Self::AnyValue(_, _) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -274,7 +281,10 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "bool_or takes exactly one argument");
             Ok(args[0].clone().bool_or())
         }
-        AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
+        AggExpr::AnyValue(_, ignore_nulls) => {
+            ensure!(args.len() == 1, "first/any_value takes exactly one argument");
+            Ok(args[0].clone().any_value(*ignore_nulls))
+        }
         AggExpr::List(_) => {
             ensure!(args.len() == 1, "array_agg takes exactly one argument");
             Ok(args[0].clone().agg_list())
