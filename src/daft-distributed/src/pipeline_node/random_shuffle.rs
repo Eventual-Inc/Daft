@@ -5,8 +5,8 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_functions::random::random_int_expr;
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, lit, resolved_col};
+use daft_functions::{hash::hash as hash_expr, random::random_int_expr};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -72,6 +72,21 @@ impl RandomShuffleNode {
         }
     }
 
+    fn sort_by_exprs(&self, seed: Option<u64>) -> Vec<ExprRef> {
+        if let Some(seed) = seed {
+            let mut columns = self.config.schema.field_names().map(resolved_col);
+            if let Some(first) = columns.next() {
+                let mut row_hash = hash_expr(first, Some(lit(seed)), None);
+                for column in columns {
+                    row_hash = hash_expr(column, Some(row_hash), None);
+                }
+                return vec![row_hash];
+            }
+        }
+
+        vec![random_int_expr(i64::MIN, i64::MAX, seed)]
+    }
+
     fn local_sort_with_random_key(
         &self,
         partition_group: Vec<MaterializedOutput>,
@@ -89,10 +104,8 @@ impl RandomShuffleNode {
             hasher.finish()
         });
 
-        let sort_by = BoundExpr::bind_all(
-            &[random_int_expr(i64::MIN, i64::MAX, partition_seed)],
-            &self.config.schema,
-        )?;
+        let sort_by =
+            BoundExpr::bind_all(&self.sort_by_exprs(partition_seed), &self.config.schema)?;
         let node_id = self.node_id();
         Ok(self
             .shuffle_backend

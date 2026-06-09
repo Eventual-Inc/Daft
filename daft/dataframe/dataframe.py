@@ -349,6 +349,42 @@ class DataFrame:
             )
         return None
 
+    @DataframePublicAPI
+    def profile(
+        self,
+        top_n: int = 5,
+        file: io.IOBase | None = None,
+        show_details: bool = False,
+    ) -> None:
+        """Prints a concise profile summary for a materialized DataFrame.
+
+        The profile is based on the execution metrics collected when the DataFrame was materialized. This method does
+        not execute the DataFrame; call :meth:`collect`, :meth:`show`, or another materializing method first.
+
+        Args:
+            top_n: Number of slowest operators to show. Defaults to 5.
+            file: Location to print the output to, or defaults to None which uses Python's default print location.
+            show_details: If True, include per-operator row and byte counts alongside durations. Defaults to False.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
+            >>> # show details like Total Time, Rows read and other metric
+            >>> df.profile(top_n=3, show_details=True)  # doctest: +SKIP
+            >>>
+            >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
+            >>> # show basic information
+            >>> df.profile()  # doctest: +SKIP
+        """
+        if top_n < 1:
+            raise ValueError("top_n must be at least 1")
+        if self._result_cache is None:
+            raise ValueError("Profile is not available until the DataFrame has been materialized")
+        if self._metadata is None:
+            raise ValueError("Profile is not available because execution metadata was not recorded")
+
+        print(self._metadata.format_profile(top_n=top_n, show_details=show_details), file=file)
+
     def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 
@@ -4184,7 +4220,11 @@ class DataFrame:
             Example with Null values and empty lists:
 
             >>> df2 = daft.from_pydict(
-            ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
+            ...     {
+            ...         "id": [1, 2, 3, 4],
+            ...         "values": [[1, 2], [], None, [3]],
+            ...         "labels": [["a", "b"], [], None, ["c"]],
+            ...     }
             ... )
             >>> df2.collect()
             ╭───────┬─────────────┬──────────────╮
@@ -4939,7 +4979,11 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {"student_id": [1, 2, 3, 4], "test1": [0.5, 0.4, 0.6, 0.7], "test2": [0.9, 0.8, 0.7, 1.0]}
+            ...     {
+            ...         "student_id": [1, 2, 3, 4],
+            ...         "test1": [0.5, 0.4, 0.6, 0.7],
+            ...         "test2": [0.9, 0.8, 0.7, 1.0],
+            ...     }
             ... )
             >>> agg_df = df.agg(
             ...     df["test1"].mean(),
