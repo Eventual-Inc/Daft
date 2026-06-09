@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_group_glob_paths() {
-        let groups = group_glob_paths(&vec![
+        let groups = group_glob_paths(&[
             "/data1/2026/**/*.parquet".to_string(),
             "s3://ai/data/2026/**/[x,y,z].json".to_string(),
             "/data1/2026/01/*.parquet".to_string(),

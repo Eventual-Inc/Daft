@@ -166,7 +166,7 @@ pub struct SQLPlanner<'sess> {
     /// Shared context for all planners
     pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
-    parent: Option<&'sess SQLPlanner<'sess>>,
+    parent: Option<&'sess Self>,
     /// In-scope bindings introduced by the current relation's schema
     pub(crate) current_plan: Option<LogicalPlanBuilder>,
     /// Plan that will be used as the right side of the join, used for planning join predicates

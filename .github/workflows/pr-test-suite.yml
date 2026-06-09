@@ -138,7 +138,7 @@ jobs:
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
       with:
-        tool: cargo-llvm-cov@0.7.1
+        tool: cargo-llvm-cov@0.8.7
 
     - name: install llvm tools
       if: matrix.coverage != false

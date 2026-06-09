@@ -304,6 +304,7 @@ impl HFSource {
         .into())
     }
 
+    #[allow(clippy::self_only_used_in_recursion)]
     #[async_recursion]
     async fn request(
         &self,

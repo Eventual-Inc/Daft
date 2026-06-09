@@ -103,26 +103,26 @@ pub enum DataType {
     Utf8,
 
     /// A list of some logical data type with a fixed number of elements.
-    FixedSizeList(Box<DataType>, usize),
+    FixedSizeList(Box<Self>, usize),
 
     /// A list of some logical data type whose offsets are represented as [`i64`].
-    List(Box<DataType>),
+    List(Box<Self>),
 
     /// A nested [`DataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
     Map {
-        key: Box<DataType>,
-        value: Box<DataType>,
+        key: Box<Self>,
+        value: Box<Self>,
     },
 
     /// Extension type.
-    Extension(String, Box<DataType>, Option<String>),
+    Extension(String, Box<Self>, Option<String>),
 
     // Non-ArrowTypes:
     /// A logical type for embeddings.
-    Embedding(Box<DataType>, usize),
+    Embedding(Box<Self>, usize),
 
     /// A logical type for images with variable shapes.
     Image(Option<ImageMode>),
@@ -131,16 +131,16 @@ pub enum DataType {
     FixedShapeImage(ImageMode, u32, u32),
 
     /// A logical type for tensors with variable shapes.
-    Tensor(Box<DataType>),
+    Tensor(Box<Self>),
 
     /// A logical type for tensors with the same shape.
-    FixedShapeTensor(Box<DataType>, Vec<u64>),
+    FixedShapeTensor(Box<Self>, Vec<u64>),
 
     /// A logical type for sparse tensors with variable shapes.
-    SparseTensor(Box<DataType>, bool),
+    SparseTensor(Box<Self>, bool),
 
     /// A logical type for sparse tensors with the same shape.
-    FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
+    FixedShapeSparseTensor(Box<Self>, Vec<u64>, bool),
 
     #[cfg(feature = "python")]
     Python,

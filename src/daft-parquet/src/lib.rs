@@ -101,6 +101,7 @@ pub enum Error {
     /// type must be `Clone`, so we keep `Arc<Error>` internally and surface the
     /// typed source to every consumer.
     #[snafu(display("Remote parquet fetch failed for {path}: {source}"))]
+    #[allow(clippy::use_self)]
     RemoteFetchFailed {
         path: String,
         source: std::sync::Arc<Error>,
