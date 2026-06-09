@@ -156,6 +156,18 @@ pub struct DaftExecutionConfig {
     /// If set, hash join build side partitions that exceed this many bytes will be spilled to
     /// `flight_shuffle_dirs`. Enables grace-hash-join spill-to-disk. Default `None` (disabled).
     pub hash_join_spill_threshold_bytes: Option<usize>,
+    /// Spill threshold (bytes) for the Sort blocking sink's external merge sort, spilled to
+    /// `flight_shuffle_dirs`. `None` auto-derives a threshold from the engine memory budget
+    /// (spilling is on by default). `Some(0)` disables spilling (pure in-memory sort).
+    pub sort_spill_threshold_bytes: Option<usize>,
+    /// Spill threshold (bytes) for the Grouped Aggregation blocking sink's grace aggregation,
+    /// spilled to `flight_shuffle_dirs`. Interpreted as the total budget across all hash buckets.
+    /// `None` auto-derives from the engine memory budget (on by default). `Some(0)` disables.
+    pub agg_spill_threshold_bytes: Option<usize>,
+    /// Spill threshold (bytes) for partitioned Window operators, spilled to `flight_shuffle_dirs`.
+    /// Interpreted as the total budget across all hash buckets. `None` auto-derives from the engine
+    /// memory budget (on by default). `Some(0)` disables.
+    pub window_spill_threshold_bytes: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -204,6 +216,9 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_compression: Some("lz4".to_string()),
             enable_multi_glob_path_tasks: false,
             hash_join_spill_threshold_bytes: None,
+            sort_spill_threshold_bytes: None,
+            agg_spill_threshold_bytes: None,
+            window_spill_threshold_bytes: None,
         }
     }
 }
@@ -220,6 +235,9 @@ impl DaftExecutionConfig {
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
     const ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD: &'static str = "DAFT_HASH_JOIN_SPILL_THRESHOLD";
+    const ENV_DAFT_SORT_SPILL_THRESHOLD: &'static str = "DAFT_SORT_SPILL_THRESHOLD";
+    const ENV_DAFT_AGG_SPILL_THRESHOLD: &'static str = "DAFT_AGG_SPILL_THRESHOLD";
+    const ENV_DAFT_WINDOW_SPILL_THRESHOLD: &'static str = "DAFT_WINDOW_SPILL_THRESHOLD";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -292,6 +310,30 @@ impl DaftExecutionConfig {
                 eprintln!(
                     "Invalid DAFT_HASH_JOIN_SPILL_THRESHOLD value: {val}, ignoring"
                 );
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_SORT_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.sort_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_SORT_SPILL_THRESHOLD value: {val}, ignoring");
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_AGG_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.agg_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_AGG_SPILL_THRESHOLD value: {val}, ignoring");
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_WINDOW_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.window_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_WINDOW_SPILL_THRESHOLD value: {val}, ignoring");
             }
         }
 

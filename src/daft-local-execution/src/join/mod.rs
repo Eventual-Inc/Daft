@@ -1,7 +1,6 @@
 pub mod anti_semi_join;
 pub mod asof_join;
 pub mod build;
-pub mod spill;
 pub mod cross_join;
 pub mod hash_join;
 pub mod index_bitmap;

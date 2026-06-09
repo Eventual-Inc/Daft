@@ -245,6 +245,9 @@ def set_execution_config(
     flight_shuffle_compression: str | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
     hash_join_spill_threshold_bytes: int | None = None,
+    sort_spill_threshold_bytes: int | None = None,
+    agg_spill_threshold_bytes: int | None = None,
+    window_spill_threshold_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -294,6 +297,9 @@ def set_execution_config(
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to "lz4". Pass "none" to disable compression; passing Python None leaves the current config unchanged.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
+        sort_spill_threshold_bytes: Memory budget (bytes) for the Sort operator before it spills to disk (external merge sort) under `flight_shuffle_dirs`. Defaults to None, which auto-derives a threshold from the engine memory budget (spilling on by default). Pass 0 to disable spilling.
+        agg_spill_threshold_bytes: Memory budget (bytes) for the grouped Aggregation operator before it spills to disk (grace aggregation) under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable spilling.
+        window_spill_threshold_bytes: Memory budget (bytes) for partitioned Window operators before they spill to disk under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable. Spill relieves memory between window partitions; a single partition_by group must still fit in memory.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -337,6 +343,9 @@ def set_execution_config(
             flight_shuffle_compression=flight_shuffle_compression,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
             hash_join_spill_threshold_bytes=hash_join_spill_threshold_bytes,
+            sort_spill_threshold_bytes=sort_spill_threshold_bytes,
+            agg_spill_threshold_bytes=agg_spill_threshold_bytes,
+            window_spill_threshold_bytes=window_spill_threshold_bytes,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

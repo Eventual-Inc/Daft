@@ -14,15 +14,17 @@ use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     },
     window_base::{
-        WindowBaseState, WindowSinkParams, partition_into_groups, sort_and_materialize_groups,
+        WindowBaseState, WindowSinkParams, finalize_partitioned_windows, partition_into_groups,
+        sort_and_materialize_groups, window_bucket_budget, window_spill_dirs,
     },
 };
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    spill::SpillConfig,
 };
 
 struct WindowPartitionAndOrderByParams {
@@ -51,6 +53,8 @@ impl WindowSinkParams for WindowPartitionAndOrderByParams {
 
 pub struct WindowPartitionAndOrderBySink {
     window_partition_and_order_by_params: Arc<WindowPartitionAndOrderByParams>,
+    spill_config: Option<SpillConfig>,
+    budget_per_bucket: usize,
 }
 
 impl WindowPartitionAndOrderBySink {
@@ -62,7 +66,9 @@ impl WindowPartitionAndOrderBySink {
         descending: &[bool],
         nulls_first: &[bool],
         schema: &SchemaRef,
+        spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
+        let budget_per_bucket = window_bucket_budget(&spill_config);
         Ok(Self {
             window_partition_and_order_by_params: Arc::new(WindowPartitionAndOrderByParams {
                 window_exprs: window_exprs.to_vec(),
@@ -73,6 +79,8 @@ impl WindowPartitionAndOrderBySink {
                 nulls_first: nulls_first.to_vec(),
                 original_schema: schema.clone(),
             }),
+            spill_config,
+            budget_per_bucket,
         })
     }
 
@@ -114,141 +122,84 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
         let params = self.window_partition_and_order_by_params.clone();
         let num_partitions = self.num_partitions();
 
+        if params.partition_by.is_empty() {
+            return Err(DaftError::ValueError(
+                "Partition by cannot be empty for window functions".into(),
+            ))
+            .into();
+        }
+
+        let schema = params.original_schema.clone();
+        let compute = move |all_partitions: Vec<RecordBatch>| -> DaftResult<RecordBatch> {
+            let groups = partition_into_groups(&all_partitions, &params.partition_by)?;
+            let full_data = RecordBatch::concat(&all_partitions)?;
+            let partitions = sort_and_materialize_groups(
+                groups,
+                full_data,
+                &params.order_by,
+                &params.descending,
+                &params.nulls_first,
+            )?;
+
+            if partitions.is_empty() {
+                return Ok(RecordBatch::empty(Some(params.original_schema.clone())));
+            }
+
+            let grouped_results: Vec<RecordBatch> = partitions
+                .into_iter()
+                .map(|partition| -> DaftResult<RecordBatch> {
+                    let new_cols: Vec<Series> = params
+                        .window_exprs
+                        .iter()
+                        .zip(params.aliases.iter())
+                        .map(|(window_expr, name)| -> DaftResult<Series> {
+                            match window_expr.as_ref() {
+                                WindowExpr::Agg(agg_expr) => {
+                                    let agg = partition.eval_expression(
+                                        &BoundExpr::new_unchecked(Arc::new(Expr::Agg(
+                                            agg_expr.clone(),
+                                        ))),
+                                    )?;
+                                    Ok(agg.broadcast(partition.len())?.rename(name))
+                                }
+                                WindowExpr::RowNumber => partition.window_row_number_col(name),
+                                WindowExpr::Rank => {
+                                    partition.window_rank_col(name, &params.order_by, false)
+                                }
+                                WindowExpr::DenseRank => {
+                                    partition.window_rank_col(name, &params.order_by, true)
+                                }
+                                WindowExpr::Offset {
+                                    input,
+                                    offset,
+                                    default,
+                                } => partition.window_offset_col(
+                                    name,
+                                    BoundExpr::new_unchecked(input.clone()),
+                                    *offset,
+                                    default.clone().map(BoundExpr::new_unchecked),
+                                ),
+                                WindowExpr::FirstValue(_, _) | WindowExpr::LastValue(_, _) => {
+                                    unreachable!("first_value/last_value require a frame and cannot appear in a partition+order_by-only window")
+                                }
+                            }
+                        })
+                        .collect::<DaftResult<_>>()?;
+
+                    if new_cols.is_empty() {
+                        Ok(partition)
+                    } else {
+                        partition.union(&RecordBatch::from_nonempty_columns(new_cols)?)
+                    }
+                })
+                .collect::<DaftResult<_>>()?;
+
+            RecordBatch::concat(&grouped_results)
+        };
+
         spawner
             .spawn(
-                async move {
-                    let mut state_iters = states
-                        .into_iter()
-                        .map(|mut state| state.finalize(params.name()).into_iter())
-                        .collect::<Vec<_>>();
-
-                    let mut per_partition_tasks = tokio::task::JoinSet::new();
-
-                    for _partition_idx in 0..num_partitions {
-                        let per_partition_state = state_iters.iter_mut().map(|state| {
-                            state
-                                .next()
-                                .expect("WindowBaseState should have SinglePartitionWindowState")
-                        });
-
-                        let all_partitions: Vec<RecordBatch> = per_partition_state
-                            .flatten()
-                            .flat_map(|state| state.partitions)
-                            .collect();
-
-                        if all_partitions.is_empty() {
-                            continue;
-                        }
-
-                        let params = params.clone();
-
-                        if params.partition_by.is_empty() {
-                            return Err(DaftError::ValueError(
-                                "Partition by cannot be empty for window functions".into(),
-                            ));
-                        }
-
-                        per_partition_tasks.spawn(async move {
-                            let groups =
-                                partition_into_groups(&all_partitions, &params.partition_by)?;
-                            let full_data = {
-                                let batches = all_partitions;
-                                RecordBatch::concat(&batches)?
-                            };
-                            let partitions = sort_and_materialize_groups(
-                                groups,
-                                full_data,
-                                &params.order_by,
-                                &params.descending,
-                                &params.nulls_first,
-                            )?;
-
-                            if partitions.is_empty() {
-                                return Ok(RecordBatch::empty(Some(
-                                    params.original_schema.clone(),
-                                )));
-                            }
-
-                            let grouped_results: Vec<RecordBatch> = partitions
-                                .into_iter()
-                                .map(|partition| -> DaftResult<RecordBatch> {
-                                    let new_cols: Vec<Series> = params
-                                        .window_exprs
-                                        .iter()
-                                        .zip(params.aliases.iter())
-                                        .map(|(window_expr, name)| -> DaftResult<Series> {
-                                            match window_expr.as_ref() {
-                                                WindowExpr::Agg(agg_expr) => {
-                                                    let agg = partition.eval_expression(
-                                                        &BoundExpr::new_unchecked(Arc::new(
-                                                            Expr::Agg(agg_expr.clone()),
-                                                        )),
-                                                    )?;
-                                                    Ok(agg.broadcast(partition.len())?.rename(name))
-                                                }
-                                                WindowExpr::RowNumber => {
-                                                    partition.window_row_number_col(name)
-                                                }
-                                                WindowExpr::Rank => partition.window_rank_col(
-                                                    name,
-                                                    &params.order_by,
-                                                    false,
-                                                ),
-                                                WindowExpr::DenseRank => partition.window_rank_col(
-                                                    name,
-                                                    &params.order_by,
-                                                    true,
-                                                ),
-                                                WindowExpr::Offset {
-                                                    input,
-                                                    offset,
-                                                    default,
-                                                } => partition.window_offset_col(
-                                                    name,
-                                                    BoundExpr::new_unchecked(input.clone()),
-                                                    *offset,
-                                                    default.clone().map(BoundExpr::new_unchecked),
-                                                ),
-                                                WindowExpr::FirstValue(_, _)
-                                                | WindowExpr::LastValue(_, _) => {
-                                                    unreachable!("first_value/last_value require a frame and cannot appear in a partition+order_by-only window")
-                                                }
-                                            }
-                                        })
-                                        .collect::<DaftResult<_>>()?;
-
-                                    if new_cols.is_empty() {
-                                        Ok(partition)
-                                    } else {
-                                        partition
-                                            .union(&RecordBatch::from_nonempty_columns(new_cols)?)
-                                    }
-                                })
-                                .collect::<DaftResult<_>>()?;
-
-                            RecordBatch::concat(&grouped_results)
-                        });
-                    }
-
-                    let results = per_partition_tasks
-                        .join_all()
-                        .await
-                        .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
-
-                    if results.is_empty() {
-                        let empty_result =
-                            MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
-                    }
-
-                    let final_result = MicroPartition::new_loaded(
-                        params.original_schema.clone(),
-                        results.into(),
-                        None,
-                    );
-                    Ok(BlockingSinkOutput::Partitions(vec![final_result]))
-                },
+                finalize_partitioned_windows(states, num_partitions, schema, compute),
                 Span::current(),
             )
             .into()
@@ -299,6 +250,10 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        WindowBaseState::make_base_state(self.num_partitions())
+        WindowBaseState::make_base_state(
+            self.num_partitions(),
+            window_spill_dirs(&self.spill_config),
+            self.budget_per_bucket,
+        )
     }
 }

@@ -50,7 +50,6 @@ use crate::{
     join::{
         AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, NestedLoopJoinOperator,
         SortMergeJoinOperator,
-        spill::SpillConfig,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -74,6 +73,7 @@ use crate::{
         glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
         shuffle_read::ShuffleReadSource, source::SourceNode,
     },
+    spill::SpillConfig,
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
@@ -437,6 +437,24 @@ pub fn translate_physical_plan_to_pipeline(
     Ok((pipeline_node, input_senders))
 }
 
+/// Resolve a blocking-sink spill threshold (bytes). `explicit` is the user override:
+/// `Some(0)` disables spilling, `Some(n)` sets an explicit threshold, `None` auto-derives ~30% of
+/// the engine memory budget divided across `divisor` concurrent buffers (floored at 64 MiB).
+fn auto_spill_threshold(explicit: Option<usize>, divisor: usize) -> Option<usize> {
+    const SPILL_FRACTION: f64 = 0.3;
+    const MIN_THRESHOLD_BYTES: usize = 64 * 1024 * 1024;
+    match explicit {
+        Some(0) => None,
+        Some(n) => Some(n),
+        None => {
+            let total = crate::resource_manager::get_or_init_memory_manager().total_bytes();
+            let derived =
+                ((total as f64 * SPILL_FRACTION) as usize / divisor.max(1)).max(MIN_THRESHOLD_BYTES);
+            Some(derived)
+        }
+    }
+}
+
 fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
@@ -524,11 +542,18 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_partition_only_sink =
-                WindowPartitionOnlySink::new(aggregations, aliases, partition_by, schema)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
+                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let window_partition_only_sink = WindowPartitionOnlySink::new(
+                aggregations,
+                aliases,
+                partition_by,
+                schema,
+                window_spill,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(
                 Arc::new(window_partition_only_sink),
                 input_node,
@@ -551,6 +576,8 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
+                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
             let window_partition_and_order_by_sink = WindowPartitionAndOrderBySink::new(
                 functions,
                 aliases,
@@ -559,6 +586,7 @@ fn physical_plan_to_pipeline(
                 descending,
                 nulls_first,
                 schema,
+                window_spill,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -587,6 +615,8 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
+                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
                 functions,
                 *min_periods,
@@ -597,6 +627,7 @@ fn physical_plan_to_pipeline(
                 nulls_first,
                 frame,
                 schema,
+                window_spill,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -947,10 +978,14 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg)
-                .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            // Total spill budget for the operator; split across hash buckets inside the sink.
+            let spill_config = auto_spill_threshold(cfg.agg_spill_threshold_bytes, 1)
+                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let agg_sink =
+                GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg, spill_config)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
             BlockingSinkNode::new(
                 Arc::new(agg_sink),
                 child_node,
@@ -1045,7 +1080,17 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
+            // Sort runs in a single state, so the whole budget is for one buffer.
+            let spill_config = auto_spill_threshold(cfg.sort_spill_threshold_bytes, 1)
+                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let sort_sink = SortSink::new(
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                input.schema().clone(),
+                spill_config,
+                cfg.default_morsel_size.get(),
+            );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(
                 Arc::new(sort_sink),

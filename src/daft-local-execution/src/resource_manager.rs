@@ -76,6 +76,12 @@ impl MemoryManager {
         }
     }
 
+    /// Total memory budget (bytes) the engine is allowed to use, from `DAFT_MEMORY_LIMIT` or
+    /// system memory. Used to auto-derive spill thresholds for blocking sinks.
+    pub fn total_bytes(&self) -> u64 {
+        self.total_bytes
+    }
+
     pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit<'_>> {
         if bytes == 0 {
             return Ok(MemoryPermit {

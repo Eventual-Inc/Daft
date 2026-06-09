@@ -25,9 +25,9 @@ use crate::{
             finalize_left, finalize_right, probe_left_right, probe_left_right_with_bitmap,
         },
         outer_join::{finalize_outer, probe_outer},
-        spill::{JoinSpillStore, JoinSpillWriter, SpillConfig},
     },
     pipeline::NodeName,
+    spill::{SpillConfig, SpillStore, SpillWriter},
 };
 
 // ─── Build state ─────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ struct PartitionedBuildData {
     per_partition_tables: Vec<Vec<RecordBatch>>,
     per_partition_size_bytes: Vec<usize>,
     threshold_per_partition: usize,
-    spill_writer: JoinSpillWriter,
+    spill_writer: SpillWriter,
 }
 
 pub(crate) struct HashJoinBuildState {
@@ -53,7 +53,7 @@ pub(crate) struct HashJoinBuildState {
 #[derive(Clone)]
 pub(crate) struct SpillableProbeState {
     pub in_memory_probes: Vec<Option<ProbeState>>,
-    pub spill_store: Option<Arc<JoinSpillStore>>,
+    pub spill_store: Option<Arc<SpillStore>>,
     pub partition_count: usize,
     pub params: Arc<HashJoinParams>,
 }
@@ -68,7 +68,7 @@ pub(crate) struct HashJoinProbeState {
     pub(crate) in_memory_probes: Vec<Option<ProbeState>>,
     pub(crate) in_memory_bitmap_builders: Vec<Option<IndexBitmapBuilder>>,
     pub(crate) probe_spill_buffers: Vec<Vec<RecordBatch>>,
-    pub(crate) spill_store: Option<Arc<JoinSpillStore>>,
+    pub(crate) spill_store: Option<Arc<SpillStore>>,
     pub(crate) partition_count: usize,
 }
 
@@ -100,8 +100,12 @@ impl HashJoinBuildState {
     ) -> DaftResult<Self> {
         let partition_count = config.partition_count();
         let threshold_per_partition = (config.threshold_bytes / partition_count).max(1);
-        let spill_writer =
-            JoinSpillWriter::new(partition_count, build_schema, config.spill_dirs.clone())?;
+        let spill_writer = SpillWriter::new(
+            partition_count,
+            build_schema,
+            config.spill_dirs.clone(),
+            "daft_join_spill_",
+        )?;
         Ok(Self {
             probe_table_builder: make_probeable_builder(
                 key_schema.clone(),
@@ -599,7 +603,7 @@ impl JoinOperator for HashJoinOperator {
                             if !store.is_spilled(p) {
                                 continue;
                             }
-                            let build_batches = store.read_build_partition(p)?;
+                            let build_batches = store.read_bucket(p)?;
                             if build_batches.is_empty() {
                                 continue;
                             }
