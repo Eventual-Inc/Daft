@@ -1,5 +1,4 @@
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
-use common_error::DaftResult;
 
 /// Infer an arrow-rs schema from arrow-rs parquet metadata, with optional post-processing
 /// for INT96 timestamp coercion and raw string encoding.
@@ -23,328 +22,151 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
     if let Some(target_unit) = coerce_int96_timestamp_unit {
         let target_arrow_unit = target_unit.to_arrow();
         if target_arrow_unit != TimeUnit::Nanosecond {
-            let new_fields: Vec<Field> = arrow_schema
-                .fields()
-                .iter()
-                .map(|f| coerce_timestamp_field(f.as_ref(), &target_arrow_unit))
-                .collect();
-            arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
+            arrow_schema = transform_schema(&arrow_schema, &|dt| match dt {
+                DataType::Timestamp(TimeUnit::Nanosecond, tz) => {
+                    Some(DataType::Timestamp(target_arrow_unit, tz.clone()))
+                }
+                _ => None,
+            });
         }
     }
 
     // Post-process: convert string types to binary if raw encoding is requested
     if string_encoding_raw {
-        let new_fields: Vec<Field> = arrow_schema
-            .fields()
-            .iter()
-            .map(|f| coerce_strings_to_binary_field(f.as_ref()))
-            .collect();
-        arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
+        arrow_schema = transform_schema(&arrow_schema, &|dt| match dt {
+            DataType::Utf8 => Some(DataType::Binary),
+            DataType::LargeUtf8 => Some(DataType::LargeBinary),
+            _ => None,
+        });
     }
 
     // Post-process: strip dictionary encoding. Arrow-rs parquet reader can infer
     // Dictionary(Int32, Utf8) etc. for dictionary-encoded columns. Daft doesn't
     // support dictionary types, so unwrap to the value type.
     // This must run before large-offset promotion so Dictionary(_, Utf8) → Utf8 → LargeUtf8.
-    {
-        let new_fields: Vec<Field> = arrow_schema
-            .fields()
-            .iter()
-            .map(|f| strip_dictionary_field(f.as_ref()))
-            .collect();
-        arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
-    }
+    // Uses its own walker (not `transform_schema`) because unwrapping a Dictionary can
+    // expose nested containers whose children may themselves be Dictionary — e.g.
+    // `Dictionary<List<Dictionary<Utf8>>>`. The generic helper short-circuits after the
+    // outer rewrite and would leave the inner Dictionary intact.
+    arrow_schema = strip_dictionaries_schema(&arrow_schema);
 
     // Post-process: promote small-offset types to large-offset types.
     // Arrow-rs parquet reader produces Utf8/Binary/List (i32 offsets) by default,
     // but Daft expects LargeUtf8/LargeBinary/LargeList (i64 offsets).
     // By putting the large types in the schema we pass to ArrowReaderOptions::with_schema(),
     // arrow-rs will produce the large types directly, avoiding a post-decode cast.
-    {
-        let new_fields: Vec<Field> = arrow_schema
-            .fields()
-            .iter()
-            .map(|f| promote_to_large_offsets_field(f.as_ref()))
-            .collect();
-        arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
-    }
+    //
+    // arrow-rs `with_schema()` can promote Utf8→LargeUtf8 and Binary→LargeBinary,
+    // but does NOT support List→LargeList coercion — so we keep List containers as-is
+    // and only promote their inner element types. Daft's ListArray::from_arrow handles
+    // i32→i64 offset widening transparently.
+    arrow_schema = transform_schema(&arrow_schema, &|dt| match dt {
+        DataType::Utf8 => Some(DataType::LargeUtf8),
+        DataType::Binary => Some(DataType::LargeBinary),
+        _ => None,
+    });
 
     Ok(arrow_schema)
 }
 
-/// Recursively coerce all `Timestamp(Nanosecond, tz)` fields to `Timestamp(target_unit, tz)`.
-fn coerce_timestamp_field(field: &Field, target_unit: &TimeUnit) -> Field {
-    let new_dtype = coerce_timestamp_datatype(field.data_type(), target_unit);
-    match new_dtype {
-        Some(dt) => field.as_ref().clone().with_data_type(dt),
-        None => field.as_ref().clone(),
-    }
+/// Recursively strip `Dictionary(_, value)` anywhere in the schema, descending through
+/// containers so nested dicts inside the unwrapped value get stripped too.
+fn strip_dictionaries_schema(schema: &Schema) -> Schema {
+    let new_fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .map(|f| strip_dictionaries_field(f.as_ref()))
+        .collect();
+    Schema::new_with_metadata(new_fields, schema.metadata().clone())
 }
 
-fn coerce_timestamp_datatype(dtype: &DataType, target_unit: &TimeUnit) -> Option<DataType> {
+fn strip_dictionaries_field(field: &Field) -> Field {
+    field
+        .clone()
+        .with_data_type(strip_dictionaries_datatype(field.data_type()))
+}
+
+fn strip_dictionaries_datatype(dtype: &DataType) -> DataType {
     match dtype {
-        DataType::Timestamp(TimeUnit::Nanosecond, tz) => {
-            Some(DataType::Timestamp(*target_unit, tz.clone()))
-        }
-        DataType::List(inner) => {
-            let new_inner = coerce_timestamp_field(inner.as_ref(), target_unit);
-            if &new_inner != inner.as_ref() {
-                Some(DataType::List(new_inner.into()))
-            } else {
-                None
-            }
-        }
+        DataType::Dictionary(_, v) => strip_dictionaries_datatype(v),
+        DataType::List(inner) => DataType::List(strip_dictionaries_field(inner.as_ref()).into()),
         DataType::LargeList(inner) => {
-            let new_inner = coerce_timestamp_field(inner.as_ref(), target_unit);
-            if &new_inner != inner.as_ref() {
-                Some(DataType::LargeList(new_inner.into()))
-            } else {
-                None
-            }
+            DataType::LargeList(strip_dictionaries_field(inner.as_ref()).into())
         }
         DataType::FixedSizeList(inner, size) => {
-            let new_inner = coerce_timestamp_field(inner.as_ref(), target_unit);
-            if &new_inner != inner.as_ref() {
-                Some(DataType::FixedSizeList(new_inner.into(), *size))
-            } else {
-                None
-            }
+            DataType::FixedSizeList(strip_dictionaries_field(inner.as_ref()).into(), *size)
+        }
+        DataType::Map(inner, sorted) => {
+            DataType::Map(strip_dictionaries_field(inner.as_ref()).into(), *sorted)
         }
         DataType::Struct(fields) => {
             let new_fields: Vec<Field> = fields
                 .iter()
-                .map(|f| coerce_timestamp_field(f.as_ref(), target_unit))
+                .map(|f| strip_dictionaries_field(f.as_ref()))
                 .collect();
-            if new_fields
-                .iter()
-                .zip(fields.iter())
-                .any(|(a, b)| a != b.as_ref())
-            {
-                Some(DataType::Struct(new_fields.into()))
-            } else {
-                None
-            }
+            DataType::Struct(new_fields.into())
         }
-        DataType::Map(inner, sorted) => {
-            let new_inner = coerce_timestamp_field(inner.as_ref(), target_unit);
-            if &new_inner != inner.as_ref() {
-                Some(DataType::Map(new_inner.into(), *sorted))
-            } else {
-                None
-            }
-        }
-        _ => None,
+        other => other.clone(),
     }
 }
 
-/// Recursively promote small-offset types (Utf8, Binary, List) to large-offset
-/// types (LargeUtf8, LargeBinary, LargeList).
-fn promote_to_large_offsets_field(field: &Field) -> Field {
-    let new_dtype = promote_to_large_offsets_datatype(field.data_type());
-    match new_dtype {
-        Some(dt) => field.as_ref().clone().with_data_type(dt),
-        None => field.as_ref().clone(),
+/// Apply `transform` to every datatype in the schema. If `transform` returns `Some`,
+/// the result replaces the input type as-is (no further recursion into its children —
+/// the caller is responsible for producing a fully-transformed type). If it returns
+/// `None`, we recurse into nested children (List/LargeList/FixedSizeList/Struct/Map).
+fn transform_schema(schema: &Schema, transform: &impl Fn(&DataType) -> Option<DataType>) -> Schema {
+    let new_fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .map(|f| transform_field(f.as_ref(), transform))
+        .collect();
+    Schema::new_with_metadata(new_fields, schema.metadata().clone())
+}
+
+fn transform_field(field: &Field, transform: &impl Fn(&DataType) -> Option<DataType>) -> Field {
+    match transform_datatype(field.data_type(), transform) {
+        Some(dt) => field.clone().with_data_type(dt),
+        None => field.clone(),
     }
 }
 
-fn promote_to_large_offsets_datatype(dtype: &DataType) -> Option<DataType> {
+fn transform_datatype(
+    dtype: &DataType,
+    transform: &impl Fn(&DataType) -> Option<DataType>,
+) -> Option<DataType> {
+    if let Some(new_dt) = transform(dtype) {
+        return Some(new_dt);
+    }
     match dtype {
-        DataType::Utf8 => Some(DataType::LargeUtf8),
-        DataType::Binary => Some(DataType::LargeBinary),
         DataType::List(inner) => {
-            // arrow-rs with_schema() can promote Utf8→LargeUtf8 and Binary→LargeBinary,
-            // but does NOT support List→LargeList coercion. So keep the outer List and
-            // only promote inner types. Daft's ListArray::from_arrow handles i32→i64
-            // offset widening transparently.
-            let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::List(new_inner.into()))
-            } else {
-                None
-            }
+            let new_inner = transform_field(inner.as_ref(), transform);
+            (&new_inner != inner.as_ref()).then(|| DataType::List(new_inner.into()))
         }
         DataType::LargeList(inner) => {
-            let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::LargeList(new_inner.into()))
-            } else {
-                None
-            }
+            let new_inner = transform_field(inner.as_ref(), transform);
+            (&new_inner != inner.as_ref()).then(|| DataType::LargeList(new_inner.into()))
+        }
+        DataType::FixedSizeList(inner, size) => {
+            let new_inner = transform_field(inner.as_ref(), transform);
+            (&new_inner != inner.as_ref()).then(|| DataType::FixedSizeList(new_inner.into(), *size))
+        }
+        DataType::Map(inner, sorted) => {
+            let new_inner = transform_field(inner.as_ref(), transform);
+            (&new_inner != inner.as_ref()).then(|| DataType::Map(new_inner.into(), *sorted))
         }
         DataType::Struct(fields) => {
             let new_fields: Vec<Field> = fields
                 .iter()
-                .map(|f| promote_to_large_offsets_field(f.as_ref()))
+                .map(|f| transform_field(f.as_ref(), transform))
                 .collect();
-            if new_fields
+            new_fields
                 .iter()
                 .zip(fields.iter())
                 .any(|(a, b)| a != b.as_ref())
-            {
-                Some(DataType::Struct(new_fields.into()))
-            } else {
-                None
-            }
-        }
-        DataType::Map(inner, sorted) => {
-            let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::Map(new_inner.into(), *sorted))
-            } else {
-                None
-            }
-        }
-        DataType::FixedSizeList(inner, size) => {
-            let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::FixedSizeList(new_inner.into(), *size))
-            } else {
-                None
-            }
+                .then(|| DataType::Struct(new_fields.into()))
         }
         _ => None,
     }
-}
-
-/// Recursively strip dictionary encoding, replacing `Dictionary(_, value_type)` with `value_type`.
-fn strip_dictionary_field(field: &Field) -> Field {
-    let new_dtype = strip_dictionary_datatype(field.data_type());
-    match new_dtype {
-        Some(dt) => field.as_ref().clone().with_data_type(dt),
-        None => field.as_ref().clone(),
-    }
-}
-
-fn strip_dictionary_datatype(dtype: &DataType) -> Option<DataType> {
-    match dtype {
-        DataType::Dictionary(_, value_type) => {
-            // Recursively strip in case the value type itself contains dictionaries
-            let inner =
-                strip_dictionary_datatype(value_type).unwrap_or_else(|| *value_type.clone());
-            Some(inner)
-        }
-        DataType::List(inner) => {
-            let new_inner = strip_dictionary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::List(new_inner.into()))
-            } else {
-                None
-            }
-        }
-        DataType::LargeList(inner) => {
-            let new_inner = strip_dictionary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::LargeList(new_inner.into()))
-            } else {
-                None
-            }
-        }
-        DataType::FixedSizeList(inner, size) => {
-            let new_inner = strip_dictionary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::FixedSizeList(new_inner.into(), *size))
-            } else {
-                None
-            }
-        }
-        DataType::Struct(fields) => {
-            let new_fields: Vec<Field> = fields
-                .iter()
-                .map(|f| strip_dictionary_field(f.as_ref()))
-                .collect();
-            if new_fields
-                .iter()
-                .zip(fields.iter())
-                .any(|(a, b)| a != b.as_ref())
-            {
-                Some(DataType::Struct(new_fields.into()))
-            } else {
-                None
-            }
-        }
-        DataType::Map(inner, sorted) => {
-            let new_inner = strip_dictionary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::Map(new_inner.into(), *sorted))
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Recursively convert all Utf8/LargeUtf8 fields to Binary/LargeBinary.
-fn coerce_strings_to_binary_field(field: &Field) -> Field {
-    let new_dtype = coerce_strings_to_binary_datatype(field.data_type());
-    match new_dtype {
-        Some(dt) => field.as_ref().clone().with_data_type(dt),
-        None => field.as_ref().clone(),
-    }
-}
-
-fn coerce_strings_to_binary_datatype(dtype: &DataType) -> Option<DataType> {
-    match dtype {
-        DataType::Utf8 => Some(DataType::Binary),
-        DataType::LargeUtf8 => Some(DataType::LargeBinary),
-        DataType::List(inner) => {
-            let new_inner = coerce_strings_to_binary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::List(new_inner.into()))
-            } else {
-                None
-            }
-        }
-        DataType::LargeList(inner) => {
-            let new_inner = coerce_strings_to_binary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::LargeList(new_inner.into()))
-            } else {
-                None
-            }
-        }
-        DataType::FixedSizeList(inner, size) => {
-            let new_inner = coerce_strings_to_binary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::FixedSizeList(new_inner.into(), *size))
-            } else {
-                None
-            }
-        }
-        DataType::Struct(fields) => {
-            let new_fields: Vec<Field> = fields
-                .iter()
-                .map(|f| coerce_strings_to_binary_field(f.as_ref()))
-                .collect();
-            if new_fields
-                .iter()
-                .zip(fields.iter())
-                .any(|(a, b)| a != b.as_ref())
-            {
-                Some(DataType::Struct(new_fields.into()))
-            } else {
-                None
-            }
-        }
-        DataType::Map(inner, sorted) => {
-            let new_inner = coerce_strings_to_binary_field(inner.as_ref());
-            if &new_inner != inner.as_ref() {
-                Some(DataType::Map(new_inner.into(), *sorted))
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Convert an arrow-rs `Schema` to a Daft `Schema`.
-///
-/// This uses the existing `TryFrom<&arrow_schema::Schema>` implementation on `daft_core::prelude::Schema`.
-pub fn arrow_schema_to_daft_schema(
-    arrow_schema: &Schema,
-) -> DaftResult<daft_core::prelude::Schema> {
-    daft_core::prelude::Schema::try_from(arrow_schema)
 }
 
 #[cfg(test)]
@@ -374,12 +196,12 @@ mod tests {
         ]);
 
         let target = TimeUnit::Microsecond;
-        let new_fields: Vec<Field> = schema
-            .fields()
-            .iter()
-            .map(|f| coerce_timestamp_field(f.as_ref(), &target))
-            .collect();
-        let result = Schema::new(new_fields);
+        let result = transform_schema(&schema, &|dt| match dt {
+            DataType::Timestamp(TimeUnit::Nanosecond, tz) => {
+                Some(DataType::Timestamp(target, tz.clone()))
+            }
+            _ => None,
+        });
 
         assert_eq!(
             result.field(0).data_type(),
@@ -396,6 +218,14 @@ mod tests {
         );
     }
 
+    fn strings_to_binary_leaf(dt: &DataType) -> Option<DataType> {
+        match dt {
+            DataType::Utf8 => Some(DataType::Binary),
+            DataType::LargeUtf8 => Some(DataType::LargeBinary),
+            _ => None,
+        }
+    }
+
     #[test]
     fn test_coerce_strings_to_binary() {
         let schema = Schema::new(vec![
@@ -403,13 +233,7 @@ mod tests {
             Field::new("ls", DataType::LargeUtf8, true),
             Field::new("i", DataType::Int32, true),
         ]);
-
-        let new_fields: Vec<Field> = schema
-            .fields()
-            .iter()
-            .map(|f| coerce_strings_to_binary_field(f.as_ref()))
-            .collect();
-        let result = Schema::new(new_fields);
+        let result = transform_schema(&schema, &strings_to_binary_leaf);
 
         assert_eq!(result.field(0).data_type(), &DataType::Binary);
         assert_eq!(result.field(1).data_type(), &DataType::LargeBinary);
@@ -430,12 +254,12 @@ mod tests {
         )]);
 
         let target = TimeUnit::Millisecond;
-        let new_fields: Vec<Field> = schema
-            .fields()
-            .iter()
-            .map(|f| coerce_timestamp_field(f.as_ref(), &target))
-            .collect();
-        let result = Schema::new(new_fields);
+        let result = transform_schema(&schema, &|dt| match dt {
+            DataType::Timestamp(TimeUnit::Nanosecond, tz) => {
+                Some(DataType::Timestamp(target, tz.clone()))
+            }
+            _ => None,
+        });
 
         match result.field(0).data_type() {
             DataType::List(inner) => {
@@ -459,13 +283,7 @@ mod tests {
             DataType::Struct(struct_fields.into()),
             true,
         )]);
-
-        let new_fields: Vec<Field> = schema
-            .fields()
-            .iter()
-            .map(|f| coerce_strings_to_binary_field(f.as_ref()))
-            .collect();
-        let result = Schema::new(new_fields);
+        let result = transform_schema(&schema, &strings_to_binary_leaf);
 
         match result.field(0).data_type() {
             DataType::Struct(fields) => {
@@ -495,13 +313,7 @@ mod tests {
                 true,
             ),
         ]);
-
-        let new_fields: Vec<Field> = schema
-            .fields()
-            .iter()
-            .map(|f| strip_dictionary_field(f.as_ref()))
-            .collect();
-        let result = Schema::new(new_fields);
+        let result = strip_dictionaries_schema(&schema);
 
         assert_eq!(result.field(0).data_type(), &DataType::Utf8);
         assert_eq!(result.field(1).data_type(), &DataType::Int32);
@@ -514,15 +326,24 @@ mod tests {
     }
 
     #[test]
-    fn test_arrow_schema_to_daft_schema() {
-        let schema = Schema::new(vec![
-            Field::new("a", DataType::Int32, true),
-            Field::new("b", DataType::Utf8, true),
-        ]);
+    fn test_strip_dictionary_nested_in_value_type() {
+        // Dictionary<Int32, List<Dictionary<Int8, Utf8>>> — the inner Dictionary lives
+        // inside the outer Dictionary's value type. Stripping must descend through the
+        // unwrapped List to remove it.
+        let inner_dict = DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8));
+        let outer = DataType::Dictionary(
+            Box::new(DataType::Int32),
+            Box::new(DataType::List(Arc::new(Field::new(
+                "item", inner_dict, true,
+            )))),
+        );
+        let schema = Schema::new(vec![Field::new("col", outer, true)]);
 
-        let daft_schema = arrow_schema_to_daft_schema(&schema).unwrap();
-        assert_eq!(daft_schema.len(), 2);
-        assert_eq!(&*daft_schema.fields()[0].name, "a");
-        assert_eq!(&*daft_schema.fields()[1].name, "b");
+        let result = strip_dictionaries_schema(&schema);
+
+        match result.field(0).data_type() {
+            DataType::List(inner) => assert_eq!(inner.data_type(), &DataType::Utf8),
+            other => panic!("Expected List, got {:?}", other),
+        }
     }
 }

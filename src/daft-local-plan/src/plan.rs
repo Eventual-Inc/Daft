@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, LockResult},
 };
 
@@ -23,7 +23,6 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +33,17 @@ pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
     pub phase: Option<String>,
     pub additional: Option<HashMap<String, String>>,
+    /// True iff this node is the root of its enclosing task's local plan; its
+    /// rows.out/bytes.out is the task's external output. Set by
+    /// `LocalPhysicalPlan::mark_task_topology` on the driver before the plan
+    /// ships to a worker.
+    #[serde(default)]
+    pub is_task_root: bool,
+    /// True iff this node is a leaf of its enclosing task's local plan; its
+    /// rows.in/bytes.in is the task's external input. Set by
+    /// `LocalPhysicalPlan::mark_task_topology`.
+    #[serde(default)]
+    pub is_task_leaf: bool,
 }
 
 impl LocalNodeContext {
@@ -42,6 +52,8 @@ impl LocalNodeContext {
             origin_node_id,
             phase: None,
             additional: None,
+            is_task_root: false,
+            is_task_leaf: false,
         }
     }
 
@@ -76,6 +88,7 @@ pub enum LocalPhysicalPlan {
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    StageCheckpointKeys(StageCheckpointKeys),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -108,11 +121,14 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
+    GatherWrite(GatherWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     AsofJoin(AsofJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
+    #[cfg(feature = "python")]
+    DistributedLimit(DistributedLimit),
     VLLMProject(VLLMProject),
 }
 #[cfg(not(debug_assertions))]
@@ -130,8 +146,13 @@ impl LocalPhysicalPlan {
     }
 
     #[must_use]
-    pub fn arced(self) -> LocalPhysicalPlanRef {
-        self.into()
+    pub fn arced(mut self) -> LocalPhysicalPlanRef {
+        // `is_task_leaf` is intrinsic to the node (does it have children?), so
+        // we set it once here on the way to Arc-wrapping. Every constructor
+        // funnels through `arced()`, so this catches every node creation —
+        // including reconstruction via `with_new_children`.
+        self.context_mut().is_task_leaf = self.children().is_empty();
+        Arc::new(self)
     }
 
     pub fn get_stats_state(&self) -> &StatsState {
@@ -151,6 +172,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
             | Self::HashAggregate(HashAggregate { stats_state, .. })
             | Self::Dedup(Dedup { stats_state, .. })
@@ -164,6 +186,7 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
+            | Self::GatherWrite(GatherWrite { stats_state, .. })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -179,6 +202,7 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject {
                 stats_state, ..
             })
+            | Self::DistributedLimit(DistributedLimit { stats_state, .. })
             | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
@@ -201,6 +225,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { context, .. })
             | Self::Sample(Sample { context, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { context, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
             | Self::HashAggregate(HashAggregate { context, .. })
             | Self::Dedup(Dedup { context, .. })
@@ -214,6 +239,7 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -227,8 +253,74 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
+    }
+
+    pub fn context_mut(&mut self) -> &mut LocalNodeContext {
+        match self {
+            Self::InMemoryScan(InMemoryScan { context, .. })
+            | Self::PhysicalScan(PhysicalScan { context, .. })
+            | Self::GlobScan(GlobScan { context, .. })
+            | Self::PlaceholderScan(PlaceholderScan { context, .. })
+            | Self::Project(Project { context, .. })
+            | Self::UDFProject(UDFProject { context, .. })
+            | Self::Filter(Filter { context, .. })
+            | Self::IntoBatches(IntoBatches { context, .. })
+            | Self::Limit(Limit { context, .. })
+            | Self::Explode(Explode { context, .. })
+            | Self::Unpivot(Unpivot { context, .. })
+            | Self::Sort(Sort { context, .. })
+            | Self::TopN(TopN { context, .. })
+            | Self::Sample(Sample { context, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { context, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
+            | Self::HashAggregate(HashAggregate { context, .. })
+            | Self::Dedup(Dedup { context, .. })
+            | Self::Pivot(Pivot { context, .. })
+            | Self::Concat(Concat { context, .. })
+            | Self::HashJoin(HashJoin { context, .. })
+            | Self::CrossJoin(CrossJoin { context, .. })
+            | Self::SortMergeJoin(SortMergeJoin { context, .. })
+            | Self::AsofJoin(AsofJoin { context, .. })
+            | Self::PhysicalWrite(PhysicalWrite { context, .. })
+            | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::IntoPartitions(IntoPartitions { context, .. })
+            | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
+            | Self::ShuffleRead(ShuffleRead { context, .. })
+            | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
+            | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
+            | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                context,
+                ..
+            })
+            | Self::VLLMProject(VLLMProject { context, .. }) => context,
+            Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite { context, .. })
+            | Self::LanceWrite(LanceWrite { context, .. })
+            | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
+            | Self::DataSink(DataSink { context, .. }) => context,
+        }
+    }
+
+    /// Mark this node as the root of its enclosing task's local plan, so
+    /// consumers of `StatSnapshot`s can attribute external `rows.out` /
+    /// `bytes.out` to it (vs. internal flow between fused operators).
+    /// `is_task_leaf` is already set at construction time by [`Self::arced`].
+    ///
+    /// Called from `SwordfishTaskBuilder::build` where the builder owns the
+    /// only Arc to the plan, so we mutate the context in place.
+    pub fn mark_task_root(mut self: LocalPhysicalPlanRef) -> LocalPhysicalPlanRef {
+        Arc::get_mut(&mut self)
+            .expect("SwordfishTaskBuilder must own the only Arc to its plan at build time")
+            .context_mut()
+            .is_task_root = true;
+        self
     }
 
     pub fn physical_scan(
@@ -309,6 +401,23 @@ impl LocalPhysicalPlan {
         Self::Filter(Filter {
             input,
             predicate,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn stage_checkpoint_keys(
+        input: LocalPhysicalPlanRef,
+        checkpoint_config: common_checkpoint_config::CheckpointConfig,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::StageCheckpointKeys(StageCheckpointKeys {
+            input,
+            checkpoint_config,
             schema,
             stats_state,
             context,
@@ -439,6 +548,28 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
+
+    #[cfg(feature = "python")]
+    pub fn distributed_limit(
+        input: LocalPhysicalPlanRef,
+        actor_object: PyObjectWrapper,
+        limit: u64,
+        offset: Option<u64>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::DistributedLimit(DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
     pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
@@ -552,7 +683,7 @@ impl LocalPhysicalPlan {
         min_periods: usize,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<BoundAggExpr>,
+        functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -566,7 +697,7 @@ impl LocalPhysicalPlan {
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         })
@@ -815,6 +946,7 @@ impl LocalPhysicalPlan {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -826,6 +958,7 @@ impl LocalPhysicalPlan {
             right_by,
             left_on,
             right_on,
+            strategy,
             schema,
             stats_state,
             context,
@@ -949,6 +1082,7 @@ impl LocalPhysicalPlan {
     pub fn into_partitions(
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
+        backend: ShuffleBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -957,6 +1091,7 @@ impl LocalPhysicalPlan {
             input,
             num_partitions,
             schema,
+            backend,
             stats_state,
             context,
         })
@@ -989,7 +1124,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
         schema: SchemaRef,
-        backend: RepartitionWriteBackend,
+        backend: ShuffleBackend,
         repartition_spec: RepartitionSpec,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -1000,6 +1135,23 @@ impl LocalPhysicalPlan {
             schema,
             backend,
             repartition_spec,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn gather_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        backend: ShuffleBackend,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::GatherWrite(GatherWrite {
+            input,
+            schema,
+            backend,
             stats_state,
             context,
         })
@@ -1048,6 +1200,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { schema, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1065,8 +1218,11 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
+            Self::GatherWrite(GatherWrite { schema, .. }) => schema,
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1124,6 +1280,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { input, .. })
             | Self::Concat(Concat { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { input, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { input, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { input, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1148,8 +1305,11 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
+            Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
@@ -1377,6 +1537,16 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                Self::StageCheckpointKeys(StageCheckpointKeys {
+                    checkpoint_config,
+                    context,
+                    ..
+                }) => Self::stage_checkpoint_keys(
+                    new_child.clone(),
+                    checkpoint_config.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::WindowPartitionOnly(WindowPartitionOnly {
                     partition_by,
                     schema,
@@ -1423,7 +1593,7 @@ impl LocalPhysicalPlan {
                     frame,
                     min_periods,
                     schema,
-                    aggregations,
+                    functions,
                     aliases,
                     context,
                     ..
@@ -1437,7 +1607,7 @@ impl LocalPhysicalPlan {
                     *min_periods,
                     schema.clone(),
                     StatsState::NotMaterialized,
-                    aggregations.clone(),
+                    functions.clone(),
                     aliases.clone(),
                     context.clone(),
                 ),
@@ -1578,13 +1748,30 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
+                #[cfg(feature = "python")]
+                Self::DistributedLimit(DistributedLimit {
+                    actor_object,
+                    limit,
+                    offset,
+                    context,
+                    ..
+                }) => Self::distributed_limit(
+                    new_child.clone(),
+                    actor_object.clone(),
+                    *limit,
+                    *offset,
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
+                    backend,
                     context,
                     ..
                 }) => Self::into_partitions(
                     new_child.clone(),
                     *num_partitions,
+                    backend.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1618,6 +1805,18 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     backend.clone(),
                     repartition_spec.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::GatherWrite(GatherWrite {
+                    schema,
+                    backend,
+                    context,
+                    ..
+                }) => Self::gather_write(
+                    new_child.clone(),
+                    schema.clone(),
+                    backend.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1703,6 +1902,7 @@ impl LocalPhysicalPlan {
                     right_by,
                     left_on,
                     right_on,
+                    strategy,
                     schema,
                     stats_state,
                     context,
@@ -1714,6 +1914,7 @@ impl LocalPhysicalPlan {
                     right_by.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    *strategy,
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -1846,11 +2047,34 @@ pub struct DistributedActorPoolProject {
     pub context: LocalNodeContext,
 }
 
+#[cfg(feature = "python")]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct DistributedLimit {
+    pub input: LocalPhysicalPlanRef,
+    pub actor_object: PyObjectWrapper,
+    pub limit: u64,
+    pub offset: Option<u64>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: BoundExpr,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StageCheckpointKeys {
+    pub input: LocalPhysicalPlanRef,
+    pub checkpoint_config: common_checkpoint_config::CheckpointConfig,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -2051,6 +2275,7 @@ pub struct AsofJoin {
     pub right_by: Vec<BoundExpr>,
     pub left_on: BoundExpr,
     pub right_on: BoundExpr,
+    pub strategy: AsofJoinStrategy,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -2162,7 +2387,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub min_periods: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<BoundAggExpr>,
+    pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
     pub context: LocalNodeContext,
 }
@@ -2187,8 +2412,19 @@ pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShuffleBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2204,16 +2440,6 @@ pub struct VLLMProject {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum RepartitionWriteBackend {
-    Ray,
-    Flight {
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-    },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
     Flight,
@@ -2224,8 +2450,17 @@ pub struct RepartitionWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub schema: SchemaRef,
-    pub backend: RepartitionWriteBackend,
+    pub backend: ShuffleBackend,
     pub repartition_spec: RepartitionSpec,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GatherWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub backend: ShuffleBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -2239,7 +2474,114 @@ pub struct ShuffleRead {
     pub context: LocalNodeContext,
 }
 
+/// Fetch one output partition of a shuffle.
+///
+/// The exact refs to fetch (`(input_id << 32) | partition_idx`) are reconstructed
+/// from the map input ids that wrote data on each server. The map is shared (`Arc`)
+/// by all of a shuffle's reduce tasks, so the coordinator holds it once instead of
+/// one ref per (map input, partition).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub refs: Vec<FlightPartitionRef>,
+    pub shuffle_id: u64,
+    pub partition_idx: u32,
+    pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
+}
+
+#[cfg(test)]
+mod task_topology_tests {
+    use super::*;
+
+    fn scan() -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::in_memory_scan(
+            0,
+            Arc::new(Schema::empty()),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        )
+    }
+
+    fn limit(input: LocalPhysicalPlanRef, n: u64) -> LocalPhysicalPlanRef {
+        LocalPhysicalPlan::limit(
+            input,
+            n,
+            None,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        )
+    }
+
+    /// Constructors set `is_task_leaf` based on the node's children — leaves
+    /// (no children) get `true`, others get `false` — regardless of how the
+    /// caller-supplied `LocalNodeContext` was initialised.
+    #[test]
+    fn arced_sets_is_task_leaf_from_children() {
+        let leaf = scan();
+        assert!(leaf.context().is_task_leaf);
+        assert!(!leaf.context().is_task_root);
+
+        let intermediate = limit(scan(), 10);
+        assert!(!intermediate.context().is_task_leaf);
+        assert!(!intermediate.context().is_task_root);
+    }
+
+    /// Single-node task: marking the root keeps `is_task_leaf` true and adds
+    /// `is_task_root`.
+    #[test]
+    fn mark_task_root_on_leaf_keeps_leaf_flag() {
+        let tagged = scan().mark_task_root();
+        let ctx = tagged.context();
+        assert!(ctx.is_task_root);
+        assert!(ctx.is_task_leaf);
+    }
+
+    /// Linear chain: only the outermost node has `is_task_root`, only the
+    /// deepest has `is_task_leaf`.
+    #[test]
+    fn linear_chain_marks_root_and_single_leaf() {
+        let plan = limit(limit(scan(), 10), 5).mark_task_root();
+        // Outer limit (root)
+        assert!(plan.context().is_task_root);
+        assert!(!plan.context().is_task_leaf);
+        // Inner limit (intermediate)
+        let inner = &plan.children()[0];
+        assert!(!inner.context().is_task_root);
+        assert!(!inner.context().is_task_leaf);
+        // Scan (leaf)
+        let leaf = &inner.children()[0];
+        assert!(!leaf.context().is_task_root);
+        assert!(leaf.context().is_task_leaf);
+    }
+
+    /// Multi-leaf join shape: the join is the root, both scans are leaves,
+    /// neither scan is a root.
+    #[test]
+    fn multi_leaf_each_leaf_marked() {
+        let plan = LocalPhysicalPlan::cross_join(
+            scan(),
+            scan(),
+            Arc::new(Schema::empty()),
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        )
+        .mark_task_root();
+        assert!(plan.context().is_task_root);
+        assert!(!plan.context().is_task_leaf);
+        let children = plan.children();
+        assert_eq!(children.len(), 2);
+        for child in &children {
+            assert!(!child.context().is_task_root);
+            assert!(child.context().is_task_leaf);
+        }
+    }
+
+    /// `mark_task_root` requires sole Arc ownership and panics if shared,
+    /// because at task-build time the builder is the only owner.
+    #[test]
+    #[should_panic(expected = "must own the only Arc")]
+    fn mark_task_root_panics_on_shared_arc() {
+        let plan = scan();
+        let _retained = plan.clone();
+        let _ = plan.mark_task_root();
+    }
 }

@@ -10,7 +10,13 @@ use common_error::DaftResult;
 use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
-use daft_context::{DaftContext, Subscriber};
+use daft_context::{
+    DaftContext, Subscriber,
+    subscribers::{
+        Event, event_header,
+        events::{TaskInfo, TaskStartEvent},
+    },
+};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
@@ -69,7 +75,18 @@ fn get_global_runtime() -> &'static Handle {
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
-    unimplemented!("get_global_runtime is not implemented without python feature");
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build global tokio runtime for NativeExecutor");
+        let handle = rt.handle().clone();
+        // Keep the runtime alive for the duration of the process.
+        std::thread::spawn(move || {
+            rt.block_on(futures::future::pending::<()>());
+        });
+        handle
+    })
 }
 
 /// Message sent to the execution task to enqueue inputs
@@ -151,6 +168,7 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
+    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 #[cfg_attr(
@@ -265,7 +283,7 @@ impl PyNativeExecutor {
     }
 }
 
-fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
+fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option<u32>) {
     let query_id = ctx
         .as_ref()
         .and_then(|c| c.get("query_id"))
@@ -276,7 +294,22 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
         .and_then(|c| c.get("plan_fingerprint"))
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
-    (query_id, fingerprint)
+    let task_id = ctx
+        .as_ref()
+        .and_then(|c| c.get("task_id"))
+        .and_then(|s| s.parse::<u32>().ok());
+
+    (query_id, fingerprint, task_id)
+}
+
+// TODO: fix configuration for events
+// This is copied from task_lifecycle.rs to avoid the daft-distributed dependency
+pub fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_TASK_EVENTS_ENABLED=true
+    }
 }
 
 /// The core execution loop that drives a pipeline to completion.
@@ -359,7 +392,7 @@ async fn run_execution_loop(
     result
 }
 
-pub(crate) struct NativeExecutor {
+pub struct NativeExecutor {
     cancel: CancellationToken,
     is_flotilla_worker: bool,
     shuffle_server: Option<Arc<ShuffleFlightServer>>,
@@ -409,7 +442,37 @@ impl NativeExecutor {
         input_id: InputId,
         maintain_order: bool,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
-        let (query_id, fingerprint) = parse_context(additional_context.as_ref());
+        let (query_id, fingerprint, task_id) = parse_context(additional_context.as_ref());
+
+        if self.is_flotilla_worker {
+            debug_assert_eq!(
+                task_id,
+                Some(input_id),
+                "Flotilla invariant violated: task_id must match input_id"
+            );
+        }
+
+        let task_start_dispatch = if self.is_flotilla_worker
+            && task_events_enabled()
+            && let Some(task_id) = task_id
+        {
+            Some((
+                Event::TaskStart(TaskStartEvent {
+                    header: event_header(query_id.clone()),
+                    task: Arc::new(TaskInfo {
+                        id: task_id,
+                        last_node_id: 0,  // TODO: propagate last_node_id
+                        node_ids: vec![], // TODO: propagate node_ids
+                        plan_fingerprint: fingerprint as u32,
+                        name: None,
+                    }),
+                    worker_id: None, // TODO: propagate worker id
+                }),
+                subscribers.clone(),
+            ))
+        } else {
+            None
+        };
 
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
@@ -455,6 +518,7 @@ impl NativeExecutor {
                     enqueue_input_sender: enqueue_input_tx,
                     stats_handle,
                     active_input_ids: HashSet::new(),
+                    skipped_corrupt_files: ctx.skipped_corrupt_files.clone(),
                 },
             );
         }
@@ -477,6 +541,12 @@ impl NativeExecutor {
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
                 }
+
+                // Send the event after the task has been enqueued for execution
+                if let Some((event, subscribers)) = task_start_dispatch {
+                    dispatch_task_start_event(&subscribers, &event);
+                }
+
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
                 })
@@ -511,17 +581,30 @@ impl NativeExecutor {
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
                 plan_state.task_handle.await??;
+                let skipped = plan_state
+                    .skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
-                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                Ok(stats
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         } else {
             let stats_handle = plan_state.stats_handle.clone();
+            let skipped_corrupt_files = plan_state.skipped_corrupt_files.clone();
             Ok(async move {
+                let skipped = skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 Ok(stats_handle
                     .take_input_snapshot(input_id)
                     .await
-                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         }
@@ -587,6 +670,22 @@ pub struct ExecutionEngineResult {
 impl ExecutionEngineResult {
     async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
         self.receiver.recv().await
+    }
+
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
+            }
+        }
+        out
     }
 }
 
@@ -655,5 +754,13 @@ impl PyResultReceiver {
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
         })
+    }
+}
+
+fn dispatch_task_start_event(subscribers: &[Arc<dyn Subscriber>], event: &Event) {
+    for subscriber in subscribers {
+        if let Err(e) = subscriber.on_event(event.clone()) {
+            log::debug!("Failed to dispatch task start event: {}", e);
+        }
     }
 }

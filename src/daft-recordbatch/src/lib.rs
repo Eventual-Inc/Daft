@@ -47,7 +47,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableRecordBatch;
-pub use ops::{build_left_to_right_map, get_column_by_name, get_columns_by_name};
+pub use ops::{get_column_by_name, get_columns_by_name};
 pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_builder};
 
 #[cfg(feature = "python")]
@@ -99,6 +99,66 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
         }
     }
     Ok(())
+}
+
+fn unpack_struct_state(struct_series: &Series) -> DaftResult<Vec<Series>> {
+    let DataType::Struct(fields) = struct_series.data_type() else {
+        return Err(DaftError::InternalError(format!(
+            "Expected Struct series for AggFn state, got {}",
+            struct_series.data_type()
+        )));
+    };
+    fields
+        .iter()
+        .map(|f| struct_series.struct_get(&f.name))
+        .collect()
+}
+
+fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResult<Series> {
+    Ok(StructArray::new(struct_field, state_series, None).into_series())
+}
+
+fn empty_agg_struct(struct_field: &Field) -> Series {
+    let DataType::Struct(fields) = &struct_field.dtype else {
+        unreachable!("empty_agg_struct called with non-Struct field");
+    };
+    let children: Vec<Series> = fields
+        .iter()
+        .map(|f| Series::empty(&f.name, &f.dtype))
+        .collect();
+    StructArray::new(struct_field.clone(), children, None).into_series()
+}
+
+fn dispatch_per_group(
+    inputs: Vec<Series>,
+    groups: Option<&GroupIndices>,
+    f: impl Fn(Vec<Series>) -> DaftResult<Vec<Literal>> + Sync,
+) -> DaftResult<Vec<Series>> {
+    use daft_core::series::from_lit::series_from_literals_iter;
+    use rayon::prelude::*;
+
+    let group_lits: Vec<Vec<Literal>> = match groups {
+        None => vec![f(inputs)?],
+        Some(groups) => groups
+            .par_iter()
+            .map(|indices| {
+                let idx = UInt64Array::from_vec("", indices.iter().copied().collect());
+                let group_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|s| s.take(&idx))
+                    .collect::<DaftResult<_>>()?;
+                f(group_inputs)
+            })
+            .collect::<DaftResult<_>>()?,
+    };
+
+    if group_lits.is_empty() {
+        return Ok(vec![]);
+    }
+    let num_fields = group_lits[0].len();
+    (0..num_fields)
+        .map(|fi| series_from_literals_iter(group_lits.iter().map(|g| Ok(g[fi].clone())), None))
+        .collect()
 }
 
 impl RecordBatch {
@@ -543,7 +603,8 @@ impl RecordBatch {
         Self::concat(tables)
     }
 
-    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: impl AsRef<[T]>) -> DaftResult<Self> {
+        let tables = tables.as_ref();
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 RecordBatch to perform concat".to_string(),
@@ -724,6 +785,90 @@ impl RecordBatch {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
+            AggExpr::AggFn { .. } => Err(DaftError::InternalError(
+                "AggFn must be decomposed into AggFnMap + AggFnReduce by the planner \
+                 before execution; do not call eval_agg_expression with a raw AggFn"
+                    .to_string(),
+            )),
+            AggExpr::AggFnMap { handle, inputs } => {
+                let evaled_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|e| self.eval_agg_child(e))
+                    .collect::<DaftResult<_>>()?;
+                let input_fields: Vec<Field> =
+                    evaled_inputs.iter().map(|s| s.field().clone()).collect();
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let expected_name = format!("{}({})", handle.name(), inputs_str);
+                let state_fields = handle.state_fields(&input_fields)?;
+                let struct_field =
+                    Field::new(expected_name, DataType::Struct(state_fields.clone()));
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
+                let state_series =
+                    dispatch_per_group(evaled_inputs, groups, |g| handle.call_agg_block(g))?;
+                let state_series: Vec<Series> = state_series
+                    .into_iter()
+                    .zip(state_fields.iter())
+                    .map(|(s, f)| s.rename(&f.name))
+                    .collect();
+                Ok(StructArray::new(struct_field, state_series, None).into_series())
+            }
+            AggExpr::AggFnCombine { handle, partial } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                let struct_field = struct_series.field().clone();
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                pack_struct_state(struct_field, merged)
+            }
+            AggExpr::AggFnReduce {
+                handle,
+                partial,
+                return_field,
+            } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(Series::empty(&return_field.name, &return_field.dtype));
+                }
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                use daft_core::series::from_lit::series_from_literals_iter;
+                let n_groups = merged.first().map_or(0, Series::len);
+                let final_lits: Vec<Literal> = (0..n_groups)
+                    .map(|i| {
+                        let state: Vec<Literal> = merged.iter().map(|s| s.get_lit(i)).collect();
+                        handle.call_agg_finalize(state)
+                    })
+                    .collect::<DaftResult<_>>()?;
+                series_from_literals_iter(
+                    final_lits.into_iter().map(Ok),
+                    Some(return_field.dtype.clone()),
+                )
+                .map(|s| s.rename(&return_field.name))
+            }
         }
     }
 
@@ -758,13 +903,19 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_async_with_metrics(
-                    BoundExpr::new_unchecked(child.clone()),
-                    metrics,
-                )
-                .await?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(child.clone()),
+                        metrics,
+                    )
+                    .await?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1016,6 +1167,12 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
+                }
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
@@ -1153,9 +1310,15 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1326,6 +1489,12 @@ impl RecordBatch {
                         &BoundExpr::new_unchecked(expr.clone()),
                         metrics,
                     )?);
+                }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
                 }
                 #[cfg(feature = "python")]
                 {
@@ -1951,7 +2120,7 @@ mod test {
             Utf8Array::from_slice("b", &["z"]).into_series(),
         ])?;
 
-        let expected = RecordBatch::concat(&[&first, &second])?;
+        let expected = RecordBatch::concat([&first, &second])?;
 
         let schema = first.schema.to_arrow()?;
         let mut buffer = Vec::new();

@@ -19,8 +19,8 @@ use crate::{
     },
     datatypes::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, DataType, Decimal128Array,
-        ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array,
-        IntervalArray, NullArray, NumericNative, Utf8Array,
+        ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float16Array, Float32Array,
+        Float64Array, IntervalArray, NullArray, NumericNative, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
@@ -28,7 +28,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::{cmp_float, make_daft_comparator},
+    kernels::cmp::{cmp_float, make_daft_comparator},
     prelude::UInt64Array,
     series::Series,
 };
@@ -214,7 +214,7 @@ pub fn build_multi_array_bicompare(
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native:
         Ord,
 {
@@ -256,6 +256,54 @@ where
         let arrow_array = self.as_arrow()?;
 
         let result = sort_by(arrow_array, |l, r| l.cmp(r), &options, None);
+
+        Self::from_arrow(self.field().clone(), Arc::new(result))
+    }
+}
+
+impl Float16Array {
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow()?;
+
+        let result = indices_sorted_unstable_by(
+            arrow_array,
+            cmp_float::<half::f16>,
+            descending,
+            nulls_first,
+        );
+
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
+    }
+
+    pub fn argsort_multikey(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow()?;
+        primitive_argsort_multikey(
+            arrow_array,
+            self.name(),
+            others,
+            descending,
+            nulls_first,
+            cmp_float::<half::f16>,
+        )
+    }
+
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let options = SortOptions {
+            descending,
+            nulls_first,
+        };
+
+        let arrow_array = self.as_arrow()?;
+
+        let result = sort_by(arrow_array, cmp_float::<half::f16>, &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }

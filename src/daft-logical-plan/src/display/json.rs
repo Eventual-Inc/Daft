@@ -53,7 +53,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "descending": sort.descending,
         }),
         LogicalPlan::Repartition(repartition) => json!({
-            "repartition_spec": repartition.repartition_spec,
+            "repartition_spec": repartition.repartition_spec.to_string(),
         }),
         LogicalPlan::IntoPartitions(into_partitions) => json!({
             "num_partitions": into_partitions.num_partitions,
@@ -88,6 +88,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "right_by": asof_join.right_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             "left_on": asof_join.left_on.to_string(),
             "right_on": asof_join.right_on.to_string(),
+            "strategy": asof_join.strategy.to_string(),
         }),
         LogicalPlan::Sink(_) => json!({}),
         LogicalPlan::Sample(sample) => json!({
@@ -101,6 +102,9 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         }),
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
             "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]
+        }),
+        LogicalPlan::StageCheckpointKeys(stage) => json!({
+            "key_column": stage.checkpoint_config.key_column,
         }),
         LogicalPlan::SubqueryAlias(subquery_alias) => json!({
             "name": subquery_alias.name,
@@ -391,5 +395,26 @@ mod tests {
         let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_repr_json_repartition_spec_human_readable() -> DaftResult<()> {
+        let plan = LogicalPlanBuilder::from(plan_1())
+            .hash_repartition(None, vec![resolved_col("id")])?
+            .build();
+
+        let mut output = String::new();
+        let mut json_vis = super::JsonVisitor::new(&mut output);
+        plan.visit(&mut json_vis).unwrap();
+
+        let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(actual["type"], "Repartition");
+        assert_eq!(
+            actual["repartition_spec"],
+            "Hash (num_partitions=auto, by=[col(id)])",
+        );
+
+        Ok(())
     }
 }

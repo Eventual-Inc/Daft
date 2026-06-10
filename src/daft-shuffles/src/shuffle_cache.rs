@@ -23,9 +23,14 @@ pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
     ((input_id as u64) << 32) | partition_idx as u64
 }
 
+/// IPC batch chunk target.
+///
+/// Shared by the oneshot writer and the read-side concat path so write emits at the
+/// size read wants.
+pub const CHUNK_TARGET_BYTES: usize = 4 * 1024 * 1024;
+
 // Result of a writer task
 struct WriterTaskResult {
-    schema: Option<SchemaRef>,
     bytes_per_file: Vec<usize>,
     total_rows_written: usize,
     total_bytes_written: usize,
@@ -43,11 +48,13 @@ pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
     writer_sender_weak: async_channel::WeakSender<MicroPartition>,
     partition_ref_id: u64,
+    schema: SchemaRef,
 }
 
 impl InProgressShuffleCache {
     pub fn try_new(
         partition_ref_id: u64,
+        schema: SchemaRef,
         dirs: &[String],
         shuffle_id: u64,
         target_filesize: usize,
@@ -79,12 +86,13 @@ impl InProgressShuffleCache {
 
         let writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
 
-        Self::try_new_with_writer(writer, partition_ref_id)
+        Self::try_new_with_writer(writer, partition_ref_id, schema)
     }
 
     fn try_new_with_writer(
         writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_ref_id: u64,
+        schema: SchemaRef,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
         let (tx, rx) = async_channel::bounded(num_cpus * 2);
@@ -100,6 +108,7 @@ impl InProgressShuffleCache {
             }),
             writer_sender_weak,
             partition_ref_id,
+            schema,
         })
     }
 
@@ -143,13 +152,12 @@ impl InProgressShuffleCache {
         match writer_result {
             Some(result) => Ok(PartitionCache {
                 partition_ref_id: self.partition_ref_id,
-                schema: result.schema.unwrap_or_else(|| {
-                    panic!("No schema found in shuffle cache, this should never happen");
-                }),
+                schema: self.schema.clone(),
                 bytes_per_file: result.bytes_per_file,
                 file_paths: result.file_paths,
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
+                byte_ranges: None,
             }),
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
@@ -180,13 +188,9 @@ async fn writer_task(
     mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
-    let mut schema = None;
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
     while let Ok(partition) = rx.recv().await {
-        if schema.is_none() {
-            schema = Some(partition.schema().clone());
-        }
         total_rows_written += partition.len();
         total_bytes_written += partition.size_bytes();
         writer = io_runtime
@@ -216,7 +220,6 @@ async fn writer_task(
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
     Ok(WriterTaskResult {
-        schema,
         bytes_per_file,
         total_rows_written,
         total_bytes_written,
@@ -232,18 +235,28 @@ pub struct PartitionCache {
     pub file_paths: Vec<String>,
     pub num_rows: usize,
     pub size_bytes: usize,
+    /// `(start, end)` per file. Set when one file holds multiple output partitions
+    /// (combined-file shuffle); `None` means read the whole file.
+    pub byte_ranges: Option<Vec<(u64, u64)>>,
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use daft_core::datatypes::DataType;
+    use daft_schema::{field::Field, schema::Schema};
     use daft_writers::test::{
         DummyWriterFactory, FailingWriterFactory, make_dummy_mp,
         make_dummy_target_file_size_writer_factory,
     };
 
     use super::*;
+
+    fn dummy_schema() -> SchemaRef {
+        // Matches the schema produced by `make_dummy_mp` in daft-writers tests.
+        Arc::new(Schema::new(vec![Field::new("ints", DataType::UInt8)]))
+    }
 
     #[tokio::test]
     async fn test_shuffle_cache_basic() -> DaftResult<()> {
@@ -254,7 +267,7 @@ mod tests {
         let writer = dummy_writer_factory.create_writer(0, None)?;
 
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
 
         // Create and push some partitions
         // Since we have 1 partition, all data goes to partition 0
@@ -286,7 +299,7 @@ mod tests {
             make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(dummy_writer_factory));
         let writer = dummy_writer_factory.create_writer(0, None)?;
 
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
 
         // Push 1000 empty partitions
         for _ in 0..1000 {
@@ -320,7 +333,7 @@ mod tests {
         let writer = failing_writer_factory.create_writer(0, None)?;
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
 
         let mut found_failure = false;
         // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
@@ -383,7 +396,7 @@ mod tests {
         let writer = failing_writer_factory.create_writer(0, None)?;
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0, dummy_schema())?;
 
         // Create and push a partition
         let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];

@@ -1,7 +1,9 @@
 pub mod abs;
+pub mod bin;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
+pub mod conv;
 pub mod e;
 pub mod exp;
 pub mod factorial;
@@ -9,6 +11,7 @@ pub mod floor;
 pub mod hypot;
 pub mod log;
 pub mod pi;
+pub mod pmod;
 pub mod pow;
 pub mod power;
 pub mod round;
@@ -17,10 +20,12 @@ pub mod sqrt;
 pub mod trigonometry;
 
 use abs::Abs;
+use bin::Bin;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
 use common_error::{DaftError, DaftResult};
+use conv::Conv;
 use daft_core::prelude::{Field, Schema};
 use daft_dsl::{
     Expr,
@@ -33,6 +38,7 @@ use floor::Floor;
 use hypot::Hypot;
 use log::{Ln, Log, Log1p, Log2, Log10};
 use pi::Pi;
+use pmod::Pmod;
 use pow::Pow;
 use power::Power;
 use round::Round;
@@ -61,9 +67,11 @@ pub struct NumericFunctions;
 impl FunctionModule for NumericFunctions {
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);
+        parent.add_fn(Bin);
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);
         parent.add_fn(Clip);
+        parent.add_fn(Conv);
         parent.add_fn(EulersNumber);
         parent.add_fn(Exp);
         parent.add_fn(Expm1);
@@ -74,9 +82,10 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Ln);
         parent.add_fn(Log1p);
         parent.add_fn(Hypot);
+        parent.add_fn(Pi);
+        parent.add_fn(Pmod);
         parent.add_fn(Pow);
         parent.add_fn(Power);
-        parent.add_fn(Pi);
         parent.add_fn(Floor);
         parent.add_fn(Round);
         parent.add_fn(Sign);

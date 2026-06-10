@@ -7,15 +7,17 @@ use daft_stats::TableMetadata;
 
 use crate::{
     FileFormatConfig, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-    ScanTask, ScanTaskRef, SourceConfig, SupportsPushdownFilters, storage_config::StorageConfig,
+    ScanTask, ScanTaskRef, SourceConfig, Statistics, SupportsPushdownFilters,
+    storage_config::StorageConfig,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DummyScanOperator {
     pub schema: SchemaRef,
     pub num_scan_tasks: u32,
     pub num_rows_per_task: Option<usize>,
     pub supports_count_pushdown_flag: bool,
+    pub stats: Option<Statistics>,
 }
 
 impl ScanOperator for DummyScanOperator {
@@ -94,6 +96,10 @@ impl ScanOperator for DummyScanOperator {
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
         Some(self)
+    }
+
+    fn statistics(&self) -> Option<Statistics> {
+        self.stats.clone()
     }
 }
 

@@ -184,4 +184,4 @@ async def my_api_call(prompt: str) -> str:
 
 - The new API does not yet expose a `memory_bytes` parameter, and `ray_options={"memory": ...}` is explicitly rejected ([#6711](https://github.com/Eventual-Inc/Daft/issues/6711)). If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`. If you need true memory-based placement on Ray, you'll need to stay on `@daft.udf` until this is resolved.
 
-If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w).
+If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://daft.ai/slack).

@@ -17,6 +17,7 @@ pub(crate) struct JoinStats {
     build_bytes_inserted: Counter,
     probe_bytes_in: Counter,
     probe_bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -82,6 +83,7 @@ impl RuntimeStats for JoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_BYTES)),
             ),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -95,6 +97,7 @@ impl RuntimeStats for JoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(ordering),
             probe_bytes_in: self.probe_bytes_in.load(ordering),
             probe_bytes_out: self.probe_bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -121,5 +124,9 @@ impl RuntimeStats for JoinStats {
 
     fn add_bytes_out(&self, _bytes: u64) {
         unreachable!("Join Nodes shouldn't receive bytes. Use add_probe_bytes_out instead.")
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }

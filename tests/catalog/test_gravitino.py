@@ -9,7 +9,7 @@ import requests
 
 from daft.catalog import Identifier, NotFoundError, Schema
 from daft.catalog.__gravitino._catalog import GravitinoCatalog as CatalogWrapper
-from daft.catalog.__gravitino._catalog import GravitinoIcebergTable, GravitinoParquetTable
+from daft.catalog.__gravitino._catalog import GravitinoIcebergTable, GravitinoParquetTable, GravitinoPostgresTable
 from daft.catalog.__gravitino._catalog import GravitinoTable as TableWrapper
 from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
@@ -405,8 +405,30 @@ class TestGravitinoTable:
         return mock_table
 
     @pytest.fixture
+    def mock_postgres_inner_table(self):
+        """Create a mock Postgres InnerTable (GravitinoTable from gravitino module) for testing."""
+        mock_table = Mock(spec=InnerTable)
+        mock_table.table_info = Mock()
+        mock_table.table_info.name = "test_table"
+        mock_table.table_info.schema = "test_schema"
+        mock_table.table_info.table_type = "jdbc-postgres"
+        properties = {
+            "jdbc-url": "jdbc:postgresql://localhost:5432/test_db",
+            "jdbc-user": "test_user",
+            "jdbc-password": "test_pwd",
+            "jdbc-database": "test_db",
+        }
+        mock_table.table_info.properties = properties
+        return mock_table
+
+    @pytest.fixture
     def mock_pyiceberg_table(self):
         """Create a mock PyIceberg table."""
+        return Mock()
+
+    @pytest.fixture
+    def mock_postgres_table(self):
+        """Create a mock Postgres table."""
         return Mock()
 
     @pytest.fixture
@@ -414,6 +436,12 @@ class TestGravitinoTable:
         """Create a GravitinoTable instance for testing."""
         with patch("daft.catalog.__gravitino._catalog._open_iceberg_table", return_value=mock_pyiceberg_table):
             return TableWrapper._from_obj(mock_inner_table)
+
+    @pytest.fixture
+    def postgres_gravitino_table(self, mock_postgres_inner_table, mock_postgres_table):
+        """Create a postgres GravitinoTable instance for testing."""
+        with patch("daft.catalog.__gravitino._catalog._open_postgres_table", return_value=mock_postgres_table):
+            return TableWrapper._from_obj(mock_postgres_inner_table)
 
     def test_init_raises_error(self):
         """Test that direct __init__ raises an error (abstract class cannot be instantiated)."""
@@ -434,6 +462,10 @@ class TestGravitinoTable:
         mock_inner_table.table_info.table_type = "hive"
         table = TableWrapper._from_obj(mock_inner_table)
         assert isinstance(table, GravitinoParquetTable)
+
+    def test_from_obj_returns_postgres_table(self, postgres_gravitino_table):
+        """Test _from_obj with a Postgres InnerTable returns GravitinoPostgresTable."""
+        assert isinstance(postgres_gravitino_table, GravitinoPostgresTable)
 
     def test_from_obj_unsupported_format(self, mock_inner_table):
         """Test _from_obj raises ValueError for unsupported formats."""
@@ -471,6 +503,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=None,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -486,6 +520,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=12345,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -511,10 +547,28 @@ class TestGravitinoTable:
             result = table.read()
             assert result is mock_df
 
+    def test_read_postgres_table(self, postgres_gravitino_table):
+        """Test reading a Postgres table."""
+        with patch("daft.catalog.__gravitino._catalog.GravitinoPostgresTable.read") as mock_read:
+            mock_df = Mock()
+            mock_read.return_value = mock_df
+            result = postgres_gravitino_table.read()
+            assert result is mock_df
+
     def test_read_with_invalid_option(self, gravitino_table):
         """Test read with invalid option raises error."""
         with pytest.raises(ValueError, match="Unsupported option"):
             gravitino_table.read(invalid_option="value")
+
+    def test_read_postgres_with_invalid_option(self, postgres_gravitino_table):
+        """Test reading a Postgres table with invalid option raises error."""
+        with pytest.raises(ValueError, match="Unsupported option"):
+            postgres_gravitino_table.read(invalid_option="value")
+
+    def test_read_postgres_table_with_infer_schema(self, postgres_gravitino_table):
+        """Test reading a Postgres table with infer_schema option."""
+        result = postgres_gravitino_table.read(infer_schema=True)
+        assert result is not None
 
     def test_schema_calls_read(self, gravitino_table):
         """Test schema() method calls read().schema()."""

@@ -71,7 +71,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
+    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State>;
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
@@ -95,11 +95,12 @@ struct PerInputState<Op: StreamingSink> {
 impl<Op: StreamingSink + 'static> PerInputState<Op> {
     fn new(
         op: &Arc<Op>,
+        input_id: InputId,
         max_concurrency: usize,
         runtime_stats: Arc<Op::Stats>,
     ) -> DaftResult<Self> {
         let states = (0..max_concurrency)
-            .map(|_| op.make_state())
+            .map(|_| op.make_state(input_id))
             .collect::<Result<_, _>>()?;
         Ok(Self {
             states,
@@ -144,6 +145,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                 );
                 Ok(e.insert(PerInputState::new(
                     &self.op,
+                    input_id,
                     max_concurrency,
                     runtime_stats,
                 )?))
@@ -213,6 +215,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     .await??;
                 let elapsed = now.elapsed();
                 runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+                runtime_stats.increment_num_tasks();
 
                 let (mp, finished) = match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
@@ -286,6 +289,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         per_input
             .runtime_stats
             .add_duration_us(elapsed.as_micros() as u64);
+        per_input.runtime_stats.increment_num_tasks();
 
         let (mp, finished) = match output {
             StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),

@@ -41,7 +41,7 @@ use crate::{
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
 
@@ -53,6 +53,7 @@ pub(crate) struct UdfRuntimeStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
 }
 
@@ -66,6 +67,7 @@ impl RuntimeStats for UdfRuntimeStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter: meter.clone(), // Cheap to clone, Arc under the hood
@@ -90,6 +92,7 @@ impl RuntimeStats for UdfRuntimeStats {
             custom_counters,
             bytes_in: self.bytes_in.load(ordering),
             bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -111,6 +114,10 @@ impl RuntimeStats for UdfRuntimeStats {
 
     fn add_bytes_out(&self, bytes: u64) {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -440,6 +447,7 @@ impl IntermediateOperator for UdfOperator {
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let params = self.params.clone();

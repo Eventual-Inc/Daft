@@ -7,7 +7,7 @@ from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
 import daft
-from daft.filesystem import _infer_filesystem
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
 
 HAS_S3 = bool(
@@ -99,7 +99,7 @@ def raw_bytes_mcap_dataset_path(tmp_path_factory):
 def data_from_s3():
     s3_file_path = "s3://kamui/las/mcap/test.mcap"
     io_config = _get_s3_io_config()
-    file_path, fs, _ = _infer_filesystem(s3_file_path, io_config)
+    [file_path], fs = _resolve_paths_and_filesystem(s3_file_path, io_config)
     with fs.open_output_stream(file_path) as f:
         writer = Writer(f)
         schema = writer.register_msgdef(datatype="std_msgs/msg/String", msgdef_text="string data")
@@ -129,6 +129,20 @@ def test_mcap_read(mcap_dataset_path):
     assert "topic" in pdf.columns
     assert "data" in pdf.columns
     assert pdf["publish_time"].between(0, 9900).all()
+
+
+def test_mcap_read_huggingface():
+    """Read a public MCAP file from Hugging Face via hf://."""
+    # Public gameplay MCAP from https://huggingface.co/datasets/open-world-agents/D2E-480p (~1.4 MiB).
+    HF_MCAP_PATH = "hf://datasets/open-world-agents/D2E-480p/PEAK/recording_20250901_122320__8bd56fb0_split_02.mcap"
+
+    df = daft.read_mcap(HF_MCAP_PATH, topics=["mouse"]).limit(10)
+    pdf = df.to_pandas()
+
+    assert len(pdf) == 10
+    assert set(pdf.columns) == {"topic", "log_time", "publish_time", "sequence", "data"}
+    assert (pdf["topic"] == "mouse").all()
+    assert pdf["log_time"].is_monotonic_increasing
 
 
 @pytest.mark.skipif(not HAS_S3, reason="S3 Env not set, skip S3 tests")

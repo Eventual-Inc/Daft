@@ -148,21 +148,26 @@ impl CosConfig {
         }
         config.insert("region".to_string(), region);
 
-        if let Some(secret_id) = &self.secret_id {
-            config.insert("secret_id".to_string(), secret_id.clone());
-        }
-        if let Some(secret_key) = &self.secret_key {
-            config.insert("secret_key".to_string(), secret_key.as_string().clone());
-        }
-        if let Some(security_token) = &self.security_token {
-            config.insert(
-                "security_token".to_string(),
-                security_token.as_string().clone(),
-            );
-        }
+        if self.anonymous {
+            // Anonymous mode: skip credential forwarding and prevent OpenDAL from loading credentials via env vars
+            config.insert("disable_config_load".to_string(), "true".to_string());
+        } else {
+            if let Some(secret_id) = &self.secret_id {
+                config.insert("secret_id".to_string(), secret_id.clone());
+            }
+            if let Some(secret_key) = &self.secret_key {
+                config.insert("secret_key".to_string(), secret_key.as_string().clone());
+            }
+            if let Some(security_token) = &self.security_token {
+                config.insert(
+                    "security_token".to_string(),
+                    security_token.as_string().clone(),
+                );
+            }
 
-        // Allow OpenDAL to also load from environment variables
-        config.insert("disable_config_load".to_string(), "false".to_string());
+            // Allow OpenDAL to load credentials from environment variables
+            config.insert("disable_config_load".to_string(), "false".to_string());
+        }
 
         config
     }

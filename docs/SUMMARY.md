@@ -23,6 +23,7 @@
         * [Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
+        * [Aggregate UDFs](custom-code/udaf.md)
         * [Working with GPUs](custom-code/gpu.md)
         * [Legacy UDF Migration Guide](custom-code/migration.md)
         * [Legacy UDFs](custom-code/udfs.md)
@@ -32,6 +33,7 @@
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
+        * [Generic File Source Options](connectors/generic-file-source-options.md)
         * [Custom Connectors](connectors/custom.md)
         * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
@@ -44,6 +46,7 @@
         * [Azure Blob Store](connectors/azure.md)
         * [Bigtable](connectors/bigtable.md)
         * [ClickHouse](connectors/clickhouse.md)
+        * [COS (Tencent Cloud)](connectors/cos.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Files](connectors/files.md)
         * [Google Cloud Storage](connectors/gcs.md)
@@ -57,7 +60,9 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
+        * [Overview](extensions/overview.md)
         * [Community Extensions](extensions/community.md)
+        * [Built on Daft](extensions/projects.md)
         * [Authoring Guide](extensions/authoring.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
@@ -68,15 +73,17 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Shuffle Algorithms](optimization/shuffle.md)
         * [Join Strategies](optimization/join-strategies.md)
     * Observability
+        * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
         * [Telemetry](observability/telemetry.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
-    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
+    * [Community <sup>↗</sup>](https://daft.ai/slack)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples

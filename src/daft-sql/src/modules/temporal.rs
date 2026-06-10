@@ -2,12 +2,16 @@ use std::sync::Arc;
 
 use daft_dsl::{
     ExprRef,
-    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
+    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs, ScalarUDF},
     lit, null_lit,
 };
 use daft_functions_temporal::{
+    Date, Day, DayOfMonth, DayOfWeek, DayOfYear, Hour, Microsecond, Millisecond, Minute, Month,
+    Nanosecond, Quarter, Second, ToString, UnixDate, WeekOfYear, Year,
     current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
-    date_arithmetic::{DateAdd, DateDiff, DateSub},
+    date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween},
+    date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz},
+    date_navigation::{LastDay, NextDay},
     epoch_conversions::{
         DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
     },
@@ -28,18 +32,41 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date_trunc", SQLDateTrunc);
         parent.add_fn("truncate", SQLDateTrunc);
+        parent.add_fn("trunc", SQLTrunc);
+        parent.add_fn("dayofmonth", Arc::new(DayOfMonth) as Arc<dyn ScalarUDF>);
+        parent.add_fn("dayofyear", Arc::new(DayOfYear) as Arc<dyn ScalarUDF>);
+        parent.add_fn("weekofyear", Arc::new(WeekOfYear) as Arc<dyn ScalarUDF>);
+        parent.add_fn("date_format", Arc::new(ToString) as Arc<dyn ScalarUDF>);
+        parent.add_fn("dateadd", SQLDateAdd);
+        parent.add_fn("datediff", SQLDateDiff);
+        parent.add_fn("datepart", SQLDatePart);
         parent.add_fn("current_date", SQLCurrentDate);
         parent.add_fn("current_timestamp", SQLCurrentTimestamp);
         parent.add_fn("current_timezone", SQLCurrentTimezone);
         parent.add_fn("date_add", SQLDateAdd);
         parent.add_fn("date_sub", SQLDateSub);
         parent.add_fn("date_diff", SQLDateDiff);
+        parent.add_fn("add_months", SQLAddMonths);
+        parent.add_fn("months_between", SQLMonthsBetween);
         parent.add_fn("date_from_unix_date", SQLDateFromUnixDate);
         parent.add_fn("timestamp_seconds", SQLTimestampSeconds);
         parent.add_fn("timestamp_millis", SQLTimestampMillis);
         parent.add_fn("timestamp_micros", SQLTimestampMicros);
         parent.add_fn("from_unixtime", SQLFromUnixtime);
+        parent.add_fn("make_date", SQLMakeDate);
+        parent.add_fn("make_timestamp", SQLMakeTimestamp);
+        parent.add_fn("make_timestamp_ltz", SQLMakeTimestampLtz);
+        parent.add_fn("last_day", SQLLastDay);
+        parent.add_fn("next_day", SQLNextDay);
     }
+}
+
+fn unary_temporal_expr<UDF: ScalarUDF + 'static>(udf: UDF, input: ExprRef) -> ExprRef {
+    BuiltinScalarFn {
+        func: BuiltinScalarFnVariant::Sync(Arc::new(udf)),
+        inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+    }
+    .into()
 }
 
 pub struct SQLDateTrunc;
@@ -115,6 +142,119 @@ impl SQLFunction for SQLDateTrunc {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["interval", "input", "relative_to"]
+    }
+}
+
+pub struct SQLTrunc;
+
+impl SQLFunction for SQLTrunc {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("trunc expects 2 arguments: trunc(input, interval)");
+        }
+
+        let input_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let interval_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let interval_str = interval_expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "trunc second argument must be a string literal (e.g. 'month')",
+                )
+            })?;
+
+        let normalized = if interval_str
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+        {
+            interval_str.to_string()
+        } else {
+            format!("1 {interval_str}")
+        };
+
+        let args = vec![
+            FunctionArg::unnamed(input_expr),
+            FunctionArg::unnamed(null_lit()),
+            FunctionArg::named("interval".to_string(), lit(normalized)),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(Truncate)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Spark-style trunc alias with argument order trunc(input, interval).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "interval"]
+    }
+}
+
+pub struct SQLDatePart;
+
+impl SQLFunction for SQLDatePart {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!(
+                "datepart expects 2 arguments: datepart(part, input), got {}",
+                inputs.len()
+            );
+        }
+
+        let part_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let part = part_expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "datepart first argument must be a string literal",
+                )
+            })?
+            .to_lowercase()
+            .replace(' ', "_");
+        let input = planner.plan_function_arg(&inputs[1])?.into_inner();
+
+        match part.as_str() {
+            "year" => Ok(unary_temporal_expr(Year, input)),
+            "quarter" => Ok(unary_temporal_expr(Quarter, input)),
+            "month" => Ok(unary_temporal_expr(Month, input)),
+            "day" => Ok(unary_temporal_expr(Day, input)),
+            "day_of_week" | "dayofweek" | "weekday" => Ok(unary_temporal_expr(DayOfWeek, input)),
+            "day_of_month" | "dayofmonth" => Ok(unary_temporal_expr(DayOfMonth, input)),
+            "day_of_year" | "dayofyear" => Ok(unary_temporal_expr(DayOfYear, input)),
+            "week_of_year" | "weekofyear" | "week" => Ok(unary_temporal_expr(WeekOfYear, input)),
+            "date" => Ok(unary_temporal_expr(Date, input)),
+            "hour" => Ok(unary_temporal_expr(Hour, input)),
+            "minute" => Ok(unary_temporal_expr(Minute, input)),
+            "second" => Ok(unary_temporal_expr(Second, input)),
+            "millisecond" => Ok(unary_temporal_expr(Millisecond, input)),
+            "microsecond" => Ok(unary_temporal_expr(Microsecond, input)),
+            "nanosecond" => Ok(unary_temporal_expr(Nanosecond, input)),
+            "unix_date" => Ok(unary_temporal_expr(UnixDate, input)),
+            _ => invalid_operation_err!("Unsupported datepart value: {}", part),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Alias-style extractor equivalent to extract(field from input).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["part", "input"]
     }
 }
 
@@ -452,5 +592,325 @@ impl SQLFunction for SQLFromUnixtime {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["seconds", "format"]
+    }
+}
+
+// --- Date construction SQL functions ---
+
+pub struct SQLMakeDate;
+
+impl SQLFunction for SQLMakeDate {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 3 {
+            invalid_operation_err!(
+                "make_date expects 3 arguments (year, month, day), got {}",
+                inputs.len()
+            );
+        }
+        let year = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let month = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let day = planner.plan_function_arg(&inputs[2])?.into_inner();
+
+        let args = vec![
+            FunctionArg::unnamed(year),
+            FunctionArg::unnamed(month),
+            FunctionArg::unnamed(day),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(MakeDate)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a date from year, month, and day components.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["year", "month", "day"]
+    }
+}
+
+pub struct SQLMakeTimestamp;
+
+impl SQLFunction for SQLMakeTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs.len() {
+            6 | 7 => {}
+            _ => invalid_operation_err!(
+                "make_timestamp expects 6 or 7 arguments (year, month, day, hour, minute, second[, timezone]), got {}",
+                inputs.len()
+            ),
+        }
+        let year = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let month = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let day = planner.plan_function_arg(&inputs[2])?.into_inner();
+        let hour = planner.plan_function_arg(&inputs[3])?.into_inner();
+        let minute = planner.plan_function_arg(&inputs[4])?.into_inner();
+        let second = planner.plan_function_arg(&inputs[5])?.into_inner();
+
+        let mut args = vec![
+            FunctionArg::unnamed(year),
+            FunctionArg::unnamed(month),
+            FunctionArg::unnamed(day),
+            FunctionArg::unnamed(hour),
+            FunctionArg::unnamed(minute),
+            FunctionArg::unnamed(second),
+        ];
+
+        if inputs.len() == 7 {
+            let tz_expr = planner.plan_function_arg(&inputs[6])?.into_inner();
+            let tz_str = tz_expr
+                .as_literal()
+                .and_then(|l| l.as_str())
+                .ok_or_else(|| {
+                    crate::error::PlannerError::invalid_operation(
+                        "make_timestamp timezone argument must be a string literal",
+                    )
+                })?;
+            args.push(FunctionArg::named(
+                "timezone".to_string(),
+                lit(tz_str.to_string()),
+            ));
+        }
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(MakeTimestamp)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a timestamp from year, month, day, hour, minute, second components.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "year", "month", "day", "hour", "minute", "second", "timezone",
+        ]
+    }
+}
+
+pub struct SQLMakeTimestampLtz;
+
+impl SQLFunction for SQLMakeTimestampLtz {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs.len() {
+            6 | 7 => {}
+            _ => invalid_operation_err!(
+                "make_timestamp_ltz expects 6 or 7 arguments (year, month, day, hour, minute, second[, timezone]), got {}",
+                inputs.len()
+            ),
+        }
+        let year = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let month = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let day = planner.plan_function_arg(&inputs[2])?.into_inner();
+        let hour = planner.plan_function_arg(&inputs[3])?.into_inner();
+        let minute = planner.plan_function_arg(&inputs[4])?.into_inner();
+        let second = planner.plan_function_arg(&inputs[5])?.into_inner();
+
+        let mut args = vec![
+            FunctionArg::unnamed(year),
+            FunctionArg::unnamed(month),
+            FunctionArg::unnamed(day),
+            FunctionArg::unnamed(hour),
+            FunctionArg::unnamed(minute),
+            FunctionArg::unnamed(second),
+        ];
+
+        if inputs.len() == 7 {
+            let tz_expr = planner.plan_function_arg(&inputs[6])?.into_inner();
+            let tz_str = tz_expr
+                .as_literal()
+                .and_then(|l| l.as_str())
+                .ok_or_else(|| {
+                    crate::error::PlannerError::invalid_operation(
+                        "make_timestamp_ltz timezone argument must be a string literal",
+                    )
+                })?;
+            args.push(FunctionArg::named(
+                "timezone".to_string(),
+                lit(tz_str.to_string()),
+            ));
+        }
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(MakeTimestampLtz)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a UTC timestamp from components, optionally interpreting them in a source timezone."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "year", "month", "day", "hour", "minute", "second", "timezone",
+        ]
+    }
+}
+
+// --- Date navigation SQL functions ---
+
+pub struct SQLLastDay;
+
+impl SQLFunction for SQLLastDay {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("last_day expects 1 argument, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+
+        let args = vec![FunctionArg::unnamed(input)];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(LastDay)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the last day of the month for the given date.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["date"]
+    }
+}
+
+pub struct SQLNextDay;
+
+impl SQLFunction for SQLNextDay {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!(
+                "next_day expects 2 arguments (date, day_of_week), got {}",
+                inputs.len()
+            );
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let dow_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let dow_str = dow_expr
+            .as_literal()
+            .and_then(|l| l.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "next_day day_of_week argument must be a string literal (e.g. 'Monday')",
+                )
+            })?;
+
+        let args = vec![
+            FunctionArg::unnamed(input),
+            FunctionArg::named("day_of_week".to_string(), lit(dow_str.to_string())),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(NextDay)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the next occurrence of the specified day of the week after the given date."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["date", "day_of_week"]
+    }
+}
+
+// --- AddMonths / MonthsBetween (Spark-style month arithmetic) ---
+
+pub struct SQLAddMonths;
+
+impl SQLFunction for SQLAddMonths {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("add_months expects 2 arguments, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let months = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(AddMonths)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::unnamed(months),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Adds a number of months to a date or timestamp, clamping to the last day of the target month if needed."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "months"]
+    }
+}
+
+pub struct SQLMonthsBetween;
+
+impl SQLFunction for SQLMonthsBetween {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("months_between expects 2 arguments, got {}", inputs.len());
+        }
+        let end_date = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let start_date = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(MonthsBetween)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(end_date),
+                FunctionArg::unnamed(start_date),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of months between two dates or timestamps as a Float64.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["end_date", "start_date"]
     }
 }

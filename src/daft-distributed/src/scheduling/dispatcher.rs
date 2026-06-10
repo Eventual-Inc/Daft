@@ -8,7 +8,10 @@ use super::{
     task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
-use crate::{scheduling::task::TaskResultHandle, statistics::StatisticsManagerRef};
+use crate::{
+    scheduling::task::TaskResultHandle,
+    statistics::{StatisticsManagerRef, TaskEvent},
+};
 
 const DISPATCHER_LOG_TARGET: &str = "DaftFlotillaDispatcher";
 
@@ -102,8 +105,8 @@ impl<W: Worker> Dispatcher<W> {
                 // Always mark the task as finished regardless of the result
                 worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
                 // Send the event to the statistics manager
-                self.statistics_manager
-                    .handle_event((task.task_context(), &task_result).into())?;
+                let event = TaskEvent::new(task.task_context(), &task_result, worker_id.clone());
+                self.statistics_manager.handle_event(event)?;
 
                 match task_result {
                     Ok(task_status) => match task_status {

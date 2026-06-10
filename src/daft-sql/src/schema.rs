@@ -239,6 +239,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
             DataType::Struct(fields)
         }
         SQLDataType::Custom(name, properties) => match name.to_string().to_lowercase().as_str() {
+            "float16" | "half" => DataType::Float16,
             "tensor" => match properties.as_slice() {
                 [] => invalid_operation_err!(
                     "must specify inner datatype with 'tensor'. ex: `tensor(int)` or `tensor(int, 10, 10, 10)`"

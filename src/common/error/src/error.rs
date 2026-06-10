@@ -21,6 +21,14 @@ pub enum DaftError {
     // because this results in infinite nesting of types in `fixed_size_binary_op` in arithmetic.rs.
     #[error("DaftError::ParquetError {0}")]
     ParquetError(String),
+    /// Raised when a file is identified as corrupt or unreadable due to format/integrity
+    /// failures (e.g. bad magic bytes, truncated footer, bad encoding, wrong field counts).
+    /// Used by `is_parquet_corrupt` and `is_csv_corrupt` to identify files that should be
+    /// skipped when `ignore_corrupt_files` is enabled.
+    /// General operation errors (write failures, schema mismatches, etc.) are NOT routed
+    /// here — they use format-specific variants or `External`.
+    #[error("DaftError::CorruptFile {0}")]
+    CorruptFile(String),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]

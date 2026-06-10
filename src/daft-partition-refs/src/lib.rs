@@ -2,9 +2,11 @@ mod flight;
 #[cfg(feature = "python")]
 mod ray;
 
-pub use flight::FlightPartitionRef;
 #[cfg(feature = "python")]
 pub use flight::PyFlightPartitionRef;
+#[cfg(feature = "python")]
+pub use flight::PyFlightPartitions;
+pub use flight::{FlightPartitionRef, FlightPartitions};
 #[cfg(feature = "python")]
 pub use ray::RayPartitionRef;
 

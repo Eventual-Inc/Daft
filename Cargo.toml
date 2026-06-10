@@ -37,6 +37,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal", default-feature
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
+daft-geo = {path = "src/daft-geo", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
@@ -77,6 +78,8 @@ python = [
   "common-metrics/python",
   "daft-ai/python",
   "daft-catalog/python",
+  "daft-checkpoint/python",
+  "daft-checkpoint/s3",
   "daft-cli/python",
   "daft-context/python",
   "daft-core/python",
@@ -171,13 +174,14 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {workspace = true}
-tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
-tikv-jemallocator = {version = "0.6.0", features = [
+tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
+tikv-jemallocator = {version = "0.7.0", features = [
   "disable_initial_exec_tls"
 ]}
 
 [workspace]
 members = [
+  "src/common/checkpoint-config",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",
@@ -239,15 +243,17 @@ exclude = [
 
 [workspace.dependencies]
 arrow = "57.1.0"
+half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
 arrow-csv = "57.1.0"
 arrow-data = "57.1.0"
 arrow-flight = "57.1.0"
-arrow-ipc = "57.1.0"
+arrow-ipc = {version = "57.1.0", features = ["lz4", "zstd"]}
 arrow-json = "57.1.0"
 arrow-row = "57.1.0"
 arrow-schema = "57.1.0"
+arrow-select = "57.1.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -322,8 +328,8 @@ ndarray = "0.17"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.28"
-opendal = {version = "0.55", default-features = false}
+numpy = {version = "0.28", features = ["half"]}
+opendal = {version = "0.57", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
@@ -371,7 +377,7 @@ tracing-subscriber = {version = "0.3.22", default-features = false, features = [
 typetag = "0.2.21"
 rustfft = "6"
 url = "2.4.0"
-uuid = {version = "1.19.0", features = ["v4"]}
+uuid = {version = "1.19.0", features = ["v4", "v7", "serde", "fast-rng"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
 hex = "0.4.3"

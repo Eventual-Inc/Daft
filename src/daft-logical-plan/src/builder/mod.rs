@@ -15,10 +15,10 @@ use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::join::{AsofJoinStrategy, JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -42,7 +42,7 @@ use crate::{
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self, Limit, Offset, SetQuantifier, UnionStrategy,
+        self, Limit, Offset, SetQuantifier, UnionStrategy, get_right_cols_to_drop,
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
@@ -144,6 +144,25 @@ impl LogicalPlanBuilder {
         self.with_new_plan(self.plan.clone().with_plan_id(id))
     }
 
+    /// Attach checkpoint configuration to the current plan's Source node.
+    ///
+    /// Panics if the current plan root is not a `LogicalPlan::Source`.
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::CheckpointConfig,
+    ) -> DaftResult<Self> {
+        match self.plan.as_ref() {
+            LogicalPlan::Source(source) => {
+                let new_source = source.clone().with_checkpoint(config);
+                Ok(self.with_new_plan(LogicalPlan::Source(new_source)))
+            }
+            other => Err(DaftError::ValueError(format!(
+                "with_checkpoint can only be called on a Source node, got: {}",
+                other.name()
+            ))),
+        }
+    }
+
     pub fn in_memory_scan(
         partition_key: &str,
         cache_entry: common_partitioning::PartitionCacheEntry,
@@ -187,11 +206,13 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
+        let clustering_keys = scan_operator.0.clustering_keys();
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
+            clustering_keys,
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
         if let Some(file_path_column) = &scan_operator.0.file_path_column()
@@ -749,7 +770,9 @@ impl LogicalPlanBuilder {
         right_by: Vec<ExprRef>,
         left_on: ExprRef,
         right_on: ExprRef,
+        strategy: AsofJoinStrategy,
         options: JoinOptions,
+        assume_sorted_and_aligned: bool,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -787,6 +810,8 @@ impl LogicalPlanBuilder {
             left_on,
             right_on,
             right_cols_to_drop,
+            strategy,
+            assume_sorted_and_aligned,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -1021,7 +1046,12 @@ impl LogicalPlanBuilder {
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(Some(execution_config.clone())),
+                    |builder| {
+                        let use_dp_ccp = cfg
+                            .as_ref()
+                            .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                        builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                    },
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -1091,7 +1121,12 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config.clone())),
+                |builder| {
+                    let use_dp_ccp = cfg
+                        .as_ref()
+                        .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                    builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                },
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1251,6 +1286,13 @@ impl PyLogicalPlanBuilder {
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
+    }
+
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::python::PyCheckpointConfig,
+    ) -> PyResult<Self> {
+        Ok(self.builder.with_checkpoint(config.config)?.into())
     }
 
     pub fn with_planning_config(
@@ -1562,7 +1604,7 @@ impl PyLogicalPlanBuilder {
         Ok(result.into())
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, prefix, suffix))]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix, assume_sorted_and_aligned=false))]
     pub fn join_asof(
         &self,
         right: &Self,
@@ -1570,8 +1612,10 @@ impl PyLogicalPlanBuilder {
         right_by: Vec<PyExpr>,
         left_on: PyExpr,
         right_on: PyExpr,
+        strategy: AsofJoinStrategy,
         prefix: Option<String>,
         suffix: Option<String>,
+        assume_sorted_and_aligned: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1581,7 +1625,9 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_by),
                 left_on.into(),
                 right_on.into(),
+                strategy,
                 JoinOptions { prefix, suffix },
+                assume_sorted_and_aligned,
             )?
             .into())
     }

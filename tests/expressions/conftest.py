@@ -77,3 +77,35 @@ def test_expression():
         assert series_res == expected
 
     yield _test_expression
+
+
+@pytest.fixture(scope="function")
+def test_binary_expression():
+    def _test_binary_expression(
+        *,
+        left: list[Any],
+        right: list[Any],
+        expected: list[Any],
+        name: str,
+        sql_name: str | None = None,
+    ):
+        expr = getattr(col("c0"), name)(col("c1")).alias("out")
+        sql_name = sql_name or name
+
+        df = from_pydict({"c0": left, "c1": right})
+
+        df_res = df.select(expr).to_pydict()["out"]
+        rb_res = RecordBatch.from_pydict({"c0": left, "c1": right}).eval_expression_list([expr]).to_pydict()["out"]
+        sql_res = sql(f"select {sql_name}(c0, c1) as out from df").to_pydict()["out"]
+
+        left_series = Series.from_pylist(left)
+        right_series = Series.from_pylist(right)
+        series_res = left_series._eval_expressions(name, right_series)
+        series_res = series_res.rename("out").to_pylist()
+
+        assert df_res == expected
+        assert rb_res == expected
+        assert sql_res == expected
+        assert series_res == expected
+
+    yield _test_binary_expression

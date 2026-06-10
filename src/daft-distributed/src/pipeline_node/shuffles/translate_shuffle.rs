@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_display::utils::bytes_to_human_readable;
 use common_error::DaftResult;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
@@ -15,22 +16,40 @@ use crate::pipeline_node::{
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
+const LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD: usize = 10 * 1024 * 1024 * 1024;
+const LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD: usize = 500_000;
+// Map-reduce shuffle materializes one object per (input, output) slot on the head node.
+const PARTITION_SLOT_HEAD_MEMORY_BYTES: usize = 3 * 1024;
+
 impl LogicalPlanToPipelineNodeTranslator {
+    /// Pick the shuffle backend implied by the current execution config.
+    pub(crate) fn select_backend(&self) -> DistributedShuffleBackend {
+        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
+                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                compression: self.plan_config.config.flight_shuffle_compression.clone(),
+                ..Default::default()
+            })
+        } else {
+            DistributedShuffleBackend::Ray
+        }
+    }
+
     pub fn gen_repartition_node(
         &mut self,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
-                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
-                ..Default::default()
-            })
-        } else {
-            DistributedShuffleBackend::Ray
-        };
-        self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
+        let backend = self.select_backend();
+        self.gen_repartition_node_with_backend(
+            repartition_spec,
+            schema,
+            child,
+            backend,
+            input_size_bytes,
+        )
     }
 
     pub fn gen_repartition_node_with_backend(
@@ -39,18 +58,22 @@ impl LogicalPlanToPipelineNodeTranslator {
         schema: SchemaRef,
         child: DistributedPipelineNode,
         backend: DistributedShuffleBackend,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
+        let input_num_partitions = child.config().clustering_spec.num_partitions();
         let num_partitions = match &repartition_spec {
-            RepartitionSpec::Hash(config) => config
-                .num_partitions
-                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-            RepartitionSpec::Random(config) => config
-                .num_partitions
-                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-            RepartitionSpec::Range(config) => config
-                .num_partitions
-                .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-        };
+            RepartitionSpec::Hash(c) => c.num_partitions,
+            RepartitionSpec::Random(c) => c.num_partitions,
+            RepartitionSpec::Range(c) => c.num_partitions,
+        }
+        .unwrap_or(input_num_partitions);
+
+        self.maybe_warn_large_shuffle(
+            &backend,
+            input_size_bytes,
+            input_num_partitions,
+            num_partitions,
+        );
 
         let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
@@ -79,7 +102,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 num_partitions,
                 backend,
                 child_node,
-            )),
+            )?),
             &self.meter,
         ))
     }
@@ -112,10 +135,16 @@ impl LogicalPlanToPipelineNodeTranslator {
     pub fn gen_gather_node(
         &mut self,
         input_node: DistributedPipelineNode,
+        input_size_bytes: usize,
     ) -> DistributedPipelineNode {
-        if input_node.config().clustering_spec.num_partitions() == 1 {
+        let input_num_partitions = input_node.config().clustering_spec.num_partitions();
+        if input_num_partitions == 1 {
             return input_node;
         }
+
+        let backend = self.select_backend();
+
+        self.maybe_warn_large_shuffle(&backend, input_size_bytes, input_num_partitions, 1);
 
         let node_id = self.get_next_pipeline_node_id();
         DistributedPipelineNode::new(
@@ -123,9 +152,54 @@ impl LogicalPlanToPipelineNodeTranslator {
                 node_id,
                 &self.plan_config,
                 input_node.config().schema.clone(),
+                backend,
                 input_node,
             )),
             &self.meter,
         )
+    }
+
+    /// Hint the user to switch to flight_shuffle when total bytes or partition product
+    /// would cause Ray object-store / head-node memory pressure. Skipped on flight_shuffle.
+    pub(crate) fn maybe_warn_large_shuffle(
+        &mut self,
+        backend: &DistributedShuffleBackend,
+        input_size_bytes: usize,
+        input_num_partitions: usize,
+        output_num_partitions: usize,
+    ) {
+        if matches!(backend, DistributedShuffleBackend::Flight(_)) {
+            return;
+        }
+
+        let algo = &self.plan_config.config.shuffle_algorithm;
+
+        // Both triggers point to the same fix (switch to flight_shuffle), so emit at most one
+        // hint per shuffle op even if both thresholds are crossed.
+        let partition_product = input_num_partitions.saturating_mul(output_num_partitions);
+        if input_size_bytes >= LARGE_SHUFFLE_SIZE_BYTES_HINT_THRESHOLD {
+            self.record_flight_shuffle_hint(format!(
+                "Large shuffle (~{} via `{}` shuffle algorithm)",
+                bytes_to_human_readable(input_size_bytes),
+                algo,
+            ));
+        } else if partition_product >= LARGE_SHUFFLE_PARTITION_PRODUCT_HINT_THRESHOLD {
+            let head_memory = partition_product.saturating_mul(PARTITION_SLOT_HEAD_MEMORY_BYTES);
+            self.record_flight_shuffle_hint(format!(
+                "Shuffle with many partitions ({} × {} = {} pieces, ~{} of head-node memory)",
+                input_num_partitions,
+                output_num_partitions,
+                partition_product,
+                bytes_to_human_readable(head_memory),
+            ));
+        }
+    }
+
+    fn record_flight_shuffle_hint(&mut self, trigger: String) {
+        self.record_hint(format!(
+            "{trigger}. `flight_shuffle` writes shuffle data to disk and scales better. Enable: \
+             daft.context.set_execution_config(shuffle_algorithm=\"flight_shuffle\", \
+             flight_shuffle_dirs=[\"/path/to/fast/ssd\"])  # defaults to [\"/tmp\"]."
+        ));
     }
 }

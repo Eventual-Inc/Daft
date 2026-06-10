@@ -19,6 +19,12 @@ def test_dataframe_running_in_async_context():
             .limit(10)
             .to_pydict()
         )
-        assert sorted(df["id"]) == [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+        # Each output is `add_one(even input)`, so every value is odd and in
+        # (0, 100]. Distributed Limit may pull from any partition that
+        # finishes first, so don't assert the specific 10 values.
+        result = df["id"]
+        assert len(result) == 10
+        assert len(set(result)) == 10
+        assert all(x % 2 == 1 and 1 <= x <= 99 for x in result)
 
     asyncio.run(main())

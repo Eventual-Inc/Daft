@@ -3,9 +3,10 @@ use std::{
     hash::{BuildHasherDefault, Hash},
 };
 
+use arrow_array::Array;
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::arrow::comparison::build_multi_array_is_equal,
+    array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     count_mode::CountMode,
     datatypes::*,
     series::{IntoSeries, Series},
@@ -647,6 +648,97 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// Single-column byte-key fast path (FNV hash on borrowed slices)
+// ---------------------------------------------------------------------------
+//
+// Used for Utf8 and Binary single-column group-bys. Keys are borrowed slices
+// into the arrow buffers, which remain alive for the duration of the call,
+// so we can avoid the comparator closure used by the generic hash path.
+
+fn agg_single_col_bytes<'a, K>(
+    len: usize,
+    null_count: usize,
+    mut value_at: impl FnMut(usize) -> &'a K,
+    mut optional_at: impl FnMut(usize) -> Option<&'a K>,
+    accumulators: &mut [AggAccumulator],
+) -> DaftResult<Vec<u64>>
+where
+    K: ?Sized + Hash + Eq + 'a,
+{
+    let initial_capacity = std::cmp::min(len, 1024).max(1);
+    let mut groupkey_indices: Vec<u64> = Vec::with_capacity(initial_capacity);
+    let mut num_groups: u32 = 0;
+    let mut group_ids: Vec<u32> = Vec::with_capacity(len);
+    let mut group_sizes: Vec<u64> = Vec::with_capacity(initial_capacity);
+
+    if null_count == 0 {
+        let mut group_map = FnvHashMap::<&'a K, u32>::with_capacity_and_hasher(
+            initial_capacity,
+            BuildHasherDefault::default(),
+        );
+        for row_idx in 0..len {
+            let val = value_at(row_idx);
+            let gid = match group_map.entry(val) {
+                Vacant(e) => {
+                    let gid = num_groups;
+                    num_groups = num_groups.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
+                    e.insert(gid);
+                    groupkey_indices.push(row_idx as u64);
+                    group_sizes.push(1);
+                    gid
+                }
+                Occupied(e) => {
+                    let gid = *e.get();
+                    group_sizes[gid as usize] += 1;
+                    gid
+                }
+            };
+            group_ids.push(gid);
+        }
+    } else {
+        let mut group_map = FnvHashMap::<Option<&'a K>, u32>::with_capacity_and_hasher(
+            initial_capacity,
+            BuildHasherDefault::default(),
+        );
+        for row_idx in 0..len {
+            let val = optional_at(row_idx);
+            let gid = match group_map.entry(val) {
+                Vacant(e) => {
+                    let gid = num_groups;
+                    num_groups = num_groups.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
+                    e.insert(gid);
+                    groupkey_indices.push(row_idx as u64);
+                    group_sizes.push(1);
+                    gid
+                }
+                Occupied(e) => {
+                    let gid = *e.get();
+                    group_sizes[gid as usize] += 1;
+                    gid
+                }
+            };
+            group_ids.push(gid);
+        }
+    }
+
+    let result = GroupingResult {
+        groupkey_indices,
+        group_ids,
+        group_sizes,
+    };
+    accumulate(accumulators, &result);
+    Ok(result.groupkey_indices)
+}
+
+// ---------------------------------------------------------------------------
 // Generic multi-column hash path
 // ---------------------------------------------------------------------------
 
@@ -731,6 +823,165 @@ fn agg_generic_hash_path(
 }
 
 // ---------------------------------------------------------------------------
+// Multi-column symbolized path (string optimization)
+// ---------------------------------------------------------------------------
+
+/// Map each distinct value of type K to a dense u32 symbol ID.
+/// Null values get symbol ID 0 (when nulls are present).
+fn symbolize_column<'a, K>(
+    len: usize,
+    null_count: usize,
+    value_at: impl Fn(usize) -> &'a K,
+    is_null: impl Fn(usize) -> bool,
+) -> DaftResult<Vec<u32>>
+where
+    K: ?Sized + Hash + Eq + 'a,
+{
+    let initial_capacity = std::cmp::min(len, 1024).max(1);
+    let mut symbols = Vec::with_capacity(len);
+
+    if null_count == 0 {
+        // When there are no nulls, symbol IDs start from 0. In the nullable path below,
+        // 0 is reserved for null and non-null symbols start from 1. This asymmetry is
+        // intentional because symbols are only compared within this column's current
+        // symbolization output; IDs are not persisted or reused across batches.
+        let mut next_id: u32 = 0;
+        let mut map = FnvHashMap::<&'a K, u32>::with_capacity_and_hasher(
+            initial_capacity,
+            BuildHasherDefault::default(),
+        );
+        for i in 0..len {
+            let val = value_at(i);
+            let id = match map.entry(val) {
+                Vacant(e) => {
+                    let id = next_id;
+                    next_id = next_id.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of distinct symbols exceeds u32::MAX in symbolization".into(),
+                        )
+                    })?;
+                    e.insert(id);
+                    id
+                }
+                Occupied(e) => *e.get(),
+            };
+            symbols.push(id);
+        }
+    } else {
+        let mut next_id: u32 = 1; // 0 reserved for null
+        let mut map = FnvHashMap::<&'a K, u32>::with_capacity_and_hasher(
+            initial_capacity,
+            BuildHasherDefault::default(),
+        );
+        for i in 0..len {
+            if is_null(i) {
+                symbols.push(0);
+            } else {
+                let val = value_at(i);
+                let id = match map.entry(val) {
+                    Vacant(e) => {
+                        let id = next_id;
+                        next_id = next_id.checked_add(1).ok_or_else(|| {
+                            common_error::DaftError::ComputeError(
+                                "Number of distinct symbols exceeds u32::MAX in symbolization"
+                                    .into(),
+                            )
+                        })?;
+                        e.insert(id);
+                        id
+                    }
+                    Occupied(e) => *e.get(),
+                };
+                symbols.push(id);
+            }
+        }
+    }
+    Ok(symbols)
+}
+
+/// Avg string-bytes-per-row below which symbolization is skipped: short keys
+/// (e.g. CHAR(1) in TPC-H Q1) hash and compare about as fast as a u32, so the
+/// extra pass would be pure overhead.
+const MIN_AVG_STRING_BYTES_PER_ROW: usize = 16;
+
+/// Symbolized multi-column grouping path for string-heavy workloads.
+/// Replaces Utf8/Binary columns with dense u32 symbol-ID columns, then runs
+/// the generic hash path on the cheaper fixed-width representation.
+/// Non-string columns (integers, etc.) are kept as-is.
+/// Returns None when no string column is present, or when string keys are
+/// too short for symbolization to pay off.
+fn agg_symbolized_path(
+    groupby_physical: &RecordBatch,
+    accumulators: &mut [AggAccumulator],
+) -> DaftResult<Option<Vec<u64>>> {
+    let cols = groupby_physical.as_materialized_series();
+    let num_rows = groupby_physical.len();
+
+    // Gate: skip symbolization when avg string bytes/row falls below the threshold.
+    let mut total_string_bytes: usize = 0;
+    let mut has_string_col = false;
+    for col in &cols {
+        match col.data_type() {
+            DataType::Utf8 => {
+                has_string_col = true;
+                let arrow_arr = col.utf8()?.as_arrow()?;
+                let offsets = arrow_arr.offsets();
+                let bytes =
+                    offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0);
+                total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
+            }
+            DataType::Binary => {
+                has_string_col = true;
+                let arrow_arr = col.binary()?.as_arrow()?;
+                let offsets = arrow_arr.offsets();
+                let bytes =
+                    offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0);
+                total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
+            }
+            _ => {}
+        }
+    }
+    if !has_string_col || total_string_bytes < num_rows.saturating_mul(MIN_AVG_STRING_BYTES_PER_ROW)
+    {
+        return Ok(None);
+    }
+
+    // Replace Utf8/Binary columns with symbolized UInt32 columns.
+    // Non-string columns are kept as-is.
+    let mut replaced_cols: Vec<Series> = Vec::with_capacity(cols.len());
+    for col in cols {
+        match col.data_type() {
+            DataType::Utf8 => {
+                let utf8_arr = col.utf8()?;
+                let arrow_arr = utf8_arr.as_arrow()?;
+                let nulls = col.nulls();
+                let null_count = nulls.map_or(0, |nb| nb.null_count());
+                let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
+                let syms =
+                    symbolize_column(col.len(), null_count, |i| arrow_arr.value(i), is_null)?;
+                replaced_cols.push(UInt32Array::from_vec(col.name(), syms).into_series());
+            }
+            DataType::Binary => {
+                let bin_arr = col.binary()?;
+                let arrow_arr = bin_arr.as_arrow()?;
+                let nulls = col.nulls();
+                let null_count = nulls.map_or(0, |nb| nb.null_count());
+                let is_null = |i: usize| nulls.is_some_and(|nb| !nb.is_valid(i));
+                let syms =
+                    symbolize_column(col.len(), null_count, |i| arrow_arr.value(i), is_null)?;
+                replaced_cols.push(UInt32Array::from_vec(col.name(), syms).into_series());
+            }
+            _ => replaced_cols.push(col.clone()),
+        }
+    }
+
+    // Run the generic hash path on the symbolized columns.
+    let symbolized_rb = RecordBatch::from_nonempty_columns(replaced_cols)?;
+    let indices = agg_generic_hash_path(&symbolized_rb, accumulators)?;
+    Ok(Some(indices))
+}
+
+// ---------------------------------------------------------------------------
 // RecordBatch methods
 // ---------------------------------------------------------------------------
 
@@ -739,6 +990,27 @@ macro_rules! dispatch_single_col_int {
     ($col:expr, $accumulators:expr, $($dtype:ident => $downcast:ident),+ $(,)?) => {
         match $col.data_type() {
             $(DataType::$dtype => Some(agg_single_col_int($col.$downcast()?, $accumulators)?),)+
+            _ => None,
+        }
+    };
+}
+
+/// Dispatch single-column Utf8/Binary groupby to the byte-key fast path.
+macro_rules! dispatch_single_col_bytes {
+    ($col:expr, $accumulators:expr, $($dtype:ident => $downcast:ident => $key:ty),+ $(,)?) => {
+        match $col.data_type() {
+            $(
+                DataType::$dtype => {
+                    let inner = $col.$downcast()?.as_arrow()?;
+                    Some(agg_single_col_bytes::<$key>(
+                        inner.len(),
+                        inner.null_count(),
+                        |i| inner.value(i),
+                        |i| (!inner.is_null(i)).then(|| inner.value(i)),
+                        $accumulators,
+                    )?)
+                }
+            )+
             _ => None,
         }
     };
@@ -768,7 +1040,7 @@ impl RecordBatch {
             output_names.push(name);
         }
 
-        // 3. Dispatch: single-column integer → FNV fast path, otherwise generic.
+        // 3. Dispatch: single-column typed fast paths, otherwise generic.
         let groupkey_indices = if groupby_physical.num_columns() == 1 {
             let col = groupby_physical.get_column(0);
             let fast_result = dispatch_single_col_int!(
@@ -776,12 +1048,24 @@ impl RecordBatch {
                 Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64,
                 UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64,
             );
+            let fast_result = match fast_result {
+                Some(indices) => Some(indices),
+                None => dispatch_single_col_bytes!(
+                    col, &mut accumulators,
+                    Utf8 => utf8 => str,
+                    Binary => binary => [u8],
+                ),
+            };
             match fast_result {
                 Some(indices) => indices,
                 None => agg_generic_hash_path(&groupby_physical, &mut accumulators)?,
             }
         } else {
-            agg_generic_hash_path(&groupby_physical, &mut accumulators)?
+            // Try symbolized path when string/binary columns are present.
+            match agg_symbolized_path(&groupby_physical, &mut accumulators)? {
+                Some(indices) => indices,
+                None => agg_generic_hash_path(&groupby_physical, &mut accumulators)?,
+            }
         };
 
         // 4. Construct output: group keys + aggregated columns.
@@ -1179,6 +1463,47 @@ mod tests {
         assert_batches_equal(&inline_result, &fallback_result);
     }
 
+    /// Helper for groupby where the aggregated column is entirely null.
+    fn make_all_null_vals_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![None, None, None, None, None],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_all_null_vals_min_matches_fallback() {
+        let (rb, group_by, schema) = make_all_null_vals_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_all_null_vals_max_matches_fallback() {
+        let (rb, group_by, schema) = make_all_null_vals_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
     // --- Float64 with NaN tests (validates f64::min/f64::max NaN handling) ---
 
     /// Helper for float-keyed groupby tests with NaN values.
@@ -1263,5 +1588,620 @@ mod tests {
         let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
         assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Byte-key fast path tests (Utf8 and Binary) ---
+
+    /// Helper for Utf8-keyed groupby with NO null keys (exercises the
+    /// `null_count == 0` fast branch in `agg_single_col_bytes`).
+    fn make_utf8_key_no_nulls_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Series::from_arrow(
+            Arc::new(Field::new("key", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                "alpha", "beta", "alpha", "gamma", "beta", "alpha",
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), None, Some(40), Some(50), Some(60)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for Utf8-keyed groupby with null keys.
+    fn make_utf8_key_with_nulls_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Series::from_arrow(
+            Arc::new(Field::new("key", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("alpha"),
+                None,
+                Some("alpha"),
+                Some(""),
+                None,
+                Some("beta"),
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for Binary-keyed groupby (with a null key and an empty key).
+    fn make_binary_key_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Series::from_arrow(
+            Arc::new(Field::new("key", DataType::Binary)),
+            Arc::new(arrow::array::LargeBinaryArray::from_opt_vec(vec![
+                Some(b"hello".as_ref()),
+                Some(b"world".as_ref()),
+                Some(b"hello".as_ref()),
+                None,
+                Some(b"".as_ref()),
+                Some(b"hello".as_ref()),
+                None,
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![
+                Some(10),
+                Some(20),
+                Some(30),
+                Some(40),
+                Some(50),
+                Some(60),
+                Some(70),
+            ],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Binary),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_utf8_key_no_nulls_count_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_no_nulls_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_utf8_key_no_nulls_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_no_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_utf8_key_no_nulls_max_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_no_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_utf8_key_with_nulls_count_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_with_nulls_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_utf8_key_with_nulls_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_utf8_key_with_nulls_min_matches_fallback() {
+        let (rb, group_by, schema) = make_utf8_key_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_binary_key_count_matches_fallback() {
+        let (rb, group_by, schema) = make_binary_key_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_binary_key_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_binary_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_binary_key_max_matches_fallback() {
+        let (rb, group_by, schema) = make_binary_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Multi-column string+int tests (exercises symbolized path) ---
+
+    /// Helper for multi-column groupby with Utf8 + Int64 keys.
+    fn make_multi_col_string_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("a"),
+                Some("a"),
+                Some("b"),
+                Some("b"),
+                Some("a"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Int64Array::from_iter(
+            Field::new("key2", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for multi-column groupby with Utf8 + Int64 keys, some null keys.
+    fn make_multi_col_string_with_nulls_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("a"),
+                None,
+                Some("a"),
+                None,
+                Some("a"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Int64Array::from_iter(
+            Field::new("key2", DataType::Int64),
+            vec![Some(1), Some(1), None, None, Some(1)],
+        )
+        .into_series();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for multi-column groupby with all Utf8 keys.
+    fn make_multi_col_all_string_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("a"),
+                Some("a"),
+                Some("b"),
+                Some("b"),
+                Some("a"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Series::from_arrow(
+            Arc::new(Field::new("key2", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("x"),
+                Some("y"),
+                Some("x"),
+                Some("y"),
+                Some("x"),
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        (rb, group_by, schema)
+    }
+
+    fn sort_by_keys(rb: &RecordBatch, key_names: &[&str]) -> RecordBatch {
+        let sort_exprs: Vec<_> = key_names
+            .iter()
+            .map(|name| BoundExpr::try_new(resolved_col(*name), rb.schema.as_ref()).unwrap())
+            .collect();
+        let descending = vec![false; key_names.len()];
+        let nulls_first = vec![false; key_names.len()];
+        rb.sort(&sort_exprs, &descending, &nulls_first).unwrap()
+    }
+
+    fn assert_batches_equal_multi_key(a: &RecordBatch, b: &RecordBatch, keys: &[&str]) {
+        let a = sort_by_keys(a, keys);
+        let b = sort_by_keys(b, keys);
+        assert_eq!(a.num_rows, b.num_rows, "Row count mismatch");
+        assert_eq!(a.num_columns(), b.num_columns(), "Column count mismatch");
+        let a_cols = a.as_materialized_series();
+        let b_cols = b.as_materialized_series();
+        for (ac, bc) in a_cols.iter().zip(b_cols.iter()) {
+            assert_eq!(ac.name(), bc.name(), "Column name mismatch");
+            assert_eq!(
+                ac.data_type(),
+                bc.data_type(),
+                "Column dtype mismatch for {}",
+                ac.name()
+            );
+            assert!(
+                series_equal_null_safe(ac, bc),
+                "Column data mismatch for '{}': {:?} vs {:?}",
+                ac.name(),
+                ac,
+                bc
+            );
+        }
+    }
+
+    #[test]
+    fn test_inline_multi_col_string_int_count_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_string_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_string_int_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_string_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_string_int_with_nulls_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_string_with_nulls_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_all_string_count_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_all_string_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_all_string_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_all_string_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_string_int_min_max_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_string_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    // --- Multi-column Binary + Int tests (exercises symbolized path for Binary) ---
+
+    /// Helper for multi-column groupby with Binary + Int64 keys.
+    fn make_multi_col_binary_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Binary)),
+            Arc::new(arrow::array::LargeBinaryArray::from(vec![
+                Some(b"aa".as_slice()),
+                Some(b"aa"),
+                Some(b"bb"),
+                Some(b"bb"),
+                Some(b"aa"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Int64Array::from_iter(
+            Field::new("key2", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Binary),
+            Field::new("key2", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_multi_col_binary_int_count_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_binary_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_multi_col_binary_int_sum_matches_fallback() {
+        let (rb, group_by, schema) = make_multi_col_binary_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    // --- Skip-path coverage: cases where agg_symbolized_path returns None ---
+
+    /// Multi-column groupby with two int columns (no strings) should bypass
+    /// the symbolized path and still produce correct results via the generic
+    /// hash path. Guards against regressions in the early-return None branch.
+    #[test]
+    fn test_inline_multi_col_int_only_matches_fallback() {
+        let key1 = Int64Array::from_iter(
+            Field::new("key1", DataType::Int64),
+            vec![Some(1), Some(1), Some(2), Some(2), Some(1)],
+        )
+        .into_series();
+        let key2 = Int64Array::from_iter(
+            Field::new("key2", DataType::Int64),
+            vec![Some(10), Some(20), Some(10), Some(20), Some(10)],
+        )
+        .into_series();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(1), Some(2), Some(3), Some(4), Some(5)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Int64),
+            Field::new("key2", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    /// Multi-column groupby with two long-string keys (well above the
+    /// avg-bytes-per-row gate) and count/sum/min/max aggs. Exercises the
+    /// active symbolized path.
+    #[test]
+    fn test_inline_multi_col_long_strings_matches_fallback() {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("alpha_long_string_value_aaaaa"),
+                Some("alpha_long_string_value_aaaaa"),
+                Some("beta_long_string_value_bbbbbbb"),
+                Some("beta_long_string_value_bbbbbbb"),
+                Some("alpha_long_string_value_aaaaa"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Series::from_arrow(
+            Arc::new(Field::new("key2", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("region_north_xxxxxxxxxxx"),
+                Some("region_south_yyyyyyyyyyy"),
+                Some("region_north_xxxxxxxxxxx"),
+                Some("region_south_yyyyyyyyyyy"),
+                Some("region_north_xxxxxxxxxxx"),
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    /// Short-string multi-column groupby (CHAR(1)-style keys) — symbolization
+    /// should be skipped under the avg-bytes-per-row gate. Mirrors the shape
+    /// of TPC-H Q1 to guard against the perf regression that motivated the
+    /// gating heuristic.
+    #[test]
+    fn test_inline_multi_col_short_strings_matches_fallback() {
+        let key1 = Series::from_arrow(
+            Arc::new(Field::new("key1", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("a"),
+                Some("a"),
+                Some("b"),
+                Some("b"),
+                Some("a"),
+            ])),
+        )
+        .unwrap();
+        let key2 = Series::from_arrow(
+            Arc::new(Field::new("key2", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("x"),
+                Some("y"),
+                Some("x"),
+                Some("y"),
+                Some("x"),
+            ])),
+        )
+        .unwrap();
+        let vals = Int64Array::from_iter(
+            Field::new("val", DataType::Int64),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key1", DataType::Utf8),
+            Field::new("key2", DataType::Utf8),
+            Field::new("val", DataType::Int64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![key1, key2, vals]).unwrap();
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("key1"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("key2"), &schema).unwrap(),
+        ];
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
     }
 }

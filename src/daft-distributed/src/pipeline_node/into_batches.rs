@@ -7,15 +7,15 @@ use common_metrics::{
     snapshot::StatSnapshotImpl as _,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -64,6 +64,10 @@ impl RuntimeStats for IntoBatchesStats {
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
     }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
+    }
 }
 
 pub(crate) struct IntoBatchesNode {
@@ -102,12 +106,9 @@ impl IntoBatchesNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(
-                UnknownClusteringConfig::new(
-                    child.config().clustering_spec.num_partitions().max(2),
-                )
-                .into(),
-            ),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(
+                child.config().clustering_spec.num_partitions().max(2),
+            )),
         );
         Self {
             config,

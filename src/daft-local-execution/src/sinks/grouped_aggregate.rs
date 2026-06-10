@@ -260,13 +260,22 @@ impl GroupedAggregateSink {
                 group_by,
             )?;
 
-        // MapGroups aggregations cannot be decomposed into partial / final stages and
-        // must see the full group in a single pass. Detect this case so that we force
-        // a partition-only strategy and run the original aggregations during the
-        // final aggregation step.
+        // MapGroups cannot be decomposed into partial/final stages — it must see the full
+        // group in one pass, so it always uses PartitionOnly.  AggFn has no single-pass
+        // path, so the two cannot coexist in the same aggregation.
         let has_map_groups = aggregations
             .iter()
             .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::MapGroups { .. }));
+        let has_agg_fn = aggregations
+            .iter()
+            .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::AggFn { .. }));
+        if has_map_groups && has_agg_fn {
+            return Err(common_error::DaftError::ValueError(
+                "Cannot mix MapGroups (Python UDFs) and extension aggregations (AggFn) \
+                 in the same aggregation; split them into separate operations."
+                    .to_string(),
+            ));
+        }
 
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by

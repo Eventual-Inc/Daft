@@ -581,6 +581,11 @@ def day_of_month(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("day_of_month", expr)
 
 
+def dayofmonth(expr: Expression) -> Expression:
+    """Alias for ``day_of_month``."""
+    return day_of_month(expr)
+
+
 def day_of_year(expr: Expression) -> Expression:
     """Retrieves the ordinal day for a datetime column. Starting at 1 for January 1st and ending at 365 or 366 for December 31st.
 
@@ -619,6 +624,11 @@ def day_of_year(expr: Expression) -> Expression:
         (Showing first 4 of 4 rows)
     """
     return Expression._call_builtin_scalar_fn("day_of_year", expr)
+
+
+def dayofyear(expr: Expression) -> Expression:
+    """Alias for ``day_of_year``."""
+    return day_of_year(expr)
 
 
 def week_of_year(expr: Expression) -> Expression:
@@ -661,6 +671,11 @@ def week_of_year(expr: Expression) -> Expression:
         (Showing first 4 of 4 rows)
     """
     return Expression._call_builtin_scalar_fn("week_of_year", expr)
+
+
+def weekofyear(expr: Expression) -> Expression:
+    """Alias for ``week_of_year``."""
+    return week_of_year(expr)
 
 
 def strftime(expr: Expression, format: str | None = None) -> Expression:
@@ -712,6 +727,11 @@ def strftime(expr: Expression, format: str | None = None) -> Expression:
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("strftime", expr, format)
+
+
+def date_format(expr: Expression, format: str | None = None) -> Expression:
+    """Alias for ``strftime``."""
+    return strftime(expr, format)
 
 
 def total_seconds(expr: Expression) -> Expression:
@@ -1196,6 +1216,21 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
     return Expression._call_builtin_scalar_fn("truncate", expr, relative_to, interval=interval)
 
 
+def trunc(expr: Expression, interval: str, relative_to: Expression | None = None) -> Expression:
+    """Alias for ``date_trunc`` with Spark-style argument order.
+
+    Args:
+        expr: The datetime/date expression to truncate.
+        interval: The truncation unit/interval (e.g. ``"day"``, ``"month"``, ``"1 hour"``).
+        relative_to (optional): Timestamp to truncate relative to.
+    """
+    normalized_interval = interval
+    stripped = interval.strip()
+    if stripped and not stripped[0].isdigit():
+        normalized_interval = f"1 {stripped}"
+    return date_trunc(normalized_interval, expr, relative_to)
+
+
 def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> Expression:
     """Converts a datetime column to a Unix timestamp with the specified time unit. (default: seconds).
 
@@ -1308,6 +1343,11 @@ def date_add(expr: Expression, days: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("date_add", expr, days)
 
 
+def dateadd(expr: Expression, days: Expression) -> Expression:
+    """Alias for ``date_add``."""
+    return date_add(expr, days)
+
+
 def date_sub(expr: Expression, days: Expression) -> Expression:
     """Subtracts a number of days from a date.
 
@@ -1351,6 +1391,104 @@ def date_diff(end: Expression, start: Expression) -> Expression:
         True
     """
     return Expression._call_builtin_scalar_fn("date_diff", end, start)
+
+
+def datediff(end: Expression, start: Expression) -> Expression:
+    """Alias for ``date_diff``."""
+    return date_diff(end, start)
+
+
+def datepart(part: str, expr: Expression) -> Expression:
+    """Alias-style extractor over existing temporal functions.
+
+    Args:
+        part: Date part name, e.g. ``"year"``, ``"dayofmonth"``, ``"weekofyear"``.
+        expr: Temporal expression to extract from.
+    """
+    normalized = part.strip().lower().replace(" ", "_")
+    extractors = {
+        "date": date,
+        "year": year,
+        "quarter": quarter,
+        "month": month,
+        "day": day,
+        "day_of_week": day_of_week,
+        "dayofweek": day_of_week,
+        "weekday": day_of_week,
+        "day_of_month": day_of_month,
+        "dayofmonth": day_of_month,
+        "day_of_year": day_of_year,
+        "dayofyear": day_of_year,
+        "week_of_year": week_of_year,
+        "weekofyear": week_of_year,
+        "week": week_of_year,
+        "hour": hour,
+        "minute": minute,
+        "second": second,
+        "millisecond": millisecond,
+        "microsecond": microsecond,
+        "nanosecond": nanosecond,
+        "unix_date": unix_date,
+    }
+    if normalized not in extractors:
+        supported = ", ".join(sorted(extractors))
+        raise ValueError(f"Unsupported datepart value: {part!r}. Supported values: {supported}")
+    return extractors[normalized](expr)
+
+
+def add_months(expr: Expression, months: Expression) -> Expression:
+    """Adds a number of months to a date or timestamp.
+
+    Mirrors Spark's ``add_months``: when the start day exceeds the number of days in
+    the resulting month, the result is clamped to the last day of that month. The
+    return type is always Date, even when the input is a Timestamp (the time-of-day
+    component is dropped before the shift).
+
+    Args:
+        expr: A Date or Timestamp expression.
+        months: An integer expression for the number of months to add (may be negative).
+
+    Returns:
+        Expression: a Date expression shifted by the given number of months.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import add_months
+        >>> df = daft.from_pydict({"d": ["2023-01-31", "2024-01-31"], "n": [1, 1]})
+        >>> df = df.with_column("d", df["d"].cast(daft.DataType.date()))
+        >>> df = df.with_column("result", add_months(df["d"], df["n"]))
+        >>> df.schema()["result"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("add_months", expr, months)
+
+
+def months_between(end: Expression, start: Expression) -> Expression:
+    """Returns the number of months between two dates or timestamps.
+
+    Mirrors Spark's ``months_between``: returns an integer when both inputs share the
+    same day-of-month or are both the last day of their respective months; otherwise
+    returns ``months_diff + (day1 - day2 + (time1 - time2)/86400) / 31`` rounded to
+    eight decimal places.
+
+    Args:
+        end: The end Date or Timestamp expression.
+        start: The start Date or Timestamp expression.
+
+    Returns:
+        Expression: a Float64 expression with the number of months (end - start).
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import months_between
+        >>> df = daft.from_pydict({"a": ["1997-02-28"], "b": ["1996-10-30"]})
+        >>> df = df.with_column("a", df["a"].cast(daft.DataType.date()))
+        >>> df = df.with_column("b", df["b"].cast(daft.DataType.date()))
+        >>> df = df.with_column("diff", months_between(df["a"], df["b"]))
+        >>> df.schema()["diff"].dtype == daft.DataType.float64()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("months_between", end, start)
 
 
 def date_from_unix_date(expr: Expression) -> Expression:
@@ -1454,3 +1592,157 @@ def from_unixtime(expr: Expression, format: str | None = None) -> Expression:
     if format is not None:
         return Expression._call_builtin_scalar_fn("from_unixtime", expr, format=format)
     return Expression._call_builtin_scalar_fn("from_unixtime", expr)
+
+
+def make_date(year: Expression, month: Expression, day: Expression) -> Expression:
+    """Creates a date from year, month, and day integer components.
+
+    Invalid dates (e.g., Feb 30) return null.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+
+    Returns:
+        Expression: a Date expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_date
+        >>> make_date(daft.col("y"), daft.col("m"), daft.col("d"))
+        make_date(col(y), col(m), col(d))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    return Expression._call_builtin_scalar_fn("make_date", year, month, day)
+
+
+def make_timestamp(
+    year: Expression,
+    month: Expression,
+    day: Expression,
+    hour: Expression,
+    minute: Expression,
+    second: Expression,
+    timezone: str | None = None,
+) -> Expression:
+    """Creates a timestamp from individual date/time components.
+
+    The ``second`` parameter accepts fractional values for sub-second precision.
+    Invalid component combinations return null.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+        hour: integer expression for the hour (0-23).
+        minute: integer expression for the minute (0-59).
+        second: numeric expression for the second (0-59, may include fractional part).
+        timezone: optional timezone string (e.g. ``"UTC"``). When provided the
+            returned timestamp carries this timezone metadata.
+
+    Returns:
+        Expression: a Timestamp(microseconds) expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_timestamp
+        >>> make_timestamp(daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s"))
+        make_timestamp(col(y), col(m), col(d), col(h), col(mi), col(s))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    hour = Expression._to_expression(hour)
+    minute = Expression._to_expression(minute)
+    second = Expression._to_expression(second)
+    return Expression._call_builtin_scalar_fn(
+        "make_timestamp", year, month, day, hour, minute, second, timezone=timezone
+    )
+
+
+def make_timestamp_ltz(
+    year: Expression,
+    month: Expression,
+    day: Expression,
+    hour: Expression,
+    minute: Expression,
+    second: Expression,
+    timezone: str | None = None,
+) -> Expression:
+    """Creates a UTC timestamp from individual date/time components.
+
+    When ``timezone`` is provided, the components are interpreted in that
+    timezone and converted to UTC. Without a timezone the components are
+    treated as UTC directly.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+        hour: integer expression for the hour (0-23).
+        minute: integer expression for the minute (0-59).
+        second: numeric expression for the second (0-59, may include fractional part).
+        timezone: optional source timezone string (e.g. ``"US/Eastern"``).
+
+    Returns:
+        Expression: a Timestamp(microseconds, UTC) expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_timestamp_ltz
+        >>> make_timestamp_ltz(
+        ...     daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s")
+        ... )
+        make_timestamp_ltz(col(y), col(m), col(d), col(h), col(mi), col(s))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    hour = Expression._to_expression(hour)
+    minute = Expression._to_expression(minute)
+    second = Expression._to_expression(second)
+    return Expression._call_builtin_scalar_fn(
+        "make_timestamp_ltz", year, month, day, hour, minute, second, timezone=timezone
+    )
+
+
+def last_day(expr: Expression) -> Expression:
+    """Returns the last day of the month for the given date or timestamp.
+
+    Args:
+        expr: a Date or Timestamp expression.
+
+    Returns:
+        Expression: a Date expression representing the last day of that month.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import last_day
+        >>> last_day(daft.col("dt"))
+        last_day(col(dt))
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("last_day", expr)
+
+
+def next_day(expr: Expression, day_of_week: str) -> Expression:
+    """Returns the next occurrence of the specified day of the week after the given date.
+
+    Args:
+        expr: a Date or Timestamp expression.
+        day_of_week: the target weekday (e.g. ``"Monday"``, ``"Mon"``).
+
+    Returns:
+        Expression: a Date expression for the next occurrence of that weekday.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import next_day
+        >>> next_day(daft.col("dt"), "Monday")
+        next_day(col(dt), lit("Monday"))
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("next_day", expr, day_of_week=day_of_week)

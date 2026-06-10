@@ -11,17 +11,33 @@ import pytz
 import daft
 from daft import DataType, col
 from daft.functions import (
+    add_months,
     current_date,
     current_timestamp,
     current_timezone,
     date_add,
     date_diff,
+    date_format,
     date_from_unix_date,
     date_sub,
+    date_trunc,
+    dateadd,
+    datediff,
+    datepart,
+    dayofmonth,
+    dayofyear,
     from_unixtime,
+    last_day,
+    make_date,
+    make_timestamp,
+    make_timestamp_ltz,
+    months_between,
+    next_day,
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
+    trunc,
+    weekofyear,
 )
 
 
@@ -838,6 +854,50 @@ def test_date_add() -> None:
     assert result == expected
 
 
+def test_temporal_alias_functions() -> None:
+    df = daft.from_pydict(
+        {
+            "dt": [datetime(2024, 2, 29, 12, 30, 45)],
+            "d": [date(2024, 2, 29)],
+            "n": [3],
+        }
+    )
+
+    result = df.select(
+        dayofmonth(col("dt")).alias("dom_alias"),
+        col("dt").day_of_month().alias("dom_expected"),
+        dayofyear(col("dt")).alias("doy_alias"),
+        col("dt").day_of_year().alias("doy_expected"),
+        weekofyear(col("dt")).alias("woy_alias"),
+        col("dt").week_of_year().alias("woy_expected"),
+        date_format(col("dt"), "%Y-%m-%d").alias("fmt_alias"),
+        col("dt").strftime("%Y-%m-%d").alias("fmt_expected"),
+        trunc(col("dt"), "day").alias("trunc_alias"),
+        date_trunc("1 day", col("dt")).alias("trunc_expected"),
+        dateadd(col("d"), col("n")).alias("dateadd_alias"),
+        date_add(col("d"), col("n")).alias("dateadd_expected"),
+        datediff(col("d"), col("d")).alias("datediff_alias"),
+        date_diff(col("d"), col("d")).alias("datediff_expected"),
+        datepart("year", col("dt")).alias("datepart_year_alias"),
+        col("dt").year().alias("datepart_year_expected"),
+        datepart("dayofmonth", col("dt")).alias("datepart_dom_alias"),
+        col("dt").day_of_month().alias("datepart_dom_expected"),
+        datepart("week", col("dt")).alias("datepart_week_alias"),
+        col("dt").week_of_year().alias("datepart_week_expected"),
+    ).to_pydict()
+
+    assert result["dom_alias"] == result["dom_expected"]
+    assert result["doy_alias"] == result["doy_expected"]
+    assert result["woy_alias"] == result["woy_expected"]
+    assert result["fmt_alias"] == result["fmt_expected"]
+    assert result["trunc_alias"] == result["trunc_expected"]
+    assert result["dateadd_alias"] == result["dateadd_expected"]
+    assert result["datediff_alias"] == result["datediff_expected"]
+    assert result["datepart_year_alias"] == result["datepart_year_expected"]
+    assert result["datepart_dom_alias"] == result["datepart_dom_expected"]
+    assert result["datepart_week_alias"] == result["datepart_week_expected"]
+
+
 def test_date_sub() -> None:
     df = daft.from_pydict({"d": [date(2021, 1, 10), date(2021, 6, 15)], "n": [5, 10]})
     df = df.select(date_sub(col("d"), col("n")).alias("result"))
@@ -951,3 +1011,286 @@ def test_temporal_batch2_sql() -> None:
     assert result["from_unix"] == [date(1970, 1, 11)]
     assert isinstance(result["ts_s"][0], datetime)
     assert result["fmt"] == ["2021-01-01 00:00:00"]
+
+
+# --- make_date ---
+
+
+def test_make_date() -> None:
+    df = daft.from_pydict({"y": [2021, 2020, 2000], "m": [1, 2, 12], "d": [15, 29, 31]})
+    df = df.with_column("dt", make_date(col("y"), col("m"), col("d")))
+    result = df.to_pydict()
+    assert result["dt"] == [date(2021, 1, 15), date(2020, 2, 29), date(2000, 12, 31)]
+
+
+def test_make_date_invalid() -> None:
+    df = daft.from_pydict({"y": [2021, 2021], "m": [2, 13], "d": [30, 1]})
+    df = df.with_column("dt", make_date(col("y"), col("m"), col("d")))
+    result = df.to_pydict()
+    assert result["dt"] == [None, None]
+
+
+# --- make_timestamp ---
+
+
+def test_make_timestamp() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [30], "s": [45.0]})
+    df = df.with_column("ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 30, 45)]
+
+
+def test_make_timestamp_with_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="UTC")
+    )
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
+
+
+def test_make_timestamp_with_non_utc_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts",
+        make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="America/New_York"),
+    )
+    result = df.to_pydict()
+    ts = result["ts"][0]
+    # 12:00 EST = 17:00 UTC. Verify the underlying UTC value is correct
+    # by checking the UTC hour via astimezone.
+    assert ts.tzinfo is not None
+    utc_ts = ts.astimezone(timezone.utc)
+    assert utc_ts.hour == 17
+    # And the local representation should be 12:00 EST.
+    assert ts.hour == 12
+
+
+# --- make_timestamp_ltz ---
+
+
+def test_make_timestamp_ltz() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column("ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
+
+
+def test_make_timestamp_ltz_with_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="US/Eastern")
+    )
+    result = df.to_pydict()
+    # 12:00 EST = 17:00 UTC
+    assert result["ts"] == [datetime(2021, 1, 1, 17, 0, 0, tzinfo=timezone.utc)]
+
+
+# --- last_day ---
+
+
+def test_last_day() -> None:
+    df = daft.from_pydict({"dt": [date(2021, 1, 15), date(2021, 2, 10), date(2020, 2, 10), date(2021, 4, 1)]})
+    df = df.with_column("last", last_day(col("dt")))
+    result = df.to_pydict()
+    assert result["last"] == [
+        date(2021, 1, 31),
+        date(2021, 2, 28),
+        date(2020, 2, 29),
+        date(2021, 4, 30),
+    ]
+
+
+# --- next_day ---
+
+
+def test_next_day() -> None:
+    # 2021-01-01 is a Friday
+    df = daft.from_pydict({"dt": [date(2021, 1, 1), date(2021, 1, 1), date(2021, 1, 1)]})
+    results = {}
+    for dow in ["Mon", "Fri", "Sun"]:
+        tmp = df.with_column("next_d", next_day(col("dt"), dow))
+        results[dow] = tmp.to_pydict()["next_d"]
+    assert results["Mon"] == [date(2021, 1, 4)] * 3  # next Mon
+    assert results["Fri"] == [date(2021, 1, 8)] * 3  # next Fri (not same day)
+    assert results["Sun"] == [date(2021, 1, 3)] * 3  # next Sun
+
+
+# --- add_months ---
+
+
+def test_add_months_basic() -> None:
+    df = daft.from_pydict(
+        {
+            "d": [date(2021, 1, 15), date(2021, 6, 1), date(2020, 12, 31)],
+            "n": [1, 6, 1],
+        }
+    )
+    df = df.with_column("result", add_months(col("d"), col("n")))
+    assert df.to_pydict()["result"] == [date(2021, 2, 15), date(2021, 12, 1), date(2021, 1, 31)]
+
+
+def test_add_months_end_of_month_clamping() -> None:
+    # Jan 31 + 1 month -> Feb 28 (non-leap)
+    # Jan 31 + 1 month -> Feb 29 (leap year 2024)
+    # Mar 31 - 1 month -> Feb 28
+    df = daft.from_pydict(
+        {
+            "d": [date(2023, 1, 31), date(2024, 1, 31), date(2023, 3, 31)],
+            "n": [1, 1, -1],
+        }
+    )
+    df = df.with_column("result", add_months(col("d"), col("n")))
+    assert df.to_pydict()["result"] == [date(2023, 2, 28), date(2024, 2, 29), date(2023, 2, 28)]
+
+
+def test_add_months_negative_and_year_rollover() -> None:
+    df = daft.from_pydict(
+        {
+            "d": [date(2021, 3, 15), date(2021, 1, 15)],
+            "n": [-5, -1],
+        }
+    )
+    df = df.with_column("result", add_months(col("d"), col("n")))
+    assert df.to_pydict()["result"] == [date(2020, 10, 15), date(2020, 12, 15)]
+
+
+def test_add_months_timestamp_input() -> None:
+    df = daft.from_pydict({"ts": [datetime(2023, 1, 31, 12, 30)], "n": [1]})
+    df = df.with_column("result", add_months(col("ts"), col("n")))
+    assert df.schema()["result"].dtype == DataType.date()
+    assert df.to_pydict()["result"] == [date(2023, 2, 28)]
+
+
+def test_add_months_null_propagation() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 15), None, date(2021, 1, 15)], "n": [1, 1, None]})
+    df = df.with_column("result", add_months(col("d"), col("n")))
+    assert df.to_pydict()["result"] == [date(2021, 2, 15), None, None]
+
+
+# --- months_between ---
+
+
+def test_months_between_same_day_of_month() -> None:
+    df = daft.from_pydict(
+        {
+            "a": [date(2021, 6, 15), date(2022, 1, 10)],
+            "b": [date(2021, 1, 15), date(2021, 1, 10)],
+        }
+    )
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    assert df.to_pydict()["diff"] == [5.0, 12.0]
+
+
+def test_months_between_both_last_day_of_month() -> None:
+    # Last-day-to-last-day should yield an integer regardless of day count.
+    df = daft.from_pydict(
+        {
+            "a": [date(2021, 2, 28), date(2024, 2, 29)],
+            "b": [date(2021, 1, 31), date(2024, 1, 31)],
+        }
+    )
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    assert df.to_pydict()["diff"] == [1.0, 1.0]
+
+
+def test_months_between_with_day_difference() -> None:
+    # Pure date inputs: 4 months + (28-30)/31 = 3.93548387
+    df = daft.from_pydict({"a": [date(1997, 2, 28)], "b": [date(1996, 10, 30)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(3.93548387, abs=1e-8)
+
+
+def test_months_between_spark_doc_example() -> None:
+    # Spark docs: months_between('1997-02-28 10:30:00', '1996-10-30') = 3.94959677
+    df = daft.from_pydict(
+        {
+            "a": [datetime(1997, 2, 28, 10, 30, 0)],
+            "b": [datetime(1996, 10, 30, 0, 0, 0)],
+        }
+    )
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(3.94959677, abs=1e-8)
+
+
+def test_months_between_same_day_ignores_time_of_day() -> None:
+    # Same calendar day: the same-day fast path returns the integer month diff
+    # regardless of any time-of-day component.
+    df = daft.from_pydict(
+        {
+            "a": [datetime(2021, 6, 15, 12, 0)],
+            "b": [datetime(2021, 6, 15, 0, 0)],
+        }
+    )
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    assert df.to_pydict()["diff"] == [0.0]
+
+
+def test_months_between_clamping_off_by_one() -> None:
+    # start + m_raw months clamps PAST end, so Spark counts only m_raw - 1
+    # complete months. months_between(2021-02-15, 2020-12-30):
+    #   shift_months(2020-12-30, 2) = 2021-02-28 (clamped) > 2021-02-15
+    #   so months_diff_floor = 1, day_diff = 15 - 30 = -15
+    #   result = 1 + (-15)/31 = 0.51612903
+    df = daft.from_pydict({"a": [date(2021, 2, 15)], "b": [date(2020, 12, 30)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(0.51612903, abs=1e-8)
+
+
+def test_months_between_negative_clamping() -> None:
+    # Mirror of the previous case in the negative direction.
+    # months_between(2020-12-30, 2021-02-15):
+    #   m_raw = -2; shift_months(2021-02-15, -2) = 2020-12-15 < 2020-12-30
+    #   so months_diff_floor = -1, day_diff = 30 - 15 = 15
+    #   result = -1 + 15/31 = -0.51612903
+    df = daft.from_pydict({"a": [date(2020, 12, 30)], "b": [date(2021, 2, 15)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    result = df.to_pydict()["diff"][0]
+    assert result == pytest.approx(-0.51612903, abs=1e-8)
+
+
+def test_months_between_negative() -> None:
+    df = daft.from_pydict({"a": [date(2021, 1, 15)], "b": [date(2021, 6, 15)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    assert df.to_pydict()["diff"] == [-5.0]
+
+
+def test_months_between_null_propagation() -> None:
+    df = daft.from_pydict({"a": [date(2021, 6, 15), None], "b": [None, date(2021, 1, 15)]})
+    df = df.with_column("diff", months_between(col("a"), col("b")))
+    assert df.to_pydict()["diff"] == [None, None]
+
+
+# --- SQL integration ---
+
+
+def test_date_construction_sql() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [15]})  # noqa: F841
+    result = daft.sql("SELECT make_date(y, m, d) as dt FROM df").to_pydict()
+    assert result["dt"] == [date(2021, 1, 15)]
+
+    result = daft.sql("SELECT last_day(make_date(y, m, d)) as ld FROM df").to_pydict()
+    assert result["ld"] == [date(2021, 1, 31)]
+
+    result = daft.sql("SELECT next_day(make_date(y, m, d), 'Monday') as next_d FROM df").to_pydict()
+    assert result["next_d"] == [date(2021, 1, 18)]
+
+
+def test_add_months_months_between_sql() -> None:
+    df = daft.from_pydict(  # noqa: F841
+        {
+            "start": [date(2023, 1, 31)],
+            "end": [date(1997, 2, 28)],
+            "ref": [date(1996, 10, 30)],
+            "n": [1],
+        }
+    )
+    add_result = daft.sql("SELECT add_months(start, n) as shifted FROM df").to_pydict()
+    assert add_result["shifted"] == [date(2023, 2, 28)]
+
+    between_result = daft.sql('SELECT months_between("end", ref) as diff FROM df').to_pydict()
+    # Pure-date inputs: 4 + (28 - 30) / 31 = 3.93548387
+    assert between_result["diff"][0] == pytest.approx(3.93548387, abs=1e-8)

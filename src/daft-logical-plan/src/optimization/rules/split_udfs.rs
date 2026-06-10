@@ -9,7 +9,7 @@ use daft_dsl::{
     optimization::{get_required_columns, requires_computation},
     resolved_col,
 };
-use daft_functions_list::ListMap;
+use daft_functions_list::{ListFilter, ListMap};
 use itertools::Itertools;
 
 use super::OptimizerRule;
@@ -219,7 +219,7 @@ struct TruncateAnyUDFChildren {
     pub(crate) new_children: Vec<ExprRef>,
     stage_idx: usize,
     expr_idx: usize,
-    is_list_map: bool,
+    is_list_eval: bool,
 }
 
 impl TruncateAnyUDFChildren {
@@ -228,7 +228,7 @@ impl TruncateAnyUDFChildren {
             new_children: Vec::new(),
             stage_idx,
             expr_idx,
-            is_list_map: false,
+            is_list_eval: false,
         }
     }
 }
@@ -257,9 +257,9 @@ impl TreeNodeRewriter for TruncateRootUDF {
                 }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // TODO: UDFs inside of list.map() can not be split
+            // TODO: UDFs inside of list.map()/list.filter() can not be split
             Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
-                if udf.type_id() == TypeId::of::<ListMap>() =>
+                if is_list_eval_type(udf.type_id()) =>
             {
                 Ok(common_treenode::Transformed::no(node))
             }
@@ -306,7 +306,7 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // Just continue
-            _ if self.is_list_map => Ok(common_treenode::Transformed::no(node)),
+            _ if self.is_list_eval => Ok(common_treenode::Transformed::no(node)),
             // This rewriter should never encounter a UDF expression (they should always be truncated and replaced)
             _ if is_udf(&node) => {
                 unreachable!("TruncateAnyUDFChildren should never run on a UDF expression");
@@ -323,11 +323,11 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
                 }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // TODO: UDFs inside of list.map() can not be split
+            // TODO: UDFs inside of list.map()/list.filter() can not be split
             Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func: udf, .. }))
-                if udf.type_id() == TypeId::of::<ListMap>() =>
+                if is_list_eval_type(udf.type_id()) =>
             {
-                self.is_list_map = true;
+                self.is_list_eval = true;
                 Ok(common_treenode::Transformed::no(node))
             }
             // Attempt to truncate any children that are UDFs, replacing them with a Expr::Column
@@ -363,14 +363,18 @@ impl TreeNodeRewriter for TruncateAnyUDFChildren {
     }
 }
 
-fn is_list_map(expr: &ExprRef) -> bool {
-    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<ListMap>())
+fn is_list_eval_type(type_id: TypeId) -> bool {
+    type_id == TypeId::of::<ListMap>() || type_id == TypeId::of::<ListFilter>()
 }
 
-fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) -> bool {
+fn is_list_eval(expr: &ExprRef) -> bool {
+    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if is_list_eval_type(func.type_id()))
+}
+
+fn exists_skip_list_eval<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) -> bool {
     let mut found = false;
     expr.apply(|n| {
-        Ok(if is_list_map(n) {
+        Ok(if is_list_eval(n) {
             TreeNodeRecursion::Stop
         } else if matches!(n.as_ref(), daft_dsl::Expr::Coalesce(_)) {
             // Don't split UDFs inside Coalesce expressions to preserve short-circuit behavior
@@ -489,7 +493,7 @@ fn recursive_optimize_project(
     let has_udfs = projection
         .projection
         .iter()
-        .any(|expr| exists_skip_list_map(expr, is_udf));
+        .any(|expr| exists_skip_list_eval(expr, is_udf));
     if !has_udfs {
         return Ok(Transformed::no(plan));
     }
@@ -540,7 +544,7 @@ fn recursive_optimize_project(
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
     let (udf_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
-        .partition(|expr| exists_skip_list_map(expr, is_udf));
+        .partition(|expr| exists_skip_list_eval(expr, is_udf));
 
     // Build the new stateless Project: [...all columns that came before it, ...stateless_projections]
     let passthrough_columns = {

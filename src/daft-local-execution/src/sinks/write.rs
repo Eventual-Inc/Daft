@@ -2,7 +2,8 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, CHECKPOINT_FILES_STAGED_KEY, CHECKPOINTS_SEALED_KEY, Counter, Meter,
+    ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_CHECKPOINTS, UNIT_FILES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -29,6 +30,9 @@ pub(crate) struct WriteStats {
     bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
+    checkpoint_files_staged: Counter,
+    checkpoints_sealed: Counter,
 
     node_kv: Vec<KeyValue>,
 }
@@ -60,6 +64,17 @@ impl RuntimeStats for WriteStats {
                 None,
                 Some(UNIT_BYTES.into()),
             ),
+            num_tasks: meter.num_tasks_metric(),
+            checkpoint_files_staged: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINT_FILES_STAGED_KEY,
+                None,
+                Some(UNIT_FILES.into()),
+            ),
+            checkpoints_sealed: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINTS_SEALED_KEY,
+                None,
+                Some(UNIT_CHECKPOINTS.into()),
+            ),
 
             node_kv,
         }
@@ -76,6 +91,9 @@ impl RuntimeStats for WriteStats {
             rows_written,
             bytes_written,
             bytes_in: self.bytes_in.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
+            checkpoint_files_staged: self.checkpoint_files_staged.load(ordering),
+            checkpoints_sealed: self.checkpoints_sealed.load(ordering),
         })
     }
 
@@ -97,6 +115,19 @@ impl RuntimeStats for WriteStats {
 
     // bytes_out for WriteSink doesn't make sense — bytes_written is the meaningful metric.
     fn add_bytes_out(&self, _bytes: u64) {}
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
+
+    fn add_checkpoint_files_staged(&self, files: u64) {
+        self.checkpoint_files_staged
+            .add(files, self.node_kv.as_slice());
+    }
+
+    fn add_checkpoints_sealed(&self, n: u64) {
+        self.checkpoints_sealed.add(n, self.node_kv.as_slice());
+    }
 }
 
 #[derive(Debug)]
