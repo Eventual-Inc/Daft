@@ -513,9 +513,6 @@ def test_matches_reference_implementation(strategy, by, num_partitions):
 
 
 class TestAlignedAsofJoinValidation:
-    @pytest.mark.skip(
-        reason="the shuffle-based fallback silently equalises partition counts; enable once the aligned execution path lands"
-    )
     def test_mismatched_partition_counts_raises(self):
         """Left and right with different partition counts raise at execution time."""
         left = value_aligned(pa.table({"ts": [1, 2, 3, 4], "v": [1, 2, 3, 4]}), "ts", [3], name="left")
