@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult};
 
 use super::producer::KafkaHeader;
 
-// TODO(native-kafka-write): remove once Task 8/9 validates headers from writer integration.
+// TODO(native-kafka-write): remove once Task 9 validates headers from writer projection.
 #[allow(dead_code)]
 pub(crate) fn validate_header_key(key: &str) -> DaftResult<()> {
     if key.is_empty() {
@@ -14,7 +14,7 @@ pub(crate) fn validate_header_key(key: &str) -> DaftResult<()> {
     Ok(())
 }
 
-// TODO(native-kafka-write): remove once Task 8/9 builds headers from writer integration.
+// TODO(native-kafka-write): remove once Task 9 builds headers from writer projection.
 #[allow(dead_code)]
 pub(crate) fn make_header(key: &str, value: Option<&[u8]>) -> DaftResult<KafkaHeader> {
     validate_header_key(key)?;

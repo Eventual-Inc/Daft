@@ -45,6 +45,8 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use file::TargetFileSizeWriterFactory;
 use ipc::IPCWriterFactory;
+#[cfg(feature = "kafka")]
+pub use kafka::writer::make_kafka_writer_factory;
 #[cfg(feature = "python")]
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;

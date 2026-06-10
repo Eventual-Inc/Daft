@@ -3,7 +3,7 @@ use common_error::{DaftError, DaftResult};
 #[cfg(test)]
 use super::producer::{KafkaHeader, KafkaOutgoingRecord};
 
-// TODO(native-kafka-write): remove once Task 8/9 validates records from writer integration.
+// TODO(native-kafka-write): remove once Task 9 validates records from writer projection.
 #[allow(dead_code)]
 pub(crate) fn validate_topic(topic: &str) -> DaftResult<()> {
     if topic.is_empty() {
@@ -15,7 +15,7 @@ pub(crate) fn validate_topic(topic: &str) -> DaftResult<()> {
     Ok(())
 }
 
-// TODO(native-kafka-write): remove once Task 8/9 validates records from writer integration.
+// TODO(native-kafka-write): remove once Task 9 validates records from writer projection.
 #[allow(dead_code)]
 pub(crate) fn validate_partition(partition: i32) -> DaftResult<()> {
     if partition < 0 {
