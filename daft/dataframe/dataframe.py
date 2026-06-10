@@ -1346,8 +1346,8 @@ class DataFrame:
         partition: int | None = None,
         partition_col: str | None = None,
         timestamp_ms_col: str | None = typing.cast(str | None, _DEFAULT_KAFKA_TIMESTAMP_MS_COL),
-        value_format: Literal["raw", "utf8", "json"] = "raw",
-        key_format: Literal["raw", "utf8"] = "raw",
+        value_format: str = "raw",
+        key_format: str = "raw",
         kafka_client_config: Mapping[str, object] | None = None,
         timeout_ms: int = 10_000,
     ) -> "DataFrame":
@@ -1377,12 +1377,12 @@ class DataFrame:
             timestamp_ms_col (str | None): Optional column containing Kafka message timestamps
                 as epoch milliseconds. If omitted, Daft uses ``"timestamp_ms"`` when that column
                 exists; pass ``None`` to always let Kafka assign timestamps.
-            value_format (Literal["raw", "utf8", "json"]): Encoding used for ``value_col``.
+            value_format (str): Encoding used for ``value_col``.
                 ``"raw"`` expects binary values, ``"utf8"`` expects strings, and ``"json"``
                 serializes JSON-compatible Daft values. A top-level null value sends a Kafka
                 null value; nested JSON nulls remain JSON ``null``.
-            key_format (Literal["raw", "utf8"]): Encoding used for ``key_col``. Defaults to
-                ``"raw"``.
+            key_format (str): Encoding used for ``key_col``. Must be ``"raw"`` or ``"utf8"``.
+                Defaults to ``"raw"``.
             kafka_client_config (Mapping[str, object] | None): Optional scalar Kafka producer
                 options passed to librdkafka. ``bootstrap.servers`` is managed by
                 ``bootstrap_servers`` and cannot be overridden. ``transactional.id`` is not
