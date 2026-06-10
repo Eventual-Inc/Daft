@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 
 
@@ -91,3 +93,63 @@ def test_into_batches_empty_dataframe():
 
     result = df.collect()
     assert len(result) == 0
+
+
+# Regression tests for GitHub issue #7087 — tests only, no fix applied.
+# These are expected to FAIL on main to demonstrate the bug.
+
+
+def test_interleaved_iter_partitions_no_panic(tmp_path):
+    """Interleaved iteration across two DataFrames with different source types must not panic.
+
+    Regression for #7087: advancing a ScanTasks generator (read_parquet)
+    and then calling next() on a concurrent InMemory generator (from_pydict)
+    before the first is exhausted triggered an unreachable! panic in
+    InputSender::send at input_sender.rs:32.
+    """
+    daft.from_pydict({"id": [1, 2, 3, 4]}).write_parquet(str(tmp_path / "data"))
+
+    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
+    df2 = daft.from_pydict({"id": [5, 6, 7, 8]})      # InMemory source
+
+    gen1 = df1.into_batches(2).iter_partitions()
+    gen2 = df2.into_batches(2).iter_partitions()
+
+    batch1 = next(gen1)
+    batch2 = next(gen2)
+
+    result1 = batch1.to_arrow()["id"].to_pylist()
+    for mp in gen1:
+        result1.extend(mp.to_arrow()["id"].to_pylist())
+
+    result2 = batch2.to_arrow()["id"].to_pylist()
+    for mp in gen2:
+        result2.extend(mp.to_arrow()["id"].to_pylist())
+
+    assert sorted(result1) == [1, 2, 3, 4]
+    assert sorted(result2) == [5, 6, 7, 8]
+
+
+def test_interleaved_to_arrow_iter_no_panic(tmp_path):
+    """to_arrow_iter() variant of the interleaved-iteration regression (#7087)."""
+    daft.from_pydict({"id": [10, 20, 30, 40]}).write_parquet(str(tmp_path / "data"))
+
+    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
+    df2 = daft.from_pydict({"id": [50, 60, 70, 80]})  # InMemory source
+
+    gen1 = df1.into_batches(2).to_arrow_iter()
+    gen2 = df2.into_batches(2).to_arrow_iter()
+
+    batch1 = next(gen1)
+    batch2 = next(gen2)
+
+    result1 = batch1["id"].to_pylist()
+    for b in gen1:
+        result1.extend(b["id"].to_pylist())
+
+    result2 = batch2["id"].to_pylist()
+    for b in gen2:
+        result2.extend(b["id"].to_pylist())
+
+    assert sorted(result1) == [10, 20, 30, 40]
+    assert sorted(result2) == [50, 60, 70, 80]
