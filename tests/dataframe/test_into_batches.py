@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_large_partition_into_batches(make_df):
@@ -99,6 +100,10 @@ def test_into_batches_empty_dataframe():
 # These are expected to FAIL on main to demonstrate the bug.
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="Plan-cache collision only affects NativeRunner",
+)
 def test_interleaved_iter_partitions_no_panic(tmp_path):
     """Interleaved iteration across two DataFrames with different source types must not panic.
 
@@ -130,6 +135,10 @@ def test_interleaved_iter_partitions_no_panic(tmp_path):
     assert sorted(result2) == [5, 6, 7, 8]
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="Plan-cache collision only affects NativeRunner",
+)
 def test_interleaved_to_arrow_iter_no_panic(tmp_path):
     """to_arrow_iter() variant of the interleaved-iteration regression (#7087)."""
     daft.from_pydict({"id": [10, 20, 30, 40]}).write_parquet(str(tmp_path / "data"))
