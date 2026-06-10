@@ -3,7 +3,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Write as _},
     hash::{Hash, Hasher},
     sync::{Arc, OnceLock},
 };
@@ -14,6 +14,7 @@ use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;
+use fnv::FnvHasher;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -180,6 +181,8 @@ pub enum ScanSourceKind {
         chunk_spec: Option<ChunkSpec>,
         iceberg_delete_files: Option<Vec<String>>,
         parquet_metadata: Option<Arc<DaftParquetMetadata>>,
+        file_etag: Option<String>,
+        file_mtime: Option<u64>,
     },
     Database {
         path: String,
@@ -204,12 +207,16 @@ impl Hash for ScanSource {
                 path,
                 chunk_spec,
                 iceberg_delete_files,
+                file_etag,
+                file_mtime,
                 ..
             } => {
                 0u8.hash(state);
                 path.hash(state);
                 chunk_spec.hash(state);
                 iceberg_delete_files.hash(state);
+                file_etag.hash(state);
+                file_mtime.hash(state);
             }
             ScanSourceKind::Database { path } => {
                 1u8.hash(state);
@@ -255,6 +262,75 @@ impl ScanSource {
         match &self.kind {
             ScanSourceKind::File { chunk_spec, .. } => chunk_spec.as_ref(),
             _ => None,
+        }
+    }
+
+    /// Compute checkpoint atom keys for this source.
+    ///
+    /// For unsplit files, the atom is the file path itself.
+    /// For split files, each chunk produces its own atom key encoding the
+    /// chunk identity (e.g. `path#rg=0`, `path#rg=1` for Parquet row groups).
+    ///
+    /// When available, file identity metadata (etag or mtime) is appended so
+    /// that replaced files produce different keys and get reprocessed.
+    ///
+    /// For Iceberg merge-on-read sources, the applicable delete-file set is
+    /// folded in as well: a data file's effective contents change when delete
+    /// files are added across snapshots, even though its path and size stay
+    /// fixed, so the delete files must be part of its identity.
+    #[must_use]
+    pub fn source_atom_keys(&self) -> Vec<String> {
+        let ScanSourceKind::File {
+            path,
+            chunk_spec,
+            file_etag,
+            file_mtime,
+            iceberg_delete_files,
+            ..
+        } = &self.kind
+        else {
+            return vec![self.get_path().to_string()];
+        };
+
+        let mut identity_suffix = if let Some(etag) = file_etag {
+            format!("#etag={etag}")
+        } else if let Some(mtime) = file_mtime {
+            format!("#mtime={mtime}")
+        } else if let Some(sz) = self.size_bytes {
+            format!("#sz={sz}")
+        } else {
+            String::new()
+        };
+
+        // Iceberg merge-on-read: fold the delete-file set into the key so that
+        // adding/removing a delete file reprocesses the affected data file
+        // instead of silently skipping it. Delete files are immutable (a new
+        // delete is a new path), so their paths are a faithful identity. Sorted
+        // for order-stability and FNV-hashed (deterministic across runs) to keep
+        // keys bounded, since delete-file lists can be large.
+        if let Some(delete_files) = iceberg_delete_files
+            && !delete_files.is_empty()
+        {
+            let mut sorted: Vec<&str> = delete_files.iter().map(String::as_str).collect();
+            sorted.sort_unstable();
+            let mut hasher = FnvHasher::default();
+            sorted.len().hash(&mut hasher);
+            for d in &sorted {
+                d.hash(&mut hasher);
+            }
+            write!(identity_suffix, "#del={:016x}", hasher.finish())
+                .expect("writing to a String is infallible");
+        }
+
+        match chunk_spec {
+            None => vec![format!("{path}{identity_suffix}")],
+            Some(ChunkSpec::Parquet(rgs)) => rgs
+                .iter()
+                .map(|rg| format!("{path}#rg={rg}{identity_suffix}"))
+                .collect(),
+            Some(ChunkSpec::Bytes { start, end }) => {
+                vec![format!("{path}#bytes={start}-{end}{identity_suffix}")]
+            }
         }
     }
 
@@ -883,8 +959,8 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-        ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
+        ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource,
+        ScanSourceKind, ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
         storage_config::StorageConfig,
     };
 
@@ -900,6 +976,8 @@ mod test {
                     chunk_spec: None,
                     iceberg_delete_files: None,
                     parquet_metadata: None,
+                    file_etag: None,
+                    file_mtime: None,
                 },
             })
             .collect_vec();
@@ -1053,6 +1131,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1095,6 +1175,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1140,6 +1222,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1183,6 +1267,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1231,6 +1317,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1282,6 +1370,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1329,6 +1419,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1376,6 +1468,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1405,5 +1499,239 @@ mod test {
             assert!(estimate_val <= REASONABLE_SIZE_BYTES);
             assert!(estimate_val > 0);
         }
+    }
+
+    fn make_file_source(path: &str, chunk_spec: Option<ChunkSpec>) -> ScanSource {
+        ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: path.to_string(),
+                chunk_spec,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
+            },
+        }
+    }
+
+    #[test]
+    fn source_atom_keys_no_chunk_spec() {
+        let source = make_file_source("s3://bucket/data.parquet", None);
+        assert_eq!(source.source_atom_keys(), vec!["s3://bucket/data.parquet"]);
+    }
+
+    #[test]
+    fn source_atom_keys_parquet_row_groups() {
+        let source = make_file_source(
+            "s3://bucket/data.parquet",
+            Some(ChunkSpec::Parquet(vec![0, 3, 7])),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec![
+                "s3://bucket/data.parquet#rg=0",
+                "s3://bucket/data.parquet#rg=3",
+                "s3://bucket/data.parquet#rg=7",
+            ]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_byte_range() {
+        let source = make_file_source(
+            "s3://bucket/data.jsonl",
+            Some(ChunkSpec::Bytes {
+                start: 0,
+                end: 1024,
+            }),
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec!["s3://bucket/data.jsonl#bytes=0-1024"]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_database_source() {
+        let source = ScanSource {
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::Database {
+                path: "postgres://table".to_string(),
+            },
+        };
+        assert_eq!(source.source_atom_keys(), vec!["postgres://table"]);
+    }
+
+    /// Helper that constructs a file source with explicit identity metadata so
+    /// the etag > mtime > size precedence can be exercised directly.
+    fn make_file_source_with_identity(
+        path: &str,
+        chunk_spec: Option<ChunkSpec>,
+        size_bytes: Option<u64>,
+        file_etag: Option<&str>,
+        file_mtime: Option<u64>,
+    ) -> ScanSource {
+        ScanSource {
+            size_bytes,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: path.to_string(),
+                chunk_spec,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+                file_etag: file_etag.map(str::to_string),
+                file_mtime,
+            },
+        }
+    }
+
+    #[test]
+    fn source_atom_keys_etag_suffix() {
+        let source = make_file_source_with_identity(
+            "s3://b/d.parquet",
+            None,
+            Some(123),
+            Some("abc"),
+            Some(99),
+        );
+        // etag wins over mtime and size.
+        assert_eq!(source.source_atom_keys(), vec!["s3://b/d.parquet#etag=abc"]);
+    }
+
+    #[test]
+    fn source_atom_keys_mtime_suffix_when_no_etag() {
+        let source =
+            make_file_source_with_identity("file:///d.parquet", None, Some(123), None, Some(99));
+        // mtime wins over size when there is no etag.
+        assert_eq!(
+            source.source_atom_keys(),
+            vec!["file:///d.parquet#mtime=99"]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_size_suffix_when_no_etag_or_mtime() {
+        let source =
+            make_file_source_with_identity("file:///d.parquet", None, Some(123), None, None);
+        assert_eq!(source.source_atom_keys(), vec!["file:///d.parquet#sz=123"]);
+    }
+
+    #[test]
+    fn source_atom_keys_identity_suffix_after_chunk_spec() {
+        // A changed file produces different keys per row group: the identity
+        // suffix must follow the chunk suffix so both runs agree on ordering.
+        let source = make_file_source_with_identity(
+            "s3://b/d.parquet",
+            Some(ChunkSpec::Parquet(vec![0, 1])),
+            None,
+            Some("v2"),
+            None,
+        );
+        assert_eq!(
+            source.source_atom_keys(),
+            vec![
+                "s3://b/d.parquet#rg=0#etag=v2",
+                "s3://b/d.parquet#rg=1#etag=v2"
+            ]
+        );
+    }
+
+    #[test]
+    fn source_atom_keys_distinct_across_etag_change() {
+        // The whole point of the identity suffix: replacing a file at the same
+        // path yields a different key, so it is reprocessed.
+        let before =
+            make_file_source_with_identity("s3://b/d.parquet", None, None, Some("e1"), None);
+        let after =
+            make_file_source_with_identity("s3://b/d.parquet", None, None, Some("e2"), None);
+        assert_ne!(before.source_atom_keys(), after.source_atom_keys());
+    }
+
+    /// Helper that constructs an Iceberg-style file source carrying delete files.
+    fn make_file_source_with_deletes(
+        path: &str,
+        size_bytes: Option<u64>,
+        iceberg_delete_files: Option<Vec<String>>,
+    ) -> ScanSource {
+        ScanSource {
+            size_bytes,
+            metadata: None,
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: path.to_string(),
+                chunk_spec: None,
+                iceberg_delete_files,
+                parquet_metadata: None,
+                // Catalog scan tasks carry no etag/mtime; size is the data
+                // file size, which is stable across delete-file additions.
+                file_etag: None,
+                file_mtime: None,
+            },
+        }
+    }
+
+    #[test]
+    fn source_atom_keys_no_delete_files_unchanged() {
+        // No delete files => no `#del` suffix, so keys match the plain
+        // size-identity form (backward compatible with append-only sources).
+        let none = make_file_source_with_deletes("s3://b/d.parquet", Some(64), None);
+        let empty = make_file_source_with_deletes("s3://b/d.parquet", Some(64), Some(vec![]));
+        assert_eq!(none.source_atom_keys(), vec!["s3://b/d.parquet#sz=64"]);
+        assert_eq!(empty.source_atom_keys(), vec!["s3://b/d.parquet#sz=64"]);
+    }
+
+    #[test]
+    fn source_atom_keys_reprocess_when_delete_file_added() {
+        // Merge-on-read: same data file path + size, but a delete file appears
+        // in the second snapshot. The key must change so the file is reprocessed.
+        let before = make_file_source_with_deletes("s3://b/d.parquet", Some(64), None);
+        let after = make_file_source_with_deletes(
+            "s3://b/d.parquet",
+            Some(64),
+            Some(vec!["s3://b/del-0.parquet".to_string()]),
+        );
+        assert_ne!(before.source_atom_keys(), after.source_atom_keys());
+    }
+
+    #[test]
+    fn source_atom_keys_delete_file_set_is_order_independent() {
+        // The same set of delete files in different listing order must yield the
+        // same key (we sort before hashing).
+        let a = make_file_source_with_deletes(
+            "s3://b/d.parquet",
+            Some(64),
+            Some(vec!["s3://b/del-a".to_string(), "s3://b/del-b".to_string()]),
+        );
+        let b = make_file_source_with_deletes(
+            "s3://b/d.parquet",
+            Some(64),
+            Some(vec!["s3://b/del-b".to_string(), "s3://b/del-a".to_string()]),
+        );
+        assert_eq!(a.source_atom_keys(), b.source_atom_keys());
+    }
+
+    #[test]
+    fn source_atom_keys_distinct_delete_sets_differ() {
+        let one = make_file_source_with_deletes(
+            "s3://b/d.parquet",
+            Some(64),
+            Some(vec!["s3://b/del-a".to_string()]),
+        );
+        let two = make_file_source_with_deletes(
+            "s3://b/d.parquet",
+            Some(64),
+            Some(vec!["s3://b/del-a".to_string(), "s3://b/del-b".to_string()]),
+        );
+        assert_ne!(one.source_atom_keys(), two.source_atom_keys());
     }
 }

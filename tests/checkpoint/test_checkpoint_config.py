@@ -74,6 +74,22 @@ def test_checkpoint_config_round_trips_settings():
     assert s.filter_batch_size is None
 
 
+def test_checkpoint_config_file_path_mode_when_on_omitted():
+    """Omitting `on=` activates file-path mode."""
+    store = daft.CheckpointStore("s3://dummy/ckpt")
+    config = daft.CheckpointConfig(store=store)
+    assert config._inner.is_file_path_mode is True
+    assert config._inner.key_column is None
+
+
+def test_checkpoint_config_row_level_mode_when_on_specified():
+    """Specifying `on=` activates row-level mode."""
+    store = daft.CheckpointStore("s3://dummy/ckpt")
+    config = daft.CheckpointConfig(store=store, on="file_id")
+    assert config._inner.is_file_path_mode is False
+    assert config._inner.key_column == "file_id"
+
+
 def test_checkpoint_config_settings_optional_defaults_to_all_none():
     store = daft.CheckpointStore("s3://dummy/ckpt")
     config = daft.CheckpointConfig(store=store, on="file_id")

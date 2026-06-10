@@ -32,6 +32,14 @@ const PATH_SEGMENT_DELIMITER: &str = "/";
 
 use crate::{local_path_to_file_uri, strip_file_uri_to_path};
 
+/// Local-file modification time as nanoseconds since the Unix epoch.
+pub(crate) fn local_file_mtime_nanos(meta: &std::fs::Metadata) -> Option<u64> {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| u64::try_from(d.as_nanos()).ok())
+}
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -213,6 +221,33 @@ impl ObjectSource for LocalSource {
         }
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let Some(path) = strip_file_uri_to_path(uri) else {
+            return Err(Error::InvalidFilePath { path: uri.into() }.into());
+        };
+        let meta = tokio::fs::metadata(path)
+            .await
+            .context(UnableToFetchFileMetadataSnafu {
+                path: path.to_string(),
+            })?;
+        if meta.is_dir() {
+            return Err(super::Error::NotAFile {
+                path: path.to_owned(),
+            });
+        }
+        Ok(FileMetadata {
+            filepath: local_path_to_file_uri(path),
+            size: Some(meta.len()),
+            filetype: object_io::FileType::File,
+            etag: None,
+            mtime: local_file_mtime_nanos(&meta),
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,
@@ -321,10 +356,13 @@ impl ObjectSource for LocalSource {
         })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
+            let mtime = local_file_mtime_nanos(&meta);
             return Ok(futures::stream::iter([Ok(FileMetadata {
                 filepath: local_path_to_file_uri(&uri),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
+                etag: None,
+                mtime,
             })])
             .boxed());
         }
@@ -355,6 +393,7 @@ impl ObjectSource for LocalSource {
                         path: entry.path().to_string_lossy().to_string(),
                     }
                 })?;
+                let mtime = local_file_mtime_nanos(&meta);
                 Ok(FileMetadata {
                     filepath: format!(
                         "{}{}",
@@ -371,6 +410,8 @@ impl ObjectSource for LocalSource {
                             path: entry.path().to_string_lossy().to_string(),
                         }
                     })?,
+                    etag: None,
+                    mtime,
                 })
             }
         });
@@ -427,6 +468,7 @@ mod tests {
     use crate::{
         HttpSource, LocalSource, Result,
         integrations::test_full_get,
+        local::local_file_mtime_nanos,
         local_path_to_file_uri,
         object_io::{FileMetadata, FileType, ObjectSource},
     };
@@ -486,21 +528,29 @@ mod tests {
                 file.path().file_name().unwrap().to_string_lossy(),
             ))
         };
+        let expected_mtime =
+            |f: &tempfile::NamedTempFile| local_file_mtime_nanos(&f.as_file().metadata().unwrap());
         let mut expected = vec![
             FileMetadata {
                 filepath: expected_filepath(&file1),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file1),
             },
             FileMetadata {
                 filepath: expected_filepath(&file2),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file2),
             },
             FileMetadata {
                 filepath: expected_filepath(&file3),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file3),
             },
         ];
         expected.sort_by(|a, b| a.filepath.cmp(&b.filepath));

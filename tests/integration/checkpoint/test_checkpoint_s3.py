@@ -621,3 +621,130 @@ def test_checkpoint_s3_rejects_concat_with_checkpoint(minio_io_config):
         df2 = daft.read_parquet(input2, io_config=minio_io_config)
         with pytest.raises(Exception, match="map-only"):
             df1.concat(df2).to_pydict()
+
+
+# ---------------------------------------------------------------------------
+# File-path checkpoint mode (on= omitted)
+# ---------------------------------------------------------------------------
+
+
+def test_checkpoint_s3_file_path_first_run_and_skip(minio_io_config):
+    """File-path mode: first run processes all files, second run skips them.
+
+    With ``on=`` omitted, checkpoint keys are derived from scan-task file
+    paths instead of row-level column values. The driver loads previously
+    checkpointed keys and filters scan tasks before dispatching to workers.
+    """
+    with minio_create_bucket(minio_io_config) as bucket:
+        input_path = f"s3://{bucket}/input"
+        ckpt_prefix = f"s3://{bucket}/checkpoints"
+        output_path = f"s3://{bucket}/output"
+
+        daft.from_pydict({"value": [1, 2, 3]}).write_parquet(input_path, io_config=minio_io_config)
+
+        # Run 1: all files are new
+        ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
+        df = daft.read_parquet(input_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config)
+        df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+        count1 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
+        assert count1 == 3, f"Run 1: expected 3 rows, got {count1}"
+
+        # Run 2: same files already checkpointed — should skip all
+        ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
+        df2 = daft.read_parquet(input_path, checkpoint=daft.CheckpointConfig(store=ckpt2), io_config=minio_io_config)
+        df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+        count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
+        assert count2 == 0, f"Run 2: expected 0 rows (all files checkpointed), got {count2}"
+
+
+def test_checkpoint_s3_file_path_incremental(minio_io_config):
+    """File-path mode: new files appended between runs are processed; old skipped.
+
+    Run 1: write one file with [1,2,3] → 3 rows processed.
+    Run 2: append a second file with [4,5] → only the new file processed (2 rows).
+    Run 3: no new files → 0 rows.
+    """
+    with minio_create_bucket(minio_io_config) as bucket:
+        input_path = f"s3://{bucket}/input"
+        ckpt_prefix = f"s3://{bucket}/checkpoints"
+        output_path = f"s3://{bucket}/output"
+
+        # Run 1
+        daft.from_pydict({"value": [1, 2, 3]}).write_parquet(input_path, io_config=minio_io_config)
+        ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
+        df = daft.read_parquet(input_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config)
+        df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+        assert daft.read_parquet(output_path, io_config=minio_io_config).count_rows() == 3
+
+        # Run 2: append new file
+        daft.from_pydict({"value": [4, 5]}).write_parquet(input_path, io_config=minio_io_config, write_mode="append")
+        ckpt2 = CheckpointStore(ckpt_prefix, minio_io_config)
+        df2 = daft.read_parquet(input_path, checkpoint=daft.CheckpointConfig(store=ckpt2), io_config=minio_io_config)
+        df2.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+        count2 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
+        assert count2 == 2, f"Run 2: expected 2 new rows, got {count2}"
+
+        # Run 3: no new files
+        ckpt3 = CheckpointStore(ckpt_prefix, minio_io_config)
+        df3 = daft.read_parquet(input_path, checkpoint=daft.CheckpointConfig(store=ckpt3), io_config=minio_io_config)
+        df3.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+        count3 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
+        assert count3 == 0, f"Run 3: expected 0 rows, got {count3}"
+
+
+def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
+    """File-path mode: a file replaced at the SAME key with new content is reprocessed.
+
+    This is the core file-identity guarantee: the checkpoint key carries the
+    object-store ETag, so overwriting an object (new ETag) makes it look new on
+    the next run.
+
+    Reads the input *prefix* (not the single object): ETag is captured during
+    listing, whereas a directly named object goes through the size-only fast
+    path. The replacement keeps the same row count/schema so the on-disk size is
+    unchanged — only the ETag differs, isolating ETag as the discriminator.
+    """
+    import io as _io
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import s3fs
+
+    fs = s3fs.S3FileSystem(
+        key=minio_io_config.s3.key_id,
+        password=minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
+    )
+
+    with minio_create_bucket(minio_io_config) as bucket:
+        # Fixed object key so re-uploads land on the same path (not a new name);
+        # read the enclosing prefix so listing surfaces the ETag.
+        key = f"{bucket}/input/data.parquet"
+        input_prefix = f"s3://{bucket}/input"
+        ckpt_prefix = f"s3://{bucket}/checkpoints"
+        output_path = f"s3://{bucket}/output"
+
+        def put(values: list[int]) -> None:
+            buf = _io.BytesIO()
+            pq.write_table(pa.table({"value": values}), buf)
+            with fs.open(key, "wb") as f:
+                f.write(buf.getvalue())
+
+        def run() -> int:
+            # write_parquet keeps the pipeline map-only (count_rows would insert
+            # an aggregate, which checkpointing rejects); count the output read.
+            ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
+            df = daft.read_parquet(
+                input_prefix, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config
+            )
+            df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+            return daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
+
+        put([1, 2, 3])
+        assert run() == 3, "run 1 processes original object"
+        assert run() == 0, "run 2 skips the unchanged object (same ETag)"
+
+        # Replace with same-size new content -> new ETag -> reprocessed.
+        put([4, 5, 6])
+        assert run() == 3, "run 3 reprocesses the replaced object (ETag changed)"
+        assert run() == 0, "run 4 skips the now-checkpointed object"

@@ -85,20 +85,38 @@ class CheckpointConfig:
 
     On re-run, rows whose key already exists in the store are skipped.
 
+    Two modes are supported:
+
+    - **Row-level mode** (when ``on`` is specified): keys are values of the
+      named column. Requires an anti-join against previously-sealed keys at
+      execution time.
+
+    - **File-path mode** (default, when ``on`` is omitted): keys are derived
+      from scan-task metadata, so no key column is needed. Only for file
+      sources whose listing exposes identity metadata (local files and major
+      object stores); other schemes (e.g. ``http``, ``hf``) are rejected.
+
     Args:
         store: The :class:`CheckpointStore` holding sealed keys.
-        on: Name of the source column that uniquely identifies inputs (e.g.
-            a file hash or document ID). Must exist in the source schema.
-        settings: Optional tuning for the key-filtering anti-join. Defaults
-            to engine-chosen values when omitted.
+        on: Optional name of the source column that uniquely identifies
+            inputs (e.g. a file hash or document ID). When omitted,
+            file-path mode is used. When specified, must exist in the
+            source schema.
+        settings: Optional tuning for the key-filtering anti-join (only
+            applies to row-level mode). Defaults to engine-chosen values
+            when omitted.
 
     Example:
         >>> store = daft.CheckpointStore("s3://bucket/ckpt")
+        >>> # Row-level mode:
         >>> config = daft.CheckpointConfig(
         ...     store=store,
         ...     on="file_id",
         ...     settings=daft.KeyFilteringSettings(num_workers=4, cpus_per_worker=1.0),
         ... )
+        >>> df = daft.read_parquet("s3://input/", checkpoint=config)
+        >>> # File-path mode (no on=):
+        >>> config = daft.CheckpointConfig(store=store)
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
 
     Assumptions:
@@ -106,14 +124,16 @@ class CheckpointConfig:
           between source and sink is map-only (project, filter, explode, UDF,
           etc.). Shuffle/materialization operators (aggregate, sort, distinct,
           join, pivot, window, repartition) are rejected at plan build time.
-        - **Source has a checkpoint key.** The ``on=`` column must exist in
-          the source schema and uniquely identify source inputs. The key is
-          written to the store on every run, so it should be lightweight.
+        - **Source has a checkpoint key.** In row-level mode the ``on=``
+          column must exist in the source schema and uniquely identify
+          source inputs. In file-path mode keys are derived automatically
+          from scan-task metadata.
         - **Strong consistency.** The backing object store must provide
           read-after-write consistency. After ``checkpoint()``, the next
-          run's anti-join must be able to see the newly checkpointed keys.
+          run's key filter (row-level anti-join, or file-path key lookup)
+          must be able to see the newly checkpointed keys.
 
-    Semantics of the ``on=`` column:
+    Semantics of the ``on=`` column (row-level mode):
         - **Checkpoint identity, not a primary key.** A key value records "this
           input has already been processed" — it is not a uniqueness constraint
           on the destination. Daft does not enforce uniqueness of the column;
@@ -140,6 +160,17 @@ class CheckpointConfig:
           the store; the sink reads them out at commit time. If the two
           paths diverge the sink can't see what the pipeline staged and
           silently commits nothing.
+
+    Semantics of file-path mode (``on`` omitted):
+        - **Keys identify file content, not just the path.** Each input file
+          (or sub-file chunk) is keyed by its path plus a content marker — the
+          object-store ETag, else modification time, else size — so a file
+          replaced at the same path is reprocessed. When only size is available,
+          an in-place edit that preserves the size is not detected.
+        - **Process-once, not CDC.** For mutable sources (e.g. Iceberg
+          merge-on-read, whose delete files are folded into the key), the new
+          state is reprocessed but previously emitted rows are not retracted —
+          pair such sources with an overwrite sink.
     """
 
     _inner: _CheckpointConfig
@@ -147,7 +178,7 @@ class CheckpointConfig:
     def __init__(
         self,
         store: CheckpointStore,
-        on: str,
+        on: str | None = None,
         settings: KeyFilteringSettings | None = None,
     ) -> None:
         self._inner = _CheckpointConfig(store.config, on, settings)

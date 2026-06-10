@@ -142,7 +142,7 @@ impl PipelineNodeImpl for StageCheckpointKeysNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![format!(
             "StageCheckpointKeys: key_column={}",
-            self.checkpoint_config.key_column
+            self.checkpoint_config.key_column().unwrap_or("None")
         )]
     }
 

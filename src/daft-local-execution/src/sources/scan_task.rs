@@ -5,11 +5,13 @@ use std::{
 };
 
 use async_trait::async_trait;
+use common_checkpoint_config::FilePathRegistry;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use daft_checkpoint::CheckpointStoreRef;
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
@@ -40,6 +42,7 @@ pub struct ScanTaskSource {
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
+    file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
     skipped_corrupt_files: SkippedCorruptFilesCollector,
 }
 
@@ -50,6 +53,7 @@ impl ScanTaskSource {
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
+        file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
         skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
@@ -64,6 +68,7 @@ impl ScanTaskSource {
             pushdowns,
             schema,
             num_parallel_tasks,
+            file_path_checkpoint,
             skipped_corrupt_files,
         }
     }
@@ -77,6 +82,7 @@ impl ScanTaskSource {
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
+        file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
         skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -97,6 +103,22 @@ impl ScanTaskSource {
         };
 
         io_runtime.spawn(async move {
+            // File-path checkpoint: load sealed atom keys into a HashSet for filtering.
+            let checkpointed_set = if let Some((ref store, _)) = file_path_checkpoint {
+                use futures::TryStreamExt;
+                let mut set = HashSet::new();
+                let mut stream = store.get_checkpointed_keys().await?;
+                while let Some(series) = stream.try_next().await? {
+                    let utf8 = series.utf8()?;
+                    for val in utf8.into_iter().flatten() {
+                        set.insert(val.to_string());
+                    }
+                }
+                Some(set)
+            } else {
+                None
+            };
+
             let mut task_set = JoinSet::new();
             // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
@@ -164,10 +186,59 @@ impl ScanTaskSource {
                                     .flat_map(|scan_task| scan_task.split())
                                     .collect();
 
-                                let num_tasks = split_tasks.len();
+                                // File-path checkpoint: filter out fully-checkpointed tasks.
+                                let filtered_tasks: Vec<Arc<ScanTask>> = if let Some(ref ckpt_set) = checkpointed_set {
+                                    split_tasks
+                                        .into_iter()
+                                        .filter(|task| {
+                                            let atom_keys: Vec<String> = task.sources
+                                                .iter()
+                                                .flat_map(|s| s.source_atom_keys())
+                                                .collect();
+                                            let all_done = !atom_keys.is_empty()
+                                                && atom_keys.iter().all(|k| ckpt_set.contains(k));
+                                            if !all_done
+                                                && let Some((_, ref registry)) = file_path_checkpoint
+                                            {
+                                                registry.register(input_id, atom_keys);
+                                            }
+                                            !all_done
+                                        })
+                                        .collect()
+                                } else {
+                                    split_tasks
+                                };
+
+                                if filtered_tasks.is_empty() {
+                                    // All tasks checkpointed — send empty + flush.
+                                    let empty = MicroPartition::empty(Some(schema.clone()));
+                                    match &flattener_state {
+                                        Some((agg_tx, _)) => {
+                                            let (stream_tx, stream_rx) =
+                                                create_channel::<MicroPartition>(1);
+                                            let _ = stream_tx.send(empty).await;
+                                            drop(stream_tx);
+                                            let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last: true });
+                                        }
+                                        None => {
+                                            if output_sender.send(PipelineMessage::Morsel {
+                                                input_id,
+                                                partition: empty,
+                                            }).await.is_err() {
+                                                return Ok(());
+                                            }
+                                            if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
+                                                return Ok(());
+                                            }
+                                        }
+                                    }
+                                    continue;
+                                }
+
+                                let num_tasks = filtered_tasks.len();
                                 *input_id_pending_counts.entry(input_id).or_insert(0) += num_tasks;
 
-                                for (i, scan_task) in split_tasks.into_iter().enumerate() {
+                                for (i, scan_task) in filtered_tasks.into_iter().enumerate() {
                                     pending_tasks.push_back((
                                         scan_task,
                                         delete_map.clone(),
@@ -243,6 +314,7 @@ impl Source for ScanTaskSource {
             chunk_size,
             self.schema.clone(),
             maintain_order,
+            self.file_path_checkpoint,
             self.skipped_corrupt_files.clone(),
         );
         let result_stream = output_receiver.into_stream().map(Ok);
