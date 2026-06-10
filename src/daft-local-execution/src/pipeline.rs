@@ -840,11 +840,7 @@ fn physical_plan_to_pipeline(
                         id_map: id_map.clone(),
                     });
 
-                    let scko = StageCheckpointKeysOperator::new(
-                        key_expr,
-                        store,
-                        id_map,
-                    );
+                    let scko = StageCheckpointKeysOperator::new(key_expr, store, id_map);
                     IntermediateNode::new(
                         Arc::new(scko),
                         child_node,

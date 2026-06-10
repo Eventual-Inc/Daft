@@ -204,9 +204,7 @@ impl PipelineNode for CheckpointTerminusNode {
                                         str_refs.as_slice(),
                                     )
                                     .into_series();
-                                    store
-                                        .stage_keys(&checkpoint_id, key_series)
-                                        .await?;
+                                    store.stage_keys(&checkpoint_id, key_series).await?;
                                 }
                             }
                             store.checkpoint(&checkpoint_id).await?;

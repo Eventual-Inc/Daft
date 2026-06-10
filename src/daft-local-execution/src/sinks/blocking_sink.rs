@@ -259,10 +259,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         if !file_metadata.is_empty() {
                             let num_files = file_metadata.len() as u64;
                             ckpt.store
-                                .stage_files(
-                                    checkpoint_id.as_ref().unwrap(),
-                                    file_metadata,
-                                )
+                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
                                 .await?;
                             per_input
                                 .runtime_stats
