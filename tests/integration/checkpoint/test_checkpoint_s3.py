@@ -690,3 +690,51 @@ def test_checkpoint_s3_file_path_incremental(minio_io_config):
         df3.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
         count3 = daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
         assert count3 == 0, f"Run 3: expected 0 rows, got {count3}"
+
+
+def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
+    """File-path mode: a file replaced at the SAME key with new content is reprocessed.
+
+    This is the core file-identity guarantee: the checkpoint key carries the
+    object-store ETag, so overwriting an object (new ETag) makes it look new on
+    the next run. A re-upload of identical bytes keeps the same ETag and is
+    correctly skipped.
+    """
+    import io as _io
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import s3fs
+
+    fs = s3fs.S3FileSystem(
+        key=minio_io_config.s3.key_id,
+        password=minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
+    )
+
+    with minio_create_bucket(minio_io_config) as bucket:
+        # Fixed object key so re-uploads land on the same path (not a new name).
+        key = f"{bucket}/input/data.parquet"
+        s3_path = f"s3://{key}"
+        ckpt_prefix = f"s3://{bucket}/checkpoints"
+
+        def put(values: list[int]) -> None:
+            buf = _io.BytesIO()
+            pq.write_table(pa.table({"value": values}), buf)
+            with fs.open(key, "wb") as f:
+                f.write(buf.getvalue())
+
+        def run() -> int:
+            ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
+            return daft.read_parquet(
+                s3_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config
+            ).count_rows()
+
+        put([1, 2, 3])
+        assert run() == 3, "run 1 processes original object"
+        assert run() == 0, "run 2 skips the unchanged object (same ETag)"
+
+        # Overwrite the same key with new content -> new ETag -> reprocessed.
+        put([10, 20])
+        assert run() == 2, "run 3 reprocesses the replaced object"
+        assert run() == 0, "run 4 skips the now-checkpointed object"

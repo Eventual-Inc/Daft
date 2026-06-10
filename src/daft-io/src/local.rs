@@ -32,6 +32,14 @@ const PATH_SEGMENT_DELIMITER: &str = "/";
 
 use crate::{local_path_to_file_uri, strip_file_uri_to_path};
 
+/// Local-file modification time as nanoseconds since the Unix epoch.
+pub(crate) fn local_file_mtime_nanos(meta: &std::fs::Metadata) -> Option<u64> {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| u64::try_from(d.as_nanos()).ok())
+}
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -321,11 +329,7 @@ impl ObjectSource for LocalSource {
         })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs());
+            let mtime = local_file_mtime_nanos(&meta);
             return Ok(futures::stream::iter([Ok(FileMetadata {
                 filepath: local_path_to_file_uri(&uri),
                 size: Some(meta.len()),
@@ -362,11 +366,7 @@ impl ObjectSource for LocalSource {
                         path: entry.path().to_string_lossy().to_string(),
                     }
                 })?;
-                let mtime = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs());
+                let mtime = local_file_mtime_nanos(&meta);
                 Ok(FileMetadata {
                     filepath: format!(
                         "{}{}",
@@ -441,6 +441,7 @@ mod tests {
     use crate::{
         HttpSource, LocalSource, Result,
         integrations::test_full_get,
+        local::local_file_mtime_nanos,
         local_path_to_file_uri,
         object_io::{FileMetadata, FileType, ObjectSource},
     };
@@ -500,15 +501,8 @@ mod tests {
                 file.path().file_name().unwrap().to_string_lossy(),
             ))
         };
-        let expected_mtime = |f: &tempfile::NamedTempFile| {
-            f.as_file()
-                .metadata()
-                .unwrap()
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-        };
+        let expected_mtime =
+            |f: &tempfile::NamedTempFile| local_file_mtime_nanos(&f.as_file().metadata().unwrap());
         let mut expected = vec![
             FileMetadata {
                 filepath: expected_filepath(&file1),

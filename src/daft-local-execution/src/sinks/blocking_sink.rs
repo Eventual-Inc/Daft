@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_checkpoint_config::{CheckpointIdMap, FilePathRegistry};
+use common_checkpoint_config::{CheckpointIdMap, FilePathRegistry, SEALED_KEYS_COLUMN};
 use common_display::tree::TreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
@@ -296,9 +296,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     let atom_keys = registry.take(input_id);
                     if !atom_keys.is_empty() {
                         let str_refs: Vec<&str> = atom_keys.iter().map(|s| s.as_str()).collect();
-                        let series =
-                            daft_core::prelude::Utf8Array::from_slice("key", str_refs.as_slice())
-                                .into_series();
+                        let series = daft_core::prelude::Utf8Array::from_slice(
+                            SEALED_KEYS_COLUMN,
+                            str_refs.as_slice(),
+                        )
+                        .into_series();
                         ckpt.store
                             .stage_keys(checkpoint_id.as_ref().unwrap(), series)
                             .await?;

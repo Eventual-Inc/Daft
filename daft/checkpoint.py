@@ -88,9 +88,14 @@ class CheckpointConfig:
     Two modes are supported:
 
     - **File-path mode** (default when ``on`` is omitted): keys are derived
-      from scan-task metadata (file paths and chunk specs). No user-specified
-      key column needed. Any file-based source is checkpointable out of the
-      box. Filter and projection pushdown are fully enabled.
+      from scan-task metadata (file paths and chunk specs such as Parquet row
+      groups or byte ranges). No user-specified key column needed, and filter
+      and projection pushdown are fully enabled. Supported for file sources on
+      schemes that expose file-identity metadata during listing — local files
+      (``file://``) and the object stores ``s3``/``s3a``/``s3n``, ``gs``/``gcs``,
+      ``az``/``abfs``/``abfss``, ``tos``, ``oss``, and ``cos``/``cosn``. Sources
+      that don't expose such metadata (e.g. ``http://``, ``hf://``) are rejected
+      at plan build time — use row-level mode (``on=``) for those.
 
     - **Row-level mode** (when ``on`` is specified): keys are values of the
       named column. Requires an anti-join against previously-sealed keys at
@@ -130,7 +135,8 @@ class CheckpointConfig:
           from scan-task metadata.
         - **Strong consistency.** The backing object store must provide
           read-after-write consistency. After ``checkpoint()``, the next
-          run's anti-join must be able to see the newly checkpointed keys.
+          run's key filter (row-level anti-join, or file-path key lookup)
+          must be able to see the newly checkpointed keys.
 
     Semantics of the ``on=`` column (row-level mode):
         - **Checkpoint identity, not a primary key.** A key value records "this
@@ -159,6 +165,29 @@ class CheckpointConfig:
           the store; the sink reads them out at commit time. If the two
           paths diverge the sink can't see what the pipeline staged and
           silently commits nothing.
+
+    Semantics of file-path mode (``on`` omitted):
+        - **File identity, not just path.** A checkpoint key combines the file
+          path, any chunk spec (Parquet row group or byte range), and a
+          file-identity suffix so that a *replaced* file at the same path is
+          reprocessed. The suffix is the object-store ETag when available,
+          otherwise the local-file modification time (nanosecond precision),
+          otherwise the file size. If none of these is available the key is the
+          path alone — a same-path, same-size content change would then be
+          treated as already-processed, so prefer stores that return an ETag.
+        - **Skip granularity is the scan chunk.** A file (or row-group chunk)
+          is skipped only when every key derived from it has been sealed.
+        - **Chunk layout must be stable across runs.** Keys encode row-group
+          indices / byte ranges, so changing split configuration between runs
+          (e.g. ``scan_tasks_*_size_bytes``) yields different keys and reprocesses
+          the affected files. Identical reader configuration produces identical
+          keys.
+        - **Iceberg merge-on-read.** A data file's applicable delete files are
+          folded into its key, so a delete added in a later snapshot reprocesses
+          the data file rather than skipping it. As with row-level mode this is
+          process-once, not CDC: re-emitted rows reflect the new (post-delete)
+          state but prior runs' rows are not retracted, so pair merge-on-read
+          sources with an overwrite/full-refresh sink.
     """
 
     _inner: _CheckpointConfig
