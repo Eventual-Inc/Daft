@@ -1,7 +1,7 @@
 mod resolve_expr;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     future::Future,
     sync::Arc,
 };
@@ -47,7 +47,10 @@ use crate::{
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
-    sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
+    sink_info::{
+        FormatSinkOption, KafkaConfigValue, KafkaKeyFormat, KafkaPartition, KafkaTopic,
+        KafkaValueFormat, KafkaWriteInfo, OutputFileInfo, SinkInfo,
+    },
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
@@ -120,6 +123,28 @@ impl IntoGlobPath for Vec<&str> {
         self.iter().map(|s| (*s).to_string()).collect()
     }
 }
+
+pub fn parse_kafka_value_format(format: &str) -> DaftResult<KafkaValueFormat> {
+    match format.to_ascii_lowercase().as_str() {
+        "raw" => Ok(KafkaValueFormat::Raw),
+        "utf8" => Ok(KafkaValueFormat::Utf8),
+        "json" => Ok(KafkaValueFormat::Json),
+        other => Err(DaftError::ValueError(format!(
+            "Unsupported Kafka value format: {other}. Expected one of: raw, utf8, json"
+        ))),
+    }
+}
+
+pub fn parse_kafka_key_format(format: &str) -> DaftResult<KafkaKeyFormat> {
+    match format.to_ascii_lowercase().as_str() {
+        "raw" => Ok(KafkaKeyFormat::Raw),
+        "utf8" => Ok(KafkaKeyFormat::Utf8),
+        other => Err(DaftError::ValueError(format!(
+            "Unsupported Kafka key format: {other}. Expected one of: raw, utf8"
+        ))),
+    }
+}
+
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
@@ -904,6 +929,79 @@ impl LogicalPlanBuilder {
             io_config,
             write_success_file,
         ));
+
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn kafka_write(
+        &self,
+        bootstrap_servers: String,
+        topic: Option<String>,
+        topic_col: Option<ExprRef>,
+        value_col: ExprRef,
+        key_col: Option<ExprRef>,
+        headers_col: Option<ExprRef>,
+        partition: Option<i32>,
+        partition_col: Option<ExprRef>,
+        timestamp_ms_col: Option<ExprRef>,
+        value_format: String,
+        key_format: String,
+        kafka_client_config: BTreeMap<String, KafkaConfigValue>,
+        timeout_ms: u64,
+    ) -> DaftResult<Self> {
+        let value_format = parse_kafka_value_format(&value_format)?;
+        let key_format = parse_kafka_key_format(&key_format)?;
+
+        let expr_resolver = ExprResolver::default();
+        let resolve_expr = |expr: ExprRef| -> DaftResult<ExprRef> {
+            expr_resolver.resolve_single(expr, self.plan.clone())
+        };
+
+        let topic = match (topic, topic_col) {
+            (Some(topic), None) => KafkaTopic::Static(topic),
+            (None, Some(topic_col)) => KafkaTopic::Dynamic(resolve_expr(topic_col)?),
+            (Some(_), Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Must provide exactly one of topic or topic_col for Kafka write".to_string(),
+                ));
+            }
+            (None, None) => {
+                return Err(DaftError::ValueError(
+                    "Must provide exactly one of topic or topic_col for Kafka write".to_string(),
+                ));
+            }
+        };
+
+        let partition = match (partition, partition_col) {
+            (Some(partition), None) => Some(KafkaPartition::Static(partition)),
+            (None, Some(partition_col)) => {
+                Some(KafkaPartition::Dynamic(resolve_expr(partition_col)?))
+            }
+            (Some(_), Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Must provide at most one of partition or partition_col for Kafka write"
+                        .to_string(),
+                ));
+            }
+            (None, None) => None,
+        };
+
+        let sink_info = SinkInfo::KafkaInfo(KafkaWriteInfo {
+            bootstrap_servers,
+            topic,
+            value_col: resolve_expr(value_col)?,
+            key_col: key_col.map(&resolve_expr).transpose()?,
+            headers_col: headers_col.map(&resolve_expr).transpose()?,
+            partition,
+            timestamp_ms_col: timestamp_ms_col.map(&resolve_expr).transpose()?,
+            value_format,
+            key_format,
+            kafka_client_config,
+            timeout_ms,
+        });
 
         let logical_plan: LogicalPlan =
             ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
