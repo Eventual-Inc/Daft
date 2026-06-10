@@ -96,43 +96,20 @@ def test_into_batches_empty_dataframe():
     assert len(result) == 0
 
 
-# ---------------------------------------------------------------------------
-# Regression tests for GitHub issue #7087
-#
-# The NativeRunner plan cache is keyed by `plan_fingerprint`. Python never
-# populates this field, so every execution fell back to fingerprint=0.
-#
-# The collision fires when two generators are alive at the same time: the
-# first generator starts a ScanTasks pipeline that occupies slot 0; when
-# the second generator (an InMemory pipeline) calls next() before the first
-# is exhausted, it reuses the stale slot and hits the InputSender type
-# mismatch at input_sender.rs:32.
-#
-# Serial executions do NOT trigger it — try_finish clears the plan from the
-# cache once a generator is fully consumed.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Plan-cache collision only affects NativeRunner")
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="iter_partitions is a NativeRunner-only API",
+)
 def test_interleaved_iter_partitions_no_panic(tmp_path):
-    """Interleaved iteration across two DataFrames with different source types must not panic.
-
-    Regression for #7087: advancing a ScanTasks generator (read_parquet)
-    and then calling next() on a concurrent InMemory generator (from_pydict)
-    before the first is exhausted triggered an unreachable! panic in
-    InputSender::send at input_sender.rs:32.
-    """
+    """Concurrent iter_partitions over DataFrames with different source types must return correct results."""
     daft.from_pydict({"id": [1, 2, 3, 4]}).write_parquet(str(tmp_path / "data"))
 
-    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
-    df2 = daft.from_pydict({"id": [5, 6, 7, 8]})      # InMemory source
+    df1 = daft.read_parquet(str(tmp_path / "data"))
+    df2 = daft.from_pydict({"id": [5, 6, 7, 8]})
 
     gen1 = df1.into_batches(2).iter_partitions()
     gen2 = df2.into_batches(2).iter_partitions()
 
-    # Advance gen1 first — occupies the cache slot with a ScanTasks pipeline.
-    # Then advance gen2 before gen1 is exhausted — without the fix this
-    # collides on fingerprint=0 and panics.
     batch1 = next(gen1)
     batch2 = next(gen2)
 
@@ -148,13 +125,16 @@ def test_interleaved_iter_partitions_no_panic(tmp_path):
     assert sorted(result2) == [5, 6, 7, 8]
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Plan-cache collision only affects NativeRunner")
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="iter_partitions is a NativeRunner-only API",
+)
 def test_interleaved_to_arrow_iter_no_panic(tmp_path):
-    """to_arrow_iter() variant of the interleaved-iteration regression (#7087)."""
+    """Concurrent to_arrow_iter() over DataFrames with different source types must return correct results."""
     daft.from_pydict({"id": [10, 20, 30, 40]}).write_parquet(str(tmp_path / "data"))
 
-    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
-    df2 = daft.from_pydict({"id": [50, 60, 70, 80]})  # InMemory source
+    df1 = daft.read_parquet(str(tmp_path / "data"))
+    df2 = daft.from_pydict({"id": [50, 60, 70, 80]})
 
     gen1 = df1.into_batches(2).to_arrow_iter()
     gen2 = df2.into_batches(2).to_arrow_iter()
