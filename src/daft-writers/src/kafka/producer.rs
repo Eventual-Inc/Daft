@@ -1,7 +1,10 @@
-use std::{collections::VecDeque, time::Duration};
+#[cfg(test)]
+use std::collections::VecDeque;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
+#[cfg(test)]
 use parking_lot::Mutex;
 #[cfg(feature = "kafka")]
 use rdkafka::{
@@ -29,8 +32,6 @@ pub(crate) struct KafkaOutgoingRecord {
 }
 
 impl KafkaOutgoingRecord {
-    // TODO(native-kafka-write): remove once Task 9 records delivery accounting from writer projection.
-    #[allow(dead_code)]
     pub(crate) fn delivered_bytes(&self) -> usize {
         let record_bytes =
             self.key.as_ref().map_or(0, Vec::len) + self.value.as_ref().map_or(0, Vec::len);
@@ -51,8 +52,6 @@ pub(crate) struct KafkaDelivery {
 
 #[async_trait]
 pub(crate) trait KafkaProducer: Send + Sync {
-    // TODO(native-kafka-write): remove once Task 9 wires row projection to producer sends.
-    #[allow(dead_code)]
     async fn send(
         &self,
         record: KafkaOutgoingRecord,
@@ -61,7 +60,6 @@ pub(crate) trait KafkaProducer: Send + Sync {
 
     async fn flush(&self, timeout: Duration) -> DaftResult<()>;
 
-    // TODO(native-kafka-write): remove once Task 9 decides producer metrics integration.
     #[allow(dead_code)]
     fn metrics_snapshot(&self) -> Option<KafkaProducerMetrics> {
         None
@@ -81,9 +79,8 @@ impl RdkafkaProducer {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
-// TODO(native-kafka-write): remove once Task 9 consumes the fake in row-projection tests.
-#[allow(dead_code)]
 pub(crate) struct FakeProducer {
     sent_records: Mutex<Vec<KafkaOutgoingRecord>>,
     delivery_results: Mutex<VecDeque<DaftResult<KafkaDelivery>>>,
@@ -91,15 +88,12 @@ pub(crate) struct FakeProducer {
     next_offset: Mutex<i64>,
 }
 
+#[cfg(test)]
 impl FakeProducer {
-    // TODO(native-kafka-write): remove once Task 9 consumes the fake in row-projection tests.
-    #[allow(dead_code)]
     pub(crate) fn succeeding() -> Self {
         Self::default()
     }
 
-    // TODO(native-kafka-write): remove once Task 9 consumes the fake in row-projection tests.
-    #[allow(dead_code)]
     pub(crate) fn with_delivery_results(results: Vec<DaftResult<KafkaDelivery>>) -> Self {
         Self {
             delivery_results: Mutex::new(results.into()),
@@ -107,8 +101,6 @@ impl FakeProducer {
         }
     }
 
-    // TODO(native-kafka-write): remove once Task 9 consumes the fake in row-projection tests.
-    #[allow(dead_code)]
     pub(crate) fn with_flush_result(result: DaftResult<()>) -> Self {
         Self {
             flush_result: Mutex::new(Some(result)),
@@ -116,15 +108,12 @@ impl FakeProducer {
         }
     }
 
-    // TODO(native-kafka-write): remove once Task 9 consumes the fake in row-projection tests.
-    #[allow(dead_code)]
     pub(crate) fn sent_records(&self) -> Vec<KafkaOutgoingRecord> {
         self.sent_records.lock().clone()
     }
 }
 
-// TODO(native-kafka-write): remove once Task 9 consumes fake producer failures from writer tests.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn delivery_error(message: impl Into<String>) -> DaftError {
     DaftError::External(format!("[write_kafka] {}", message.into()).into())
 }
@@ -181,8 +170,6 @@ where
 }
 
 #[cfg(feature = "kafka")]
-// TODO(native-kafka-write): remove once Task 9 exercises producer sends from writer projection.
-#[allow(dead_code)]
 fn to_owned_headers(headers: &[KafkaHeader]) -> Option<OwnedHeaders> {
     if headers.is_empty() {
         return None;
@@ -298,6 +285,7 @@ mod kafka_error_tests {
     }
 }
 
+#[cfg(test)]
 #[async_trait]
 impl KafkaProducer for FakeProducer {
     async fn send(
