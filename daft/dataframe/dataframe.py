@@ -12,7 +12,7 @@ import os
 import pathlib
 import typing
 import warnings
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
@@ -98,8 +98,28 @@ _KAFKA_UNSUPPORTED_CONFIG_KEYS = {"transactional.id"}
 
 def _normalize_kafka_bootstrap_servers(bootstrap_servers: str | typing.Sequence[str]) -> str:
     if isinstance(bootstrap_servers, str):
+        if bootstrap_servers == "":
+            raise ValueError("[write_kafka] bootstrap_servers must be non-empty")
         return bootstrap_servers
-    return ",".join(str(server) for server in bootstrap_servers)
+    if isinstance(bootstrap_servers, (bytes, bytearray)):
+        raise TypeError(
+            "[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings"
+        )
+    if not isinstance(bootstrap_servers, Sequence):
+        raise TypeError(
+            "[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings"
+        )
+    if len(bootstrap_servers) == 0:
+        raise ValueError("[write_kafka] bootstrap_servers sequence must be non-empty")
+
+    normalized_servers: list[str] = []
+    for server in bootstrap_servers:
+        if not isinstance(server, str):
+            raise TypeError("[write_kafka] bootstrap_servers sequence values must be strings")
+        if server == "":
+            raise ValueError("[write_kafka] bootstrap_servers sequence values must be non-empty")
+        normalized_servers.append(server)
+    return ",".join(normalized_servers)
 
 
 def _validate_kafka_client_config(kafka_client_config: Mapping[str, object] | None) -> dict[str, object] | None:
@@ -107,8 +127,11 @@ def _validate_kafka_client_config(kafka_client_config: Mapping[str, object] | No
         return None
 
     normalized: dict[str, object] = {}
-    for raw_key, value in kafka_client_config.items():
-        key = str(raw_key)
+    for key, value in kafka_client_config.items():
+        if not isinstance(key, str):
+            raise TypeError("[write_kafka] kafka_client_config keys must be strings")
+        if key == "":
+            raise ValueError("[write_kafka] kafka_client_config keys must be non-empty")
         if key in _KAFKA_MANAGED_CONFIG_KEYS:
             raise ValueError(f"[write_kafka] kafka_client_config must not override managed key: {key!r}")
         if key in _KAFKA_UNSUPPORTED_CONFIG_KEYS:
@@ -1313,7 +1336,16 @@ class DataFrame:
     ) -> "DataFrame":
         """Writes the DataFrame to Kafka, returning task-level write summaries.
 
-        This call is blocking and executes the DataFrame.
+        Exactly one of ``topic`` or ``topic_col`` must be provided. ``kafka_client_config``
+        may contain scalar Kafka client options, but Daft-managed options such as
+        ``bootstrap.servers`` cannot be overridden and transactional writes are not yet
+        supported.
+
+        Returns:
+            DataFrame: Task-level write summaries, including row and byte counts.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
         """
         if (topic is None) == (topic_col is None):
             raise ValueError("[write_kafka] exactly one of topic or topic_col must be provided")

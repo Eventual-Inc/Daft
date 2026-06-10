@@ -29,6 +29,26 @@ def test_write_kafka_is_exported_on_dataframe() -> None:
             "topic must be non-empty",
         ),
         (
+            {"bootstrap_servers": "", "topic": "topic-a"},
+            ValueError,
+            "bootstrap_servers must be non-empty",
+        ),
+        (
+            {"bootstrap_servers": [], "topic": "topic-a"},
+            ValueError,
+            "bootstrap_servers sequence must be non-empty",
+        ),
+        (
+            {"bootstrap_servers": b"localhost:9092", "topic": "topic-a"},
+            TypeError,
+            "bootstrap_servers must be a non-empty string or sequence of non-empty strings",
+        ),
+        (
+            {"bootstrap_servers": ["localhost:9092", 9092], "topic": "topic-a"},
+            TypeError,
+            "bootstrap_servers sequence values must be strings",
+        ),
+        (
             {"bootstrap_servers": "localhost:9092", "topic": "topic-a", "partition": -1},
             ValueError,
             "partition must be >= 0",
@@ -90,10 +110,28 @@ def test_write_kafka_is_exported_on_dataframe() -> None:
             TypeError,
             "must be a scalar",
         ),
+        (
+            {
+                "bootstrap_servers": "localhost:9092",
+                "topic": "topic-a",
+                "kafka_client_config": {1: "all"},
+            },
+            TypeError,
+            "kafka_client_config keys must be strings",
+        ),
+        (
+            {
+                "bootstrap_servers": "localhost:9092",
+                "topic": "topic-a",
+                "kafka_client_config": {"": "all"},
+            },
+            ValueError,
+            "kafka_client_config keys must be non-empty",
+        ),
     ],
 )
 def test_write_kafka_rejects_invalid_inputs(
-    kwargs: dict[str, object],
+    kwargs: dict[str, object] | dict[object, object],
     exc: type[Exception],
     match: str,
 ) -> None:
