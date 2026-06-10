@@ -24,6 +24,10 @@ def _get_http_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]
     return f"https://data.commoncrawl.org/crawl-data/{crawl}/{file_type}.paths.gz"
 
 
+def _get_hf_manifest_path(crawl: str, file_type: Literal["warc", "wet", "wat"]) -> str:
+    return f"hf://buckets/commoncrawl/commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz"
+
+
 def _unique_cc_file_paths(paths_url: str, io_config: IOConfig | None) -> DataFrame:
     # The manifest file is a gzipped plaintext file with one path per line.
     # Technically, this is equivalent to a CSV file with one column, "url", with no headers, and we could use read_csv.
@@ -47,16 +51,21 @@ def _get_common_crawl_paths(
     io_config: IOConfig | None,
     *,
     in_aws: bool,
+    hf_buckets: bool = False,
 ) -> list[str]:
     """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
-    if in_aws:
+    if hf_buckets:
+        paths_url = _get_hf_manifest_path(crawl, file_type)
+    elif in_aws:
         paths_url = _get_s3_manifest_path(crawl, file_type)
     else:
         paths_url = _get_http_manifest_path(crawl, file_type)
 
     paths = _unique_cc_file_paths(paths_url, io_config)
 
-    if in_aws:
+    if hf_buckets:
+        paths = paths.select(format("hf://buckets/commoncrawl/commoncrawl/{}", col("url")).alias("url"))
+    elif in_aws:
         paths = paths.select(format("s3://commoncrawl/{}", col("url")).alias("url"))
     else:
         paths = paths.select(format("https://data.commoncrawl.org/{}", col("url")).alias("url"))
@@ -79,7 +88,8 @@ def common_crawl(
     num_files: int | None = None,
     io_config: IOConfig | None = None,
     *,
-    in_aws: bool,
+    in_aws: bool = False,
+    hf_buckets: bool = False,
 ) -> DataFrame:
     r"""Load Common Crawl data as a DataFrame.
 
@@ -94,11 +104,18 @@ def common_crawl(
             + "text" or "wet": Extracted plain text content
             + "metadata" or "wat": Metadata about crawled pages
         num_files: Limit the number of files to process. If not provided, processes all matching files.
-        io_config: IO configuration for accessing S3.
-        in_aws: Where to fetch the common crawl data from. If running in AWS, this must be set to True. If outside of AWS,
-                then this must be set to False. Setting this flag correctly is required for **optimal download performance**.
-                If running in AWS, then make sure you're in the "us-east-1" region so you don't incur S3 egress fees!
-                See [the Common Crawl docs](https://commoncrawl.org/get-started) for more specific instructions.
+        io_config: IO configuration for accessing storage.
+        in_aws: Fetch from AWS S3 (default: ``s3://commoncrawl/...\`). If running in AWS, set to ``True`` for optimal
+                performance. Set to ``False`` when running outside AWS to avoid S3 egress fees.
+                If running in AWS, make sure you're in the "us-east-1" region.
+        hf_buckets: Fetch from Hugging Face Buckets (default: ``hf://buckets/commoncrawl/...\`). This is the recommended
+                option for most users, especially when running outside AWS. HF Buckets are accessible from any cloud
+                provider and region, and are cheaper than S3 egress. See the [Hugging Face Buckets docs](https://huggingface.co/docs/huggingface_hub/guides/hf_file_system#hugging-face-buckets) for more details.
+
+    Note:
+        Only one of ``in_aws`` or ``hf_buckets`` should be ``True`` at a time. If both are ``False``,
+        HTTPS is used as a fallback (slower but requires no credentials).
+        See [the Common Crawl docs](https://commoncrawl.org/get-started) for more information.
 
     Returns:
         A DataFrame containing the requested Common Crawl data.
@@ -179,6 +196,7 @@ def common_crawl(
         num_files=num_files,
         io_config=io_config,
         in_aws=in_aws,
+        hf_buckets=hf_buckets,
     )
 
     return read_warc(warc_paths, io_config=io_config)
