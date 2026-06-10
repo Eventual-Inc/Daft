@@ -17,6 +17,7 @@ use crate::{
     error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
+    source::DataSource,
     unsupported_err,
 };
 
@@ -41,6 +42,8 @@ struct SessionState {
     providers: Bindings<ProviderRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
+    /// Bindings for the attached data sources.
+    data_sources: Bindings<DataSource>,
     /// Session-scoped functions (Python UDFs and native extension functions).
     functions: Bindings<ScalarFunction>,
     /// Session-scoped aggregate functions (native extension UDAFs).
@@ -81,6 +84,7 @@ impl Session {
             catalogs: Bindings::empty(),
             providers: Bindings::empty(),
             tables: Bindings::empty(),
+            data_sources: Bindings::empty(),
             functions: Bindings::empty(),
             agg_functions: Bindings::empty(),
         };
@@ -109,6 +113,15 @@ impl Session {
             self.state_mut().options.curr_catalog = Some(alias.clone());
         }
         self.state_mut().catalogs.bind(alias, catalog);
+        Ok(())
+    }
+
+    /// Attaches a data source to this session, err if already exists.
+    pub fn attach_data_source(&self, data_source: DataSource, alias: String) -> CatalogResult<()> {
+        if self.state().data_sources.contains(&alias) {
+            obj_already_exists_err!("DataSource", &alias.into())
+        }
+        self.state_mut().data_sources.bind(alias, data_source);
         Ok(())
     }
 
@@ -231,6 +244,15 @@ impl Session {
         Ok(())
     }
 
+    /// Detaches a data source from this session, err if does not exist.
+    pub fn detach_data_source(&self, alias: &str) -> CatalogResult<()> {
+        if !self.state().data_sources.contains(alias) {
+            obj_not_found_err!("DataSource", &alias.into())
+        }
+        self.state_mut().data_sources.remove(alias);
+        Ok(())
+    }
+
     /// Detaches a function from this session. This does NOT err if it does not exist.
     pub fn detach_function(&self, name: &str) -> CatalogResult<()> {
         self.state_mut().functions.remove(name);
@@ -256,6 +278,15 @@ impl Session {
             Ok(catalog.clone())
         } else {
             obj_not_found_err!("Catalog", &name.into())
+        }
+    }
+
+    /// Returns the data source or an object not found error.
+    pub fn get_data_source(&self, name: &str) -> CatalogResult<DataSource> {
+        if let Some(data_source) = self.state().get_attached_data_source(name)? {
+            Ok(data_source)
+        } else {
+            obj_not_found_err!("DataSource", &name.into())
         }
     }
 
@@ -381,6 +412,11 @@ impl Session {
         self.state().catalogs.contains(name)
     }
 
+    /// Returns true iff the session has access to a matching data source.
+    pub fn has_data_source(&self, name: &str) -> bool {
+        self.state().data_sources.contains(name)
+    }
+
     /// Returns true iff the session has access to a matching provider.
     pub fn has_provider(&self, name: &str) -> bool {
         self.state().providers.contains(name)
@@ -394,6 +430,11 @@ impl Session {
     /// Lists all catalogs matching the pattern.
     pub fn list_catalogs(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
         Ok(self.state().catalogs.list(pattern))
+    }
+
+    /// Lists all data sources matching the pattern.
+    pub fn list_data_sources(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
+        Ok(self.state().data_sources.list(pattern))
     }
 
     /// Lists all tables matching the pattern.
@@ -561,6 +602,15 @@ impl SessionState {
             providers if providers.is_empty() => Ok(None),
             providers if providers.len() == 1 => Ok(Some(providers[0].clone())),
             providers => ambiguous_identifier_err!("Provider", providers.iter().map(|p| p.name())),
+        }
+    }
+
+    /// Get an attached data source by name using the session's identifier mode.
+    pub fn get_attached_data_source(&self, name: &str) -> CatalogResult<Option<DataSource>> {
+        match self.data_sources.lookup(name, self.options.lookup_mode()) {
+            sources if sources.is_empty() => Ok(None),
+            sources if sources.len() == 1 => Ok(Some(sources[0].clone())),
+            _ => ambiguous_identifier_err!("DataSource", std::iter::once(name.to_string())),
         }
     }
 

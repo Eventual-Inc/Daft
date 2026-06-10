@@ -138,6 +138,15 @@ data_source = TextFileDataSource([sample_file])
 )
 ```
 
+You can also attach a data source to a session and read it by name:
+
+=== "🐍 Python"
+```python
+daft.attach_data_source(TextFileDataSource([sample_file]), alias="text_file")
+
+daft.read_source("text_file").show()
+```
+
 **Output:**
 
 ```bash
