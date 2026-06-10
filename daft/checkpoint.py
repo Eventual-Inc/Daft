@@ -162,29 +162,15 @@ class CheckpointConfig:
           silently commits nothing.
 
     Semantics of file-path mode (``on`` omitted):
-        - **File identity, not just path.** A checkpoint key combines the file
-          path, any chunk spec (Parquet row group or byte range), and a
-          file-identity suffix so that a *replaced* file at the same path is
-          reprocessed. The suffix is the object-store ETag when available,
-          otherwise the local-file modification time (nanosecond precision),
-          otherwise the file size. ETag/mtime are captured both for directory
-          and glob listings and for directly named single files. If none of
-          them is available the key is the path alone — a same-path, same-size
-          content change would then be treated as already-processed, so prefer
-          stores that return an ETag.
-        - **Skip granularity is the scan chunk.** A file (or row-group chunk)
-          is skipped only when every key derived from it has been sealed.
-        - **Chunk layout must be stable across runs.** Keys encode row-group
-          indices / byte ranges, so changing split configuration between runs
-          (e.g. ``scan_tasks_*_size_bytes``) yields different keys and reprocesses
-          the affected files. Identical reader configuration produces identical
-          keys.
-        - **Iceberg merge-on-read.** A data file's applicable delete files are
-          folded into its key, so a delete added in a later snapshot reprocesses
-          the data file rather than skipping it. As with row-level mode this is
-          process-once, not CDC: re-emitted rows reflect the new (post-delete)
-          state but prior runs' rows are not retracted, so pair merge-on-read
-          sources with an overwrite/full-refresh sink.
+        - **Keys identify file content, not just the path.** Each input file
+          (or sub-file chunk) is keyed by its path plus a content marker — the
+          object-store ETag, else modification time, else size — so a file
+          replaced at the same path is reprocessed. When only size is available,
+          an in-place edit that preserves the size is not detected.
+        - **Process-once, not CDC.** For mutable sources (e.g. Iceberg
+          merge-on-read, whose delete files are folded into the key), the new
+          state is reprocessed but previously emitted rows are not retracted —
+          pair such sources with an overwrite sink.
     """
 
     _inner: _CheckpointConfig
