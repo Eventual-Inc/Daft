@@ -632,6 +632,13 @@ fn translate_helper(
                         LocalNodeContext::default(),
                     )
                 }
+                SinkInfo::KafkaInfo(info) => LocalPhysicalPlan::kafka_write(
+                    input_plan,
+                    info.clone().bind(&data_schema)?,
+                    sink.schema.clone(),
+                    sink.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
                 #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(info) => match &info.catalog {
                     daft_logical_plan::CatalogType::DeltaLake(..)

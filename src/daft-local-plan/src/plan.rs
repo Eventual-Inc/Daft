@@ -21,6 +21,7 @@ use daft_dsl::{
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
     partitioning::RepartitionSpec,
+    sink_info::KafkaWriteInfo,
     stats::{PlanStats, StatsState},
 };
 use daft_scan::{Pushdowns, SourceConfig};
@@ -105,6 +106,7 @@ pub enum LocalPhysicalPlan {
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
+    KafkaWrite(KafkaWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
     #[cfg(feature = "python")]
@@ -184,6 +186,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
+            | Self::KafkaWrite(KafkaWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
             | Self::GatherWrite(GatherWrite { stats_state, .. })
@@ -237,6 +240,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::KafkaWrite(KafkaWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
@@ -287,6 +291,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::KafkaWrite(KafkaWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
@@ -1021,6 +1026,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn kafka_write(
+        input: LocalPhysicalPlanRef,
+        kafka_info: KafkaWriteInfo<BoundExpr>,
+        file_schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::KafkaWrite(KafkaWrite {
+            input,
+            kafka_info,
+            file_schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     #[cfg(feature = "python")]
     pub fn catalog_write(
         input: LocalPhysicalPlanRef,
@@ -1209,6 +1231,7 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
+            Self::KafkaWrite(KafkaWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { schema, .. }) => schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
@@ -1287,7 +1310,8 @@ impl LocalPhysicalPlan {
                 input, ..
             })
             | Self::PhysicalWrite(PhysicalWrite { input, .. })
-            | Self::CommitWrite(CommitWrite { input, .. }) => vec![input.clone()],
+            | Self::CommitWrite(CommitWrite { input, .. })
+            | Self::KafkaWrite(KafkaWrite { input, .. }) => vec![input.clone()],
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
@@ -1665,7 +1689,6 @@ impl LocalPhysicalPlan {
                     context.clone(),
                 ),
                 Self::CommitWrite(CommitWrite {
-                    input,
                     data_schema,
                     stats_state,
                     file_schema,
@@ -1680,9 +1703,21 @@ impl LocalPhysicalPlan {
                     stats_state.clone(),
                     context.clone(),
                 ),
+                Self::KafkaWrite(KafkaWrite {
+                    kafka_info,
+                    file_schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::kafka_write(
+                    new_child.clone(),
+                    kafka_info.clone(),
+                    file_schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
                 #[cfg(feature = "python")]
                 Self::DataSink(DataSink {
-                    input,
                     data_sink_info,
                     file_schema,
                     stats_state,
@@ -2309,6 +2344,16 @@ pub struct CommitWrite {
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct KafkaWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub kafka_info: KafkaWriteInfo<BoundExpr>,
+    pub file_schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
