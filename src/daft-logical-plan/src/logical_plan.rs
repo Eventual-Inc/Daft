@@ -1315,3 +1315,4 @@ impl_from_data_struct_for_logical_plan!(Shuffle);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);
+impl_from_data_struct_for_logical_plan!(CommonSubplan);

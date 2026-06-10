@@ -82,7 +82,11 @@ impl CseSharedCache {
     /// Idempotent — safe to call multiple times.
     pub fn mark_done(&self) {
         self.done.store(true, Ordering::Release);
-        self.notify.notify_waiters();
+        // Use notify_one() rather than notify_waiters() because
+        // notify_one() stores a permit internally when there are no
+        // waiters, so a reader that has not yet called notified()
+        // will still be able to receive the notification.
+        self.notify.notify_one();
     }
 
     /// Wait until the writer has signalled completion.
@@ -90,12 +94,16 @@ impl CseSharedCache {
     /// Returns immediately if [`mark_done`](Self::mark_done) has already been
     /// called.
     pub async fn wait_done(&self) {
-        if self.done.load(Ordering::Acquire) {
-            return;
-        }
         loop {
+            if self.done.load(Ordering::Acquire) {
+                return;
+            }
             self.notify.notified().await;
             if self.done.load(Ordering::Acquire) {
+                // Pass the permit to the next reader that may also be
+                // waiting, so that multiple concurrent readers all
+                // eventually wake up.
+                self.notify.notify_one();
                 return;
             }
         }
