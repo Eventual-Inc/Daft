@@ -2534,6 +2534,9 @@ pub struct FlightShuffleReadInput {
 
 #[cfg(test)]
 mod task_topology_tests {
+    use daft_core::datatypes::{DataType, Field};
+    use daft_logical_plan::sink_info::{KafkaKeyFormat, KafkaTopic, KafkaValueFormat};
+
     use super::*;
 
     fn scan() -> LocalPhysicalPlanRef {
@@ -2628,5 +2631,70 @@ mod task_topology_tests {
         let plan = scan();
         let _retained = plan.clone();
         let _ = plan.mark_task_root();
+    }
+
+    #[test]
+    fn kafka_write_preserves_schema_child_and_info_with_new_children() {
+        let data_schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Utf8)]));
+        let file_schema = Arc::new(Schema::new(vec![Field::new("summary", DataType::UInt64)]));
+        let replacement_file_schema = Arc::new(Schema::new(vec![Field::new(
+            "replacement",
+            DataType::UInt64,
+        )]));
+        let kafka_info = daft_logical_plan::sink_info::KafkaWriteInfo {
+            bootstrap_servers: "localhost:9092".to_string(),
+            topic: KafkaTopic::Static("topic-a".to_string()),
+            value_col: daft_dsl::unresolved_col("value"),
+            key_col: None,
+            headers_col: None,
+            partition: None,
+            timestamp_ms_col: None,
+            value_format: KafkaValueFormat::Utf8,
+            key_format: KafkaKeyFormat::Utf8,
+            kafka_client_config: BTreeMap::new(),
+            timeout_ms: 1000,
+        }
+        .bind(&data_schema)
+        .unwrap();
+        let plan = LocalPhysicalPlan::kafka_write(
+            LocalPhysicalPlan::in_memory_scan(
+                0,
+                data_schema.clone(),
+                0,
+                StatsState::NotMaterialized,
+                LocalNodeContext::default(),
+            ),
+            kafka_info.clone(),
+            file_schema.clone(),
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+
+        assert_eq!(plan.schema(), &file_schema);
+        let children = plan.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].schema(), &data_schema);
+
+        let replacement = LocalPhysicalPlan::in_memory_scan(
+            1,
+            replacement_file_schema.clone(),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        let rewritten = plan.with_new_children(&[replacement]);
+
+        let LocalPhysicalPlan::KafkaWrite(KafkaWrite {
+            kafka_info: rewritten_info,
+            file_schema: rewritten_file_schema,
+            input,
+            ..
+        }) = rewritten.as_ref()
+        else {
+            panic!("expected KafkaWrite");
+        };
+        assert_eq!(rewritten_info, &kafka_info);
+        assert_eq!(rewritten_file_schema, &file_schema);
+        assert_eq!(input.schema(), &replacement_file_schema);
     }
 }
