@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import daft.runners.flotilla as flotilla
+from daft.runners import flotilla
 
 
 def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
@@ -111,15 +111,13 @@ def _install_fakes(monkeypatch, nodes, outcomes):
     monkeypatch.setattr(flotilla.ray, "kill", _fake_ray_kill)
     monkeypatch.setattr(flotilla, "RaySwordfishActor", _FakeActorClass)
     monkeypatch.setattr(flotilla, "RaySwordfishWorker", _FakeWorker)
-    monkeypatch.setattr(flotilla, "_extension_runtime_env", lambda: {})
+    monkeypatch.setattr(flotilla, "_extension_runtime_env", dict)
     return captured
 
 
 def _unschedulable_error() -> Exception:
     # Construct without invoking Ray's constructor (signature varies by version).
-    return flotilla.ray.exceptions.ActorUnschedulableError.__new__(
-        flotilla.ray.exceptions.ActorUnschedulableError
-    )
+    return flotilla.ray.exceptions.ActorUnschedulableError.__new__(flotilla.ray.exceptions.ActorUnschedulableError)
 
 
 def _actor_died_error() -> Exception:
@@ -127,9 +125,7 @@ def _actor_died_error() -> Exception:
 
 
 def _actor_unavailable_error() -> Exception:
-    return flotilla.ray.exceptions.ActorUnavailableError.__new__(
-        flotilla.ray.exceptions.ActorUnavailableError
-    )
+    return flotilla.ray.exceptions.ActorUnavailableError.__new__(flotilla.ray.exceptions.ActorUnavailableError)
 
 
 def _ray_task_error() -> Exception:

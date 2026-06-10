@@ -560,8 +560,7 @@ def start_ray_workers(
         # running on the existing workers and retries on the next refresh.
         if not handles and not existing_worker_ids:
             raise RuntimeError(
-                f"No flotilla workers became available within {worker_startup_timeout}s "
-                f"({len(actors)} attempted)"
+                f"No flotilla workers became available within {worker_startup_timeout}s ({len(actors)} attempted)"
             )
 
     return handles
