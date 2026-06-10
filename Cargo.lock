@@ -3521,7 +3521,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
- "futures",
  "hashbrown 0.16.1",
  "parking_lot 0.12.5",
  "parquet",

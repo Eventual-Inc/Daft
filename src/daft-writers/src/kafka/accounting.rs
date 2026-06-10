@@ -68,6 +68,16 @@ mod tests {
 
     use super::*;
 
+    fn assert_i64_column(batch: &RecordBatch, index: usize, name: &str, value: i64) {
+        let column = &batch.columns()[index];
+        assert_eq!(column.name(), name);
+        assert_eq!(column.data_type(), &DataType::Int64);
+        assert_eq!(
+            column.as_materialized_series().i64().unwrap().get(0),
+            Some(value)
+        );
+    }
+
     #[test]
     fn counts_deliveries_and_failures_and_preserves_first_error() {
         let mut accounting = KafkaWriteAccounting::new(7);
@@ -117,6 +127,11 @@ mod tests {
             batch.schema.as_ref(),
             KafkaWriteAccounting::schema().as_ref()
         );
+        assert_i64_column(&batch, 0, "task_id", 9);
+        assert_i64_column(&batch, 1, "messages_attempted", 0);
+        assert_i64_column(&batch, 2, "messages_delivered", 0);
+        assert_i64_column(&batch, 3, "messages_failed", 0);
+        assert_i64_column(&batch, 4, "bytes_delivered", 0);
         let first_error = &batch.columns()[5];
         assert_eq!(first_error.name(), "first_error");
         assert_eq!(first_error.data_type(), &DataType::Utf8);
@@ -126,10 +141,18 @@ mod tests {
     #[test]
     fn builds_summary_record_batch_with_error_value() {
         let mut accounting = KafkaWriteAccounting::new(10);
+        accounting.record_attempt();
+        accounting.record_attempt();
+        accounting.record_delivery(128);
         accounting.record_failure("failed");
         let batch = accounting.to_record_batch().unwrap();
 
         assert_eq!(batch.len(), 1);
+        assert_i64_column(&batch, 0, "task_id", 10);
+        assert_i64_column(&batch, 1, "messages_attempted", 2);
+        assert_i64_column(&batch, 2, "messages_delivered", 1);
+        assert_i64_column(&batch, 3, "messages_failed", 1);
+        assert_i64_column(&batch, 4, "bytes_delivered", 128);
         assert_eq!(batch.columns()[5].str_value(0).unwrap(), "failed");
     }
 }

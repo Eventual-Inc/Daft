@@ -12,6 +12,8 @@ pub fn config_value_to_string(value: &KafkaConfigValue) -> String {
         KafkaConfigValue::Int(value) => value.to_string(),
         KafkaConfigValue::Float(value) => value.0.to_string(),
         KafkaConfigValue::Bool(value) => value.to_string(),
+        // librdkafka represents configuration values as strings; Daft nulls intentionally
+        // map to an empty value so users can pass through configs that use empty strings.
         KafkaConfigValue::Null => String::new(),
     }
 }
@@ -32,8 +34,11 @@ pub fn validate_config_key(key: &str) -> DaftResult<()> {
 
 pub fn redact_config_value(key: &str, value: &str) -> String {
     let key = key.to_ascii_lowercase();
-    if key.contains("password")
+    if key == "sasl.jaas.config"
+        || key == "basic.auth.user.info"
         || key == "sasl.oauthbearer.config"
+        || key.contains("password")
+        || key.contains("credential")
         || key.contains("secret")
         || key.contains("token")
     {
@@ -100,9 +105,17 @@ mod tests {
 
         let managed = validate_config_key("bootstrap.servers").unwrap_err();
         assert!(managed.to_string().contains("bootstrap.servers"));
+        let managed_mixed_case = validate_config_key("BOOTSTRAP.SERVERS").unwrap_err();
+        assert!(managed_mixed_case.to_string().contains("bootstrap.servers"));
 
         let unsupported = validate_config_key("transactional.id").unwrap_err();
         assert!(unsupported.to_string().contains("transactional.id"));
+        let unsupported_mixed_case = validate_config_key("Transactional.ID").unwrap_err();
+        assert!(
+            unsupported_mixed_case
+                .to_string()
+                .contains("transactional.id")
+        );
     }
 
     #[test]
@@ -115,8 +128,24 @@ mod tests {
             redact_config_value("sasl.oauthbearer.config", "token=abc"),
             "<redacted>"
         );
+        assert_eq!(
+            redact_config_value("SASL.JAAS.CONFIG", "username=alice password=abc"),
+            "<redacted>"
+        );
+        assert_eq!(
+            redact_config_value("Basic.Auth.User.Info", "alice:abc"),
+            "<redacted>"
+        );
+        assert_eq!(
+            redact_config_value("Sasl.OAuthBearer.Config", "token=abc"),
+            "<redacted>"
+        );
         assert_eq!(redact_config_value("api.token", "abc"), "<redacted>");
         assert_eq!(redact_config_value("client.secret", "abc"), "<redacted>");
+        assert_eq!(
+            redact_config_value("schema.registry.credential.source", "user-info"),
+            "<redacted>"
+        );
         assert_eq!(redact_config_value("acks", "all"), "all");
     }
 
