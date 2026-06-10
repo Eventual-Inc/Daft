@@ -6,9 +6,7 @@ use daft_logical_plan::{AsofJoinStrategy, ops::AsofJoin};
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode,
-    join::{AsofJoinAlignedNode, AsofJoinNode},
-    translate::LogicalPlanToPipelineNodeTranslator,
+    DistributedPipelineNode, join::AsofJoinNode, translate::LogicalPlanToPipelineNodeTranslator,
 };
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -32,49 +30,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         let node_id = self.get_next_pipeline_node_id();
         Ok(DistributedPipelineNode::new(
             Arc::new(AsofJoinNode::new(
-                node_id,
-                &self.plan_config,
-                left_by,
-                right_by,
-                left_on,
-                right_on,
-                strategy,
-                num_partitions,
-                left,
-                right,
-                output_schema,
-            )),
-            &self.meter,
-        ))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn gen_aligned_asof_join_nodes(
-        &mut self,
-        left: DistributedPipelineNode,
-        right: DistributedPipelineNode,
-        left_by: Vec<BoundExpr>,
-        right_by: Vec<BoundExpr>,
-        left_on: BoundExpr,
-        right_on: BoundExpr,
-        strategy: AsofJoinStrategy,
-        output_schema: SchemaRef,
-    ) -> DaftResult<DistributedPipelineNode> {
-        if self.plan_config.config.enable_scan_task_split_and_merge {
-            return Err(common_error::DaftError::ValueError(
-                "_assume_sorted_and_aligned=True is incompatible with enable_scan_task_split_and_merge=True: \
-                 scan task splitting may change partition counts and break alignment."
-                    .to_string(),
-            ));
-        }
-
-        let num_left_partitions = left.config().clustering_spec.num_partitions();
-        let num_right_partitions = right.config().clustering_spec.num_partitions();
-        let num_partitions = max(num_left_partitions, num_right_partitions);
-
-        let node_id = self.get_next_pipeline_node_id();
-        Ok(DistributedPipelineNode::new(
-            Arc::new(AsofJoinAlignedNode::new(
                 node_id,
                 &self.plan_config,
                 left_by,
@@ -121,28 +76,27 @@ impl LogicalPlanToPipelineNodeTranslator {
             &right_node.config().schema,
         )?;
 
-        if asof_join.assume_sorted_and_aligned {
-            self.gen_aligned_asof_join_nodes(
-                left_node,
-                right_node,
-                left_by,
-                right_by,
-                left_on,
-                right_on,
-                asof_join.strategy,
-                asof_join.output_schema.clone(),
-            )
-        } else {
-            self.gen_asof_join_nodes(
-                left_node,
-                right_node,
-                left_by,
-                right_by,
-                left_on,
-                right_on,
-                asof_join.strategy,
-                asof_join.output_schema.clone(),
-            )
+        // TODO: dispatch to an execution path that skips the range shuffle when
+        // `assume_sorted_and_aligned` is set. For now both paths run the regular
+        // shuffle-based asof join, which is correct regardless of input alignment.
+        if asof_join.assume_sorted_and_aligned
+            && self.plan_config.config.enable_scan_task_split_and_merge
+        {
+            return Err(common_error::DaftError::ValueError(
+                "_assume_sorted_and_aligned=True is incompatible with enable_scan_task_split_and_merge=True: \
+                 scan task splitting may change partition counts and break alignment."
+                    .to_string(),
+            ));
         }
+        self.gen_asof_join_nodes(
+            left_node,
+            right_node,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            asof_join.strategy,
+            asof_join.output_schema.clone(),
+        )
     }
 }

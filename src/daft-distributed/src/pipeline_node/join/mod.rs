@@ -1,5 +1,4 @@
 pub(crate) mod asof_join;
-pub(crate) mod asof_join_aligned;
 mod broadcast_join;
 pub(crate) mod cross_join;
 pub(crate) mod hash_join;
@@ -11,7 +10,6 @@ pub(crate) mod translate_asof_join;
 pub(crate) mod translate_join;
 
 pub(crate) use asof_join::AsofJoinNode;
-pub(crate) use asof_join_aligned::AsofJoinAlignedNode;
 pub(crate) use broadcast_join::BroadcastJoinNode;
 pub(crate) use cross_join::CrossJoinNode;
 pub(crate) use hash_join::HashJoinNode;
