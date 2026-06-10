@@ -1,9 +1,11 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow::array::{Datum, Scalar};
+use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::{DataArray, iterator::Utf8Iter},
+    datatypes::DaftPrimitiveType,
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -246,4 +248,101 @@ pub(crate) fn binary_utf8_to_field(
         TypeError: "invalid argument type for '{fn_name}'"
     );
     Ok(Field::new(input.name, return_dtype))
+}
+
+/// Evaluate a pairwise string distance/similarity function over two string inputs.
+///
+/// Casts both inputs to Utf8, then iterates row-by-row tracking nulls and produces a
+/// numeric output array of type `T`. Supports scalar broadcasting on either side
+/// (column-column, column-scalar, scalar-column) via `parse_inputs` and
+/// `create_broadcasted_str_iter`. Returns null for a row when either input is null.
+/// Shared by the string distance/similarity UDFs (levenshtein, jaro, jaro-winkler,
+/// damerau-levenshtein) to avoid duplicating the cast/iterate/null-track/build logic.
+pub(crate) fn binary_str_distance<T, F>(
+    inputs: FunctionArgs<Series>,
+    name: &'static str,
+    return_dtype: DataType,
+    compute: F,
+) -> DaftResult<Series>
+where
+    T: DaftPrimitiveType,
+    T::Native: Default,
+    F: Fn(&str, &str) -> T::Native,
+    DataArray<T>: IntoSeries,
+{
+    let left = inputs.required(0)?.cast(&DataType::Utf8)?;
+    let right = inputs.required(1)?.cast(&DataType::Utf8)?;
+    let field = Arc::new(Field::new(name, return_dtype.clone()));
+
+    left.with_utf8_array(|left| {
+        right.with_utf8_array(|right| {
+            let (is_full_null, expected_size) = parse_inputs(left, &[right])
+                .map_err(|e| DaftError::ValueError(format!("Error in {name}: {e}")))?;
+
+            if is_full_null {
+                return Ok(
+                    DataArray::<T>::full_null(name, &return_dtype, expected_size).into_series(),
+                );
+            }
+            if expected_size == 0 {
+                return Ok(DataArray::<T>::empty(name, &return_dtype).into_series());
+            }
+
+            let left_iter = create_broadcasted_str_iter(left, expected_size);
+            let right_iter = create_broadcasted_str_iter(right, expected_size);
+
+            let mut values = Vec::with_capacity(expected_size);
+            let mut validity = NullBufferBuilder::new(expected_size);
+
+            for (l, r) in left_iter.zip(right_iter) {
+                match (l, r) {
+                    (Some(l), Some(r)) => {
+                        values.push(compute(l, r));
+                        validity.append_non_null();
+                    }
+                    _ => {
+                        values.push(T::Native::default());
+                        validity.append_null();
+                    }
+                }
+            }
+
+            let result = DataArray::<T>::from_field_and_values(field.clone(), values)
+                .with_nulls(validity.finish())?;
+            Ok(result.into_series())
+        })
+    })
+}
+
+/// Compute the return field for a pairwise string distance/similarity function.
+///
+/// Validates that both arguments are string-typed (or Null) and returns a field with
+/// the given `return_dtype`. Shared by the string distance/similarity UDFs.
+pub(crate) fn binary_str_distance_to_field(
+    inputs: FunctionArgs<ExprRef>,
+    schema: &Schema,
+    name: &'static str,
+    return_dtype: DataType,
+) -> DaftResult<Field> {
+    ensure!(
+        inputs.len() == 2,
+        SchemaMismatch: "Expected 2 inputs, but received {}",
+        inputs.len()
+    );
+
+    let left = inputs.required(0)?.to_field(schema)?;
+    let right = inputs.required(1)?.to_field(schema)?;
+
+    ensure!(
+        left.dtype.is_string() || left.dtype == DataType::Null,
+        TypeError: "First argument must be a string, got {}",
+        left.dtype
+    );
+    ensure!(
+        right.dtype.is_string() || right.dtype == DataType::Null,
+        TypeError: "Second argument must be a string, got {}",
+        right.dtype
+    );
+
+    Ok(Field::new(name, return_dtype))
 }

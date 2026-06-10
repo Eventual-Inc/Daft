@@ -277,6 +277,10 @@ from .str import (
     regexp_replace,
     find,
     hamming_distance_str,
+    levenshtein_distance,
+    jaro_similarity,
+    jaro_winkler_similarity,
+    damerau_levenshtein_distance,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -350,6 +354,7 @@ __all__ = [
     "current_date",
     "current_timestamp",
     "current_timezone",
+    "damerau_levenshtein_distance",
     "date",
     "date_add",
     "date_diff",
@@ -424,6 +429,8 @@ __all__ = [
     "is_nan",
     "is_null",
     "jaccard_similarity",
+    "jaro_similarity",
+    "jaro_winkler_similarity",
     "jq",
     "json_array_length",
     "json_object_keys",
@@ -435,6 +442,7 @@ __all__ = [
     "left",
     "length",
     "length_bytes",
+    "levenshtein_distance",
     "like",
     "list_agg",
     "list_agg_distinct",

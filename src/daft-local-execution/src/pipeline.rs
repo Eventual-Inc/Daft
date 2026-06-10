@@ -281,6 +281,7 @@ pub struct BuilderContext {
     /// a `CseCacheWrite` or `CseCacheRead` pipeline node, whichever the
     /// top-down builder encounters first.
     cse_caches: std::cell::RefCell<HashMap<usize, Arc<CseSharedCache>>>,
+    pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 impl BuilderContext {
@@ -302,6 +303,7 @@ impl BuilderContext {
             shuffle_server,
             checkpoint: std::cell::RefCell::new(None),
             cse_caches: std::cell::RefCell::new(HashMap::new()),
+            skipped_corrupt_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -481,6 +483,7 @@ fn physical_plan_to_pipeline(
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
+                Some(ctx.skipped_corrupt_files.clone()),
             );
             SourceNode::new(
                 Box::new(scan_task_source),
