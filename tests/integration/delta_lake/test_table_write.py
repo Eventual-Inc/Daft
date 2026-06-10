@@ -339,6 +339,7 @@ def test_custom_metadata_added_for_new_table(tmp_path, custom_metadata):
     history = table.history(1)
 
     assert custom_metadata.items() <= history[0].items()
+    assert "operationMetrics" in history[0]
 
 
 def test_custom_metadata_updated_for_existing_table(tmp_path, custom_metadata):
@@ -357,6 +358,7 @@ def test_custom_metadata_updated_for_existing_table(tmp_path, custom_metadata):
     history = table.history(1)
 
     assert custom_metadata.items() <= history[0].items()
+    assert "operationMetrics" in history[0]
 
 
 def test_custom_metadata_updated_for_existing_table_with_commit_properties(
@@ -379,4 +381,71 @@ def test_custom_metadata_updated_for_existing_table_with_commit_properties(
         (_, _, _, _, _, custom_metadata_arg) = mock_method.call_args[0]
 
         assert isinstance(custom_metadata_arg, _FakeCommitProperties)
-        assert custom_metadata_arg.custom_metadata == custom_metadata
+        assert custom_metadata.items() <= custom_metadata_arg.custom_metadata.items()
+        assert "operationMetrics" in custom_metadata_arg.custom_metadata
+
+
+def test_operation_metrics_added_for_new_table(tmp_path):
+    deltalake = pytest.importorskip("deltalake")
+
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2, 3, 4]}).write_deltalake(str(path))
+
+    history_entry = deltalake.DeltaTable(path).history(1)[0]
+    assert "operationMetrics" in history_entry
+
+
+def test_operation_metrics_added_for_existing_table_append(tmp_path):
+    deltalake = pytest.importorskip("deltalake")
+
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2]}).write_deltalake(str(path))
+    daft.from_pydict({"a": [3, 4, 5]}).write_deltalake(str(path), mode="append")
+
+    history_entry = deltalake.DeltaTable(path).history(1)[0]
+    assert "operationMetrics" in history_entry
+
+
+def test_operation_metrics_added_for_existing_table_overwrite(tmp_path):
+    deltalake = pytest.importorskip("deltalake")
+
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2]}).write_deltalake(str(path))
+    daft.from_pydict({"a": [8]}).write_deltalake(str(path), mode="overwrite")
+
+    history_entry = deltalake.DeltaTable(path).history(1)[0]
+    assert "operationMetrics" in history_entry
+
+
+def test_delete_deltalake_basic(tmp_path):
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_deltalake(str(path))
+
+    result = daft.delete_deltalake(str(path), predicate="a >= 2")
+    assert isinstance(result, dict)
+
+    rows = daft.read_deltalake(str(path)).to_pydict()
+    assert rows == {"a": [1], "b": ["x"]}
+
+
+def test_update_deltalake_basic(tmp_path):
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_deltalake(str(path))
+
+    result = daft.update_deltalake(str(path), updates={"b": "'updated'"}, predicate="a >= 2")
+    assert isinstance(result, dict)
+
+    rows = daft.read_deltalake(str(path)).sort("a").to_pydict()
+    assert rows == {"a": [1, 2, 3], "b": ["x", "updated", "updated"]}
+
+
+def test_history_deltalake_exposes_operation_metrics(tmp_path):
+    path = tmp_path / "some_table"
+    daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_deltalake(str(path))
+    daft.update_deltalake(str(path), updates={"b": "'updated'"}, predicate="a >= 2")
+    daft.delete_deltalake(str(path), predicate="a = 1")
+
+    history = daft.history_deltalake(str(path), limit=3)
+    assert len(history) == 3
+    assert all("operationMetrics" in entry for entry in history)
+    assert all(isinstance(entry["operationMetrics"], dict) for entry in history)

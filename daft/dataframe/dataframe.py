@@ -6,6 +6,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import json
 import logging
 import multiprocessing
 import os
@@ -127,6 +128,56 @@ def _create_delta_metadata_param(metadata: dict[str, str] | None) -> Any:
     from deltalake import CommitProperties
 
     return CommitProperties(custom_metadata=metadata)
+
+
+def _merge_delta_custom_metadata(
+    custom_metadata: dict[str, str] | None,
+    operation_metrics: dict[str, int] | None = None,
+) -> dict[str, str] | None:
+    merged = dict(custom_metadata or {})
+    if operation_metrics and "operationMetrics" not in merged:
+        # delta-rs low-level transaction APIs currently surface operationMetrics
+        # in commit info when provided via this metadata key.
+        merged["operationMetrics"] = json.dumps(operation_metrics)
+    return merged or None
+
+
+def _get_num_records_from_add_action_stats(stats_json: str) -> int:
+    try:
+        parsed = json.loads(stats_json)
+    except (TypeError, json.JSONDecodeError):
+        return 0
+    value = parsed.get("numRecords", 0)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _compute_delta_operation_metrics(
+    add_actions: list[Any],
+    removed_file_count: int = 0,
+    removed_row_count: int = 0,
+) -> dict[str, int]:
+    num_added_files = len(add_actions)
+    num_added_rows = sum(_get_num_records_from_add_action_stats(aa.stats) for aa in add_actions)
+    num_partitions = len(
+        {
+            tuple(sorted((aa.partition_values or {}).items()))
+            for aa in add_actions
+            if getattr(aa, "partition_values", None)
+        }
+    )
+
+    metrics = {
+        "num_added_files": num_added_files,
+        "num_added_rows": num_added_rows,
+        "num_removed_files": removed_file_count,
+        "num_partitions": num_partitions,
+    }
+    if removed_file_count > 0:
+        metrics["num_deleted_rows"] = removed_row_count
+    return metrics
 
 
 def _utc_now() -> datetime:
@@ -1913,7 +1964,11 @@ class DataFrame:
             rows.append(stats["numRecords"])
             sizes.append(add_action.size)
 
+        removed_file_count = 0
+        removed_row_count = 0
+
         if table is None:
+            operation_metrics = _compute_delta_operation_metrics(add_actions)
             create_table_with_add_actions(
                 table_uri,
                 delta_schema,
@@ -1924,19 +1979,25 @@ class DataFrame:
                 description,
                 configuration,
                 storage_options,
-                custom_metadata,
+                _merge_delta_custom_metadata(custom_metadata, operation_metrics),
             )
         else:
             if mode == "overwrite":
                 old_actions = pa.table(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
+                removed_file_count = old_actions.num_rows
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
                     paths.append(old_actions_dict["path"][i])
-                    rows.append(old_actions_dict["num_records"][i])
+                    removed_rows = old_actions_dict["num_records"][i] or 0
+                    removed_row_count += int(removed_rows)
+                    rows.append(removed_rows)
                     sizes.append(old_actions_dict["size_bytes"][i])
 
-            metadata_param = _create_delta_metadata_param(custom_metadata)
+            operation_metrics = _compute_delta_operation_metrics(add_actions, removed_file_count, removed_row_count)
+            metadata_param = _create_delta_metadata_param(
+                _merge_delta_custom_metadata(custom_metadata, operation_metrics)
+            )
             if parse(deltalake.__version__) < parse("1.0.0"):
                 table._table.create_write_transaction(
                     add_actions, mode, partition_cols or [], delta_schema, None, metadata_param
@@ -2071,6 +2132,7 @@ class DataFrame:
             return empty_write_result(write_df)
 
         add_actions: list[AddAction] = decode_file_metadata(store, "add_action")
+        operation_metrics = _compute_delta_operation_metrics(add_actions)
 
         def _build_result() -> "DataFrame":
             operations: list[str] = []
@@ -2123,10 +2185,12 @@ class DataFrame:
                         description,
                         configuration,
                         storage_options,
-                        full_meta,
+                        _merge_delta_custom_metadata(full_meta, operation_metrics),
                     )
                 else:
-                    metadata_param = _create_delta_metadata_param(full_meta)
+                    metadata_param = _create_delta_metadata_param(
+                        _merge_delta_custom_metadata(full_meta, operation_metrics)
+                    )
                     resolved._table.create_write_transaction(
                         add_actions,
                         mode,

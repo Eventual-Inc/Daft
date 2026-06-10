@@ -1,7 +1,8 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 import os
-from typing import TYPE_CHECKING, Union
+import json
+from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -12,6 +13,7 @@ from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from collections.abc import Mapping
 
     import deltalake
     import pyarrow as pa
@@ -92,6 +94,137 @@ def read_deltalake(
     handle = ScanOperatorHandle.from_python_scan_operator(delta_lake_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)
+
+
+def _resolve_deltalake_table_and_storage_options(
+    table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+    io_config: IOConfig | None,
+) -> tuple["deltalake.DeltaTable", dict[str, str]]:
+    import deltalake
+
+    from daft.io.object_store_options import io_config_to_storage_options
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+    if isinstance(table, deltalake.DeltaTable):
+        table_uri = table.table_uri
+        storage_options = table._storage_options or {}
+        new_storage_options = io_config_to_storage_options(io_config, table_uri)
+        storage_options.update(new_storage_options or {})
+        return table, storage_options
+
+    if isinstance(table, str):
+        table_uri = os.path.expanduser(table)
+    elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
+        table_uri = table.table_uri
+        io_config = table.io_config
+    else:
+        raise ValueError(
+            f"table argument must be a table URI string, DeltaTable, or UnityCatalogTable instance, but got: {type(table)}"
+        )
+
+    if io_config is None:
+        raise ValueError("io_config was not provided and could not be retrieved from defaults.")
+
+    storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+    return deltalake.DeltaTable(table_uri, storage_options=storage_options), storage_options
+
+
+@PublicAPI
+def history_deltalake(
+    table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+    limit: int | None = None,
+    io_config: IOConfig | None = None,
+    parse_operation_metrics: bool = True,
+) -> list[dict[str, Any]]:
+    """Return commit history for a Delta Lake table.
+
+    Args:
+        table: Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
+        limit: Maximum number of commits to return. ``None`` returns full history.
+        io_config: Optional :class:`~daft.daft.IOConfig` used for object storage access.
+        parse_operation_metrics: If ``True``, parse JSON-encoded ``operationMetrics`` into dictionaries.
+
+    Returns:
+        list[dict[str, Any]]: Delta commit history entries.
+    """
+    resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
+    history = resolved_table.history(limit=limit)
+
+    if not parse_operation_metrics:
+        return history
+
+    normalized_history: list[dict[str, Any]] = []
+    for entry in history:
+        normalized = dict(entry)
+        operation_metrics = normalized.get("operationMetrics")
+        if isinstance(operation_metrics, str):
+            try:
+                normalized["operationMetrics"] = json.loads(operation_metrics)
+            except json.JSONDecodeError:
+                pass
+        normalized_history.append(normalized)
+
+    return normalized_history
+
+
+@PublicAPI
+def delete_deltalake(
+    table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+    predicate: str | None = None,
+    io_config: IOConfig | None = None,
+    custom_metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Delete rows from a Delta Lake table.
+
+    Args:
+        table: Destination Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
+        predicate: SQL predicate that selects rows to delete. If ``None``, deletes all rows.
+        io_config: Optional :class:`~daft.daft.IOConfig` used for object storage access.
+        custom_metadata: Optional key-value metadata to attach to the Delta commit.
+
+    Returns:
+        dict[str, Any]: Delta-rs metrics from the delete operation.
+    """
+    from deltalake import CommitProperties
+
+    resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
+    commit_properties = CommitProperties(custom_metadata=custom_metadata)
+    return resolved_table.delete(predicate=predicate, commit_properties=commit_properties)
+
+
+@PublicAPI
+def update_deltalake(
+    table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+    updates: "Mapping[str, str]",
+    predicate: str | None = None,
+    io_config: IOConfig | None = None,
+    custom_metadata: dict[str, str] | None = None,
+    safe_cast: bool = True,
+) -> dict[str, Any]:
+    """Update rows in a Delta Lake table.
+
+    Args:
+        table: Destination Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
+        updates: Mapping from column name to SQL update expression.
+        predicate: SQL predicate that selects rows to update. If ``None``, updates all rows.
+        io_config: Optional :class:`~daft.daft.IOConfig` used for object storage access.
+        custom_metadata: Optional key-value metadata to attach to the Delta commit.
+        safe_cast: If ``True``, safely cast update expressions to target column types when needed.
+
+    Returns:
+        dict[str, Any]: Delta-rs metrics from the update operation.
+    """
+    from deltalake import CommitProperties
+
+    resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
+    commit_properties = CommitProperties(custom_metadata=custom_metadata)
+    return resolved_table.update(
+        updates=dict(updates),
+        predicate=predicate,
+        error_on_type_mismatch=not safe_cast,
+        commit_properties=commit_properties,
+    )
 
 
 def delta_schema_to_pyarrow(schema: "deltalake.Schema") -> "pa.Schema":
