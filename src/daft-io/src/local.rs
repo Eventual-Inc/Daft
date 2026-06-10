@@ -321,10 +321,17 @@ impl ObjectSource for LocalSource {
         })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
             return Ok(futures::stream::iter([Ok(FileMetadata {
                 filepath: local_path_to_file_uri(&uri),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
+                etag: None,
+                mtime,
             })])
             .boxed());
         }
@@ -355,6 +362,11 @@ impl ObjectSource for LocalSource {
                         path: entry.path().to_string_lossy().to_string(),
                     }
                 })?;
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs());
                 Ok(FileMetadata {
                     filepath: format!(
                         "{}{}",
@@ -371,6 +383,8 @@ impl ObjectSource for LocalSource {
                             path: entry.path().to_string_lossy().to_string(),
                         }
                     })?,
+                    etag: None,
+                    mtime,
                 })
             }
         });
@@ -486,21 +500,36 @@ mod tests {
                 file.path().file_name().unwrap().to_string_lossy(),
             ))
         };
+        let expected_mtime = |f: &tempfile::NamedTempFile| {
+            f.as_file()
+                .metadata()
+                .unwrap()
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+        };
         let mut expected = vec![
             FileMetadata {
                 filepath: expected_filepath(&file1),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file1),
             },
             FileMetadata {
                 filepath: expected_filepath(&file2),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file2),
             },
             FileMetadata {
                 filepath: expected_filepath(&file3),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                etag: None,
+                mtime: expected_mtime(&file3),
             },
         ];
         expected.sort_by(|a, b| a.filepath.cmp(&b.filepath));

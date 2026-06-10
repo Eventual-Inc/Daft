@@ -178,6 +178,8 @@ pub enum ScanSourceKind {
         chunk_spec: Option<ChunkSpec>,
         iceberg_delete_files: Option<Vec<String>>,
         parquet_metadata: Option<Arc<DaftParquetMetadata>>,
+        file_etag: Option<String>,
+        file_mtime: Option<u64>,
     },
     Database {
         path: String,
@@ -202,12 +204,16 @@ impl Hash for ScanSource {
                 path,
                 chunk_spec,
                 iceberg_delete_files,
+                file_etag,
+                file_mtime,
                 ..
             } => {
                 0u8.hash(state);
                 path.hash(state);
                 chunk_spec.hash(state);
                 iceberg_delete_files.hash(state);
+                file_etag.hash(state);
+                file_mtime.hash(state);
             }
             ScanSourceKind::Database { path } => {
                 1u8.hash(state);
@@ -261,22 +267,40 @@ impl ScanSource {
     /// For unsplit files, the atom is the file path itself.
     /// For split files, each chunk produces its own atom key encoding the
     /// chunk identity (e.g. `path#rg=0`, `path#rg=1` for Parquet row groups).
+    ///
+    /// When available, file identity metadata (etag or mtime) is appended so
+    /// that replaced files produce different keys and get reprocessed.
     #[must_use]
     pub fn source_atom_keys(&self) -> Vec<String> {
         let ScanSourceKind::File {
-            path, chunk_spec, ..
+            path,
+            chunk_spec,
+            file_etag,
+            file_mtime,
+            ..
         } = &self.kind
         else {
             return vec![self.get_path().to_string()];
         };
 
+        let identity_suffix = if let Some(etag) = file_etag {
+            format!("#etag={etag}")
+        } else if let Some(mtime) = file_mtime {
+            format!("#mtime={mtime}")
+        } else if let Some(sz) = self.size {
+            format!("#sz={sz}")
+        } else {
+            String::new()
+        };
+
         match chunk_spec {
-            None => vec![path.clone()],
-            Some(ChunkSpec::Parquet(rgs)) => {
-                rgs.iter().map(|rg| format!("{path}#rg={rg}")).collect()
-            }
+            None => vec![format!("{path}{identity_suffix}")],
+            Some(ChunkSpec::Parquet(rgs)) => rgs
+                .iter()
+                .map(|rg| format!("{path}#rg={rg}{identity_suffix}"))
+                .collect(),
             Some(ChunkSpec::Bytes { start, end }) => {
-                vec![format!("{path}#bytes={start}-{end}")]
+                vec![format!("{path}#bytes={start}-{end}{identity_suffix}")]
             }
         }
     }
@@ -923,6 +947,8 @@ mod test {
                     chunk_spec: None,
                     iceberg_delete_files: None,
                     parquet_metadata: None,
+                    file_etag: None,
+                    file_mtime: None,
                 },
             })
             .collect_vec();
@@ -1074,6 +1100,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1116,6 +1144,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1161,6 +1191,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1204,6 +1236,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1251,6 +1285,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1301,6 +1337,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1347,6 +1385,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1393,6 +1433,8 @@ mod test {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }];
 
@@ -1434,6 +1476,8 @@ mod test {
                 chunk_spec,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         }
     }

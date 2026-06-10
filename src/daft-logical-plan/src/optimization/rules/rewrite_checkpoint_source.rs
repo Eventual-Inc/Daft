@@ -15,7 +15,7 @@ use daft_schema::{field::Field, schema::Schema};
 
 use super::OptimizerRule;
 use crate::{
-    LogicalPlan, LogicalPlanBuilder,
+    LogicalPlan, LogicalPlanBuilder, SourceInfo,
     ops::{KeyFilteringConfig, StageCheckpointKeys, join::JoinOptions},
 };
 
@@ -127,6 +127,40 @@ fn validate_map_only_downstream(plan: &LogicalPlan) -> DaftResult<()> {
     }
 
     walk(plan)
+}
+
+fn validate_file_identity_support(source: &crate::ops::Source) -> DaftResult<()> {
+    let SourceInfo::GlobScan(info) = source.source_info.as_ref() else {
+        return Ok(());
+    };
+
+    for path in info.glob_paths.iter() {
+        let scheme = path.find("://").map_or("file", |idx| &path[..idx]);
+        let supported = matches!(
+            scheme,
+            "file"
+                | "s3"
+                | "s3a"
+                | "s3n"
+                | "az"
+                | "abfs"
+                | "abfss"
+                | "gcs"
+                | "gs"
+                | "tos"
+                | "oss"
+                | "cos"
+                | "cosn"
+        );
+        if !supported {
+            return Err(DaftError::ValueError(format!(
+                "Checkpoint with file-path mode requires file identity metadata (etag or mtime), \
+                 but source '{path}' (scheme: {scheme}) does not provide it. \
+                 Use checkpoint with `on=` to specify an explicit key column instead.",
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl OptimizerRule for RewriteCheckpointSource {
@@ -247,6 +281,8 @@ impl RewriteCheckpointSource {
         source: &crate::ops::Source,
         cfg: &common_checkpoint_config::CheckpointConfig,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        validate_file_identity_support(source)?;
+
         let source_plan: Arc<LogicalPlan> = {
             let mut source_copy = source.clone();
             source_copy.checkpoint = None;
@@ -542,5 +578,52 @@ mod tests {
         // Untouched fields with no rule fallback — stay `None`.
         assert_eq!(kfc.keys_load_batch_size, None);
         assert_eq!(kfc.filter_batch_size, None);
+    }
+
+    fn glob_scan_with_file_path_checkpoint(glob_path: &str) -> Arc<LogicalPlan> {
+        use crate::source_info::GlobScanInfo;
+
+        let info = GlobScanInfo::new(vec![glob_path.to_string()], None);
+        let schema = info.schema.clone();
+        let mut source = crate::ops::Source::new(schema, Arc::new(SourceInfo::GlobScan(info)));
+        source.checkpoint = Some(CheckpointConfig {
+            store: CheckpointStoreConfig::ObjectStore {
+                prefix: "s3://ckpt".to_string(),
+                io_config: Box::new(common_io_config::IOConfig::default()),
+            },
+            key_mode: CheckpointKeyMode::FilePath,
+            settings: common_checkpoint_config::CheckpointSettings::default(),
+        });
+        Arc::new(LogicalPlan::Source(source))
+    }
+
+    #[test]
+    fn file_path_mode_accepts_whitelisted_schemes() {
+        for scheme in [
+            "s3://b/d",
+            "gs://b/d",
+            "az://c/d",
+            "tos://b/d",
+            "file:///tmp/d",
+            "oss://b/d",
+        ] {
+            let plan = glob_scan_with_file_path_checkpoint(scheme);
+            assert!(
+                RewriteCheckpointSource::new().try_optimize(plan).is_ok(),
+                "should accept {scheme}"
+            );
+        }
+    }
+
+    #[test]
+    fn file_path_mode_rejects_non_whitelisted_schemes() {
+        for scheme in ["hf://datasets/u/r/d", "http://example.com/d", "ftp://s/d"] {
+            let plan = glob_scan_with_file_path_checkpoint(scheme);
+            let err = RewriteCheckpointSource::new()
+                .try_optimize(plan)
+                .unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("on="), "{scheme}: {msg}");
+        }
     }
 }

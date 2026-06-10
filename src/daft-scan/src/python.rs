@@ -123,6 +123,8 @@ impl PyDataSourceTask {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         };
 
@@ -750,6 +752,8 @@ pub mod pylib {
                     chunk_spec: None,
                     iceberg_delete_files,
                     parquet_metadata: None,
+                    file_etag: None,
+                    file_mtime: None,
                 },
             };
 
@@ -942,6 +946,8 @@ pub mod pylib {
                 chunk_spec: None,
                 iceberg_delete_files: None,
                 parquet_metadata: None,
+                file_etag: None,
+                file_mtime: None,
             },
         };
         let st = ScanTask::new(

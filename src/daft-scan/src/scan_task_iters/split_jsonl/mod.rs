@@ -249,6 +249,8 @@ mod tests {
                     chunk_spec: None,
                     iceberg_delete_files: None,
                     parquet_metadata: None,
+                    file_etag: None,
+                    file_mtime: None,
                 },
             }],
             Arc::new(SourceConfig::File(FileFormatConfig::Json(

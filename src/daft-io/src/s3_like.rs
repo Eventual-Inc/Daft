@@ -1003,11 +1003,15 @@ impl S3LikeSource {
                         filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
                         size: None,
                         filetype: FileType::Directory,
+                        etag: None,
+                        mtime: None,
                     })
                     .chain(files.iter().map(|f| FileMetadata {
                         filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
                         size: f.size().map(|size| size as u64),
                         filetype: FileType::File,
+                        etag: f.e_tag().map(|s| s.trim_matches('"').to_string()),
+                        mtime: None,
                     }))
                     .collect();
 

@@ -318,11 +318,19 @@ impl GCSClientWrapper {
             filepath: format!("{GCS_SCHEME}://{}/{}", bucket, obj.name),
             size: Some(obj.size as u64),
             filetype: FileType::File,
+            etag: if obj.etag.is_empty() {
+                None
+            } else {
+                Some(obj.etag.trim_matches('"').to_string())
+            },
+            mtime: None,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
             filepath: format!("{GCS_SCHEME}://{bucket}/{pref}"),
             size: None,
             filetype: FileType::Directory,
+            etag: None,
+            mtime: None,
         });
         Ok(LSResult {
             files: files.chain(dirs).collect(),

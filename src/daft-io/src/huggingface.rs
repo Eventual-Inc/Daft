@@ -609,6 +609,8 @@ impl ObjectSource for HFSource {
                     filepath,
                     size,
                     filetype,
+                    etag: None,
+                    mtime: None,
                 }
             })
             .collect();
@@ -682,6 +684,8 @@ async fn try_parquet_api(
                     filepath: uri,
                     size: None,
                     filetype: FileType::File,
+                    etag: None,
+                    mtime: None,
                 })
             });
 

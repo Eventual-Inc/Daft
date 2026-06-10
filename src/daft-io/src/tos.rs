@@ -608,11 +608,25 @@ impl TosSource {
                     filepath: format!("tos://{}/{}", bucket, prefix.prefix()),
                     size: None,
                     filetype: FileType::Directory,
+                    etag: None,
+                    mtime: None,
                 })
-                .chain(files.iter().map(|f| FileMetadata {
-                    filepath: format!("tos://{}/{}", bucket, f.key()),
-                    size: Some(f.size() as u64),
-                    filetype: FileType::File,
+                .chain(files.iter().map(|f| {
+                    let etag = {
+                        let e = f.etag();
+                        if e.is_empty() {
+                            None
+                        } else {
+                            Some(e.trim_matches('"').to_string())
+                        }
+                    };
+                    FileMetadata {
+                        filepath: format!("tos://{}/{}", bucket, f.key()),
+                        size: Some(f.size() as u64),
+                        filetype: FileType::File,
+                        etag,
+                        mtime: None,
+                    }
                 }))
                 .collect();
             let continuation_token = (!r.next_continuation_token().is_empty())

@@ -271,6 +271,8 @@ pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
     pub filetype: FileType,
+    pub etag: Option<String>,
+    pub mtime: Option<u64>,
 }
 #[derive(Debug)]
 pub struct LSResult {

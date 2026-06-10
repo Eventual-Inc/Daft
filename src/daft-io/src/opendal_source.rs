@@ -325,15 +325,19 @@ impl ObjectSource for OpenDALSource {
                     EntryMode::DIR => FileType::Directory,
                     _ => FileType::File,
                 };
+                let meta = entry.metadata();
                 let size = if filetype == FileType::File {
-                    Some(entry.metadata().content_length())
+                    Some(meta.content_length())
                 } else {
                     None
                 };
+                let etag = meta.etag().map(|e| e.trim_matches('"').to_string());
                 Some(FileMetadata {
                     filepath,
                     size,
                     filetype,
+                    etag,
+                    mtime: None,
                 })
             })
             .collect();

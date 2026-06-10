@@ -507,6 +507,8 @@ impl AzureBlobSource {
             filepath: format!("{protocol}://{}/", &container.name),
             size: None,
             filetype: FileType::Directory,
+            etag: None,
+            mtime: None,
         }
     }
 
@@ -521,11 +523,21 @@ impl AzureBlobSource {
                 filepath: format!("{protocol}://{}/{}", container_name, &blob.name),
                 size: Some(blob.properties.content_length),
                 filetype: FileType::File,
+                etag: Some(
+                    blob.properties
+                        .etag
+                        .to_string()
+                        .trim_matches('"')
+                        .to_string(),
+                ),
+                mtime: None,
             },
             BlobItem::BlobPrefix(prefix) => FileMetadata {
                 filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
                 size: None,
                 filetype: FileType::Directory,
+                etag: None,
+                mtime: None,
             },
         }
     }

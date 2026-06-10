@@ -88,6 +88,8 @@ fn generate_metadata_from_manifest(
             filepath: path.clone(),
             size: None,
             filetype: FileType::File,
+            etag: None,
+            mtime: None,
         })
     })
 }
@@ -548,6 +550,8 @@ impl ScanOperator for GlobScanOperator {
                     let FileMetadata {
                         filepath: path,
                         size: size_bytes,
+                        etag: file_etag,
+                        mtime: file_mtime,
                         ..
                     } = f?;
                     // Create partition values from hive partitions, if any.
@@ -612,6 +616,8 @@ impl ScanOperator for GlobScanOperator {
                                 chunk_spec,
                                 iceberg_delete_files: None,
                                 parquet_metadata: None,
+                                file_etag,
+                                file_mtime,
                             },
                         }],
                         source_config.clone(),

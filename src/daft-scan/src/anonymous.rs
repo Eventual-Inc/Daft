@@ -114,6 +114,8 @@ impl ScanOperator for AnonymousScanOperator {
                             chunk_spec,
                             iceberg_delete_files: None,
                             parquet_metadata: None,
+                            file_etag: None,
+                            file_mtime: None,
                         },
                     }],
                     source_config.clone(),
