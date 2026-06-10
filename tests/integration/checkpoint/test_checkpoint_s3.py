@@ -729,9 +729,7 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
             # write_parquet keeps the pipeline map-only (count_rows would insert
             # an aggregate, which checkpointing rejects); count the output read.
             ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-            df = daft.read_parquet(
-                s3_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config
-            )
+            df = daft.read_parquet(s3_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config)
             df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
             return daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
 
