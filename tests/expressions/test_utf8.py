@@ -130,7 +130,9 @@ def test_hamming_distance_str(test_binary_expression):
 
 def test_translate(test_expression):
     test_data = ["AaBbCc", "abc", "hello"]
-    expected = ["A1B2C3", "123", "he44o"]
+    # Spark-parity: 'a'->'1', 'b'->'2', 'c'->'3', 'o'->'0'.
+    # Characters not in `from` (e.g. 'h', 'e', 'l') are left unchanged.
+    expected = ["A1B2C3", "123", "hell0"]
     test_expression(
         data=test_data,
         expected=expected,
@@ -152,7 +154,9 @@ def test_substring_index_positive(test_expression):
 
 def test_substring_index_negative(test_expression):
     test_data = ["www.apache.org", "a.b.c.d", "noseparator"]
-    expected = ["org", "c.d", "noseparator"]
+    # Spark-parity: with count=-2 return the substring after the
+    # 2nd-to-last delimiter (i.e. the last 2 tokens joined by the delimiter).
+    expected = ["apache.org", "c.d", "noseparator"]
     test_expression(
         data=test_data,
         expected=expected,
