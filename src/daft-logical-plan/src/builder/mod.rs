@@ -12,6 +12,8 @@ use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
+#[cfg(feature = "python")]
+use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
@@ -33,8 +35,10 @@ use {
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
+    pyo3::PyTypeCheck,
     pyo3::intern,
     pyo3::prelude::*,
+    pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString},
 };
 
 use crate::{
@@ -1356,6 +1360,45 @@ fn pyexprs_to_exprs(vec: Vec<PyExpr>) -> Vec<ExprRef> {
 }
 
 #[cfg(feature = "python")]
+fn py_kafka_client_config_to_config(
+    kafka_client_config: Option<&Bound<'_, PyDict>>,
+) -> PyResult<BTreeMap<String, KafkaConfigValue>> {
+    let Some(kafka_client_config) = kafka_client_config else {
+        return Ok(BTreeMap::new());
+    };
+
+    kafka_client_config
+        .iter()
+        .map(|(key, value)| {
+            let key: String = key.extract()?;
+            let value = if value.is_none() {
+                KafkaConfigValue::Null
+            } else if PyBool::type_check(&value) {
+                KafkaConfigValue::Bool(value.extract()?)
+            } else if PyInt::type_check(&value) {
+                KafkaConfigValue::Int(value.extract()?)
+            } else if PyFloat::type_check(&value) {
+                let value: f64 = value.extract()?;
+                if !value.is_finite() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "[write_kafka] kafka_client_config value for {key:?} must be finite"
+                    )));
+                }
+                KafkaConfigValue::Float(FloatWrapper(value))
+            } else if PyString::type_check(&value) {
+                KafkaConfigValue::String(value.extract()?)
+            } else {
+                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                    "[write_kafka] kafka_client_config value for {key:?} must be None, bool, int, float, or str"
+                )));
+            };
+
+            Ok((key, value))
+        })
+        .collect()
+}
+
+#[cfg(feature = "python")]
 #[pymethods]
 impl PyLogicalPlanBuilder {
     #[staticmethod]
@@ -1802,6 +1845,60 @@ impl PyLogicalPlanBuilder {
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        bootstrap_servers,
+        topic,
+        topic_col,
+        value_col,
+        key_col,
+        headers_col,
+        partition,
+        partition_col,
+        timestamp_ms_col,
+        value_format,
+        key_format,
+        kafka_client_config=None,
+        timeout_ms=10000
+    ))]
+    pub fn kafka_write(
+        &self,
+        bootstrap_servers: String,
+        topic: Option<String>,
+        topic_col: Option<String>,
+        value_col: String,
+        key_col: Option<String>,
+        headers_col: Option<String>,
+        partition: Option<i32>,
+        partition_col: Option<String>,
+        timestamp_ms_col: Option<String>,
+        value_format: String,
+        key_format: String,
+        kafka_client_config: Option<&Bound<'_, PyDict>>,
+        timeout_ms: u64,
+    ) -> PyResult<Self> {
+        let kafka_client_config = py_kafka_client_config_to_config(kafka_client_config)?;
+
+        Ok(self
+            .builder
+            .kafka_write(
+                bootstrap_servers,
+                topic,
+                topic_col.map(|name| unresolved_col(name.as_str())),
+                unresolved_col(value_col.as_str()),
+                key_col.map(|name| unresolved_col(name.as_str())),
+                headers_col.map(|name| unresolved_col(name.as_str())),
+                partition,
+                partition_col.map(|name| unresolved_col(name.as_str())),
+                timestamp_ms_col.map(|name| unresolved_col(name.as_str())),
+                value_format,
+                key_format,
+                kafka_client_config,
+                timeout_ms,
             )?
             .into())
     }

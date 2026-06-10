@@ -2315,8 +2315,8 @@ class LogicalPlanBuilder:
         timestamp_ms_col: str | None,
         value_format: str,
         key_format: str,
-        kafka_client_config: dict[str, Any] | None,
-        timeout_ms: int,
+        kafka_client_config: dict[str, Any] | None = None,
+        timeout_ms: int = 10000,
     ) -> LogicalPlanBuilder: ...
     def iceberg_write(
         self,
