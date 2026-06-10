@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import suppress
 from datetime import datetime, timezone
 
 import pytest
@@ -14,9 +15,11 @@ import daft
 def _wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
     confluent_kafka = pytest.importorskip("confluent_kafka")
 
+    readiness_errors = (confluent_kafka.KafkaException, OSError, RuntimeError, TimeoutError)
     deadline = time.time() + timeout_s
     last: Exception | None = None
     while time.time() < deadline:
+        consumer = None
         try:
             consumer = confluent_kafka.Consumer(
                 {
@@ -26,11 +29,14 @@ def _wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
                 }
             )
             consumer.list_topics(timeout=5)
-            consumer.close()
             return
-        except confluent_kafka.KafkaException as e:
+        except readiness_errors as e:
             last = e
             time.sleep(1)
+        finally:
+            if consumer is not None:
+                with suppress(*readiness_errors):
+                    consumer.close()
     raise RuntimeError(f"Kafka was not ready after {timeout_s}s: {last}")
 
 
@@ -124,6 +130,35 @@ def _read_topic(*, bootstrap: str, topic: str) -> list[dict]:
         .collect()
         .to_pylist()
     )
+
+
+def _consume_raw_messages(*, bootstrap: str, topic: str, count: int) -> list[object]:
+    confluent_kafka = pytest.importorskip("confluent_kafka")
+    consumer = confluent_kafka.Consumer(
+        {
+            "bootstrap.servers": bootstrap,
+            "group.id": f"daft-kafka-integration-{uuid.uuid4().hex}",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+        }
+    )
+    consumer.subscribe([topic])
+    deadline = time.time() + 20
+    messages: list[object] = []
+    try:
+        while time.time() < deadline and len(messages) < count:
+            msg = consumer.poll(1)
+            if msg is None:
+                continue
+            if msg.error():
+                raise confluent_kafka.KafkaException(msg.error())
+            messages.append(msg)
+    finally:
+        consumer.close()
+
+    if len(messages) != count:
+        pytest.fail(f"timed out waiting for {count} message(s) from topic {topic!r}")
+    return messages
 
 
 @pytest.fixture(scope="module")
@@ -516,6 +551,7 @@ def test_write_kafka_json_dynamic_topic(kafka_context: dict[str, object]) -> Non
         [
             {"topic": topic_a, "key": "ka", "value": payload_a},
             {"topic": topic_b, "key": "kb", "value": payload_b},
+            {"topic": topic_a, "key": "ka-delete", "value": None},
         ]
     ).write_kafka(
         bootstrap_servers=bootstrap,
@@ -529,13 +565,16 @@ def test_write_kafka_json_dynamic_topic(kafka_context: dict[str, object]) -> Non
     )
 
     delivered, failed = _write_summary_counts(summary)
-    assert delivered == 2
+    assert delivered == 3
     assert failed == 0
 
-    decoded_a = _read_topic(bootstrap=bootstrap, topic=topic_a)
+    raw_a = {
+        msg.key().decode("utf-8"): msg.value()
+        for msg in _consume_raw_messages(bootstrap=bootstrap, topic=topic_a, count=2)
+    }
     decoded_b = _read_topic(bootstrap=bootstrap, topic=topic_b)
-    assert [r["key"] for r in decoded_a] == ["ka"]
-    assert [r["value"] for r in decoded_a] == [payload_a]
+    assert json.loads(raw_a["ka"].decode("utf-8")) == payload_a
+    assert raw_a["ka-delete"] is None
     assert [r["key"] for r in decoded_b] == ["kb"]
     assert [r["value"] for r in decoded_b] == [payload_b]
 
