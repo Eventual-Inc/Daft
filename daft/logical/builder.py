@@ -394,6 +394,40 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
+    def write_kafka(
+        self,
+        *,
+        bootstrap_servers: str,
+        topic: str | None,
+        topic_col: str | None,
+        value_col: str,
+        key_col: str | None,
+        headers_col: str | None,
+        partition: int | None,
+        partition_col: str | None,
+        timestamp_ms_col: str | None,
+        value_format: str,
+        key_format: str,
+        kafka_client_config: dict[str, object] | None,
+        timeout_ms: int,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.kafka_write(
+            bootstrap_servers,
+            topic,
+            topic_col,
+            value_col,
+            key_col,
+            headers_col,
+            partition,
+            partition_col,
+            timestamp_ms_col,
+            value_format,
+            key_format,
+            kafka_client_config,
+            timeout_ms,
+        )
+        return LogicalPlanBuilder(builder)
+
     def write_iceberg(self, table: IcebergTable, io_config: IOConfig) -> LogicalPlanBuilder:
         from daft.io.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
 
