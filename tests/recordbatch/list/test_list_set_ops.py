@@ -106,10 +106,19 @@ def test_list_except_with_duplicates_dropped():
     assert result.to_pydict()["a"] == [[1, 3]]
 
 
-def test_list_except_nulls_ignored():
+def test_list_except_nulls_kept_when_rhs_has_no_null():
+    # Null-safe-equal semantics (Spark): a null in lhs is dropped only if rhs also has a null.
     table = MicroPartition.from_pydict({"a": [[1, None, 2, None]], "b": [[None, 1]]})
     result = table.eval_expression_list([col("a").list_except(col("b"))])
+    # rhs contains a null, so the lhs null is removed (matched).
     assert result.to_pydict()["a"] == [[2]]
+
+
+def test_list_except_keeps_null_when_rhs_has_no_null():
+    table = MicroPartition.from_pydict({"a": [[1, None, 2]], "b": [[1]]})
+    result = table.eval_expression_list([col("a").list_except(col("b"))])
+    # rhs has no null, so null is kept in the result.
+    assert result.to_pydict()["a"] == [[None, 2]]
 
 
 def test_list_except_null_list_returns_null():
@@ -138,8 +147,15 @@ def test_list_intersect_with_duplicates():
     assert result.to_pydict()["a"] == [[1, 2]]
 
 
-def test_list_intersect_nulls_ignored():
+def test_list_intersect_nulls_kept_when_both_have_null():
+    # Null-safe-equal semantics (Spark): null is kept only if both sides have a null.
     table = MicroPartition.from_pydict({"a": [[1, None, 2]], "b": [[None, 2]]})
+    result = table.eval_expression_list([col("a").list_intersect(col("b"))])
+    assert result.to_pydict()["a"] == [[None, 2]]
+
+
+def test_list_intersect_null_dropped_when_only_one_side_has_null():
+    table = MicroPartition.from_pydict({"a": [[1, None, 2]], "b": [[2, 3]]})
     result = table.eval_expression_list([col("a").list_intersect(col("b"))])
     assert result.to_pydict()["a"] == [[2]]
 
@@ -170,10 +186,23 @@ def test_list_union_dedup_within_inputs():
     assert result.to_pydict()["a"] == [[1, 2, 3]]
 
 
-def test_list_union_nulls_ignored():
+def test_list_union_keeps_null_from_either_side():
+    # Null-safe-equal semantics (Spark): result contains a single null if either input has a null.
     table = MicroPartition.from_pydict({"a": [[1, None, 2]], "b": [[None, 3]]})
     result = table.eval_expression_list([col("a").list_union(col("b"))])
-    assert result.to_pydict()["a"] == [[1, 2, 3]]
+    assert result.to_pydict()["a"] == [[1, None, 2, 3]]
+
+
+def test_list_union_null_only_on_left():
+    table = MicroPartition.from_pydict({"a": [[1, None, 2]], "b": [[3]]})
+    result = table.eval_expression_list([col("a").list_union(col("b"))])
+    assert result.to_pydict()["a"] == [[1, None, 2, 3]]
+
+
+def test_list_union_null_only_on_right():
+    table = MicroPartition.from_pydict({"a": [[1, 2]], "b": [[None, 3]]})
+    result = table.eval_expression_list([col("a").list_union(col("b"))])
+    assert result.to_pydict()["a"] == [[1, 2, None, 3]]
 
 
 def test_list_union_null_list_returns_null():
@@ -210,3 +239,25 @@ def test_set_ops_fixed_size_list():
     assert out["inter"] == [[2], [4]]
     assert out["diff"] == [[1], [3]]
     assert out["uni"] == [[1, 2, 3], [3, 4, 5]]
+
+
+def test_set_ops_type_promotion_int_float():
+    """Mixed numeric element types should be promoted to a common supertype (Spark-compatible)."""
+    table = MicroPartition.from_pydict({"a": [[1, 2, 3]], "b": [[2.0, 3.0, 4.0]]})
+    table = table.eval_expression_list(
+        [
+            col("a").cast(DataType.list(DataType.int64())),
+            col("b").cast(DataType.list(DataType.float64())),
+        ]
+    )
+    res = table.eval_expression_list(
+        [
+            col("a").list_union(col("b")).alias("uni"),
+            col("a").list_intersect(col("b")).alias("inter"),
+            col("a").list_except(col("b")).alias("diff"),
+        ]
+    )
+    out = res.to_pydict()
+    assert out["uni"] == [[1.0, 2.0, 3.0, 4.0]]
+    assert out["inter"] == [[2.0, 3.0]]
+    assert out["diff"] == [[1.0]]
