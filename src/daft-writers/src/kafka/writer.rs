@@ -11,7 +11,7 @@ use rdkafka::producer::FutureProducer;
 use super::{
     accounting::KafkaWriteAccounting,
     config::build_client_config,
-    producer::{KafkaProducer, RdkafkaProducer},
+    producer::{KafkaExternalError, KafkaProducer, RdkafkaProducer},
 };
 use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 
@@ -40,9 +40,10 @@ impl WriterFactory for KafkaWriterFactory {
         )?
         .create()
         .map_err(|err| {
-            DaftError::External(
-                format!("[write_kafka] failed to create Kafka producer: {err}").into(),
-            )
+            DaftError::External(Box::new(KafkaExternalError::new(
+                "failed to create Kafka producer",
+                err,
+            )))
         })?;
 
         Ok(Box::new(KafkaWriter::new(

@@ -130,8 +130,54 @@ pub(crate) fn delivery_error(message: impl Into<String>) -> DaftError {
 }
 
 #[cfg(feature = "kafka")]
-fn external_error(message: impl Into<String>) -> DaftError {
-    DaftError::External(format!("[write_kafka] {}", message.into()).into())
+pub(crate) struct KafkaExternalError<E> {
+    context: String,
+    source: E,
+}
+
+#[cfg(feature = "kafka")]
+impl<E> KafkaExternalError<E> {
+    pub(crate) fn new(context: impl Into<String>, source: E) -> Self {
+        Self {
+            context: context.into(),
+            source,
+        }
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl<E: std::fmt::Display> std::fmt::Display for KafkaExternalError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[write_kafka] {}: {}", self.context, self.source)
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl<E: std::fmt::Debug> std::fmt::Debug for KafkaExternalError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KafkaExternalError")
+            .field("context", &self.context)
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+#[cfg(feature = "kafka")]
+impl<E> std::error::Error for KafkaExternalError<E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+#[cfg(feature = "kafka")]
+fn external_error<E>(context: impl Into<String>, source: E) -> DaftError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    DaftError::External(Box::new(KafkaExternalError::new(context, source)))
 }
 
 #[cfg(feature = "kafka")]
@@ -188,19 +234,43 @@ impl KafkaProducer for RdkafkaProducer {
                 timestamp_ms: delivery.timestamp.to_millis(),
             })
             .map_err(|(err, message)| {
-                external_error(format!(
-                    "delivery failed for topic {:?}, partition {}, offset {}: {err}",
-                    message.topic(),
-                    message.partition(),
-                    message.offset()
-                ))
+                external_error(
+                    format!(
+                        "delivery failed for topic {:?}, partition {}, offset {}",
+                        message.topic(),
+                        message.partition(),
+                        message.offset()
+                    ),
+                    err,
+                )
             })
     }
 
     async fn flush(&self, timeout: Duration) -> DaftResult<()> {
         self.producer
             .flush(timeout)
-            .map_err(|err| external_error(format!("flush failed: {err}")))
+            .map_err(|err| external_error("flush failed", err))
+    }
+}
+
+#[cfg(all(test, feature = "kafka"))]
+mod kafka_error_tests {
+    use std::{error::Error, io};
+
+    use super::KafkaExternalError;
+
+    #[test]
+    fn kafka_external_error_preserves_source_and_context() {
+        let err = KafkaExternalError::new(
+            "delivery failed for topic \"topic\", partition 1, offset 2",
+            io::Error::other("broker unavailable"),
+        );
+
+        assert_eq!(
+            err.to_string(),
+            "[write_kafka] delivery failed for topic \"topic\", partition 1, offset 2: broker unavailable"
+        );
+        assert_eq!(err.source().unwrap().to_string(), "broker unavailable");
     }
 }
 
