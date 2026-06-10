@@ -4,6 +4,8 @@ mod csv_writer;
 mod file;
 mod ipc;
 mod json_writer;
+#[cfg(feature = "kafka")]
+mod kafka;
 mod parquet_writer;
 mod partition;
 pub mod physical;
