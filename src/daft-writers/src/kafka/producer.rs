@@ -257,6 +257,8 @@ impl KafkaProducer for RdkafkaProducer {
 mod kafka_error_tests {
     use std::{error::Error, io};
 
+    use common_error::DaftError;
+
     use super::KafkaExternalError;
 
     #[test]
@@ -271,6 +273,28 @@ mod kafka_error_tests {
             "[write_kafka] delivery failed for topic \"topic\", partition 1, offset 2: broker unavailable"
         );
         assert_eq!(err.source().unwrap().to_string(), "broker unavailable");
+    }
+
+    #[test]
+    fn daft_external_error_exposes_kafka_wrapper_and_source() {
+        let err = DaftError::External(Box::new(KafkaExternalError::new(
+            "flush failed",
+            io::Error::other("broker unavailable"),
+        )));
+
+        assert_eq!(
+            err.to_string(),
+            "DaftError::External [write_kafka] flush failed: broker unavailable"
+        );
+        let kafka_source = err.source().unwrap();
+        assert_eq!(
+            kafka_source.to_string(),
+            "[write_kafka] flush failed: broker unavailable"
+        );
+        assert_eq!(
+            kafka_source.source().unwrap().to_string(),
+            "broker unavailable"
+        );
     }
 }
 

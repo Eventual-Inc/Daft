@@ -53,7 +53,7 @@ pub enum DaftError {
     #[error("MiscTransient {0}")]
     MiscTransient(GenericError),
     #[error("DaftError::External {0}")]
-    External(GenericError),
+    External(#[source] GenericError),
     #[error("DaftError::SerdeJsonError {0}")]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("DaftError::FmtError {0}")]
@@ -78,6 +78,21 @@ impl DaftError {
     }
     pub fn type_error<T: std::fmt::Display>(msg: T) -> Self {
         Self::TypeError(msg.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{error::Error, io};
+
+    use super::DaftError;
+
+    #[test]
+    fn external_error_exposes_wrapped_error_as_source() {
+        let err = DaftError::External(Box::new(io::Error::other("external source")));
+
+        assert_eq!(err.to_string(), "DaftError::External external source");
+        assert_eq!(err.source().unwrap().to_string(), "external source");
     }
 }
 
