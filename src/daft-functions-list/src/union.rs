@@ -2,6 +2,7 @@ use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
+    utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
     ExprRef,
@@ -82,24 +83,25 @@ impl ScalarUDF for ListUnion {
 
         let lhs_inner = lhs.to_exploded_field()?.dtype;
         let rhs_inner = rhs.to_exploded_field()?.dtype;
-        ensure!(
-            lhs_inner == rhs_inner || lhs_inner.is_null() || rhs_inner.is_null(),
-            TypeError: "Cannot compute list_union between list of {} and list of {}",
-            lhs_inner,
-            rhs_inner
-        );
-
-        let inner_type = if lhs_inner.is_null() {
-            rhs_inner
-        } else {
+        // Promote element types to a common supertype (Spark-compatible).
+        let inner_type = if lhs_inner == rhs_inner {
             lhs_inner
+        } else {
+            try_get_supertype(&lhs_inner, &rhs_inner).map_err(|_| {
+                common_error::DaftError::TypeError(format!(
+                    "Cannot compute list_union between list of {} and list of {}",
+                    lhs_inner, rhs_inner
+                ))
+            })?
         };
         Ok(Field::new(lhs.name, DataType::List(Box::new(inner_type))))
     }
 }
 
 /// Returns an array of the union of elements in both input lists, with duplicates removed.
-/// Null values are ignored. Spark-compatible alias: `array_union`.
+///
+/// Uses null-safe-equal semantics: if either input contains a null, the result
+/// contains a single null. Spark-compatible alias: `array_union`.
 #[must_use]
 pub fn list_union(lhs: ExprRef, rhs: ExprRef) -> ExprRef {
     ScalarFn::builtin(ListUnion {}, vec![lhs, rhs]).into()

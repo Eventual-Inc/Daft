@@ -689,7 +689,9 @@ def list_position(list_expr: Expression, item: Expression) -> Expression:
 def list_except(list_expr: Expression, other: Expression) -> Expression:
     """Returns the elements in ``list_expr`` that are not in ``other``, with duplicates removed.
 
-    Null values are ignored. The order of first occurrence from ``list_expr`` is preserved.
+    Null elements participate as a first-class value (null-safe-equal): a null in
+    ``list_expr`` is dropped only if ``other`` also contains a null. The order of
+    first occurrence from ``list_expr`` is preserved.
     Spark-compatible: equivalent to ``array_except`` (also accessible by that SQL name).
 
     Args:
@@ -722,7 +724,9 @@ def list_except(list_expr: Expression, other: Expression) -> Expression:
 def list_intersect(list_expr: Expression, other: Expression) -> Expression:
     """Returns an array of the elements in the intersection of two lists, with duplicates removed.
 
-    Null values are ignored. The order of first occurrence from ``list_expr`` is preserved.
+    Null elements participate as a first-class value (null-safe-equal): a null is kept
+    in the result only if both inputs contain a null. The order of first occurrence
+    from ``list_expr`` is preserved.
     Spark-compatible: equivalent to ``array_intersect`` (also accessible by that SQL name).
 
     Args:
@@ -755,7 +759,9 @@ def list_intersect(list_expr: Expression, other: Expression) -> Expression:
 def list_union(list_expr: Expression, other: Expression) -> Expression:
     """Returns an array of the elements in the union of two lists, with duplicates removed.
 
-    Null values are ignored. Order of first occurrence from ``list_expr`` then from ``other`` is preserved.
+    Null elements participate as a first-class value (null-safe-equal): if either input
+    contains a null, the result contains a single null. Order of first occurrence from
+    ``list_expr`` then from ``other`` is preserved.
     Spark-compatible: equivalent to ``array_union`` (also accessible by that SQL name).
 
     Args:

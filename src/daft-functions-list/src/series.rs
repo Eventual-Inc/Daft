@@ -476,12 +476,20 @@ impl SeriesListExtension for Series {
         let child_hashes = list.flat_child.hash(None)?;
         let child_arrow = list.flat_child.to_arrow()?;
         let item_arrow = item.to_arrow()?;
+        // Surface a typed error instead of panicking when the element type
+        // is not orderable/comparable by arrow's `make_comparator`.
         let comparator = arrow::array::make_comparator(
             child_arrow.as_ref(),
             item_arrow.as_ref(),
             Default::default(),
         )
-        .unwrap();
+        .map_err(|e| {
+            DaftError::TypeError(format!(
+                "list_position: cannot compare elements of type {}: {}",
+                list.flat_child.data_type(),
+                e
+            ))
+        })?;
 
         let list_offsets = list.offsets();
         let mut values: Vec<i64> = Vec::with_capacity(list.len());
@@ -523,19 +531,24 @@ impl SeriesListExtension for Series {
     }
 
     /// Returns the elements in `self` that are not in `other`, with duplicates removed.
-    /// Null values are ignored. The order of first occurrence is preserved from `self`.
+    /// Returns the elements in `self` that are not in `other`, with duplicates removed.
+    /// Uses null-safe-equal semantics: a null element in `self` is dropped only if
+    /// `other` also contains a null. The order of first occurrence is preserved from `self`.
     fn list_except(&self, other: &Self) -> DaftResult<Self> {
         list_set_op(self, other, SetOp::Except)
     }
 
     /// Returns the elements that are in both `self` and `other`, with duplicates removed.
-    /// Null values are ignored. The order of first occurrence is preserved from `self`.
+    /// Uses null-safe-equal semantics: a null is kept in the result only if both
+    /// inputs contain a null. The order of first occurrence is preserved from `self`.
     fn list_intersect(&self, other: &Self) -> DaftResult<Self> {
         list_set_op(self, other, SetOp::Intersect)
     }
 
     /// Returns the union of elements in `self` and `other`, with duplicates removed.
-    /// Null values are ignored. The order of first occurrence (from `self` then `other`) is preserved.
+    /// Uses null-safe-equal semantics: if either input contains a null, the result
+    /// contains a single null. The order of first occurrence (from `self` then `other`)
+    /// is preserved.
     fn list_union(&self, other: &Self) -> DaftResult<Self> {
         list_set_op(self, other, SetOp::Union)
     }
@@ -549,8 +562,9 @@ enum SetOp {
 }
 
 /// Common helper that performs per-row set operations between two list series.
-/// Both sides are first normalized to `List`. The result preserves the order of first
-/// occurrence and ignores null values inside the lists.
+/// Both sides are first normalized to `List` and promoted to a common element
+/// supertype. Spark-compatible null-safe-equal semantics are used: NULL elements
+/// inside the lists participate as a regular value (e.g. NULL is equal to NULL).
 fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
     let lhs_norm = if let DataType::FixedSizeList(inner_type, _) = lhs.data_type() {
         lhs.cast(&DataType::List(inner_type.clone()))?
@@ -574,30 +588,32 @@ fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
         )));
     }
 
-    // Cast rhs child to lhs child dtype if compatible (handles Null inner type).
-    let rhs_child_casted = if lhs_list.flat_child.data_type() == rhs_list.flat_child.data_type() {
-        rhs_list.flat_child.clone()
-    } else if rhs_list.flat_child.data_type() == &DataType::Null {
-        rhs_list.flat_child.cast(lhs_list.flat_child.data_type())?
-    } else if lhs_list.flat_child.data_type() == &DataType::Null {
-        // Both effectively typed by rhs; we'll convert lhs's child below by reusing its empty content.
-        rhs_list.flat_child.clone()
+    // Promote both children to a common supertype so mixed numeric inputs like
+    // `array_union(int_list, float_list)` work, matching Spark behavior.
+    let lhs_child_dtype = lhs_list.flat_child.data_type();
+    let rhs_child_dtype = rhs_list.flat_child.data_type();
+    let target_inner_dtype = if lhs_child_dtype == rhs_child_dtype {
+        lhs_child_dtype.clone()
     } else {
-        rhs_list.flat_child.cast(lhs_list.flat_child.data_type())?
+        daft_core::utils::supertype::try_get_supertype(lhs_child_dtype, rhs_child_dtype)?
     };
 
-    // Use the union of the two flat children as the source for take indices. We append rhs_child
-    // after lhs_child, so any take index >= lhs_child.len() refers to rhs.
-    let lhs_child_len = lhs_list.flat_child.len();
-    let lhs_child_for_concat = if lhs_list.flat_child.data_type() == &DataType::Null
-        && rhs_child_casted.data_type() != &DataType::Null
-    {
-        // Promote lhs child to rhs's type so concat works.
-        lhs_list.flat_child.cast(rhs_child_casted.data_type())?
-    } else {
+    let lhs_child_casted = if lhs_child_dtype == &target_inner_dtype {
         lhs_list.flat_child.clone()
+    } else {
+        lhs_list.flat_child.cast(&target_inner_dtype)?
     };
-    let combined = Series::concat(&[&lhs_child_for_concat, &rhs_child_casted])?;
+    let rhs_child_casted = if rhs_child_dtype == &target_inner_dtype {
+        rhs_list.flat_child.clone()
+    } else {
+        rhs_list.flat_child.cast(&target_inner_dtype)?
+    };
+
+    // Use the concatenation of the two (promoted) flat children as the source for
+    // take indices. We append rhs_child after lhs_child, so any take index
+    // >= lhs_child.len() refers to rhs.
+    let lhs_child_len = lhs_child_casted.len();
+    let combined = Series::concat(&[&lhs_child_casted, &rhs_child_casted])?;
 
     let lhs_offsets = lhs_list.offsets();
     let rhs_offsets = rhs_list.offsets();
@@ -628,19 +644,26 @@ fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
         let r_start = *rhs_offsets.get(i).unwrap() as usize;
         let r_end = *rhs_offsets.get(i + 1).unwrap() as usize;
 
-        let lhs_sub = lhs_list.flat_child.slice(l_start, l_end)?;
-        let rhs_sub = rhs_list.flat_child.slice(r_start, r_end)?;
+        let lhs_sub = lhs_child_casted.slice(l_start, l_end)?;
+        let rhs_sub = rhs_child_casted.slice(r_start, r_end)?;
 
-        // Build probe tables for both sides (already drops nulls).
+        // Build probe tables for both sides (these intentionally exclude nulls;
+        // null-equality is handled separately below).
         let lhs_probe = lhs_sub.build_probe_table_without_nulls()?;
         let rhs_probe = rhs_sub.build_probe_table_without_nulls()?;
+
+        // Track null-element presence on each side so we can preserve nulls as a
+        // first-class value (Spark null-safe-equal semantics).
+        let lhs_first_null_local: Option<usize> =
+            (0..lhs_sub.len()).find(|&j| !lhs_sub.is_valid(j));
+        let rhs_has_null: bool = (0..rhs_sub.len()).any(|j| !rhs_sub.is_valid(j));
 
         // Determine which lhs unique indices to keep based on op.
         let mut kept_count = 0i64;
         for k in lhs_probe.keys() {
             let local_idx = k.idx as usize;
             let absolute_idx = l_start + local_idx;
-            // The element value at absolute_idx in lhs_list.flat_child.
+            // The element value at absolute_idx in the (promoted) lhs flat child.
             let in_rhs = probe_contains(&rhs_sub, &lhs_sub, local_idx, &rhs_probe)?;
             let keep = match op {
                 SetOp::Except => !in_rhs,
@@ -649,6 +672,31 @@ fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
             };
             if keep {
                 take_indices.push(absolute_idx as u64);
+                kept_count += 1;
+            }
+        }
+
+        // Handle null elements with null-safe-equal semantics:
+        //   - Except:    keep one null if lhs has null AND rhs does NOT.
+        //   - Intersect: keep one null if BOTH sides have null.
+        //   - Union:     keep one null if EITHER side has null (taken from lhs
+        //                first if available, otherwise from rhs).
+        if let Some(lhs_null_local) = lhs_first_null_local {
+            let absolute_idx = l_start + lhs_null_local;
+            let keep = match op {
+                SetOp::Except => !rhs_has_null,
+                SetOp::Intersect => rhs_has_null,
+                SetOp::Union => true,
+            };
+            if keep {
+                take_indices.push(absolute_idx as u64);
+                kept_count += 1;
+            }
+        } else if matches!(op, SetOp::Union) && rhs_has_null {
+            // lhs has no null; pull a null from rhs for union.
+            if let Some(rhs_null_local) = (0..rhs_sub.len()).find(|&j| !rhs_sub.is_valid(j)) {
+                let absolute_idx_in_combined = lhs_child_len + r_start + rhs_null_local;
+                take_indices.push(absolute_idx_in_combined as u64);
                 kept_count += 1;
             }
         }
