@@ -423,12 +423,20 @@ fn needs_range_repartition(
     child: &DistributedPipelineNode,
     sort_by: &[BoundExpr],
     descending: &[bool],
+    nulls_first: &[bool],
 ) -> bool {
     let spec = &child.config().clustering_spec;
     if !spec.is_range() {
         return true;
     }
-    !is_exact_range_partition_match(spec.partition_by(), spec.descending(), sort_by, descending)
+    !is_exact_range_partition_match(
+        spec.partition_by(),
+        spec.descending(),
+        spec.nulls_first(),
+        sort_by,
+        descending,
+        nulls_first,
+    )
 }
 
 pub(crate) struct SortNode {
@@ -464,7 +472,8 @@ impl SortNode {
             NodeCategory::BlockingSink,
         );
 
-        let needs_range_repartition = needs_range_repartition(&child, &sort_by, &descending);
+        let needs_range_repartition =
+            needs_range_repartition(&child, &sort_by, &descending, &nulls_first);
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
@@ -472,6 +481,7 @@ impl SortNode {
                 child.config().clustering_spec.num_partitions(),
                 sort_by.clone(),
                 descending.clone(),
+                nulls_first.clone(),
             ))),
         );
         Self {

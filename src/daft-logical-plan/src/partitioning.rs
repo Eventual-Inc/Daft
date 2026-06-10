@@ -57,6 +57,9 @@ impl RepartitionSpec {
                 num_partitions.unwrap_or(upstream_num_partitions),
                 by.iter().map(|e| e.inner().clone()).collect(),
                 descending.clone(),
+                // The range-shuffle kernel routes nulls to the extreme partition consistent
+                // with default sort null placement (nulls_first = descending).
+                descending.clone(),
             )),
         }
     }
@@ -270,6 +273,13 @@ impl<T> ClusteringSpec<T> {
         }
     }
 
+    pub fn nulls_first(&self) -> &[bool] {
+        match self {
+            Self::Range(RangeClusteringConfig { nulls_first, .. }) => nulls_first,
+            _ => &[],
+        }
+    }
+
     pub fn unknown(num_partitions: usize) -> Self {
         Self::Unknown(UnknownClusteringConfig::new(num_partitions))
     }
@@ -279,8 +289,13 @@ impl<T> ClusteringSpec<T> {
     }
 
     pub fn range(num_partitions: usize, by: Vec<T>) -> Self {
-        let descending = vec![false; by.len()];
-        Self::Range(RangeClusteringConfig::new(num_partitions, by, descending))
+        let flags = vec![false; by.len()];
+        Self::Range(RangeClusteringConfig::new(
+            num_partitions,
+            by,
+            flags.clone(),
+            flags,
+        ))
     }
 }
 
@@ -330,14 +345,23 @@ pub struct RangeClusteringConfig<T = ExprRef> {
     pub num_partitions: usize,
     pub by: Vec<T>,
     pub descending: Vec<bool>,
+    /// Where nulls live relative to each key's range: partition 0 (`true`) or the last
+    /// partition (`false`). Must match a downstream sort's `nulls_first` for shuffle elision.
+    pub nulls_first: Vec<bool>,
 }
 
 impl<T> RangeClusteringConfig<T> {
-    pub fn new(num_partitions: usize, by: Vec<T>, descending: Vec<bool>) -> Self {
+    pub fn new(
+        num_partitions: usize,
+        by: Vec<T>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+    ) -> Self {
         Self {
             num_partitions,
             by,
             descending,
+            nulls_first,
         }
     }
 }

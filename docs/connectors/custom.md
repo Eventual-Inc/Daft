@@ -218,7 +218,9 @@ df = (
 
 If your source already emits data where each task covers a non-overlapping range of values for
 those columns, you can tell Daft by returning `ClusteringKeys.range()`. Pass `descending=True`
-if partitions are ordered from highest to lowest values.
+if partitions are ordered from highest to lowest values. If any key values are null, declare
+where those rows live with `nulls_first` (default: nulls in the last partition when ascending,
+the first when descending, matching sort semantics).
 
 ```python
 class TimeSeriesSource(DataSource):

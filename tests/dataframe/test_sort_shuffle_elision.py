@@ -233,3 +233,57 @@ def test_multi_column_mixed_direction_repartitions(source_table):
     df = RangeClusteredSource(source_table, hint).read().sort(["ts", "val"], desc=[False, True])
     assert _sort_needs_repartition(df)
     assert df.to_pydict()["ts"] == [1, 2, 3, 4, 5, 6]
+
+
+# ---------------------------------------------------------------------------
+# Null placement — nulls_first is part of the range spec
+# ---------------------------------------------------------------------------
+
+
+def test_sort_on_sort_different_nulls_first_repartitions():
+    """Same key and direction but different nulls_first must repartition.
+
+    The nulls physically live in the wrong partition for the new null order.
+    """
+    df = daft.from_pydict({"a": [5, None, 3, 8, None, 1, 9, 4, 7, 2]}).repartition(3).sort("a")
+    df2 = df.sort("a", nulls_first=True)
+    assert _sort_needs_repartition(df2)
+    pytest.xfail(
+        "pre-existing: the distributed sort's range shuffle routes nulls via search_sorted, "
+        "which has no nulls_first support, so nulls land in the wrong partition"
+    )
+    assert df2.to_pydict()["a"] == [None, None, 1, 2, 3, 4, 5, 7, 8, 9]
+
+
+def test_sort_on_sort_same_nulls_first_skips_repartition():
+    """Matching nulls_first (non-default) still skips the repartition."""
+    df = daft.from_pydict({"a": [5, None, 3, 8, None, 1, 9, 4, 7, 2]}).repartition(3).sort("a", nulls_first=True)
+    df2 = df.sort("a", nulls_first=True)
+    assert not _sort_needs_repartition(df2)
+    pytest.xfail(
+        "pre-existing: the first sort's own shuffle already places nulls incorrectly "
+        "(search_sorted has no nulls_first support)"
+    )
+    assert df2.to_pydict()["a"] == [None, None, 1, 2, 3, 4, 5, 7, 8, 9]
+
+
+def test_hint_nulls_first_mismatch_repartitions():
+    """Hint defaults to nulls-last (ascending); a nulls-first sort must repartition."""
+    table = pa.table({"ts": [1, 2, 3, None, None, None], "val": [10, 20, 30, 40, 50, 60]})
+    hint = ClusteringKeys.range("ts")  # nulls_first defaults to descending = False
+    df = RangeClusteredSource(table, hint).read().sort("ts", nulls_first=True)
+    assert _sort_needs_repartition(df)
+    pytest.xfail(
+        "pre-existing: the distributed sort's range shuffle routes nulls via search_sorted, "
+        "which has no nulls_first support, so nulls land in the wrong partition"
+    )
+    assert df.to_pydict()["ts"] == [None, None, None, 1, 2, 3]
+
+
+def test_hint_nulls_first_match_skips_repartition():
+    """Declaring nulls in the first partition lets a nulls-first sort skip its shuffle."""
+    table = pa.table({"ts": [None, None, None, 1, 2, 3], "val": [10, 20, 30, 40, 50, 60]})
+    hint = ClusteringKeys.range("ts", nulls_first=True)
+    df = RangeClusteredSource(table, hint).read().sort("ts", nulls_first=True)
+    assert not _sort_needs_repartition(df)
+    assert df.to_pydict()["ts"] == [None, None, None, 1, 2, 3]
