@@ -171,7 +171,9 @@ fn substring_index_str(input: &str, delim: &str, count: i64) -> String {
         let n = (count as usize).min(parts.len());
         parts[..n].join(delim)
     } else {
-        let n = ((-count) as usize).min(parts.len());
+        // Use `unsigned_abs` to avoid `(-count) as usize` overflowing at `i64::MIN`.
+        let abs = count.unsigned_abs() as usize;
+        let n = abs.min(parts.len());
         parts[parts.len() - n..].join(delim)
     }
 }
@@ -232,5 +234,19 @@ mod tests {
         assert_eq!(result.get(0), Some("a.b"));
         assert_eq!(result.get(1), None);
         assert_eq!(result.get(2), Some("x.y"));
+    }
+
+    #[test]
+    fn test_substring_index_i64_min_does_not_overflow() {
+        // `(-count) as usize` would overflow at `i64::MIN`; using `unsigned_abs`
+        // sidesteps this. The expected behavior is the same as a very large
+        // negative count: return everything to the right of the (non-existent)
+        // last delimiter, i.e. the entire string.
+        let arr = Utf8Array::from_iter("a", vec![Some("a.b.c")].into_iter());
+        let delim = Utf8Array::from_iter("delim", vec![Some(".")].into_iter());
+        let count = Int64Array::from_slice("count", &[i64::MIN]);
+
+        let result = substring_index_impl(&arr, &delim, &count).unwrap();
+        assert_eq!(result.get(0), Some("a.b.c"));
     }
 }

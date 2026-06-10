@@ -1926,7 +1926,7 @@ def ascii_func(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("ascii", expr)
 
 
-def chr(expr: Expression) -> Expression:
+def chr_func(expr: Expression) -> Expression:
     """Converts an ASCII numeric value to a character.
 
     Returns the character corresponding to the ASCII code.
@@ -1940,9 +1940,9 @@ def chr(expr: Expression) -> Expression:
 
     Examples:
         >>> import daft
-        >>> from daft.functions import chr
+        >>> from daft.functions import chr_func
         >>> df = daft.from_pydict({"x": [65, 97, 48]})
-        >>> df = df.select(chr(df["x"]))
+        >>> df = df.select(chr_func(df["x"]))
         >>> df.show()
         ╭────────╮
         │ x      │

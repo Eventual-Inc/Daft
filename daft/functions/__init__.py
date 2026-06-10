@@ -285,7 +285,7 @@ from .str import (
     substring_index,
     soundex,
     ascii_func,
-    chr,
+    chr_func,
     space,
 )
 from .struct import unnest, to_struct
@@ -331,7 +331,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
-    "chr",
+    "chr_func",
     "chunk",
     "classify_image",
     "classify_text",

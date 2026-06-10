@@ -57,66 +57,71 @@ pub fn soundex(input: ExprRef) -> ExprRef {
     ScalarFn::builtin(Soundex {}, vec![input]).into()
 }
 
-/// Compute the Soundex code for a given string.
-/// The algorithm:
-/// 1. Retain the first letter.
-/// 2. Replace consonants with digits (after the first letter):
-///    B, F, P, V -> 1
-///    C, G, J, K, Q, S, X, Z -> 2
-///    D, T -> 3
-///    L -> 4
-///    M, N -> 5
-///    R -> 6
-/// 3. Two adjacent letters with the same code are coded as a single number.
-///    Letters with the same code separated by 'h' or 'w' are treated as a single number.
-///    Letters with the same code separated by a vowel are coded separately.
-/// 4. Return the first 4 characters, padding with zeros if necessary.
+/// Compute the Soundex code for a given string, matching Spark's semantics:
+///
+/// 1. If the input does not start with an ASCII letter, it is returned unchanged
+///    (Spark: `soundex('3M') == '3M'`).
+/// 2. Otherwise, retain the first letter as the initial of the result.
+/// 3. Replace consonants with digits (after the first letter):
+///    - `B, F, P, V` → `1`
+///    - `C, G, J, K, Q, S, X, Z` → `2`
+///    - `D, T` → `3`
+///    - `L` → `4`
+///    - `M, N` → `5`
+///    - `R` → `6`
+/// 4. Adjacent letters with the same code collapse into a single digit. Letters
+///    separated by `H` or `W` are still considered adjacent. Vowels (and any
+///    non-letter character — Spark treats interior non-letters as separators)
+///    reset the "last code" so that same-coded letters on either side are
+///    emitted separately. e.g. `soundex('S3S') == 'S200'`.
+/// 5. Truncate or right-pad with zeros to 4 characters.
 fn soundex_encode(input: &str) -> String {
-    if input.is_empty() {
-        return String::new();
-    }
-
-    let mut chars = input.chars().filter(|c| c.is_ascii_alphabetic());
-
-    let first_char = match chars.next() {
-        Some(c) => c.to_ascii_uppercase(),
+    // Spark returns the input unchanged when it does not start with a letter.
+    let mut bytes = input.bytes();
+    let first_byte = match bytes.next() {
+        Some(b) => b,
         None => return String::new(),
     };
+    if !first_byte.is_ascii_alphabetic() {
+        return input.to_string();
+    }
+
+    let first_char = (first_byte as char).to_ascii_uppercase();
 
     let mut result = String::with_capacity(4);
     result.push(first_char);
 
     let mut last_code = soundex_code(first_char);
-    let mut last_was_hw = false;
 
-    for c in chars {
+    for c in input.chars().skip(1) {
+        if !c.is_ascii_alphabetic() {
+            // Spark treats interior non-letters as separators: a same-coded
+            // letter that follows must be emitted separately.
+            last_code = '0';
+            continue;
+        }
+
         let upper = c.to_ascii_uppercase();
         let code = soundex_code(upper);
 
         if code == '0' {
-            // Vowel (A, E, I, O, U, Y) separates same-code letters
-            // H and W do NOT separate same-code letters
-            if matches!(upper, 'H' | 'W') {
-                last_was_hw = true;
-            } else {
-                // It's a vowel separator - next same-code letter will be coded separately
-                last_was_hw = false;
+            // Vowels reset the running code so the next same-coded consonant is
+            // emitted separately; H and W do NOT (so a same-coded letter after
+            // an H/W is treated as adjacent and skipped).
+            if !matches!(upper, 'H' | 'W') {
                 last_code = '0';
             }
-        } else if code != last_code || (!last_was_hw && last_code == '0') {
+        } else if code != last_code {
             result.push(code);
             if result.len() == 4 {
                 return result;
             }
             last_code = code;
-            last_was_hw = false;
-        } else {
-            // Same code as last, skip (adjacent or separated by h/w)
-            last_was_hw = false;
         }
+        // else: same code as last (adjacent or separated by H/W) — skip.
     }
 
-    // Pad with zeros
+    // Right-pad with zeros to 4 characters.
     while result.len() < 4 {
         result.push('0');
     }
@@ -161,6 +166,20 @@ mod tests {
     #[test]
     fn test_soundex_single_char() {
         assert_eq!(soundex_encode("A"), "A000");
+    }
+
+    #[test]
+    fn test_soundex_non_letter_start_passthrough() {
+        // Spark: when the input does not start with a letter, return it unchanged.
+        assert_eq!(soundex_encode("3M"), "3M");
+        assert_eq!(soundex_encode("123"), "123");
+    }
+
+    #[test]
+    fn test_soundex_interior_non_letter_separator() {
+        // Spark: interior non-letters act as separators, so adjacent same-coded
+        // letters across them are emitted twice. soundex('S3S') == 'S200'.
+        assert_eq!(soundex_encode("S3S"), "S200");
     }
 
     #[test]

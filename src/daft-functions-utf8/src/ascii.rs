@@ -31,7 +31,12 @@ impl ScalarUDF for Ascii {
             s.with_utf8_array(|arr| {
                 let result: daft_core::array::DataArray<daft_core::prelude::Int32Type> = arr
                     .into_iter()
-                    .map(|val| val.map(|v| v.bytes().next().map(|b| b as i32).unwrap_or(0)))
+                    .map(|val| {
+                        // Spark returns the *signed* first byte, so non-ASCII bytes
+                        // surface as negative integers (e.g. ascii('é') = -61). An
+                        // empty string yields 0.
+                        val.map(|v| v.bytes().next().map(|b| b as i8 as i32).unwrap_or(0))
+                    })
                     .collect::<daft_core::array::DataArray<daft_core::prelude::Int32Type>>()
                     .rename(arr.name());
                 Ok(result.into_series())
@@ -48,7 +53,7 @@ impl ScalarUDF for Ascii {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the ASCII numeric value of the first character of the string. Returns 0 for empty strings."
+        "Returns the *signed* first byte of the string (so non-ASCII bytes are negative). Returns 0 for empty strings. This matches Spark's ascii semantics."
     }
 }
 
@@ -70,12 +75,27 @@ mod tests {
 
         let results: Vec<Option<i32>> = arr
             .into_iter()
-            .map(|val| val.map(|v| v.bytes().next().map(|b| b as i32).unwrap_or(0)))
+            .map(|val| val.map(|v| v.bytes().next().map(|b| b as i8 as i32).unwrap_or(0)))
             .collect();
 
         assert_eq!(results[0], Some(65)); // 'A'
         assert_eq!(results[1], Some(97)); // 'a'
         assert_eq!(results[2], Some(0)); // empty string
         assert_eq!(results[3], None); // null
+    }
+
+    #[test]
+    fn test_ascii_non_ascii_is_signed() {
+        // 'é' is encoded as 0xC3 0xA9 in UTF-8; Spark returns the signed first byte: -61.
+        let arr = Utf8Array::from_iter("a", vec![Some("é"), Some("ñ")].into_iter());
+
+        let results: Vec<Option<i32>> = arr
+            .into_iter()
+            .map(|val| val.map(|v| v.bytes().next().map(|b| b as i8 as i32).unwrap_or(0)))
+            .collect();
+
+        assert_eq!(results[0], Some(-61));
+        // 'ñ' is 0xC3 0xB1 -> signed first byte is -61 as well.
+        assert_eq!(results[1], Some(-61));
     }
 }
