@@ -193,6 +193,9 @@ jobs:
           uv pip install "pyiceberg==0.7.0"
         fi
 
+    - name: Build hello extension (for extension tests)
+      run: cargo build --release --manifest-path examples/hello/Cargo.toml
+
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
       run: |
@@ -1627,7 +1630,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ["3.10"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         exclude:

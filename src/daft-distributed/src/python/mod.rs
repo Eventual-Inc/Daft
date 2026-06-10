@@ -241,10 +241,11 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::new();
+    #[pyo3(signature = (worker_startup_timeout = 120))]
+    fn new(worker_startup_timeout: usize) -> PyResult<Self> {
+        let worker_manager = Arc::new(RayWorkerManager::new(worker_startup_timeout));
         Ok(Self {
-            runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
+            runner: Arc::new(PlanRunner::new(worker_manager)),
         })
     }
 

@@ -71,3 +71,64 @@ def partition_iceberg_truncate(expr: Expression, w: int) -> Expression:
         Expression: Expression of the Same Type of the input
     """
     return Expression._from_pyexpr(expr._expr.partitioning_iceberg_truncate(w))
+
+
+def extract_minute_uuid7(expr: Expression) -> Expression:
+    """Partitioning Transform that extracts the number of minutes since epoch (1970-01-01) from a UUIDv7.
+
+    A UUIDv7 embeds a 48-bit Unix-millisecond timestamp in its first 6 bytes. The input must be a
+    Uuid or a FixedSizeBinary of 16 bytes (128 bits).
+
+    Args:
+        expr: a Uuid or FixedSizeBinary(16) expression of UUIDv7 values
+
+    Returns:
+        Expression: Int64 Expression with the number of minutes since epoch
+    """
+    return Expression._call_builtin_scalar_fn("extract_minute_uuid7", expr)
+
+
+def extract_hour_uuid7(expr: Expression) -> Expression:
+    """Partitioning Transform that extracts the number of hours since epoch (1970-01-01) from a UUIDv7.
+
+    A UUIDv7 embeds a 48-bit Unix-millisecond timestamp in its first 6 bytes. The input must be a
+    Uuid or a FixedSizeBinary of 16 bytes (128 bits).
+
+    Args:
+        expr: a Uuid or FixedSizeBinary(16) expression of UUIDv7 values
+
+    Returns:
+        Expression: Int64 Expression with the number of hours since epoch
+    """
+    return Expression._call_builtin_scalar_fn("extract_hour_uuid7", expr)
+
+
+def extract_day_uuid7(expr: Expression) -> Expression:
+    """Partitioning Transform that extracts the number of days since epoch (1970-01-01) from a UUIDv7.
+
+    A UUIDv7 embeds a 48-bit Unix-millisecond timestamp in its first 6 bytes. The input must be a
+    Uuid or a FixedSizeBinary of 16 bytes (128 bits).
+
+    Args:
+        expr: a Uuid or FixedSizeBinary(16) expression of UUIDv7 values
+
+    Returns:
+        Expression: Int64 Expression with the number of days since epoch
+    """
+    return Expression._call_builtin_scalar_fn("extract_day_uuid7", expr)
+
+
+def extract_month_uuid7(expr: Expression) -> Expression:
+    """Partitioning Transform that extracts the number of calendar months since 1970-01 from a UUIDv7.
+
+    The result is `(year - 1970) * 12 + (month - 1)`, matching `partition_months`. A UUIDv7 embeds a
+    48-bit Unix-millisecond timestamp in its first 6 bytes. The input must be a Uuid or a
+    FixedSizeBinary of 16 bytes (128 bits).
+
+    Args:
+        expr: a Uuid or FixedSizeBinary(16) expression of UUIDv7 values
+
+    Returns:
+        Expression: Int64 Expression with the number of months since 1970-01
+    """
+    return Expression._call_builtin_scalar_fn("extract_month_uuid7", expr)
