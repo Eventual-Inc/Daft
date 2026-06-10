@@ -272,8 +272,16 @@ fn projected_timestamp(timestamp: &Series, row_idx: usize) -> DaftResult<Option<
 }
 
 fn literal_to_json_bytes(value: &Literal) -> DaftResult<Option<Vec<u8>>> {
+    if matches!(value, Literal::Null) {
+        return Ok(None);
+    }
+
+    Ok(Some(literal_to_json_string(value)?.into_bytes()))
+}
+
+fn literal_to_json_string(value: &Literal) -> DaftResult<String> {
     let json = match value {
-        Literal::Null => return Ok(None),
+        Literal::Null => "null".to_string(),
         Literal::Boolean(value) => value.to_string(),
         Literal::Utf8(value) => quote_json_string(value),
         Literal::Int8(value) => value.to_string(),
@@ -300,6 +308,30 @@ fn literal_to_json_bytes(value: &Literal) -> DaftResult<Option<Vec<u8>>> {
             }
             value.to_string()
         }
+        Literal::List(values) => {
+            let mut json = String::from("[");
+            for idx in 0..values.len() {
+                if idx > 0 {
+                    json.push(',');
+                }
+                json.push_str(&literal_to_json_string(&values.get_lit(idx))?);
+            }
+            json.push(']');
+            json
+        }
+        Literal::Struct(fields) => {
+            let mut json = String::from("{");
+            for (idx, (key, value)) in fields.iter().enumerate() {
+                if idx > 0 {
+                    json.push(',');
+                }
+                json.push_str(&quote_json_string(key));
+                json.push(':');
+                json.push_str(&literal_to_json_string(value)?);
+            }
+            json.push('}');
+            json
+        }
         other => {
             return Err(DaftError::ValueError(format!(
                 "[write_kafka] kafka JSON value does not yet support {}",
@@ -308,7 +340,7 @@ fn literal_to_json_bytes(value: &Literal) -> DaftResult<Option<Vec<u8>>> {
         }
     };
 
-    Ok(Some(json.into_bytes()))
+    Ok(json)
 }
 
 fn quote_json_string(value: &str) -> String {
@@ -533,6 +565,28 @@ mod tests {
 
         assert_eq!(records[0].value.as_deref(), Some(&b"\"hello\\nworld\""[..]));
         assert_eq!(records[1].value, None);
+    }
+
+    #[test]
+    fn json_struct_and_list_values_are_serialized_recursively() {
+        let list = Int64Array::from_iter(
+            Field::new("scores", DataType::Int64),
+            [Some(10), None, Some(30)],
+        )
+        .into_series();
+        let value = Literal::new_struct([
+            ("id".to_string(), Literal::Int64(1)),
+            ("kind".to_string(), Literal::Utf8("event".to_string())),
+            ("scores".to_string(), Literal::List(list)),
+            ("meta".to_string(), Literal::Null),
+        ]);
+
+        let json = literal_to_json_bytes(&value).unwrap().unwrap();
+
+        assert_eq!(
+            std::str::from_utf8(&json).unwrap(),
+            r#"{"id":1,"kind":"event","scores":[10,null,30],"meta":null}"#
+        );
     }
 
     #[test]
