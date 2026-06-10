@@ -98,68 +98,74 @@ def test_into_batches_empty_dataframe():
 # ---------------------------------------------------------------------------
 # Regression tests for GitHub issue #7087
 #
-# NativeRunner's plan cache keyed every plan on `plan_fingerprint`, which
-# Python never populates, so all plans fell back to fingerprint=0.  A prior
-# operation (e.g. write_parquet) would occupy slot 0 with a ScanTasks
-# pipeline; the next iter_partitions() / to_arrow_iter() call then hit the
-# same slot with an InMemory plan, and the type mismatch triggered an
-# `unreachable!` panic in InputSender::send at input_sender.rs.
+# The NativeRunner plan cache is keyed by `plan_fingerprint`. Python never
+# populates this field, so every execution fell back to fingerprint=0.
 #
-# The fix generates a unique fingerprint per call when none is provided by
-# the caller, so the cache never collides across independent executions.
+# The collision fires when two generators are alive at the same time: the
+# first generator starts a ScanTasks pipeline that occupies slot 0; when
+# the second generator (an InMemory pipeline) calls next() before the first
+# is exhausted, it reuses the stale slot and hits the InputSender type
+# mismatch at input_sender.rs:32.
+#
+# Serial executions do NOT trigger it — try_finish clears the plan from the
+# cache once a generator is fully consumed.
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("batch_size", [2, 3])
-def test_iter_partitions_after_prior_daft_op_no_panic(tmp_path, batch_size):
-    """iter_partitions must not panic when called after a prior daft operation.
+def test_interleaved_iter_partitions_no_panic(tmp_path):
+    """Interleaved iteration across two DataFrames with different source types must not panic.
 
-    Regression for #7087: the NativeRunner plan cache collided on
-    fingerprint=0, causing a type mismatch between the stale ScanTasks
-    sender and the new InMemory plan.
+    Regression for #7087: advancing a ScanTasks generator (read_parquet)
+    and then calling next() on a concurrent InMemory generator (from_pydict)
+    before the first is exhausted triggered an unreachable! panic in
+    InputSender::send at input_sender.rs:32.
     """
-    # Any prior operation that goes through the execution engine is enough
-    # to occupy the cache slot that used to be hardcoded to 0.
-    df1 = daft.from_pydict({"id": [1, 2, 3]})
-    df1.write_parquet(str(tmp_path / "prior_op"))
+    daft.from_pydict({"id": [1, 2, 3, 4]}).write_parquet(str(tmp_path / "data"))
 
-    df2 = daft.from_pydict({"id": [4, 5, 6]})
-    result = []
-    for mp in df2.into_batches(batch_size).iter_partitions():
-        result.extend(mp.to_arrow()["id"].to_pylist())
+    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
+    df2 = daft.from_pydict({"id": [5, 6, 7, 8]})      # InMemory source
 
-    assert sorted(result) == [4, 5, 6]
+    gen1 = df1.into_batches(2).iter_partitions()
+    gen2 = df2.into_batches(2).iter_partitions()
 
+    # Advance gen1 first — occupies the cache slot with a ScanTasks pipeline.
+    # Then advance gen2 before gen1 is exhausted — without the fix this
+    # collides on fingerprint=0 and panics.
+    batch1 = next(gen1)
+    batch2 = next(gen2)
 
-def test_to_arrow_iter_after_prior_daft_op_no_panic(tmp_path):
-    """to_arrow_iter() must not panic when called after a prior daft operation.
+    result1 = batch1.to_arrow()["id"].to_pylist()
+    for mp in gen1:
+        result1.extend(mp.to_arrow()["id"].to_pylist())
 
-    Regression for #7087 — same root cause as iter_partitions variant above.
-    """
-    df1 = daft.from_pydict({"id": [10, 20, 30]})
-    df1.write_parquet(str(tmp_path / "prior_op"))
+    result2 = batch2.to_arrow()["id"].to_pylist()
+    for mp in gen2:
+        result2.extend(mp.to_arrow()["id"].to_pylist())
 
-    df2 = daft.from_pydict({"id": [40, 50, 60]})
-    result = []
-    for batch in df2.into_batches(2).to_arrow_iter():
-        result.extend(batch["id"].to_pylist())
-
-    assert sorted(result) == [40, 50, 60]
+    assert sorted(result1) == [1, 2, 3, 4]
+    assert sorted(result2) == [5, 6, 7, 8]
 
 
-def test_multiple_sequential_iter_partitions_no_panic(tmp_path):
-    """Multiple sequential iter_partitions calls must each return correct results.
+def test_interleaved_to_arrow_iter_no_panic(tmp_path):
+    """to_arrow_iter() variant of the interleaved-iteration regression (#7087)."""
+    daft.from_pydict({"id": [10, 20, 30, 40]}).write_parquet(str(tmp_path / "data"))
 
-    Regression for #7087: each call must get an independent cache slot so
-    they don't interfere with each other.
-    """
-    df1 = daft.from_pydict({"id": [1, 2, 3]})
-    df1.write_parquet(str(tmp_path / "prior_op"))
+    df1 = daft.read_parquet(str(tmp_path / "data"))   # ScanTasks source
+    df2 = daft.from_pydict({"id": [50, 60, 70, 80]})  # InMemory source
 
-    for i in range(3):
-        rows = list(range(i * 10, i * 10 + 5))
-        df = daft.from_pydict({"id": rows})
-        result = []
-        for mp in df.into_batches(2).iter_partitions():
-            result.extend(mp.to_arrow()["id"].to_pylist())
-        assert sorted(result) == rows, f"Iteration {i}: expected {rows}, got {sorted(result)}"
+    gen1 = df1.into_batches(2).to_arrow_iter()
+    gen2 = df2.into_batches(2).to_arrow_iter()
+
+    batch1 = next(gen1)
+    batch2 = next(gen2)
+
+    result1 = batch1["id"].to_pylist()
+    for b in gen1:
+        result1.extend(b["id"].to_pylist())
+
+    result2 = batch2["id"].to_pylist()
+    for b in gen2:
+        result2.extend(b["id"].to_pylist())
+
+    assert sorted(result1) == [10, 20, 30, 40]
+    assert sorted(result2) == [50, 60, 70, 80]
