@@ -87,19 +87,14 @@ class CheckpointConfig:
 
     Two modes are supported:
 
-    - **File-path mode** (default when ``on`` is omitted): keys are derived
-      from scan-task metadata (file paths and chunk specs such as Parquet row
-      groups or byte ranges). No user-specified key column needed, and filter
-      and projection pushdown are fully enabled. Supported for file sources on
-      schemes that expose file-identity metadata during listing — local files
-      (``file://``) and the object stores ``s3``/``s3a``/``s3n``, ``gs``/``gcs``,
-      ``az``/``abfs``/``abfss``, ``tos``, ``oss``, and ``cos``/``cosn``. Sources
-      that don't expose such metadata (e.g. ``http://``, ``hf://``) are rejected
-      at plan build time — use row-level mode (``on=``) for those.
-
     - **Row-level mode** (when ``on`` is specified): keys are values of the
       named column. Requires an anti-join against previously-sealed keys at
       execution time.
+
+    - **File-path mode** (default, when ``on`` is omitted): keys are derived
+      from scan-task metadata, so no key column is needed. Only for file
+      sources whose listing exposes identity metadata (local files and major
+      object stores); other schemes (e.g. ``http``, ``hf``) are rejected.
 
     Args:
         store: The :class:`CheckpointStore` holding sealed keys.
@@ -113,15 +108,15 @@ class CheckpointConfig:
 
     Example:
         >>> store = daft.CheckpointStore("s3://bucket/ckpt")
-        >>> # File-path mode (no on=):
-        >>> config = daft.CheckpointConfig(store=store)
-        >>> df = daft.read_parquet("s3://input/", checkpoint=config)
         >>> # Row-level mode:
         >>> config = daft.CheckpointConfig(
         ...     store=store,
         ...     on="file_id",
         ...     settings=daft.KeyFilteringSettings(num_workers=4, cpus_per_worker=1.0),
         ... )
+        >>> df = daft.read_parquet("s3://input/", checkpoint=config)
+        >>> # File-path mode (no on=):
+        >>> config = daft.CheckpointConfig(store=store)
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
 
     Assumptions:
@@ -172,9 +167,11 @@ class CheckpointConfig:
           file-identity suffix so that a *replaced* file at the same path is
           reprocessed. The suffix is the object-store ETag when available,
           otherwise the local-file modification time (nanosecond precision),
-          otherwise the file size. If none of these is available the key is the
-          path alone — a same-path, same-size content change would then be
-          treated as already-processed, so prefer stores that return an ETag.
+          otherwise the file size. ETag/mtime are captured both for directory
+          and glob listings and for directly named single files. If none of
+          them is available the key is the path alone — a same-path, same-size
+          content change would then be treated as already-processed, so prefer
+          stores that return an ETag.
         - **Skip granularity is the scan chunk.** A file (or row-group chunk)
           is skipped only when every key derived from it has been sealed.
         - **Chunk layout must be stable across runs.** Keys encode row-group

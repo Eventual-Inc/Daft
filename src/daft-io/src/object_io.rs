@@ -321,6 +321,24 @@ pub trait ObjectSource: Sync + Send {
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize>;
 
+    /// Fetch metadata for a single file `uri`. The default returns size only;
+    /// sources override this to also return `etag`/`mtime` when their size
+    /// lookup already carries them.
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let size = self.get_size(uri, io_stats).await?;
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(size as u64),
+            filetype: FileType::File,
+            etag: None,
+            mtime: None,
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,

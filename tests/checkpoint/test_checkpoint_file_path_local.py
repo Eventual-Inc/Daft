@@ -29,7 +29,7 @@ def _run(input_path, ckpt_dir) -> int:
     inserts an aggregate, and checkpointing only supports map-only pipelines
     between source and sink.
     """
-    store = CheckpointStore(str(ckpt_dir))
+    store = CheckpointStore(f"file://{ckpt_dir}")
     df = daft.read_parquet(str(input_path), checkpoint=CheckpointConfig(store=store))
     return len(df.to_pydict()["value"])
 
@@ -71,6 +71,9 @@ def test_file_path_reprocesses_on_mtime_change_same_size(tmp_path):
     With identical size, only the modification time distinguishes the new key
     from the old one. The PR records mtime at nanosecond precision; the sleep
     guarantees the timestamp advances even on coarse (1s-resolution) filesystems.
+
+    Reads a single named file (not a directory) to confirm mtime is captured on
+    that path too — it goes through ``get_file_metadata``, not a size-only lookup.
     """
     input_file = tmp_path / "data.parquet"
     ckpt_dir = tmp_path / "ckpt"
@@ -106,12 +109,12 @@ def test_file_path_mode_allowed_on_native_runner(tmp_path):
     ckpt_dir = tmp_path / "ckpt"
     pq.write_table(pa.table({"value": [1]}), input_file)
 
-    store = CheckpointStore(str(ckpt_dir))
+    store = CheckpointStore(f"file://{ckpt_dir}")
     # Should not raise.
     daft.read_parquet(str(input_file), checkpoint=CheckpointConfig(store=store)).to_pydict()
 
     # Row-level mode (on=) remains unsupported on the native runner.
     with pytest.raises(ValueError, match="native"):
         daft.read_parquet(
-            str(input_file), checkpoint=CheckpointConfig(store=CheckpointStore(str(ckpt_dir)), on="value")
+            str(input_file), checkpoint=CheckpointConfig(store=CheckpointStore(f"file://{ckpt_dir}"), on="value")
         ).to_pydict()

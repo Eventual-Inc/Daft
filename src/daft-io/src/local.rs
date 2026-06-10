@@ -221,6 +221,33 @@ impl ObjectSource for LocalSource {
         }
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let Some(path) = strip_file_uri_to_path(uri) else {
+            return Err(Error::InvalidFilePath { path: uri.into() }.into());
+        };
+        let meta = tokio::fs::metadata(path)
+            .await
+            .context(UnableToFetchFileMetadataSnafu {
+                path: path.to_string(),
+            })?;
+        if meta.is_dir() {
+            return Err(super::Error::NotAFile {
+                path: path.to_owned(),
+            });
+        }
+        Ok(FileMetadata {
+            filepath: local_path_to_file_uri(path),
+            size: Some(meta.len()),
+            filetype: object_io::FileType::File,
+            etag: None,
+            mtime: local_file_mtime_nanos(&meta),
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,

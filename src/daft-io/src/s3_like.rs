@@ -739,6 +739,11 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
 }
 const REGION_HEADER: &str = "x-amz-bucket-region";
 
+struct S3HeadInfo {
+    size: usize,
+    etag: Option<String>,
+}
+
 impl S3LikeSource {
     pub async fn get_client(config: &S3Config) -> super::Result<Arc<Self>> {
         Ok(build_client(config).await?.into())
@@ -881,7 +886,7 @@ impl S3LikeSource {
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
-    ) -> super::Result<usize> {
+    ) -> super::Result<S3HeadInfo> {
         log::debug!("S3 head at {uri} in region: {region}");
         let ObjectPath {
             scheme: _scheme,
@@ -910,7 +915,10 @@ impl S3LikeSource {
 
             match response {
                 Ok(v) => match v.content_length() {
-                    Some(l) => Ok(l as usize),
+                    Some(l) => Ok(S3HeadInfo {
+                        size: l as usize,
+                        etag: v.e_tag().map(|s| s.trim_matches('"').to_string()),
+                    }),
                     None => Err(Error::HeadObjectOutputEmpty { path: uri.into() }.into()),
                 },
                 Err(SdkError::ServiceError(err)) => {
@@ -1381,7 +1389,30 @@ impl ObjectSource for S3LikeSource {
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1);
         }
-        Ok(head_result)
+        Ok(head_result.size)
+    }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let head_result = self.head_impl(permit, uri, &self.default_region).await?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(head_result.size as u64),
+            filetype: FileType::File,
+            etag: head_result.etag,
+            mtime: None,
+        })
     }
 
     async fn glob(

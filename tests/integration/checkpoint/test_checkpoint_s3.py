@@ -697,8 +697,12 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
 
     This is the core file-identity guarantee: the checkpoint key carries the
     object-store ETag, so overwriting an object (new ETag) makes it look new on
-    the next run. A re-upload of identical bytes keeps the same ETag and is
-    correctly skipped.
+    the next run.
+
+    Reads the input *prefix* (not the single object): ETag is captured during
+    listing, whereas a directly named object goes through the size-only fast
+    path. The replacement keeps the same row count/schema so the on-disk size is
+    unchanged — only the ETag differs, isolating ETag as the discriminator.
     """
     import io as _io
 
@@ -713,9 +717,10 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
     )
 
     with minio_create_bucket(minio_io_config) as bucket:
-        # Fixed object key so re-uploads land on the same path (not a new name).
+        # Fixed object key so re-uploads land on the same path (not a new name);
+        # read the enclosing prefix so listing surfaces the ETag.
         key = f"{bucket}/input/data.parquet"
-        s3_path = f"s3://{key}"
+        input_prefix = f"s3://{bucket}/input"
         ckpt_prefix = f"s3://{bucket}/checkpoints"
         output_path = f"s3://{bucket}/output"
 
@@ -729,7 +734,9 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
             # write_parquet keeps the pipeline map-only (count_rows would insert
             # an aggregate, which checkpointing rejects); count the output read.
             ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-            df = daft.read_parquet(s3_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config)
+            df = daft.read_parquet(
+                input_prefix, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config
+            )
             df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
             return daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
 
@@ -737,7 +744,7 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
         assert run() == 3, "run 1 processes original object"
         assert run() == 0, "run 2 skips the unchanged object (same ETag)"
 
-        # Overwrite the same key with new content -> new ETag -> reprocessed.
-        put([10, 20])
-        assert run() == 2, "run 3 reprocesses the replaced object"
+        # Replace with same-size new content -> new ETag -> reprocessed.
+        put([4, 5, 6])
+        assert run() == 3, "run 3 reprocesses the replaced object (ETag changed)"
         assert run() == 0, "run 4 skips the now-checkpointed object"
