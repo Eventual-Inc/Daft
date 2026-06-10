@@ -143,6 +143,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    Kafka,
     DataSink(String),
 }
 
@@ -268,6 +269,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltaLake Write".into(),
             WriteFormat::PartitionedDeltalake => "Partitioned DeltaLake Write".into(),
             WriteFormat::Lance => "Lance Write".into(),
+            WriteFormat::Kafka => "Kafka Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }
     }

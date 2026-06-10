@@ -1462,13 +1462,29 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::KafkaWrite(_) => {
-            return Err(crate::Error::PipelineCreationError {
-                source: DaftError::not_implemented(
-                    "[write_kafka] Kafka write execution is not implemented in the native runner yet",
-                ),
-                plan_name: physical_plan.name().to_string(),
-            });
+        LocalPhysicalPlan::KafkaWrite(daft_local_plan::KafkaWrite {
+            input,
+            kafka_info,
+            file_schema,
+            stats_state,
+            context,
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let writer_factory = daft_writers::make_kafka_writer_factory(kafka_info.clone());
+            let write_sink = WriteSink::new(
+                WriteFormat::Kafka,
+                writer_factory,
+                None,
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(
+                Arc::new(write_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
