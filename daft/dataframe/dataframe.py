@@ -94,6 +94,15 @@ _KAFKA_VALUE_FORMATS = {"raw", "utf8", "json"}
 _KAFKA_KEY_FORMATS = {"raw", "utf8"}
 _KAFKA_MANAGED_CONFIG_KEYS = {"bootstrap.servers"}
 _KAFKA_UNSUPPORTED_CONFIG_KEYS = {"transactional.id"}
+_KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME = "timestamp_ms"
+
+
+class _DefaultKafkaTimestampMsCol:
+    def __repr__(self) -> str:
+        return repr(_KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME)
+
+
+_DEFAULT_KAFKA_TIMESTAMP_MS_COL = _DefaultKafkaTimestampMsCol()
 
 
 def _normalize_kafka_bootstrap_servers(bootstrap_servers: str | typing.Sequence[str]) -> str:
@@ -144,6 +153,14 @@ def _validate_kafka_client_config(kafka_client_config: Mapping[str, object] | No
             f"(str, int, bool, float, or None), got {type(value).__name__}"
         )
     return normalized
+
+
+def _resolve_kafka_timestamp_ms_col(timestamp_ms_col: object, column_names: Sequence[str]) -> str | None:
+    if timestamp_ms_col is _DEFAULT_KAFKA_TIMESTAMP_MS_COL:
+        if _KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME in column_names:
+            return _KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME
+        return None
+    return typing.cast(str | None, timestamp_ms_col)
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -1328,7 +1345,7 @@ class DataFrame:
         headers_col: str | None = None,
         partition: int | None = None,
         partition_col: str | None = None,
-        timestamp_ms_col: str | None = "timestamp_ms",
+        timestamp_ms_col: str | None = typing.cast(str | None, _DEFAULT_KAFKA_TIMESTAMP_MS_COL),
         value_format: Literal["raw", "utf8", "json"] = "raw",
         key_format: Literal["raw", "utf8"] = "raw",
         kafka_client_config: Mapping[str, object] | None = None,
@@ -1336,16 +1353,70 @@ class DataFrame:
     ) -> "DataFrame":
         """Writes the DataFrame to Kafka, returning task-level write summaries.
 
-        Exactly one of ``topic`` or ``topic_col`` must be provided. ``kafka_client_config``
-        may contain scalar Kafka client options, but Daft-managed options such as
-        ``bootstrap.servers`` cannot be overridden and transactional writes are not yet
-        supported.
+        This method is a native Kafka producer sink. Exactly one of ``topic`` or
+        ``topic_col`` must be provided. Writes are at-least-once: if a later message
+        or flush fails, messages already acknowledged by Kafka are not rolled back.
+
+        Args:
+            bootstrap_servers (str | Sequence[str]): Kafka bootstrap server(s) to connect to.
+                Can be a single server string or a sequence of server strings.
+            topic (str | None): Static Kafka topic for all rows. Mutually exclusive with
+                ``topic_col``.
+            topic_col (str | None): Column containing the Kafka topic for each row. Mutually
+                exclusive with ``topic``. Topic values must be non-null strings.
+            value_col (str): Column containing Kafka message values. Defaults to ``"value"``.
+            key_col (str | None): Optional column containing Kafka message keys. Defaults to
+                ``"key"``. Set to ``None`` to write without keys.
+            headers_col (str | None): Optional column containing Kafka headers as a list of
+                structs with ``key`` and ``value`` fields. This preserves duplicate header
+                keys and header order.
+            partition (int | None): Optional static non-negative Kafka partition for all rows.
+                Mutually exclusive with ``partition_col``.
+            partition_col (str | None): Optional column containing per-row Kafka partitions.
+                Null partition values let Kafka choose the partition.
+            timestamp_ms_col (str | None): Optional column containing Kafka message timestamps
+                as epoch milliseconds. If omitted, Daft uses ``"timestamp_ms"`` when that column
+                exists; pass ``None`` to always let Kafka assign timestamps.
+            value_format (Literal["raw", "utf8", "json"]): Encoding used for ``value_col``.
+                ``"raw"`` expects binary values, ``"utf8"`` expects strings, and ``"json"``
+                serializes JSON-compatible Daft values. A top-level null value sends a Kafka
+                null value; nested JSON nulls remain JSON ``null``.
+            key_format (Literal["raw", "utf8"]): Encoding used for ``key_col``. Defaults to
+                ``"raw"``.
+            kafka_client_config (Mapping[str, object] | None): Optional scalar Kafka producer
+                options passed to librdkafka. ``bootstrap.servers`` is managed by
+                ``bootstrap_servers`` and cannot be overridden. ``transactional.id`` is not
+                supported yet.
+            timeout_ms (int): Timeout in milliseconds for Kafka delivery and flush operations.
+                Defaults to 10_000.
 
         Returns:
-            DataFrame: Task-level write summaries, including row and byte counts.
+            DataFrame: Task-level write summaries with columns ``task_id``,
+                ``messages_attempted``, ``messages_delivered``, ``messages_failed``,
+                ``bytes_delivered``, and ``first_error``.
 
         Note:
             This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            Write binary key/value rows to a static topic:
+
+            >>> import daft
+            >>> df = daft.from_pydict({"key": [b"k1"], "value": [b"v1"]})
+            >>> summary = df.write_kafka(  # doctest: +SKIP
+            ...     bootstrap_servers="localhost:9092",
+            ...     topic="events",
+            ... )
+
+            Write JSON values with UTF-8 keys:
+
+            >>> df = daft.from_pylist([{"key": "k1", "value": {"event": "created"}}])
+            >>> summary = df.write_kafka(  # doctest: +SKIP
+            ...     bootstrap_servers="localhost:9092",
+            ...     topic="events",
+            ...     key_format="utf8",
+            ...     value_format="json",
+            ... )
         """
         if (topic is None) == (topic_col is None):
             raise ValueError("[write_kafka] exactly one of topic or topic_col must be provided")
@@ -1364,6 +1435,7 @@ class DataFrame:
 
         bootstrap_servers_str = _normalize_kafka_bootstrap_servers(bootstrap_servers)
         normalized_client_config = _validate_kafka_client_config(kafka_client_config)
+        resolved_timestamp_ms_col = _resolve_kafka_timestamp_ms_col(timestamp_ms_col, self.column_names)
 
         builder = self._builder.write_kafka(
             bootstrap_servers=bootstrap_servers_str,
@@ -1374,7 +1446,7 @@ class DataFrame:
             headers_col=headers_col,
             partition=partition,
             partition_col=partition_col,
-            timestamp_ms_col=timestamp_ms_col,
+            timestamp_ms_col=resolved_timestamp_ms_col,
             value_format=value_format,
             key_format=key_format,
             kafka_client_config=normalized_client_config,

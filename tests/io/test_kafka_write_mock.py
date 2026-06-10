@@ -165,3 +165,15 @@ def test_validate_kafka_client_config_accepts_valid_values() -> None:
         "queue.buffering.max.kbytes": 1024.5,
         "client.id": None,
     }
+
+
+def test_default_timestamp_ms_col_is_opportunistic() -> None:
+    from daft.dataframe.dataframe import _DEFAULT_KAFKA_TIMESTAMP_MS_COL, _resolve_kafka_timestamp_ms_col
+
+    assert (
+        _resolve_kafka_timestamp_ms_col(_DEFAULT_KAFKA_TIMESTAMP_MS_COL, ["value", "timestamp_ms"])
+        == "timestamp_ms"
+    )
+    assert _resolve_kafka_timestamp_ms_col(_DEFAULT_KAFKA_TIMESTAMP_MS_COL, ["value"]) is None
+    assert _resolve_kafka_timestamp_ms_col("event_ts_ms", ["value"]) == "event_ts_ms"
+    assert _resolve_kafka_timestamp_ms_col(None, ["value", "timestamp_ms"]) is None
