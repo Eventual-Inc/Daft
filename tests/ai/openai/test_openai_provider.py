@@ -6,7 +6,6 @@ import pytest
 
 pytest.importorskip("openai")
 
-from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderDescriptor
 from daft.ai.openai.provider import OpenAIProvider
 
 
@@ -26,87 +25,87 @@ def test_openai_provider_upsert():
 
 def test_openai_text_embedder_default():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder()
+    descriptor = provider.get_text_embedder_descriptor()
 
-    assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
-    assert descriptor.get_provider() == "openai"
-    assert descriptor.get_model() == "text-embedding-3-small"
-    assert descriptor.get_dimensions().size == 1536
+    assert descriptor["provider"] == "openai"
+    assert descriptor["model"] == "text-embedding-3-small"
+    assert descriptor["dimensions"].size == 1536
 
 
 def test_openai_text_embedder_overridden_dimensions():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder(dimensions=256)
+    descriptor = provider.get_text_embedder_descriptor(dimensions=256)
 
-    assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
-    assert descriptor.get_provider() == "openai"
-    assert descriptor.get_model() == "text-embedding-3-small"
-    assert descriptor.get_dimensions().size == 256
+    assert descriptor["provider"] == "openai"
+    assert descriptor["model"] == "text-embedding-3-small"
+    assert descriptor["dimensions"].size == 256
 
 
 def test_openai_text_embedder_other():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder(model="text-embedding-3-large", api_key="test-key")
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-3-large", api_key="test-key")
 
-    assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
-    assert descriptor.get_provider() == "openai"
-    assert descriptor.get_model() == "text-embedding-3-large"
-    assert descriptor.get_dimensions().size == 3072
+    assert descriptor["provider"] == "openai"
+    assert descriptor["model"] == "text-embedding-3-large"
+    assert descriptor["dimensions"].size == 3072
 
 
 def test_openai_text_embedder_instantiation():
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test_key"},
-        model_name="text-embedding-ada-002",
-        dimensions=None,
-        embed_options={},
-    )
+    provider = OpenAIProvider(api_key="test_key")
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-ada-002")
 
-    embedder = descriptor.instantiate()
+    embedder = provider.get_text_embedder(descriptor)
     assert embedder._model == "text-embedding-ada-002"
     assert hasattr(embedder, "_client")
 
 
 def test_openai_text_embedder_dimensions():
-    descriptor_ada = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test_key"},
-        model_name="text-embedding-ada-002",
-        dimensions=None,
-        embed_options={},
-    )
-    assert descriptor_ada.get_dimensions().size == 1536
+    provider = OpenAIProvider()
 
-    descriptor_small = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test_key"},
-        model_name="text-embedding-3-small",
-        dimensions=None,
-        embed_options={},
-    )
-    assert descriptor_small.get_dimensions().size == 1536
+    descriptor_ada = provider.get_text_embedder_descriptor(model="text-embedding-ada-002")
+    assert descriptor_ada["dimensions"].size == 1536
 
-    descriptor_large = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test_key"},
-        model_name="text-embedding-3-large",
-        dimensions=None,
-        embed_options={},
-    )
-    assert descriptor_large.get_dimensions().size == 3072
+    descriptor_small = provider.get_text_embedder_descriptor(model="text-embedding-3-small")
+    assert descriptor_small["dimensions"].size == 1536
+
+    descriptor_large = provider.get_text_embedder_descriptor(model="text-embedding-3-large")
+    assert descriptor_large["dimensions"].size == 3072
 
 
 def test_openai_text_embedder_descriptor_overridden_dimensions():
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test_key"},
-        model_name="text-embedding-3-large",
-        dimensions=256,
-        embed_options={},
-    )
+    provider = OpenAIProvider()
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-3-large", dimensions=256)
 
-    assert descriptor.get_dimensions().size == 256
+    assert descriptor["dimensions"].size == 256
+
+
+def test_openai_get_udf_options():
+    """Test that OpenAI provider sets max_retries=0 (client handles retries)."""
+    provider = OpenAIProvider()
+    descriptor = provider.get_text_embedder_descriptor()
+
+    udf_options = provider._get_udf_options(descriptor)
+    assert udf_options.max_retries == 0
+
+
+def test_openai_get_udf_options_with_custom_options():
+    """Test that embed_options are passed through to UDF options."""
+    provider = OpenAIProvider()
+    descriptor = provider.get_text_embedder_descriptor(batch_size=32, on_error="ignore")
+
+    udf_options = provider._get_udf_options(descriptor)
+    assert udf_options.max_retries == 0
+    assert udf_options.batch_size == 32
+    assert udf_options.on_error == "ignore"
+
+
+def test_openai_embed_text_returns_expression():
+    """Test that embed_text() returns a Daft Expression."""
+    import daft
+
+    provider = OpenAIProvider()
+    expr = provider.embed_text(daft.col("text"))
+    assert isinstance(expr, daft.Expression)
 
 
 def test_openai_provider_raises_import_error_without_numpy():

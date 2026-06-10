@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         ImageEmbedderDescriptor,
         PrompterDescriptor,
         TextClassifierDescriptor,
+        TextEmbedder,
         TextEmbedderDescriptor,
     )
     from daft.ai.typing import (
@@ -27,7 +28,9 @@ if TYPE_CHECKING:
         EmbedImageOptions,
         EmbedTextOptions,
         PromptOptions,
+        UDFOptions,
     )
+    from daft.expressions import Expression
 
 
 class ProviderImportError(ImportError):
@@ -108,10 +111,14 @@ class Provider(ABC):
     Hugging Face Transformers, etc. Provides a unified interface for model access
     and execution regardless of the underlying implementation.
 
-    Note:
-        We will need to move instantiation from the TextEmbedderDesriptor to the Provider or other.
-        It is not set at the moment, and instantiation directly from the descriptor is the easiest.
-        We could opt to include a factory method location (descriptor's init) in the serialization.
+    Each function (e.g. embed_text) follows a three-method pattern:
+
+    1. ``get_<fn>_descriptor`` — validates options, returns a serializable descriptor.
+    2. ``get_<fn>`` — returns an implementation that adheres to the protocol.
+    3. ``<fn>`` — builds and returns a Daft Expression (default uses 1 + 2).
+
+    Providers must implement (1). They may override (2) and (3) for custom behavior.
+    The default (3) builds a sync class-based UDF using the protocol implementation.
     """
 
     @property
@@ -120,11 +127,71 @@ class Provider(ABC):
         """Returns the provider's name."""
         ...
 
-    def get_text_embedder(
+    def _get_udf_options(self, descriptor: TextEmbedderDescriptor) -> UDFOptions:
+        """Extracts UDF configuration from a descriptor. Override for custom behavior."""
+        from daft.ai.typing import UDFOptions as UDFOptionsCls
+        from daft.utils import from_dict
+
+        return from_dict(UDFOptionsCls, dict(descriptor.get("embed_options", {})))
+
+    # ------------------------------------------------------------------
+    # embed_text
+    # ------------------------------------------------------------------
+    # 1. We must be able to introspect and serialize our resolved function info (descriptor).
+    # 2. We must be able to instantiate an expression from this serializable info (descriptor).
+    # 3. Implementations should adhere to an interface, but are not required to (protocol).
+    # 4. We must give providers control on how their expression is instantiated (custom expressions).
+    # ------------------------------------------------------------------
+
+    def get_text_embedder_descriptor(
         self, model: str | None = None, dimensions: int | None = None, **options: Unpack[EmbedTextOptions]
     ) -> TextEmbedderDescriptor:
-        """Returns a TextEmbedderDescriptor for this provider."""
+        """Validates options and returns a serializable TextEmbedderDescriptor."""
         raise not_implemented_err(self, method="embed_text")
+
+    def get_text_embedder(self, descriptor: TextEmbedderDescriptor) -> TextEmbedder:
+        """Returns a TextEmbedder implementation from the descriptor."""
+        raise not_implemented_err(self, method="embed_text")
+
+    def embed_text(
+        self,
+        text: Expression,
+        model: str | None = None,
+        dimensions: int | None = None,
+        **options: Unpack[EmbedTextOptions],
+    ) -> Expression:
+        """Returns an Expression that embeds text using this provider.
+
+        The default builds a synchronous class-based UDF from the descriptor
+        and protocol implementation. Providers should override this for async
+        implementations or custom expression behavior.
+        """
+        from daft.ai._expressions import _TextEmbedderExpression
+        from daft.udf import cls as daft_cls
+        from daft.udf import method
+
+        descriptor = self.get_text_embedder_descriptor(model, dimensions, **options)
+        udf_options = self._get_udf_options(descriptor)
+
+        _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
+            method=_TextEmbedderExpression._call_sync,
+            return_dtype=descriptor["dimensions"].as_dtype(),
+            batch_size=udf_options.batch_size,
+        )
+        wrapped_cls = daft_cls(
+            _TextEmbedderExpression,
+            max_concurrency=udf_options.concurrency,
+            gpus=udf_options.num_gpus or 0,
+            max_retries=udf_options.max_retries,
+            on_error=udf_options.on_error,
+            name_override="embed_text",
+        )
+
+        return wrapped_cls(descriptor)(text)
+
+    # ------------------------------------------------------------------
+    # embed_image
+    # ------------------------------------------------------------------
 
     def get_image_embedder(
         self, model: str | None = None, **options: Unpack[EmbedImageOptions]
@@ -132,17 +199,29 @@ class Provider(ABC):
         """Returns an ImageEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_image")
 
+    # ------------------------------------------------------------------
+    # classify_image
+    # ------------------------------------------------------------------
+
     def get_image_classifier(
         self, model: str | None = None, **options: Unpack[ClassifyImageOptions]
     ) -> ImageClassifierDescriptor:
         """Returns an ImageClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_image")
 
+    # ------------------------------------------------------------------
+    # classify_text
+    # ------------------------------------------------------------------
+
     def get_text_classifier(
         self, model: str | None = None, **options: Unpack[ClassifyTextOptions]
     ) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_text")
+
+    # ------------------------------------------------------------------
+    # prompt
+    # ------------------------------------------------------------------
 
     def get_prompter(
         self,
