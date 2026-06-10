@@ -7,7 +7,7 @@ import daft
 
 def test_write_kafka_is_exported_on_dataframe() -> None:
     df = daft.from_pydict({"value": [b"a"]})
-    assert hasattr(df, "write_kafka")
+    assert callable(getattr(df, "write_kafka", None))
 
 
 @pytest.mark.parametrize(
@@ -45,6 +45,11 @@ def test_write_kafka_is_exported_on_dataframe() -> None:
         ),
         (
             {"bootstrap_servers": "localhost:9092", "topic": "topic-a", "timeout_ms": 0},
+            ValueError,
+            "timeout_ms must be > 0",
+        ),
+        (
+            {"bootstrap_servers": "localhost:9092", "topic": "topic-a", "timeout_ms": -1},
             ValueError,
             "timeout_ms must be > 0",
         ),
@@ -97,11 +102,16 @@ def test_write_kafka_rejects_invalid_inputs(
         df.write_kafka(**kwargs)
 
 
-def test_write_kafka_normalization_helpers_accept_valid_values() -> None:
-    from daft.dataframe.dataframe import _normalize_kafka_bootstrap_servers, _validate_kafka_client_config
+def test_normalize_kafka_bootstrap_servers_accepts_valid_values() -> None:
+    from daft.dataframe.dataframe import _normalize_kafka_bootstrap_servers
 
     assert _normalize_kafka_bootstrap_servers("localhost:9092") == "localhost:9092"
     assert _normalize_kafka_bootstrap_servers(["a:9092", "b:9092"]) == "a:9092,b:9092"
+
+
+def test_validate_kafka_client_config_accepts_valid_values() -> None:
+    from daft.dataframe.dataframe import _validate_kafka_client_config
+
     assert _validate_kafka_client_config(
         {
             "acks": "all",
