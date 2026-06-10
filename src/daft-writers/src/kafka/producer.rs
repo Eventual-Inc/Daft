@@ -7,12 +7,16 @@ use parking_lot::Mutex;
 use super::metrics::KafkaProducerMetrics;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+// TODO(native-kafka-write): remove once Task 8/9 wires outgoing records into the writer integration.
+#[allow(dead_code)]
 pub(crate) struct KafkaHeader {
     pub key: String,
     pub value: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+// TODO(native-kafka-write): remove once Task 8/9 wires outgoing records into the writer integration.
+#[allow(dead_code)]
 pub(crate) struct KafkaOutgoingRecord {
     pub topic: String,
     pub key: Option<Vec<u8>>,
@@ -23,6 +27,8 @@ pub(crate) struct KafkaOutgoingRecord {
 }
 
 impl KafkaOutgoingRecord {
+    // TODO(native-kafka-write): remove once Task 8/9 records delivery accounting from writer integration.
+    #[allow(dead_code)]
     pub(crate) fn delivered_bytes(&self) -> usize {
         let record_bytes =
             self.key.as_ref().map_or(0, Vec::len) + self.value.as_ref().map_or(0, Vec::len);
@@ -34,6 +40,8 @@ impl KafkaOutgoingRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+// TODO(native-kafka-write): remove once Task 8/9 wires delivery results into the writer integration.
+#[allow(dead_code)]
 pub(crate) struct KafkaDelivery {
     pub topic: String,
     pub partition: i32,
@@ -41,6 +49,8 @@ pub(crate) struct KafkaDelivery {
     pub timestamp_ms: Option<i64>,
 }
 
+// TODO(native-kafka-write): remove once Task 8/9 adds the concrete producer adapter and writer integration.
+#[allow(dead_code)]
 #[async_trait]
 pub(crate) trait KafkaProducer: Send + Sync {
     async fn send(&self, record: KafkaOutgoingRecord) -> DaftResult<KafkaDelivery>;
@@ -53,6 +63,8 @@ pub(crate) trait KafkaProducer: Send + Sync {
 }
 
 #[derive(Debug, Default)]
+// TODO(native-kafka-write): remove once Task 8/9 writer integration consumes the fake in higher-level tests.
+#[allow(dead_code)]
 pub(crate) struct FakeProducer {
     sent_records: Mutex<Vec<KafkaOutgoingRecord>>,
     delivery_results: Mutex<VecDeque<DaftResult<KafkaDelivery>>>,
@@ -61,10 +73,14 @@ pub(crate) struct FakeProducer {
 }
 
 impl FakeProducer {
+    // TODO(native-kafka-write): remove once Task 8/9 writer integration consumes the fake in higher-level tests.
+    #[allow(dead_code)]
     pub(crate) fn succeeding() -> Self {
         Self::default()
     }
 
+    // TODO(native-kafka-write): remove once Task 8/9 writer integration consumes the fake in higher-level tests.
+    #[allow(dead_code)]
     pub(crate) fn with_delivery_results(results: Vec<DaftResult<KafkaDelivery>>) -> Self {
         Self {
             delivery_results: Mutex::new(results.into()),
@@ -72,6 +88,8 @@ impl FakeProducer {
         }
     }
 
+    // TODO(native-kafka-write): remove once Task 8/9 writer integration consumes the fake in higher-level tests.
+    #[allow(dead_code)]
     pub(crate) fn with_flush_result(result: DaftResult<()>) -> Self {
         Self {
             flush_result: Mutex::new(Some(result)),
@@ -79,13 +97,17 @@ impl FakeProducer {
         }
     }
 
+    // TODO(native-kafka-write): remove once Task 8/9 writer integration consumes the fake in higher-level tests.
+    #[allow(dead_code)]
     pub(crate) fn sent_records(&self) -> Vec<KafkaOutgoingRecord> {
         self.sent_records.lock().clone()
     }
 }
 
+// TODO(native-kafka-write): remove once Task 8/9 surfaces producer delivery errors through writer integration.
+#[allow(dead_code)]
 pub(crate) fn delivery_error(message: impl Into<String>) -> DaftError {
-    DaftError::ValueError(format!("[write_kafka] {}", message.into()))
+    DaftError::ComputeError(format!("[write_kafka] {}", message.into()))
 }
 
 #[async_trait]
