@@ -424,8 +424,8 @@ impl DataType {
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
-                Field::new("offset", Int64),
-                Field::new("length", Int64),
+                Field::new("position", Int64),
+                Field::new("size", Int64),
             ]),
             _ => {
                 assert!(self.is_physical());

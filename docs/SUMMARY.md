@@ -33,6 +33,7 @@
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
+        * [Generic File Source Options](connectors/generic-file-source-options.md)
         * [Custom Connectors](connectors/custom.md)
         * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
@@ -72,6 +73,7 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Shuffle Algorithms](optimization/shuffle.md)
         * [Join Strategies](optimization/join-strategies.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
@@ -81,7 +83,7 @@
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
-    * [Community <sup>↗</sup>](http://www.daft.ai/slack)
+    * [Community <sup>↗</sup>](https://daft.ai/slack)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples

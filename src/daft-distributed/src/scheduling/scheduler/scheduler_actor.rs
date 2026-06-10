@@ -101,32 +101,57 @@ where
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run(mut self) -> DaftResult<()> {
         let mut tick_interval = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
+
         while !self.input_exhausted
             || self.scheduler.num_pending_tasks() > 0
             || self.dispatcher.has_running_tasks()
         {
             let worker_snapshots = self.worker_manager.worker_snapshots()?;
-            tracing::info!(target: SCHEDULER_LOG_TARGET,
+            tracing::info!(
+                target: SCHEDULER_LOG_TARGET,
                 num_workers = worker_snapshots.len(),
                 pending_tasks = self.scheduler.num_pending_tasks(),
-                "Received worker snapshots");
-            tracing::debug!(target: SCHEDULER_LOG_TARGET, worker_snapshots = %format!("{:#?}", worker_snapshots));
+                "Received worker snapshots"
+            );
+            tracing::debug!(
+                target: SCHEDULER_LOG_TARGET,
+                worker_snapshots = %format!("{:#?}", worker_snapshots)
+            );
 
             self.scheduler.update_worker_state(&worker_snapshots);
 
-            // 1: Send autoscaling request if needed
-            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand and not just the residual demand after scheduling.
-            if let Some(request) = self.scheduler.get_autoscaling_request() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
+            // 1: Send autoscaling request if needed (scale up).
+            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand
+            // and not just the residual demand after scheduling.
+            let autoscaling_request = self.scheduler.get_autoscaling_request();
+            let sent_scale_up_request = autoscaling_request.is_some();
+            if let Some(request) = autoscaling_request {
+                tracing::info!(
+                    target: SCHEDULER_LOG_TARGET,
+                    autoscaling_request = %format!("{:#?}", request),
+                    "Sending autoscaling request"
+                );
                 self.worker_manager.try_autoscale(request)?;
             }
 
             // 2: Get all tasks that are ready to be scheduled
-            let scheduled_tasks = self.scheduler.schedule_tasks();
+            let (scheduled_tasks, cancelled_tasks) = self.scheduler.schedule_tasks();
+            for task in &cancelled_tasks {
+                self.statistics_manager.handle_event(TaskEvent::Cancelled {
+                    context: task.task_context(),
+                })?;
+            }
             // 3: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
-                tracing::debug!(target: SCHEDULER_LOG_TARGET, scheduled_tasks = %format!("{:#?}", scheduled_tasks));
+                tracing::info!(
+                    target: SCHEDULER_LOG_TARGET,
+                    num_tasks = scheduled_tasks.len(),
+                    "Scheduling tasks for dispatch"
+                );
+                tracing::debug!(
+                    target: SCHEDULER_LOG_TARGET,
+                    scheduled_tasks = %format!("{:#?}", scheduled_tasks)
+                );
 
                 for task in &scheduled_tasks {
                     self.statistics_manager.handle_event(TaskEvent::Scheduled {
@@ -137,6 +162,23 @@ where
 
                 self.dispatcher
                     .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
+            }
+
+            // 3b: Ask the worker manager to retire idle workers when downscaling is configured.
+            //
+            // The worker manager owns the entire downscale policy: enable flag, idle thresholds,
+            // min-survivor floor, head-node protection, and blacklist TTLs. The scheduler only
+            // hands it the per-tick context it has — namely whether a scale-up was just sent —
+            // so the worker manager can avoid undoing scale-up demand in the same cycle.
+            let retired = self
+                .worker_manager
+                .retire_idle_workers(sent_scale_up_request, false)?;
+            if retired > 0 {
+                tracing::info!(
+                    target: SCHEDULER_LOG_TARGET,
+                    retired,
+                    "Downscale: retired idle workers"
+                );
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
@@ -171,6 +213,17 @@ where
                     // Worker snapshots refreshed at top of next iteration.
                 }
             }
+        }
+
+        // Final downscale on job completion: best-effort clear of Ray demand and idle actors.
+        // The worker manager itself is responsible for honoring the enable flag.
+        let final_retired = self.worker_manager.retire_idle_workers(false, true)?;
+        if final_retired > 0 {
+            tracing::info!(
+                target: SCHEDULER_LOG_TARGET,
+                final_retired,
+                "Final downscale completed"
+            );
         }
 
         tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
@@ -300,14 +353,14 @@ impl<T: Task> SchedulerHandle<T> {
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
     cancel_token: CancellationToken,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(
         task: T,
         cancel_token: CancellationToken,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             task,
@@ -336,7 +389,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
     finished: bool,
 }
 
@@ -345,7 +398,7 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_tokens: Vec<OneshotSender<()>>,
+        notify_tokens: Vec<OneshotSender<TaskID>>,
     ) -> Self {
         Self {
             _task_id: task_id,
@@ -369,16 +422,18 @@ impl Future for SubmittedTask {
         match self.result_rx.poll_unpin(cx) {
             Poll::Ready(Ok(result)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(result)
             }
             // If the sender is dropped (i.e. the task is cancelled), return no results
             Poll::Ready(Err(_)) => {
                 self.finished = true;
+                let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(());
+                    let _ = notify_token.send(task_id);
                 }
                 Poll::Ready(Ok(None))
             }
@@ -416,6 +471,7 @@ mod tests {
 
     struct SchedulerActorTestContext {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
+        worker_manager: Arc<MockWorkerManager>,
         joinset: JoinSet<DaftResult<()>>,
     }
 
@@ -435,15 +491,59 @@ mod tests {
         let workers = setup_workers(worker_configs);
         let worker_manager = Arc::new(MockWorkerManager::new(workers));
         let mut joinset = JoinSet::new();
-        let scheduler_handle = spawn_default_scheduler_actor(
-            worker_manager,
-            &mut joinset,
+
+        let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
+        let loop_state = SchedulerLoop::new(
+            DefaultScheduler::<MockTask>::default(),
+            scheduler_receiver,
+            worker_manager.clone(),
             StatisticsManagerRef::default(),
         );
+        joinset.spawn(loop_state.run());
+        let scheduler_handle = SchedulerHandle::new(scheduler_sender);
+
         SchedulerActorTestContext {
             scheduler_handle_ref: Arc::new(scheduler_handle),
+            worker_manager,
             joinset,
         }
+    }
+
+    /// The scheduler now defers all downscale gating (enable flag, min-survivor floor,
+    /// idle thresholds) to the worker manager. From the scheduler's point of view, it
+    /// just calls `retire_idle_workers` every tick — this test verifies the call wiring
+    /// and the per-tick context (skip-due-to-pending-scale-up flag) we hand off.
+    #[tokio::test]
+    async fn test_scheduler_actor_invokes_retire_idle_workers_each_tick() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context(&[
+            (Arc::from("worker1"), 1),
+            (Arc::from("worker2"), 1),
+        ]);
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(ctx.worker_manager.retire_call_count() > 0);
+        // No tasks have been enqueued so no scale-up was sent — `skip_due_to_pending_scale_up`
+        // must be false. The shutdown path is exercised by `cleanup`, which lifts
+        // `force_all_when_cluster_idle` to true; we only check the per-tick args here.
+        assert_eq!(ctx.worker_manager.last_retire_args(), Some((false, false)));
+
+        ctx.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_actor_invokes_final_retire_on_shutdown() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+
+        // Drop the scheduler handle so the loop drains and exits, triggering the final downscale.
+        drop(ctx.scheduler_handle_ref);
+        let mut joinset = ctx.joinset;
+        while let Some(result) = joinset.join_next().await {
+            result??;
+        }
+        // The final invocation must request a forced retirement.
+        assert_eq!(ctx.worker_manager.last_retire_args(), Some((false, true)));
+        Ok(())
     }
 
     #[tokio::test]
@@ -566,7 +666,8 @@ mod tests {
         let submittable_task = SubmittableTask::task_only(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         drop(submitted_task);
-        cancel_receiver.await.unwrap();
+        // Notifier may not fire if the scheduler filtered the task before dispatch.
+        let _ = cancel_receiver.await;
 
         test_context.cleanup().await?;
         Ok(())
@@ -636,7 +737,8 @@ mod tests {
         {
             if let Some(cancel_receiver) = maybe_cancel_receiver {
                 drop(submitted_task);
-                cancel_receiver.await.unwrap();
+                // Notifier may not fire if scheduler-side filtering kicked in.
+                let _ = cancel_receiver.await;
             } else {
                 let result = submitted_task.await?;
                 let partition = result.unwrap().partitions()[0].clone();

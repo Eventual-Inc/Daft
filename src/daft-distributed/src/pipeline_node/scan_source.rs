@@ -1,19 +1,24 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
+use common_error::DaftResult;
 use common_metrics::{
     BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ClusteringSpec, stats::StatsState};
-use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
+use daft_logical_plan::stats::StatsState;
+use daft_scan::{ClusteringKeys, Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::KeyValue;
 
-use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
+use super::{
+    ClusteringStrategy, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+    TaskBuilderStream, clustering::BoundClusteringSpec,
+};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
@@ -94,7 +99,8 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
-    ) -> Self {
+        clustering_keys: Option<ClusteringKeys>,
+    ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
@@ -103,19 +109,26 @@ impl ScanSourceNode {
             NodeType::ScanTask,
             NodeCategory::Source,
         );
-        let config = PipelineNodeConfig::new(
-            schema,
-            plan_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(
-                scan_tasks.len(),
-            )),
-        );
-        Self {
+        let num_partitions = scan_tasks.len();
+        // If the source declared a clustering, lower it to a concrete `BoundClusteringSpec` by
+        // attaching the partition count and binding the declared keys against the output schema.
+        // Binding a key that the source's schema doesn't contain is a misdeclaration — surface it
+        // as an error rather than silently dropping the clustering, since acting on a wrong
+        // declaration would be a correctness bug. A source that declares nothing keeps the
+        // historical Unknown clustering.
+        let clustering_spec = match clustering_keys {
+            Some(ClusteringKeys::Hash(keys)) => ClusteringStrategy::Explicit(
+                BoundClusteringSpec::hash(num_partitions, BoundExpr::bind_all(&keys, &schema)?),
+            ),
+            None => ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
+        };
+        let config = PipelineNodeConfig::new(schema, plan_config.config.clone(), clustering_spec);
+        Ok(Self {
             config,
             context,
             pushdowns,
             scan_tasks,
-        }
+        })
     }
 
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
@@ -294,6 +307,7 @@ mod tests {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         };
         let source_config = Arc::new(SourceConfig::File(FileFormatConfig::Csv(csv_cfg)));
         let storage_config = Arc::new(StorageConfig::new_internal(false, None));
@@ -326,8 +340,15 @@ mod tests {
             .collect();
 
         let plan_config = test_plan_config();
-        let scan_source_node =
-            ScanSourceNode::new(0, &plan_config, pushdowns, Arc::new(scan_tasks), schema);
+        let scan_source_node = ScanSourceNode::new(
+            0,
+            &plan_config,
+            pushdowns,
+            Arc::new(scan_tasks),
+            schema,
+            None,
+        )
+        .unwrap();
 
         DistributedPipelineNode::new(Arc::new(scan_source_node), meter)
     }

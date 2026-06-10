@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
+from daft_lance.lance_data_sink import LanceDataSink
 
-from daft.io.lance.lance_data_sink import LanceDataSink
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 
@@ -53,7 +53,7 @@ def _make_mp(n: int) -> MicroPartition:
 def test_accumulate_small_micropartitions(schema, tmp_path):
     fake = FakeLanceModule()._bind()
 
-    with patch.object(LanceDataSink, "_import_lance", return_value=fake):
+    with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
         mps = [_make_mp(10), _make_mp(20), _make_mp(30)]
         results = list(sink.write(iter(mps)))
@@ -67,7 +67,7 @@ def test_accumulate_small_micropartitions(schema, tmp_path):
 def test_flush_remaining_at_end(schema, tmp_path):
     fake = FakeLanceModule()._bind()
 
-    with patch.object(LanceDataSink, "_import_lance", return_value=fake):
+    with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
@@ -81,7 +81,7 @@ def test_flush_remaining_at_end(schema, tmp_path):
 def test_large_micropartition_writes_directly(schema, tmp_path):
     fake = FakeLanceModule()._bind()
 
-    with patch.object(LanceDataSink, "_import_lance", return_value=fake):
+    with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
         mps = [_make_mp(30)]
         results = list(sink.write(iter(mps)))
@@ -95,7 +95,7 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
 def test_no_accumulation_when_param_missing(schema, tmp_path):
     fake = FakeLanceModule()._bind()
 
-    with patch.object(LanceDataSink, "_import_lance", return_value=fake):
+    with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create")
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))

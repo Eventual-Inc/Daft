@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import datetime
+
+import pyarrow as pa
 import pytest
 
 import daft
@@ -72,7 +75,7 @@ class TestAsofJoinParameterValidation:
         left = daft.from_pydict({"ts": [1, 2]})
         right = daft.from_pydict({"ts": [1, 2]})
         with pytest.raises(APITypeError):
-            left.join_asof(right, strategy="forward")
+            left.join_asof(right, strategy="invalid_strategy")
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +191,41 @@ class TestAsofJoinKeyPermutations:
         result_str = left.join_asof(right, on="ts", by="entity").sort("ts").to_pydict()
         result_list = left.join_asof(right, on="ts", by=["entity"]).sort("ts").to_pydict()
         assert result_str == result_list
+
+    def test_two_left_by_right_by_different_names(self):
+        """Multiple by keys with different column names on left and right sides."""
+        left = daft.from_pydict(
+            {
+                "g1_l": ["A", "A", "B", "B"],
+                "g2_l": [1, 1, 2, 2],
+                "ts": [10, 20, 10, 20],
+                "v": [1, 2, 3, 4],
+            }
+        )
+        right = daft.from_pydict(
+            {
+                "g1_r": ["A", "A", "B", "B"],
+                "g2_r": [1, 1, 2, 2],
+                "ts": [5, 15, 8, 18],
+                "w": [50, 150, 80, 180],
+            }
+        )
+        result = left.join_asof(
+            right,
+            on="ts",
+            left_by=["g1_l", "g2_l"],
+            right_by=["g1_r", "g2_r"],
+        ).sort(["g1_l", "ts"])
+        assert result.column_names == ["g1_l", "g2_l", "ts", "v", "w"]
+        assert result.to_pydict() == {
+            "g1_l": ["A", "A", "B", "B"],
+            "g2_l": [1, 1, 2, 2],
+            "ts": [10, 20, 10, 20],
+            "v": [1, 2, 3, 4],
+            # (A,1)@10 -> right (A,1)@5=50;  (A,1)@20 -> right (A,1)@15=150
+            # (B,2)@10 -> right (B,2)@8=80;  (B,2)@20 -> right (B,2)@18=180
+            "w": [50, 150, 80, 180],
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +620,82 @@ class TestAsofJoinIntegration:
 
 
 # ---------------------------------------------------------------------------
-# 8. Distributed Execution
+# 8. Type Mismatches on Join Keys
+# ---------------------------------------------------------------------------
+
+
+class TestAsofJoinTypeMismatches:
+    def test_int_float_asof_key_coercion(self):
+        """Int left asof key and float right asof key coerce to a common type."""
+        left = daft.from_pydict({"ts": [1, 2, 3], "v": [10, 20, 30]})
+        right = daft.from_pydict({"ts": [1.0, 2.0, 3.0], "w": [100, 200, 300]})
+        result = left.join_asof(right, on="ts").sort("ts")
+        assert result.column_names == ["ts", "v", "w"]
+        assert result.to_pydict() == {"ts": [1, 2, 3], "v": [10, 20, 30], "w": [100, 200, 300]}
+
+    def test_int_float_by_key_coercion(self):
+        """Int left by key and float right by key coerce to a common type and group correctly."""
+        left = daft.from_pydict({"g": [1, 2], "ts": [10, 20], "v": [1, 2]})
+        right = daft.from_pydict({"g": [1.0, 2.0], "ts": [5, 4], "w": [50, 60]})
+        result = left.join_asof(right, on="ts", by="g").sort("g")
+        assert result.column_names == ["g", "ts", "v", "w"]
+        assert result.to_pydict() == {"g": [1, 2], "ts": [10, 20], "v": [1, 2], "w": [50, 60]}
+
+    def test_partial_int_str_by_key_coercion(self):
+        """Two by keys: first is int/int (no cast), second is int/str (cast to Utf8). Both match."""
+        left = daft.from_pydict({"g1": [1, 2], "g2": [10, 20], "ts": [1, 2], "v": [10, 20]})
+        right = daft.from_pydict({"g1": [1, 2], "g2": ["10", "20"], "ts": [1, 2], "w": [100, 200]})
+        result = left.join_asof(right, on="ts", by=["g1", "g2"]).sort("g1")
+        assert result.column_names == ["g1", "g2", "ts", "v", "w"]
+        assert result.to_pydict() == {"g1": [1, 2], "g2": [10, 20], "ts": [1, 2], "v": [10, 20], "w": [100, 200]}
+
+    def test_int_float_multiple_by_keys_coercion(self):
+        """Two by keys both with int/float type differences coerce and group correctly."""
+        left = daft.from_pydict({"g1": [1, 2], "g2": [10, 20], "ts": [10, 20], "v": [1, 2]})
+        right = daft.from_pydict({"g1": [1.0, 2.0], "g2": [10.0, 20.0], "ts": [5, 4], "w": [50, 60]})
+        result = left.join_asof(right, on="ts", by=["g1", "g2"]).sort("g1")
+        assert result.column_names == ["g1", "g2", "ts", "v", "w"]
+        assert result.to_pydict() == {"g1": [1, 2], "g2": [10, 20], "ts": [10, 20], "v": [1, 2], "w": [50, 60]}
+
+    def test_time_date_asof_key_raises(self):
+        """Time left asof key vs Date right asof key: no supertype exists, should raise."""
+        left = daft.from_arrow(pa.table({"ts": pa.array([3_600_000_000_000], type=pa.time64("ns")), "v": [1]}))
+        right = daft.from_arrow(pa.table({"ts": pa.array([datetime.date(2021, 1, 1)]), "w": [10]}))
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
+            left.join_asof(right, on="ts").collect()
+
+    def test_time_date_by_key_raises(self):
+        """Time left by key vs Date right by key: no supertype exists, should raise."""
+        left = daft.from_arrow(
+            pa.table({"g": pa.array([3_600_000_000_000], type=pa.time64("ns")), "ts": [1], "v": [1]})
+        )
+        right = daft.from_arrow(pa.table({"g": pa.array([datetime.date(2021, 1, 1)]), "ts": [1], "w": [10]}))
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
+            left.join_asof(right, on="ts", by="g").collect()
+
+    def test_multiple_by_keys_first_coerces_second_raises(self):
+        """Two by keys: first is int/float (coerces), second is Time/Date (no supertype, raises)."""
+        left = daft.from_arrow(
+            pa.table({"g1": [1], "g2": pa.array([3_600_000_000_000], type=pa.time64("ns")), "ts": [10], "v": [1]})
+        )
+        right = daft.from_arrow(
+            pa.table({"g1": [1.0], "g2": pa.array([datetime.date(2021, 1, 1)]), "ts": [5], "w": [50]})
+        )
+        with pytest.raises(
+            (daft.exceptions.DaftCoreException, RuntimeError),
+            match="could not determine supertype of Time\\(Nanoseconds\\) and Date",
+        ):
+            left.join_asof(right, on="ts", by=["g1", "g2"]).collect()
+
+
+# ---------------------------------------------------------------------------
+# 9. Distributed Execution
 # ---------------------------------------------------------------------------
 
 

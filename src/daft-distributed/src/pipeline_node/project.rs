@@ -3,12 +3,15 @@ use std::sync::Arc;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -40,13 +43,10 @@ impl ProjectNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            translate_clustering_spec(
-                child.config().clustering_spec.clone(),
-                &projection
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
-            ),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &projection,
+            },
         );
         Self {
             config,

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, LockResult},
 };
 
@@ -23,7 +23,6 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -128,6 +127,8 @@ pub enum LocalPhysicalPlan {
     AsofJoin(AsofJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
+    #[cfg(feature = "python")]
+    DistributedLimit(DistributedLimit),
     VLLMProject(VLLMProject),
 }
 #[cfg(not(debug_assertions))]
@@ -201,6 +202,7 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject {
                 stats_state, ..
             })
+            | Self::DistributedLimit(DistributedLimit { stats_state, .. })
             | Self::DataSink(DataSink { stats_state, .. }) => stats_state,
         }
     }
@@ -251,6 +253,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
     }
@@ -300,6 +303,7 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
+            | Self::DistributedLimit(DistributedLimit { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
     }
@@ -544,6 +548,28 @@ impl LocalPhysicalPlan {
         })
         .arced()
     }
+
+    #[cfg(feature = "python")]
+    pub fn distributed_limit(
+        input: LocalPhysicalPlanRef,
+        actor_object: PyObjectWrapper,
+        limit: u64,
+        offset: Option<u64>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::DistributedLimit(DistributedLimit {
+            input,
+            actor_object,
+            limit,
+            offset,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
     pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
@@ -657,7 +683,7 @@ impl LocalPhysicalPlan {
         min_periods: usize,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<BoundAggExpr>,
+        functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -671,7 +697,7 @@ impl LocalPhysicalPlan {
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         })
@@ -920,6 +946,7 @@ impl LocalPhysicalPlan {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -931,6 +958,7 @@ impl LocalPhysicalPlan {
             right_by,
             left_on,
             right_on,
+            strategy,
             schema,
             stats_state,
             context,
@@ -1190,6 +1218,8 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
             Self::GatherWrite(GatherWrite { schema, .. }) => schema,
@@ -1275,6 +1305,8 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
+            #[cfg(feature = "python")]
+            Self::DistributedLimit(DistributedLimit { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
             Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
@@ -1561,7 +1593,7 @@ impl LocalPhysicalPlan {
                     frame,
                     min_periods,
                     schema,
-                    aggregations,
+                    functions,
                     aliases,
                     context,
                     ..
@@ -1575,7 +1607,7 @@ impl LocalPhysicalPlan {
                     *min_periods,
                     schema.clone(),
                     StatsState::NotMaterialized,
-                    aggregations.clone(),
+                    functions.clone(),
                     aliases.clone(),
                     context.clone(),
                 ),
@@ -1713,6 +1745,21 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     passthrough_columns.clone(),
                     required_columns.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                #[cfg(feature = "python")]
+                Self::DistributedLimit(DistributedLimit {
+                    actor_object,
+                    limit,
+                    offset,
+                    context,
+                    ..
+                }) => Self::distributed_limit(
+                    new_child.clone(),
+                    actor_object.clone(),
+                    *limit,
+                    *offset,
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1855,6 +1902,7 @@ impl LocalPhysicalPlan {
                     right_by,
                     left_on,
                     right_on,
+                    strategy,
                     schema,
                     stats_state,
                     context,
@@ -1866,6 +1914,7 @@ impl LocalPhysicalPlan {
                     right_by.clone(),
                     left_on.clone(),
                     right_on.clone(),
+                    *strategy,
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -1994,6 +2043,19 @@ pub struct DistributedActorPoolProject {
     pub schema: SchemaRef,
     pub passthrough_columns: Vec<BoundExpr>,
     pub required_columns: Vec<usize>,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[cfg(feature = "python")]
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct DistributedLimit {
+    pub input: LocalPhysicalPlanRef,
+    pub actor_object: PyObjectWrapper,
+    pub limit: u64,
+    pub offset: Option<u64>,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -2213,6 +2275,7 @@ pub struct AsofJoin {
     pub right_by: Vec<BoundExpr>,
     pub left_on: BoundExpr,
     pub right_on: BoundExpr,
+    pub strategy: AsofJoinStrategy,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -2324,7 +2387,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub min_periods: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<BoundAggExpr>,
+    pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
     pub context: LocalNodeContext,
 }
@@ -2411,9 +2474,17 @@ pub struct ShuffleRead {
     pub context: LocalNodeContext,
 }
 
+/// Fetch one output partition of a shuffle.
+///
+/// The exact refs to fetch (`(input_id << 32) | partition_idx`) are reconstructed
+/// from the map input ids that wrote data on each server. The map is shared (`Arc`)
+/// by all of a shuffle's reduce tasks, so the coordinator holds it once instead of
+/// one ref per (map input, partition).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub refs: Vec<FlightPartitionRef>,
+    pub shuffle_id: u64,
+    pub partition_idx: u32,
+    pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
 }
 
 #[cfg(test)]

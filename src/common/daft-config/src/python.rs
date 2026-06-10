@@ -118,11 +118,11 @@ impl PyDaftExecutionConfig {
         native_parquet_writer=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
-        worker_startup_timeout=None,
         maintain_order=None,
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -156,11 +156,11 @@ impl PyDaftExecutionConfig {
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
-        worker_startup_timeout: Option<usize>,
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -276,10 +276,6 @@ impl PyDaftExecutionConfig {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
         }
 
-        if let Some(worker_startup_timeout) = worker_startup_timeout {
-            config.worker_startup_timeout = worker_startup_timeout;
-        }
-
         if let Some(maintain_order) = maintain_order {
             config.maintain_order = maintain_order;
         }
@@ -302,6 +298,19 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(flight_shuffle_compression) = flight_shuffle_compression {
+            config.flight_shuffle_compression = match flight_shuffle_compression {
+                "" | "none" => None,
+                "lz4" | "zstd" => Some(flight_shuffle_compression.to_string()),
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "flight_shuffle_compression must be 'lz4', 'zstd', or 'none' (got '{}')",
+                        other
+                    )));
+                }
+            };
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -453,11 +462,6 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn worker_startup_timeout(&self) -> PyResult<usize> {
-        Ok(self.config.worker_startup_timeout)
-    }
-
-    #[getter]
     fn maintain_order(&self) -> PyResult<bool> {
         Ok(self.config.maintain_order)
     }
@@ -474,6 +478,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
+    }
+
+    #[getter]
+    fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
+        Ok(self.config.flight_shuffle_compression.as_deref())
     }
 }
 

@@ -23,6 +23,12 @@ pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
     ((input_id as u64) << 32) | partition_idx as u64
 }
 
+/// IPC batch chunk target.
+///
+/// Shared by the oneshot writer and the read-side concat path so write emits at the
+/// size read wants.
+pub const CHUNK_TARGET_BYTES: usize = 4 * 1024 * 1024;
+
 // Result of a writer task
 struct WriterTaskResult {
     bytes_per_file: Vec<usize>,
@@ -151,6 +157,7 @@ impl InProgressShuffleCache {
                 file_paths: result.file_paths,
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
+                byte_ranges: None,
             }),
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
@@ -228,6 +235,9 @@ pub struct PartitionCache {
     pub file_paths: Vec<String>,
     pub num_rows: usize,
     pub size_bytes: usize,
+    /// `(start, end)` per file. Set when one file holds multiple output partitions
+    /// (combined-file shuffle); `None` means read the whole file.
+    pub byte_ranges: Option<Vec<(u64, u64)>>,
 }
 
 #[cfg(test)]

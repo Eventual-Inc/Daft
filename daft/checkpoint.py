@@ -33,7 +33,7 @@ class CheckpointStore:
         io_config: Optional IO configuration for the object store backend.
 
     Example:
-        >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> config = daft.CheckpointConfig(store=store, on="file_id")
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
     """
@@ -93,7 +93,7 @@ class CheckpointConfig:
             to engine-chosen values when omitted.
 
     Example:
-        >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> config = daft.CheckpointConfig(
         ...     store=store,
         ...     on="file_id",
@@ -175,15 +175,15 @@ class IdempotentCommit:
             across distinct commits.
 
     Example:
-        >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> df = daft.read_parquet("s3://input/", checkpoint=daft.CheckpointConfig(store=store, on="file_id"))
         >>> df.write_iceberg(table, checkpoint=daft.IdempotentCommit(store=store, idempotence_key="run-2026-05-04"))
 
     Idempotence-key contract — read carefully:
         - **Same key + different inputs → silent no-op (data loss).** The
-          destination already has a snapshot tagged with the key, so nothing
+          destination already has a commit tagged with the key, so nothing
           new is written.
-        - **Different key + same retry → duplicate snapshot.** The destination
+        - **Different key + same retry → duplicate commit.** The destination
           won't recognize the prior attempt and will commit again. Idempotence
           is broken.
         - **Recommended source: an orchestrator-supplied run ID.** Stable

@@ -91,6 +91,141 @@ def jq(expr: Expression, filter: str) -> Expression:
     return Expression._call_builtin_scalar_fn("jq", expr, filter=filter)
 
 
+def json_array_length(expr: Expression) -> Expression:
+    """Returns the number of elements in the outermost JSON array.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an array. Equivalent to Spark's
+    ``json_array_length``.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: An ``Int32`` expression with the array length.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_array_length
+        >>>
+        >>> df = daft.from_pydict({"col": ["[1, 2, 3]", "[]", '{"a": 1}', None]})
+        >>> df.with_column("len", json_array_length(df["col"])).collect()
+        ╭───────────┬───────╮
+        │ col       ┆ len   │
+        │ ---       ┆ ---   │
+        │ String    ┆ Int32 │
+        ╞═══════════╪═══════╡
+        │ [1, 2, 3] ┆ 3     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []        ┆ 0     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ {"a": 1}  ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ None      ┆ None  │
+        ╰───────────┴───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_array_length", expr)
+
+
+def json_object_keys(expr: Expression) -> Expression:
+    """Returns the top-level keys of a JSON object as a list of strings.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an object. Returns an empty list for empty
+    objects.
+
+    Note:
+        Keys are returned in **sorted alphabetical order**, not source
+        insertion order. This differs from Spark's ``json_object_keys``,
+        which preserves insertion order.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: A ``List[String]`` expression with the object's keys.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_object_keys
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": 2}', "{}", "[1, 2]", None]})
+        >>> df.with_column("keys", json_object_keys(df["col"])).collect()
+        ╭──────────────────┬──────────────╮
+        │ col              ┆ keys         │
+        │ ---              ┆ ---          │
+        │ String           ┆ List[String] │
+        ╞══════════════════╪══════════════╡
+        │ {"a": 1, "b": 2} ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}               ┆ []           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2]           ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None             ┆ None         │
+        ╰──────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_object_keys", expr)
+
+
+def json_tuple(expr: Expression, *fields: str) -> Expression:
+    """Extracts the values for the given top-level keys from a JSON object string.
+
+    Spark's ``json_tuple`` returns one column per requested key (``c0``,
+    ``c1``, ...). To fit Daft's single-output expression model, this returns
+    a ``Struct`` whose field names are the requested keys, each typed as
+    ``String``. Use ``.get("key")`` to pull individual fields out.
+
+    Behavior:
+
+    * Non-string scalar values (numbers, booleans) are stringified without
+      surrounding quotes (e.g. ``"1"``, ``"true"``).
+    * Nested objects/arrays are returned as their JSON-encoded string form.
+    * Missing keys yield ``NULL`` for that field only; the row itself is
+      still valid as long as the input parses as a JSON object.
+    * Malformed JSON, non-object roots, and ``NULL`` inputs yield a
+      row-level ``NULL`` (``is_null()`` returns ``True``); every child
+      field is also ``NULL``.
+    * Field names must be unique; passing a duplicate raises an error.
+
+    Args:
+        expr: A string expression containing JSON.
+        *fields: One or more top-level keys to extract.
+
+    Returns:
+        Expression: A ``Struct`` expression with one ``String`` field per key.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_tuple
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": "x"}', '{"a": 2}', None]})
+        >>> df = df.with_column("t", json_tuple(df["col"], "a", "b"))
+        >>> df.select(df["t"].get("a").alias("a"), df["t"].get("b").alias("b")).collect()
+        ╭────────┬────────╮
+        │ a      ┆ b      │
+        │ ---    ┆ ---    │
+        │ String ┆ String │
+        ╞════════╪════════╡
+        │ 1      ┆ x      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2      ┆ None   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ None   ┆ None   │
+        ╰────────┴────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    if not fields:
+        raise ValueError("json_tuple requires at least one field name")
+    field_lits = [lit(f) for f in fields]
+    return Expression._call_builtin_scalar_fn("json_tuple", expr, *field_lits)
+
+
 def format(f_string: str, *args: Expression | str) -> Expression:
     """Format a string using the given arguments.
 
@@ -1477,3 +1612,161 @@ def hamming_distance_str(left: Expression, right: Expression) -> Expression:
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("hamming_distance_str", left, right)
+
+
+def levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Levenshtein edit distance between two strings.
+
+    The Levenshtein distance is the minimum number of single-character insertions,
+    deletions, or substitutions required to transform one string into the other.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Levenshtein distance for each pair of strings. Returns null when either
+        input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["kitten", "saturday", ""], "y": ["sitting", "sunday", "abc"]})
+        >>> df = df.with_column("distance", levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭──────────┬─────────┬──────────╮
+        │ x        ┆ y       ┆ distance │
+        │ ---      ┆ ---     ┆ ---      │
+        │ String   ┆ String  ┆ Int64    │
+        ╞══════════╪═════════╪══════════╡
+        │ kitten   ┆ sitting ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ saturday ┆ sunday  ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │          ┆ abc     ┆ 3        │
+        ╰──────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("levenshtein_distance", left, right)
+
+
+def jaro_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro similarity between two strings.
+
+    The Jaro similarity is a measure of similarity between two strings, based on
+    matching characters and transpositions. Returns a value between 0.0 (no similarity)
+    and 1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro similarity (0.0 to 1.0) for each pair of strings. Returns null when
+        either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9444444444444445 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8222222222222223 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.7666666666666666 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_similarity", left, right)
+
+
+def jaro_winkler_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro-Winkler similarity between two strings.
+
+    This is the Jaro similarity with a prefix bonus for strings sharing a common
+    prefix (up to 4 characters). Returns a value between 0.0 (no similarity) and
+    1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro-Winkler similarity (0.0 to 1.0) for each pair of strings. Returns
+        null when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_winkler_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_winkler_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9611111111111111 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8400000000000001 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.8133333333333332 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_winkler_similarity", left, right)
+
+
+def damerau_levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Damerau-Levenshtein distance between two strings.
+
+    This extends the Levenshtein distance by also counting transpositions of two
+    adjacent characters as a single edit operation (in addition to insertions,
+    deletions, and substitutions).
+
+    Note:
+        This computes the Optimal String Alignment (OSA) variant, which does not
+        allow a substring to be edited more than once. Results may differ from the
+        true Damerau-Levenshtein distance for inputs with overlapping transpositions
+        (e.g., ``"CA"`` to ``"ABC"`` is 3 under OSA but 2 under true
+        Damerau-Levenshtein). OSA does not satisfy the triangle inequality.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Damerau-Levenshtein (OSA) distance for each pair of strings. Returns null
+        when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import damerau_levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "acb", "abc"]})
+        >>> df = df.with_column("distance", damerau_levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬────────┬──────────╮
+        │ x      ┆ y      ┆ distance │
+        │ ---    ┆ ---    ┆ ---      │
+        │ String ┆ String ┆ Int64    │
+        ╞════════╪════════╪══════════╡
+        │ abc    ┆ bac    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ abc    ┆ acb    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │        ┆ abc    ┆ 3        │
+        ╰────────┴────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("damerau_levenshtein_distance", left, right)

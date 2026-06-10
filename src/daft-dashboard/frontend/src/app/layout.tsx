@@ -25,7 +25,7 @@ export default function RootLayout({
               <div className="flex flex-col h-full">
                 <AppNavbar />
                 <main className="flex-1 overflow-auto">
-                  <div className="p-[20px]">{children}</div>
+                  <div className="pt-[20px]">{children}</div>
                 </main>
               </div>
             </TooltipProvider>
