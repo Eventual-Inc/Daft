@@ -30,8 +30,7 @@ opendal = {workspace = true, features = [
   "services-obs",  # Huawei Cloud Object Storage
   "services-memory",  # In-memory backend (used for testing)
   "services-fs",  # Local filesystem (used for integration testing)
-  "services-github",  # GitHub repository contents
-  "services-huggingface"  # Hugging Face repositories and storage buckets
+  "services-github"  # GitHub repository contents
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
@@ -39,6 +38,7 @@ regex = {version = "1.12.2"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}

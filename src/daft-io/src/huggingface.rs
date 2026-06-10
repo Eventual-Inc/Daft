@@ -25,7 +25,6 @@ use crate::{
     http::HttpSource,
     multipart::MultipartWriter,
     object_io::{FileMetadata, FileType, LSResult},
-    opendal_source::OpenDALSource,
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
@@ -77,6 +76,16 @@ Example:
     PrivateDataset,
     #[snafu(display("Unauthorized access to dataset, please check your credentials."))]
     Unauthorized,
+
+    #[snafu(display(
+        "Writes to Hugging Face Storage Buckets are not supported natively by Daft because \
+         bucket uploads require the Xet protocol. Use the `huggingface_hub` Python library \
+         (e.g. `HfApi.batch_bucket_files`) to write to `{path}`, available via `pip install 'daft[huggingface]'`."
+    ))]
+    HFBucketWritesUnsupported { path: String },
+
+    #[snafu(display("Unable to delete {} from Hugging Face bucket: {}", path, reason))]
+    HFBucketDeleteFailed { path: String, reason: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -86,11 +95,16 @@ enum ItemType {
     Directory,
 }
 
+/// A single entry in a Hugging Face tree API response.
+///
+/// Shared by the dataset tree API (`/api/datasets/{repo}/tree/...`) and the
+/// Storage Bucket tree API (`/api/buckets/{repo}/tree/...`). Bucket directory
+/// entries omit `size`, so it defaults to 0 (mapped to an unknown size below).
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 struct Item {
     r#type: ItemType,
-    oid: String,
+    #[serde(default)]
     size: u64,
     path: String,
 }
@@ -115,25 +129,6 @@ impl HFPathParts {
 
     fn is_dataset(&self) -> bool {
         matches!(self.bucket.as_str(), "dataset" | "datasets")
-    }
-
-    fn opendal_uri(&self) -> String {
-        if self.path.is_empty() {
-            "huggingface://repo/".to_string()
-        } else {
-            format!("huggingface://repo/{}", self.path)
-        }
-    }
-
-    fn from_opendal_uri(&self, uri: &str) -> super::Result<String> {
-        let parsed = url::Url::parse(uri).context(super::InvalidUrlSnafu { path: uri })?;
-        let path = parsed.path().trim_start_matches('/');
-
-        if path.is_empty() {
-            Ok(format!("hf://buckets/{}", self.repository))
-        } else {
-            Ok(format!("hf://buckets/{}/{}", self.repository, path))
-        }
     }
 }
 
@@ -402,13 +397,14 @@ impl HFPath {
 
 pub struct HFSource {
     http_source: HttpSource,
-    hf_config: HuggingFaceConfig,
-    bucket_sources: tokio::sync::RwLock<HashMap<String, Arc<dyn ObjectSource>>>,
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::{UnableToDetermineSize, UnableToOpenFile};
+        use Error::{
+            HFBucketDeleteFailed, HFBucketWritesUnsupported, UnableToDetermineSize,
+            UnableToOpenFile,
+        };
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
                 Some(404 | 410) => Self::NotFound {
@@ -421,6 +417,10 @@ impl From<Error> for super::Error {
                 },
             },
             UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            HFBucketWritesUnsupported { .. } | HFBucketDeleteFailed { .. } => Self::Generic {
+                store: super::SourceType::HFBucket,
+                source: error.into(),
+            },
             _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
@@ -450,64 +450,11 @@ impl HFSource {
         let http_source = HttpSource::get_client(&combined_config).await?;
         let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
         let client = http_source.client;
-        let hf_config = if hf_config.token.is_none() && !hf_config.anonymous {
-            HuggingFaceConfig {
-                token: combined_config.bearer_token.clone(),
-                ..hf_config.clone()
-            }
-        } else {
-            hf_config.clone()
-        };
 
         Ok(Self {
             http_source: HttpSource { client },
-            hf_config,
-            bucket_sources: tokio::sync::RwLock::new(HashMap::new()),
         }
         .into())
-    }
-
-    async fn bucket_source(
-        &self,
-        path_parts: &HFPathParts,
-    ) -> super::Result<Option<Arc<dyn ObjectSource>>> {
-        if !path_parts.is_storage_bucket() {
-            return Ok(None);
-        }
-
-        let source_key = path_parts.repository.clone();
-
-        if let Some(source) = self.bucket_sources.read().await.get(&source_key) {
-            return Ok(Some(source.clone()));
-        }
-
-        let mut write_handle = self.bucket_sources.write().await;
-        if let Some(source) = write_handle.get(&source_key) {
-            return Ok(Some(source.clone()));
-        }
-
-        let config = self
-            .hf_config
-            .to_opendal_config("bucket", &path_parts.repository, None);
-        let source =
-            OpenDALSource::get_client("huggingface", &config).await? as Arc<dyn ObjectSource>;
-        write_handle.insert(source_key, source.clone());
-        Ok(Some(source))
-    }
-
-    async fn bucket_source_and_uri(
-        &self,
-        uri: &str,
-    ) -> super::Result<Option<(Arc<dyn ObjectSource>, String)>> {
-        let HFPath::Hf(path_parts) = uri.parse::<HFPath>()? else {
-            return Ok(None);
-        };
-
-        let Some(source) = self.bucket_source(&path_parts).await? else {
-            return Ok(None);
-        };
-
-        Ok(Some((source, path_parts.opendal_uri())))
     }
 
     #[async_recursion]
@@ -572,10 +519,6 @@ impl HFSource {
 #[async_trait]
 impl ObjectSource for HFSource {
     async fn supports_range(&self, uri: &str) -> super::Result<bool> {
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
-            return source.supports_range(&bucket_uri).await;
-        }
-
         let path = uri.parse::<HFPath>()?;
         let uri = path.get_file_uri(false);
 
@@ -586,11 +529,15 @@ impl ObjectSource for HFSource {
         self: Arc<Self>,
         uri: &str,
     ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
-        let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? else {
-            return Ok(None);
-        };
-
-        source.create_multipart_writer(&bucket_uri).await
+        if let HFPath::Hf(parts) = uri.parse::<HFPath>()?
+            && parts.is_storage_bucket()
+        {
+            return Err(Error::HFBucketWritesUnsupported {
+                path: uri.to_string(),
+            }
+            .into());
+        }
+        Ok(None)
     }
 
     async fn get(
@@ -599,10 +546,6 @@ impl ObjectSource for HFSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
-            return source.get(&bucket_uri, range, io_stats).await;
-        }
-
         let (response, range_applied) = self
             .request(uri, false, range.as_ref(), &self.http_source.client)
             .await?;
@@ -662,21 +605,22 @@ impl ObjectSource for HFSource {
     async fn put(
         &self,
         uri: &str,
-        data: bytes::Bytes,
-        io_stats: Option<IOStatsRef>,
+        _data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
-            return source.put(&bucket_uri, data, io_stats).await;
+        if let HFPath::Hf(parts) = uri.parse::<HFPath>()?
+            && parts.is_storage_bucket()
+        {
+            return Err(Error::HFBucketWritesUnsupported {
+                path: uri.to_string(),
+            }
+            .into());
         }
 
         todo!("PUTs to HTTP URLs are not yet supported! Please file an issue.");
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
-            return source.get_size(&bucket_uri, io_stats).await;
-        }
-
         let path = uri.parse::<HFPath>()?;
         let uri = &path.get_file_uri(false);
 
@@ -725,33 +669,6 @@ impl ObjectSource for HFSource {
         file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
-
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(glob_path).await? {
-            let HFPath::Hf(path_parts) = glob_path.parse::<HFPath>()? else {
-                unreachable!("bucket_source_and_uri only returns Some for Hugging Face paths");
-            };
-
-            return source
-                .glob(
-                    &bucket_uri,
-                    _fanout_limit,
-                    _page_size,
-                    limit,
-                    io_stats,
-                    file_format,
-                )
-                .await
-                .map(|stream| {
-                    stream
-                        .map(move |result| {
-                            result.and_then(|mut file| {
-                                file.filepath = path_parts.from_opendal_uri(&file.filepath)?;
-                                Ok(file)
-                            })
-                        })
-                        .boxed()
-                });
-        }
 
         let path = glob_path.parse::<HFPath>()?;
 
@@ -802,19 +719,6 @@ impl ObjectSource for HFSource {
     ) -> super::Result<LSResult> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
-        }
-
-        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(path).await? {
-            let HFPath::Hf(path_parts) = path.parse::<HFPath>()? else {
-                unreachable!("bucket_source_and_uri only returns Some for Hugging Face paths");
-            };
-            let mut result = source
-                .ls(&bucket_uri, posix, continuation_token, page_size, io_stats)
-                .await?;
-            for file in &mut result.files {
-                file.filepath = path_parts.from_opendal_uri(&file.filepath)?;
-            }
-            return Ok(result);
         }
 
         let hf_path = path.parse::<HFPath>()?;
@@ -892,14 +796,78 @@ impl ObjectSource for HFSource {
     }
 
     async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
-        let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? else {
+        let HFPath::Hf(parts) = uri.parse::<HFPath>()? else {
             return Err(super::Error::NotImplementedMethod {
-                method: "Deletes is not yet supported for non-bucket Hugging Face paths."
-                    .to_string(),
+                method: "Deletes are not supported for non-`hf://` Hugging Face paths.".to_string(),
             });
         };
+        if !parts.is_storage_bucket() {
+            return Err(super::Error::NotImplementedMethod {
+                method: "Deletes are not yet supported for non-bucket Hugging Face paths."
+                    .to_string(),
+            });
+        }
 
-        source.delete(&bucket_uri, io_stats).await
+        // Storage Bucket deletes go through the batch endpoint, which accepts
+        // newline-delimited JSON operations. Unlike adds, deletes do not require
+        // the Xet protocol.
+        let api_uri = format!(
+            "https://huggingface.co/api/buckets/{REPOSITORY}/batch",
+            REPOSITORY = parts.repository,
+        );
+        let operation = serde_json::json!({
+            "type": "deleteFile",
+            "path": parts.path,
+        });
+        let body = format!("{operation}\n");
+
+        let response = self
+            .http_source
+            .client
+            .post(api_uri.clone())
+            .header("Content-Type", "application/x-ndjson")
+            .body(body)
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> {
+                path: api_uri.clone(),
+            })?;
+        let response = response.error_for_status().map_err(|e| {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
+                Error::Unauthorized
+            } else {
+                Error::UnableToOpenFile {
+                    path: uri.to_string(),
+                    source: e,
+                }
+            }
+        })?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
+
+        // The batch endpoint returns 200 even when individual operations fail,
+        // so inspect the per-operation results.
+        #[derive(Deserialize)]
+        struct BatchResponse {
+            succeeded: u64,
+            #[serde(default)]
+            failed: Vec<serde_json::Value>,
+        }
+        let batch_response: BatchResponse =
+            response.json().await.context(UnableToReadBytesSnafu {
+                path: api_uri.clone(),
+            })?;
+        if batch_response.succeeded == 0 || !batch_response.failed.is_empty() {
+            return Err(Error::HFBucketDeleteFailed {
+                path: uri.to_string(),
+                reason: format!("batch operation failed: {:?}", batch_response.failed),
+            }
+            .into());
+        }
+
+        Ok(())
     }
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
@@ -984,12 +952,12 @@ mod tests {
     use bytes::Bytes;
     use common_error::DaftResult;
     use common_io_config::{HTTPConfig, HuggingFaceConfig, ObfuscatedString};
-    use uuid::Uuid;
 
     use crate::{
         huggingface::{HFPath, HFPathParts, HFSource},
         integrations::test_full_get,
         object_io::ObjectSource,
+        range::GetRange,
     };
 
     #[tokio::test]
@@ -1165,14 +1133,9 @@ mod tests {
 
         assert_eq!(parts, expected);
         assert!(parts.is_storage_bucket());
-        assert_eq!(
-            parts.opendal_uri(),
-            "huggingface://repo/path/to/file.parquet"
-        );
-        assert_eq!(
-            parts.from_opendal_uri("huggingface://repo/path/to/file.parquet")?,
-            "hf://buckets/user/bucket/path/to/file.parquet"
-        );
+        // Display round-trips back to the canonical bucket URI (used by `ls` to
+        // rebuild file paths from tree API responses).
+        assert_eq!(parts.to_string(), uri);
 
         Ok(())
     }
@@ -1217,6 +1180,35 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_hf_bucket_writes_unsupported() {
+        let client = HFSource::get_client(&HuggingFaceConfig::default(), &HTTPConfig::default())
+            .await
+            .unwrap();
+
+        let result = client
+            .put(
+                "hf://buckets/owner/bucket/file.parquet",
+                Bytes::from_static(b"data"),
+                None,
+            )
+            .await;
+        let err = result.expect_err("bucket puts should not be supported");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("huggingface_hub"),
+            "expected error message to point at `huggingface_hub`, got: {msg}"
+        );
+
+        let result = client
+            .create_multipart_writer("hf://buckets/owner/bucket/file.parquet")
+            .await;
+        assert!(
+            result.is_err(),
+            "bucket multipart writers should not be supported"
+        );
+    }
+
     fn setup_online_bucket_test_config() -> Option<(HuggingFaceConfig, String)> {
         let token = env::var("HF_TOKEN").ok()?;
         let bucket = env::var("HF_BUCKET").ok()?;
@@ -1229,10 +1221,6 @@ mod tests {
             },
             bucket,
         ))
-    }
-
-    fn generate_test_object_prefix() -> String {
-        format!("daft-io-tests/{}", Uuid::new_v4())
     }
 
     #[tokio::test]
@@ -1254,60 +1242,98 @@ mod tests {
         test_full_get(client, test_file_path, &bytes).await
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_hf_bucket_put_get_roundtrip() -> crate::Result<()> {
-        let (cfg, bucket) = match setup_online_bucket_test_config() {
-            Some(c) => c,
-            None => return Ok(()),
-        };
+    // The live bucket tests below read fixtures that must be seeded ahead of time,
+    // because Daft cannot write to buckets natively (uploads require Xet). Seed with:
+    //
+    // ```python
+    // from huggingface_hub import HfApi
+    // api = HfApi(token=...)
+    // api.batch_bucket_files(
+    //     bucket,
+    //     add=[
+    //         (b"daft rust http bucket test file one", "daft-rest-probe/seed1.bin"),
+    //         (b"delete me", "daft-rest-probe/delete-me.bin"),
+    //     ],
+    // )
+    // ```
 
-        let uri = format!(
-            "hf://buckets/{}/{}/hello.txt",
-            bucket,
-            generate_test_object_prefix()
-        );
+    #[tokio::test]
+    #[ignore = "requires network access, HF_TOKEN/HF_BUCKET env vars, and seeded fixtures"]
+    async fn test_hf_bucket_live_get_ls_and_size() -> crate::Result<()> {
+        let Some((cfg, bucket)) = setup_online_bucket_test_config() else {
+            return Ok(());
+        };
         let client = HFSource::get_client(&cfg, &HTTPConfig::default()).await?;
 
-        let data = Bytes::from_static(b"hello huggingface bucket");
-        client.put(&uri, data.clone(), None).await?;
+        let file_uri = format!("hf://buckets/{bucket}/daft-rest-probe/seed1.bin");
+        let expected = b"daft rust http bucket test file one";
 
-        let bytes = client.get(&uri, None, None).await?.bytes().await?;
-        assert_eq!(bytes, data);
+        // Full read.
+        let bytes = client.get(&file_uri, None, None).await?.bytes().await?;
+        assert_eq!(bytes.as_ref(), expected);
 
-        client.delete(&uri, None).await?;
+        // Range read (what parquet scans rely on).
+        let range = GetRange::Bounded(5..9);
+        let bytes = client
+            .get(&file_uri, Some(range), None)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(bytes.as_ref(), &expected[5..9]);
+
+        // Size via HEAD.
+        let size = client.get_size(&file_uri, None).await?;
+        assert_eq!(size, expected.len());
+
+        // Listing rebuilds canonical hf://buckets/... paths.
+        let dir_uri = format!("hf://buckets/{bucket}/daft-rest-probe/");
+        let listing = client.ls(&dir_uri, true, None, None, None).await?;
+        assert!(
+            listing.files.iter().any(|file| file.filepath == file_uri),
+            "expected {file_uri} in listing: {:?}",
+            listing.files
+        );
+
+        // Glob (the entry point for path-pattern reads like read_parquet).
+        use futures::TryStreamExt;
+        let glob_uri = format!("hf://buckets/{bucket}/daft-rest-probe/**/*.bin");
+        let globbed: Vec<_> = client
+            .glob(&glob_uri, None, None, None, None, None)
+            .await?
+            .try_collect()
+            .await?;
+        assert!(
+            globbed.iter().any(|file| file.filepath == file_uri),
+            "expected {file_uri} in glob results: {globbed:?}"
+        );
+
         Ok(())
     }
 
     #[tokio::test]
-    #[ignore]
-    async fn test_hf_bucket_multipart_and_ls_roundtrip() -> crate::Result<()> {
-        let (cfg, bucket) = match setup_online_bucket_test_config() {
-            Some(c) => c,
-            None => return Ok(()),
+    #[ignore = "requires network access, HF_TOKEN/HF_BUCKET env vars, and a seeded daft-rest-probe/delete-me.bin"]
+    async fn test_hf_bucket_live_delete() -> crate::Result<()> {
+        let Some((cfg, bucket)) = setup_online_bucket_test_config() else {
+            return Ok(());
         };
-
-        let prefix = generate_test_object_prefix();
-        let dir_uri = format!("hf://buckets/{}/{}/", bucket, prefix);
-        let file_uri = format!("{dir_uri}multipart.txt");
         let client = HFSource::get_client(&cfg, &HTTPConfig::default()).await?;
 
-        let mut writer = client
-            .clone()
-            .create_multipart_writer(&file_uri)
-            .await?
-            .expect("bucket multipart writer should be available");
-        writer.put_part(Bytes::from_static(b"multipart ")).await?;
-        writer.put_part(Bytes::from_static(b"roundtrip")).await?;
-        writer.complete().await?;
-
-        let bytes = client.get(&file_uri, None, None).await?.bytes().await?;
-        assert_eq!(bytes, Bytes::from_static(b"multipart roundtrip"));
-
-        let listing = client.ls(&dir_uri, true, None, None, None).await?;
-        assert!(listing.files.iter().any(|file| file.filepath == file_uri));
-
+        let file_uri = format!("hf://buckets/{bucket}/daft-rest-probe/delete-me.bin");
         client.delete(&file_uri, None).await?;
+
+        // The batch endpoint treats deletes as idempotent (like S3 DeleteObject),
+        // so deleting an already-deleted path also succeeds.
+        client.delete(&file_uri, None).await?;
+
+        // The file should no longer appear in listings.
+        let dir_uri = format!("hf://buckets/{bucket}/daft-rest-probe/");
+        let listing = client.ls(&dir_uri, true, None, None, None).await?;
+        assert!(
+            listing.files.iter().all(|file| file.filepath != file_uri),
+            "deleted file still present in listing: {:?}",
+            listing.files
+        );
+
         Ok(())
     }
 }

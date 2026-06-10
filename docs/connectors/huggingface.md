@@ -1,6 +1,6 @@
 # Hugging Face Datasets and Storage Buckets
 
-Daft has native support for reading from and writing to [Hugging Face datasets](https://huggingface.co/datasets) and [Hugging Face Storage Buckets](https://huggingface.co/docs/hub/storage-buckets).
+Daft has native support for reading from and writing to [Hugging Face datasets](https://huggingface.co/datasets), as well as reading from [Hugging Face Storage Buckets](https://huggingface.co/docs/hub/storage-buckets).
 
 To install all dependencies required for Daft's Hugging Face integrations, use the `huggingface` feature:
 ```
@@ -51,9 +51,9 @@ Not only can you read entire datasets, but you can also read individual files fr
     df = daft.read_parquet("hf://datasets/username/dataset_name/**/*.parquet")
     ```
 
-## Reading and Writing Storage Buckets
+## Reading From Storage Buckets
 
-Daft can read from and write to Hugging Face Storage Buckets using the canonical `hf://buckets/<owner>/<bucket>/...` path format.
+Daft can read from [Hugging Face Storage Buckets](https://huggingface.co/docs/hub/storage-buckets) using the canonical `hf://buckets/<owner>/<bucket>/...` path format. Reads, listings, and glob patterns all work natively:
 
 === "🐍 Python"
 
@@ -61,7 +61,9 @@ Daft can read from and write to Hugging Face Storage Buckets using the canonical
     import daft
 
     df = daft.read_parquet("hf://buckets/username/my-bucket/data/input.parquet")
-    df.write_parquet("hf://buckets/username/my-bucket/data/output/")
+
+    # glob patterns work too
+    df = daft.read_parquet("hf://buckets/username/my-bucket/data/**/*.parquet")
     ```
 
 For private buckets, configure a Hugging Face token via [`IOConfig`][daft.io.IOConfig] and [`HuggingFaceConfig`][daft.io.HuggingFaceConfig]:
@@ -78,9 +80,25 @@ For private buckets, configure a Hugging Face token via [`IOConfig`][daft.io.IOC
         "hf://buckets/username/my-private-bucket/data/input.parquet",
         io_config=io_config,
     )
-    df.write_parquet(
-        "hf://buckets/username/my-private-bucket/data/output/",
-        io_config=io_config,
+    ```
+
+### Writing to Storage Buckets
+
+Bucket uploads require the [Xet protocol](https://huggingface.co/blog/xet-on-the-hub), which Daft does not bundle natively. Use the `huggingface_hub` library (included in the `daft[huggingface]` extra) to upload files — it transfers via Xet with content-defined chunking and deduplication:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from huggingface_hub import HfApi
+
+    df: daft.DataFrame = ...
+    df.write_parquet("local_output/")
+
+    api = HfApi(token="your_token")
+    api.batch_bucket_files(
+        "username/my-bucket",
+        add=[("local_output/file.parquet", "data/output/file.parquet")],
     )
     ```
 

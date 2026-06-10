@@ -531,12 +531,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File
-                | Self::S3
-                | Self::HFBucket
-                | Self::Tos
-                | Self::Gravitino
-                | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -764,7 +759,8 @@ mod parse_url_tests {
             path.as_ref(),
             "hf://buckets/user/bucket/path/to/file.parquet"
         );
-        assert!(source_type.supports_native_writer());
+        // Bucket writes require the Xet protocol, which Daft does not bundle natively.
+        assert!(!source_type.supports_native_writer());
     }
 
     #[test]
