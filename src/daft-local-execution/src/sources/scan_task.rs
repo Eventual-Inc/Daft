@@ -15,7 +15,9 @@ use daft_checkpoint::CheckpointStoreRef;
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
+use daft_parquet::read::{
+    ParquetBulkReadOptions, ParquetSchemaInferenceOptions, read_parquet_bulk,
+};
 use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
 use futures::{FutureExt, Stream, StreamExt};
 use tracing::instrument;
@@ -32,6 +34,8 @@ use crate::{
     },
 };
 
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
+
 pub struct ScanTaskSource {
     receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
     source_config: Option<Arc<SourceConfig>>,
@@ -39,6 +43,7 @@ pub struct ScanTaskSource {
     schema: SchemaRef,
     num_parallel_tasks: usize,
     file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 }
 
 impl ScanTaskSource {
@@ -49,6 +54,7 @@ impl ScanTaskSource {
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
         file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
+        skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
         let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
@@ -63,6 +69,7 @@ impl ScanTaskSource {
             schema,
             num_parallel_tasks,
             file_path_checkpoint,
+            skipped_corrupt_files,
         }
     }
 
@@ -76,6 +83,7 @@ impl ScanTaskSource {
         schema: SchemaRef,
         maintain_order: bool,
         file_path_checkpoint: Option<(CheckpointStoreRef, FilePathRegistry)>,
+        skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -139,6 +147,7 @@ impl ScanTaskSource {
                         chunk_size,
                         sender,
                         input_id,
+                        skipped_corrupt_files.clone(),
                     ));
                 }
 
@@ -306,6 +315,7 @@ impl Source for ScanTaskSource {
             self.schema.clone(),
             maintain_order,
             self.file_path_checkpoint,
+            self.skipped_corrupt_files.clone(),
         );
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
@@ -446,24 +456,15 @@ async fn get_delete_map(
                 .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
                 .map(|path| (path, vec![]))
                 .collect::<std::collections::HashMap<_, _>>();
-            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
-            let result = read_parquet_bulk_async(
-                delete_files.into_iter().collect(),
-                columns_to_read,
-                None,
-                None,
-                None,
-                None,
-                io_client,
-                None,
-                get_compute_pool_num_threads(),
-                ParquetSchemaInferenceOptions::new(None),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
+            let opts = ParquetBulkReadOptions {
+                columns: Some(vec!["file_path".to_string(), "pos".to_string()]),
+                schema_infer: ParquetSchemaInferenceOptions::new(None),
+                num_parallel_tasks: get_compute_pool_num_threads(),
+                ..Default::default()
+            };
+            let result =
+                read_parquet_bulk(delete_files.into_iter().collect(), io_client, None, opts)
+                    .await?;
 
             for table_result in result {
                 let table = table_result?;
@@ -549,6 +550,7 @@ enum ScanTaskOutputSender {
     OrderPreserving(Sender<MicroPartition>),
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn forward_scan_task_stream(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
@@ -557,10 +559,18 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: ScanTaskOutputSender,
     input_id: InputId,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
-    let mut stream =
-        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+    let mut stream = stream_scan_task(
+        scan_task,
+        io_stats,
+        delete_map,
+        maintain_order,
+        chunk_size,
+        skipped_corrupt_files,
+    )
+    .await?;
     let mut has_data = false;
     while let Some(result) = stream.next().await {
         has_data = true;
@@ -612,6 +622,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<impl Stream<Item = DaftResult<MicroPartition>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
@@ -667,6 +678,7 @@ async fn stream_scan_task(
         delete_map,
         maintain_order,
         chunk_size,
+        skipped_corrupt_files,
     )
     .await?;
 

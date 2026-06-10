@@ -10,7 +10,7 @@ use common_metrics::{
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
@@ -18,8 +18,8 @@ use opentelemetry::KeyValue;
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        TaskBuilderStream, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -145,13 +145,10 @@ impl UDFNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            translate_clustering_spec(
-                child.config().clustering_spec.clone(),
-                &passthrough_columns
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
-            ),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &passthrough_columns,
+            },
         );
         Self {
             config,

@@ -29,6 +29,7 @@ if "COV_CORE_SOURCE" in os.environ:
 from daft.daft import build_type as _build_type
 from daft.daft import version as _version
 from daft.daft import refresh_logger as _refresh_logger
+from daft.daft import get_loaded_extension_paths
 
 
 def get_version() -> str:
@@ -61,7 +62,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
-from daft.checkpoint import CheckpointConfig, CheckpointStore, KeyFilteringSettings
+from daft.checkpoint import CheckpointConfig, CheckpointStore, IdempotentCommit, KeyFilteringSettings
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -71,6 +72,8 @@ from daft.context import (
     with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
+    set_event_log_config,
+    event_log_ctx,
 )
 from daft.convert import (
     from_arrow,
@@ -132,7 +135,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method, metrics
+from daft.udf import udf, udaf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
@@ -157,7 +160,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile
+from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -168,7 +171,7 @@ from daft import datasets
 from daft import functions
 
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io import read_lance
 
@@ -189,6 +192,7 @@ __all__ = [
     "Expression",
     "File",
     "IOConfig",
+    "IdempotentCommit",
     "Identifier",
     "ImageFile",
     "ImageFormat",
@@ -250,6 +254,7 @@ __all__ = [
     "get_catalog",
     "get_context",
     "get_function",
+    "get_loaded_extension_paths",
     "get_or_create_runner",
     "get_or_infer_runner_type",
     "get_provider",
@@ -266,6 +271,7 @@ __all__ = [
     "load_extension",
     "method",
     "metrics",
+    "open_file",
     "planning_config_ctx",
     "range",
     "read_csv",
@@ -299,6 +305,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "udaf",
     "udf",
     "with_subscriber",
     "write_table",

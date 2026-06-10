@@ -450,6 +450,7 @@ mod tests {
     fn scheduled_event() -> TaskEvent {
         TaskEvent::Scheduled {
             context: TaskContext::default(),
+            worker_id: "worker-1".into(),
         }
     }
 
@@ -542,6 +543,8 @@ mod tests {
                 node_category: NodeCategory::Intermediate,
                 node_phase: None,
                 context: HashMap::new(),
+                is_task_root: false,
+                is_task_leaf: false,
             });
 
             let distributed_ctx = PipelineNodeContext::new(

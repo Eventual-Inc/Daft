@@ -17,8 +17,16 @@ pub struct DaftFile {
 }
 // TODO(universalmind303): convert all the Read and Seek impls to AsyncRead and AsyncSeek.
 // The python wrapper should handle blocking, but the core implementation should be fully async.
+pub const BUFFER_SIZE_FULL: usize = 16 * 1024 * 1024;
+pub const BUFFER_SIZE_METADATA: usize = 64 * 1024;
+pub const BUFFER_SIZE_SNIFF: usize = 4 * 1024;
+
 impl DaftFile {
-    pub async fn load(file_ref: FileReference, download_small_files: bool) -> DaftResult<Self> {
+    pub async fn load(
+        file_ref: FileReference,
+        download_small_files: bool,
+        buffer_size: Option<usize>,
+    ) -> DaftResult<Self> {
         let media_type = file_ref.media_type;
         let io_client = daft_io::get_io_client(true, file_ref.io_config.unwrap_or_default())?;
 
@@ -27,10 +35,10 @@ impl DaftFile {
             .await
             .map_err(DaftError::from)?;
 
-        match (file_ref.offset, file_ref.length) {
-            (Some(offset), Some(length)) => {
+        match (file_ref.position, file_ref.size) {
+            (Some(position), Some(size)) => {
                 let range = Some(GetRange::Bounded(
-                    offset as usize..(offset + length) as usize,
+                    position as usize..(position + size) as usize,
                 ));
                 let result = source
                     .get(&path, range, None)
@@ -44,7 +52,7 @@ impl DaftFile {
             }
             (Some(_), None) | (None, Some(_)) => {
                 return Err(DaftError::ValueError(
-                    "Both offset and length must be specified for byte-range reads".to_string(),
+                    "Both position and size must be specified for byte-range reads".to_string(),
                 ));
             }
             (None, None) => {}
@@ -61,17 +69,16 @@ impl DaftFile {
             .await
             .map_err(|e| DaftError::ComputeError(e.to_string()))?;
 
-        // Default to 16MB buffer
-        const DEFAULT_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+        let buf_size = buffer_size.unwrap_or(BUFFER_SIZE_FULL);
 
         let reader = ObjectSourceReader::new(source, path, None, file_size);
-        if !supports_range || (file_size <= DEFAULT_BUFFER_SIZE && download_small_files) {
+        if !supports_range || (file_size <= buf_size && download_small_files) {
             let buf = reader.read_full_content().await?;
 
             Ok(Self::from_bytes(media_type, buf))
         } else {
             // we wrap it in a BufReader so we are not making so many network requests for each byte read
-            let buffered_reader = BufReader::with_capacity(DEFAULT_BUFFER_SIZE, reader);
+            let buffered_reader = BufReader::with_capacity(buf_size, reader);
 
             Ok(Self {
                 media_type,
@@ -82,9 +89,13 @@ impl DaftFile {
     }
 
     /// Create a new file. unlike the async `new`, this will block the current thread until the file is created.
-    pub fn load_blocking(file_ref: FileReference, download_small_files: bool) -> DaftResult<Self> {
+    pub fn load_blocking(
+        file_ref: FileReference,
+        download_small_files: bool,
+        buffer_size: Option<usize>,
+    ) -> DaftResult<Self> {
         let rt = common_runtime::get_io_runtime(true);
-        rt.block_within_async_context(Self::load(file_ref, download_small_files))
+        rt.block_within_async_context(Self::load(file_ref, download_small_files, buffer_size))
             .flatten()
     }
 
@@ -93,7 +104,7 @@ impl DaftFile {
         path: String,
         io_conf: Option<IOConfig>,
     ) -> DaftResult<Self> {
-        Self::load_blocking(FileReference::new(media_type, path, io_conf), true)
+        Self::load_blocking(FileReference::new(media_type, path, io_conf), true, None)
     }
 
     pub fn from_bytes(media_type: MediaType, bytes: Vec<u8>) -> Self {

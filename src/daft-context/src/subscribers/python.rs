@@ -174,8 +174,10 @@ fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Option<Py<PyAny>>> {
         Event::OperatorStart(event) => build_operator_started(py, &event).map(Some),
         Event::OperatorEnd(event) => build_operator_finished(py, &event).map(Some),
         Event::Stats(event) => build_stats(py, &event).map(Some),
+        Event::TaskStatsUpdate(_event) => Ok(None),
         Event::ProcessStats(event) => build_process_stats(py, &event).map(Some),
         Event::TaskSubmit(_event) => Ok(None),
+        Event::TaskScheduled(_event) => Ok(None),
         Event::TaskStart(_event) => Ok(None),
         Event::TaskEnd(_event) => Ok(None),
     }

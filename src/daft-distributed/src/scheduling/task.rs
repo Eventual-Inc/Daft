@@ -327,7 +327,8 @@ pub(crate) struct SwordfishTaskBuilder {
     context: HashMap<String, String>,
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
-    notify_tokens: Vec<OneshotSender<()>>,
+    notify_tokens: Vec<OneshotSender<TaskID>>,
+    cancel_token: Option<CancellationToken>,
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
     plan_fingerprint: PlanFingerprint,
@@ -352,6 +353,7 @@ impl SwordfishTaskBuilder {
             node_context: None,
             pending_node_ids: vec![node.node_id()],
             notify_tokens: vec![],
+            cancel_token: None,
             plan_fingerprint,
         }
     }
@@ -425,6 +427,7 @@ impl SwordfishTaskBuilder {
             node_context: left.node_context.clone(),
             pending_node_ids,
             notify_tokens: vec![],
+            cancel_token: None,
             plan_fingerprint,
         }
     }
@@ -439,18 +442,6 @@ impl SwordfishTaskBuilder {
     pub fn with_psets(mut self, source_id: SourceId, psets: Vec<PartitionRef>) -> Self {
         self.psets.insert(source_id, psets);
         self
-    }
-
-    /// Returns all scan tasks across all source inputs.
-    pub fn all_scan_tasks(&self) -> Vec<&ScanTaskRef> {
-        self.inputs
-            .values()
-            .filter_map(|input| match input {
-                Input::ScanTasks(tasks) => Some(tasks.iter()),
-                _ => None,
-            })
-            .flatten()
-            .collect()
     }
 
     /// Add scan_tasks with source_id to the builder.
@@ -475,64 +466,17 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Add a notify token to the builder. Returns the builder and the receiver for the token.
-    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+    /// Add a notify token to the builder. The receiver fires when the task
+    /// completes (or is cancelled) with the assigned `TaskID`.
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<TaskID>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
         self.notify_tokens.push(notify_token);
         (self, notify_rx)
     }
 
-    /// Estimate the number of output rows based on scan task metadata.
-    ///
-    /// Used by LimitNode to compute initial task concurrency without waiting for
-    /// the first task to complete. Returns `None` if no scan task inputs exist
-    /// or if row estimation is not possible (e.g. non-Parquet sources without metadata).
-    pub fn estimated_num_rows(&self) -> Option<usize> {
-        let mut total = 0usize;
-        let mut found_any = false;
-        for input in self.inputs.values() {
-            match input {
-                Input::ScanTasks(scan_tasks) => {
-                    for st in scan_tasks {
-                        if let Some(n) = st.num_rows() {
-                            total = total.saturating_add(n);
-                            found_any = true;
-                        } else if let Some(approx) = st.approx_num_rows(Some(self.config.as_ref()))
-                        {
-                            total = total.saturating_add(approx as usize);
-                            found_any = true;
-                        }
-                    }
-                }
-                Input::InMemory(_) => debug_assert!(
-                    false,
-                    "Input::InMemory should never appear in SwordfishTask.inputs; in-memory data lives in psets"
-                ),
-                Input::GlobPaths(_) => {
-                    // num_rows would be the number of files matching the glob patterns,
-                    // but we can't estimate that at planning time
-                }
-                Input::FlightShuffle(shuffle_inputs) => {
-                    for input in shuffle_inputs {
-                        for part in &input.refs {
-                            total = total.saturating_add(part.num_rows);
-                            found_any = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // in-memory sources live in psets instead of inputs
-        for partition_refs in self.psets.values() {
-            for pr in partition_refs {
-                let n = pr.num_rows();
-                total = total.saturating_add(n);
-                found_any = true;
-            }
-        }
-
-        found_any.then_some(total)
+    pub fn with_cancel_token(mut self, cancel_token: CancellationToken) -> Self {
+        self.cancel_token = Some(cancel_token);
+        self
     }
 
     /// Build the SubmittableTask directly, which can be submitted to the scheduler.
@@ -566,9 +510,16 @@ impl SwordfishTaskBuilder {
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());
 
+        // Mark the root of the local plan so the worker's NodeInfo carries
+        // `is_task_root` on the StatSnapshot it ships back. `is_task_leaf` is
+        // already set on every node by `LocalPhysicalPlan::arced`. Together
+        // they let the dashboard's per-task aggregator attribute external
+        // row/byte I/O without double-counting fused chains.
+        let plan = self.plan.mark_task_root();
+
         let task = SwordfishTask {
             task_context,
-            plan: self.plan,
+            plan,
             resource_request,
             config: self.config.clone(),
             inputs: self.inputs,
@@ -577,7 +528,7 @@ impl SwordfishTaskBuilder {
             context,
         };
 
-        let cancel_token = CancellationToken::new();
+        let cancel_token = self.cancel_token.unwrap_or_default();
         SubmittableTask::new(task, cancel_token, self.notify_tokens)
     }
 }
@@ -878,134 +829,6 @@ pub(super) mod tests {
         }
     }
 
-    /// Helper to create a ScanTask with optional exact row count metadata.
-    fn make_scan_task_with_metadata(num_rows: Option<usize>) -> ScanTaskRef {
-        use daft_scan::{
-            FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
-            SourceConfig, storage_config::StorageConfig,
-        };
-        use daft_schema::schema::Schema;
-
-        let metadata = num_rows.map(|n| daft_stats::TableMetadata { length: n });
-        let source = ScanSource {
-            size_bytes: None,
-            metadata,
-            statistics: None,
-            partition_spec: None,
-            kind: ScanSourceKind::File {
-                path: "test.parquet".to_string(),
-                chunk_spec: None,
-                iceberg_delete_files: None,
-                parquet_metadata: None,
-                file_etag: None,
-                file_mtime: None,
-            },
-        };
-        Arc::new(ScanTask::new(
-            vec![source],
-            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
-            ))),
-            Arc::new(Schema::empty()),
-            Arc::new(StorageConfig::default()),
-            Pushdowns::default(),
-            None,
-        ))
-    }
-
-    /// Helper to create a ScanTask with only file size (no exact metadata).
-    fn make_scan_task_with_size(size_bytes: u64) -> ScanTaskRef {
-        use daft_scan::{
-            FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanSourceKind, ScanTask,
-            SourceConfig, storage_config::StorageConfig,
-        };
-        use daft_schema::{dtype::DataType, field::Field, schema::Schema};
-
-        let source = ScanSource {
-            size_bytes: Some(size_bytes),
-            metadata: None,
-            statistics: None,
-            partition_spec: None,
-            kind: ScanSourceKind::File {
-                path: "test.parquet".to_string(),
-                chunk_spec: None,
-                iceberg_delete_files: None,
-                parquet_metadata: None,
-                file_etag: None,
-                file_mtime: None,
-            },
-        };
-        // Need a non-empty schema so estimate_row_size_bytes > 0 for approx_num_rows
-        let schema = Arc::new(Schema::new(vec![Field::new("col", DataType::Int64)]));
-        Arc::new(ScanTask::new(
-            vec![source],
-            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
-            ))),
-            schema,
-            Arc::new(StorageConfig::default()),
-            Pushdowns::default(),
-            None,
-        ))
-    }
-
-    #[test]
-    fn test_estimated_num_rows_no_inputs() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1);
-        assert_eq!(builder.estimated_num_rows(), None);
-    }
-
-    #[test]
-    fn test_estimated_num_rows_with_exact_metadata() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![make_scan_task_with_metadata(Some(5000))]);
-        assert_eq!(builder.estimated_num_rows(), Some(5000));
-    }
-
-    #[test]
-    fn test_estimated_num_rows_multiple_scan_tasks() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1).with_scan_tasks(
-            1,
-            vec![
-                make_scan_task_with_metadata(Some(3000)),
-                make_scan_task_with_metadata(Some(7000)),
-            ],
-        );
-        assert_eq!(builder.estimated_num_rows(), Some(10000));
-    }
-
-    #[test]
-    fn test_estimated_num_rows_no_metadata() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        // Scan task with no metadata and no size_bytes => can't estimate
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![make_scan_task_with_metadata(None)]);
-        assert_eq!(builder.estimated_num_rows(), None);
-    }
-
-    #[test]
-    fn test_estimated_num_rows_approx_from_size() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![make_scan_task_with_size(1_000_000)]);
-        let est = builder.estimated_num_rows();
-        assert!(est.is_some());
-        assert!(est.unwrap() > 0);
-    }
-
     #[test]
     fn test_swordfish_task_priority_ordering() {
         // Test cases for priority ordering:
@@ -1147,57 +970,5 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
-    }
-
-    #[test]
-    fn test_all_scan_tasks_empty() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1);
-        assert!(builder.all_scan_tasks().is_empty());
-    }
-
-    #[test]
-    fn test_all_scan_tasks_single_source() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let st1 = make_scan_task_with_metadata(Some(10));
-        let st2 = make_scan_task_with_metadata(Some(20));
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![st1.clone(), st2.clone()]);
-        let tasks = builder.all_scan_tasks();
-        assert_eq!(tasks.len(), 2);
-        assert!(Arc::ptr_eq(tasks[0], &st1) || Arc::ptr_eq(tasks[0], &st2));
-    }
-
-    #[test]
-    fn test_all_scan_tasks_multiple_sources() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let st_a = make_scan_task_with_metadata(Some(10));
-        let st_b = make_scan_task_with_metadata(Some(20));
-        let st_c = make_scan_task_with_metadata(Some(30));
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![st_a])
-            .with_scan_tasks(2, vec![st_b, st_c]);
-        let tasks = builder.all_scan_tasks();
-        assert_eq!(tasks.len(), 3);
-    }
-
-    #[test]
-    fn test_all_scan_tasks_ignores_non_scan_inputs() {
-        use crate::pipeline_node::tests::MockNode;
-
-        let node = MockNode::new(1);
-        let st = make_scan_task_with_metadata(Some(10));
-        let builder = crate::pipeline_node::tests::make_builder(&node, 1)
-            .with_scan_tasks(1, vec![st])
-            .with_glob_paths(2, vec!["s3://bucket/*.parquet".to_string()])
-            .with_psets(3, vec![create_mock_partition_ref(100, 100)]);
-        let tasks = builder.all_scan_tasks();
-        assert_eq!(tasks.len(), 1);
     }
 }

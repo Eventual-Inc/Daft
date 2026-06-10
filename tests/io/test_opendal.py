@@ -192,7 +192,11 @@ def test_opendal_fs_roundtrip_parquet_partitioned(tmp_path):
     )
     df.write_parquet("fs://localhost/out", partition_cols=["group"], io_config=io_config)
 
-    result = daft.read_parquet("fs://localhost/out/**/*.parquet", io_config=io_config).sort("val").collect()
+    result = (
+        daft.read_parquet("fs://localhost/out/**/*.parquet", io_config=io_config, hive_partitioning=True)
+        .sort("val")
+        .collect()
+    )
     assert result.to_pydict() == {"val": [1, 2, 3, 4], "group": ["a", "a", "b", "b"]}
 
 

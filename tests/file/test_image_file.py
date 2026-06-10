@@ -182,6 +182,14 @@ def test_image_file_from_unknown_file(sample_png: Path):
     assert field.dtype == dt.file(MediaType.image())
 
 
+def test_cast_unknown_file_to_image_file(sample_png: Path):
+    df = daft.from_pydict({"paths": [str(sample_png)]})
+    df = df.select(file(df["paths"]).cast(dt.file(MediaType.image())).alias("image"))
+
+    assert df.schema() == daft.Schema.from_pydict({"image": dt.file(MediaType.image())})
+    df.collect()
+
+
 # ── dependency guard ──
 
 
@@ -196,3 +204,19 @@ def test_file_as_image_without_pillow(sample_png: Path):
     with patch("daft.dependencies.pil_image.module_available", return_value=False):
         with pytest.raises(ImportError, match="pillow"):
             f.as_image()
+
+
+# ── buffer_size tests ──
+
+
+def test_imagefile_metadata_with_small_buffer(sample_png: Path):
+    f = daft.ImageFile(str(sample_png))
+    meta = f.metadata()
+    assert meta["width"] == 80
+    assert meta["height"] == 50
+
+
+def test_imagefile_decode_with_default_buffer(sample_png: Path):
+    f = daft.ImageFile(str(sample_png))
+    img = f.decode()
+    assert img.size == (80, 50)

@@ -17,11 +17,17 @@ pub enum Event {
     ExecStart(ExecStartEvent),
     ExecEnd(ExecEndEvent),
     TaskSubmit(TaskSubmitEvent),
+    /// Driver-side: scheduler has decided which worker to dispatch the task
+    /// to. Fires just before the handoff to the worker. The dashboard
+    /// renders this as "running", but it precedes true execution start;
+    /// see `TaskStart` (emitted by the worker) for the more precise signal.
+    TaskScheduled(TaskScheduledEvent),
     TaskStart(TaskStartEvent),
     TaskEnd(TaskEndEvent),
     OperatorStart(OperatorStartEvent),
     OperatorEnd(OperatorEndEvent),
     Stats(StatsEvent),
+    TaskStatsUpdate(TaskStatsUpdateEvent),
     ProcessStats(ProcessStatsEvent),
 }
 
@@ -88,6 +94,40 @@ pub struct OperatorEndEvent {
 pub struct StatsEvent {
     pub header: EventHeader,
     pub stats: Arc<Vec<(NodeID, Stats)>>,
+}
+
+/// Mid-execution per-task progress emitted by flotilla workers.
+///
+/// Batches all active tasks' scalar totals into a single event per worker per
+/// tick so the dashboard can show in-flight progress separately from the
+/// coordinator-aggregated operator stats. Per-operator breakdown is omitted
+/// here on purpose — the local NodeID scope doesn't cleanly map to either the
+/// distributed plan node id or a stable within-task position, and the only
+/// current consumer is task-level scalars (cpu_us, rows, bytes). Bigger
+/// breakdowns can be added as a separate event variant if a "drill into
+/// running task" view ever needs them.
+#[derive(Debug, Clone)]
+pub struct TaskStatsUpdateEvent {
+    pub header: EventHeader,
+    pub tasks: Arc<Vec<TaskStatsSnapshot>>,
+}
+
+/// Per-task scalar totals reported mid-flight.
+///
+/// `cpu_us` is summed `DURATION_KEY` across the task's local pipeline
+/// operators (busy time, not wall-clock since submit). The rows/bytes I/O
+/// fields are filtered by `is_task_root`/`is_task_leaf` on each snapshot's
+/// `NodeInfo` to avoid double-counting fused chains: only root snapshots
+/// contribute external `rows.out`/`bytes.out`, only leaf snapshots contribute
+/// external `rows.in`/`bytes.in`. See `daft_dashboard::engine::TaskTotals`.
+#[derive(Debug, Clone, Default)]
+pub struct TaskStatsSnapshot {
+    pub task_id: u32,
+    pub cpu_us: u64,
+    pub rows_in: u64,
+    pub rows_out: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +198,14 @@ pub struct TaskSubmitEvent {
     pub header: EventHeader,
     pub task: Arc<TaskInfo>,
     pub sources: Arc<Vec<TaskSource>>,
+}
+
+/// Driver-side "task is on its way to a worker". See `Event::TaskScheduled`.
+#[derive(Debug, Clone)]
+pub struct TaskScheduledEvent {
+    pub header: EventHeader,
+    pub task: Arc<TaskInfo>,
+    pub worker_id: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]

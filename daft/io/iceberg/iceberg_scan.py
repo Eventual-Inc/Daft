@@ -4,7 +4,6 @@ import logging
 import warnings
 from typing import TYPE_CHECKING
 
-from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.schema import visit
 
 import daft
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+    from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import Table
     from pyiceberg.typedef import Record
 
@@ -87,6 +87,7 @@ class IcebergScanOperator(ScanOperator):
         iceberg_table: Table,
         snapshot_id: int | None,
         storage_config: StorageConfig,
+        ignore_corrupt_files: bool = False,
     ) -> None:
         super().__init__()
         iceberg_schema = (
@@ -96,6 +97,7 @@ class IcebergScanOperator(ScanOperator):
         self._iceberg_schema = iceberg_schema
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
+        self._ignore_corrupt_files = ignore_corrupt_files
         self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         self._schema = convert_iceberg_schema(iceberg_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
@@ -200,7 +202,10 @@ class IcebergScanOperator(ScanOperator):
             file_format = file.file_format
             if file_format == "PARQUET":
                 file_format_config = FileFormatConfig.from_parquet_config(
-                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
+                    ParquetSourceConfig(
+                        field_id_mapping=self._field_id_mapping,
+                        ignore_corrupt_files=self._ignore_corrupt_files,
+                    )
                 )
             else:
                 # TODO: Support ORC and AVRO when we can read it

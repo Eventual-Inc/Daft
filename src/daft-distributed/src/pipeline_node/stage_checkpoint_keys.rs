@@ -1,23 +1,24 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::{Arc, atomic::Ordering};
 
-use common_checkpoint_config::{CheckpointConfig, CheckpointKeyMode};
+use common_checkpoint_config::CheckpointConfig;
 use common_metrics::{
-    Meter,
-    ops::{NodeCategory, NodeType},
+    CHECKPOINT_KEYS_STAGED_KEY, Counter, Meter, StatSnapshot, UNIT_KEYS,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StageCheckpointKeysSnapshot,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
-use futures::StreamExt;
+use opentelemetry::KeyValue;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
-    plan::{PlanConfig, PlanExecutionContext},
-    statistics::{
-        RuntimeStats,
-        stats::{BaseCounters, RuntimeStatsRef},
+    pipeline_node::{
+        ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        metrics::key_values_from_context,
     },
+    plan::{PlanConfig, PlanExecutionContext},
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
 
 pub(crate) struct StageCheckpointKeysNode {
@@ -48,7 +49,7 @@ impl StageCheckpointKeysNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,
@@ -60,33 +61,68 @@ impl StageCheckpointKeysNode {
 }
 
 struct StageCheckpointKeysStats {
-    base: BaseCounters,
+    duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
+    keys_staged: Counter,
+    num_tasks: Counter,
+    node_kv: Vec<KeyValue>,
 }
 
 impl StageCheckpointKeysStats {
     fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            base: BaseCounters::new(meter, context),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
+            keys_staged: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINT_KEYS_STAGED_KEY,
+                None,
+                Some(UNIT_KEYS.into()),
+            ),
+            num_tasks: meter.num_tasks_metric(),
+            node_kv,
         }
     }
 }
 
 impl RuntimeStats for StageCheckpointKeysStats {
-    fn handle_worker_node_stats(
-        &self,
-        _node_info: &common_metrics::ops::NodeInfo,
-        snapshot: &common_metrics::StatSnapshot,
-    ) {
-        use common_metrics::snapshot::StatSnapshotImpl as _;
-        self.base.add_duration_us(snapshot.duration_us());
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        let StatSnapshot::StageCheckpointKeys(snapshot) = snapshot else {
+            return;
+        };
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.rows_out
+            .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
+        self.bytes_out
+            .add(snapshot.bytes_out, self.node_kv.as_slice());
+        self.keys_staged
+            .add(snapshot.keys_staged, self.node_kv.as_slice());
     }
 
-    fn export_snapshot(&self) -> common_metrics::StatSnapshot {
-        self.base.export_default_snapshot()
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::StageCheckpointKeys(StageCheckpointKeysSnapshot {
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+            keys_staged: self.keys_staged.load(Ordering::Relaxed),
+            bytes_in: self.bytes_in.load(Ordering::Relaxed),
+            bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
+        })
     }
 
     fn increment_num_tasks(&self) {
-        self.base.increment_num_tasks();
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -105,8 +141,8 @@ impl PipelineNodeImpl for StageCheckpointKeysNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![format!(
-            "StageCheckpointKeys: {:?}",
-            self.checkpoint_config.key_mode
+            "StageCheckpointKeys: key_column={}",
+            self.checkpoint_config.key_column
         )]
     }
 
@@ -118,82 +154,17 @@ impl PipelineNodeImpl for StageCheckpointKeysNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        let input_stream = self.child.clone().produce_tasks(plan_context);
+        let input_node = self.child.clone().produce_tasks(plan_context);
+
         let checkpoint_config = self.checkpoint_config.clone();
         let node_id = self.node_id();
-
-        match &self.checkpoint_config.key_mode {
-            CheckpointKeyMode::RowLevel { .. } => {
-                input_stream.pipeline_instruction(self, move |input| {
-                    LocalPhysicalPlan::stage_checkpoint_keys(
-                        input,
-                        checkpoint_config.clone(),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(node_id as usize)),
-                    )
-                })
-            }
-            CheckpointKeyMode::FilePath => {
-                let store_config = checkpoint_config.store.clone();
-                let slf = self.clone();
-
-                let outer = futures::stream::once(async move {
-                    let store = daft_checkpoint::build_store(&store_config);
-                    let ckpt_set = {
-                        use futures::TryStreamExt;
-                        let mut set = HashSet::new();
-                        match store.get_checkpointed_keys().await {
-                            Ok(mut stream) => {
-                                while let Some(series) = stream.try_next().await.unwrap_or_else(|e| {
-                                    tracing::warn!("Failed to read checkpointed keys stream: {e}; treating remaining keys as empty");
-                                    None
-                                }) {
-                                    if let Ok(utf8) = series.utf8() {
-                                        for val in utf8.into_iter().flatten() {
-                                            set.insert(val.to_string());
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to load checkpointed keys: {e}; all tasks will be dispatched");
-                            }
-                        }
-                        set
-                    };
-
-                    input_stream.filter_map(move |builder| {
-                        let all_done = {
-                            let scan_tasks = builder.all_scan_tasks();
-                            !scan_tasks.is_empty()
-                                && scan_tasks.iter().all(|st| {
-                                    st.sources.iter().all(|s| {
-                                        let keys = s.source_atom_keys();
-                                        !keys.is_empty()
-                                            && keys.iter().all(|k| ckpt_set.contains(k))
-                                    })
-                                })
-                        };
-                        if all_done {
-                            futures::future::ready(None)
-                        } else {
-                            let cfg = checkpoint_config.clone();
-                            let wrapped = builder.map_plan(slf.as_ref(), move |input| {
-                                LocalPhysicalPlan::stage_checkpoint_keys(
-                                    input,
-                                    cfg,
-                                    StatsState::NotMaterialized,
-                                    LocalNodeContext::new(Some(node_id as usize)),
-                                )
-                            });
-                            futures::future::ready(Some(wrapped))
-                        }
-                    })
-                })
-                .flatten();
-
-                TaskBuilderStream::new(outer.boxed())
-            }
-        }
+        input_node.pipeline_instruction(self, move |input| {
+            LocalPhysicalPlan::stage_checkpoint_keys(
+                input,
+                checkpoint_config.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        })
     }
 }

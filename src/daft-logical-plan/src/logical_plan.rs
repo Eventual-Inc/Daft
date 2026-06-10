@@ -838,9 +838,13 @@ impl LogicalPlan {
                     right_by,
                     left_on,
                     right_on,
+                    strategy,
+                    assume_sorted_and_aligned,
                     ..
                 }) => {
-                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_right_cols_to_drop};
+                    use daft_dsl::{Column, Expr, ResolvedColumn};
+
+                    use crate::ops::get_right_cols_to_drop;
 
                     let right_cols_to_drop =
                         get_right_cols_to_drop(right_by, left_on, right_on, |e| {
@@ -861,6 +865,8 @@ impl LogicalPlan {
                             left_on.clone(),
                             right_on.clone(),
                             right_cols_to_drop,
+                            *strategy,
+                            *assume_sorted_and_aligned,
                         )
                         .unwrap(),
                     )

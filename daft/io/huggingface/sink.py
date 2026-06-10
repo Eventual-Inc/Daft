@@ -17,7 +17,7 @@ from daft.utils import get_arrow_version
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from huggingface_hub import CommitOperationAdd, HfApi
+    from huggingface_hub import CommitOperation, CommitOperationAdd, HfApi
 
     from daft.daft import HuggingFaceConfig
 
@@ -167,7 +167,7 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
                     yield flush(writer)
 
     def finalize(self, write_results: list[WriteResult[CommitOperationAddWrapper]]) -> MicroPartition:
-        from huggingface_hub import CommitOperation, CommitOperationAdd, CommitOperationCopy, CommitOperationDelete
+        from huggingface_hub import CommitOperationAdd, CommitOperationCopy, CommitOperationDelete
         from huggingface_hub.hf_api import RepoFile, RepoFolder
 
         additions = [res.result.inner for res in write_results]

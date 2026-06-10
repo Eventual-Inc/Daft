@@ -3,7 +3,15 @@ from __future__ import annotations
 import gzip
 import os
 
+import pytest
+
 import daft
+from tests.conftest import get_tests_daft_runner_name
+
+pytestmark = pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Flotilla coalesces small worker outputs into a single 64 MiB MicroPartition, which masks the chunk-size→partition-layout signal these tests assert on.",
+)
 
 
 def _write_fixed_width_jsonl(path: str, *, rows: int, line_bytes: int, id_width: int) -> None:

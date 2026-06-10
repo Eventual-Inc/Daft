@@ -3,6 +3,7 @@ pub mod bin;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
+pub mod conv;
 pub mod e;
 pub mod exp;
 pub mod factorial;
@@ -24,6 +25,7 @@ use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
 use common_error::{DaftError, DaftResult};
+use conv::Conv;
 use daft_core::prelude::{Field, Schema};
 use daft_dsl::{
     Expr,
@@ -69,6 +71,7 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);
         parent.add_fn(Clip);
+        parent.add_fn(Conv);
         parent.add_fn(EulersNumber);
         parent.add_fn(Exp);
         parent.add_fn(Expm1);

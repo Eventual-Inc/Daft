@@ -2,7 +2,7 @@ use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_logical_plan::ops::AsofJoin;
+use daft_logical_plan::{AsofJoinStrategy, ops::AsofJoin};
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
@@ -19,6 +19,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         right_by: Vec<BoundExpr>,
         left_on: BoundExpr,
         right_on: BoundExpr,
+        strategy: AsofJoinStrategy,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_left_partitions = left.config().clustering_spec.num_partitions();
@@ -35,6 +36,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_by,
                 left_on,
                 right_on,
+                strategy,
                 num_partitions,
                 left,
                 right,
@@ -50,28 +52,46 @@ impl LogicalPlanToPipelineNodeTranslator {
         left_node: DistributedPipelineNode,
         right_node: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
-        // Normalize the by
         let (left_by, right_by) = daft_dsl::join::normalize_join_keys(
             asof_join.left_by.clone(),
             asof_join.right_by.clone(),
             left_node.config().schema.clone(),
             right_node.config().schema.clone(),
         )?;
+        let (left_on_exprs, right_on_exprs) = daft_dsl::join::normalize_join_keys(
+            vec![asof_join.left_on.clone()],
+            vec![asof_join.right_on.clone()],
+            left_node.config().schema.clone(),
+            right_node.config().schema.clone(),
+        )?;
 
-        // Bind keys to schemas
         let left_by = BoundExpr::bind_all(&left_by, &left_node.config().schema)?;
         let right_by = BoundExpr::bind_all(&right_by, &right_node.config().schema)?;
-        let left_on = BoundExpr::try_new(asof_join.left_on.clone(), &left_node.config().schema)?;
-        let right_on = BoundExpr::try_new(asof_join.right_on.clone(), &right_node.config().schema)?;
+        let left_on = BoundExpr::try_new(
+            left_on_exprs.into_iter().next().unwrap(),
+            &left_node.config().schema,
+        )?;
+        let right_on = BoundExpr::try_new(
+            right_on_exprs.into_iter().next().unwrap(),
+            &right_node.config().schema,
+        )?;
 
-        self.gen_asof_join_nodes(
-            left_node,
-            right_node,
-            left_by,
-            right_by,
-            left_on,
-            right_on,
-            asof_join.output_schema.clone(),
-        )
+        if asof_join.assume_sorted_and_aligned {
+            Err(common_error::DaftError::NotImplemented(
+                "_assume_sorted_and_aligned=True: AsofJoinAlignedNode is not yet implemented"
+                    .to_string(),
+            ))
+        } else {
+            self.gen_asof_join_nodes(
+                left_node,
+                right_node,
+                left_by,
+                right_by,
+                left_on,
+                right_on,
+                asof_join.strategy,
+                asof_join.output_schema.clone(),
+            )
+        }
     }
 }

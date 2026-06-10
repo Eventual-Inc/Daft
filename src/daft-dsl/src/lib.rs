@@ -5,6 +5,7 @@ pub mod join;
 pub mod optimization;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod python_udaf;
 pub mod python_udf;
 pub use common_metrics::operator_metrics;
 
@@ -18,9 +19,9 @@ pub use common_treenode;
 pub use expr::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, PlanRef, ResolvedColumn, SketchType,
     Subquery, SubqueryPlan, UnresolvedColumn, WindowExpr, binary_op, bound_col,
-    deduplicate_expr_names, estimated_selectivity, exprs_to_schema, has_agg, is_actor_pool_udf,
-    is_partition_compatible, is_udf, left_col, lit, null_lit, resolved_col, right_col,
-    unresolved_col,
+    clustering_is_covered_by, deduplicate_expr_names, estimated_selectivity, exprs_to_schema,
+    has_agg, is_actor_pool_udf, is_exact_partition_match, is_udf, left_col, lit, null_lit,
+    resolved_col, right_col, unresolved_col,
     window::{WindowBoundary, WindowFrame, WindowSpec, window_to_agg_exprs},
 };
 #[cfg(feature = "python")]
@@ -51,6 +52,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::row_wise_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::batch_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::udaf_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;

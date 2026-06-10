@@ -76,14 +76,17 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     df = daft.read_table(f"{catalog_name}.default.{table}")
     df = df.where(predicate(df["dt"]))
     if limit:
-        df = df.limit(limit)
+        # Sort before limit so the truncated set is deterministic across
+        # PyIceberg's manifest iteration order and Daft's distributed
+        # scan-task execution order. See `_on_number` below for context.
+        df = df.sort("dt").limit(limit)
     df.collect()
 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["dt"])]
     if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
+        iceberg_pandas = iceberg_pandas.sort_values("dt").reset_index(drop=True)[:limit]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["dt"])
 
 
@@ -117,14 +120,15 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
     df = daft.read_table(f"{catalog_name}.default.{table}")
     df = df.where(predicate(df["ts"]))
     if limit:
-        df = df.limit(limit)
+        # Sort before limit; see `_on_number` below for context.
+        df = df.sort("ts").limit(limit)
     df.collect()
 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["ts"])]
     if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
+        iceberg_pandas = iceberg_pandas.sort_values("ts").reset_index(drop=True)[:limit]
 
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
 
@@ -159,13 +163,14 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     df = daft.read_table(f"{catalog_name}.default.{table}")
     df = df.where(predicate(df["letter"]))
     if limit:
-        df = df.limit(limit)
+        # Sort before limit; see `_on_number` below for context.
+        df = df.sort("letter").limit(limit)
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["letter"])]
     if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
+        iceberg_pandas = iceberg_pandas.sort_values("letter").reset_index(drop=True)[:limit]
 
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["letter"])
 

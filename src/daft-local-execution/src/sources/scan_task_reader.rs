@@ -5,7 +5,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_parquet::read::{ParquetReadOptions, ParquetSchemaInferenceOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
     ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
@@ -14,6 +14,8 @@ use daft_scan::{
 use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
+
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
 
 /// Dispatches a ScanTask to the appropriate reader based on its SourceConfig,
 /// returning a stream of RecordBatches.
@@ -29,6 +31,7 @@ pub(crate) async fn read_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     match scan_task.source_config.as_ref() {
         SourceConfig::File(ffc) => match ffc {
@@ -43,6 +46,7 @@ pub(crate) async fn read_scan_task(
                     delete_map,
                     maintain_order,
                     chunk_size,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -55,6 +59,7 @@ pub(crate) async fn read_scan_task(
                     io_client,
                     io_stats,
                     chunk_size,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -91,56 +96,78 @@ async fn read_parquet(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-    maintain_order: bool,
+    // Unused: the arrow-rs reader is always file-ordered within a single file
+    // (see `build_rg_stream` in daft-parquet's reader). `maintain_order=false`
+    // at the scan layer reorders only BETWEEN scan tasks, which is handled by
+    // the caller, not here.
+    _maintain_order: bool,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
     {
-        daft_parquet::read::stream_parquet_count_pushdown(
+        return count_pushdown_stream(
             url,
             io_client,
-            Some(io_stats),
+            io_stats,
             cfg.field_id_mapping.clone(),
             aggregation,
         )
-        .await
-    } else {
-        let parquet_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-        let inference_options =
-            ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit));
+        .await;
+    }
 
-        let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
-        let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-            Some(row_groups.clone())
-        } else {
-            None
-        };
-        let metadata = scan_task
+    let row_groups = match source.get_chunk_spec() {
+        Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
+        _ => None,
+    };
+    let opts = ParquetReadOptions {
+        columns: file_column_names,
+        num_rows: scan_task.pushdowns.limit,
+        row_groups,
+        predicate: scan_task.pushdowns.filters.clone(),
+        schema_infer: ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit)),
+        field_id_mapping: cfg.field_id_mapping.clone(),
+        delete_rows: delete_map.as_ref().and_then(|m| m.get(url).cloned()),
+        batch_size: cfg.chunk_size.or(Some(chunk_size)),
+        metadata: scan_task
             .sources
             .first()
-            .and_then(|s| s.get_parquet_metadata().cloned());
-        daft_parquet::read::stream_parquet(
-            url,
-            file_column_names,
-            scan_task.pushdowns.limit,
-            row_groups,
-            scan_task.pushdowns.filters.clone(),
-            io_client,
-            Some(io_stats),
-            &inference_options,
-            cfg.field_id_mapping.clone(),
-            metadata,
-            maintain_order,
-            delete_rows,
-            parquet_chunk_size,
-        )
-        .await
-    }
+            .and_then(|s| s.get_parquet_metadata().cloned()),
+        ignore_corrupt_files: cfg.ignore_corrupt_files,
+        skipped_corrupt_files: skipped_corrupt_files.clone(),
+        ..Default::default()
+    };
+    // Box::pin: setup future is large (~20KB) due to many tuning args.
+    Box::pin(daft_parquet::read::read_parquet(
+        url,
+        io_client,
+        Some(io_stats),
+        opts,
+    ))
+    .await
 }
 
+async fn count_pushdown_stream(
+    url: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+    field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
+    aggregation: &daft_dsl::ExprRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    daft_parquet::read::stream_parquet_count_pushdown(
+        url,
+        io_client,
+        Some(io_stats),
+        field_id_mapping,
+        aggregation,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn read_csv(
     scan_task: &ScanTask,
     cfg: &CsvSourceConfig,
@@ -149,6 +176,7 @@ async fn read_csv(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     chunk_size: usize,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let schema_of_file = scan_task.schema.clone();
     let col_names = if !cfg.has_headers {
@@ -186,6 +214,8 @@ async fn read_csv(
         io_client,
         Some(io_stats),
         None,
+        cfg.ignore_corrupt_files,
+        skipped_corrupt_files,
     )
     .await
 }

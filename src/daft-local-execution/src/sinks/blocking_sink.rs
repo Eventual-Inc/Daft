@@ -8,7 +8,7 @@ use common_checkpoint_config::{CheckpointIdMap, FilePathRegistry};
 use common_display::tree::TreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    Meter, QueryID,
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
@@ -146,15 +146,6 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct SinkCheckpointContext {
-    pub store: CheckpointStoreRef,
-    pub id_map: CheckpointIdMap,
-    pub file_format: daft_checkpoint::FileFormat,
-    pub query_id: QueryID,
-    pub file_path_registry: Option<FilePathRegistry>,
-}
-
 pub struct BlockingSinkNode<Op: BlockingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
@@ -162,6 +153,14 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     checkpoint: Option<SinkCheckpointContext>,
+}
+
+#[derive(Clone)]
+pub(crate) struct SinkCheckpointContext {
+    pub store: CheckpointStoreRef,
+    pub id_map: CheckpointIdMap,
+    pub file_format: daft_checkpoint::FileFormat,
+    pub file_path_registry: Option<FilePathRegistry>,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
@@ -184,22 +183,17 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         }
     }
 
-    /// Set the checkpoint context for this sink node. When present, the store's
-    /// `checkpoint()` method is called after each input finalizes, using a
-    /// per-input `CheckpointId` derived from the shared `CheckpointIdMap`.
     pub(crate) fn with_checkpoint(
         mut self,
         store: CheckpointStoreRef,
         id_map: CheckpointIdMap,
         file_format: daft_checkpoint::FileFormat,
-        query_id: QueryID,
         file_path_registry: Option<FilePathRegistry>,
     ) -> Self {
         self.checkpoint = Some(SinkCheckpointContext {
             store,
             id_map,
             file_format,
-            query_id,
             file_path_registry,
         });
         self
@@ -259,18 +253,20 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             per_input.runtime_stats.increment_num_tasks();
             match output {
                 BlockingSinkOutput::Partitions(partitions) => {
-                    // Stage write results as file metadata before sending.
                     if let Some(ref ckpt) = checkpoint {
                         let file_metadata =
                             Self::encode_file_metadata(&partitions, ckpt.file_format)?;
                         if !file_metadata.is_empty() {
+                            let num_files = file_metadata.len() as u64;
                             ckpt.store
                                 .stage_files(
                                     checkpoint_id.as_ref().unwrap(),
-                                    &ckpt.query_id,
                                     file_metadata,
                                 )
                                 .await?;
+                            per_input
+                                .runtime_stats
+                                .add_checkpoint_files_staged(num_files);
                         }
                     }
 
@@ -299,24 +295,22 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 }
             }
             if let Some(ref ckpt) = checkpoint {
-                // File-path mode: stage atom keys from the registry before sealing.
                 if let Some(ref registry) = ckpt.file_path_registry {
                     let atom_keys = registry.take(input_id);
                     if !atom_keys.is_empty() {
                         let str_refs: Vec<&str> = atom_keys.iter().map(|s| s.as_str()).collect();
-                        let key_series = daft_core::prelude::Utf8Array::from_slice(
-                            common_checkpoint_config::SEALED_KEYS_COLUMN,
-                            str_refs.as_slice(),
-                        )
-                        .into_series();
+                        let series =
+                            daft_core::prelude::Utf8Array::from_slice("key", str_refs.as_slice())
+                                .into_series();
                         ckpt.store
-                            .stage_keys(checkpoint_id.as_ref().unwrap(), &ckpt.query_id, key_series)
+                            .stage_keys(checkpoint_id.as_ref().unwrap(), series)
                             .await?;
                     }
                 }
                 ckpt.store
                     .checkpoint(checkpoint_id.as_ref().unwrap())
                     .await?;
+                per_input.runtime_stats.add_checkpoints_sealed(1);
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
             Ok(TaskResult::Finalized)

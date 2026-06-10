@@ -8,7 +8,7 @@ use google_cloud_storage::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     http::{
         Error as GError,
-        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        objects::{delete::DeleteObjectRequest, get::GetObjectRequest, list::ListObjectsRequest},
     },
 };
 use google_cloud_token::{TokenSource, TokenSourceProvider};
@@ -40,6 +40,9 @@ enum Error {
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes { path: String, source: GError },
 
+    #[snafu(display("Unable to delete {}: {}", path, source))]
+    UnableToDeleteFile { path: String, source: GError },
+
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials {
         source: google_cloud_storage::client::google_cloud_auth::error::Error,
@@ -61,8 +64,8 @@ enum Error {
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore, UnableToListObjects,
-            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+            NotAFile, NotFound, UnableToCreateClient, UnableToDeleteFile, UnableToGrabSemaphore,
+            UnableToListObjects, UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
 
         fn from_reqwest_err(path: String, err: reqwest::Error) -> super::Error {
@@ -100,6 +103,7 @@ impl From<Error> for super::Error {
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
+            | UnableToDeleteFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => from_reqwest_err(path, err),
                 GError::Response(err) => match err.code {
@@ -183,6 +187,21 @@ fn parse_raw_uri(uri: &str) -> super::Result<(&str, &str)> {
         Ok((bucket, key))
     } else {
         Err(Error::NotAFile { path: uri.into() }.into())
+    }
+}
+
+fn is_delete_not_found_status(code: u16) -> bool {
+    matches!(code, 404 | 410)
+}
+
+fn is_delete_idempotent_error(err: &GError) -> bool {
+    match err {
+        GError::Response(err) => is_delete_not_found_status(err.code),
+        GError::HttpClient(err) => err
+            .status()
+            .map(|status| is_delete_not_found_status(status.as_u16()))
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -278,6 +297,45 @@ impl GCSClientWrapper {
         }
         Ok(response.size as usize)
     }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        let (bucket, key) = parse_raw_uri(uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
+        let req = DeleteObjectRequest {
+            bucket: bucket.into(),
+            object: key.into(),
+            ..Default::default()
+        };
+
+        let is_success = match client.delete_object(&req).await {
+            Ok(()) => true,
+            Err(e) => {
+                if !is_delete_idempotent_error(&e) {
+                    return Err(UnableToDeleteFileSnafu {
+                        path: uri.to_string(),
+                    }
+                    .into_error(e)
+                    .into());
+                }
+                true
+            }
+        };
+
+        if is_success && let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn ls_impl(
         &self,
@@ -444,7 +502,10 @@ impl TokenSource for FixedTokenSource {
 }
 
 impl GCSSource {
-    pub async fn get_client(config: &GCSConfig) -> super::Result<Arc<Self>> {
+    async fn get_client_config(
+        config: &GCSConfig,
+        allow_anonymous_fallback: bool,
+    ) -> super::Result<ClientConfig> {
         let mut client_config = if config.anonymous {
             ClientConfig::default().anonymous()
         } else if let Some(creds) = &config.credentials {
@@ -496,10 +557,14 @@ impl GCSSource {
             match attempted {
                 Ok(attempt) => attempt,
                 Err(err) => {
-                    log::warn!(
-                        "Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}"
-                    );
-                    ClientConfig::default().anonymous()
+                    if allow_anonymous_fallback {
+                        log::warn!(
+                            "Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}"
+                        );
+                        ClientConfig::default().anonymous()
+                    } else {
+                        return Err(err.into());
+                    }
                 }
             }
         };
@@ -537,6 +602,13 @@ impl GCSSource {
                 .build()
         });
 
+        Ok(client_config)
+    }
+
+    fn client_from_config(
+        config: &GCSConfig,
+        client_config: ClientConfig,
+    ) -> super::Result<Arc<Self>> {
         let client = Client::new(client_config);
 
         let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
@@ -550,6 +622,17 @@ impl GCSSource {
             },
         }
         .into())
+    }
+
+    pub async fn get_client(config: &GCSConfig) -> super::Result<Arc<Self>> {
+        let client_config = Self::get_client_config(config, true).await?;
+        Self::client_from_config(config, client_config)
+    }
+
+    #[cfg(test)]
+    async fn get_client_without_anonymous_fallback(config: &GCSConfig) -> super::Result<Arc<Self>> {
+        let client_config = Self::get_client_config(config, false).await?;
+        Self::client_from_config(config, client_config)
     }
 }
 
@@ -606,6 +689,10 @@ impl ObjectSource for GCSSource {
         .await
     }
 
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        self.client.delete(uri, io_stats).await
+    }
+
     async fn ls(
         &self,
         path: &str,
@@ -626,9 +713,24 @@ impl ObjectSource for GCSSource {
 
 #[cfg(test)]
 mod tests {
-    use common_io_config::GCSConfig;
+    use std::sync::Arc;
 
-    use crate::{google_cloud::GCSSource, integrations::test_full_get, object_io::ObjectSource};
+    use common_io_config::GCSConfig;
+    use google_cloud_storage::{
+        client::ClientConfig,
+        http::objects::upload::{Media, UploadObjectRequest, UploadType},
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::oneshot,
+    };
+
+    use crate::{
+        google_cloud::{GCSSource, is_delete_not_found_status},
+        integrations::test_full_get,
+        object_io::ObjectSource,
+    };
 
     #[tokio::test]
     async fn test_full_get_from_gcs() -> crate::Result<()> {
@@ -650,5 +752,290 @@ mod tests {
         assert_eq!(checksum, expected_md5);
 
         test_full_get(client, test_file_path, &bytes).await
+    }
+
+    #[test]
+    fn test_delete_not_found_status_helper() {
+        assert!(is_delete_not_found_status(404));
+        assert!(is_delete_not_found_status(410));
+        assert!(!is_delete_not_found_status(401));
+        assert!(!is_delete_not_found_status(500));
+    }
+
+    #[tokio::test]
+    async fn test_delete_rejects_bucket_uri() {
+        let config = GCSConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = GCSSource::get_client(&config).await.unwrap();
+
+        let result = client.delete("gs://daft-public-data-gs", None).await;
+        assert!(matches!(result, Err(crate::Error::NotAFile { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_delete_rejects_bucket_directory_uri() {
+        let config = GCSConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = GCSSource::get_client(&config).await.unwrap();
+
+        let result = client.delete("gs://daft-public-data-gs/", None).await;
+        assert!(matches!(result, Err(crate::Error::NotAFile { .. })));
+    }
+
+    async fn mock_gcs_delete_client(
+        status: u16,
+        body: impl Into<String>,
+    ) -> crate::Result<(Arc<GCSSource>, oneshot::Receiver<String>)> {
+        let listener =
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|source| crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?;
+        let endpoint = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|source| crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?
+        );
+        let (request_tx, request_rx) = oneshot::channel();
+        let mut request_tx = Some(request_tx);
+        let body = body.into();
+
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 1024];
+                loop {
+                    let n = stream.read(&mut buf).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..n]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+
+                if let Some(tx) = request_tx.take() {
+                    let request = String::from_utf8_lossy(&request).to_string();
+                    let first_line = request.lines().next().unwrap_or_default().to_string();
+                    let _ = tx.send(first_line);
+                }
+
+                let reason = match status {
+                    204 => "No Content",
+                    404 => "Not Found",
+                    410 => "Gone",
+                    500 => "Internal Server Error",
+                    _ => "Unknown",
+                };
+                let response = if body.is_empty() {
+                    format!("HTTP/1.1 {status} {reason}\r\nConnection: close\r\n\r\n")
+                } else {
+                    format!(
+                        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                };
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.flush().await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+
+        let config = GCSConfig {
+            anonymous: true,
+            num_tries: 0,
+            ..Default::default()
+        };
+        let http = reqwest_middleware::ClientBuilder::new(
+            reqwest_middleware::reqwest::ClientBuilder::default()
+                .no_proxy()
+                .build()
+                .map_err(|source| crate::Error::UnableToCreateClient {
+                    store: crate::SourceType::GCS,
+                    source: source.into(),
+                })?,
+        )
+        .build();
+        let client_config = ClientConfig {
+            storage_endpoint: endpoint,
+            token_source_provider: None,
+            http: Some(http),
+            ..Default::default()
+        };
+
+        Ok((
+            GCSSource::client_from_config(&config, client_config)?,
+            request_rx,
+        ))
+    }
+
+    fn gcs_error_body(code: u16, message: &'static str) -> String {
+        format!(
+            r#"{{"error":{{"code":{code},"message":"{message}","errors":[{{"domain":"global","message":"{message}","reason":"test"}}]}}}}"#
+        )
+    }
+
+    #[tokio::test]
+    async fn test_delete_sends_request_to_gcs_mock() -> crate::Result<()> {
+        let (client, request_rx) = mock_gcs_delete_client(204, "").await?;
+
+        client
+            .delete("gs://test-bucket/path/to/object.parquet", None)
+            .await?;
+
+        assert_eq!(
+            request_rx.await.unwrap(),
+            "DELETE /storage/v1/b/test-bucket/o/path%2Fto%2Fobject.parquet HTTP/1.1"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_treats_mock_gcs_not_found_as_success() -> crate::Result<()> {
+        for (status, body) in [
+            (404, gcs_error_body(404, "not found")),
+            (410, gcs_error_body(410, "gone")),
+        ] {
+            let (client, request_rx) = mock_gcs_delete_client(status, body).await?;
+
+            client
+                .delete("gs://test-bucket/already-deleted.parquet", None)
+                .await?;
+
+            assert_eq!(
+                request_rx.await.unwrap(),
+                "DELETE /storage/v1/b/test-bucket/o/already-deleted.parquet HTTP/1.1"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_returns_error_for_mock_gcs_server_error() -> crate::Result<()> {
+        let body = gcs_error_body(500, "server error");
+        let (client, request_rx) = mock_gcs_delete_client(500, body).await?;
+
+        let result = client
+            .delete("gs://test-bucket/failing-delete.parquet", None)
+            .await;
+
+        assert_eq!(
+            request_rx.await.unwrap(),
+            "DELETE /storage/v1/b/test-bucket/o/failing-delete.parquet HTTP/1.1"
+        );
+        assert!(matches!(result, Err(crate::Error::UnableToOpenFile { .. })));
+        Ok(())
+    }
+
+    fn gcs_write_test_config() -> GCSConfig {
+        GCSConfig {
+            project_id: std::env::var("GCS_TEST_PROJECT_ID").ok(),
+            anonymous: false,
+            ..Default::default()
+        }
+    }
+
+    async fn gcs_write_test_client() -> crate::Result<Option<Arc<GCSSource>>> {
+        let config = gcs_write_test_config();
+        match GCSSource::get_client_without_anonymous_fallback(&config).await {
+            Ok(client) => Ok(Some(client)),
+            Err(crate::Error::UnableToLoadCredentials { .. }) => {
+                eprintln!(
+                    "skipping test_delete_roundtrip_gcs_smoke: usable GCS auth not available"
+                );
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_roundtrip_gcs_smoke() -> crate::Result<()> {
+        let bucket = match std::env::var("GCS_WRITE_TEST_BUCKET") {
+            Ok(bucket) => bucket,
+            Err(_) => {
+                eprintln!(
+                    "skipping test_delete_roundtrip_gcs_smoke: set GCS_WRITE_TEST_BUCKET to run writable GCS smoke tests"
+                );
+                return Ok(());
+            }
+        };
+
+        let client = match gcs_write_test_client().await? {
+            Some(client) => client,
+            None => return Ok(()),
+        };
+
+        let object_name = format!("daft-tests/delete-smoke-{}.txt", uuid::Uuid::new_v4());
+        let uri = format!("gs://{bucket}/{object_name}");
+
+        let upload_type = UploadType::Simple(Media::new(object_name.clone()));
+        client
+            .client
+            .client
+            .upload_object(
+                &UploadObjectRequest {
+                    bucket: bucket.clone(),
+                    ..Default::default()
+                },
+                b"daft-gcs-delete-smoke".as_slice(),
+                &upload_type,
+            )
+            .await
+            .map_err(|source| crate::Error::Generic {
+                store: crate::SourceType::GCS,
+                source: source.into(),
+            })?;
+
+        let test_result: crate::Result<()> = async {
+            let size_before_delete = client.get_size(&uri, None).await?;
+            if size_before_delete != b"daft-gcs-delete-smoke".len() {
+                return Err(crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: format!(
+                        "unexpected size before delete for {uri}: expected {}, got {}",
+                        b"daft-gcs-delete-smoke".len(),
+                        size_before_delete
+                    )
+                    .into(),
+                });
+            }
+
+            client.delete(&uri, None).await?;
+
+            let after_delete = client.get_size(&uri, None).await;
+            if !matches!(after_delete, Err(crate::Error::NotFound { .. })) {
+                return Err(crate::Error::Generic {
+                    store: crate::SourceType::GCS,
+                    source: format!(
+                        "expected NotFound after delete for {uri}, got {:?}",
+                        after_delete
+                    )
+                    .into(),
+                });
+            }
+
+            client.delete(&uri, None).await?;
+            Ok(())
+        }
+        .await;
+
+        if test_result.is_err() {
+            let _ = client.delete(&uri, None).await;
+        }
+
+        test_result
     }
 }

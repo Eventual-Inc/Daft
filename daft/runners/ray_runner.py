@@ -22,7 +22,7 @@ from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
 from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
-from daft.runners.flotilla import FlotillaRunner
+from daft.runners.flotilla import DEFAULT_WORKER_STARTUP_TIMEOUT, FlotillaRunner
 from daft.runners.heartbeat import Heartbeat
 from daft.runners.query_id import emit_query_id
 from daft.scarf_telemetry import track_runner_on_scarf
@@ -448,13 +448,21 @@ class RayRunnerIO(runner_io.RunnerIO):
                 for arrow_field in arrow_schema
             ]
         )
-        block_refs = ds.get_internal_block_refs()
 
         # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
         # which can iterate on Ray Dataset blocks and materialize as-needed
+        if RAY_VERSION >= (2, 33, 0):
+            # iter_internal_ref_bundles() was added in Ray 2.33.0 to replace the now-deprecated get_internal_block_refs().
+            block_refs = (
+                block_ref for ref_bundle in ds.iter_internal_ref_bundles() for block_ref in ref_bundle.block_refs
+            )
+        else:
+            block_refs = ds.get_internal_block_refs()
+
         daft_micropartitions = [
-            _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
+            _make_daft_partition_from_ray_dataset_blocks.remote(block_ref, daft_schema) for block_ref in block_refs
         ]
+
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):
@@ -534,10 +542,14 @@ class RayRunner(Runner[ray.ObjectRef]):
         self,
         address: str | None,
         force_client_mode: bool = False,
+        worker_startup_timeout: int | None = None,
     ) -> None:
         super().__init__()
 
         self.ray_address = address
+        self.worker_startup_timeout = (
+            worker_startup_timeout if worker_startup_timeout is not None else DEFAULT_WORKER_STARTUP_TIMEOUT
+        )
 
         if ray.is_initialized():
             if address is not None:
@@ -645,7 +657,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             heartbeat.start()
 
             if self.flotilla_plan_runner is None:
-                self.flotilla_plan_runner = FlotillaRunner()
+                self.flotilla_plan_runner = FlotillaRunner(
+                    worker_startup_timeout=self.worker_startup_timeout,
+                )
 
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(

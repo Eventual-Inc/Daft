@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
+use common_daft_config::{DaftEventLogConfig, DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
 #[cfg(feature = "python")]
@@ -29,6 +29,7 @@ use crate::subscribers::{
 pub struct Config {
     pub execution: Arc<DaftExecutionConfig>,
     pub planning: Arc<DaftPlanningConfig>,
+    pub event_log: DaftEventLogConfig,
 }
 
 impl Config {
@@ -36,6 +37,7 @@ impl Config {
         Self {
             execution: Arc::new(DaftExecutionConfig::from_env()),
             planning: Arc::new(DaftPlanningConfig::from_env()),
+            event_log: DaftEventLogConfig::from_env(),
         }
     }
 }
@@ -106,8 +108,17 @@ impl DaftContext {
         self.with_state_mut(|state| state.config.planning = config);
     }
 
+    /// set the event log config
+    pub fn set_event_log_config(&self, config: DaftEventLogConfig) {
+        self.with_state_mut(|state| state.config.event_log = config);
+    }
+
     pub fn io_config(&self) -> IOConfig {
         self.with_state(|state| state.config.planning.default_io_config.clone())
+    }
+
+    pub fn event_log_config(&self) -> DaftEventLogConfig {
+        self.with_state(|state| state.config.event_log.clone())
     }
 
     pub fn subscribers(&self) -> Vec<Arc<dyn Subscriber>> {

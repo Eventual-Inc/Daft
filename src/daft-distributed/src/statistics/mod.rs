@@ -40,6 +40,7 @@ pub(crate) enum TaskEvent {
     },
     Scheduled {
         context: TaskContext,
+        worker_id: WorkerId,
     },
     Completed {
         context: TaskContext,
@@ -128,6 +129,7 @@ pub struct StatisticsManager {
     /// events. Empty for the `Default` impl used in tests that don't
     /// exercise the global event bus.
     query_id: QueryID,
+    skipped_corrupt_files: Mutex<Vec<(String, String, bool)>>,
 }
 
 impl StatisticsManager {
@@ -147,6 +149,8 @@ impl StatisticsManager {
                 node_category: node.context().node_category.clone(),
                 node_phase: None,
                 context: HashMap::new(),
+                is_task_root: false,
+                is_task_leaf: false,
             });
             runtime_node_managers.insert(
                 node.node_id(),
@@ -165,10 +169,19 @@ impl StatisticsManager {
             runtime_node_managers,
             subscribers: Mutex::new(subscribers),
             query_id,
+            skipped_corrupt_files: Mutex::new(vec![]),
         }))
     }
 
     pub fn handle_event(&self, event: TaskEvent) -> DaftResult<()> {
+        // Accumulate skipped files from completed tasks so they are available in export_metrics().
+        if let TaskEvent::Completed { ref stats, .. } = event
+            && !stats.skipped_corrupt_files.is_empty()
+            && let Ok(mut v) = self.skipped_corrupt_files.lock()
+        {
+            v.extend(stats.skipped_corrupt_files.iter().cloned());
+        }
+
         // First, drive per-node lifecycle (Start/End) events. We do this
         // *before* `RuntimeNodeManager::handle_task_event` so that
         // `OperatorStart` is dispatched while subscribers see no task
@@ -280,6 +293,11 @@ impl StatisticsManager {
             .values()
             .map(RuntimeNodeManager::export_snapshot)
             .collect();
-        ExecutionStats::new("".into(), nodes)
+        let skipped_corrupt_files = self
+            .skipped_corrupt_files
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default();
+        ExecutionStats::new("".into(), nodes).with_skipped_corrupt_files(skipped_corrupt_files)
     }
 }

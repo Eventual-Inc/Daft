@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
     from daft.daft import IOConfig
 
 
-__all__ = ["CheckpointConfig", "CheckpointStore", "KeyFilteringSettings"]
+__all__ = ["CheckpointConfig", "CheckpointStore", "IdempotentCommit", "KeyFilteringSettings"]
 
 
 class CheckpointStore:
@@ -32,7 +33,7 @@ class CheckpointStore:
         io_config: Optional IO configuration for the object store backend.
 
     Example:
-        >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> config = daft.CheckpointConfig(store=store, on="file_id")
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
     """
@@ -106,7 +107,7 @@ class CheckpointConfig:
             when omitted.
 
     Example:
-        >>> store = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> # File-path mode (no on=):
         >>> config = daft.CheckpointConfig(store=store)
         >>> df = daft.read_parquet("s3://input/", checkpoint=config)
@@ -172,3 +173,45 @@ class CheckpointConfig:
 
     def __repr__(self) -> str:
         return f"CheckpointConfig({self._inner!r})"
+
+
+@dataclass(frozen=True)
+class IdempotentCommit:
+    """Per-call idempotent commit configuration for sink writes.
+
+    Bundles a :class:`CheckpointStore` with a stable ``idempotence_key`` that
+    identifies a single logical commit attempt. Pass via ``checkpoint=`` on
+    sinks that support idempotent commits (e.g. :meth:`DataFrame.write_iceberg`).
+
+    Args:
+        store: The :class:`CheckpointStore` backing the commit's staging.
+        idempotence_key: Stable identifier for this logical commit. Stamped
+            on the resulting commit's metadata (e.g. an Iceberg snapshot
+            summary's ``daft.idempotence-key``) so retries — after a crash,
+            network blip, etc. — recognize the prior attempt and don't
+            produce a duplicate. The user is responsible for keeping this
+            stable across retries of the same logical commit and unique
+            across distinct commits.
+
+    Example:
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
+        >>> df = daft.read_parquet("s3://input/", checkpoint=daft.CheckpointConfig(store=store, on="file_id"))
+        >>> df.write_iceberg(table, checkpoint=daft.IdempotentCommit(store=store, idempotence_key="run-2026-05-04"))
+
+    Idempotence-key contract — read carefully:
+        - **Same key + different inputs → silent no-op (data loss).** The
+          destination already has a commit tagged with the key, so nothing
+          new is written.
+        - **Different key + same retry → duplicate commit.** The destination
+          won't recognize the prior attempt and will commit again. Idempotence
+          is broken.
+        - **Recommended source: an orchestrator-supplied run ID.** Stable
+          across task retries and unique across runs by construction.
+    """
+
+    store: CheckpointStore
+    idempotence_key: str
+
+    def __post_init__(self) -> None:
+        if not self.idempotence_key:
+            raise ValueError("idempotence_key must be a non-empty string")

@@ -7,15 +7,9 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_dsl::functions::{AggFnHandle, ScalarUDF};
+use daft_dsl::functions::AggFnHandle;
 use daft_ext::abi::{FFI_AggregateFunction, FFI_ScalarFunction, FFI_SessionContext};
-use daft_ext_internal::{
-    aggregate::into_aggregate_fn_handle,
-    function::{
-        OverloadedScalarFunctionFactory, ScalarFunctionHandle, into_scalar_function_handle,
-    },
-    module::ModuleHandle,
-};
+use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 
 use crate::{
@@ -126,25 +120,6 @@ impl Session {
         self.state_mut()
             .functions
             .bind(name.into(), function.into());
-    }
-
-    /// Attaches a native extension function, accumulating overloads under the same name.
-    pub fn attach_native_function(&self, name: String, handle: Arc<ScalarFunctionHandle>) {
-        let mut state = self.state_mut();
-        if let Some(crate::ScalarFunction::Native(factory)) = state.functions.get_mut(&name)
-            && let Some(overloaded) = Arc::get_mut(factory).and_then(|f| {
-                f.as_any_mut()
-                    .downcast_mut::<OverloadedScalarFunctionFactory>()
-            })
-        {
-            overloaded.add_variant(handle);
-            return;
-        }
-        let factory =
-            OverloadedScalarFunctionFactory::new(ScalarUDF::name(handle.as_ref()), handle);
-        state
-            .functions
-            .bind(name, crate::ScalarFunction::Native(Arc::new(factory)));
     }
 
     /// Attaches an aggregate function to this session. Does NOT err if it already exists.
@@ -479,21 +454,34 @@ impl Session {
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
+            /// Set by a callback when registering a function/aggregate fails;
+            /// callbacks return non-zero to short-circuit init, and the caller
+            /// surfaces this error in preference to the bare init rc.
+            error: Option<DaftError>,
         }
 
         unsafe extern "C" fn define_function_cb(
             ctx: *mut c_void,
             ffi: FFI_ScalarFunction,
         ) -> c_int {
-            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
             let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
             let name = unsafe { CStr::from_ptr(name_ptr) }
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = into_scalar_function_handle(ffi, init_ctx.module.clone());
+            let factory = match daft_ext_internal::function::into_scalar_function_factory(
+                ffi,
+                init_ctx.module.clone(),
+            ) {
+                Ok(f) => f,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
             let session = unsafe { &*init_ctx.session };
-            session.attach_native_function(name, handle);
+            session.attach_function(name, factory);
             0
         }
 
@@ -501,30 +489,43 @@ impl Session {
             ctx: *mut c_void,
             ffi: FFI_AggregateFunction,
         ) -> c_int {
-            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
             let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
             let name = unsafe { CStr::from_ptr(name_ptr) }
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let handle = into_aggregate_fn_handle(ffi, init_ctx.module.clone());
+            let handle = match daft_ext_internal::aggregate::into_aggregate_fn_handle(
+                ffi,
+                init_ctx.module.clone(),
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
             let session = unsafe { &*init_ctx.session };
             session.attach_aggregate_function(name, handle);
             0
         }
 
-        let init_ctx = InitCtx {
+        let mut init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
+            error: None,
         };
 
         let mut ffi_ctx = FFI_SessionContext {
-            ctx: (&raw const init_ctx) as *mut c_void,
+            ctx: (&raw mut init_ctx).cast::<c_void>(),
             define_function: define_function_cb,
             define_aggregate_function: define_aggregate_function_cb,
         };
 
         let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };
+        if let Some(e) = init_ctx.error {
+            return Err(e);
+        }
         if rc != 0 {
             return Err(DaftError::InternalError(format!(
                 "extension init failed with code {rc}"
@@ -625,7 +626,7 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                clustering_spec: Arc::new(ClusteringSpec::unknown(0)),
             })),
         ))
         .arced()
@@ -673,14 +674,6 @@ mod tests {
             Err(common_error::DaftError::ValueError(
                 "mock: not callable".into(),
             ))
-        }
-
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-            self
         }
     }
 
@@ -730,8 +723,9 @@ mod tests {
         struct MockAgg;
 
         #[typetag::serde(name = "MockAgg")]
+        #[allow(clippy::unnecessary_literal_bound)]
         impl AggFn for MockAgg {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 "mock_agg"
             }
             fn return_dtype(&self, _: &[DataType]) -> DaftResult<DataType> {

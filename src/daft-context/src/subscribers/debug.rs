@@ -6,7 +6,8 @@ use crate::subscribers::{
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
         OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-        QueryStartEvent, StatsEvent, TaskEndEvent, TaskStartEvent, TaskSubmitEvent,
+        QueryStartEvent, StatsEvent, TaskEndEvent, TaskScheduledEvent, TaskStartEvent,
+        TaskSubmitEvent,
     },
 };
 
@@ -156,9 +157,24 @@ impl DebugSubscriber {
 
     fn handle_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
         eprintln!(
-            "task_submit query_id={} task_id={} node_ids={:?}",
-            event.header.query_id, event.task.id, event.task.node_ids
+            "task_submit query_id={} task_id={} node_ids={:?} sources={:?}",
+            event.header.query_id, event.task.id, event.task.node_ids, event.sources
         );
+        Ok(())
+    }
+
+    fn handle_task_scheduled(&self, event: &TaskScheduledEvent) -> DaftResult<()> {
+        if let Some(worker_id) = &event.worker_id {
+            eprintln!(
+                "task_scheduled query_id={} task_id={} worker_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, worker_id, event.task.node_ids
+            );
+        } else {
+            eprintln!(
+                "task_scheduled query_id={} task_id={} node_ids={:?}",
+                event.header.query_id, event.task.id, event.task.node_ids
+            );
+        }
         Ok(())
     }
 
@@ -234,8 +250,10 @@ impl Subscriber for DebugSubscriber {
             Event::OperatorStart(e) => self.handle_operator_start(&e)?,
             Event::OperatorEnd(e) => self.handle_operator_end(&e)?,
             Event::Stats(e) => self.handle_stats(&e)?,
+            Event::TaskStatsUpdate(_e) => (),
             Event::ProcessStats(e) => self.handle_process_stats(&e)?,
             Event::TaskSubmit(e) => self.handle_task_submit(&e)?,
+            Event::TaskScheduled(e) => self.handle_task_scheduled(&e)?,
             Event::TaskStart(e) => self.handle_task_start(&e)?,
             Event::TaskEnd(e) => self.handle_task_end(&e)?,
         }

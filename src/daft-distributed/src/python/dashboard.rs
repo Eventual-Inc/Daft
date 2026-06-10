@@ -135,7 +135,9 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             TaskEvent::Submitted {
                 context: task_ctx, ..
             }
-            | TaskEvent::Scheduled { context: task_ctx }
+            | TaskEvent::Scheduled {
+                context: task_ctx, ..
+            }
             | TaskEvent::Completed {
                 context: task_ctx, ..
             }

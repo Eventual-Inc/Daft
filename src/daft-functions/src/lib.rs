@@ -31,7 +31,9 @@ pub use python::register as register_modules;
 use simhash::SimHashFunction;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
-use uuid::Uuid;
+use uuid::{
+    ExtractDayUuid7, ExtractHourUuid7, ExtractMinuteUuid7, ExtractMonthUuid7, Uuid, UuidV7,
+};
 
 use crate::{concat_ws::ConcatWs, slice::Slice};
 
@@ -74,5 +76,10 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
         parent.add_fn(Uuid);
+        parent.add_fn(UuidV7);
+        parent.add_fn(ExtractMinuteUuid7);
+        parent.add_fn(ExtractHourUuid7);
+        parent.add_fn(ExtractDayUuid7);
+        parent.add_fn(ExtractMonthUuid7);
     }
 }

@@ -67,9 +67,9 @@ pub struct FileReference {
     pub url: String,
     pub io_config: Option<Arc<IOConfig>>,
     #[serde(default)]
-    pub offset: Option<u64>,
+    pub position: Option<u64>,
     #[serde(default)]
-    pub length: Option<u64>,
+    pub size: Option<u64>,
 }
 
 impl FileReference {
@@ -78,8 +78,8 @@ impl FileReference {
             media_type,
             url,
             io_config: io_config.map(Arc::new),
-            offset: None,
-            length: None,
+            position: None,
+            size: None,
         }
     }
 
@@ -87,15 +87,15 @@ impl FileReference {
         media_type: MediaType,
         url: String,
         io_config: Option<IOConfig>,
-        offset: Option<u64>,
-        length: Option<u64>,
+        position: Option<u64>,
+        size: Option<u64>,
     ) -> Self {
         Self {
             media_type,
             url,
             io_config: io_config.map(Arc::new),
-            offset,
-            length,
+            position,
+            size,
         }
     }
 }
@@ -106,8 +106,13 @@ impl fmt::Display for FileReference {
         if self.io_config.is_some() {
             write!(f, " [with config]")?;
         }
-        if let (Some(offset), Some(length)) = (self.offset, self.length) {
-            write!(f, " [range: {}..{}]", offset, offset.saturating_add(length))?;
+        if let (Some(position), Some(size)) = (self.position, self.size) {
+            write!(
+                f,
+                " [range: {}..{}]",
+                position,
+                position.saturating_add(size)
+            )?;
         }
         write!(f, ")")
     }
