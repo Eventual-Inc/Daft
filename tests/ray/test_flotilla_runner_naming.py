@@ -122,6 +122,16 @@ def _unschedulable_error() -> Exception:
     )
 
 
+def _actor_died_error() -> Exception:
+    return flotilla.ray.exceptions.ActorDiedError.__new__(flotilla.ray.exceptions.ActorDiedError)
+
+
+def _actor_unavailable_error() -> Exception:
+    return flotilla.ray.exceptions.ActorUnavailableError.__new__(
+        flotilla.ray.exceptions.ActorUnavailableError
+    )
+
+
 def _ray_task_error() -> Exception:
     return flotilla.ray.exceptions.RayTaskError.__new__(flotilla.ray.exceptions.RayTaskError)
 
@@ -149,6 +159,8 @@ def test_start_ray_workers_uses_passed_worker_startup_timeout(monkeypatch):
     "outcome",
     [
         ("raise", _unschedulable_error()),
+        ("raise", _actor_died_error()),
+        ("raise", _actor_unavailable_error()),
         ("raise", _ray_task_error()),
         ("timeout", None),
     ],
