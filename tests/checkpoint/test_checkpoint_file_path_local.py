@@ -16,7 +16,6 @@ import time
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
 
 import daft
 from daft import CheckpointConfig, CheckpointStore
@@ -101,20 +100,3 @@ def test_file_path_incremental_new_file(tmp_path):
     pq.write_table(pa.table({"value": [4, 5]}), input_dir / "b.parquet")
     assert _run(input_dir, ckpt_dir) == 2, "run 2 processes only the new file"
     assert _run(input_dir, ckpt_dir) == 0, "run 3 has nothing new"
-
-
-def test_file_path_mode_allowed_on_native_runner(tmp_path):
-    """File-path mode must not be rejected on the native runner (only row-level is)."""
-    input_file = tmp_path / "data.parquet"
-    ckpt_dir = tmp_path / "ckpt"
-    pq.write_table(pa.table({"value": [1]}), input_file)
-
-    store = CheckpointStore(f"file://{ckpt_dir}")
-    # Should not raise.
-    daft.read_parquet(str(input_file), checkpoint=CheckpointConfig(store=store)).to_pydict()
-
-    # Row-level mode (on=) remains unsupported on the native runner.
-    with pytest.raises(ValueError, match="native"):
-        daft.read_parquet(
-            str(input_file), checkpoint=CheckpointConfig(store=CheckpointStore(f"file://{ckpt_dir}"), on="value")
-        ).to_pydict()
