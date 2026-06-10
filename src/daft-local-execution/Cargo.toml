@@ -40,7 +40,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-shuffles = {path = "../daft-shuffles", default-features = false}
 daft-warc = {path = "../daft-warc", default-features = false}
-daft-writers = {path = "../daft-writers", default-features = false, features = ["kafka"]}
+daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = {workspace = true}
@@ -65,6 +65,7 @@ sysinfo = {workspace = true}
 tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
 
 [features]
+kafka = ["daft-writers/kafka"]
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",
