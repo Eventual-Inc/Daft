@@ -656,60 +656,85 @@ fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
         // first-class value (Spark null-safe-equal semantics).
         let lhs_first_null_local: Option<usize> =
             (0..lhs_sub.len()).find(|&j| !lhs_sub.is_valid(j));
-        let rhs_has_null: bool = (0..rhs_sub.len()).any(|j| !rhs_sub.is_valid(j));
+        let rhs_first_null_local: Option<usize> =
+            (0..rhs_sub.len()).find(|&j| !rhs_sub.is_valid(j));
+        let rhs_has_null: bool = rhs_first_null_local.is_some();
 
-        // Determine which lhs unique indices to keep based on op.
+        // Build an ordered list of unique lhs items (by first-occurrence local
+        // index), treating null as a regular value. Each entry is
+        // (local_idx, is_null). The probe table iteration preserves
+        // first-occurrence order for non-null elements; we splice in the null
+        // at its original position to preserve the input ordering (Spark
+        // semantics).
+        let mut lhs_unique_items: Vec<(usize, bool)> =
+            lhs_probe.keys().map(|k| (k.idx as usize, false)).collect();
+        if let Some(null_local) = lhs_first_null_local {
+            // Insert null at the position that maintains ascending local_idx
+            // order. Non-null entries are already in ascending order.
+            let insert_pos = lhs_unique_items
+                .iter()
+                .position(|&(idx, _)| idx > null_local)
+                .unwrap_or(lhs_unique_items.len());
+            lhs_unique_items.insert(insert_pos, (null_local, true));
+        }
+
+        // Determine which lhs unique items to keep based on op, preserving
+        // their original first-occurrence order.
         let mut kept_count = 0i64;
-        for k in lhs_probe.keys() {
-            let local_idx = k.idx as usize;
-            let absolute_idx = l_start + local_idx;
-            // The element value at absolute_idx in the (promoted) lhs flat child.
-            let in_rhs = probe_contains(&rhs_sub, &lhs_sub, local_idx, &rhs_probe)?;
-            let keep = match op {
-                SetOp::Except => !in_rhs,
-                SetOp::Intersect => in_rhs,
-                SetOp::Union => true,
+        for &(local_idx, is_null) in &lhs_unique_items {
+            let keep = if is_null {
+                // Null-safe-equal semantics for nulls in lhs:
+                //   - Except:    keep null only if rhs has NO null.
+                //   - Intersect: keep null only if rhs also has a null.
+                //   - Union:     always keep null from lhs.
+                match op {
+                    SetOp::Except => !rhs_has_null,
+                    SetOp::Intersect => rhs_has_null,
+                    SetOp::Union => true,
+                }
+            } else {
+                let in_rhs = probe_contains(&rhs_sub, &lhs_sub, local_idx, &rhs_probe)?;
+                match op {
+                    SetOp::Except => !in_rhs,
+                    SetOp::Intersect => in_rhs,
+                    SetOp::Union => true,
+                }
             };
             if keep {
+                let absolute_idx = l_start + local_idx;
                 take_indices.push(absolute_idx as u64);
                 kept_count += 1;
             }
         }
 
-        // Handle null elements with null-safe-equal semantics:
-        //   - Except:    keep one null if lhs has null AND rhs does NOT.
-        //   - Intersect: keep one null if BOTH sides have null.
-        //   - Union:     keep one null if EITHER side has null (taken from lhs
-        //                first if available, otherwise from rhs).
-        if let Some(lhs_null_local) = lhs_first_null_local {
-            let absolute_idx = l_start + lhs_null_local;
-            let keep = match op {
-                SetOp::Except => !rhs_has_null,
-                SetOp::Intersect => rhs_has_null,
-                SetOp::Union => true,
-            };
-            if keep {
-                take_indices.push(absolute_idx as u64);
-                kept_count += 1;
-            }
-        } else if matches!(op, SetOp::Union) && rhs_has_null {
-            // lhs has no null; pull a null from rhs for union.
-            if let Some(rhs_null_local) = (0..rhs_sub.len()).find(|&j| !rhs_sub.is_valid(j)) {
-                let absolute_idx_in_combined = lhs_child_len + r_start + rhs_null_local;
-                take_indices.push(absolute_idx_in_combined as u64);
-                kept_count += 1;
-            }
-        }
-
-        // For Union, append unique rhs items that are not already in lhs.
+        // For Union, append unique rhs items that are not already in lhs,
+        // preserving the rhs first-occurrence order. A null on rhs is included
+        // only when lhs had no null (otherwise it was already emitted above).
         if matches!(op, SetOp::Union) {
-            for k in rhs_probe.keys() {
-                let local_idx = k.idx as usize;
+            let mut rhs_unique_items: Vec<(usize, bool)> =
+                rhs_probe.keys().map(|k| (k.idx as usize, false)).collect();
+            if lhs_first_null_local.is_none()
+                && let Some(null_local) = rhs_first_null_local
+            {
+                let insert_pos = rhs_unique_items
+                    .iter()
+                    .position(|&(idx, _)| idx > null_local)
+                    .unwrap_or(rhs_unique_items.len());
+                rhs_unique_items.insert(insert_pos, (null_local, true));
+            }
+
+            for &(local_idx, is_null) in &rhs_unique_items {
                 let absolute_idx_in_combined = lhs_child_len + r_start + local_idx;
-                let in_lhs = probe_contains(&lhs_sub, &rhs_sub, local_idx, &lhs_probe)?;
-                if !in_lhs {
+                if is_null {
+                    // Already filtered above: only reach here if lhs has no null.
                     take_indices.push(absolute_idx_in_combined as u64);
                     kept_count += 1;
+                } else {
+                    let in_lhs = probe_contains(&lhs_sub, &rhs_sub, local_idx, &lhs_probe)?;
+                    if !in_lhs {
+                        take_indices.push(absolute_idx_in_combined as u64);
+                        kept_count += 1;
+                    }
                 }
             }
         }
