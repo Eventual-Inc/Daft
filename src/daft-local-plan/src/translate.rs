@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::join::JoinStrategy;
+use daft_core::{join::JoinStrategy, prelude::SchemaRef};
 use daft_dsl::{
     expr::{
         agg::extract_agg_expr,
@@ -18,18 +18,26 @@ use daft_scan::{ScanState, ScanTaskRef};
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
 
+/// Tracks the schema of a CSE subplan so subsequent encounters can
+/// emit a `CseCacheRead` leaf node instead of re-translating.
+struct CseCacheEntry {
+    schema: SchemaRef,
+}
+
 pub fn translate(
     plan: &LogicalPlanRef,
     psets: &HashMap<String, Vec<MicroPartitionRef>>,
 ) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     let mut source_counter = SourceIdCounter::default();
-    translate_helper(plan, &mut source_counter, psets)
+    let mut cse_cache = HashMap::new();
+    translate_helper(plan, &mut source_counter, psets, &mut cse_cache)
 }
 
 fn translate_helper(
     plan: &LogicalPlanRef,
     source_counter: &mut SourceIdCounter,
     psets: &HashMap<String, Vec<MicroPartitionRef>>,
+    cse_cache: &mut HashMap<usize, CseCacheEntry>,
 ) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
@@ -100,7 +108,8 @@ fn translate_helper(
             "Sharding should have been folded into a source".to_string(),
         )),
         LogicalPlan::Filter(filter) => {
-            let (input_plan, inputs) = translate_helper(&filter.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&filter.input, source_counter, psets, cse_cache)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::filter(
@@ -113,7 +122,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::StageCheckpointKeys(stage) => {
-            let (input_plan, inputs) = translate_helper(&stage.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&stage.input, source_counter, psets, cse_cache)?;
             Ok((
                 LocalPhysicalPlan::stage_checkpoint_keys(
                     input_plan,
@@ -126,7 +136,7 @@ fn translate_helper(
         }
         LogicalPlan::IntoBatches(into_batches) => {
             let (input_plan, inputs) =
-                translate_helper(&into_batches.input, source_counter, psets)?;
+                translate_helper(&into_batches.input, source_counter, psets, cse_cache)?;
             Ok((
                 LocalPhysicalPlan::into_batches(
                     input_plan,
@@ -139,7 +149,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Limit(limit) => {
-            let (input_plan, inputs) = translate_helper(&limit.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&limit.input, source_counter, psets, cse_cache)?;
             Ok((
                 LocalPhysicalPlan::limit(
                     input_plan,
@@ -152,7 +163,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Project(project) => {
-            let (input_plan, inputs) = translate_helper(&project.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&project.input, source_counter, psets, cse_cache)?;
 
             let projection = BoundExpr::bind_all(&project.projection, input_plan.schema())?;
 
@@ -168,7 +180,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::UDFProject(udf_project) => {
-            let (input_plan, inputs) = translate_helper(&udf_project.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&udf_project.input, source_counter, psets, cse_cache)?;
 
             let passthrough_columns =
                 BoundExpr::bind_all(&udf_project.passthrough_columns, input_plan.schema())?;
@@ -188,7 +201,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Sample(sample) => {
-            let (input_plan, inputs) = translate_helper(&sample.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&sample.input, source_counter, psets, cse_cache)?;
             let sampling_method = if let Some(fraction) = sample.fraction {
                 SamplingMethod::Fraction(fraction)
             } else if let Some(size) = sample.size {
@@ -211,7 +225,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Aggregate(aggregate) => {
-            let (input_plan, inputs) = translate_helper(&aggregate.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&aggregate.input, source_counter, psets, cse_cache)?;
 
             let aggregations = aggregate
                 .aggregations
@@ -250,7 +265,8 @@ fn translate_helper(
             }
         }
         LogicalPlan::Window(window) => {
-            let (input_plan, inputs) = translate_helper(&window.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&window.input, source_counter, psets, cse_cache)?;
 
             let window_functions =
                 BoundWindowExpr::bind_all(&window.window_functions, input_plan.schema())?;
@@ -328,7 +344,8 @@ fn translate_helper(
             Ok((plan, inputs))
         }
         LogicalPlan::Unpivot(unpivot) => {
-            let (input_plan, inputs) = translate_helper(&unpivot.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&unpivot.input, source_counter, psets, cse_cache)?;
 
             let ids = BoundExpr::bind_all(&unpivot.ids, input_plan.schema())?;
             let values = BoundExpr::bind_all(&unpivot.values, input_plan.schema())?;
@@ -348,7 +365,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Pivot(pivot) => {
-            let (input_plan, inputs) = translate_helper(&pivot.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&pivot.input, source_counter, psets, cse_cache)?;
 
             let group_by = BoundExpr::bind_all(&pivot.group_by, input_plan.schema())?;
             let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), input_plan.schema())?;
@@ -373,7 +391,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Sort(sort) => {
-            let (input_plan, inputs) = translate_helper(&sort.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&sort.input, source_counter, psets, cse_cache)?;
 
             let sort_by = BoundExpr::bind_all(&sort.sort_by, input_plan.schema())?;
 
@@ -390,7 +409,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Shuffle(shuffle) => {
-            let (input_plan, inputs) = translate_helper(&shuffle.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&shuffle.input, source_counter, psets, cse_cache)?;
             let sort_by = BoundExpr::bind_all(
                 &[random_int_expr(i64::MIN, i64::MAX, shuffle.seed)],
                 input_plan.schema(),
@@ -408,7 +428,8 @@ fn translate_helper(
             ))
         }
         LogicalPlan::TopN(top_n) => {
-            let (input_plan, inputs) = translate_helper(&top_n.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&top_n.input, source_counter, psets, cse_cache)?;
 
             let sort_by = BoundExpr::bind_all(&top_n.sort_by, input_plan.schema())?;
 
@@ -447,8 +468,10 @@ fn translate_helper(
                     _ => {}
                 }
             }
-            let (left_plan, mut left_inputs) = translate_helper(&join.left, source_counter, psets)?;
-            let (right_plan, right_inputs) = translate_helper(&join.right, source_counter, psets)?;
+            let (left_plan, mut left_inputs) =
+                translate_helper(&join.left, source_counter, psets, cse_cache)?;
+            let (right_plan, right_inputs) =
+                translate_helper(&join.right, source_counter, psets, cse_cache)?;
 
             // Merge inputs from both sides
             left_inputs.extend(right_inputs);
@@ -496,9 +519,9 @@ fn translate_helper(
         }
         LogicalPlan::AsofJoin(asof_join) => {
             let (left_plan, mut left_inputs) =
-                translate_helper(&asof_join.left, source_counter, psets)?;
+                translate_helper(&asof_join.left, source_counter, psets, cse_cache)?;
             let (right_plan, right_inputs) =
-                translate_helper(&asof_join.right, source_counter, psets)?;
+                translate_helper(&asof_join.right, source_counter, psets, cse_cache)?;
 
             left_inputs.extend(right_inputs);
 
@@ -543,7 +566,8 @@ fn translate_helper(
         }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
-            let (input_plan, inputs) = translate_helper(&distinct.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&distinct.input, source_counter, psets, cse_cache)?;
 
             let columns = distinct
                 .columns
@@ -563,9 +587,10 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Concat(concat) => {
-            let (input_plan, mut inputs) = translate_helper(&concat.input, source_counter, psets)?;
+            let (input_plan, mut inputs) =
+                translate_helper(&concat.input, source_counter, psets, cse_cache)?;
             let (other_plan, other_inputs) =
-                translate_helper(&concat.other, source_counter, psets)?;
+                translate_helper(&concat.other, source_counter, psets, cse_cache)?;
 
             // Merge inputs from both sides
             inputs.extend(other_inputs);
@@ -584,17 +609,21 @@ fn translate_helper(
             log::warn!(
                 "Repartition not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
             );
-            translate_helper(&repartition.input, source_counter, psets)
+            translate_helper(&repartition.input, source_counter, psets, cse_cache)
         }
         LogicalPlan::IntoPartitions(into_partitions) => {
             log::warn!(
                 "IntoPartitions not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
             );
-            translate_helper(&into_partitions.input, source_counter, psets)
+            translate_helper(&into_partitions.input, source_counter, psets, cse_cache)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-            let (input_plan, inputs) =
-                translate_helper(&monotonically_increasing_id.input, source_counter, psets)?;
+            let (input_plan, inputs) = translate_helper(
+                &monotonically_increasing_id.input,
+                source_counter,
+                psets,
+                cse_cache,
+            )?;
             Ok((
                 LocalPhysicalPlan::monotonically_increasing_id(
                     input_plan,
@@ -609,7 +638,8 @@ fn translate_helper(
         }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
-            let (input_plan, inputs) = translate_helper(&sink.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&sink.input, source_counter, psets, cse_cache)?;
             let data_schema = input_plan.schema().clone();
             let plan = match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => {
@@ -666,7 +696,8 @@ fn translate_helper(
             Ok((plan, inputs))
         }
         LogicalPlan::Explode(explode) => {
-            let (input_plan, inputs) = translate_helper(&explode.input, source_counter, psets)?;
+            let (input_plan, inputs) =
+                translate_helper(&explode.input, source_counter, psets, cse_cache)?;
 
             let to_explode = BoundExpr::bind_all(&explode.to_explode, input_plan.schema())?;
 
@@ -685,7 +716,7 @@ fn translate_helper(
         }
         LogicalPlan::VLLMProject(vllm_project) => {
             let (input_plan, inputs) =
-                translate_helper(&vllm_project.input, source_counter, psets)?;
+                translate_helper(&vllm_project.input, source_counter, psets, cse_cache)?;
             let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::vllm_project(
@@ -700,6 +731,34 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::CommonSubplan(common_subplan) => {
+            if let Some(entry) = cse_cache.get(&common_subplan.id) {
+                // Subsequent encounter → emit a CseCacheRead leaf node.
+                let source_id = source_counter.next();
+                let read = LocalPhysicalPlan::cse_cache_read(
+                    source_id,
+                    common_subplan.id,
+                    entry.schema.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::default(),
+                );
+                Ok((read, HashMap::new()))
+            } else {
+                // First encounter → translate the subplan and wrap in CseCacheWrite.
+                let (subplan, inputs) =
+                    translate_helper(&common_subplan.subplan, source_counter, psets, cse_cache)?;
+                let schema = subplan.schema().clone();
+                let write = LocalPhysicalPlan::cse_cache_write(
+                    common_subplan.id,
+                    subplan,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::default(),
+                );
+                cse_cache.insert(common_subplan.id, CseCacheEntry { schema });
+                Ok((write, inputs))
+            }
+        }
         LogicalPlan::Intersect(_)
         | LogicalPlan::Union(_)
         | LogicalPlan::SubqueryAlias(_)
@@ -707,5 +766,88 @@ fn translate_helper(
             "Logical plan operator {} should already be optimized away",
             plan.name()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_logical_plan::{
+        LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
+        ops::{CommonSubplan, Concat},
+        stats::StatsState,
+    };
+    use daft_scan::{ScanOperatorRef, test_utils::DummyScanOperator};
+
+    use super::*;
+
+    /// Build a Union of two CommonSubplan nodes sharing the same id,
+    /// translate it, and verify CseCacheWrite / CseCacheRead are emitted.
+    #[test]
+    fn translate_common_subplan_produces_cse_cache_nodes() -> DaftResult<()> {
+        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]));
+        let scan_op = ScanOperatorRef(Arc::new(DummyScanOperator {
+            schema,
+            num_scan_tasks: 1,
+            num_rows_per_task: Some(1),
+            supports_count_pushdown_flag: false,
+            stats: None,
+        }));
+
+        // Build the canonical subplan — a single Source.
+        let source: LogicalPlanRef = LogicalPlanBuilder::table_scan(scan_op, None)?.build();
+
+        // Wrap it in two CommonSubplan nodes with the same id.
+        let cse_id = 42;
+        let cs1 = Arc::new(LogicalPlan::CommonSubplan(CommonSubplan::new(
+            source.clone(),
+            cse_id,
+        )));
+        let cs2 = Arc::new(LogicalPlan::CommonSubplan(CommonSubplan::new(
+            source, cse_id,
+        )));
+
+        // Directly construct the Concat (try_new is pub(crate)).
+        let concat_logical = Concat {
+            plan_id: None,
+            node_id: None,
+            input: cs1,
+            other: cs2,
+            stats_state: StatsState::NotMaterialized,
+        };
+        let plan: LogicalPlanRef = Arc::new(LogicalPlan::Concat(concat_logical));
+
+        let (physical, _inputs) = translate(&plan, &HashMap::new())?;
+
+        // Root should be Concat (the execution-layer Union).
+        let concat = match physical.as_ref() {
+            LocalPhysicalPlan::Concat(c) => c,
+            other => panic!("expected Concat root, got {}", other.name()),
+        };
+
+        // One child must be CseCacheWrite wrapping the translated subplan,
+        // the other must be CseCacheRead for the same cse_id.
+        let mut saw_write = false;
+        let mut saw_read = false;
+        for child in [concat.input.as_ref(), concat.other.as_ref()] {
+            match child {
+                LocalPhysicalPlan::CseCacheWrite(w) => {
+                    saw_write = true;
+                    assert_eq!(w.cse_id, cse_id);
+                }
+                LocalPhysicalPlan::CseCacheRead(r) => {
+                    saw_read = true;
+                    assert_eq!(r.cse_id, cse_id);
+                }
+                other => panic!("unexpected child {}", other.name()),
+            }
+        }
+        assert!(saw_write, "expected a CseCacheWrite child");
+        assert!(saw_read, "expected a CseCacheRead child");
+
+        Ok(())
     }
 }

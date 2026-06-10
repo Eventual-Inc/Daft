@@ -17,13 +17,13 @@ use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
-    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
-    LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite,
-    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    AsofJoin, CommitWrite, Concat, CrossJoin, CseCacheRead, CseCacheWrite, Dedup, Explode, Filter,
+    FlightShuffleReadInput, GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan,
+    IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId,
+    PhysicalScan, PhysicalWrite, Pivot, Project, RepartitionWrite, Sample, ShuffleBackend,
+    ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate,
+    Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -38,6 +38,7 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::create_unbounded_channel,
     concat::ConcatNode,
+    cse::{CseCacheReadNode, CseCacheWriteNode, CseSharedCache},
     input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -276,6 +277,10 @@ pub struct BuilderContext {
             daft_dsl::expr::bound_expr::BoundExpr,
         )>,
     >,
+    /// Shared CSE caches keyed by `cse_id`. Created on first access by either
+    /// a `CseCacheWrite` or `CseCacheRead` pipeline node, whichever the
+    /// top-down builder encounters first.
+    cse_caches: std::cell::RefCell<HashMap<usize, Arc<CseSharedCache>>>,
 }
 
 impl BuilderContext {
@@ -296,6 +301,7 @@ impl BuilderContext {
             context,
             shuffle_server,
             checkpoint: std::cell::RefCell::new(None),
+            cse_caches: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -327,6 +333,17 @@ impl BuilderContext {
         let index = *counter;
         *counter += 1;
         index
+    }
+
+    /// Get or create a shared CSE cache for the given `cse_id`.
+    /// Ensures that `CseCacheWriteNode` and `CseCacheReadNode` share the
+    /// same `Arc<CseSharedCache>` regardless of which is built first.
+    pub fn get_or_create_cse_cache(&self, cse_id: usize) -> Arc<CseSharedCache> {
+        let mut caches = self.cse_caches.borrow_mut();
+        caches
+            .entry(cse_id)
+            .or_insert_with(|| CseSharedCache::new(cse_id))
+            .clone()
     }
 
     pub fn next_node_info(
@@ -392,11 +409,13 @@ pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     s
 }
 
+pub type InputSenders = HashMap<SourceId, Vec<InputSender>>;
+
 pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &BuilderContext,
-) -> crate::Result<(Box<dyn PipelineNode>, HashMap<SourceId, InputSender>)> {
+) -> crate::Result<(Box<dyn PipelineNode>, InputSenders)> {
     let mut input_senders = HashMap::new();
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
 
@@ -435,7 +454,7 @@ fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &BuilderContext,
-    input_senders: &mut HashMap<SourceId, InputSender>,
+    input_senders: &mut InputSenders,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
@@ -451,7 +470,10 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
-            input_senders.insert(*source_id, InputSender::ScanTasks(tx));
+            input_senders
+                .entry(*source_id)
+                .or_default()
+                .push(InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(
                 rx,
@@ -476,7 +498,10 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
-            input_senders.insert(*source_id, InputSender::InMemory(tx));
+            input_senders
+                .entry(*source_id)
+                .or_default()
+                .push(InputSender::InMemory(tx));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);
             SourceNode::new(
@@ -496,7 +521,10 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<String>)>();
-            input_senders.insert(*source_id, InputSender::GlobPaths(tx));
+            input_senders
+                .entry(*source_id)
+                .or_default()
+                .push(InputSender::GlobPaths(tx));
 
             let glob_scan_source =
                 GlobScanSource::new(rx, pushdowns.clone(), schema.clone(), io_config.clone());
@@ -1747,7 +1775,10 @@ fn physical_plan_to_pipeline(
         }) => match backend {
             ShuffleReadBackend::Ray => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
-                input_senders.insert(*source_id, InputSender::InMemory(tx));
+                input_senders
+                    .entry(*source_id)
+                    .or_default()
+                    .push(InputSender::InMemory(tx));
 
                 let in_memory_source = InMemorySource::new(rx, schema.clone(), 0);
                 SourceNode::new(
@@ -1760,7 +1791,10 @@ fn physical_plan_to_pipeline(
             }
             ShuffleReadBackend::Flight => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
-                input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
+                input_senders
+                    .entry(*source_id)
+                    .or_default()
+                    .push(InputSender::FlightShuffle(tx));
                 let (local_server, local_address) = ctx.shuffle_server().expect(
                     "Flight shuffle server must be initialized for Flight shuffle read plans",
                 );
@@ -1793,6 +1827,29 @@ fn physical_plan_to_pipeline(
                 context,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::CseCacheWrite(CseCacheWrite {
+            cse_id,
+            input,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let shared = ctx.get_or_create_cse_cache(*cse_id);
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            CseCacheWriteNode::new(child_node, shared, stats_state.clone(), ctx, context).boxed()
+        }
+        LocalPhysicalPlan::CseCacheRead(CseCacheRead {
+            source_id,
+            cse_id,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let shared = ctx.get_or_create_cse_cache(*cse_id);
+            // No InputSender registration — data comes from the cache, not
+            // from the runner's injection loop.
+            CseCacheReadNode::new(shared, *source_id, stats_state.clone(), ctx, context).boxed()
         }
     };
 

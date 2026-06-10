@@ -323,3 +323,14 @@ def test_explain_when_join_with_download():
     output = explain_to_text(df, only_physical_plan=True)
     assert "url_download" in output
     assert "Join" in output
+
+
+def test_explain_shows_common_subplan_in_optimized_plan():
+    """Verify that CSE wraps duplicate subplans in CommonSubplan nodes visible in df.explain()."""
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    union_df = df.concat(df)
+
+    text = explain_to_text(union_df)
+    # Extract the Optimized Logical Plan section
+    opt_section = text.split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
+    assert "CommonSubplan" in opt_section, f"Expected 'CommonSubplan' in optimized plan output, got:\n{opt_section}"

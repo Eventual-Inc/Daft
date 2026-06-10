@@ -319,7 +319,7 @@ async fn run_execution_loop(
     cancel: CancellationToken,
     stats_manager: RuntimeStatsManager,
     mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
-    input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
+    input_senders: Arc<HashMap<SourceId, Vec<crate::input_sender::InputSender>>>,
     pipeline: Box<dyn crate::pipeline::PipelineNode>,
     maintain_order: bool,
 ) -> DaftResult<()> {
@@ -357,8 +357,10 @@ async fn run_execution_loop(
                     message_router.insert_output_sender(input_id, result_sender);
                     let senders = input_senders.as_ref().unwrap();
                     for (key, plan_input) in inputs {
-                        if let Some(sender) = senders.get(&key) {
-                            let _ = sender.send(input_id, plan_input);
+                        if let Some(sender_list) = senders.get(&key) {
+                            for sender in sender_list {
+                                let _ = sender.send(input_id, plan_input.clone());
+                            }
                         }
                     }
                 } else {
