@@ -39,6 +39,9 @@ impl KafkaWriteAccounting {
         }
     }
 
+    // TODO: Wire this into the native Kafka write result contract once that
+    // path consumes the logical accounting schema outside tests.
+    #[allow(dead_code)]
     pub fn schema() -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             Field::new("task_id", DataType::Int64),

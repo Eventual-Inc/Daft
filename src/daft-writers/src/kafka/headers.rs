@@ -40,8 +40,16 @@ pub(crate) fn headers_for_row(headers: &Series, row_idx: usize) -> DaftResult<Ve
             "[write_kafka] kafka headers must contain struct entries: {err}"
         ))
     })?;
-    let keys = entries.get("key")?;
-    let values = entries.get("value")?;
+    let keys = entries.get("key").map_err(|err| {
+        DaftError::ValueError(format!(
+            "[write_kafka] kafka headers must contain a key field: {err}"
+        ))
+    })?;
+    let values = entries.get("value").map_err(|err| {
+        DaftError::ValueError(format!(
+            "[write_kafka] kafka headers must contain a value field: {err}"
+        ))
+    })?;
     let keys = keys.utf8().map_err(|err| {
         DaftError::ValueError(format!(
             "[write_kafka] kafka header key must be Utf8: {err}"
@@ -76,7 +84,9 @@ pub(crate) fn headers_for_row(headers: &Series, row_idx: usize) -> DaftResult<Ve
 mod tests {
     use std::sync::Arc;
 
-    use arrow_array::builder::{BinaryBuilder, LargeListBuilder, StringBuilder, StructBuilder};
+    use arrow_array::builder::{
+        BinaryBuilder, LargeListBuilder, NullBuilder, StringBuilder, StructBuilder,
+    };
     use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Fields};
     use daft_core::prelude::Field;
 
@@ -152,6 +162,150 @@ mod tests {
         );
         assert!(null_row.is_empty());
         assert_eq!(third_row, vec![make_header("nullable", None).unwrap()]);
+    }
+
+    #[test]
+    fn parses_utf8_header_value_column() {
+        let mut builder = LargeListBuilder::new(StructBuilder::from_fields(
+            Fields::from(vec![
+                ArrowField::new("key", ArrowDataType::Utf8, true),
+                ArrowField::new("value", ArrowDataType::Utf8, true),
+            ]),
+            1,
+        ));
+        {
+            let values = builder.values();
+            values
+                .field_builder::<StringBuilder>(0)
+                .unwrap()
+                .append_value("text");
+            values
+                .field_builder::<StringBuilder>(1)
+                .unwrap()
+                .append_value("hello");
+            values.append(true);
+        }
+        builder.append(true);
+        let headers = Series::from_arrow(
+            Arc::new(Field::new(
+                "headers",
+                DataType::List(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Utf8),
+                ]))),
+            )),
+            Arc::new(builder.finish()),
+        )
+        .unwrap();
+
+        let parsed = headers_for_row(&headers, 0).unwrap();
+
+        assert_eq!(parsed, vec![make_header("text", Some(b"hello")).unwrap()]);
+    }
+
+    #[test]
+    fn parses_null_header_value_column() {
+        let mut builder = LargeListBuilder::new(StructBuilder::from_fields(
+            Fields::from(vec![
+                ArrowField::new("key", ArrowDataType::Utf8, true),
+                ArrowField::new("value", ArrowDataType::Null, true),
+            ]),
+            1,
+        ));
+        {
+            let values = builder.values();
+            values
+                .field_builder::<StringBuilder>(0)
+                .unwrap()
+                .append_value("nullish");
+            values
+                .field_builder::<NullBuilder>(1)
+                .unwrap()
+                .append_null();
+            values.append(true);
+        }
+        builder.append(true);
+        let headers = Series::from_arrow(
+            Arc::new(Field::new(
+                "headers",
+                DataType::List(Box::new(DataType::Struct(vec![
+                    Field::new("key", DataType::Utf8),
+                    Field::new("value", DataType::Null),
+                ]))),
+            )),
+            Arc::new(builder.finish()),
+        )
+        .unwrap();
+
+        let parsed = headers_for_row(&headers, 0).unwrap();
+
+        assert_eq!(parsed, vec![make_header("nullish", None).unwrap()]);
+    }
+
+    #[test]
+    fn rejects_header_struct_missing_key_field() {
+        let mut builder = LargeListBuilder::new(StructBuilder::from_fields(
+            Fields::from(vec![ArrowField::new("value", ArrowDataType::Binary, true)]),
+            1,
+        ));
+        {
+            let values = builder.values();
+            values
+                .field_builder::<BinaryBuilder>(0)
+                .unwrap()
+                .append_value(b"value");
+            values.append(true);
+        }
+        builder.append(true);
+        let headers = Series::from_arrow(
+            Arc::new(Field::new(
+                "headers",
+                DataType::List(Box::new(DataType::Struct(vec![Field::new(
+                    "value",
+                    DataType::Binary,
+                )]))),
+            )),
+            Arc::new(builder.finish()),
+        )
+        .unwrap();
+
+        let err = headers_for_row(&headers, 0).unwrap_err();
+
+        assert!(err.to_string().contains("[write_kafka]"));
+        assert!(err.to_string().contains("key field"));
+    }
+
+    #[test]
+    fn rejects_header_struct_missing_value_field() {
+        let mut builder = LargeListBuilder::new(StructBuilder::from_fields(
+            Fields::from(vec![ArrowField::new("key", ArrowDataType::Utf8, true)]),
+            1,
+        ));
+        {
+            let values = builder.values();
+            values
+                .field_builder::<StringBuilder>(0)
+                .unwrap()
+                .append_value("key");
+            values.append(true);
+        }
+        builder.append(true);
+        let headers = Series::from_arrow(
+            Arc::new(Field::new(
+                "headers",
+                DataType::List(Box::new(DataType::Struct(vec![Field::new(
+                    "key",
+                    DataType::Utf8,
+                )]))),
+            )),
+            Arc::new(builder.finish()),
+        )
+        .unwrap();
+
+        let err = headers_for_row(&headers, 0).unwrap_err();
+
+        assert!(err.to_string().contains("[write_kafka]"));
+        assert!(err.to_string().contains("value field"));
     }
 
     #[test]

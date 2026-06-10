@@ -4,6 +4,8 @@ use common_error::{DaftError, DaftResult};
 use daft_logical_plan::sink_info::KafkaConfigValue;
 
 const DEFAULT_CLIENT_ID: &str = "daft-write-kafka";
+// TODO: Use this in user-facing Kafka diagnostics when config logging lands.
+#[allow(dead_code)]
 const REDACTED: &str = "<redacted>";
 
 pub fn config_value_to_string(value: &KafkaConfigValue) -> String {
@@ -32,6 +34,8 @@ pub fn validate_config_key(key: &str) -> DaftResult<()> {
     }
 }
 
+// TODO: Use this in user-facing Kafka diagnostics when config logging lands.
+#[allow(dead_code)]
 pub fn redact_config_value(key: &str, value: &str) -> String {
     let key = key.to_ascii_lowercase();
     if key == "sasl.jaas.config"

@@ -284,8 +284,22 @@ fn literal_to_json_bytes(value: &Literal) -> DaftResult<Option<Vec<u8>>> {
         Literal::UInt32(value) => value.to_string(),
         Literal::Int64(value) => value.to_string(),
         Literal::UInt64(value) => value.to_string(),
-        Literal::Float32(value) if value.is_finite() => value.to_string(),
-        Literal::Float64(value) if value.is_finite() => value.to_string(),
+        Literal::Float32(value) => {
+            if !value.is_finite() {
+                return Err(DaftError::ValueError(
+                    "[write_kafka] kafka JSON numeric value must be finite".to_string(),
+                ));
+            }
+            value.to_string()
+        }
+        Literal::Float64(value) => {
+            if !value.is_finite() {
+                return Err(DaftError::ValueError(
+                    "[write_kafka] kafka JSON numeric value must be finite".to_string(),
+                ));
+            }
+            value.to_string()
+        }
         other => {
             return Err(DaftError::ValueError(format!(
                 "[write_kafka] kafka JSON value does not yet support {}",
@@ -347,7 +361,10 @@ pub(crate) fn make_test_record(
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use daft_core::prelude::{BinaryArray, Field, Int64Array, IntoSeries, Utf8Array};
+    use daft_core::prelude::{
+        BinaryArray, Field, Float32Array, Float64Array, Int32Array, Int64Array, IntoSeries,
+        Utf8Array,
+    };
     use daft_dsl::bound_col;
     use daft_logical_plan::sink_info::{KafkaKeyFormat, KafkaTopic};
     use daft_recordbatch::RecordBatch;
@@ -516,6 +533,88 @@ mod tests {
 
         assert_eq!(records[0].value.as_deref(), Some(&b"\"hello\\nworld\""[..]));
         assert_eq!(records[1].value, None);
+    }
+
+    #[test]
+    fn rejects_non_finite_json_float_values() {
+        for (value, dtype) in [
+            (
+                Float32Array::from_slice("value", &[f32::NAN]).into_series(),
+                DataType::Float32,
+            ),
+            (
+                Float32Array::from_slice("value", &[f32::INFINITY]).into_series(),
+                DataType::Float32,
+            ),
+            (
+                Float64Array::from_slice("value", &[f64::NEG_INFINITY]).into_series(),
+                DataType::Float64,
+            ),
+        ] {
+            let batch = RecordBatch::from_nonempty_columns(vec![value]).unwrap();
+            let input = micropartition(batch);
+            let mut info = kafka_info(KafkaValueFormat::Json);
+            info.value_col = bound(0, "value", dtype);
+            info.key_col = None;
+
+            let err = records_from_micropartition(&input, &info).unwrap_err();
+
+            assert!(err.to_string().contains("[write_kafka]"));
+            assert!(
+                err.to_string()
+                    .contains("JSON numeric value must be finite")
+            );
+        }
+    }
+
+    #[test]
+    fn projects_int32_dynamic_partition() {
+        let batch = RecordBatch::from_nonempty_columns(vec![
+            BinaryArray::from_iter("value", [Some(b"value".as_slice())]).into_series(),
+            Int32Array::from_iter(Field::new("partition", DataType::Int32), [Some(7)])
+                .into_series(),
+        ])
+        .unwrap();
+        let input = micropartition(batch);
+        let mut info = kafka_info(KafkaValueFormat::Raw);
+        info.value_col = bound(0, "value", DataType::Binary);
+        info.key_col = None;
+        info.partition = Some(KafkaPartition::Dynamic(bound(
+            1,
+            "partition",
+            DataType::Int32,
+        )));
+
+        let records = records_from_micropartition(&input, &info).unwrap();
+
+        assert_eq!(records[0].partition, Some(7));
+    }
+
+    #[test]
+    fn rejects_int64_dynamic_partition_overflow() {
+        let batch = RecordBatch::from_nonempty_columns(vec![
+            BinaryArray::from_iter("value", [Some(b"value".as_slice())]).into_series(),
+            Int64Array::from_iter(
+                Field::new("partition", DataType::Int64),
+                [Some(i64::from(i32::MAX) + 1)],
+            )
+            .into_series(),
+        ])
+        .unwrap();
+        let input = micropartition(batch);
+        let mut info = kafka_info(KafkaValueFormat::Raw);
+        info.value_col = bound(0, "value", DataType::Binary);
+        info.key_col = None;
+        info.partition = Some(KafkaPartition::Dynamic(bound(
+            1,
+            "partition",
+            DataType::Int64,
+        )));
+
+        let err = records_from_micropartition(&input, &info).unwrap_err();
+
+        assert!(err.to_string().contains("[write_kafka]"));
+        assert!(err.to_string().contains("must fit Int32"));
     }
 
     #[test]
