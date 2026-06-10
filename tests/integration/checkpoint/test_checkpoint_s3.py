@@ -717,6 +717,7 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
         key = f"{bucket}/input/data.parquet"
         s3_path = f"s3://{key}"
         ckpt_prefix = f"s3://{bucket}/checkpoints"
+        output_path = f"s3://{bucket}/output"
 
         def put(values: list[int]) -> None:
             buf = _io.BytesIO()
@@ -725,10 +726,14 @@ def test_checkpoint_s3_file_path_reprocesses_on_etag_change(minio_io_config):
                 f.write(buf.getvalue())
 
         def run() -> int:
+            # write_parquet keeps the pipeline map-only (count_rows would insert
+            # an aggregate, which checkpointing rejects); count the output read.
             ckpt = CheckpointStore(ckpt_prefix, minio_io_config)
-            return daft.read_parquet(
+            df = daft.read_parquet(
                 s3_path, checkpoint=daft.CheckpointConfig(store=ckpt), io_config=minio_io_config
-            ).count_rows()
+            )
+            df.write_parquet(output_path, io_config=minio_io_config, write_mode="overwrite")
+            return daft.read_parquet(output_path, io_config=minio_io_config).count_rows()
 
         put([1, 2, 3])
         assert run() == 3, "run 1 processes original object"

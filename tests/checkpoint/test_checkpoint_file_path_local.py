@@ -23,10 +23,15 @@ from daft import CheckpointConfig, CheckpointStore
 
 
 def _run(input_path, ckpt_dir) -> int:
-    """Run a file-path-mode checkpoint read and return the row count processed."""
+    """Run a file-path-mode checkpoint read and return the number of rows processed.
+
+    Materializes with ``to_pydict()`` rather than ``count_rows()``: the latter
+    inserts an aggregate, and checkpointing only supports map-only pipelines
+    between source and sink.
+    """
     store = CheckpointStore(str(ckpt_dir))
     df = daft.read_parquet(str(input_path), checkpoint=CheckpointConfig(store=store))
-    return df.count_rows()
+    return len(df.to_pydict()["value"])
 
 
 def test_file_path_first_run_then_skip(tmp_path):
@@ -103,10 +108,10 @@ def test_file_path_mode_allowed_on_native_runner(tmp_path):
 
     store = CheckpointStore(str(ckpt_dir))
     # Should not raise.
-    daft.read_parquet(str(input_file), checkpoint=CheckpointConfig(store=store)).count_rows()
+    daft.read_parquet(str(input_file), checkpoint=CheckpointConfig(store=store)).to_pydict()
 
     # Row-level mode (on=) remains unsupported on the native runner.
     with pytest.raises(ValueError, match="native"):
         daft.read_parquet(
             str(input_file), checkpoint=CheckpointConfig(store=CheckpointStore(str(ckpt_dir)), on="value")
-        ).count_rows()
+        ).to_pydict()
