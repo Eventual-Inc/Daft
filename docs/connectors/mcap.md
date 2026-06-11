@@ -32,6 +32,15 @@ pip install mcap
     df.show()
     ```
 
+=== "Remote File (HTTP/HTTPS)"
+
+    ```python
+    import daft
+
+    df = daft.read_mcap("https://example.com/recordings/session.mcap")
+    df.show()
+    ```
+
 === "Directory of Files"
 
     ```python
