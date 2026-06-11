@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn preserves_duplicate_keys_and_order() {
-        let headers = vec![
+        let headers = [
             make_header("same", Some(b"first")).unwrap(),
             make_header("other", Some(b"middle")).unwrap(),
             make_header("same", Some(b"second")).unwrap(),

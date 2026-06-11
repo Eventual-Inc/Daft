@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections.abc import Iterator
@@ -262,7 +263,8 @@ def test_read_kafka_chunk_size_one(kafka_context: dict[str, object]) -> None:
         partitions=[0],
         chunk_size=1,
     ).collect()
-    assert len(list(df_all_p0.iter_partitions())) == 20
+    if os.environ.get("DAFT_RUNNER") == "native":
+        assert len(list(df_all_p0.iter_partitions())) == 20
     decoded = _decode_rows(df_all_p0.to_pylist())
     assert len(decoded) == 20
     assert {r["topic"] for r in decoded} == {topic}

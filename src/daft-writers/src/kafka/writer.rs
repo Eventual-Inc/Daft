@@ -101,8 +101,8 @@ impl<P: KafkaProducer> AsyncFileWriter for KafkaWriter<P> {
         }
 
         Ok(WriteResult {
-            rows_written,
             bytes_written,
+            rows_written,
         })
     }
 
