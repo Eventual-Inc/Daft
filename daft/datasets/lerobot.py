@@ -20,7 +20,6 @@ from daft.file import VideoFile
 from daft.exceptions import DaftCoreException
 from daft.functions import lpad
 from daft.functions.file_ import video_file
-from daft.functions.video import get_video_frame_by_idx
 from daft.udf import func
 
 if TYPE_CHECKING:
@@ -109,7 +108,6 @@ def _decode_lerobot_video_timestamp(
         )
     return closest_img
 
-
 class Feature(TypedDict):
     dtype: str
 
@@ -117,8 +115,8 @@ class LeRobotInfo(TypedDict):
     codebase_version: str
     data_path: str
     video_path: str
+    fps: float
     features: dict[str, Feature]
-
 
 def _read_info(normalized_uri: str, io_config: IOConfig | None = None) -> LeRobotInfo:
     with daft.open_file(f"{normalized_uri}/meta/info.json", io_config=io_config) as f:
@@ -126,7 +124,6 @@ def _read_info(normalized_uri: str, io_config: IOConfig | None = None) -> LeRobo
         if info["codebase_version"] != "v3.0":
             raise ValueError("`daft.datasets.lerobot` currently only supports LeRobot datasets of v3 and above")
         return info
-
 
 @PublicAPI
 def read(
@@ -137,16 +134,21 @@ def read(
 ) -> DataFrame:
     """Read LeRobot v3 episode metadata as a lazy DataFrame (one row per frame with episode metadata)."""
     root = _normalize_dataset_root(dataset_uri)
+    info = _read_info(root, io_config=io_config)
 
-    episode_df = daft.datasets.lerobot.read_episodes(dataset_uri, io_config=io_config, include_stats=include_stats)
-    frame_df = daft.read_parquet(f"{root}/data/**")
-    df = episode_df.join(frame_df, on=["episode_index"])
-    df = df.exclude("data/chunk_index", "data/file_index")
+    # Keep the per-episode video metadata (notably `videos/{key}/from_timestamp`,
+    # the time within the shard where each episode's footage begins). We need it
+    # to translate episode-local frame timestamps into absolute shard timestamps
+    # when decoding, and drop these internal columns again before returning.
+    episode_df = read_episodes(
+        dataset_uri, io_config=io_config, include_stats=include_stats, include_video_metadata=True
+    )
+    df = load_episode_frames(episode_df, dataset_uri, io_config=io_config)
 
     # Load video frames into memory
     if load_video_frames is not False:
         if load_video_frames is True:
-            video_keys = []  # TODO
+            video_keys = [name for name, feat_info in info["features"].items() if feat_info["dtype"] == "video"]
         elif isinstance(load_video_frames, str):
             video_keys = [load_video_frames]
         elif isinstance(load_video_frames, list) and all(isinstance(k, str) for k in load_video_frames):
@@ -154,14 +156,37 @@ def read(
         else:
             raise ValueError(f"Invalid value provided for argument load_video_frames=`{load_video_frames}`")
 
+        # An MP4 shard packs many episodes back to back, so the shard's internal
+        # frame numbering is NOT the parquet's episode-local `frame_index` (which
+        # resets to 0 each episode). Seeking by `frame_index` only happens to work
+        # for the first episode in each shard. Instead, seek by absolute timestamp:
+        # `from_timestamp` (where this episode begins in the shard) + the per-frame
+        # episode-local `timestamp`. That keeps a single coordinate system end to end.
+        fps = float(info["fps"])
+        tolerance_s = 1.0 / fps / 2.0  # half a frame period: any closer frame is unambiguously "the" frame
+
         # To increase parallelism, reduce batch size
-        df = df.into_batches(16)  # TODO: Set it in the batch UDF instead?
+        df = df.into_batches(16)  # TODO (for later): Set it in the batch UDF instead?
         for k in video_keys:
-            # TODO: Optimize by using a batch UDF to avoid opening the same video multiple times
-            df = df.with_column(k, get_video_frame_by_idx(f"videos/{k}/video", col("frame_idx")))
+            # TODO (for later): Optimize by using a batch UDF to avoid opening the same video multiple times
+            df = df.with_column(
+                k,
+                _decode_lerobot_video_timestamp(
+                    col(f"videos/{k}/video"),
+                    col(f"videos/{k}/from_timestamp"),
+                    col("timestamp"),
+                    lit(tolerance_s),
+                    lit(0),  # image_width: 0 disables resize (decode at native resolution)
+                    lit(0),  # image_height: 0 disables resize
+                ),
+            )
             df = df.exclude(f"videos/{k}/video")
 
         # TODO: What about raw images, what do i do about them? Is that a thing in LeRobot v3
+
+    # Drop the internal per-episode video metadata we kept above (chunk/file index,
+    # from/to timestamp). This restores read_episodes' default of hiding these.
+    df = df.exclude(*(c for c in df.column_names if c.startswith("videos/") and not c.endswith("/video")))
 
     return df
 
@@ -213,6 +238,40 @@ def read_episodes(
     if not include_video_metadata:
         df = df.exclude(*(c for c in df.column_names if c.startswith("videos/") and not c.endswith("/video")))
 
+    return df
+
+
+@PublicAPI
+def load_episode_frames(
+    episodes: DataFrame,
+    dataset_uri: str,
+    io_config: IOConfig | None = None,
+) -> DataFrame:
+    """Expand an episode-level DataFrame into a frame-level DataFrame.
+
+    Reads the per-frame parquet under ``data/**`` and joins it to the provided
+    episode metadata on ``episode_index``, producing one row per frame. Episode
+    metadata is broadcast across each episode's frames.
+
+    Filter ``episodes`` before calling this to expand only the episodes you need;
+    only the surviving episodes contribute to the join.
+
+    Args:
+        episodes: Episode-level DataFrame, typically from :func:`read_episodes`
+            (optionally filtered). Must contain an ``episode_index`` column.
+        dataset_uri: The same dataset identifier passed to :func:`read_episodes`
+            (Huggingface repo id ``org/name``, or a local / remote directory such
+            as ``s3://...`` or ``hf://datasets/...``).
+        io_config: Optional IO configuration for remote reads.
+
+    Returns:
+        Lazy DataFrame with one row per frame.
+    """
+    root = _normalize_dataset_root(dataset_uri)
+
+    frame_df = daft.read_parquet(f"{root}/data/**", io_config=io_config)
+    df = episodes.join(frame_df, on=["episode_index"])
+    df = df.exclude("data/chunk_index", "data/file_index")
     return df
 
 
