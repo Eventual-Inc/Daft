@@ -688,7 +688,7 @@ def test_udf_fails_with_no_actors_schedulable():
             return data
 
         result = df.select(udf_1(col("a")).alias("udf_1"))
-        with pytest.raises(RuntimeError, match="RuntimeError: UDF actors failed to start within 10 seconds"):
+        with pytest.raises(RuntimeError, match="No single actor can be scheduled"):
             result.collect()
 
 
