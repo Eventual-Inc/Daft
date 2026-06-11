@@ -95,6 +95,7 @@ impl Default for GoosefsConfig {
 impl GoosefsConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(root) = &self.root {
             res.push(format!("Root = {root}"));
@@ -120,19 +121,37 @@ impl GoosefsConfig {
         if self.auth_password.is_some() {
             res.push("Auth password = ***".to_string());
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Max retries = {}", self.max_retries));
-        res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
-        res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
-        res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
-        res.push(format!(
-            "Max concurrent requests = {}",
-            self.max_concurrent_requests
-        ));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
+        // Only emit non-default values for numeric/boolean fields so that a
+        // freshly-defaulted GoosefsConfig produces an empty multiline view
+        // (matching the sparse-display contract used by Option<_> fields and
+        // by `auth_username` above).
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.max_retries != defaults.max_retries {
+            res.push(format!("Max retries = {}", self.max_retries));
+        }
+        if self.retry_timeout_ms != defaults.retry_timeout_ms {
+            res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
+        }
+        if self.max_concurrent_requests != defaults.max_concurrent_requests {
+            res.push(format!(
+                "Max concurrent requests = {}",
+                self.max_concurrent_requests
+            ));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
         res
     }
 
@@ -191,6 +210,51 @@ impl GoosefsConfig {
                     auth_password.as_string().clone(),
                 );
             }
+        }
+
+        // Forward retry / timeout / concurrency knobs to the OpenDAL config map.
+        //
+        // Older versions of `opendal-service-goosefs` may not yet recognize all
+        // of these keys (the backend's `GoosefsConfig` is `#[non_exhaustive]`
+        // and unknown keys are silently ignored by `from_iter`). Inserting
+        // them here ensures that user-provided values are *not* silently
+        // dropped at the Daft layer — they reach the backend, and any version
+        // that exposes the corresponding fields will pick them up
+        // automatically. We only emit non-default values to keep the
+        // forwarded map lean.
+        let defaults = Self::default();
+        if self.max_retries != defaults.max_retries {
+            config.insert("max_retries".to_string(), self.max_retries.to_string());
+        }
+        if self.retry_timeout_ms != defaults.retry_timeout_ms {
+            config.insert(
+                "retry_timeout_ms".to_string(),
+                self.retry_timeout_ms.to_string(),
+            );
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            config.insert(
+                "connect_timeout_ms".to_string(),
+                self.connect_timeout_ms.to_string(),
+            );
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            config.insert(
+                "read_timeout_ms".to_string(),
+                self.read_timeout_ms.to_string(),
+            );
+        }
+        if self.max_concurrent_requests != defaults.max_concurrent_requests {
+            config.insert(
+                "max_concurrent_requests".to_string(),
+                self.max_concurrent_requests.to_string(),
+            );
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            config.insert(
+                "max_connections_per_io_thread".to_string(),
+                self.max_connections_per_io_thread.to_string(),
+            );
         }
 
         config
@@ -328,6 +392,80 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("Auth type = simple")));
         assert!(lines.iter().any(|l| l.contains("Auth username = alice")));
         assert!(lines.iter().any(|l| l.contains("Auth password = ***")));
+    }
+
+    #[test]
+    fn test_goosefs_config_multiline_display_defaults_are_sparse() {
+        // A freshly-defaulted config must not emit any timeout/retry/
+        // concurrency lines, mirroring how Option<_> fields and
+        // `auth_username` are gated. This guards against the regression
+        // flagged in the P2 review where every numeric field always
+        // appeared even when left at its default.
+        let lines = GoosefsConfig::default().multiline_display();
+        assert!(lines.is_empty(), "expected empty, got {lines:?}");
+    }
+
+    #[test]
+    fn test_goosefs_config_multiline_display_emits_overridden_numerics() {
+        // Once the user overrides a numeric field, the corresponding line
+        // must reappear. Defaults stay hidden.
+        let config = GoosefsConfig {
+            connect_timeout_ms: 5_000, // non-default
+            ..Default::default()
+        };
+        let lines = config.multiline_display();
+        assert!(
+            lines.iter().any(|l| l.contains("Connect timeout = 5000ms")),
+            "expected overridden connect_timeout_ms to be displayed, got {lines:?}"
+        );
+        // Untouched numeric fields stay hidden.
+        assert!(!lines.iter().any(|l| l.contains("Max retries")));
+        assert!(!lines.iter().any(|l| l.contains("Retry timeout")));
+        assert!(!lines.iter().any(|l| l.contains("Read timeout")));
+        assert!(!lines.iter().any(|l| l.contains("Max concurrent requests")));
+        assert!(!lines.iter().any(|l| l.contains("Max connections")));
+        assert!(!lines.iter().any(|l| l.contains("Anonymous")));
+    }
+
+    #[test]
+    fn test_to_opendal_config_defaults_drop_retry_and_timeout_keys() {
+        // For a defaulted config we should not pollute the OpenDAL map
+        // with redundant default values; only user-overridden knobs are
+        // forwarded.
+        let map = GoosefsConfig::default().to_opendal_config("m:9200");
+        assert!(!map.contains_key("max_retries"));
+        assert!(!map.contains_key("retry_timeout_ms"));
+        assert!(!map.contains_key("connect_timeout_ms"));
+        assert!(!map.contains_key("read_timeout_ms"));
+        assert!(!map.contains_key("max_concurrent_requests"));
+        assert!(!map.contains_key("max_connections_per_io_thread"));
+    }
+
+    #[test]
+    fn test_to_opendal_config_forwards_retry_timeout_and_concurrency() {
+        // Regression test for the P1 review: when the user explicitly sets
+        // timeout / retry / concurrency knobs on `GoosefsConfig`, those
+        // values must be propagated into the OpenDAL config map rather
+        // than being silently dropped at the Daft layer.
+        let config = GoosefsConfig {
+            max_retries: 7,
+            retry_timeout_ms: 12_345,
+            connect_timeout_ms: 6_789,
+            read_timeout_ms: 54_321,
+            max_concurrent_requests: 128,
+            max_connections_per_io_thread: 64,
+            ..Default::default()
+        };
+        let map = config.to_opendal_config("m:9200");
+        assert_eq!(map.get("max_retries"), Some(&"7".to_string()));
+        assert_eq!(map.get("retry_timeout_ms"), Some(&"12345".to_string()));
+        assert_eq!(map.get("connect_timeout_ms"), Some(&"6789".to_string()));
+        assert_eq!(map.get("read_timeout_ms"), Some(&"54321".to_string()));
+        assert_eq!(map.get("max_concurrent_requests"), Some(&"128".to_string()));
+        assert_eq!(
+            map.get("max_connections_per_io_thread"),
+            Some(&"64".to_string())
+        );
     }
 
     #[test]
