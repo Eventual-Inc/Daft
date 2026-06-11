@@ -292,12 +292,8 @@ def test_raw_read_transform_write_roundtrip(kafka_e2e_context: KafkaE2EContext) 
         }
         for record in source_records
     ]
-    consumed_tuples = sorted(
-        (row["partition"], row["timestamp_ms"], row["key"], row["value"]) for row in consumed
-    )
-    expected_tuples = sorted(
-        (row["partition"], row["timestamp_ms"], row["key"], row["value"]) for row in expected
-    )
+    consumed_tuples = sorted((row["partition"], row["timestamp_ms"], row["key"], row["value"]) for row in consumed)
+    expected_tuples = sorted((row["partition"], row["timestamp_ms"], row["key"], row["value"]) for row in expected)
     assert consumed_tuples == expected_tuples
 
     daft_rows = read_all_with_daft(bootstrap=ctx.bootstrap, topic=ctx.raw_topic)

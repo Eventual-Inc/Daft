@@ -111,13 +111,9 @@ def _normalize_kafka_bootstrap_servers(bootstrap_servers: str | typing.Sequence[
             raise ValueError("[write_kafka] bootstrap_servers must be non-empty")
         return bootstrap_servers
     if isinstance(bootstrap_servers, (bytes, bytearray)):
-        raise TypeError(
-            "[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings"
-        )
+        raise TypeError("[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings")
     if not isinstance(bootstrap_servers, Sequence):
-        raise TypeError(
-            "[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings"
-        )
+        raise TypeError("[write_kafka] bootstrap_servers must be a non-empty string or sequence of non-empty strings")
     if len(bootstrap_servers) == 0:
         raise ValueError("[write_kafka] bootstrap_servers sequence must be non-empty")
 
