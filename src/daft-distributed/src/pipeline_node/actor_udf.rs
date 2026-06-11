@@ -191,6 +191,7 @@ impl ActorUDF {
                 break;
             }
         }
+        drop(result_tx);
         // Wait for all tasks to finish.
         while let Some(result) = running_tasks.join_next().await {
             if result?.is_err() {
