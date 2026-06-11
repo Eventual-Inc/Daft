@@ -610,7 +610,17 @@ impl SessionState {
         match self.data_sources.lookup(name, self.options.lookup_mode()) {
             sources if sources.is_empty() => Ok(None),
             sources if sources.len() == 1 => Ok(Some(sources[0].clone())),
-            _ => ambiguous_identifier_err!("DataSource", std::iter::once(name.to_string())),
+            _ => {
+                // Surface the stored aliases that collided. The aliases are the binding
+                // keys rather than the sources' name properties, since reading a
+                // DataSource name requires calling into Python.
+                let aliases = self
+                    .data_sources
+                    .list(None)
+                    .into_iter()
+                    .filter(|alias| alias.to_lowercase() == name.to_lowercase());
+                ambiguous_identifier_err!("DataSource", aliases)
+            }
         }
     }
 
