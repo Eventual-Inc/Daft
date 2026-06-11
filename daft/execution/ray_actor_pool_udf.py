@@ -99,21 +99,20 @@ async def start_udf_actors(
         }
     )
 
-    cluster_resources = ray.cluster_resources()
     cpus_per_actor = udf_options.get("num_cpus", 1.0)
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
-    total_cpus = cluster_resources.get("CPU", 0)
-    total_gpus = cluster_resources.get("GPU", 0)
-    if cpus_per_actor > total_cpus:
+    max_node_cpus = max((n["Resources"].get("CPU", 0) for n in ray.nodes() if n["Alive"]), default=0)
+    max_node_gpus = max((n["Resources"].get("GPU", 0) for n in ray.nodes() if n["Alive"]), default=0)
+    if cpus_per_actor > max_node_cpus:
         raise RuntimeError(
             f"Actor UDF requires {cpus_per_actor} CPUs per actor, "
-            f"but cluster only has {total_cpus} CPUs total. "
+            f"but the largest node only has {max_node_cpus} CPUs. "
             f"No single actor can be scheduled."
         )
-    if gpus_per_actor > 0 and gpus_per_actor > total_gpus:
+    if gpus_per_actor > 0 and gpus_per_actor > max_node_gpus:
         raise RuntimeError(
             f"Actor UDF requires {gpus_per_actor} GPUs per actor, "
-            f"but cluster only has {total_gpus} GPUs total. "
+            f"but the largest node only has {max_node_gpus} GPUs. "
             f"No single actor can be scheduled."
         )
 
