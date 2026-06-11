@@ -200,6 +200,7 @@ def get_frame_by_idx_impl(
 ) -> PIL.Image.Image:
     return file.get_frame_by_idx(idx)
 
+
 video_get_frame_by_idx_fn = Func._from_func(
     get_frame_by_idx_impl,
     return_dtype=daft.DataType.image(),
@@ -211,6 +212,7 @@ video_get_frame_by_idx_fn = Func._from_func(
     on_error=None,
     name_override="video_get_frame_by_idx",
 )
+
 
 def get_video_frame_by_idx(
     file_expr: Expression,
