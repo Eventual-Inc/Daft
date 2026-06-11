@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -114,6 +115,20 @@ async def start_udf_actors(
             f"Actor UDF requires {gpus_per_actor} GPUs per actor, "
             f"but the largest node only has {max_node_gpus} GPUs. "
             f"No single actor can be scheduled."
+        )
+
+    cluster_cpus = ray.cluster_resources().get("CPU", 0)
+    cluster_gpus = ray.cluster_resources().get("GPU", 0)
+    max_schedulable = int(min(
+        cluster_cpus / cpus_per_actor if cpus_per_actor > 0 else float("inf"),
+        cluster_gpus / gpus_per_actor if gpus_per_actor > 0 else float("inf"),
+    ))
+    if num_actors > max_schedulable:
+        logging.warning(
+            "with_concurrency(%d) requested but only %d actors can be scheduled "
+            "(%g CPUs, %g GPUs available). Will proceed with partial actor pool "
+            "after actor_udf_ready_timeout (%ds).",
+            num_actors, max_schedulable, cluster_cpus, cluster_gpus, timeout,
         )
 
     actors: list[RayActorHandle] = [
