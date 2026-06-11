@@ -29,7 +29,9 @@ class ClusteringKeys:
     _keys: _PyClusteringKeys
 
     def __init__(self) -> None:
-        raise NotImplementedError("Use ClusteringKeys.hash(...) to construct ClusteringKeys.")
+        raise NotImplementedError(
+            "Use ClusteringKeys.hash(...) or ClusteringKeys.range(...) to construct ClusteringKeys."
+        )
 
     def __repr__(self) -> str:
         return self._keys.__repr__()
@@ -57,3 +59,32 @@ class ClusteringKeys:
         """
         exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
         return ClusteringKeys._from_clustering_keys(_PyClusteringKeys.hash([e._expr for e in exprs]))
+
+    @staticmethod
+    def range(*cols: str | Expression, descending: bool = False, nulls_first: bool | None = None) -> ClusteringKeys:
+        """Declares that the source's output is range-partitioned by ``cols``.
+
+        Each partition covers a non-overlapping range of values for the declared columns in the
+        declared direction. ``descending`` and ``nulls_first`` apply uniformly to all keys. No
+        guarantee is required about the sort order of rows within each partition.
+
+        Column-name strings are interpreted as column references.
+
+        Args:
+            cols: The clustering keys, as column names or expressions.
+            descending: If ``True``, partitions are ordered from highest to lowest values.
+                Defaults to ``False`` (ascending partition order).
+            nulls_first: Whether rows with null key values live in the first partition
+                (``True``) or the last (``False``). Defaults to ``descending``, matching sort
+                semantics (nulls last when ascending, first when descending). A downstream sort
+                can only skip its shuffle when its own ``nulls_first`` matches this declaration.
+
+        Examples:
+            >>> from daft.io.clustering import ClusteringKeys
+            >>> keys = ClusteringKeys.range("ts_ns")
+            >>> keys_desc = ClusteringKeys.range("ts_ns", descending=True)
+        """
+        exprs: Sequence[Expression] = [c if isinstance(c, Expression) else col(c) for c in cols]
+        return ClusteringKeys._from_clustering_keys(
+            _PyClusteringKeys.range([e._expr for e in exprs], descending=descending, nulls_first=nulls_first)
+        )
