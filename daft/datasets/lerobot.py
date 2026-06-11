@@ -8,16 +8,16 @@ See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for format details.
 
 from __future__ import annotations
 
-import re
 import json
+import re
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import daft
 from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
+from daft.exceptions import DaftCoreException
 from daft.expressions import col, lit
 from daft.file import VideoFile
-from daft.exceptions import DaftCoreException
 from daft.functions import lpad
 from daft.functions.file_ import video_file
 from daft.udf import func
@@ -46,7 +46,7 @@ def _decode_lerobot_video_timestamp(
     tolerance_s: float,
     image_width_i: int,
     image_height_i: int,
-):
+) -> Any:  # returns a PIL.Image; PIL is an optional dependency imported lazily below
     """Pick the decoded frame closest in time to ``episode_from_timestamp_s + frame_timestamp_s``."""
     try:
         import av as av_mod
@@ -108,8 +108,10 @@ def _decode_lerobot_video_timestamp(
         )
     return closest_img
 
+
 class Feature(TypedDict):
     dtype: str
+
 
 class LeRobotInfo(TypedDict):
     codebase_version: str
@@ -118,12 +120,14 @@ class LeRobotInfo(TypedDict):
     fps: float
     features: dict[str, Feature]
 
+
 def _read_info(normalized_uri: str, io_config: IOConfig | None = None) -> LeRobotInfo:
     with daft.open_file(f"{normalized_uri}/meta/info.json", io_config=io_config) as f:
-        info = cast(LeRobotInfo, json.load(f))
+        info = cast("LeRobotInfo", json.load(f))
         if info["codebase_version"] != "v3.0":
             raise ValueError("`daft.datasets.lerobot` currently only supports LeRobot datasets of v3 and above")
         return info
+
 
 @PublicAPI
 def read(
@@ -220,14 +224,14 @@ def read_episodes(
         df = df.exclude(*(c for c in df.column_names if c.startswith("meta/")))
     if not include_stats:
         df = df.exclude(*(c for c in df.column_names if c.startswith("stats/")))
-    
+
     # Get the video keys
     video_keys = set(name for name, feat_info in info["features"].items() if feat_info["dtype"] == "video")
 
     for key in video_keys:
         file_name_expr = (
             lit(f"{root}/videos/{key}/chunk-")
-            + lpad(col(f"videos/{key}/chunk_index").cast(DataType.string), 3, "0")    
+            + lpad(col(f"videos/{key}/chunk_index").cast(DataType.string), 3, "0")
             + lit("/file-")
             + lpad(col(f"videos/{key}/file_index").cast(DataType.string), 3, "0")
             + lit(".mp4")
