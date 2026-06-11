@@ -1,142 +1,3 @@
-# Kafka Write Local E2E Implementation Plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
-**Goal:** Add an opt-in local Docker E2E test that validates Daft native `write_kafka` against a real Redpanda broker.
-
-**Architecture:** Create one local-only pytest module under `tests/local_e2e` with a module-level `skipif` environment gate so it is never run by default. Reuse the existing Redpanda Docker Compose service and local helper functions for broker readiness, topic creation, seed production, exact consumption, Daft readback, summary assertions, and message normalization.
-
-**Tech Stack:** pytest, Daft Python API, `confluent_kafka`, existing Redpanda Docker Compose service, native Daft runner.
-
----
-
-## File Structure
-
-- Create `tests/local_e2e/test_kafka_write_e2e.py`
-  - Owns the full opt-in local Kafka write E2E.
-  - Contains local helpers only; do not import private helpers from existing integration tests.
-  - Marks tests skipped unless `DAFT_RUN_KAFKA_LOCAL_E2E=1`.
-
-- Modify `tests/conftest.py`
-  - Register the `local_e2e` marker next to the existing `integration` marker.
-  - Do not change default `addopts`; the environment gate plus explicit opt-in marker selection are the safety mechanisms.
-
-## Task 1: Opt-In Test Module Skeleton
-
-**Files:**
-- Create: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Create the local E2E test directory**
-
-Run:
-
-```bash
-mkdir -p tests/local_e2e
-```
-
-Expected: directory exists and no source files are modified.
-
-- [ ] **Step 2: Add a gated module skeleton**
-
-Create `tests/local_e2e/test_kafka_write_e2e.py` with:
-
-```python
-from __future__ import annotations
-
-import os
-
-import pytest
-
-
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.local_e2e,
-    pytest.mark.skipif(
-        os.environ.get("DAFT_RUN_KAFKA_LOCAL_E2E") != "1",
-        reason="local Kafka E2E is opt-in",
-    ),
-]
-
-
-def test_kafka_write_local_e2e_placeholder() -> None:
-    assert True
-```
-
-- [ ] **Step 3: Verify the module is not selected by default**
-
-Run:
-
-```bash
-DAFT_RUNNER=native .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py -q -rs; test $? -eq 5
-```
-
-Expected: the repository default marker filter deselects the placeholder test and pytest returns code `5`.
-
-- [ ] **Step 4: Verify explicit marker selection is still env-gated**
-
-Run:
-
-```bash
-DAFT_RUNNER=native .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py \
-  -m "integration and local_e2e" -q -rs
-```
-
-Expected: the placeholder test is selected, skipped by the environment gate, and exits with code `0`.
-
-- [ ] **Step 5: Verify the module runs when opted in**
-
-Run:
-
-```bash
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py -m "integration and local_e2e" -q
-```
-
-Expected: one placeholder test passes. The explicit `-m` expression overrides the repository default that excludes integration tests.
-
-## Task 2: Marker Registration
-
-**Files:**
-- Modify: `tests/conftest.py`
-
-- [ ] **Step 1: Register `local_e2e` marker**
-
-Modify `pytest_configure` in `tests/conftest.py` to keep the existing `integration` marker and add:
-
-```python
-config.addinivalue_line(
-    "markers",
-    "local_e2e: mark opt-in local end-to-end tests",
-)
-```
-
-Keep the existing default in `pyproject.toml` unchanged:
-
-```toml
-addopts = "-m 'not (integration or benchmark or hypothesis)'"
-```
-
-- [ ] **Step 2: Re-run the explicit env-gate skip check**
-
-Run:
-
-```bash
-DAFT_RUNNER=native .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py \
-  -m "integration and local_e2e" -q -rs
-```
-
-Expected: tests are skipped by the environment gate and no unknown marker warning is emitted.
-
-## Task 3: Kafka Helper Layer
-
-**Files:**
-- Modify: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Replace the placeholder module with helper imports and constants**
-
-Replace the entire placeholder module with:
-
-```python
 from __future__ import annotations
 
 import json
@@ -151,7 +12,6 @@ from typing import Any
 import pytest
 
 import daft
-
 
 pytestmark = [
     pytest.mark.integration,
@@ -173,13 +33,21 @@ class SeedRecord:
     value: bytes
     partition: int
     timestamp_ms: int
-```
 
-- [ ] **Step 2: Add broker readiness and topic helpers**
 
-Append:
+@dataclass(frozen=True)
+class KafkaE2EContext:
+    bootstrap: str
+    run_id: str
+    base_ts_ms: int
+    source_topic: str
+    raw_topic: str
+    user_topic: str
+    order_topic: str
+    headers_topic: str
+    compact_topic: str
 
-```python
+
 def wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
     confluent_kafka = pytest.importorskip("confluent_kafka")
 
@@ -231,13 +99,8 @@ def create_topic(*, bootstrap: str, topic: str, partitions: int, config: dict[st
         ):
             return
         raise
-```
 
-- [ ] **Step 3: Add producer and consumer helpers**
 
-Append:
-
-```python
 def produce_seed_records(*, bootstrap: str, topic: str, records: Iterable[SeedRecord]) -> None:
     confluent_kafka = pytest.importorskip("confluent_kafka")
 
@@ -282,13 +145,8 @@ def consume_exactly(*, bootstrap: str, topic: str, count: int, timeout_s: int = 
     if len(messages) != count:
         pytest.fail(f"timed out waiting for {count} message(s) from topic {topic!r}; got {len(messages)}")
     return messages
-```
 
-- [ ] **Step 4: Add Daft read and assertion helpers**
 
-Append:
-
-```python
 def read_all_with_daft(*, bootstrap: str, topic: str) -> list[dict[str, Any]]:
     return (
         daft.read_kafka(
@@ -322,24 +180,6 @@ def normalize_message(msg: Any) -> dict[str, Any]:
         "timestamp_ms": msg.timestamp()[1],
         "headers": msg.headers(),
     }
-```
-
-- [ ] **Step 5: Add run context fixture**
-
-Append:
-
-```python
-@dataclass(frozen=True)
-class KafkaE2EContext:
-    bootstrap: str
-    run_id: str
-    base_ts_ms: int
-    source_topic: str
-    raw_topic: str
-    user_topic: str
-    order_topic: str
-    headers_topic: str
-    compact_topic: str
 
 
 @pytest.fixture(scope="module")
@@ -373,35 +213,14 @@ def kafka_e2e_context() -> Iterator[KafkaE2EContext]:
     )
 
     yield ctx
-```
 
-- [ ] **Step 6: Verify helper-only module still imports and runs no tests**
 
-Run:
-
-```bash
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py -m "integration and local_e2e" -q
-```
-
-Expected: pytest collects zero tests or only fixture import passes. If pytest exits with "no tests ran" as code `5`, continue to Task 4 without treating this as a functional failure.
-
-## Task 4: Raw Mirror E2E Scenario
-
-**Files:**
-- Modify: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Add source record builder**
-
-Append before tests:
-
-```python
 def build_source_records(base_ts_ms: int) -> list[SeedRecord]:
     rows = [
         (1, b"user-001", {"event_id": 1, "kind": "signup", "amount": 0, "note": "hello"}, 0),
         (2, b"order-001", {"event_id": 2, "kind": "purchase", "amount": 19.99, "note": "zstd-path"}, 1),
         (3, b"user-001", {"event_id": 3, "kind": "update", "amount": 0, "note": "duplicate-key"}, 0),
-        (4, "user-004".encode("utf-8"), {"event_id": 4, "kind": "unicode", "note": "hello unicode"}, 2),
+        (4, b"user-004", {"event_id": 4, "kind": "unicode", "note": "hello unicode"}, 2),
         (5, b"user-005", {"event_id": 5, "kind": "logout", "amount": 0, "note": "small"}, 0),
         (6, b"order-006", {"event_id": 6, "kind": "purchase", "amount": 42.5, "note": "medium"}, 1),
         (7, b"user-007", {"event_id": 7, "kind": "profile", "amount": 0, "note": "large-" + "x" * 128}, 2),
@@ -415,19 +234,14 @@ def build_source_records(base_ts_ms: int) -> list[SeedRecord]:
         SeedRecord(
             event_id=event_id,
             key=key,
-            value=json.dumps(value, sort_keys=True).encode("utf-8"),
+            value=json.dumps(value, sort_keys=True).encode(),
             partition=partition,
             timestamp_ms=base_ts_ms + event_id,
         )
         for event_id, key, value, partition in rows
     ]
-```
 
-- [ ] **Step 2: Add raw mirror test**
 
-Append:
-
-```python
 def test_raw_read_transform_write_roundtrip(kafka_e2e_context: KafkaE2EContext) -> None:
     ctx = kafka_e2e_context
     source_records = build_source_records(ctx.base_ts_ms)
@@ -461,11 +275,14 @@ def test_raw_read_transform_write_roundtrip(kafka_e2e_context: KafkaE2EContext) 
 
     assert_summary(summary, attempted=len(source_records), delivered=len(source_records))
 
-    consumed = [normalize_message(msg) for msg in consume_exactly(
-        bootstrap=ctx.bootstrap,
-        topic=ctx.raw_topic,
-        count=len(source_records),
-    )]
+    consumed = [
+        normalize_message(msg)
+        for msg in consume_exactly(
+            bootstrap=ctx.bootstrap,
+            topic=ctx.raw_topic,
+            count=len(source_records),
+        )
+    ]
     expected = [
         {
             "key": record.key,
@@ -485,31 +302,8 @@ def test_raw_read_transform_write_roundtrip(kafka_e2e_context: KafkaE2EContext) 
 
     daft_rows = read_all_with_daft(bootstrap=ctx.bootstrap, topic=ctx.raw_topic)
     assert len(daft_rows) == len(source_records)
-```
 
-- [ ] **Step 3: Run the raw mirror test against Redpanda**
 
-Run:
-
-```bash
-docker compose -f tests/integration/io/docker-compose/docker-compose.yml up -d redpanda
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py::test_raw_read_transform_write_roundtrip \
-  -m "integration and local_e2e" -q -s
-```
-
-Expected: test passes and summary counters match the 12 seeded records.
-
-## Task 5: JSON Dynamic Topic And Tombstone Scenario
-
-**Files:**
-- Modify: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Add JSON dynamic topic test**
-
-Append:
-
-```python
 def test_json_dynamic_topic_and_tombstone(kafka_e2e_context: KafkaE2EContext) -> None:
     ctx = kafka_e2e_context
     json_rows = [
@@ -564,44 +358,22 @@ def test_json_dynamic_topic_and_tombstone(kafka_e2e_context: KafkaE2EContext) ->
     assert_summary(summary, attempted=3, delivered=3)
 
     user_messages = {
-        msg.key().decode("utf-8"): normalize_message(msg)
+        msg.key().decode(): normalize_message(msg)
         for msg in consume_exactly(bootstrap=ctx.bootstrap, topic=ctx.user_topic, count=2)
     }
     order_messages = {
-        msg.key().decode("utf-8"): normalize_message(msg)
+        msg.key().decode(): normalize_message(msg)
         for msg in consume_exactly(bootstrap=ctx.bootstrap, topic=ctx.order_topic, count=1)
     }
 
-    assert json.loads(user_messages["user-001"]["value"].decode("utf-8")) == json_rows[0]["value"]
+    assert json.loads(user_messages["user-001"]["value"].decode()) == json_rows[0]["value"]
     assert user_messages["user-002"]["value"] is None
-    assert json.loads(order_messages["order-001"]["value"].decode("utf-8")) == json_rows[1]["value"]
+    assert json.loads(order_messages["order-001"]["value"].decode()) == json_rows[1]["value"]
     assert user_messages["user-001"]["partition"] == 0
     assert user_messages["user-002"]["partition"] == 1
     assert order_messages["order-001"]["partition"] == 1
-```
 
-- [ ] **Step 2: Run the JSON dynamic topic test**
 
-Run:
-
-```bash
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py::test_json_dynamic_topic_and_tombstone \
-  -m "integration and local_e2e" -q -s
-```
-
-Expected: test passes; top-level `None` is consumed as Kafka null value.
-
-## Task 6: Headers And Compact Tombstone Scenarios
-
-**Files:**
-- Modify: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Add headers test**
-
-Append:
-
-```python
 def test_headers_preserve_duplicate_order_and_null(kafka_e2e_context: KafkaE2EContext) -> None:
     ctx = kafka_e2e_context
     summary = daft.from_pylist(
@@ -629,13 +401,8 @@ def test_headers_preserve_duplicate_order_and_null(kafka_e2e_context: KafkaE2ECo
     assert_summary(summary, attempted=1, delivered=1)
     [message] = consume_exactly(bootstrap=ctx.bootstrap, topic=ctx.headers_topic, count=1)
     assert message.headers() == [("trace", b"a"), ("trace", b"b"), ("nullable", None)]
-```
 
-- [ ] **Step 2: Add compact tombstone test**
 
-Append:
-
-```python
 def test_compacted_topic_receives_tombstone(kafka_e2e_context: KafkaE2EContext) -> None:
     ctx = kafka_e2e_context
     summary = daft.from_pylist(
@@ -656,37 +423,13 @@ def test_compacted_topic_receives_tombstone(kafka_e2e_context: KafkaE2EContext) 
 
     assert_summary(summary, attempted=2, delivered=2)
     messages = consume_exactly(bootstrap=ctx.bootstrap, topic=ctx.compact_topic, count=2)
-    assert {msg.key().decode("utf-8") for msg in messages} == {"user-compact-001"}
+    assert {msg.key().decode() for msg in messages} == {"user-compact-001"}
 
     values = [msg.value() for msg in messages]
     assert sum(value is None for value in values) == 1
-    assert [json.loads(value.decode("utf-8")) for value in values if value is not None] == [{"status": "active"}]
-```
+    assert [json.loads(value.decode()) for value in values if value is not None] == [{"status": "active"}]
 
-- [ ] **Step 3: Run headers and compact tests**
 
-Run:
-
-```bash
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest \
-  tests/local_e2e/test_kafka_write_e2e.py::test_headers_preserve_duplicate_order_and_null \
-  tests/local_e2e/test_kafka_write_e2e.py::test_compacted_topic_receives_tombstone \
-  -m "integration and local_e2e" -q -s
-```
-
-Expected: both tests pass.
-
-## Task 7: Validation Guardrails
-
-**Files:**
-- Modify: `tests/local_e2e/test_kafka_write_e2e.py`
-
-- [ ] **Step 1: Add validation tests**
-
-Append:
-
-```python
 def test_validation_guardrails(kafka_e2e_context: KafkaE2EContext) -> None:
     ctx = kafka_e2e_context
     df = daft.from_pydict({"value": [b"x"]})
@@ -715,85 +458,3 @@ def test_validation_guardrails(kafka_e2e_context: KafkaE2EContext) -> None:
             value_col="value",
             timeout_ms=WRITE_TIMEOUT_MS,
         )
-```
-
-- [ ] **Step 2: Run validation guardrails**
-
-Run:
-
-```bash
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py::test_validation_guardrails \
-  -m "integration and local_e2e" -q -s
-```
-
-Expected: test passes without producing misleading success summaries.
-
-## Task 8: Full Verification
-
-**Files:**
-- Verify: `tests/local_e2e/test_kafka_write_e2e.py`
-- Verify: `tests/conftest.py`
-
-- [ ] **Step 1: Run Python syntax check**
-
-Run:
-
-```bash
-.venv/bin/python -m py_compile tests/local_e2e/test_kafka_write_e2e.py
-```
-
-Expected: exit code `0`.
-
-- [ ] **Step 2: Run targeted ruff check**
-
-Run:
-
-```bash
-.venv/bin/python -m ruff check tests/local_e2e/test_kafka_write_e2e.py
-```
-
-Expected: `All checks passed!`
-
-- [ ] **Step 3: Verify default marker filtering and explicit env-gate skip behavior**
-
-Run:
-
-```bash
-DAFT_RUNNER=native .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py -q -rs; test $? -eq 5
-DAFT_RUNNER=native .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py \
-  -m "integration and local_e2e" -q -rs
-```
-
-Expected: the first command reports `5 deselected` because default `addopts` excludes integration tests; the second reports `5 skipped` because `DAFT_RUN_KAFKA_LOCAL_E2E` is not set.
-
-- [ ] **Step 4: Run full local E2E**
-
-Run:
-
-```bash
-docker compose -f tests/integration/io/docker-compose/docker-compose.yml up -d redpanda
-DAFT_RUN_KAFKA_LOCAL_E2E=1 DAFT_RUNNER=native \
-  .venv/bin/python -m pytest tests/local_e2e/test_kafka_write_e2e.py \
-  -m "integration and local_e2e" -q -s
-```
-
-Expected: all local E2E tests pass against Redpanda.
-
-- [ ] **Step 5: Confirm repository diff hygiene**
-
-Run:
-
-```bash
-git diff --check
-git status --short
-```
-
-Expected: no whitespace errors; `git status --short` shows the expected modified/staged files, including the new `tests/local_e2e/test_kafka_write_e2e.py` before commit.
-
-## Self-Review Checklist
-
-- Spec coverage: Tasks cover opt-in invocation, Redpanda readiness, unique topics, source seed data, raw mirror, Daft readback, JSON dynamic topics, tombstones, headers, compact topic tombstone, null and empty dynamic topic guardrails, and verification commands.
-- Placeholder handling: The placeholder is limited to Task 1 bootstrap and is explicitly replaced before any E2E scenario is added; no task uses `TBD`, `TODO`, `fill in`, or unspecified test commands.
-- Type consistency: Helper names in tests match helper definitions: `wait_for_kafka_ready`, `create_topic`, `produce_seed_records`, `consume_exactly`, `read_all_with_daft`, `assert_summary`, and `normalize_message`.
-- Scope: TLS/SASL and broker-dependent delivery failure remain future extensions, matching the approved v1 design.
