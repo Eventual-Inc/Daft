@@ -46,7 +46,8 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GoosefsConfig, GravitinoConfig, HTTPConfig, IOConfig,
+    S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -311,6 +312,22 @@ impl IOClient {
                     let cos_config = self.config.cos.to_opendal_config(bucket);
                     // Merge user-provided opendal_backends on top (if any)
                     let mut merged = cos_config;
+                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                        for (k, v) in extra {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                    }
+                    merged
+                } else if scheme == "goosefs" {
+                    // Extract authority (host:port) from URL as default master_addr.
+                    let parsed_url =
+                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                    let authority = match parsed_url.port() {
+                        Some(port) => format!("{}:{}", parsed_url.host_str().unwrap_or(""), port),
+                        None => parsed_url.host_str().unwrap_or("").to_string(),
+                    };
+                    let goosefs_config = self.config.goosefs.to_opendal_config(&authority);
+                    let mut merged = goosefs_config;
                     if let Some(extra) = self.config.opendal_backends.get(scheme) {
                         for (k, v) in extra {
                             merged.insert(k.clone(), v.clone());
@@ -628,6 +645,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
+        "goosefs" => Ok((
+            SourceType::OpenDAL {
+                scheme: "goosefs".to_string(),
             },
             fixed_input,
         )),
