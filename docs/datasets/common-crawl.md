@@ -8,6 +8,90 @@ Daft provides a simple, performant, and responsible way to access Common Crawl d
 
     These APIs are in beta and may be subject to change as the Common Crawl dataset continues to be developed.
 
+## Access from Hugging Face Buckets
+
+As of 2025, Common Crawl data is also hosted on [Hugging Face Buckets](https://huggingface.co/buckets/commoncrawl), providing a cheaper and more accessible alternative to AWS S3. Unlike S3, which restricts access to AWS machines in the same region (and charges inter-region egress fees), HF Buckets are accessible from any cloud provider and region using the ``hf://`` protocol.
+
+When using `daft.datasets.common_crawl`, set ``hf_buckets=True`` to fetch data from HF Buckets. This is the **recommended** option for most users, especially when running outside AWS.
+
+### Reading with the Common Crawl dataset helper
+
+```python
+import daft
+
+# Read from HF Buckets (recommended)
+daft.datasets.common_crawl("CC-MAIN-2025-33", hf_buckets=True)
+```
+
+### Reading WARC files directly
+
+You can also read WARC files directly from HF Buckets using the ``hf://`` protocol:
+
+```python
+import daft
+
+# Read a single WARC file from HF Buckets
+daft.read_warc("hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/segments/1775805908305.14/warc/CC-MAIN-20260410081153-20260410111153-00000.warc.gz")
+
+# Read WARC files matching a glob pattern
+daft.read_warc("hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/segments/*/warc/*.warc.gz")
+```
+
+### Authentication
+
+For public Common Crawl data, no authentication is needed. For private Hugging Face repos or datasets, pass a token via ``IOConfig``:
+
+```python
+from daft.io import IOConfig
+
+daft.read_warc(
+    "hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2025-33/segments/...",
+    io_config=IOConfig(hf=daft.io.HuggingFaceConfig(token="hf_xxxxxxxxxxxxxxxxxxxx"))
+)
+```
+
+You can also authenticate using ``hf auth login`` — the token is picked up automatically.
+
+### Exploring HF Buckets
+
+Use the [`huggingface_hub`](https://huggingface.co/docs/huggingface_hub) library to explore available data:
+
+```python
+from huggingface_hub import hffs
+
+# List crawl archives
+for path in hffs.ls('hf://buckets/commoncrawl/commoncrawl/crawl-data/'):
+    print(path)
+
+# List segments in a specific crawl
+for path in hffs.ls('hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/'):
+    print(path)
+
+# List WARC files in a segment
+for path in hffs.ls('hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/segments/1775805908305.14/warc/'):
+    print(path)
+```
+
+**Note:** When using ``hffs.ls()``, paths are returned without the ``hf://`` prefix. To open files returned by ``ls()``, prepend the protocol:
+
+```python
+files = hffs.ls('hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/segments/1775805908305.14/warc/')
+for file_path in files[:1]:
+    with daft.file.open_file('hf://' + file_path, 'rb') as fh:
+        # ... read the WARC file
+        ...
+```
+
+### Access Method Comparison
+
+| Method | URL Scheme | Best For | Credentials Required |
+|--------|-----------|----------|---------------------|
+| Hugging Face Buckets | ``hf://buckets/...`` | Cross-region, outside AWS, cheapest | No (public) |
+| AWS S3 | ``s3://commoncrawl/...`` | Inside AWS (us-east-1) | Yes |
+| HTTPS | ``https://data.commoncrawl.org/...`` | Fallback when no credentials | No |
+
+Common Crawl path structure on HF Buckets: ``hf://buckets/commoncrawl/commoncrawl/crawl-data/<crawl-name>/<path>``
+
 ## Prerequisites for access within the AWS Cloud
 
 Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
@@ -18,6 +102,10 @@ However, access does require AWS authentication when downloading Common Crawl da
 All Common Crawl data is stored in the `us-east-1` region. It's recommended to access the data from that same region. From the [Common Crawl website](https://commoncrawl.org/get-started):
 
 > The connection to S3 should be faster and you avoid the minimal fees for inter-region data transfer (you have to send requests which are charged as outgoing traffic).
+
+!!! warning
+
+    Using S3 from outside AWS incurs data transfer egress fees. Consider using [Hugging Face Buckets](#access-from-hugging-face-buckets) as a cheaper alternative.
 
 ### Authentication option 1: AWS SSO Login
 
@@ -49,18 +137,14 @@ daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=io_config, in_aws=True)
 
 ## Prerequisites for access outside the AWS Cloud
 
-If you are running _outside_ of AWS, then the most optimal way to download Common Crawl data is to use their HTTPS links.
-From the [Common Crawl website](https://commoncrawl.org/get-started):
+If you are running _outside_ of AWS, we recommend using [Hugging Face Buckets](#access-from-hugging-face-buckets) (`hf_buckets=True`) as the optimal access method.
 
-> If you want to download the data to your local machine or local cluster, you can use any HTTP download agent, such as cURL or wget.
-
-**NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=False` when accessing data outside the AWS Cloud!
-
-Here's an example of how to use Common Crawl with Daft when outside of AWS:
+As a fallback, you can also use HTTPS links (slower but no credentials required):
 
 ```python
 import daft
 
+# Use HTTPS as a fallback (slower than HF Buckets)
 daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=False)
 ```
 
@@ -71,14 +155,8 @@ The simplest way to get started with Common Crawl is to load a small sample of d
 ```python
 import daft
 
-# If you are running this code locally, set `in_aws = True`. This will use S3.
-# Otherwise, set `in_aws = False`. This will use HTTPS URLs for the files.
-# You must **explicitly** set the `in_aws` parameter.
-in_aws: bool = ...
-
-
-# Load a sample of raw WARC data from the CC-MAIN-2025-33 crawl
-daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws).show()
+# Read from Hugging Face Buckets (recommended - free, fast from anywhere)
+daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, hf_buckets=True).show()
 ```
 
 ```{title="Output"}
@@ -117,27 +195,27 @@ Common Crawl provides three types of content:
 
 ```python
 # Raw WARC data (default)
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="raw", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="raw", hf_buckets=True)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="warc", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="warc", hf_buckets=True)
 ```
 
 **Extracted text, aka WET files** - Plain text content extracted from web pages:
 
 ```python
 # Extracted text content
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", hf_buckets=True)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="wet", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="wet", hf_buckets=True)
 ```
 
 **Metadata, aka WAT files** - Information about crawled pages without content:
 
 ```python
 # Metadata only
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="metadata", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="metadata", hf_buckets=True)
 # or equivalently
-daft.datasets.common_crawl("CC-MAIN-2025-33", content="wat", in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", content="wat", hf_buckets=True)
 ```
 
 ### Loading a subset of data
@@ -146,7 +224,7 @@ For quick testing and development, it's helpful to limit the number of crawl fil
 
 ```python
 # Process only 1 crawl file for testing
-daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws)
+daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, hf_buckets=True)
 ```
 
 ### Working with specific segments
@@ -157,7 +235,7 @@ Each crawl is split into 100 segments. You can target a specific segment:
 daft.datasets.common_crawl(
     "CC-MAIN-2025-33",
     segment="1754151279521.11",
-    in_aws=in_aws,
+    hf_buckets=True,
 )
 ```
 
@@ -185,7 +263,7 @@ Find the most common MIME types in a crawl:
 
 ```python
 (
-    daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, in_aws=in_aws)
+    daft.datasets.common_crawl("CC-MAIN-2025-33", num_files=1, hf_buckets=True)
     .select(daft.col("WARC-Identified-Payload-Type"))
     .groupby("WARC-Identified-Payload-Type")
     .agg(daft.col("WARC-Identified-Payload-Type").count().alias("count"))
@@ -226,7 +304,7 @@ Content in Common Crawl WARC files are UTF-8 encoded. Use Daft's [try_decode][da
 from daft.functions import try_decode
 
 (
-    daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", num_files=1, in_aws=in_aws)
+    daft.datasets.common_crawl("CC-MAIN-2025-33", content="text", num_files=1, hf_buckets=True)
     .with_column("text_content", try_decode(daft.col("warc_content"), charset="utf-8"))
     .where(daft.col("text_content").not_null())
     .select("WARC-Target-URI", "text_content")
