@@ -99,23 +99,23 @@ async def start_udf_actors(
         }
     )
 
-    cluster_resources = ray.available_resources()
+    cluster_resources = ray.cluster_resources()
     cpus_per_actor = udf_options.get("num_cpus", 1.0)
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
-    available_cpus = cluster_resources.get("CPU", 0)
-    available_gpus = cluster_resources.get("GPU", 0)
+    total_cpus = cluster_resources.get("CPU", 0)
+    total_gpus = cluster_resources.get("GPU", 0)
     required_cpus = num_actors * cpus_per_actor
     required_gpus = num_actors * gpus_per_actor
-    if required_cpus > available_cpus:
+    if required_cpus > total_cpus:
         raise RuntimeError(
             f"with_concurrency({num_actors}) requires {required_cpus} CPUs "
-            f"({num_actors} x {cpus_per_actor}), cluster has {available_cpus}. "
+            f"({num_actors} x {cpus_per_actor}), cluster has {total_cpus}. "
             f"Reduce concurrency or add more CPUs."
         )
-    if gpus_per_actor > 0 and required_gpus > available_gpus:
+    if gpus_per_actor > 0 and required_gpus > total_gpus:
         raise RuntimeError(
             f"with_concurrency({num_actors}) requires {required_gpus} GPUs "
-            f"({num_actors} x {gpus_per_actor}), cluster has {available_gpus}. "
+            f"({num_actors} x {gpus_per_actor}), cluster has {total_gpus}. "
             f"Reduce concurrency or add more GPUs."
         )
 
