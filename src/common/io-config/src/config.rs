@@ -75,10 +75,17 @@ impl IOConfig {
             "COS config = {{ {} }}",
             self.cos.multiline_display().join(", ")
         ));
-        res.push(format!(
-            "GooseFS config = {{ {} }}",
-            self.goosefs.multiline_display().join(", ")
-        ));
+        // Only show the GooseFS config line when at least one field has a
+        // non-default value, mirroring how `auth_username` and friends are
+        // gated inside `GoosefsConfig::multiline_display`. This keeps the
+        // top-level IOConfig dump clean for users who never configure GooseFS.
+        let goosefs_lines = self.goosefs.multiline_display();
+        if !goosefs_lines.is_empty() {
+            res.push(format!(
+                "GooseFS config = {{ {} }}",
+                goosefs_lines.join(", ")
+            ));
+        }
         if !self.opendal_backends.is_empty() {
             res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
         }
