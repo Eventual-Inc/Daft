@@ -102,34 +102,35 @@ async def start_udf_actors(
 
     cpus_per_actor = udf_options.get("num_cpus", 1.0)
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
-    max_node_cpus = max((n["Resources"].get("CPU", 0) for n in ray.nodes() if n["Alive"]), default=0)
-    max_node_gpus = max((n["Resources"].get("GPU", 0) for n in ray.nodes() if n["Alive"]), default=0)
-    if cpus_per_actor > max_node_cpus:
+    alive_nodes = [n for n in ray.nodes() if n["Alive"]]
+    can_schedule = any(
+        n["Resources"].get("CPU", 0) >= cpus_per_actor
+        and n["Resources"].get("GPU", 0) >= gpus_per_actor
+        for n in alive_nodes
+    )
+    if not can_schedule:
         raise RuntimeError(
-            f"Actor UDF requires {cpus_per_actor} CPUs per actor, "
-            f"but the largest node only has {max_node_cpus} CPUs. "
-            f"No single actor can be scheduled."
-        )
-    if gpus_per_actor > 0 and gpus_per_actor > max_node_gpus:
-        raise RuntimeError(
-            f"Actor UDF requires {gpus_per_actor} GPUs per actor, "
-            f"but the largest node only has {max_node_gpus} GPUs. "
+            f"Actor UDF requires {cpus_per_actor} CPUs and {gpus_per_actor} GPUs per actor, "
+            f"but no single node can satisfy this. "
             f"No single actor can be scheduled."
         )
 
-    cluster_cpus = ray.cluster_resources().get("CPU", 0)
-    cluster_gpus = ray.cluster_resources().get("GPU", 0)
-    max_schedulable = int(min(
-        cluster_cpus / cpus_per_actor if cpus_per_actor > 0 else float("inf"),
-        cluster_gpus / gpus_per_actor if gpus_per_actor > 0 else float("inf"),
-    ))
-    if num_actors > max_schedulable:
-        logging.warning(
-            "with_concurrency(%d) requested but only %d actors can be scheduled "
-            "(%g CPUs, %g GPUs available). Will proceed with partial actor pool "
-            "after actor_udf_ready_timeout (%ds).",
-            num_actors, max_schedulable, cluster_cpus, cluster_gpus, timeout,
-        )
+    if cpus_per_actor > 0 or gpus_per_actor > 0:
+        cluster_cpus = ray.cluster_resources().get("CPU", 0)
+        cluster_gpus = ray.cluster_resources().get("GPU", 0)
+        limits = []
+        if cpus_per_actor > 0:
+            limits.append(cluster_cpus / cpus_per_actor)
+        if gpus_per_actor > 0:
+            limits.append(cluster_gpus / gpus_per_actor)
+        max_schedulable = int(min(limits))
+        if num_actors > max_schedulable:
+            logging.warning(
+                "with_concurrency(%d) requested but only %d actors can be scheduled "
+                "(%g CPUs, %g GPUs available). Will proceed with partial actor pool "
+                "after actor_udf_ready_timeout (%ds).",
+                num_actors, max_schedulable, cluster_cpus, cluster_gpus, timeout,
+            )
 
     actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
