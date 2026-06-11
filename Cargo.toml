@@ -329,7 +329,7 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = {version = "0.28", features = ["half"]}
-opendal = {version = "0.55", default-features = false}
+opendal = {version = "0.57", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
