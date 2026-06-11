@@ -99,7 +99,7 @@ async def start_udf_actors(
         }
     )
 
-    cluster_resources = ray.cluster_resources()
+    cluster_resources = ray.available_resources()
     cpus_per_actor = udf_options.get("num_cpus", 1.0)
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
     available_cpus = cluster_resources.get("CPU", 0)
