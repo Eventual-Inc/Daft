@@ -99,23 +99,24 @@ async def start_udf_actors(
         }
     )
 
-    # Check if the cluster has enough resources for the requested actors
     cluster_resources = ray.cluster_resources()
+    cpus_per_actor = udf_options.get("num_cpus", 1.0)
+    gpus_per_actor = udf_options.get("num_gpus", 0.0)
     available_cpus = cluster_resources.get("CPU", 0)
     available_gpus = cluster_resources.get("GPU", 0)
-    required_cpus = num_actors * num_cpus_per_actor
-    required_gpus = num_actors * num_gpus_per_actor
+    required_cpus = num_actors * cpus_per_actor
+    required_gpus = num_actors * gpus_per_actor
     if required_cpus > available_cpus:
         raise RuntimeError(
-            f"Actor UDF requires {num_actors} actors x {num_cpus_per_actor} CPUs = {required_cpus} CPUs, "
-            f"but the cluster only has {available_cpus} CPUs available. "
-            f"Reduce with_concurrency() or add more CPUs to the cluster."
+            f"with_concurrency({num_actors}) requires {required_cpus} CPUs "
+            f"({num_actors} x {cpus_per_actor}), cluster has {available_cpus}. "
+            f"Reduce concurrency or add more CPUs."
         )
-    if num_gpus_per_actor > 0 and required_gpus > available_gpus:
+    if gpus_per_actor > 0 and required_gpus > available_gpus:
         raise RuntimeError(
-            f"Actor UDF requires {num_actors} actors x {num_gpus_per_actor} GPUs = {required_gpus} GPUs, "
-            f"but the cluster only has {available_gpus} GPUs available. "
-            f"Reduce with_concurrency() or add more GPUs to the cluster."
+            f"with_concurrency({num_actors}) requires {required_gpus} GPUs "
+            f"({num_actors} x {gpus_per_actor}), cluster has {available_gpus}. "
+            f"Reduce concurrency or add more GPUs."
         )
 
     actors: list[RayActorHandle] = [
