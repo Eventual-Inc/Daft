@@ -1,5 +1,7 @@
 import { createContext, useContext } from "react";
 
+import type { RunnerInfo } from "@/app/query/types";
+
 export type PendingStatus = {
   status: "Pending";
   start_sec: number;
@@ -69,12 +71,10 @@ export type QuerySummary = {
   id: string;
   start_sec: number;
   status: QueryStatus;
-  runner: string;
-  ray_dashboard_url?: string;
+  runner: RunnerInfo;
   entrypoint?: string;
   python_version?: string;
   daft_version?: string;
-  ray_version?: string;
 };
 
 export type QuerySummaryMap = { [_: string]: QuerySummary };
