@@ -38,6 +38,7 @@ impl WriterFactory for KafkaWriterFactory {
         let producer: FutureProducer = build_client_config(
             &self.kafka_info.bootstrap_servers,
             &self.kafka_info.kafka_client_config,
+            self.kafka_info.timeout_ms,
         )?
         .create()
         .map_err(|err| {

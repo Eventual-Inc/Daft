@@ -4,6 +4,8 @@ use common_error::{DaftError, DaftResult};
 use daft_logical_plan::sink_info::KafkaConfigValue;
 
 const DEFAULT_CLIENT_ID: &str = "daft-write-kafka";
+const DELIVERY_TIMEOUT_MS: &str = "delivery.timeout.ms";
+const MESSAGE_TIMEOUT_MS: &str = "message.timeout.ms";
 // TODO: Use this in user-facing Kafka diagnostics when config logging lands.
 #[allow(dead_code)]
 const REDACTED: &str = "<redacted>";
@@ -56,11 +58,15 @@ pub fn redact_config_value(key: &str, value: &str) -> String {
 pub fn build_client_config(
     bootstrap_servers: &str,
     kafka_client_config: &BTreeMap<String, KafkaConfigValue>,
+    timeout_ms: u64,
 ) -> DaftResult<rdkafka::ClientConfig> {
     let mut client_config = rdkafka::ClientConfig::new();
     client_config
         .set("bootstrap.servers", bootstrap_servers)
         .set("client.id", DEFAULT_CLIENT_ID);
+    if !has_user_delivery_timeout(kafka_client_config) {
+        client_config.set(DELIVERY_TIMEOUT_MS, timeout_ms.to_string());
+    }
 
     for (key, value) in kafka_client_config {
         validate_config_key(key)?;
@@ -69,6 +75,14 @@ pub fn build_client_config(
     }
 
     Ok(client_config)
+}
+
+#[cfg(feature = "kafka")]
+fn has_user_delivery_timeout(kafka_client_config: &BTreeMap<String, KafkaConfigValue>) -> bool {
+    kafka_client_config.keys().any(|key| {
+        let key = key.to_ascii_lowercase();
+        key == DELIVERY_TIMEOUT_MS || key == MESSAGE_TIMEOUT_MS
+    })
 }
 
 #[cfg(test)]
@@ -156,7 +170,8 @@ mod tests {
     #[cfg(feature = "kafka")]
     #[test]
     fn builds_client_config_with_managed_bootstrap_and_default_client_id() {
-        let client_config = build_client_config("localhost:9092", &BTreeMap::new()).unwrap();
+        let client_config =
+            build_client_config("localhost:9092", &BTreeMap::new(), 10_000).unwrap();
 
         assert_eq!(
             client_config.get("bootstrap.servers"),
@@ -178,9 +193,47 @@ mod tests {
             KafkaConfigValue::String("all".to_string()),
         );
 
-        let client_config = build_client_config("localhost:9092", &user_config).unwrap();
+        let client_config = build_client_config("localhost:9092", &user_config, 10_000).unwrap();
 
         assert_eq!(client_config.get("client.id"), Some("custom-client"));
         assert_eq!(client_config.get("acks"), Some("all"));
+    }
+
+    #[cfg(feature = "kafka")]
+    #[test]
+    fn build_client_config_sets_default_delivery_timeout_from_write_timeout() {
+        let client_config =
+            build_client_config("localhost:9092", &BTreeMap::new(), 12_345).unwrap();
+
+        assert_eq!(client_config.get("delivery.timeout.ms"), Some("12345"));
+    }
+
+    #[cfg(feature = "kafka")]
+    #[test]
+    fn build_client_config_preserves_delivery_timeout_override() {
+        let mut user_config = BTreeMap::new();
+        user_config.insert(
+            "delivery.timeout.ms".to_string(),
+            KafkaConfigValue::Int(60_000),
+        );
+
+        let client_config = build_client_config("localhost:9092", &user_config, 12_345).unwrap();
+
+        assert_eq!(client_config.get("delivery.timeout.ms"), Some("60000"));
+    }
+
+    #[cfg(feature = "kafka")]
+    #[test]
+    fn build_client_config_preserves_legacy_message_timeout_override() {
+        let mut user_config = BTreeMap::new();
+        user_config.insert(
+            "Message.Timeout.Ms".to_string(),
+            KafkaConfigValue::Int(60_000),
+        );
+
+        let client_config = build_client_config("localhost:9092", &user_config, 12_345).unwrap();
+
+        assert_eq!(client_config.get("Message.Timeout.Ms"), Some("60000"));
+        assert_eq!(client_config.get("delivery.timeout.ms"), None);
     }
 }

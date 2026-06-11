@@ -160,7 +160,7 @@ def _resolve_kafka_timestamp_ms_col(timestamp_ms_col: object, column_names: Sequ
         if _KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME in column_names:
             return _KAFKA_DEFAULT_TIMESTAMP_MS_COL_NAME
         return None
-    return typing.cast(str | None, timestamp_ms_col)
+    return typing.cast("str | None", timestamp_ms_col)
 
 
 def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
@@ -1345,7 +1345,7 @@ class DataFrame:
         headers_col: str | None = None,
         partition: int | None = None,
         partition_col: str | None = None,
-        timestamp_ms_col: str | None = typing.cast(str | None, _DEFAULT_KAFKA_TIMESTAMP_MS_COL),
+        timestamp_ms_col: str | None = typing.cast("str | None", _DEFAULT_KAFKA_TIMESTAMP_MS_COL),
         value_format: str = "raw",
         key_format: str = "raw",
         kafka_client_config: Mapping[str, object] | None = None,
@@ -1387,7 +1387,9 @@ class DataFrame:
                 options passed to librdkafka. ``bootstrap.servers`` is managed by
                 ``bootstrap_servers`` and cannot be overridden. ``transactional.id`` is not
                 supported yet.
-            timeout_ms (int): Timeout in milliseconds for Kafka delivery and flush operations.
+            timeout_ms (int): Timeout in milliseconds for Kafka delivery, queue, and flush
+                operations. If ``kafka_client_config`` does not set ``delivery.timeout.ms`` or
+                ``message.timeout.ms``, this value is passed to librdkafka as the delivery timeout.
                 Defaults to 10_000.
 
         Returns:

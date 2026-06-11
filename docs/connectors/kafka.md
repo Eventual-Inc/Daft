@@ -304,10 +304,10 @@ Use `topic_col` to choose the topic per row. Use either `partition` for a fixed 
 | Column               | Type     | Description                                             |
 |----------------------|----------|---------------------------------------------------------|
 | `task_id`            | `int64`  | Daft write task identifier                              |
-| `messages_attempted` | `uint64` | Number of messages attempted by the task                |
-| `messages_delivered` | `uint64` | Number of messages acknowledged by Kafka                |
-| `messages_failed`    | `uint64` | Number of messages that failed delivery                 |
-| `bytes_delivered`    | `uint64` | Delivered key, value, and header bytes counted by Daft  |
+| `messages_attempted` | `int64`  | Number of messages attempted by the task                |
+| `messages_delivered` | `int64`  | Number of messages acknowledged by Kafka                |
+| `messages_failed`    | `int64`  | Number of messages that failed delivery                 |
+| `bytes_delivered`    | `int64`  | Delivered key, value, and header bytes counted by Daft  |
 | `first_error`        | `string` | First delivery or flush error for the task, if any      |
 
 Delivery counts come from Kafka delivery results. `write_kafka` is at-least-once: if a task errors after some messages are delivered, those messages remain in Kafka.
@@ -342,6 +342,10 @@ Pass additional [librdkafka configuration](https://github.com/confluentinc/librd
     )
     ```
 
+`timeout_ms` is used for Kafka enqueue, delivery, and flush timeouts. If `kafka_client_config` does not include `delivery.timeout.ms` or `message.timeout.ms`, Daft passes `timeout_ms` through as librdkafka's `delivery.timeout.ms`.
+
 !!! note
 
     `bootstrap.servers` is managed by the `bootstrap_servers` parameter and cannot be overridden through `kafka_client_config`. `transactional.id` is not supported yet and will raise an error.
+
+Native Kafka writes are built with librdkafka support for TLS and common compression codecs including zlib and zstd. Kerberos/GSSAPI builds are not enabled by default.
