@@ -219,6 +219,7 @@ __all__ = [
     "attach_view",
     "cls",
     "col",
+    "concat",
     "context",
     "create_namespace",
     "create_namespace_if_not_exists",

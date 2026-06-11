@@ -257,7 +257,7 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
 
 
 @PublicAPI
-def concat(dfs: list["DataFrame"] | Iterable["DataFrame"]) -> "DataFrame":
+def concat(dfs: Iterable["DataFrame"]) -> "DataFrame":
     """Concatenates multiple DataFrames into a single DataFrame.
 
     All DataFrames must have exactly the same schema.
