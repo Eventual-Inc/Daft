@@ -115,6 +115,7 @@ def read_iceberg(
     tag: str | None = None,
     io_config: IOConfig | None = None,
     checkpoint: "CheckpointConfig | None" = None,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
@@ -130,6 +131,9 @@ def read_iceberg(
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
+        ignore_corrupt_files (bool): If True, silently skip corrupt or unreadable data files
+            instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files``
+            after collection. Defaults to False.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
@@ -175,7 +179,9 @@ def read_iceberg(
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    iceberg_operator = IcebergScanOperator(table, snapshot_id=snapshot_id, storage_config=storage_config)
+    iceberg_operator = IcebergScanOperator(
+        table, snapshot_id=snapshot_id, storage_config=storage_config, ignore_corrupt_files=ignore_corrupt_files
+    )
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

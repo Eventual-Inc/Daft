@@ -282,6 +282,7 @@ class ParquetSourceConfig:
         field_id_mapping: dict[int, PyField] | None = None,
         row_groups: list[list[int]] | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class CsvSourceConfig:
@@ -308,6 +309,7 @@ class CsvSourceConfig:
         comment: str | None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class JsonSourceConfig:
@@ -1189,6 +1191,8 @@ class ClusteringKeys:
 
     @staticmethod
     def hash(exprs: list[PyExpr]) -> ClusteringKeys: ...
+    @staticmethod
+    def range(exprs: list[PyExpr], descending: bool = False, nulls_first: bool | None = None) -> ClusteringKeys: ...
     def __repr__(self) -> str: ...
 
 class PyPartitionField:
@@ -2420,6 +2424,8 @@ class PyExecutionStats:
     def query_plan(self) -> str | None: ...
     def encode(self) -> bytes: ...
     def to_recordbatch(self) -> PyRecordBatch: ...
+    @property
+    def skipped_corrupt_files(self) -> list[tuple[str, str, bool]]: ...
 
 class PyResultReceiver:
     def __aiter__(self) -> PyResultReceiver: ...

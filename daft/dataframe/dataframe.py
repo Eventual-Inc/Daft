@@ -204,6 +204,26 @@ class DataFrame:
         else:
             return self._metadata.to_recordbatch() if self._metadata else None
 
+    @property
+    def skipped_corrupt_files(self) -> list[tuple[str, str, bool]]:
+        """Files skipped during the last execution due to ignore_corrupt_files=True.
+
+        Returns a list of ``(path, reason, partial)`` tuples. ``partial`` is ``True``
+        when some batches were already emitted before corruption was detected (the file
+        was not fully skipped). Only available after ``.collect()``.
+
+        Example::
+
+            df = daft.read_parquet("s3://bucket/data/", ignore_corrupt_files=True)
+            df.collect()
+            for path, reason, partial in df.skipped_corrupt_files:
+                tag = " (partial)" if partial else ""
+                print(f"Skipped{tag} {path}: {reason}")
+        """
+        if self._result_cache is None:
+            raise ValueError("skipped_corrupt_files is not available until the DataFrame has been collected")
+        return self._metadata.skipped_corrupt_files if self._metadata else []
+
     def pipe(
         self,
         function: Callable[Concatenate["DataFrame", P], T],
@@ -3871,7 +3891,7 @@ class DataFrame:
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
             strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; For tie-breaking, prefer the larger/forward value.
-            _assume_sorted_and_aligned: Asserts that both tables have the same number of
+            _assume_sorted_and_aligned: Asserts that both inputs have the same number of
                 partitions with identical boundaries, and that rows within each partition are
                 sorted ascending by the on-key. Also requires
                 ``enable_scan_task_split_and_merge=False``. When these conditions hold, Daft
@@ -5359,6 +5379,15 @@ class DataFrame:
             assert result is not None
             result.wait()
             self._metadata.write_mermaid()
+            skipped = self._metadata.skipped_corrupt_files if self._metadata else []
+            if skipped:
+                paths = "\n".join(f"  - {path}{' (partial)' if partial else ''}" for path, _, partial in skipped)
+                logger.warning(
+                    "%d file(s) were skipped due to corruption or being missing "
+                    "(ignore_corrupt_files=True). Use df.skipped_corrupt_files for details.\n%s",
+                    len(skipped),
+                    paths,
+                )
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":
