@@ -99,6 +99,25 @@ async def start_udf_actors(
         }
     )
 
+    # Check if the cluster has enough resources for the requested actors
+    cluster_resources = ray.cluster_resources()
+    available_cpus = cluster_resources.get("CPU", 0)
+    available_gpus = cluster_resources.get("GPU", 0)
+    required_cpus = num_actors * num_cpus_per_actor
+    required_gpus = num_actors * num_gpus_per_actor
+    if required_cpus > available_cpus:
+        raise RuntimeError(
+            f"Actor UDF requires {num_actors} actors x {num_cpus_per_actor} CPUs = {required_cpus} CPUs, "
+            f"but the cluster only has {available_cpus} CPUs available. "
+            f"Reduce with_concurrency() or add more CPUs to the cluster."
+        )
+    if num_gpus_per_actor > 0 and required_gpus > available_gpus:
+        raise RuntimeError(
+            f"Actor UDF requires {num_actors} actors x {num_gpus_per_actor} GPUs = {required_gpus} GPUs, "
+            f"but the cluster only has {available_gpus} GPUs available. "
+            f"Reduce with_concurrency() or add more GPUs to the cluster."
+        )
+
     actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
             name=None if actor_name is None else f"{actor_name}:{str(uuid.uuid4())[:8]}-{rank}",
