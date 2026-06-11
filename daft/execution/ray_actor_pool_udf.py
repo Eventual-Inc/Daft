@@ -104,19 +104,17 @@ async def start_udf_actors(
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
     total_cpus = cluster_resources.get("CPU", 0)
     total_gpus = cluster_resources.get("GPU", 0)
-    required_cpus = num_actors * cpus_per_actor
-    required_gpus = num_actors * gpus_per_actor
-    if required_cpus > total_cpus:
+    if cpus_per_actor > total_cpus:
         raise RuntimeError(
-            f"with_concurrency({num_actors}) requires {required_cpus} CPUs "
-            f"({num_actors} x {cpus_per_actor}), cluster has {total_cpus}. "
-            f"Reduce concurrency or add more CPUs."
+            f"Actor UDF requires {cpus_per_actor} CPUs per actor, "
+            f"but cluster only has {total_cpus} CPUs total. "
+            f"No single actor can be scheduled."
         )
-    if gpus_per_actor > 0 and required_gpus > total_gpus:
+    if gpus_per_actor > 0 and gpus_per_actor > total_gpus:
         raise RuntimeError(
-            f"with_concurrency({num_actors}) requires {required_gpus} GPUs "
-            f"({num_actors} x {gpus_per_actor}), cluster has {total_gpus}. "
-            f"Reduce concurrency or add more GPUs."
+            f"Actor UDF requires {gpus_per_actor} GPUs per actor, "
+            f"but cluster only has {total_gpus} GPUs total. "
+            f"No single actor can be scheduled."
         )
 
     actors: list[RayActorHandle] = [
