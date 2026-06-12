@@ -191,6 +191,8 @@ impl ActorUDF {
                 break;
             }
         }
+        // Drop the sender so downstream BlockingSinks observe EOF and flush;
+        // otherwise their notify_tokens (awaited below) never fire -> deadlock.
         drop(result_tx);
         // Wait for all tasks to finish.
         while let Some(result) = running_tasks.join_next().await {
