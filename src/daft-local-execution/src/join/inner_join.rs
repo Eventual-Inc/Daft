@@ -64,11 +64,13 @@ pub(crate) fn probe_inner(
             // build_rb_idx for the take-based path. The probe-side hot loop
             // is a tight `Vec::push`, which the compiler lowers to the same
             // code as a `flat_map(...).collect()` form.
-            let mut matches: Vec<(u32, u64, u64)> = Vec::with_capacity(input_table.len());
+            // probe_idx is stored as u64 to avoid silent truncation on input
+            // tables larger than u32::MAX rows.
+            let mut matches: Vec<(u64, u64, u64)> = Vec::with_capacity(input_table.len());
             for (probe_idx, inner_iter) in idx_iter.enumerate() {
                 if let Some(inner_iter) = inner_iter {
                     for (rb_idx, row_idx) in inner_iter {
-                        matches.push((probe_idx as u32, rb_idx as u64, row_idx));
+                        matches.push((probe_idx as u64, rb_idx as u64, row_idx));
                     }
                 }
             }
@@ -87,25 +89,46 @@ pub(crate) fn probe_inner(
 
             let (left_table, right_table) = if use_batch {
                 let build_tables = probe_state.get_record_batches();
-                let mut probe_indices = Vec::with_capacity(matches_len);
-                let mut per_table_indices = vec![Vec::new(); build_tables.len()];
-
+                // Bucket matches by build table index. We store
+                // `(probe_idx, row_idx)` pairs together so that when we later
+                // walk the buckets in rb_idx order, both `probe_indices` and
+                // the per-table row index arrays are produced in the same
+                // grouped order. This keeps the probe-side `take` aligned
+                // with the rb_idx-ordered build-side `concat` without
+                // requiring an O(N log N) sort of `matches`.
+                let mut per_table_indices: Vec<Vec<(u64, u64)>> =
+                    vec![Vec::new(); build_tables.len()];
                 for (probe_idx, rb_idx, row_idx) in matches {
-                    probe_indices.push(probe_idx as u64);
-                    per_table_indices[rb_idx as usize].push(row_idx);
+                    per_table_indices[rb_idx as usize].push((probe_idx, row_idx));
                 }
 
+                let mut probe_indices = Vec::with_capacity(matches_len);
                 let mut build_side_tables = Vec::new();
-                for (rb_idx, indices) in per_table_indices.into_iter().enumerate() {
-                    if !indices.is_empty() {
-                        let idx_arr = UInt64Array::from_vec("", indices);
+                for (rb_idx, bucket) in per_table_indices.into_iter().enumerate() {
+                    if !bucket.is_empty() {
+                        let mut row_indices = Vec::with_capacity(bucket.len());
+                        for (probe_idx, row_idx) in bucket {
+                            probe_indices.push(probe_idx);
+                            row_indices.push(row_idx);
+                        }
+                        let idx_arr = UInt64Array::from_vec("", row_indices);
                         let taken = build_tables[rb_idx].take(&idx_arr)?;
                         build_side_tables.push(taken);
                     }
                 }
 
                 let build_side_table = if build_side_tables.is_empty() {
-                    daft_recordbatch::RecordBatch::empty(Some(params.output_schema.clone()))
+                    // The build side carries the schema of whichever input
+                    // was built into the probe table, not the joined output
+                    // schema; using `output_schema` here would cause a
+                    // schema mismatch in `build_final_table`'s
+                    // `get_columns_by_name` calls.
+                    let build_schema = if params.build_on_left {
+                        params.left_schema.clone()
+                    } else {
+                        params.right_schema.clone()
+                    };
+                    daft_recordbatch::RecordBatch::empty(Some(build_schema))
                 } else if build_side_tables.len() == 1 {
                     build_side_tables.pop().unwrap()
                 } else {
@@ -134,7 +157,7 @@ pub(crate) fn probe_inner(
 
                 for (probe_idx, rb_idx, row_idx) in matches {
                     build_side_growable.extend(rb_idx as usize, row_idx as usize, 1);
-                    probe_side_idxs.push(probe_idx as u64);
+                    probe_side_idxs.push(probe_idx);
                 }
 
                 let build_side_table = build_side_growable.build()?;
