@@ -706,8 +706,6 @@ def test_udf_succeeds_with_some_actors_schedulable():
         assert result == {"udf_1": [1, 2, 3]}
 
 
-
-
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
 def test_udf_fails_when_single_actor_exceeds_cluster_capacity():
     df = daft.from_pydict({"a": [1, 2, 3]})
@@ -719,6 +717,7 @@ def test_udf_fails_when_single_actor_exceeds_cluster_capacity():
     result = df.select(udf_1(col("a")).alias("udf_1"))
     with pytest.raises(RuntimeError, match="No single actor can be scheduled"):
         result.collect()
+
 
 def test_udf_error_serialize_err():
     """Test that UDF errors that can't be serialized are handled."""
