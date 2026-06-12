@@ -42,6 +42,14 @@ impl Sink {
                 }
                 fields
             }
+            SinkInfo::KafkaInfo(_) => vec![
+                Field::new("task_id", DataType::Int64),
+                Field::new("messages_attempted", DataType::Int64),
+                Field::new("messages_delivered", DataType::Int64),
+                Field::new("messages_failed", DataType::Int64),
+                Field::new("bytes_delivered", DataType::Int64),
+                Field::new("first_error", DataType::Utf8),
+            ],
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(catalog_info) => {
                 match catalog_info.catalog {
@@ -95,6 +103,10 @@ impl Sink {
             SinkInfo::OutputFileInfo(output_file_info) => {
                 res.push(format!("Sink: {:?}", output_file_info.file_format));
                 res.extend(output_file_info.multiline_display());
+            }
+            SinkInfo::KafkaInfo(kafka_write_info) => {
+                res.push("Sink: Kafka".to_string());
+                res.extend(kafka_write_info.multiline_display());
             }
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {

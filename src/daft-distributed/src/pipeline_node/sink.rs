@@ -133,6 +133,7 @@ fn sink_display_name(sink_info: &SinkInfo<BoundExpr>) -> String {
                 (_, _) => "Write".to_string(),
             }
         }
+        SinkInfo::KafkaInfo(_) => "Kafka Write".to_string(),
         #[cfg(feature = "python")]
         SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
             CatalogType::Iceberg(ic) => {
@@ -209,6 +210,13 @@ impl SinkNode {
                 data_schema,
                 file_schema,
                 info.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            ),
+            SinkInfo::KafkaInfo(info) => LocalPhysicalPlan::kafka_write(
+                input,
+                info.clone(),
+                file_schema,
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             ),
@@ -296,6 +304,10 @@ impl PipelineNodeImpl for SinkNode {
             SinkInfo::OutputFileInfo(output_file_info) => {
                 res.push(format!("Sink: {:?}", output_file_info.file_format));
                 res.extend(output_file_info.multiline_display());
+            }
+            SinkInfo::KafkaInfo(info) => {
+                res.push("Sink: Kafka".to_string());
+                res.extend(info.multiline_display());
             }
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {

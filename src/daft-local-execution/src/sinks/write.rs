@@ -143,6 +143,7 @@ pub enum WriteFormat {
     Deltalake,
     PartitionedDeltalake,
     Lance,
+    Kafka,
     DataSink(String),
 }
 
@@ -268,6 +269,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::Deltalake => "DeltaLake Write".into(),
             WriteFormat::PartitionedDeltalake => "Partitioned DeltaLake Write".into(),
             WriteFormat::Lance => "Lance Write".into(),
+            WriteFormat::Kafka => "Kafka Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }
     }
@@ -276,8 +278,8 @@ impl BlockingSink for WriteSink {
         NodeType::Write
     }
 
-    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        let writer = self.writer_factory.create_writer(0, None)?;
+    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
+        let writer = self.writer_factory.create_writer(input_id as usize, None)?;
         Ok(WriteState::new(writer))
     }
 
@@ -292,5 +294,78 @@ impl BlockingSink for WriteSink {
 
     fn max_concurrency(&self) -> usize {
         1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use daft_core::prelude::Schema;
+
+    use super::*;
+
+    struct RecordingWriterFactory {
+        file_indices: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl WriterFactory for RecordingWriterFactory {
+        type Input = MicroPartition;
+        type Result = Vec<RecordBatch>;
+
+        fn create_writer(
+            &self,
+            file_idx: usize,
+            _partition_values: Option<&RecordBatch>,
+        ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>>
+        {
+            self.file_indices.lock().unwrap().push(file_idx);
+            Ok(Box::new(NoopWriter))
+        }
+    }
+
+    struct NoopWriter;
+
+    #[async_trait]
+    impl AsyncFileWriter for NoopWriter {
+        type Input = MicroPartition;
+        type Result = Vec<RecordBatch>;
+
+        async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
+            Ok(WriteResult {
+                bytes_written: 0,
+                rows_written: data.len(),
+            })
+        }
+
+        async fn close(&mut self) -> DaftResult<Self::Result> {
+            Ok(vec![])
+        }
+
+        fn bytes_written(&self) -> usize {
+            0
+        }
+
+        fn bytes_per_file(&self) -> Vec<usize> {
+            vec![0]
+        }
+    }
+
+    #[test]
+    fn make_state_uses_input_id_as_writer_index() {
+        let file_indices = Arc::new(Mutex::new(Vec::new()));
+        let sink = WriteSink::new(
+            WriteFormat::Kafka,
+            Arc::new(RecordingWriterFactory {
+                file_indices: file_indices.clone(),
+            }),
+            None,
+            Arc::new(Schema::empty()),
+        );
+
+        <WriteSink as BlockingSink>::make_state(&sink, 42).unwrap();
+
+        assert_eq!(*file_indices.lock().unwrap(), vec![42]);
     }
 }

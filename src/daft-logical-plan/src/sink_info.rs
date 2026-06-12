@@ -1,7 +1,8 @@
-use std::{hash::Hash, sync::Arc};
+use std::{collections::BTreeMap, fmt, hash::Hash, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
+use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum SinkInfo<E = ExprRef> {
     OutputFileInfo(OutputFileInfo<E>),
+    KafkaInfo(KafkaWriteInfo<E>),
     #[cfg(feature = "python")]
     CatalogInfo(CatalogInfo<E>),
     #[cfg(feature = "python")]
@@ -33,6 +35,61 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
     pub write_success_file: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct KafkaWriteInfo<E = ExprRef> {
+    pub bootstrap_servers: String,
+    pub topic: KafkaTopic<E>,
+    pub value_col: E,
+    pub key_col: Option<E>,
+    pub headers_col: Option<E>,
+    pub partition: Option<KafkaPartition<E>>,
+    pub timestamp_ms_col: Option<E>,
+    pub value_format: KafkaValueFormat,
+    pub key_format: KafkaKeyFormat,
+    pub kafka_client_config: BTreeMap<String, KafkaConfigValue>,
+    pub timeout_ms: u64,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub enum KafkaTopic<E = ExprRef> {
+    Static(String),
+    Dynamic(E),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub enum KafkaPartition<E = ExprRef> {
+    Static(i32),
+    Dynamic(E),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub enum KafkaValueFormat {
+    Raw,
+    Utf8,
+    Json,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub enum KafkaKeyFormat {
+    Raw,
+    Utf8,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub enum KafkaConfigValue {
+    String(String),
+    Int(i64),
+    Float(FloatWrapper<f64>),
+    Bool(bool),
+    Null,
 }
 
 #[cfg(feature = "python")]
@@ -229,12 +286,96 @@ where
     }
 }
 
+impl<E> KafkaWriteInfo<E>
+where
+    E: ToString,
+{
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![
+            format!("Bootstrap servers = {}", self.bootstrap_servers),
+            format!("Topic = {}", self.topic),
+            format!("Value column = {}", self.value_col.to_string()),
+        ];
+        if let Some(key_col) = &self.key_col {
+            res.push(format!("Key column = {}", key_col.to_string()));
+        }
+        if let Some(headers_col) = &self.headers_col {
+            res.push(format!("Headers column = {}", headers_col.to_string()));
+        }
+        if let Some(partition) = &self.partition {
+            res.push(format!("Partition = {}", partition));
+        }
+        if let Some(timestamp_ms_col) = &self.timestamp_ms_col {
+            res.push(format!(
+                "Timestamp ms column = {}",
+                timestamp_ms_col.to_string()
+            ));
+        }
+        res.push(format!("Value format = {}", self.value_format));
+        res.push(format!("Key format = {}", self.key_format));
+        res.push(format!(
+            "Kafka client config entries = {}",
+            self.kafka_client_config.len()
+        ));
+        res.push(format!("Timeout ms = {}", self.timeout_ms));
+        res
+    }
+}
+
+impl<E> fmt::Display for KafkaTopic<E>
+where
+    E: ToString,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Static(topic) => write!(f, "Static({topic})"),
+            Self::Dynamic(expr) => write!(f, "Dynamic({})", expr.to_string()),
+        }
+    }
+}
+
+impl<E> fmt::Display for KafkaPartition<E>
+where
+    E: ToString,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Static(partition) => write!(f, "Static({partition})"),
+            Self::Dynamic(expr) => write!(f, "Dynamic({})", expr.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for KafkaValueFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let format = match self {
+            Self::Raw => "raw",
+            Self::Utf8 => "utf8",
+            Self::Json => "json",
+        };
+        write!(f, "{format}")
+    }
+}
+
+impl fmt::Display for KafkaKeyFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let format = match self {
+            Self::Raw => "raw",
+            Self::Utf8 => "utf8",
+        };
+        write!(f, "{format}")
+    }
+}
+
 impl SinkInfo {
     pub fn bind(&self, schema: &Schema) -> DaftResult<SinkInfo<BoundExpr>> {
         match self {
             Self::OutputFileInfo(output_file_info) => Ok(SinkInfo::OutputFileInfo(
                 output_file_info.clone().bind(schema)?,
             )),
+            Self::KafkaInfo(kafka_write_info) => {
+                Ok(SinkInfo::KafkaInfo(kafka_write_info.clone().bind(schema)?))
+            }
             #[cfg(feature = "python")]
             Self::CatalogInfo(catalog_info) => {
                 Ok(SinkInfo::CatalogInfo(catalog_info.clone().bind(schema)?))
@@ -261,6 +402,54 @@ impl OutputFileInfo {
             compression: self.compression,
             io_config: self.io_config,
             write_success_file: self.write_success_file,
+        })
+    }
+}
+
+impl KafkaWriteInfo {
+    pub fn bind(self, schema: &Schema) -> DaftResult<KafkaWriteInfo<BoundExpr>> {
+        Ok(KafkaWriteInfo {
+            bootstrap_servers: self.bootstrap_servers,
+            topic: self.topic.bind(schema)?,
+            value_col: BoundExpr::try_new(self.value_col, schema)?,
+            key_col: self
+                .key_col
+                .map(|expr| BoundExpr::try_new(expr, schema))
+                .transpose()?,
+            headers_col: self
+                .headers_col
+                .map(|expr| BoundExpr::try_new(expr, schema))
+                .transpose()?,
+            partition: self
+                .partition
+                .map(|partition| partition.bind(schema))
+                .transpose()?,
+            timestamp_ms_col: self
+                .timestamp_ms_col
+                .map(|expr| BoundExpr::try_new(expr, schema))
+                .transpose()?,
+            value_format: self.value_format,
+            key_format: self.key_format,
+            kafka_client_config: self.kafka_client_config,
+            timeout_ms: self.timeout_ms,
+        })
+    }
+}
+
+impl KafkaTopic {
+    fn bind(self, schema: &Schema) -> DaftResult<KafkaTopic<BoundExpr>> {
+        Ok(match self {
+            Self::Static(topic) => KafkaTopic::Static(topic),
+            Self::Dynamic(expr) => KafkaTopic::Dynamic(BoundExpr::try_new(expr, schema)?),
+        })
+    }
+}
+
+impl KafkaPartition {
+    fn bind(self, schema: &Schema) -> DaftResult<KafkaPartition<BoundExpr>> {
+        Ok(match self {
+            Self::Static(partition) => KafkaPartition::Static(partition),
+            Self::Dynamic(expr) => KafkaPartition::Dynamic(BoundExpr::try_new(expr, schema)?),
         })
     }
 }

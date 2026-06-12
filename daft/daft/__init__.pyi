@@ -2304,6 +2304,22 @@ class LogicalPlanBuilder:
         compression: str | None = None,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
+    def kafka_write(
+        self,
+        bootstrap_servers: str,
+        topic: str | None,
+        topic_col: str | None,
+        value_col: str,
+        key_col: str | None,
+        headers_col: str | None,
+        partition: int | None,
+        partition_col: str | None,
+        timestamp_ms_col: str | None,
+        value_format: str,
+        key_format: str,
+        kafka_client_config: dict[str, Any] | None = None,
+        timeout_ms: int = 10000,
+    ) -> LogicalPlanBuilder: ...
     def iceberg_write(
         self,
         table_name: str,
