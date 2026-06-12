@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.ai.provider import Provider as DaftProvider
 from daft.catalog import Catalog, Identifier, NotFoundError, Table
 from daft.session import Session
 
@@ -301,7 +302,7 @@ def test_exception_surfacing():
 #
 
 
-class MockProvider:
+class MockProvider(DaftProvider):
     def __init__(self, name):
         self._name = name
 
@@ -349,6 +350,69 @@ def test_set_provider_and_current_provider(monkeypatch):
     sess.attach_provider(mock_provider)
     sess.set_provider("mock_provider")
     assert sess.current_provider() is mock_provider
+
+
+def test_set_provider_with_provider_instance():
+    """set_provider should accept a Provider instance, auto-attach it, and set it as current."""
+    sess = Session()
+    provider = MockProvider("my_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+    assert sess.get_provider("my_provider") is provider
+
+
+def test_set_provider_with_provider_instance_toplevel():
+    """daft.set_provider() should accept a Provider instance, auto-attach it, and set it as current."""
+    sess = Session()
+    provider = MockProvider("top_level_provider")
+    daft.set_session(sess)
+    daft.set_provider(provider)
+    assert sess.current_provider() is provider
+    assert sess.get_provider("top_level_provider") is provider
+
+
+def test_set_provider_none():
+    """set_provider(None) should clear the current provider without error."""
+    sess = Session()
+    sess.set_provider(None)
+    assert sess.current_provider() is None
+
+
+def test_set_provider_with_provider_instance_replaces_existing():
+    """set_provider with a Provider instance should correctly switch the current provider."""
+    sess = Session()
+    provider_a = MockProvider("provider_a")
+    provider_b = MockProvider("provider_b")
+
+    sess.set_provider(provider_a)
+    assert sess.current_provider() is provider_a
+
+    sess.set_provider(provider_b)
+    assert sess.current_provider() is provider_b
+
+
+def test_set_provider_with_provider_instance_twice_raises():
+    """Calling set_provider twice with the same provider instance should raise."""
+    sess = Session()
+    provider = MockProvider("same_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+    # Calling set_provider again with the same instance should fail
+    # because the provider is already attached
+    with pytest.raises(Exception, match="already exists"):
+        sess.set_provider(provider)
+
+
+def test_set_provider_with_provider_instance_then_string():
+    """After using set_provider with a Provider instance, switching by string name should work."""
+    sess = Session()
+    provider = MockProvider("hybrid_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+
+    # Switch to a provider by string name
+    sess.set_provider("hybrid_provider")
+    assert sess.current_provider() is provider
 
 
 def test_current_session_drop_table():
