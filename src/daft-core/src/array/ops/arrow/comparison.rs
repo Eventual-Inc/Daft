@@ -1,5 +1,5 @@
 use arrow::{
-    array::{make_comparator, Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray},
+    array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_comparator},
     buffer::{NullBuffer, ScalarBuffer},
     compute::SortOptions,
     datatypes::{DataType, Float32Type, Float64Type},
@@ -281,7 +281,7 @@ pub fn build_multi_array_is_equal_from_arrays(
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{Float32Array, Int32Array};
+    use arrow::array::{Float32Array, Int32Array, NullArray};
 
     use super::*;
 
@@ -343,6 +343,69 @@ mod tests {
         let right = Arc::new(Int32Array::from(vec![None])) as ArrayRef;
         let is_equal = single_column_is_equal(left, right, true, false);
         assert!(!is_equal(0, 0));
+    }
+
+    #[test]
+    fn null_array_against_itself_respects_nulls_equal_flag() {
+        // A NullArray has no validity bitmap, so equality is decided entirely by
+        // the `left_is_null_array` / `right_is_null_array` flags treating every
+        // row as null.
+        let left = Arc::new(NullArray::new(2)) as ArrayRef;
+        let right = Arc::new(NullArray::new(2)) as ArrayRef;
+
+        let null_eq = single_column_is_equal(left.clone(), right.clone(), true, false);
+        assert!(
+            null_eq(0, 0),
+            "all-null rows are equal when nulls_equal is set"
+        );
+
+        let null_ne = single_column_is_equal(left, right, false, false);
+        assert!(!null_ne(0, 0), "all-null rows are not equal by default");
+    }
+
+    #[test]
+    fn null_column_alongside_typed_column_uses_null_validity() {
+        // A multi-column key with one all-null column and one typed column: the
+        // Null column forces every row pair to disagree on that column unless
+        // both rows are null *and* nulls_equal is set. This exercises the
+        // `*_is_null_array` flags in the real (matching-type) multi-column path,
+        // without the unsupported cross-type pairing on a single column.
+        let left_null = Arc::new(NullArray::new(2)) as ArrayRef;
+        let left_int = Arc::new(Int32Array::from(vec![1, 2])) as ArrayRef;
+        let right_null = Arc::new(NullArray::new(2)) as ArrayRef;
+        let right_int = Arc::new(Int32Array::from(vec![1, 2])) as ArrayRef;
+
+        // nulls_equal = false on the Null column: the null column never matches,
+        // so the whole key never matches even though the int column is equal.
+        let ne = build_multi_array_is_equal_from_arrays(
+            &[left_null.clone(), left_int.clone()],
+            &[right_null.clone(), right_int.clone()],
+            &[false, false],
+            &[false, false],
+        )
+        .unwrap();
+        assert!(
+            !ne(0, 0),
+            "all-null column blocks the match when nulls_equal is false"
+        );
+
+        // nulls_equal = true on the Null column: the null column matches, so the
+        // key matches iff the int column matches.
+        let eq = build_multi_array_is_equal_from_arrays(
+            &[left_null, left_int],
+            &[right_null, right_int],
+            &[true, false],
+            &[false, false],
+        )
+        .unwrap();
+        assert!(
+            eq(0, 0),
+            "matching int rows are equal when the null column allows it"
+        );
+        assert!(
+            !eq(0, 1),
+            "differing int rows are unequal even when the null column allows it"
+        );
     }
 
     #[test]
