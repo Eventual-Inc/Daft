@@ -260,6 +260,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-avro"
+version = "57.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "582f1459cdc77a082b345f03c7be047ec9b80221d50325398d47c88fad54188e"
+dependencies = [
+ "arrow-array 57.3.0",
+ "arrow-buffer 57.3.0",
+ "arrow-schema 57.3.0",
+ "bzip2 0.6.1",
+ "crc",
+ "flate2",
+ "indexmap",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+ "snap",
+ "strum_macros",
+ "uuid",
+ "xz",
+ "zstd",
+]
+
+[[package]]
 name = "arrow-buffer"
 version = "56.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -557,7 +580,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06575e6a9673580f52661c92107baabffbf41e2141373441cbcdc47cb733003c"
 dependencies = [
  "brotli 7.0.0",
- "bzip2",
+ "bzip2 0.5.2",
  "deflate64",
  "flate2",
  "futures-core",
@@ -1569,6 +1592,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "bzip2-sys"
 version = "0.1.13+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2332,6 +2364,7 @@ dependencies = [
  "common-version",
  "daft-ai",
  "daft-algebra",
+ "daft-avro",
  "daft-catalog",
  "daft-checkpoint",
  "daft-cli",
@@ -2403,6 +2436,28 @@ dependencies = [
  "half",
  "indexmap",
  "rstest",
+]
+
+[[package]]
+name = "daft-avro"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array 57.3.0",
+ "arrow-avro",
+ "arrow-schema 57.3.0",
+ "common-error",
+ "common-py-serde",
+ "common-runtime",
+ "daft-core",
+ "daft-io",
+ "daft-recordbatch",
+ "daft-schema",
+ "futures",
+ "pyo3",
+ "serde",
+ "snafu",
+ "tokio",
 ]
 
 [[package]]
@@ -3062,6 +3117,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console",
+ "daft-avro",
  "daft-checkpoint",
  "daft-context",
  "daft-core",
@@ -3323,6 +3379,7 @@ dependencies = [
  "common-py-serde",
  "common-runtime",
  "daft-algebra",
+ "daft-avro",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -3527,6 +3584,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "daft-avro",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -5299,6 +5357,12 @@ checksum = "409851a618475d2d5796377cad353802345cba92c867d9fbcde9cf4eac4e14df"
 dependencies = [
  "lexical-util",
 ]
+
+[[package]]
+name = "libbz2-rs-sys"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34b357333733e8260735ba5894eb928c02ecc69c78715f01a8019e7fa7f2db4c"
 
 [[package]]
 name = "libc"
@@ -9589,6 +9653,15 @@ name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
+
+[[package]]
+name = "xz"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c887690ff2a2e233e8e49633461521f98ec57fbff9d59a884c9a4f04ec1da34"
+dependencies = [
+ "xz2",
+]
 
 [[package]]
 name = "xz2"
