@@ -24,7 +24,7 @@ use parquet::{
 use crate::{
     AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
-    utils::build_filename,
+    utils::{build_filename, build_filename_single},
 };
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
@@ -93,6 +93,7 @@ pub(crate) fn native_parquet_writer_supported(
         .is_ok())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_native_parquet_writer(
     root_dir: &str,
     schema: &SchemaRef,
@@ -101,16 +102,21 @@ pub(crate) fn create_native_parquet_writer(
     io_config: Option<IOConfig>,
     compression: Option<&str>,
     column_compression: Option<&[(String, String)]>,
+    single_file: bool,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    let filename = build_filename(
-        &source_type,
-        root_dir.as_ref(),
-        partition_values,
-        file_idx,
-        "parquet",
-    )?;
+    let filename = if single_file {
+        build_filename_single(&source_type, root_dir.as_ref())?
+    } else {
+        build_filename(
+            &source_type,
+            root_dir.as_ref(),
+            partition_values,
+            file_idx,
+            "parquet",
+        )?
+    };
 
     let default_compression = match compression {
         Some(name) => parse_compression(name)?,
