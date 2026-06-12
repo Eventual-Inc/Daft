@@ -1612,3 +1612,161 @@ def hamming_distance_str(left: Expression, right: Expression) -> Expression:
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("hamming_distance_str", left, right)
+
+
+def levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Levenshtein edit distance between two strings.
+
+    The Levenshtein distance is the minimum number of single-character insertions,
+    deletions, or substitutions required to transform one string into the other.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Levenshtein distance for each pair of strings. Returns null when either
+        input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["kitten", "saturday", ""], "y": ["sitting", "sunday", "abc"]})
+        >>> df = df.with_column("distance", levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭──────────┬─────────┬──────────╮
+        │ x        ┆ y       ┆ distance │
+        │ ---      ┆ ---     ┆ ---      │
+        │ String   ┆ String  ┆ Int64    │
+        ╞══════════╪═════════╪══════════╡
+        │ kitten   ┆ sitting ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ saturday ┆ sunday  ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │          ┆ abc     ┆ 3        │
+        ╰──────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("levenshtein_distance", left, right)
+
+
+def jaro_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro similarity between two strings.
+
+    The Jaro similarity is a measure of similarity between two strings, based on
+    matching characters and transpositions. Returns a value between 0.0 (no similarity)
+    and 1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro similarity (0.0 to 1.0) for each pair of strings. Returns null when
+        either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9444444444444445 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8222222222222223 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.7666666666666666 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_similarity", left, right)
+
+
+def jaro_winkler_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro-Winkler similarity between two strings.
+
+    This is the Jaro similarity with a prefix bonus for strings sharing a common
+    prefix (up to 4 characters). Returns a value between 0.0 (no similarity) and
+    1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro-Winkler similarity (0.0 to 1.0) for each pair of strings. Returns
+        null when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_winkler_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_winkler_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9611111111111111 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8400000000000001 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.8133333333333332 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_winkler_similarity", left, right)
+
+
+def damerau_levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Damerau-Levenshtein distance between two strings.
+
+    This extends the Levenshtein distance by also counting transpositions of two
+    adjacent characters as a single edit operation (in addition to insertions,
+    deletions, and substitutions).
+
+    Note:
+        This computes the Optimal String Alignment (OSA) variant, which does not
+        allow a substring to be edited more than once. Results may differ from the
+        true Damerau-Levenshtein distance for inputs with overlapping transpositions
+        (e.g., ``"CA"`` to ``"ABC"`` is 3 under OSA but 2 under true
+        Damerau-Levenshtein). OSA does not satisfy the triangle inequality.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Damerau-Levenshtein (OSA) distance for each pair of strings. Returns null
+        when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import damerau_levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "acb", "abc"]})
+        >>> df = df.with_column("distance", damerau_levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬────────┬──────────╮
+        │ x      ┆ y      ┆ distance │
+        │ ---    ┆ ---    ┆ ---      │
+        │ String ┆ String ┆ Int64    │
+        ╞════════╪════════╪══════════╡
+        │ abc    ┆ bac    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ abc    ┆ acb    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │        ┆ abc    ┆ 3        │
+        ╰────────┴────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("damerau_levenshtein_distance", left, right)

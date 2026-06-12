@@ -22,7 +22,15 @@ class PyArrowFSWithExpiry:
     expiry: datetime | None
 
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], PyArrowFSWithExpiry] = {}
+_CACHED_FSES: dict[tuple[str, str], PyArrowFSWithExpiry] = {}
+
+
+def _io_config_cache_key(io_config: IOConfig | None) -> str:
+    # IOConfig.__eq__ is identity-based on the PyO3 wrapper, so two semantically-equal
+    # configs constructed at different times miss the dict. Key on the content-repr
+    # instead; the cached entry's `expiry` field still drives refresh-credentials
+    # invalidation.
+    return "None" if io_config is None else repr(io_config)
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -32,8 +40,9 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     """
     global _CACHED_FSES
 
-    if (protocol, io_config) in _CACHED_FSES:
-        fs = _CACHED_FSES[(protocol, io_config)]
+    key = (protocol, _io_config_cache_key(io_config))
+    if key in _CACHED_FSES:
+        fs = _CACHED_FSES[key]
 
         if fs.expiry is None or fs.expiry > datetime.now(timezone.utc):
             return fs.fs
@@ -45,7 +54,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
+    _CACHED_FSES[(protocol, _io_config_cache_key(io_config))] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
@@ -240,7 +249,7 @@ def _build_filesystem(
     if protocol == "http":
         # "https" canonicalizes to "http"; fsspec's HTTPFileSystem handles both schemes.
         fsspec_fs = fsspec.get_filesystem_class("http")()
-        return pafs.PyFileSystem(fsspec_fs), None
+        return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
     ###
     # Azure: Use FSSpec as a fallback
@@ -280,8 +289,8 @@ def _resolve_path(path: str, fs: pafs.FileSystem) -> str:
     # Strip trailing slashes so downstream "{dir}/{file}" joins don't double them.
     path = path.rstrip("/") or path
     protocol = get_protocol_from_path(path)
-    # Gravitino keeps the full gvfs:// URI — its Rust-backed handler expects it.
-    if protocol == "gvfs":
+    # These filesystems expect the full URI, including the scheme.
+    if protocol in {"gvfs", "http", "https"}:
         return path
     if protocol == "file":
         path = os.path.expanduser(path)

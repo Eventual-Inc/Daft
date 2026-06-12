@@ -3,6 +3,7 @@ harness = false
 name = "parquet_read"
 
 [dependencies]
+log = {workspace = true}
 arrow = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 bytes = {workspace = true}

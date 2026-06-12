@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import (
-    FlightPartitionRef,
+    FlightPartitions,
     Input,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
@@ -38,7 +38,7 @@ class NativeExecutor:
     ) -> Generator[LocalMaterializedResult, None, tuple[str, PyExecutionStats]]:
         stats: PyExecutionStats | None = None
 
-        async def stream_results() -> AsyncGenerator[PyMicroPartition | FlightPartitionRef | None, None]:
+        async def stream_results() -> AsyncGenerator[PyMicroPartition | FlightPartitions | None, None]:
             result_handle = await self._executor.run(
                 local_physical_plan,
                 ctx._ctx,

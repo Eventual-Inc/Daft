@@ -26,13 +26,18 @@ impl Partition for FlightPartitionRef {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightPartitions {
+    pub refs: Vec<FlightPartitionRef>,
+}
+
 #[cfg(feature = "python")]
 mod python {
     use common_py_serde::impl_bincode_py_state_serialization;
     use pyo3::{Bound, PyResult, Python, pyclass, pymethods, types::PyModuleMethods};
     use serde::{Deserialize, Serialize};
 
-    use crate::flight::FlightPartitionRef;
+    use crate::flight::{FlightPartitionRef, FlightPartitions};
 
     #[pyclass(
         module = "daft.daft",
@@ -106,11 +111,42 @@ mod python {
         }
     }
 
+    #[pyclass(
+        module = "daft.daft",
+        name = "FlightPartitions",
+        frozen,
+        from_py_object
+    )]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PyFlightPartitions {
+        pub inner: FlightPartitions,
+    }
+
+    #[pymethods]
+    impl PyFlightPartitions {
+        #[new]
+        pub fn new(py_refs: Vec<PyFlightPartitionRef>) -> Self {
+            Self {
+                inner: FlightPartitions {
+                    refs: py_refs.into_iter().map(Into::into).collect(),
+                },
+            }
+        }
+
+        #[getter]
+        pub fn partitions(&self) -> Vec<PyFlightPartitionRef> {
+            self.inner.refs.iter().cloned().map(Into::into).collect()
+        }
+    }
+
+    impl_bincode_py_state_serialization!(PyFlightPartitions);
+
     pub fn register_modules(parent: &Bound<pyo3::types::PyModule>) -> PyResult<()> {
         parent.add_class::<PyFlightPartitionRef>()?;
+        parent.add_class::<PyFlightPartitions>()?;
         Ok(())
     }
 }
 
 #[cfg(feature = "python")]
-pub use python::{PyFlightPartitionRef, register_modules};
+pub use python::{PyFlightPartitionRef, PyFlightPartitions, register_modules};

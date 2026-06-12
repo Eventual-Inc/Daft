@@ -289,23 +289,20 @@ fn translate_helper(
                     window.aliases.clone(),
                     LocalNodeContext::default(),
                 ),
-                (true, true, true) => {
-                    let aggregations = window_to_agg_exprs(window_functions)?;
-                    LocalPhysicalPlan::window_partition_and_dynamic_frame(
-                        input_plan,
-                        partition_by,
-                        order_by,
-                        window.window_spec.descending.clone(),
-                        window.window_spec.nulls_first.clone(),
-                        window.window_spec.frame.clone().unwrap(),
-                        window.window_spec.min_periods,
-                        window.schema.clone(),
-                        window.stats_state.clone(),
-                        aggregations,
-                        window.aliases.clone(),
-                        LocalNodeContext::default(),
-                    )
-                }
+                (true, true, true) => LocalPhysicalPlan::window_partition_and_dynamic_frame(
+                    input_plan,
+                    partition_by,
+                    order_by,
+                    window.window_spec.descending.clone(),
+                    window.window_spec.nulls_first.clone(),
+                    window.window_spec.frame.clone().unwrap(),
+                    window.window_spec.min_periods,
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                    window_functions,
+                    window.aliases.clone(),
+                    LocalNodeContext::default(),
+                ),
                 (false, true, false) => LocalPhysicalPlan::window_order_by_only(
                     input_plan,
                     order_by,

@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
+from daft_lance.lance_data_sink import LanceDataSink
 
-from daft.io.lance.lance_data_sink import LanceDataSink
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
 

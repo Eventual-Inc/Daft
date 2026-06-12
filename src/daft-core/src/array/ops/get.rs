@@ -301,16 +301,16 @@ where
                 .flatten()
         };
 
-        let offset = self
+        let position = self
             .physical
-            .get("offset")
+            .get("position")
             .ok()
             .and_then(|s| s.i64().ok().and_then(|a| a.get(idx)))
             .map(|v| v as u64);
 
-        let length = self
+        let size = self
             .physical
-            .get("length")
+            .get("size")
             .ok()
             .and_then(|s| s.i64().ok().and_then(|a| a.get(idx)))
             .map(|v| v as u64);
@@ -319,8 +319,8 @@ where
             T::get_type(),
             data.to_string(),
             io_config,
-            offset,
-            length,
+            position,
+            size,
         ))
     }
 }

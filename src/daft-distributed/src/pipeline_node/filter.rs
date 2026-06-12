@@ -14,7 +14,8 @@ use opentelemetry::KeyValue;
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        NodeID, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+        ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -123,7 +124,7 @@ impl FilterNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

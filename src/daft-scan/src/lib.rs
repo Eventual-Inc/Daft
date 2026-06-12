@@ -29,6 +29,7 @@ pub use file_format_config::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
     WarcSourceConfig,
 };
+pub mod clustering;
 pub mod glob;
 mod hive;
 mod partitioning;
@@ -40,6 +41,7 @@ pub mod scan_task_iters;
 mod sharder;
 mod source_config;
 pub mod statistics;
+pub use clustering::ClusteringKeys;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
@@ -909,6 +911,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }));
 
         ScanTask::new(
@@ -927,6 +930,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         });
 
         let mut sources: Vec<String> = Vec::new();
@@ -1199,6 +1203,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1250,6 +1255,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1294,6 +1300,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1340,6 +1347,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1383,6 +1391,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
