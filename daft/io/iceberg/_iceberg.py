@@ -45,9 +45,15 @@ def _convert_iceberg_file_io_properties_to_io_config(
 
     is_oss = location is not None and get_protocol_from_path(location) == "oss"
 
+    # Some catalogs vend `s3.endpoint` as a bare host. Daft's S3 client requires
+    # a full URI, so default the scheme to https (PyArrow's default).
+    endpoint_url = get_first_property_value("s3.endpoint")
+    if endpoint_url is not None and "://" not in endpoint_url:
+        endpoint_url = f"https://{endpoint_url}"
+
     io_config = IOConfig(
         s3=S3Config(
-            endpoint_url=get_first_property_value("s3.endpoint"),
+            endpoint_url=endpoint_url,
             region_name=get_first_property_value("s3.region", "client.region"),
             key_id=get_first_property_value("s3.access-key-id", "client.access-key-id"),
             access_key=get_first_property_value("s3.secret-access-key", "client.secret-access-key"),

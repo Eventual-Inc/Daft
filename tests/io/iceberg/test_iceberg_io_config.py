@@ -54,3 +54,39 @@ def test_no_location_with_props():
 def test_no_location_no_props_returns_none():
     """With no location (default) and no properties, no IOConfig is produced."""
     assert _convert_iceberg_file_io_properties_to_io_config({}) is None
+
+
+def test_schemeless_endpoint_gets_https_scheme():
+    """A vended endpoint without a URI scheme is defaulted to https.
+
+    Some catalogs vend `s3.endpoint` as a bare host; Daft's S3 client requires
+    a full URI.
+    """
+    props = {"s3.endpoint": "s3.us-west-2.example.com"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "s3://my-bucket/warehouse/db/table")
+    assert result is not None
+    assert result.s3.endpoint_url == "https://s3.us-west-2.example.com"
+
+
+def test_schemeless_endpoint_with_trailing_slash():
+    """A bare-host endpoint with a trailing slash also gets the https scheme."""
+    props = {"s3.endpoint": "s3.us-west-2.example.com/"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "s3://my-bucket/warehouse/db/table")
+    assert result is not None
+    assert result.s3.endpoint_url == "https://s3.us-west-2.example.com/"
+
+
+def test_schemeless_endpoint_with_port():
+    """A bare host:port endpoint also gets the https scheme."""
+    props = {"s3.endpoint": "minio.example.com:9000"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "s3://my-bucket/warehouse/db/table")
+    assert result is not None
+    assert result.s3.endpoint_url == "https://minio.example.com:9000"
+
+
+def test_endpoint_with_scheme_unchanged():
+    """Endpoints that already carry a scheme are passed through untouched."""
+    props = {"s3.endpoint": "http://minio.example.com:9000"}
+    result = _convert_iceberg_file_io_properties_to_io_config(props, "s3://my-bucket/warehouse/db/table")
+    assert result is not None
+    assert result.s3.endpoint_url == "http://minio.example.com:9000"
