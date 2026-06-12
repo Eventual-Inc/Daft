@@ -5,6 +5,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.functions import random_int
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_random_int_column_generation(make_df) -> None:
@@ -54,6 +55,10 @@ def test_random_int_invalid_inputs_raise(make_df) -> None:
         df.with_column("r", random_int(low=1, high=col("a"))).collect()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Distributed shuffle is non-deterministic on Ray runner due to task scheduling order",
+)
 def test_shuffle_reproducible_with_seed(make_df) -> None:
     df = make_df({"a": list(range(40))})
     first = df.shuffle(seed=99).to_pydict()["a"]
