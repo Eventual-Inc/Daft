@@ -10,3 +10,27 @@ Check out our [Common Crawl dataset guide](../datasets/common-crawl.md) for more
     options:
         filters: ["!^_"]
         heading_level: 3
+
+## LeRobot v3
+
+See the [LeRobot v3 dataset guide](../datasets/lerobot.md) for episode vs frame workflows and Hub/local paths.
+
+::: daft.datasets.lerobot.read
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.lerobot.read_episodes
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.lerobot.load_episode_frames
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.lerobot.read_tasks
+    options:
+        filters: ["!^_"]
+        heading_level: 3
