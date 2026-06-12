@@ -703,7 +703,7 @@ def test_udf_succeeds_with_some_actors_schedulable():
             return data
 
         result = df.select(udf_1(col("a")).alias("udf_1")).to_pydict()
-        assert sorted(result["udf_1"]) == [1, 2, 3]
+        assert result == {"udf_1": [1, 2, 3]}
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
