@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.ray_compat import validate_and_normalize_ray_options
-
-import logging
 
 logger = logging.getLogger(__name__)
 
