@@ -57,11 +57,16 @@ class DataSource(ABC):
         """Declares how this source's output is distributed at execution time.
 
         Returning ``None`` (the default) means the source makes no clustering guarantee, so
-        downstream ``groupby`` / ``Window.partition_by`` / ``distinct`` operators will shuffle
-        as usual. Override this to return
-        :class:`~daft.io.clustering.ClusteringKeys` when the source knows its output is already
-        hash-partitioned — e.g. when each ``DataSourceTask`` corresponds to exactly one
-        ``(producer, hour)`` group — so the optimizer can skip those shuffles.
+        downstream operators will shuffle as usual. Override this to return
+        :class:`~daft.io.clustering.ClusteringKeys` when the source can make one of the
+        following guarantees:
+
+        - :meth:`~daft.io.clustering.ClusteringKeys.hash` — when the source knows its output
+          is already hash-partitioned — e.g. when each ``DataSourceTask`` corresponds to exactly
+          one ``(producer, hour)`` group - allows the optimizer to skip hash shuffles
+        - :meth:`~daft.io.clustering.ClusteringKeys.range` — when each task covers a
+          non-overlapping range of values for the declared keys. Pass ``descending=True`` if
+          partition order is high-to-low. Allows the optimizer to skip range shuffles.
 
         Note that this is distinct from :meth:`get_partition_fields`, which describes on-disk
         storage layout for per-row value injection, not execution-time clustering.

@@ -2711,6 +2711,46 @@ class Expression:
 
         return find(self, substr)
 
+    def translate(self, from_str: builtins.str | Expression, to_str: builtins.str | Expression) -> Expression:
+        """Translates characters in the string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+        Tip: See Also
+            [`daft.functions.translate`](https://docs.daft.ai/en/stable/api/functions/translate/)
+        """
+        from daft.functions import translate
+
+        return translate(self, from_str, to_str)
+
+    def substring_index(self, delim: builtins.str | Expression, count: builtins.int | Expression) -> Expression:
+        """Returns the substring from string before count occurrences of the delimiter.
+
+        Tip: See Also
+            [`daft.functions.substring_index`](https://docs.daft.ai/en/stable/api/functions/substring_index/)
+        """
+        from daft.functions import substring_index
+
+        return substring_index(self, delim, count)
+
+    def soundex(self) -> Expression:
+        """Returns the Soundex code of the string.
+
+        Tip: See Also
+            [`daft.functions.soundex`](https://docs.daft.ai/en/stable/api/functions/soundex/)
+        """
+        from daft.functions import soundex
+
+        return soundex(self)
+
+    def ascii(self) -> Expression:
+        """Returns the ASCII numeric value of the first character of the string.
+
+        Tip: See Also
+            [`daft.functions.ascii_func`](https://docs.daft.ai/en/stable/api/functions/ascii_func/)
+        """
+        from daft.functions import ascii_func
+
+        return ascii_func(self)
+
     def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
         """Convert an image expression to the specified mode.
 
