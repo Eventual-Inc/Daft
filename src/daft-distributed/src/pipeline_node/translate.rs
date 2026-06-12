@@ -62,6 +62,7 @@ pub(crate) struct LogicalPlanToPipelineNodeTranslator {
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     curr_node: Vec<DistributedPipelineNode>,
     pub(crate) hints: Vec<String>,
+    cse_cache: HashMap<usize, DistributedPipelineNode>,
 }
 
 impl LogicalPlanToPipelineNodeTranslator {
@@ -77,6 +78,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             psets,
             curr_node: Vec::new(),
             hints: Vec::new(),
+            cse_cache: HashMap::new(),
         }
     }
 
@@ -679,6 +681,20 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )),
                     &self.meter,
                 )
+            }
+            LogicalPlan::CommonSubplan(common_subplan) => {
+                // On first encounter, cache the translated subplan.
+                // On subsequent encounters with the same id, reuse the cached
+                // node so the execution engine can share the computation.
+                if let Some(cached) = self.cse_cache.get(&common_subplan.id) {
+                    // Discard the freshly-translated node and use the cached one
+                    let _ = self.curr_node.pop().unwrap();
+                    cached.clone()
+                } else {
+                    let node = self.curr_node.pop().unwrap();
+                    self.cse_cache.insert(common_subplan.id, node.clone());
+                    node
+                }
             }
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
