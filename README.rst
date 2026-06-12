@@ -1,6 +1,6 @@
 |Banner|
 
-|CI| |PyPI| |Latest Tag| |Coverage| |Slack|
+|CI| |PyPI| |Latest Tag| |Coverage| |Slack| |Ruff| |uv|
 
 `Website <https://www.daft.ai>`_ • `Docs <https://docs.daft.ai>`_ • `Installation <https://docs.daft.ai/en/stable/install/>`_ • `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
@@ -127,6 +127,14 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
    :target: https://daft.ai/slack
    :alt: slack community
+
+.. |Ruff| image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+   :target: https://github.com/astral-sh/ruff
+   :alt: Ruff
+
+.. |uv| image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json
+   :target: https://github.com/astral-sh/uv
+   :alt: uv
 
 .. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239
    :target: https://trendshift.io/repositories/8239
