@@ -44,8 +44,26 @@ impl PySession {
             .attach_table(PyTableWrapper::from(table).arced(), alias)?)
     }
 
+    #[pyo3(signature = (data_source, alias = None))]
+    pub fn attach_data_source(
+        &self,
+        data_source: pyo3::Py<pyo3::PyAny>,
+        alias: Option<String>,
+    ) -> PyResult<()> {
+        let data_source = crate::DataSource::new(data_source);
+        let alias = match alias {
+            Some(alias) => alias,
+            None => data_source.name()?,
+        };
+        Ok(self.0.attach_data_source(data_source, alias)?)
+    }
+
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
         Ok(self.0.detach_catalog(alias)?)
+    }
+
+    pub fn detach_data_source(&self, alias: &str) -> PyResult<()> {
+        Ok(self.0.detach_data_source(alias)?)
     }
 
     pub fn detach_provider(&self, alias: &str) -> PyResult<()> {
@@ -93,6 +111,10 @@ impl PySession {
         self.0.get_catalog(name)?.to_py(py)
     }
 
+    pub fn get_data_source(&self, py: Python<'_>, name: &str) -> PyResult<pyo3::Py<pyo3::PyAny>> {
+        Ok(self.0.get_data_source(name)?.to_py(py))
+    }
+
     pub fn get_provider(&self, py: Python<'_>, name: &str) -> PyResult<pyo3::Py<pyo3::PyAny>> {
         self.0.get_provider(name)?.to_py(py)
     }
@@ -109,6 +131,10 @@ impl PySession {
         Ok(self.0.has_catalog(name))
     }
 
+    pub fn has_data_source(&self, name: &str) -> PyResult<bool> {
+        Ok(self.0.has_data_source(name))
+    }
+
     pub fn has_provider(&self, name: &str) -> PyResult<bool> {
         Ok(self.0.has_provider(name))
     }
@@ -120,6 +146,11 @@ impl PySession {
     #[pyo3(signature = (pattern=None))]
     pub fn list_catalogs(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
         Ok(self.0.list_catalogs(pattern)?)
+    }
+
+    #[pyo3(signature = (pattern=None))]
+    pub fn list_data_sources(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        Ok(self.0.list_data_sources(pattern)?)
     }
 
     #[pyo3(signature = (pattern=None))]

@@ -84,6 +84,10 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
+::: daft.read_source
+    options:
+        heading_level: 3
+
 ::: daft.sql.sql.sql
     options:
         heading_level: 3

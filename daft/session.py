@@ -22,10 +22,13 @@ from daft.udf import UDF
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from daft.io.source import DataSource
+
 __all__ = [
     "Session",
     "attach",
     "attach_catalog",
+    "attach_data_source",
     "attach_function",
     "attach_provider",
     "attach_table",
@@ -42,22 +45,27 @@ __all__ = [
     "current_provider",
     "current_session",
     "detach_catalog",
+    "detach_data_source",
     "detach_function",
     "detach_provider",
     "detach_table",
     "drop_namespace",
     "drop_table",
     "get_catalog",
+    "get_data_source",
     "get_function",
     "get_provider",
     "get_table",
     "has_catalog",
+    "has_data_source",
     "has_namespace",
     "has_provider",
     "has_table",
     "list_catalogs",
+    "list_data_sources",
     "list_namespaces",
     "list_tables",
+    "read_source",
     "read_table",
     "set_catalog",
     "set_model",
@@ -138,6 +146,7 @@ class Session:
         """Creates a session from a rust session wrapper."""
         s = Session.__new__(Session)
         s._session = session
+        s._token = None
         return s
 
     @staticmethod
@@ -173,15 +182,19 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog, Table, UDF, or DataFrame.
+    def attach(
+        self, object: Catalog | Provider | Table | UDF | DataFrame | DataSource, alias: str | None = None
+    ) -> None:
+        """Attaches a known attachable object like a Catalog, Table, UDF, DataFrame, or DataSource.
 
         Args:
-            object (Catalog|Table|UDF|DataFrame): object which is attachable to a session
+            object (Catalog|Table|UDF|DataFrame|DataSource): object which is attachable to a session
 
         Returns:
             None
         """
+        from daft.io.source import DataSource
+
         if isinstance(object, Catalog):
             self.attach_catalog(object, alias)
         elif isinstance(object, Provider):
@@ -190,6 +203,8 @@ class Session:
             self.attach_table(object, alias)
         elif isinstance(object, UDF):
             self.attach_function(object, alias)
+        elif isinstance(object, DataSource):
+            self.attach_data_source(object, alias)
         elif isinstance(object, DataFrame):
             if alias is None:
                 raise ValueError("Cannot attach a DataFrame without an alias. Please provide `alias`.")
@@ -211,6 +226,19 @@ class Session:
         a = alias if alias else c.name
         self._session.attach_catalog(c, a)
         return c
+
+    def attach_data_source(self, data_source: DataSource, alias: str | None = None) -> DataSource:
+        """Attaches a data source instance to this session.
+
+        Args:
+            data_source (DataSource): data source instance
+            alias (str | None): optional alias for name resolution, defaults to the source's name
+
+        Returns:
+            DataSource: the data source instance
+        """
+        self._session.attach_data_source(data_source, alias)
+        return data_source
 
     def attach_function(self, function: UDF, alias: str | None = None) -> None:
         """Attaches a Python function as a UDF in the current session."""
@@ -261,6 +289,14 @@ class Session:
             alias (str): catalog alias to detach
         """
         return self._session.detach_catalog(alias)
+
+    def detach_data_source(self, alias: str) -> None:
+        """Detaches the data source from this session or raises if the data source does not exist.
+
+        Args:
+            alias (str): data source alias to detach
+        """
+        return self._session.detach_data_source(alias)
 
     def detach_function(self, alias: str) -> None:
         """Detaches a Python function as a UDF in the current session."""
@@ -532,6 +568,20 @@ class Session:
         """
         return self._session.get_catalog(identifier)
 
+    def get_data_source(self, name: str) -> DataSource:
+        """Returns the data source or raises an exception if it does not exist.
+
+        Args:
+            name (str): data source name
+
+        Returns:
+            DataSource: The attached data source instance.
+
+        Raises:
+            ValueError: If the data source does not exist.
+        """
+        return self._session.get_data_source(name)
+
     def get_provider(self, identifier: str) -> Provider:
         """Returns the provider or raises an exception if it does not exist.
 
@@ -594,6 +644,10 @@ class Session:
         """Returns true if a catalog with the given identifier exists."""
         return self._session.has_catalog(identifier)
 
+    def has_data_source(self, name: str) -> bool:
+        """Returns true if a data source with the given name exists."""
+        return self._session.has_data_source(name)
+
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Returns true if a namespace with the given identifier exists."""
         if not (catalog := self.current_catalog()):
@@ -627,6 +681,17 @@ class Session:
             list[str]: list of available catalog names
         """
         return self._session.list_catalogs(pattern)
+
+    def list_data_sources(self, pattern: str | None = None) -> list[str]:
+        """Returns a list of attached data source names matching the pattern.
+
+        Args:
+            pattern (str): data source name pattern
+
+        Returns:
+            list[str]: list of attached data source names
+        """
+        return self._session.list_data_sources(pattern)
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
         """Returns a list of matching namespaces in the current catalog."""
@@ -669,6 +734,20 @@ class Session:
             ValueError: If the tables does not exist.
         """
         return self.get_table(identifier).read(**options)
+
+    def read_source(self, name: str) -> DataFrame:
+        """Reads the attached data source as a DataFrame or raises an exception if it does not exist.
+
+        Args:
+            name (str): data source name
+
+        Returns:
+            DataFrame:
+
+        Raises:
+            ValueError: If the data source does not exist.
+        """
+        return self.get_data_source(name).read()
 
     ###
     # set_*
@@ -772,7 +851,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
+def attach(object: Catalog | Provider | Table | UDF | DataFrame | DataSource, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -780,6 +859,11 @@ def attach(object: Catalog | Provider | Table | UDF | DataFrame, alias: str | No
 def attach_catalog(catalog: object | Catalog, alias: str | None = None) -> Catalog:
     """Attaches an external catalog to the current session."""
     return _session().attach_catalog(catalog, alias)
+
+
+def attach_data_source(data_source: DataSource, alias: str | None = None) -> DataSource:
+    """Attaches a data source instance to the current session."""
+    return _session().attach_data_source(data_source, alias)
 
 
 def attach_function(function: UDF, alias: str | None = None) -> None:
@@ -805,6 +889,11 @@ def attach_view(view: DataFrame, alias: str) -> Table:
 def detach_catalog(alias: str) -> None:
     """Detaches the catalog from the current session."""
     return _session().detach_catalog(alias)
+
+
+def detach_data_source(alias: str) -> None:
+    """Detaches the data source from the current session."""
+    return _session().detach_data_source(alias)
 
 
 def detach_function(alias: str) -> None:
@@ -912,6 +1001,11 @@ def get_catalog(identifier: str) -> Catalog:
     return _session().get_catalog(identifier)
 
 
+def get_data_source(name: str) -> DataSource:
+    """Returns the data source from the current session or raises an exception if it does not exist."""
+    return _session().get_data_source(name)
+
+
 def get_provider(identifier: str) -> Provider:
     """Returns the provider from the current session or raises an exception if it does not exist."""
     return _session().get_provider(identifier)
@@ -942,6 +1036,11 @@ def has_catalog(identifier: str) -> bool:
     return _session().has_catalog(identifier)
 
 
+def has_data_source(name: str) -> bool:
+    """Returns true if a data source with the given name exists in the current session."""
+    return _session().has_data_source(name)
+
+
 def has_provider(identifier: str) -> bool:
     """Returns true if a provider with the given identifier exists in the current session."""
     return _session().has_provider(identifier)
@@ -965,6 +1064,11 @@ def has_table(identifier: Identifier | str) -> bool:
 def list_catalogs(pattern: str | None = None) -> list[str]:
     """Returns a list of available catalogs in the current session."""
     return _session().list_catalogs(pattern)
+
+
+def list_data_sources(pattern: str | None = None) -> list[str]:
+    """Returns a list of attached data source names in the current session."""
+    return _session().list_data_sources(pattern)
 
 
 def list_namespaces(pattern: str | None = None) -> list[Identifier]:
@@ -995,6 +1099,11 @@ def load_extension(extension: str | types.ModuleType | Path) -> None:
 def read_table(identifier: Identifier | str, **options: Any) -> DataFrame:
     """Returns the table as a DataFrame or raises an exception if it does not exist."""
     return _session().read_table(identifier, **options)
+
+
+def read_source(name: str) -> DataFrame:
+    """Reads the attached data source as a DataFrame or raises an exception if it does not exist."""
+    return _session().read_source(name)
 
 
 ###
