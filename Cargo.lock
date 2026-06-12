@@ -2993,6 +2993,7 @@ dependencies = [
  "reqwest-middleware",
  "reqwest-retry",
  "serde",
+ "serde_json",
  "snafu",
  "tempfile",
  "thiserror 2.0.18",

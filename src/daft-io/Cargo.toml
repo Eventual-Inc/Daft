@@ -38,6 +38,7 @@ regex = {version = "1.12.2"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
