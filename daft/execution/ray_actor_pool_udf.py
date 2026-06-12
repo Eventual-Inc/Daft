@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.ray_compat import validate_and_normalize_ray_options
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ray.actor import ActorHandle as RayActorHandle
@@ -104,8 +107,7 @@ async def start_udf_actors(
     gpus_per_actor = udf_options.get("num_gpus", 0.0)
     alive_nodes = [n for n in ray.nodes() if n["Alive"]]
     can_schedule = any(
-        n["Resources"].get("CPU", 0) >= cpus_per_actor
-        and n["Resources"].get("GPU", 0) >= gpus_per_actor
+        n["Resources"].get("CPU", 0) >= cpus_per_actor and n["Resources"].get("GPU", 0) >= gpus_per_actor
         for n in alive_nodes
     )
     if not can_schedule:
@@ -125,11 +127,15 @@ async def start_udf_actors(
             limits.append(cluster_gpus / gpus_per_actor)
         max_schedulable = int(min(limits))
         if num_actors > max_schedulable:
-            logging.warning(
+            logger.warning(
                 "with_concurrency(%d) requested but only %d actors can be scheduled "
                 "(%g CPUs, %g GPUs available). Will proceed with partial actor pool "
                 "after actor_udf_ready_timeout (%ds).",
-                num_actors, max_schedulable, cluster_cpus, cluster_gpus, timeout,
+                num_actors,
+                max_schedulable,
+                cluster_cpus,
+                cluster_gpus,
+                timeout,
             )
 
     actors: list[RayActorHandle] = [
