@@ -695,11 +695,12 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
-    def set_provider(self, identifier: str | None, **options: Any) -> None:
+    def set_provider(self, identifier: str | Provider | None, **options: Any) -> None:
         """Set the default model provider with associated options.
 
         Args:
-            identifier (str | None): provider identifier string or None.
+            identifier (str | Provider | None): provider identifier string, Provider instance, or None.
+                If a Provider instance is given, it is attached to the session before being set as current.
             **options (Any): provider specific options such as an API key or retry limit.
 
         Note:
@@ -707,6 +708,11 @@ class Session:
             like "openai", then we will create and attach this known provider.
             For example, `daft.set_provider("openai")` works.
         """
+        # If a Provider instance is given, attach it and resolve to its name
+        if isinstance(identifier, Provider):
+            self.attach_provider(identifier)
+            identifier = identifier.name
+
         # consider using @overload on known providers for better type hints
         if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
             # upsert semantic for known providers e.g. daft.set_provider("openai")
@@ -1027,7 +1033,7 @@ def set_namespace(identifier: Identifier | str | None) -> None:
     _session().set_namespace(identifier)
 
 
-def set_provider(identifier: str | None, **options: Any) -> None:
+def set_provider(identifier: str | Provider | None, **options: Any) -> None:
     """Set the given provider as current_provider for the active session."""
     _session().set_provider(identifier, **options)
 
