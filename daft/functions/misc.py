@@ -550,10 +550,12 @@ def sha2_hex(expr: Expression, bit_length: int = 256) -> Expression:
     return Expression._call_builtin_scalar_fn("sha2", expr, bit_length=bit_length)
 
 
-def xxhash64(*exprs: Expression, seed: int = 42) -> Expression:
+def spark_xxhash64(*exprs: Expression, seed: int = 42) -> Expression:
     """Computes the xxHash64 hash of one or more expressions and returns the result as an Int64.
 
-    Compatible with Spark's xxhash64() function.
+    This is a Spark SQL-compatible implementation of xxhash64. It differs from
+    ``hash(..., hash_function="xxhash64")`` in return type (Int64 vs UInt64),
+    null-handling semantics, and byte representation of inputs.
 
     Args:
         exprs: One or more expressions to hash.
@@ -564,20 +566,20 @@ def xxhash64(*exprs: Expression, seed: int = 42) -> Expression:
 
     Examples:
         >>> import daft
-        >>> from daft.functions import xxhash64
+        >>> from daft.functions import spark_xxhash64
         >>> df = daft.from_pydict({"a": ["hello", "world"], "b": [1, 2]})
-        >>> df = df.select(xxhash64(df["a"]))
+        >>> df = df.select(spark_xxhash64(df["a"]))
         >>> df.show()  # doctest: +SKIP
     """
     if not exprs:
-        raise ValueError("xxhash64() requires at least one expression")
+        raise ValueError("spark_xxhash64() requires at least one expression")
     normalized = []
     for expr in exprs:
         if isinstance(expr, str):
             normalized.append(col(expr))
         else:
             normalized.append(Expression._to_expression(expr))
-    return Expression._call_builtin_scalar_fn("xxhash64", *normalized, seed=seed)
+    return Expression._call_builtin_scalar_fn("spark_xxhash64", *normalized, seed=seed)
 
 
 def crc32(expr: Expression) -> Expression:

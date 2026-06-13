@@ -1,10 +1,10 @@
-"""Tests for crypto/hash functions: md5, sha1, sha2, xxhash64, crc32."""
+"""Tests for crypto/hash functions: md5, sha1, sha2, spark_xxhash64, crc32."""
 
 from __future__ import annotations
 
 import daft
 from daft import col
-from daft.functions import crc32, md5, sha1_hex, sha2_hex, xxhash64
+from daft.functions import crc32, md5, sha1_hex, sha2_hex, spark_xxhash64
 
 
 class TestMd5:
@@ -137,35 +137,35 @@ class TestSha2:
         assert len({r224, r256, r384, r512}) == 4
 
 
-class TestXxHash64:
-    def test_xxhash64_basic(self):
+class TestSparkXxHash64:
+    def test_spark_xxhash64_basic(self):
         df = daft.from_pydict({"data": ["hello", "world"]})
-        result = df.select(xxhash64(col("data"))).to_pydict()["data"]
-        # xxhash64 should return Int64 values
+        result = df.select(spark_xxhash64(col("data"))).to_pydict()["data"]
+        # spark_xxhash64 should return Int64 values
         assert all(isinstance(v, int) for v in result)
         assert len(result) == 2
 
-    def test_xxhash64_deterministic(self):
+    def test_spark_xxhash64_deterministic(self):
         df = daft.from_pydict({"data": ["hello", "world"]})
-        result1 = df.select(xxhash64(col("data"))).to_pydict()["data"]
-        result2 = df.select(xxhash64(col("data"))).to_pydict()["data"]
+        result1 = df.select(spark_xxhash64(col("data"))).to_pydict()["data"]
+        result2 = df.select(spark_xxhash64(col("data"))).to_pydict()["data"]
         assert result1 == result2
 
-    def test_xxhash64_different_seeds(self):
+    def test_spark_xxhash64_different_seeds(self):
         df = daft.from_pydict({"data": ["hello"]})
-        result1 = df.select(xxhash64(col("data"), seed=0)).to_pydict()["data"]
-        result2 = df.select(xxhash64(col("data"), seed=42)).to_pydict()["data"]
+        result1 = df.select(spark_xxhash64(col("data"), seed=0)).to_pydict()["data"]
+        result2 = df.select(spark_xxhash64(col("data"), seed=42)).to_pydict()["data"]
         assert result1 != result2
 
-    def test_xxhash64_multiple_columns(self):
+    def test_spark_xxhash64_multiple_columns(self):
         df = daft.from_pydict({"a": ["hello", "world"], "b": ["foo", "bar"]})
-        result = df.select(xxhash64(col("a"), col("b"))).to_pydict()["a"]
+        result = df.select(spark_xxhash64(col("a"), col("b"))).to_pydict()["a"]
         assert len(result) == 2
         assert all(isinstance(v, int) for v in result)
 
-    def test_xxhash64_different_inputs(self):
+    def test_spark_xxhash64_different_inputs(self):
         df = daft.from_pydict({"data": ["hello", "world"]})
-        result = df.select(xxhash64(col("data"))).to_pydict()["data"]
+        result = df.select(spark_xxhash64(col("data"))).to_pydict()["data"]
         assert result[0] != result[1]
 
 
@@ -232,9 +232,9 @@ class TestSqlIntegration:
         assert result[0] is not None
         assert len(result[0]) == 64
 
-    def test_xxhash64_sql(self):
+    def test_spark_xxhash64_sql(self):
         df = daft.from_pydict({"data": ["hello"]})  # noqa: F841
-        result = daft.sql("SELECT xxhash64(data) as data FROM df").to_pydict()["data"]
+        result = daft.sql("SELECT spark_xxhash64(data) as data FROM df").to_pydict()["data"]
         assert isinstance(result[0], int)
 
     def test_crc32_sql(self):
