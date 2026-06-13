@@ -161,7 +161,7 @@ from .misc import (
     md5,
     sha1_hex,
     sha2_hex,
-    xxhash64,
+    spark_xxhash64,
     crc32,
     length,
     concat,
@@ -567,6 +567,7 @@ __all__ = [
     "slice",
     "soundex",
     "space",
+    "spark_xxhash64",
     "split",
     "sqrt",
     "startswith",
@@ -627,6 +628,5 @@ __all__ = [
     "week_of_year",
     "weekofyear",
     "when",
-    "xxhash64",
     "year",
 ]
