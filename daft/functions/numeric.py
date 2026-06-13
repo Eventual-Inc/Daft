@@ -330,9 +330,9 @@ def hex(expr: Expression) -> Expression:
 
 
 def unhex(expr: Expression) -> Expression:
-    """Inverse of :func:`hex`: decodes a hexadecimal string into binary bytes.
+    r"""Inverse of :func:`hex`: decodes a hexadecimal string into binary bytes.
 
-    Odd-length inputs are left-padded with ``'0'`` (``unhex('F') == b'\\x0f'``).
+    Odd-length inputs are left-padded with ``'0'`` (``unhex('F') == b'\x0f'``).
     Returns NULL when the input contains characters outside ``[0-9a-fA-F]``.
     """
     return Expression._call_builtin_scalar_fn("unhex", expr)
