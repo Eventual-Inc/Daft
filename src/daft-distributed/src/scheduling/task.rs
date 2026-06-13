@@ -23,15 +23,23 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
     pub resource_request: ResourceRequest,
+    /// Floor applied when the plan's ResourceRequest does not specify num_cpus.
+    /// Sourced from DaftExecutionConfig::min_cpu_per_task at task construction time.
+    min_cpu_per_task: f64,
 }
 
 impl TaskResourceRequest {
-    pub fn new(resource_request: ResourceRequest) -> Self {
-        Self { resource_request }
+    pub fn new(resource_request: ResourceRequest, min_cpu_per_task: f64) -> Self {
+        Self {
+            resource_request,
+            min_cpu_per_task,
+        }
     }
 
     pub fn num_cpus(&self) -> f64 {
-        self.resource_request.num_cpus().unwrap_or(1.0)
+        self.resource_request
+            .num_cpus()
+            .unwrap_or(self.min_cpu_per_task)
     }
 
     pub fn num_gpus(&self) -> f64 {
@@ -508,7 +516,8 @@ impl SwordfishTaskBuilder {
         context.insert("plan_fingerprint".to_string(), plan_fingerprint.to_string());
 
         // Extract resource_request from plan
-        let resource_request = TaskResourceRequest::new(self.plan.resource_request());
+        let resource_request =
+            TaskResourceRequest::new(self.plan.resource_request(), self.config.min_cpu_per_task);
 
         // Mark the root of the local plan so the worker's NodeInfo carries
         // `is_task_root` on the StatSnapshot it ships back. `is_task_leaf` is
@@ -680,7 +689,10 @@ pub(super) mod tests {
                 task_name: String::new(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
-                resource_request: TaskResourceRequest::new(ResourceRequest::default()),
+                resource_request: TaskResourceRequest::new(
+                    ResourceRequest::default(),
+                    DaftExecutionConfig::default().min_cpu_per_task,
+                ),
                 task_result: crate::pipeline_node::MaterializedOutput::new(
                     vec![partition_ref],
                     "".into(),
@@ -699,7 +711,10 @@ pub(super) mod tests {
         }
 
         pub fn with_resource_request(mut self, resource_request: ResourceRequest) -> Self {
-            self.resource_request = TaskResourceRequest::new(resource_request);
+            self.resource_request = TaskResourceRequest::new(
+                resource_request,
+                DaftExecutionConfig::default().min_cpu_per_task,
+            );
             self
         }
 
