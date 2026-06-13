@@ -6,6 +6,7 @@ pub mod coalesce;
 pub mod concat_ws;
 pub mod distance;
 pub mod float;
+pub mod greatest;
 pub mod hash;
 pub mod length;
 pub mod minhash;

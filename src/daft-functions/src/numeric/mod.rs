@@ -1,5 +1,6 @@
 pub mod abs;
 pub mod bin;
+pub mod bround;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
@@ -8,6 +9,7 @@ pub mod e;
 pub mod exp;
 pub mod factorial;
 pub mod floor;
+pub mod hex;
 pub mod hypot;
 pub mod log;
 pub mod pi;
@@ -22,6 +24,7 @@ pub mod try_divide;
 
 use abs::Abs;
 use bin::Bin;
+use bround::BRound;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
@@ -36,6 +39,7 @@ use e::EulersNumber;
 use exp::{Exp, Expm1};
 use factorial::Factorial;
 use floor::Floor;
+use hex::{Hex, Unhex};
 use hypot::Hypot;
 use log::{Ln, Log, Log1p, Log2, Log10};
 use pi::Pi;
@@ -70,6 +74,7 @@ impl FunctionModule for NumericFunctions {
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);
         parent.add_fn(Bin);
+        parent.add_fn(BRound);
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);
         parent.add_fn(Clip);
@@ -89,6 +94,8 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Pow);
         parent.add_fn(Power);
         parent.add_fn(Floor);
+        parent.add_fn(Hex);
+        parent.add_fn(Unhex);
         parent.add_fn(Round);
         parent.add_fn(Sign);
         parent.add_fn(Negate);
