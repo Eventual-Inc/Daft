@@ -158,14 +158,18 @@ impl ScalarUDF for Sha2Function {
 }
 
 // ============================================================================
-// XxHash64 Function
+// Spark XxHash64 Function
+//
+// Spark SQL-compatible xxhash64. Distinct from `hash(..., hash_function="xxhash64")`,
+// which is a general-purpose hash used for partitioning/shuffling and uses a
+// different byte representation, null-handling and return type.
 // ============================================================================
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct XxHash64Function;
+pub(super) struct SparkXxHash64Function;
 
 #[derive(FunctionArgs)]
-struct XxHash64Args<T> {
+struct SparkXxHash64Args<T> {
     #[arg(variadic)]
     input: Vec<T>,
 
@@ -174,9 +178,9 @@ struct XxHash64Args<T> {
 }
 
 #[typetag::serde]
-impl ScalarUDF for XxHash64Function {
+impl ScalarUDF for SparkXxHash64Function {
     fn name(&self) -> &'static str {
-        "xxhash64"
+        "spark_xxhash64"
     }
 
     fn call(
@@ -184,11 +188,11 @@ impl ScalarUDF for XxHash64Function {
         inputs: daft_dsl::functions::FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let XxHash64Args { input, seed } = inputs.try_into()?;
+        let SparkXxHash64Args { input, seed } = inputs.try_into()?;
 
         if input.is_empty() {
             return Err(DaftError::ValueError(
-                "xxhash64() requires at least one expression".to_string(),
+                "spark_xxhash64() requires at least one expression".to_string(),
             ));
         }
 
@@ -222,9 +226,9 @@ impl ScalarUDF for XxHash64Function {
         inputs: FunctionArgs<ExprRef>,
         _schema: &Schema,
     ) -> DaftResult<Field> {
-        let XxHash64Args { input, .. } = inputs.try_into()?;
+        let SparkXxHash64Args { input, .. } = inputs.try_into()?;
         let first = input.first().ok_or_else(|| {
-            DaftError::ValueError("xxhash64() requires at least one expression".to_string())
+            DaftError::ValueError("spark_xxhash64() requires at least one expression".to_string())
         })?;
         let input = first.to_field(_schema)?;
         Ok(Field::new(input.name, DataType::Int64))
@@ -390,12 +394,12 @@ pub fn sha2(input: ExprRef, bit_length: ExprRef) -> ExprRef {
 }
 
 #[must_use]
-pub fn xxhash64(inputs: Vec<ExprRef>, seed: Option<ExprRef>) -> ExprRef {
+pub fn spark_xxhash64(inputs: Vec<ExprRef>, seed: Option<ExprRef>) -> ExprRef {
     let mut all_inputs = inputs;
     if let Some(seed) = seed {
         all_inputs.push(seed);
     }
-    ScalarFn::builtin(XxHash64Function, all_inputs).into()
+    ScalarFn::builtin(SparkXxHash64Function, all_inputs).into()
 }
 
 #[must_use]
