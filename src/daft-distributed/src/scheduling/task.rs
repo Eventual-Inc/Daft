@@ -23,8 +23,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
     pub resource_request: ResourceRequest,
-    /// Floor applied when the plan's ResourceRequest does not specify num_cpus.
-    /// Sourced from DaftExecutionConfig::min_cpu_per_task at task construction time.
+    /// Default used by `num_cpus()` when the plan's ResourceRequest leaves
+    /// `num_cpus` unset. Sourced from `DaftExecutionConfig::min_cpu_per_task`
+    /// at task construction. Explicit `num_cpus` values pass through unchanged.
     min_cpu_per_task: f64,
 }
 
@@ -598,6 +599,32 @@ pub(super) mod tests {
 
     use super::*;
     use crate::utils::channel::OneshotSender;
+
+    #[test]
+    fn num_cpus_uses_min_cpu_per_task_when_unset() {
+        // Plan has no explicit num_cpus -> fall back to the configured min.
+        let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
+        assert_eq!(r.num_cpus(), 0.1);
+
+        // Default config still produces the historical 0.5 floor when unset.
+        let r = TaskResourceRequest::new(
+            ResourceRequest::default(),
+            DaftExecutionConfig::default().min_cpu_per_task,
+        );
+        assert_eq!(r.num_cpus(), 0.5);
+    }
+
+    #[test]
+    fn num_cpus_respects_explicit_request() {
+        // Explicit num_cpus on the plan is honored even when below the config min.
+        let explicit = ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap();
+        let r = TaskResourceRequest::new(explicit, 0.1);
+        assert_eq!(r.num_cpus(), 2.0);
+
+        let explicit = ResourceRequest::try_new_internal(Some(0.25), None, None).unwrap();
+        let r = TaskResourceRequest::new(explicit, 0.5);
+        assert_eq!(r.num_cpus(), 0.25);
+    }
 
     #[derive(Debug)]
     pub struct MockPartition {
