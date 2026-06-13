@@ -1838,6 +1838,16 @@ class Expression:
 
         return day_of_week(self)
 
+    def weekday(self) -> Expression:
+        """Returns the day of the week with Monday=0 numbering (Spark-style alias for :meth:`day_of_week`).
+
+        Tip: See Also
+            [`daft.functions.weekday`](https://docs.daft.ai/en/stable/api/functions/weekday/)
+        """
+        from daft.functions import weekday
+
+        return weekday(self)
+
     def day_of_month(self) -> Expression:
         """Retrieves the day of the month for a datetime column.
 
@@ -2830,6 +2840,56 @@ class Expression:
         from daft.functions import to_unix_epoch
 
         return to_unix_epoch(self, time_unit=time_unit)
+
+    def unix_seconds(self) -> Expression:
+        """Returns the number of seconds since the Unix epoch (Spark-style alias).
+
+        Tip: See Also
+            [`daft.functions.unix_seconds`](https://docs.daft.ai/en/stable/api/functions/unix_seconds/)
+        """
+        from daft.functions import unix_seconds
+
+        return unix_seconds(self)
+
+    def unix_millis(self) -> Expression:
+        """Returns the number of milliseconds since the Unix epoch (Spark-style alias).
+
+        Tip: See Also
+            [`daft.functions.unix_millis`](https://docs.daft.ai/en/stable/api/functions/unix_millis/)
+        """
+        from daft.functions import unix_millis
+
+        return unix_millis(self)
+
+    def unix_micros(self) -> Expression:
+        """Returns the number of microseconds since the Unix epoch (Spark-style alias).
+
+        Tip: See Also
+            [`daft.functions.unix_micros`](https://docs.daft.ai/en/stable/api/functions/unix_micros/)
+        """
+        from daft.functions import unix_micros
+
+        return unix_micros(self)
+
+    def unix_timestamp(self) -> Expression:
+        """Returns the number of seconds since the Unix epoch (Spark-style alias for :meth:`unix_seconds`).
+
+        Tip: See Also
+            [`daft.functions.unix_timestamp`](https://docs.daft.ai/en/stable/api/functions/unix_timestamp/)
+        """
+        from daft.functions import unix_timestamp
+
+        return unix_timestamp(self)
+
+    def to_unix_timestamp(self) -> Expression:
+        """Spark-style alias for :meth:`unix_timestamp`.
+
+        Tip: See Also
+            [`daft.functions.to_unix_timestamp`](https://docs.daft.ai/en/stable/api/functions/to_unix_timestamp/)
+        """
+        from daft.functions import to_unix_timestamp
+
+        return to_unix_timestamp(self)
 
     def partition_days(self) -> Expression:
         """Partitioning Transform that returns the number of days since epoch (1970-01-01).

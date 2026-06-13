@@ -1270,6 +1270,93 @@ def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> 
     return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit=time_unit)
 
 
+def unix_seconds(expr: Expression) -> Expression:
+    """Returns the number of seconds since the Unix epoch for a Date or Timestamp.
+
+    Mirrors Spark's ``unix_seconds``. Thin wrapper over :func:`to_unix_epoch` with
+    ``time_unit="s"``.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with the number of seconds since epoch.
+    """
+    return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit="s")
+
+
+def unix_millis(expr: Expression) -> Expression:
+    """Returns the number of milliseconds since the Unix epoch for a Date or Timestamp.
+
+    Mirrors Spark's ``unix_millis``. Thin wrapper over :func:`to_unix_epoch` with
+    ``time_unit="ms"``.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with the number of milliseconds since epoch.
+    """
+    return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit="ms")
+
+
+def unix_micros(expr: Expression) -> Expression:
+    """Returns the number of microseconds since the Unix epoch for a Date or Timestamp.
+
+    Mirrors Spark's ``unix_micros``. Thin wrapper over :func:`to_unix_epoch` with
+    ``time_unit="us"``.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with the number of microseconds since epoch.
+    """
+    return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit="us")
+
+
+def unix_timestamp(expr: Expression) -> Expression:
+    """Returns the number of seconds since the Unix epoch for a Date or Timestamp.
+
+    Mirrors Spark's ``unix_timestamp`` with a column argument (Spark's default unit is
+    seconds). Equivalent to :func:`unix_seconds`.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with the number of seconds since epoch.
+    """
+    return unix_seconds(expr)
+
+
+def to_unix_timestamp(expr: Expression) -> Expression:
+    """Spark-style alias for :func:`unix_timestamp`.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with the number of seconds since epoch.
+    """
+    return unix_timestamp(expr)
+
+
+def weekday(expr: Expression) -> Expression:
+    """Returns the day of the week with Monday=0 numbering.
+
+    Mirrors Spark's ``weekday``. Equivalent to :func:`day_of_week` since Daft already
+    uses Monday=0, Sunday=6 numbering internally.
+
+    Args:
+        expr: A Date or Timestamp expression.
+
+    Returns:
+        Expression: a UInt32 expression with the weekday (Mon=0, Sun=6).
+    """
+    return day_of_week(expr)
+
+
 def current_date() -> Expression:
     """Returns the current date (UTC).
 
