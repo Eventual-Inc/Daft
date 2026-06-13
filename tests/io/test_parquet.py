@@ -183,6 +183,114 @@ def test_read_parquet_row_group_edges(tmp_path):
         daft.read_parquet([str(path)], row_groups=[[2]]).to_pydict()
 
 
+def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_i32.parquet"
+    int64_path = tmp_path / "map_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[("a", 1)]], type=pa.map_(pa.string(), pa.int32()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[("b", 2)]], type=pa.map_(pa.string(), pa.int64()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.int64())},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", 1)], [("b", 2)]]}
+
+
+def test_read_parquet_casts_map_logical_values_to_explicit_schema(tmp_path):
+    path = tmp_path / "map_timestamp.parquet"
+    ts = datetime.datetime.fromisoformat("2024-01-01T12:00:00")
+
+    papq.write_table(pa.table({"m": pa.array([[("a", ts)]], type=pa.map_(pa.string(), pa.timestamp("ns")))}), path)
+
+    df = daft.read_parquet(
+        [str(path)],
+        schema={"m": DataType.map(DataType.string(), DataType.timestamp(TimeUnit.us()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", ts)]]}
+
+
+def test_read_parquet_casts_map_keys_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_key_i32.parquet"
+    int64_path = tmp_path / "map_key_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[(1, "a")]], type=pa.map_(pa.int32(), pa.string()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[(2, "b")]], type=pa.map_(pa.int64(), pa.string()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.int64(), DataType.string())},
+    )
+
+    assert df.to_pydict() == {"m": [[(1, "a")], [(2, "b")]]}
+
+
+def test_read_parquet_casts_nested_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_list_i32.parquet"
+    int64_path = tmp_path / "map_list_i64.parquet"
+
+    papq.write_table(
+        pa.table({"m": pa.array([[("a", [1, 2])]], type=pa.map_(pa.string(), pa.list_(pa.int32())))}),
+        int32_path,
+    )
+    papq.write_table(
+        pa.table({"m": pa.array([[("b", [3, 4])]], type=pa.map_(pa.string(), pa.list_(pa.int64())))}),
+        int64_path,
+    )
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.list(DataType.int64()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", [1, 2])], [("b", [3, 4])]]}
+
+
+def test_read_parquet_fills_map_struct_values_to_explicit_schema(tmp_path):
+    struct_x_path = tmp_path / "map_struct_x.parquet"
+    struct_xy_path = tmp_path / "map_struct_xy.parquet"
+
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("a", {"x": 1})]],
+                    type=pa.map_(pa.string(), pa.struct([pa.field("x", pa.int64())])),
+                )
+            }
+        ),
+        struct_x_path,
+    )
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("b", {"x": 2, "y": "present"})]],
+                    type=pa.map_(
+                        pa.string(),
+                        pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.large_string())]),
+                    ),
+                )
+            }
+        ),
+        struct_xy_path,
+    )
+
+    df = daft.read_parquet(
+        [str(struct_x_path), str(struct_xy_path)],
+        schema={
+            "m": DataType.map(
+                DataType.string(),
+                DataType.struct({"x": DataType.int64(), "y": DataType.string()}),
+            )
+        },
+    )
+
+    assert df.to_pydict() == {"m": [[("a", {"x": 1, "y": None})], [("b", {"x": 2, "y": "present"})]]}
+
+
 # Test fix for issue #2537.
 # This issue arose when the last row of a top-level column has a leaf field with values that span
 # more than one data page.
