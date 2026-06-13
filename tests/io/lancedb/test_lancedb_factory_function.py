@@ -5,8 +5,8 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from daft_lance.lance_scan import _lancedb_table_factory_function
 
-from daft.io.lance.lance_scan import _lancedb_table_factory_function
 from daft.recordbatch import RecordBatch
 
 # Import-or-skip lance once at module level so individual tests don't need to do this

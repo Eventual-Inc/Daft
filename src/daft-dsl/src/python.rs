@@ -477,6 +477,10 @@ impl PyExpr {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }
 
+    pub fn try_cast(&self, dtype: PyDataType) -> PyResult<Self> {
+        Ok(self.expr.clone().try_cast(&dtype.into()).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self
             .expr
@@ -570,6 +574,14 @@ impl PyExpr {
 
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
+    }
+
+    pub fn first_value(&self, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().first_value(ignore_nulls).into())
+    }
+
+    pub fn last_value(&self, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().last_value(ignore_nulls).into())
     }
 
     pub fn skew(&self) -> PyResult<Self> {

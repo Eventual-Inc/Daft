@@ -193,6 +193,9 @@ jobs:
           uv pip install "pyiceberg==0.7.0"
         fi
 
+    - name: Build hello extension (for extension tests)
+      run: cargo build --release --manifest-path examples/hello/Cargo.toml
+
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
       run: |
@@ -1301,7 +1304,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: blacksmith-8vcpu-ubuntu-2204
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2

@@ -27,6 +27,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
             DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                compression: self.plan_config.config.flight_shuffle_compression.clone(),
                 ..Default::default()
             })
         } else {
@@ -101,7 +102,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 num_partitions,
                 backend,
                 child_node,
-            )),
+            )?),
             &self.meter,
         ))
     }

@@ -4,14 +4,15 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -53,7 +54,7 @@ impl IntoPartitionsNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
         let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
 

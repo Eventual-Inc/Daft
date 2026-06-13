@@ -28,7 +28,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::{cmp_float, make_daft_comparator},
+    kernels::cmp::{cmp_float, make_daft_comparator},
     prelude::UInt64Array,
     series::Series,
 };
@@ -214,7 +214,7 @@ pub fn build_multi_array_bicompare(
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native:
         Ord,
 {

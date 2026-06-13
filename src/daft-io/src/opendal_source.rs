@@ -3,7 +3,7 @@ use std::{any::Any, collections::BTreeMap, sync::Arc};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use opendal::{EntryMode, Operator, Scheme};
+use opendal::{EntryMode, Operator};
 use snafu::ResultExt;
 
 use crate::{
@@ -30,24 +30,12 @@ impl OpenDALSource {
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
-        let parsed_scheme: Scheme =
-            scheme
-                .parse()
-                .map_err(|e: opendal::Error| super::Error::UnableToCreateClient {
-                    store: super::SourceType::OpenDAL {
-                        scheme: scheme.to_string(),
-                    },
-                    source: format!(
-                        "Unknown scheme '{}'. Available OpenDAL schemes: [{}]. Error: {}",
-                        scheme,
-                        Self::available_schemes().join(", "),
-                        e
-                    )
-                    .into(),
-                })?;
+        // Ensure all compiled-in OpenDAL services are registered in the global
+        // OperatorRegistry. This is a no-op after the first call.
+        opendal::init_default_registry();
 
         let operator =
-            Operator::via_iter(parsed_scheme, config.clone()).map_err(|e: opendal::Error| {
+            Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
                 super::Error::UnableToCreateClient {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
@@ -55,8 +43,9 @@ impl OpenDALSource {
                     source: format!(
                         "Failed to create OpenDAL operator for '{}'. \
                          You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
+                         Available OpenDAL schemes: [{}]. \
                          Error: {}",
-                        scheme, scheme, e
+                        scheme, scheme, Self::available_schemes().join(", "), e
                     )
                     .into(),
                 }
@@ -223,7 +212,7 @@ impl ObjectSource for OpenDALSource {
 
         use futures::StreamExt;
         let mapped_stream = byte_stream.map(move |result| {
-            result.map_err(|e| super::Error::Generic {
+            result.map_err(|e: std::io::Error| super::Error::Generic {
                 store: super::SourceType::OpenDAL {
                     scheme: scheme.clone(),
                 },

@@ -32,15 +32,19 @@ def test_audio_file_dtype(sample_audio_path):
     assert field.dtype == daft.DataType.file(daft.MediaType.audio())
 
 
-def test_audio_file_udf_return_dtype(sample_audio_path):
-    @daft.func
-    def make_audio_file(path: str) -> daft.AudioFile:
-        return daft.AudioFile(path)
-
+def test_audio_file_from_generic_file(sample_audio_path):
     df = daft.from_pydict({"path": [sample_audio_path]})
-    df = df.select(make_audio_file(df["path"]).alias("audio"))
+    df = df.select(daft.functions.audio_file(daft.functions.file(df["path"]), verify=True).alias("audio"))
 
     assert df.schema() == daft.Schema.from_pydict({"audio": daft.DataType.file(daft.MediaType.audio())})
+    df.collect()
+
+
+def test_file_from_audio_file(sample_audio_path):
+    df = daft.from_pydict({"path": [sample_audio_path]})
+    df = df.select(daft.functions.file(daft.functions.audio_file(df["path"])).alias("file"))
+
+    assert df.schema() == daft.Schema.from_pydict({"file": daft.DataType.file()})
     df.collect()
 
 
