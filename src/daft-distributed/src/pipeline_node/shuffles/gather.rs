@@ -3,14 +3,15 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::BoundClusteringSpec,
         shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -49,7 +50,7 @@ impl GatherNode {
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            Arc::new(UnknownClusteringConfig::new(1).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
         let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
         Self {
@@ -78,9 +79,15 @@ impl GatherNode {
             .await?;
 
         // Gather = single read task that consumes every ref from every worker.
-        self.shuffle_backend
-            .emit_read_tasks(vec![materialized], self.as_ref(), result_tx)
-            .await
+        let refs = materialized
+            .into_iter()
+            .flat_map(|output| output.into_inner().0)
+            .collect();
+        let task = self
+            .shuffle_backend
+            .build_refs_task_builder(refs, self.as_ref(), |plan| plan);
+        let _ = result_tx.send(task).await;
+        Ok(())
     }
 }
 

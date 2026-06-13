@@ -2,6 +2,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
@@ -74,24 +75,66 @@ def _convert_iceberg_file_io_properties_to_io_config(
     return io_config if any_props_set else None
 
 
+def _resolve_ref_snapshot_id(table: "PyIcebergTable", ref_name: str, ref_kind: str) -> int:
+    from pyiceberg.table.refs import SnapshotRefType  # pyiceberg is an optional dependency
+
+    expected_ref_type = SnapshotRefType.BRANCH if ref_kind == "branch" else SnapshotRefType.TAG
+    ref = table.refs().get(ref_name)
+
+    if ref is None:
+        raise ValueError(f"Iceberg {ref_kind} {ref_name!r} does not exist")
+
+    if ref.snapshot_ref_type != expected_ref_type:
+        raise ValueError(f"Iceberg {ref_kind} {ref_name!r} is a {ref.snapshot_ref_type.value}")
+
+    return ref.snapshot_id
+
+
+# Internal helper used by read_iceberg and the Rust SQL scan path; not a public API.
+def resolve_snapshot_id(
+    table: "PyIcebergTable",
+    snapshot_id: int | None,
+    branch: str | None,
+    tag: str | None,
+) -> int | None:
+    if sum(value is not None for value in (snapshot_id, branch, tag)) > 1:
+        raise ValueError("Only one of snapshot_id, branch, or tag may be provided")
+
+    if branch is not None:
+        return _resolve_ref_snapshot_id(table, branch, "branch")
+    if tag is not None:
+        return _resolve_ref_snapshot_id(table, tag, "tag")
+
+    return snapshot_id
+
+
 @PublicAPI
 def read_iceberg(
-    table: Union[str, "PyIcebergTable"],
+    table: Union[str, os.PathLike[str], "PyIcebergTable"],
     snapshot_id: int | None = None,
+    branch: str | None = None,
+    tag: str | None = None,
     io_config: IOConfig | None = None,
     checkpoint: "CheckpointConfig | None" = None,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
-            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
-            created using the PyIceberg library.
+        table (str, os.PathLike, or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs
+            to object stores such as ``s3://`` or ``gs://``) or a
+            [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created
+            using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
+        branch (str, optional): Iceberg branch name to query. Cannot be combined with ``snapshot_id`` or ``tag``.
+        tag (str, optional): Iceberg tag name to query. Cannot be combined with ``snapshot_id`` or ``branch``.
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
+        ignore_corrupt_files (bool): If True, silently skip corrupt or unreadable data files
+            instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files``
+            after collection. Defaults to False.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
@@ -122,8 +165,10 @@ def read_iceberg(
     from daft.io.iceberg.iceberg_scan import IcebergScanOperator
 
     # support for read_iceberg('path/to/metadata.json')
-    if isinstance(table, str):
-        table = StaticTable.from_metadata(metadata_location=table)
+    if isinstance(table, (str, os.PathLike)):
+        table = StaticTable.from_metadata(metadata_location=os.fspath(table))
+
+    snapshot_id = resolve_snapshot_id(table, snapshot_id, branch, tag)
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
@@ -135,7 +180,9 @@ def read_iceberg(
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    iceberg_operator = IcebergScanOperator(table, snapshot_id=snapshot_id, storage_config=storage_config)
+    iceberg_operator = IcebergScanOperator(
+        table, snapshot_id=snapshot_id, storage_config=storage_config, ignore_corrupt_files=ignore_corrupt_files
+    )
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

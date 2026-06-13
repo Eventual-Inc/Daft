@@ -127,6 +127,12 @@ impl From<Error> for DaftError {
             )),
             // Lets retry logic key on `DaftError::ReadTimeout`.
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::InvalidParquetFile { .. }
+            | Error::FileTooSmall { .. }
+            | Error::InvalidParquetFooterSize { .. }
+            | Error::ParquetMetadata { .. }
+            | Error::ParquetColumnDecode { .. }
+            | Error::Arrow { .. } => Self::CorruptFile(err.to_string()),
             _ => Self::External(err.into()),
         }
     }

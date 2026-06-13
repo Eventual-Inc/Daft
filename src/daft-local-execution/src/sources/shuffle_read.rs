@@ -11,9 +11,11 @@ use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
+use daft_shuffles::{
+    client::FlightClientManager, server::flight_server::ShuffleFlightServer,
+    shuffle_cache::partition_ref_id,
+};
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
@@ -55,76 +57,63 @@ impl ShuffleReadSource {
         }
     }
 
+    /// Resolve read inputs to the exact `(shuffle_id, server_address, partition_ref_ids)`
+    /// requests to issue, merged so each server is contacted once.
+    fn to_server_requests(inputs: Vec<FlightShuffleReadInput>) -> Vec<(u64, String, Vec<u64>)> {
+        let mut refs_by_server: HashMap<(u64, String), Vec<u64>> = HashMap::new();
+        for input in inputs {
+            for (address, input_ids) in input.inputs_by_server.iter() {
+                refs_by_server
+                    .entry((input.shuffle_id, address.clone()))
+                    .or_default()
+                    .extend(
+                        input_ids
+                            .iter()
+                            .map(|id| partition_ref_id(*id, input.partition_idx as usize)),
+                    );
+            }
+        }
+        refs_by_server
+            .into_iter()
+            .map(|((shuffle_id, address), ref_ids)| (shuffle_id, address, ref_ids))
+            .collect()
+    }
+
     async fn get_partition_stream(
         client_manager: FlightClientManager,
         local_server: Arc<ShuffleFlightServer>,
         local_address: &str,
-        refs: Vec<FlightPartitionRef>,
+        inputs: Vec<FlightShuffleReadInput>,
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let (local_refs, remote_refs): (Vec<_>, Vec<_>) = refs
+        let (local_requests, remote_requests): (Vec<_>, Vec<_>) = Self::to_server_requests(inputs)
             .into_iter()
-            .partition(|r| r.server_address == local_address);
+            .partition(|(_, address, _)| address == local_address);
 
-        let local_stream = if !local_refs.is_empty() {
-            Some(
+        let mut local_streams = Vec::new();
+        for (shuffle_id, _, partition_ref_ids) in local_requests {
+            local_streams.push(
                 local_server
-                    .get_partition_local(
-                        local_refs[0].shuffle_id,
-                        &local_refs
-                            .iter()
-                            .map(|r| r.partition_ref_id)
-                            .collect::<Vec<_>>(),
-                    )
+                    .get_partition_local(shuffle_id, &partition_ref_ids)
                     .await?,
-            )
-        } else {
-            None
-        };
-
-        let remote_stream = if remote_refs.is_empty() {
-            None
-        } else {
-            let mut refs_by_server: HashMap<(u64, String), Vec<u64>> = HashMap::new();
-            for partition_ref in remote_refs {
-                refs_by_server
-                    .entry((
-                        partition_ref.shuffle_id,
-                        partition_ref.server_address.clone(),
-                    ))
-                    .or_default()
-                    .push(partition_ref.partition_ref_id);
-            }
-            let fetches = refs_by_server
-                .into_iter()
-                .map(|((shuffle_id, server_address), partition_ref_ids)| {
-                    let client_manager = client_manager.clone();
-                    let schema = schema.clone();
-                    async move {
-                        client_manager
-                            .fetch_partition(
-                                shuffle_id,
-                                &server_address,
-                                &partition_ref_ids,
-                                schema,
-                            )
-                            .await
-                    }
-                })
-                .collect::<Vec<_>>();
-            // Some(futures::future::try_join_all(fetches).await?)
-            let streams = futures::future::try_join_all(fetches).await?;
-            Some(futures::stream::select_all(streams).boxed())
-        };
-
-        match (local_stream, remote_stream) {
-            (None, None) => Ok(futures::stream::empty().boxed()),
-            (Some(local_stream), None) => Ok(local_stream.boxed()),
-            (None, Some(remote_stream)) => Ok(remote_stream.boxed()),
-            (Some(local_stream), Some(remote_stream)) => {
-                Ok(futures::stream::select(local_stream, remote_stream).boxed())
-            }
+            );
         }
+
+        let fetches = remote_requests
+            .into_iter()
+            .map(|(shuffle_id, server_address, partition_ref_ids)| {
+                let client_manager = client_manager.clone();
+                let schema = schema.clone();
+                async move {
+                    client_manager
+                        .fetch_partition(shuffle_id, &server_address, &partition_ref_ids, schema)
+                        .await
+                }
+            })
+            .collect::<Vec<_>>();
+        let remote_streams = futures::future::try_join_all(fetches).await?;
+
+        Ok(futures::stream::select_all(local_streams.into_iter().chain(remote_streams)).boxed())
     }
 
     fn spawn_flight_shuffle_processor(
@@ -141,39 +130,24 @@ impl ShuffleReadSource {
         io_runtime.spawn(async move {
             let client_manager = FlightClientManager::new();
             let mut task_set = JoinSet::new();
-            let mut pending_tasks: VecDeque<(InputId, FlightShuffleReadInput)> = VecDeque::new();
+            let mut pending_tasks: VecDeque<(InputId, Vec<FlightShuffleReadInput>)> = VecDeque::new();
             let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
             let mut receiver_exhausted = false;
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 while task_set.len() < num_parallel_tasks
-                    && let Some((input_id, input)) = pending_tasks.pop_front()
+                    && let Some((input_id, inputs)) = pending_tasks.pop_front()
                 {
-                    let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, input.refs, schema.clone()).await?;
+                    let stream = Self::get_partition_stream(client_manager.clone(), local_server.clone(), &local_address, inputs, schema.clone()).await?;
                     task_set.spawn(forward_partition_stream(stream, schema.clone(), output_sender.clone(), input_id));
                 }
 
                 tokio::select! {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
-                            Some((input_id, inputs)) if inputs.is_empty() => {
-                                let empty = MicroPartition::empty(Some(schema.clone()));
-                                if output_sender.send(PipelineMessage::Morsel {
-                                    input_id,
-                                    partition: empty,
-                                }).await.is_err() {
-                                    return Ok(());
-                                }
-                                if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
-                                    return Ok(());
-                                }
-                            }
                             Some((input_id, inputs)) => {
-                                let num_inputs = inputs.len();
-                                *input_id_pending_counts.entry(input_id).or_insert(0) += num_inputs;
-                                for input in inputs {
-                                    pending_tasks.push_back((input_id, input));
-                                }
+                                *input_id_pending_counts.entry(input_id).or_insert(0) += 1;
+                                pending_tasks.push_back((input_id, inputs));
                             }
                             None => {
                                 receiver_exhausted = true;
@@ -225,10 +199,9 @@ async fn forward_partition_stream(
             return Ok(input_id);
         }
     }
-    // If the stream produced no batches (all refs were zero-row / file-less),
-    // still emit a single empty `MicroPartition` so the downstream pipeline
-    // sees one output per input. Matches the `inputs.is_empty()` branch in
-    // `spawn_flight_shuffle_processor`.
+    // If the stream produced no batches (no read inputs, or all refs were
+    // zero-row / file-less), still emit a single empty `MicroPartition` so the
+    // downstream pipeline sees one output per input.
     if !emitted_any {
         let empty = MicroPartition::empty(Some(schema.clone()));
         let _ = sender

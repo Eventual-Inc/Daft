@@ -603,7 +603,8 @@ impl RecordBatch {
         Self::concat(tables)
     }
 
-    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: impl AsRef<[T]>) -> DaftResult<Self> {
+        let tables = tables.as_ref();
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 RecordBatch to perform concat".to_string(),
@@ -902,13 +903,19 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_async_with_metrics(
-                    BoundExpr::new_unchecked(child.clone()),
-                    metrics,
-                )
-                .await?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(child.clone()),
+                        metrics,
+                    )
+                    .await?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1303,9 +1310,15 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -2107,7 +2120,7 @@ mod test {
             Utf8Array::from_slice("b", &["z"]).into_series(),
         ])?;
 
-        let expected = RecordBatch::concat(&[&first, &second])?;
+        let expected = RecordBatch::concat([&first, &second])?;
 
         let schema = first.schema.to_arrow()?;
         let mut buffer = Vec::new();

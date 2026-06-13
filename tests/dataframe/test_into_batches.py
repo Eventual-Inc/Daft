@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_large_partition_into_batches(make_df):
@@ -91,3 +94,61 @@ def test_into_batches_empty_dataframe():
 
     result = df.collect()
     assert len(result) == 0
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="iter_partitions is a NativeRunner-only API",
+)
+def test_interleaved_iter_partitions_no_panic(tmp_path):
+    """Concurrent iter_partitions over DataFrames with different source types must return correct results."""
+    daft.from_pydict({"id": [1, 2, 3, 4]}).write_parquet(str(tmp_path / "data"))
+
+    df1 = daft.read_parquet(str(tmp_path / "data"))
+    df2 = daft.from_pydict({"id": [5, 6, 7, 8]})
+
+    gen1 = df1.into_batches(2).iter_partitions()
+    gen2 = df2.into_batches(2).iter_partitions()
+
+    batch1 = next(gen1)
+    batch2 = next(gen2)
+
+    result1 = batch1.to_arrow()["id"].to_pylist()
+    for mp in gen1:
+        result1.extend(mp.to_arrow()["id"].to_pylist())
+
+    result2 = batch2.to_arrow()["id"].to_pylist()
+    for mp in gen2:
+        result2.extend(mp.to_arrow()["id"].to_pylist())
+
+    assert sorted(result1) == [1, 2, 3, 4]
+    assert sorted(result2) == [5, 6, 7, 8]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="iter_partitions is a NativeRunner-only API",
+)
+def test_interleaved_to_arrow_iter_no_panic(tmp_path):
+    """Concurrent to_arrow_iter() over DataFrames with different source types must return correct results."""
+    daft.from_pydict({"id": [10, 20, 30, 40]}).write_parquet(str(tmp_path / "data"))
+
+    df1 = daft.read_parquet(str(tmp_path / "data"))
+    df2 = daft.from_pydict({"id": [50, 60, 70, 80]})
+
+    gen1 = df1.into_batches(2).to_arrow_iter()
+    gen2 = df2.into_batches(2).to_arrow_iter()
+
+    batch1 = next(gen1)
+    batch2 = next(gen2)
+
+    result1 = batch1["id"].to_pylist()
+    for b in gen1:
+        result1.extend(b["id"].to_pylist())
+
+    result2 = batch2["id"].to_pylist()
+    for b in gen2:
+        result2.extend(b["id"].to_pylist())
+
+    assert sorted(result1) == [10, 20, 30, 40]
+    assert sorted(result2) == [50, 60, 70, 80]

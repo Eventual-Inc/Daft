@@ -14,6 +14,7 @@ import pytest
 
 import daft
 from daft.datatype import DataType, TimeUnit
+from daft.exceptions import DaftCoreException
 from daft.expressions import col
 from daft.io.writer import ParquetFileWriter
 from daft.logical.schema import Schema
@@ -139,6 +140,157 @@ def test_row_groups():
     assert df.count_rows() == 20
 
 
+def test_read_parquet_validates_arguments():
+    path = "tests/assets/parquet-data/mvp.parquet"
+
+    with pytest.raises(ValueError, match="Cannot read DataFrame from empty list of Parquet filepaths"):
+        daft.read_parquet([])
+
+    with pytest.raises(ValueError, match="row_groups must be the same length as the list of paths provided"):
+        daft.read_parquet([path], row_groups=[[0], [1]])
+
+    with pytest.raises(ValueError, match="row_groups are only supported when reading multiple"):
+        daft.read_parquet(path, row_groups=[[0]])
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot read DataFrame with infer_schema=False and schema=None",
+    ):
+        daft.read_parquet(path, infer_schema=False)
+
+
+def test_read_empty_pyarrow_parquet_file(tmp_path):
+    path = tmp_path / "empty.parquet"
+    table = pa.table(
+        {
+            "a": pa.array([], type=pa.int64()),
+            "b": pa.array([], type=pa.large_string()),
+        }
+    )
+    papq.write_table(table, path)
+
+    assert daft.read_parquet(str(path)).to_arrow() == table
+
+
+def test_read_parquet_row_group_edges(tmp_path):
+    path = tmp_path / "row_groups.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3, 4]}), path, row_group_size=2)
+
+    assert daft.read_parquet([str(path)], row_groups=[[1]]).to_pydict() == {"x": [3, 4]}
+    assert daft.read_parquet([str(path)], row_groups=[[]]).to_pydict() == {"x": []}
+
+    with pytest.raises(DaftCoreException, match="Row group index 2 out of bounds"):
+        daft.read_parquet([str(path)], row_groups=[[2]]).to_pydict()
+
+
+def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_i32.parquet"
+    int64_path = tmp_path / "map_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[("a", 1)]], type=pa.map_(pa.string(), pa.int32()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[("b", 2)]], type=pa.map_(pa.string(), pa.int64()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.int64())},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", 1)], [("b", 2)]]}
+
+
+def test_read_parquet_casts_map_logical_values_to_explicit_schema(tmp_path):
+    path = tmp_path / "map_timestamp.parquet"
+    ts = datetime.datetime.fromisoformat("2024-01-01T12:00:00")
+
+    papq.write_table(pa.table({"m": pa.array([[("a", ts)]], type=pa.map_(pa.string(), pa.timestamp("ns")))}), path)
+
+    df = daft.read_parquet(
+        [str(path)],
+        schema={"m": DataType.map(DataType.string(), DataType.timestamp(TimeUnit.us()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", ts)]]}
+
+
+def test_read_parquet_casts_map_keys_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_key_i32.parquet"
+    int64_path = tmp_path / "map_key_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[(1, "a")]], type=pa.map_(pa.int32(), pa.string()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[(2, "b")]], type=pa.map_(pa.int64(), pa.string()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.int64(), DataType.string())},
+    )
+
+    assert df.to_pydict() == {"m": [[(1, "a")], [(2, "b")]]}
+
+
+def test_read_parquet_casts_nested_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_list_i32.parquet"
+    int64_path = tmp_path / "map_list_i64.parquet"
+
+    papq.write_table(
+        pa.table({"m": pa.array([[("a", [1, 2])]], type=pa.map_(pa.string(), pa.list_(pa.int32())))}),
+        int32_path,
+    )
+    papq.write_table(
+        pa.table({"m": pa.array([[("b", [3, 4])]], type=pa.map_(pa.string(), pa.list_(pa.int64())))}),
+        int64_path,
+    )
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.list(DataType.int64()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", [1, 2])], [("b", [3, 4])]]}
+
+
+def test_read_parquet_fills_map_struct_values_to_explicit_schema(tmp_path):
+    struct_x_path = tmp_path / "map_struct_x.parquet"
+    struct_xy_path = tmp_path / "map_struct_xy.parquet"
+
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("a", {"x": 1})]],
+                    type=pa.map_(pa.string(), pa.struct([pa.field("x", pa.int64())])),
+                )
+            }
+        ),
+        struct_x_path,
+    )
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("b", {"x": 2, "y": "present"})]],
+                    type=pa.map_(
+                        pa.string(),
+                        pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.large_string())]),
+                    ),
+                )
+            }
+        ),
+        struct_xy_path,
+    )
+
+    df = daft.read_parquet(
+        [str(struct_x_path), str(struct_xy_path)],
+        schema={
+            "m": DataType.map(
+                DataType.string(),
+                DataType.struct({"x": DataType.int64(), "y": DataType.string()}),
+            )
+        },
+    )
+
+    assert df.to_pydict() == {"m": [[("a", {"x": 1, "y": None})], [("b", {"x": 2, "y": "present"})]]}
+
+
 # Test fix for issue #2537.
 # This issue arose when the last row of a top-level column has a leaf field with values that span
 # more than one data page.
@@ -244,7 +396,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
 
     def test_parquet_helper(data_and_type, use_daft_writer):
         data, data_type = data_and_type
-        index_data = [x for x in range(0, len(data))]
+        index_data = [x for x in range(len(data))]
         file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
 
         # Test Daft roundtrip. Daft does not support the dictionary logical type, hence we skip

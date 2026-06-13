@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import json
 import logging
 import os
 import shutil
@@ -25,6 +26,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    get_loaded_extension_paths,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -97,6 +99,43 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
+def _load_extensions_from_env() -> None:
+    """Load every extension listed in the `DAFT_EXTENSION_PATHS` env var.
+
+    The env var holds a JSON-encoded list of absolute paths. Set by the driver
+    when it creates Ray actors, so workers dlopen the same `.so`s the driver
+    has and can re-attach FFI handles when plans deserialize.
+    """
+    paths_json = os.environ.get("DAFT_EXTENSION_PATHS")
+    if not paths_json:
+        return
+    import daft
+
+    try:
+        paths = json.loads(paths_json)
+    except json.JSONDecodeError:
+        logger.warning("DAFT_EXTENSION_PATHS is set but not valid JSON: %r", paths_json)
+        return
+    for path in paths:
+        try:
+            daft.load_extension(path)
+        except Exception as e:
+            logger.warning("Failed to load extension %s on worker: %s", path, e)
+
+
+def _extension_runtime_env() -> dict[str, dict[str, str]]:
+    """Build a Ray `runtime_env` fragment that propagates the driver's loaded extensions.
+
+    Propagates via the `DAFT_EXTENSION_PATHS` env var.
+    Returns an empty dict if no extensions are loaded. Callers should merge
+    the returned dict into any existing `runtime_env` they pass to Ray.
+    """
+    paths = get_loaded_extension_paths()
+    if not paths:
+        return {}
+    return {"env_vars": {"DAFT_EXTENSION_PATHS": json.dumps(paths)}}
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -140,6 +179,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        _load_extensions_from_env()
 
         self.ip = ray.util.get_node_ip_address()
         self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
@@ -365,8 +405,7 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def _get_worker_startup_timeout() -> int:
-    return get_context().daft_execution_config.worker_startup_timeout
+DEFAULT_WORKER_STARTUP_TIMEOUT = 120
 
 
 def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
@@ -388,7 +427,10 @@ def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
         logger.warning("Failed to attach remote event log subscriber: %s", e)
 
 
-def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+def start_ray_workers(
+    existing_worker_ids: list[str],
+    worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
+) -> list[RaySwordfishWorker]:
     event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
     dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
     task_events_enabled = os.environ.get("DAFT_TASK_EVENTS_ENABLED")
@@ -416,13 +458,22 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             # `node:__internal_head__` is Ray's internal resource key tagging the head node;
             # not in public Ray docs but stable and relied on by Ray's own autoscaler/GCS code.
             is_head = node["Resources"].get("node:__internal_head__", 0) == 1
-            actor = RaySwordfishActor.options(  # type: ignore
-                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+            ext_env = _extension_runtime_env()
+            runtime_env_vars: dict[str, str] = dict(worker_env_vars) if worker_env_vars else {}
+            if "env_vars" in ext_env:
+                runtime_env_vars.update(ext_env["env_vars"])
+            runtime_env: dict[str, object] = {}
+            if runtime_env_vars:
+                runtime_env["env_vars"] = runtime_env_vars
+            swordfish_options: dict[str, object] = {
+                "scheduling_strategy": ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
                 ),
-                runtime_env=({"env_vars": worker_env_vars} if worker_env_vars else None),
-            ).remote(
+            }
+            if runtime_env:
+                swordfish_options["runtime_env"] = runtime_env
+            actor = RaySwordfishActor.options(**swordfish_options).remote(  # type: ignore
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
                 is_head=is_head,
@@ -431,29 +482,86 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             )
             actors.append((node, actor))
 
-    # Batch all IP address retrievals into a single ray.get call
-    actor_startup_timeout = _get_worker_startup_timeout()
-    try:
-        ip_addresses = ray.get(
-            [actor.get_address.remote() for _, actor in actors],
-            timeout=actor_startup_timeout,
-        )
-    except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
-
+    # Submit every address lookup up front so the actors start concurrently
+    # (preserving the original batched-startup latency), then wait against a
+    # single shared deadline. Resolving each ready ref individually isolates
+    # failures: a node that churns between the `ray.nodes()` snapshot and actor
+    # scheduling raises `ActorUnschedulableError`, a dead/unreachable actor
+    # raises `ActorDiedError`/`ActorUnavailableError`, and a worker whose
+    # `get_address` fails (e.g. the Flight shuffle server never started) raises
+    # `RayTaskError`. Actors still pending at the deadline are treated the same
+    # (slow / likely churned). Skip and kill those actors and continue with the
+    # workers that came up. The scheduler re-calls `start_ray_workers`
+    # incrementally (passing `existing_worker_ids`), so a skipped node's
+    # replacement is picked up on a later refresh. This mirrors the execution
+    # path, which already degrades gracefully on worker death (see
+    # `RaySwordfishTaskHandle._get_result`).
     handles = []
-    for (node, actor), ip_address in zip(actors, ip_addresses):
-        actor_handle = RaySwordfishActorHandle(actor)
-        handles.append(
-            RaySwordfishWorker(
-                node["NodeID"],
-                actor_handle,
-                int(node["Resources"]["CPU"]),
-                int(node["Resources"].get("GPU", 0)),
-                int(node["Resources"]["memory"]),
-                ip_address,
-            )
+    if actors:
+        address_refs = [actor.get_address.remote() for _, actor in actors]
+        ref_to_entry = {ref: (node, actor) for (node, actor), ref in zip(actors, address_refs)}
+
+        # `ray.wait` returns whatever resolved within the shared timeout window
+        # in `ready` (including tasks that errored, surfaced on `ray.get`) and
+        # the rest in `not_ready` -- so a timeout is handled as data here, never
+        # raised as `GetTimeoutError`.
+        ready, not_ready = ray.wait(
+            address_refs,
+            num_returns=len(address_refs),
+            timeout=worker_startup_timeout,
         )
+
+        to_skip = [ref_to_entry[ref] for ref in not_ready]
+        for ref in ready:
+            node, actor = ref_to_entry[ref]
+            try:
+                ip_address = ray.get(ref)  # already resolved; does not block
+            except (
+                ray.exceptions.ActorUnschedulableError,
+                ray.exceptions.ActorDiedError,
+                ray.exceptions.ActorUnavailableError,
+                ray.exceptions.RayTaskError,
+            ):
+                to_skip.append((node, actor))
+                continue
+            handles.append(
+                RaySwordfishWorker(
+                    node["NodeID"],
+                    RaySwordfishActorHandle(actor),
+                    int(node["Resources"]["CPU"]),
+                    int(node["Resources"].get("GPU", 0)),
+                    int(node["Resources"]["memory"]),
+                    ip_address,
+                )
+            )
+
+        for _node, actor in to_skip:
+            # Kill skipped actors so they don't hold the node's resources and
+            # block the replacement actor on the next refresh.
+            try:
+                ray.kill(actor, no_restart=True)
+            except Exception:
+                pass
+
+        if to_skip:
+            logger.warning(
+                "Skipped %d/%d unschedulable/unreachable flotilla worker(s) during "
+                "startup/refresh; continuing with %d. Replacement nodes are picked up "
+                "on a later refresh.",
+                len(to_skip),
+                len(actors),
+                len(handles),
+            )
+
+        # Hard-fail only genuine initial-startup total failure: we tried to
+        # schedule workers, none came up, and there is no pre-existing fleet to
+        # fall back on. During incremental refreshes (existing_worker_ids
+        # populated) a fully-failed batch is non-fatal -- the query keeps
+        # running on the existing workers and retries on the next refresh.
+        if not handles and not existing_worker_ids:
+            raise RuntimeError(
+                f"No flotilla workers became available within {worker_startup_timeout}s ({len(actors)} attempted)"
+            )
 
     return handles
 
@@ -466,13 +574,20 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     )
 
 
+def clear_autoscaling_requests() -> None:
+    # Clear any previously requested resources by the Ray autoscaler.
+    try_autoscale(bundles=[])
+
+
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
     def __init__(
         self,
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
+        worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
     ) -> None:
+        _load_extensions_from_env()
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:
@@ -496,7 +611,7 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        self.plan_runner = DistributedPhysicalPlanRunner(worker_startup_timeout)
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
@@ -608,9 +723,19 @@ def get_head_node_id() -> str | None:
 
 
 class FlotillaRunner:
-    """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface."""
+    """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface.
 
-    def __init__(self) -> None:
+    .. warning::
+        Extensions must be loaded **before** the first query is executed.
+
+        ``RemoteFlotillaRunner`` is a named singleton Ray actor (``get_if_exists=True``).
+        Once created, Ray ignores any subsequent ``runtime_env`` options — including
+        ``DAFT_EXTENSION_PATHS`` — and never re-runs ``__init__`` on the existing actor.
+        Calling ``daft.load_extension(...)`` after the first query will not propagate
+        the extension to existing workers.
+    """
+
+    def __init__(self, worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
 
@@ -624,12 +749,18 @@ class FlotillaRunner:
         if dashboard_url:
             runner_env_vars["DAFT_DASHBOARD_URL"] = dashboard_url
 
-        self.runner = RemoteFlotillaRunner.options(  # type: ignore
-            name=get_flotilla_runner_actor_name(),
-            namespace=FLOTILLA_RUNNER_NAMESPACE,
-            get_if_exists=True,
-            runtime_env=({"env_vars": runner_env_vars} if runner_env_vars else None),
-            scheduling_strategy=(
+        ext_env = _extension_runtime_env()
+        if "env_vars" in ext_env:
+            runner_env_vars.update(ext_env["env_vars"])
+
+        flotilla_options: dict[str, object] = {
+            "name": get_flotilla_runner_actor_name(),
+            "namespace": FLOTILLA_RUNNER_NAMESPACE,
+            # NOTE: get_if_exists=True returns the existing actor when one already exists,
+            # silently ignoring any new runtime_env options (including DAFT_EXTENSION_PATHS).
+            # Extensions loaded after the first query will not be propagated to workers.
+            "get_if_exists": True,
+            "scheduling_strategy": (
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,
                     soft=False,
@@ -637,13 +768,31 @@ class FlotillaRunner:
                 if head_node_id
                 else None
             ),
-        ).remote(dashboard_url=dashboard_url, event_log_dir=event_log_dir)
+        }
+        if runner_env_vars:
+            flotilla_options["runtime_env"] = {"env_vars": runner_env_vars}
+
+        self.runner = RemoteFlotillaRunner.options(**flotilla_options).remote(  # type: ignore
+            dashboard_url=dashboard_url,
+            event_log_dir=event_log_dir,
+            worker_startup_timeout=worker_startup_timeout,
+        )
+        self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
 
     def stream_plan(
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
+        current_extensions = frozenset(get_loaded_extension_paths())
+        new_extensions = current_extensions - self._init_extension_paths
+        if new_extensions:
+            logger.warning(
+                "Extensions loaded after the first query was executed will not be available on Ray workers: %s. "
+                "Call daft.load_extension() before executing any queries to ensure extensions are propagated.",
+                sorted(new_extensions),
+            )
+
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 

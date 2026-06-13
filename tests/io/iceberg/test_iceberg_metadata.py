@@ -141,14 +141,28 @@ def test_convert_partition_field_bucket():
     assert pf.transform == PartitionTransform.iceberg_bucket(4)
 
 
-def test_convert_partition_field_day():
+@pytest.mark.parametrize(
+    "source_id, transform, field_name, expected_dtype, expected_transform, expected_source_name",
+    [
+        (2, DayTransform(), "ts_day", DataType.date(), PartitionTransform.day(), "ts"),
+        (2, YearTransform(), "ts_year", DataType.int32(), PartitionTransform.year(), "ts"),
+        (2, MonthTransform(), "ts_month", DataType.int32(), PartitionTransform.month(), "ts"),
+        (2, HourTransform(), "ts_hour", DataType.int32(), PartitionTransform.hour(), "ts"),
+        (3, TruncateTransform(8), "name_trunc", DataType.string(), PartitionTransform.iceberg_truncate(8), "name"),
+    ],
+    ids=["day", "year", "month", "hour", "truncate"],
+)
+def test_convert_partition_field_transforms(
+    source_id, transform, field_name, expected_dtype, expected_transform, expected_source_name
+):
     pf = convert_iceberg_partition_field(
         SIMPLE_SCHEMA,
-        IcebergPartitionField(source_id=2, field_id=1002, transform=DayTransform(), name="ts_day"),
+        IcebergPartitionField(source_id=source_id, field_id=1003, transform=transform, name=field_name),
     )
-    assert pf.field.name == "ts_day"
-    assert pf.field.dtype == DataType.date()
-    assert pf.source_field.name == "ts"
+    assert pf.field.name == field_name
+    assert pf.field.dtype == expected_dtype
+    assert pf.source_field.name == expected_source_name
+    assert pf.transform == expected_transform
 
 
 def test_convert_partition_spec_multiple_fields():
