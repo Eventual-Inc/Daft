@@ -99,10 +99,9 @@ fn f32_bround(arr: &Float32Array, precision: i32) -> DaftResult<Float32Array> {
     if precision == 0 {
         arr.apply(|v| v.round_ties_even())
     } else {
-        let multiplier: f64 = 10.0f64.pow(precision);
         // Compute in f64 to keep parity with Spark's Decimal/Double pipeline,
         // then narrow back to f32 at the end.
-        arr.apply(|v| ((v as f64 * multiplier).round_ties_even() / multiplier) as f32)
+        arr.apply(|v| bround_f64(v as f64, precision) as f32)
     }
 }
 
@@ -110,15 +109,33 @@ fn f64_bround(arr: &Float64Array, precision: i32) -> DaftResult<Float64Array> {
     if precision == 0 {
         arr.apply(|v| v.round_ties_even())
     } else {
-        let multiplier: f64 = 10.0f64.pow(precision);
-        arr.apply(|v| (v * multiplier).round_ties_even() / multiplier)
+        arr.apply(|v| bround_f64(v, precision))
+    }
+}
+
+/// HALF_EVEN round of `v` to `precision` decimal places.
+///
+/// We always pick a multiplier of the form `10^|precision|`, which is exactly
+/// representable in f64 for the relevant range, and choose multiply-then-divide
+/// for non-negative `precision` and divide-then-multiply for negative
+/// `precision`. Going the other way (e.g. multiplying by `10^-2 = 0.01`, which
+/// is not exactly representable) would introduce a second rounding step on top
+/// of the intentional `round_ties_even` and bias edge-of-tie cases.
+#[inline]
+fn bround_f64(v: f64, precision: i32) -> f64 {
+    if precision >= 0 {
+        let multiplier = 10.0f64.pow(precision);
+        (v * multiplier).round_ties_even() / multiplier
+    } else {
+        let divisor = 10.0f64.pow(-precision);
+        (v / divisor).round_ties_even() * divisor
     }
 }
 
 #[cfg(test)]
 mod tests {
     use daft_core::{
-        prelude::{DataType, Field, Float64Array, Int64Array},
+        prelude::{DataType, Field, Float64Array, Int32Array, Int64Array},
         series::{IntoSeries, Series},
     };
     use daft_dsl::functions::{FunctionArgs, ScalarUDF, scalar::EvalContext};
@@ -131,6 +148,10 @@ mod tests {
 
     fn i64s(name: &str, vals: Vec<Option<i64>>) -> Series {
         Int64Array::from_iter(Field::new(name, DataType::Int64), vals.into_iter()).into_series()
+    }
+
+    fn i32s(name: &str, vals: Vec<Option<i32>>) -> Series {
+        Int32Array::from_iter(Field::new(name, DataType::Int32), vals.into_iter()).into_series()
     }
 
     fn call_bround(input: Series, decimals: Option<i32>) -> Series {
@@ -202,6 +223,42 @@ mod tests {
         let s = f64s("x", vec![Some(1.5), None, Some(2.5)]);
         let out = call_bround(s, None);
         let expected = f64s("x", vec![Some(2.0), None, Some(2.0)]);
+        assert_eq!(out.f64().unwrap(), expected.f64().unwrap());
+    }
+
+    #[test]
+    fn test_bround_int32_decimals_literal() {
+        // `BRoundArgs.decimals` is declared as `Option<i32>`; ensure that an
+        // `Int32` literal (the natural type for small SQL/Python integer
+        // literals) is accepted in addition to the `Int64` path covered by the
+        // other tests.
+        let s = f64s("x", vec![Some(125.0), Some(135.0)]);
+        let mut args = vec![s.clone()];
+        args.push(i32s("d", vec![Some(-1)]));
+        let ctx = EvalContext { row_count: s.len() };
+        let out = BRound {}
+            .call(FunctionArgs::new_unnamed(args), &ctx)
+            .unwrap();
+        let expected = f64s("x", vec![Some(120.0), Some(140.0)]);
+        assert_eq!(out.f64().unwrap(), expected.f64().unwrap());
+    }
+
+    #[test]
+    fn test_bround_negative_decimals_uses_exact_divisor() {
+        // Regression test: the previous implementation multiplied by
+        // `10^-2 = 0.01`, which is not exactly representable in f64 and could
+        // skew ties. Using `divide-by-100` keeps the rounding step exact.
+        let s = f64s(
+            "x",
+            vec![Some(150.0), Some(250.0), Some(-150.0), Some(-250.0)],
+        );
+        let out = call_bround(s, Some(-2));
+        // 150 / 100 = 1.5 -> 2 (even) -> 200
+        // 250 / 100 = 2.5 -> 2 (even) -> 200
+        let expected = f64s(
+            "x",
+            vec![Some(200.0), Some(200.0), Some(-200.0), Some(-200.0)],
+        );
         assert_eq!(out.f64().unwrap(), expected.f64().unwrap());
     }
 }
