@@ -91,12 +91,12 @@ impl PyFileReference {
         Ok(url.clone())
     }
 
-    fn offset(&self) -> PyResult<Option<u64>> {
-        Ok(self.inner.offset)
+    fn position(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.position)
     }
 
-    fn length(&self) -> PyResult<Option<u64>> {
-        Ok(self.inner.length)
+    fn size(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.size)
     }
 }
 

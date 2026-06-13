@@ -12,6 +12,10 @@ exactly one new Delta commit tagged with the call's idempotence key.
 The checkpoint-aware source filter (``daft.read_parquet(checkpoint=...)``)
 runs only on the Ray runner, so these tests are skipped on the native
 runner.
+
+Optional: set ``CHECKPOINTING_TEST_BUCKET`` (and ensure ``AWS_REGION`` /
+AWS auth are exported) to route fixtures through real S3 instead of the
+local filesystem. CI defaults to local; S3 is opt-in.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ import daft
 deltalake = pytest.importorskip("deltalake")
 
 from daft.daft import CheckpointStatus
+from tests.io._s3_helpers import S3_BUCKET, delta_storage_options, s3_io_config, s3_uri
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("DAFT_RUNNER") != "ray",
@@ -39,6 +44,8 @@ IDEMPOTENCE_KEY = "test-run-2026-05-08"
 @pytest.fixture(scope="function")
 def delta_table_path(tmpdir):
     """Path for a Delta table that doesn't exist yet (fresh-table path)."""
+    if S3_BUCKET:
+        return s3_uri("delta", "delta_table")
     return str(tmpdir / "delta_table")
 
 
@@ -48,21 +55,33 @@ def delta_table(delta_table_path):
     import pyarrow as pa
 
     schema = pa.schema([("file_id", pa.string()), ("x", pa.int64())])
-    deltalake.write_deltalake(delta_table_path, pa.table({"file_id": [], "x": []}).cast(schema))
+    empty = pa.table({"file_id": [], "x": []}).cast(schema)
+    if S3_BUCKET:
+        opts = delta_storage_options()
+        deltalake.write_deltalake(delta_table_path, empty, storage_options=opts)
+        return deltalake.DeltaTable(delta_table_path, storage_options=opts)
+    deltalake.write_deltalake(delta_table_path, empty)
     return deltalake.DeltaTable(delta_table_path)
 
 
 @pytest.fixture(scope="function")
 def parquet_input(tmpdir):
     """A small parquet input directory we can read with checkpoint=."""
+    df = daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]})
+    if S3_BUCKET:
+        path = s3_uri("delta", "input")
+        df.write_parquet(path, io_config=s3_io_config())
+        return path
     path = str(tmpdir / "input")
     os.makedirs(path, exist_ok=True)
-    daft.from_pydict({"file_id": ["a", "b", "c"], "x": [1, 2, 3]}).write_parquet(path)
+    df.write_parquet(path)
     return path
 
 
 @pytest.fixture(scope="function")
 def checkpoint_store(tmpdir):
+    if S3_BUCKET:
+        return daft.CheckpointStore(s3_uri("delta", "ckpt"), io_config=s3_io_config())
     return daft.CheckpointStore(f"file://{tmpdir}/ckpt")
 
 
@@ -72,6 +91,8 @@ def idempotent_commit(checkpoint_store):
 
 
 def _read_delta_rows(table_path: str) -> dict:
+    if S3_BUCKET:
+        return daft.read_deltalake(table_path, io_config=s3_io_config()).to_pydict()
     return daft.read_deltalake(table_path).to_pydict()
 
 

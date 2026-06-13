@@ -1,5 +1,6 @@
 [dependencies]
 arc-swap = {workspace = true}
+arrow = {workspace = true}
 arrow-array = {workspace = true}
 arrow-buffer = {workspace = true}
 arrow-ipc = {workspace = true}
@@ -61,7 +62,7 @@ dashmap = {workspace = true}
 sysinfo = {workspace = true}
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
+tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
 
 [features]
 python = [

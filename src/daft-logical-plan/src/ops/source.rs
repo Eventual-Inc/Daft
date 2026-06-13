@@ -167,6 +167,7 @@ impl Source {
                 scan_state,
                 partitioning_keys,
                 pushdowns,
+                clustering_keys,
             }) => {
                 use itertools::Itertools;
                 res.extend(scan_state.multiline_display());
@@ -176,6 +177,16 @@ impl Source {
                     "Partitioning keys = [{}]",
                     partitioning_keys.iter().map(|k| format!("{k}")).join(" ")
                 ));
+                if let Some(clustering_keys) = clustering_keys {
+                    res.push(format!(
+                        "Clustering keys = [{}]",
+                        clustering_keys
+                            .keys()
+                            .iter()
+                            .map(|k| format!("{k}"))
+                            .join(", ")
+                    ));
+                }
                 res.extend(pushdowns.multiline_display());
             }
             SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {

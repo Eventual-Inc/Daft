@@ -20,8 +20,9 @@ use opentelemetry::KeyValue;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -177,7 +178,7 @@ impl BroadcastJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            receiver.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &receiver },
         );
         let broadcaster_schema = broadcaster.config().schema.clone();
         let runtime_stats = Arc::new(BroadcastJoinStats::new(meter, &context));

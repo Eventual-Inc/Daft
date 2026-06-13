@@ -521,6 +521,7 @@ impl ExprResolver<'_> {
             }
             Expr::Column(_) => false,
             Expr::Literal(_) => true,
+            Expr::WindowFunction(_) => false,
             _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
         }
     }
