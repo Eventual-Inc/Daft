@@ -11,13 +11,47 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Shared marker trait so `Greatest` and `Least` only differ by a single
+/// associated constant. Everything else - validation, dtype promotion,
+/// per-row reduction - lives on a single `compare_inputs` implementation.
+trait GreatestLeastKind {
+    /// `true` for `greatest`, `false` for `least`.
+    const KEEP_GREATER: bool;
+    const NAME: &'static str;
+    const DOCSTRING: &'static str;
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Greatest;
+
+impl GreatestLeastKind for Greatest {
+    const KEEP_GREATER: bool = true;
+    const NAME: &'static str = "greatest";
+    const DOCSTRING: &'static str = "Returns the largest value among the inputs, skipping NULL values. \
+         Returns NULL only if all inputs are NULL. Requires at least one argument.";
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Least;
+
+impl GreatestLeastKind for Least {
+    const KEEP_GREATER: bool = false;
+    const NAME: &'static str = "least";
+    const DOCSTRING: &'static str = "Returns the smallest value among the inputs, skipping NULL values. \
+         Returns NULL only if all inputs are NULL. Requires at least one argument.";
+}
+
+/// Single shared `ScalarUDF` body for `Greatest`/`Least`. Both implementations
+/// below are thin pass-throughs that pick the parameterization via
+/// [`GreatestLeastKind`].
+fn impl_call<K: GreatestLeastKind>(inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    compare_inputs(K::NAME, inputs, K::KEEP_GREATER)
+}
 
 #[typetag::serde]
 impl ScalarUDF for Greatest {
     fn name(&self) -> &'static str {
-        "greatest"
+        Self::NAME
     }
 
     /// Returns the largest of the input values per row, ignoring NULLs.
@@ -28,7 +62,7 @@ impl ScalarUDF for Greatest {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        compare_inputs(inputs, /* keep_greater = */ true)
+        impl_call::<Self>(inputs)
     }
 
     fn get_return_field(
@@ -40,18 +74,14 @@ impl ScalarUDF for Greatest {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the largest value among the inputs, skipping NULL values. \
-         Returns NULL only if all inputs are NULL. Requires at least one argument."
+        Self::DOCSTRING
     }
 }
-
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Least;
 
 #[typetag::serde]
 impl ScalarUDF for Least {
     fn name(&self) -> &'static str {
-        "least"
+        Self::NAME
     }
 
     /// Returns the smallest of the input values per row, ignoring NULLs.
@@ -62,7 +92,7 @@ impl ScalarUDF for Least {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        compare_inputs(inputs, /* keep_greater = */ false)
+        impl_call::<Self>(inputs)
     }
 
     fn get_return_field(
@@ -74,8 +104,7 @@ impl ScalarUDF for Least {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the smallest value among the inputs, skipping NULL values. \
-         Returns NULL only if all inputs are NULL. Requires at least one argument."
+        Self::DOCSTRING
     }
 }
 
@@ -99,13 +128,17 @@ fn common_return_field(
     Ok(Field::new(field_name, field_type))
 }
 
-fn compare_inputs(inputs: FunctionArgs<Series>, keep_greater: bool) -> DaftResult<Series> {
+fn compare_inputs(
+    fn_name: &str,
+    inputs: FunctionArgs<Series>,
+    keep_greater: bool,
+) -> DaftResult<Series> {
     let inputs = inputs.into_inner();
     let inputs = inputs.as_slice();
     match inputs.len() {
-        0 => Err(DaftError::ComputeError(
-            "greatest/least requires at least one argument".to_string(),
-        )),
+        0 => Err(DaftError::ComputeError(format!(
+            "{fn_name} requires at least one argument"
+        ))),
         1 => Ok(inputs[0].clone()),
         _ => {
             let name = inputs[0].name().to_string();
