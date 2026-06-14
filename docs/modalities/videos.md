@@ -285,3 +285,24 @@ df = df.with_column(
     video_frames(daft.col("video"), sample_interval_seconds=1.0),
 )
 ```
+
+#### Decoding from a binary column with `video_frames_from_bytes`
+
+When the encoded video is already in memory (for example, downloaded from a non-URI-addressable storage system inside a UDF) and you don't want to round-trip through a path, you can decode frames row-wise directly from a binary column with `video_frames_from_bytes`. The output schema is identical to `video_frames`.
+
+```python
+import daft
+from pathlib import Path
+from daft.functions import video_frames_from_bytes
+
+df = daft.from_pydict({"video_bytes": [Path("zoo.mp4").read_bytes()]})
+df = df.with_column(
+    "frames",
+    video_frames_from_bytes(
+        daft.col("video_bytes"),
+        sample_interval_seconds=1.0,
+    ),
+)
+
+df.select("frames").show()
+```
