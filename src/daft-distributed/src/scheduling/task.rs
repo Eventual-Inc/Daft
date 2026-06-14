@@ -606,12 +606,13 @@ pub(super) mod tests {
         let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
         assert_eq!(r.num_cpus(), 0.1);
 
-        // Default config still produces the historical 0.5 floor when unset.
+        // The default config preserves the pre-fix hardcoded fallback of 1.0,
+        // so no plan without an explicit num_cpus changes behavior.
         let r = TaskResourceRequest::new(
             ResourceRequest::default(),
             DaftExecutionConfig::default().min_cpu_per_task,
         );
-        assert_eq!(r.num_cpus(), 0.5);
+        assert_eq!(r.num_cpus(), 1.0);
     }
 
     #[test]

@@ -192,7 +192,7 @@ impl Default for DaftExecutionConfig {
             pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
-            min_cpu_per_task: 0.5,
+            min_cpu_per_task: 1.0,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
             enable_dynamic_batching: false,
@@ -513,7 +513,7 @@ mod tests {
         // ENV_DAFT_MIN_CPU_PER_TASK
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 0.5);
+            assert_eq!(cfg.min_cpu_per_task, 1.0);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "0.1");
@@ -525,7 +525,7 @@ mod tests {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "invalid");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 0.5);
+            assert_eq!(cfg.min_cpu_per_task, 1.0);
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK);
