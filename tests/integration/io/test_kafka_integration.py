@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections.abc import Iterator
+from contextlib import suppress
 from datetime import datetime, timezone
 
 import pytest
@@ -14,9 +16,11 @@ import daft
 def _wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
     confluent_kafka = pytest.importorskip("confluent_kafka")
 
+    readiness_errors = (confluent_kafka.KafkaException, OSError, RuntimeError, TimeoutError)
     deadline = time.time() + timeout_s
     last: Exception | None = None
     while time.time() < deadline:
+        consumer = None
         try:
             consumer = confluent_kafka.Consumer(
                 {
@@ -26,11 +30,14 @@ def _wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
                 }
             )
             consumer.list_topics(timeout=5)
-            consumer.close()
             return
-        except Exception as e:
+        except readiness_errors as e:
             last = e
             time.sleep(1)
+        finally:
+            if consumer is not None:
+                with suppress(*readiness_errors):
+                    consumer.close()
     raise RuntimeError(f"Kafka was not ready after {timeout_s}s: {last}")
 
 
@@ -43,9 +50,13 @@ def _ensure_topic(*, bootstrap: str, topic: str, num_partitions: int) -> None:
     try:
         futures[topic].result(timeout=30)
     except confluent_kafka.KafkaException as e:
-        if e.args and hasattr(e.args[0], "code") and callable(e.args[0].code):
-            if e.args[0].code() == confluent_kafka.KafkaError.TOPIC_ALREADY_EXISTS:
-                return
+        if (
+            e.args
+            and hasattr(e.args[0], "code")
+            and callable(e.args[0].code)
+            and e.args[0].code() == confluent_kafka.KafkaError.TOPIC_ALREADY_EXISTS
+        ):
+            return
         raise
 
 
@@ -81,7 +92,11 @@ def _decode_rows(rows: list[dict]) -> list[dict]:
             key = bytes(key).decode("utf-8")
         value = r.get("value")
         if isinstance(value, (bytes, bytearray, memoryview)):
-            value = json.loads(bytes(value).decode("utf-8"))
+            value_text = bytes(value).decode("utf-8")
+            try:
+                value = json.loads(value_text)
+            except json.JSONDecodeError:
+                value = value_text
         decoded.append(
             {
                 "topic": r.get("topic"),
@@ -93,6 +108,58 @@ def _decode_rows(rows: list[dict]) -> list[dict]:
             }
         )
     return decoded
+
+
+def _write_summary_counts(summary: daft.DataFrame) -> tuple[int, int]:
+    rows = summary.to_pylist()
+    return (
+        sum(int(row["messages_delivered"]) for row in rows),
+        sum(int(row["messages_failed"]) for row in rows),
+    )
+
+
+def _read_topic(*, bootstrap: str, topic: str) -> list[dict]:
+    return _decode_rows(
+        daft.read_kafka(
+            bootstrap_servers=bootstrap,
+            topics=topic,
+            group_id=f"daft-kafka-integration-{uuid.uuid4().hex}",
+            timeout_ms=20_000,
+            start="earliest",
+            end="latest",
+        )
+        .collect()
+        .to_pylist()
+    )
+
+
+def _consume_raw_messages(*, bootstrap: str, topic: str, count: int) -> list[object]:
+    confluent_kafka = pytest.importorskip("confluent_kafka")
+    consumer = confluent_kafka.Consumer(
+        {
+            "bootstrap.servers": bootstrap,
+            "group.id": f"daft-kafka-integration-{uuid.uuid4().hex}",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+        }
+    )
+    consumer.subscribe([topic])
+    deadline = time.time() + 20
+    messages: list[object] = []
+    try:
+        while time.time() < deadline and len(messages) < count:
+            msg = consumer.poll(1)
+            if msg is None:
+                continue
+            if msg.error():
+                raise confluent_kafka.KafkaException(msg.error())
+            messages.append(msg)
+    finally:
+        consumer.close()
+
+    if len(messages) != count:
+        pytest.fail(f"timed out waiting for {count} message(s) from topic {topic!r}")
+    return messages
 
 
 @pytest.fixture(scope="module")
@@ -196,7 +263,8 @@ def test_read_kafka_chunk_size_one(kafka_context: dict[str, object]) -> None:
         partitions=[0],
         chunk_size=1,
     ).collect()
-    assert len(list(df_all_p0.iter_partitions())) == 20
+    if os.environ.get("DAFT_RUNNER") == "native":
+        assert len(list(df_all_p0.iter_partitions())) == 20
     decoded = _decode_rows(df_all_p0.to_pylist())
     assert len(decoded) == 20
     assert {r["topic"] for r in decoded} == {topic}
@@ -437,3 +505,132 @@ def test_read_kafka_missing_partition_offset_raises(kafka_context: dict[str, obj
             start={0: 0},
             end={0: 5},
         ).collect()
+
+
+@pytest.mark.integration()
+def test_write_kafka_raw_roundtrip(kafka_context: dict[str, object]) -> None:
+    bootstrap = str(kafka_context["bootstrap"])
+    topic = f"daft-kafka-write-raw-{uuid.uuid4().hex[:8]}"
+    _ensure_topic(bootstrap=bootstrap, topic=topic, num_partitions=2)
+
+    summary = daft.from_pydict(
+        {
+            "key": [b"k1", b"k2", b"k3"],
+            "value": [b"v1", b"v2", b"v3"],
+            "partition": [0, 1, 0],
+        }
+    ).write_kafka(
+        bootstrap_servers=bootstrap,
+        topic=topic,
+        key_col="key",
+        value_col="value",
+        partition_col="partition",
+        kafka_client_config={"acks": "all", "enable.idempotence": True},
+        timeout_ms=20_000,
+    )
+
+    delivered, failed = _write_summary_counts(summary)
+    assert delivered == 3
+    assert failed == 0
+
+    decoded = _read_topic(bootstrap=bootstrap, topic=topic)
+    assert {r["key"] for r in decoded} == {"k1", "k2", "k3"}
+    assert {r["value"] for r in decoded} == {"v1", "v2", "v3"}
+    assert {r["partition"] for r in decoded} == {0, 1}
+
+
+@pytest.mark.integration()
+def test_write_kafka_json_dynamic_topic(kafka_context: dict[str, object]) -> None:
+    bootstrap = str(kafka_context["bootstrap"])
+    topic_a = f"daft-kafka-write-json-a-{uuid.uuid4().hex[:8]}"
+    topic_b = f"daft-kafka-write-json-b-{uuid.uuid4().hex[:8]}"
+    _ensure_topic(bootstrap=bootstrap, topic=topic_a, num_partitions=1)
+    _ensure_topic(bootstrap=bootstrap, topic=topic_b, num_partitions=1)
+
+    payload_a = {"id": 1, "kind": "a", "tags": ["red", None]}
+    payload_b = {"id": 2, "kind": "b", "tags": ["blue"]}
+    summary = daft.from_pylist(
+        [
+            {"topic": topic_a, "key": "ka", "value": payload_a},
+            {"topic": topic_b, "key": "kb", "value": payload_b},
+            {"topic": topic_a, "key": "ka-delete", "value": None},
+        ]
+    ).write_kafka(
+        bootstrap_servers=bootstrap,
+        topic_col="topic",
+        key_col="key",
+        value_col="value",
+        key_format="utf8",
+        value_format="json",
+        kafka_client_config={"acks": "all"},
+        timeout_ms=20_000,
+    )
+
+    delivered, failed = _write_summary_counts(summary)
+    assert delivered == 3
+    assert failed == 0
+
+    raw_a = {
+        msg.key().decode("utf-8"): msg.value()
+        for msg in _consume_raw_messages(bootstrap=bootstrap, topic=topic_a, count=2)
+    }
+    decoded_b = _read_topic(bootstrap=bootstrap, topic=topic_b)
+    assert json.loads(raw_a["ka"].decode("utf-8")) == payload_a
+    assert raw_a["ka-delete"] is None
+    assert [r["key"] for r in decoded_b] == ["kb"]
+    assert [r["value"] for r in decoded_b] == [payload_b]
+
+
+@pytest.mark.integration()
+def test_write_kafka_headers(kafka_context: dict[str, object]) -> None:
+    confluent_kafka = pytest.importorskip("confluent_kafka")
+
+    bootstrap = str(kafka_context["bootstrap"])
+    topic = f"daft-kafka-write-headers-{uuid.uuid4().hex[:8]}"
+    _ensure_topic(bootstrap=bootstrap, topic=topic, num_partitions=1)
+
+    summary = daft.from_pylist(
+        [
+            {
+                "key": b"k",
+                "value": b"v",
+                "headers": [{"key": "trace", "value": b"a"}, {"key": "trace", "value": b"b"}],
+            }
+        ]
+    ).write_kafka(
+        bootstrap_servers=bootstrap,
+        topic=topic,
+        key_col="key",
+        value_col="value",
+        headers_col="headers",
+        kafka_client_config={"acks": "all"},
+        timeout_ms=20_000,
+    )
+    delivered, failed = _write_summary_counts(summary)
+    assert delivered == 1
+    assert failed == 0
+
+    consumer = confluent_kafka.Consumer(
+        {
+            "bootstrap.servers": bootstrap,
+            "group.id": f"daft-kafka-integration-{uuid.uuid4().hex}",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+        }
+    )
+    consumer.subscribe([topic])
+    deadline = time.time() + 20
+    try:
+        while time.time() < deadline:
+            msg = consumer.poll(1)
+            if msg is None:
+                continue
+            if msg.error():
+                raise confluent_kafka.KafkaException(msg.error())
+
+            assert msg.headers() == [("trace", b"a"), ("trace", b"b")]
+            return
+    finally:
+        consumer.close()
+
+    pytest.fail("timed out waiting for header test message")

@@ -65,6 +65,7 @@ sysinfo = {workspace = true}
 tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
 
 [features]
+kafka = ["daft-writers/kafka"]
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",

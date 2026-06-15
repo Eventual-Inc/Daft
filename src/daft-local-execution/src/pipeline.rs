@@ -407,6 +407,8 @@ pub fn translate_physical_plan_to_pipeline(
     // effects), wrap the pipeline in a CheckpointTerminusNode that stages keys
     // and calls `store.checkpoint(id)` per input. Write-sink plans already
     // handle this via SCKO + BlockingSinkNode::with_checkpoint.
+    // Kafka writes have external side effects and are not checkpointed as
+    // file-write sinks unless that behavior is deliberately implemented.
     let root_is_write_sink = matches!(
         physical_plan,
         LocalPhysicalPlan::PhysicalWrite(_) | LocalPhysicalPlan::CommitWrite(_)
@@ -1462,6 +1464,43 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::KafkaWrite(daft_local_plan::KafkaWrite {
+            input,
+            kafka_info,
+            file_schema,
+            stats_state,
+            context,
+        }) => {
+            #[cfg(feature = "kafka")]
+            {
+                let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+                let writer_factory = daft_writers::make_kafka_writer_factory(kafka_info.clone());
+                let write_sink = WriteSink::new(
+                    WriteFormat::Kafka,
+                    writer_factory,
+                    None,
+                    file_schema.clone(),
+                );
+                BlockingSinkNode::new(
+                    Arc::new(write_sink),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            }
+            #[cfg(not(feature = "kafka"))]
+            {
+                let _ = (input, kafka_info, file_schema, stats_state, context);
+                return Err(DaftError::not_implemented(
+                    "Kafka write support requires the `kafka` feature",
+                ))
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                });
+            }
+        }
         #[cfg(feature = "python")]
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
@@ -1800,4 +1839,65 @@ fn physical_plan_to_pipeline(
     };
 
     Ok(pipeline_node)
+}
+
+#[cfg(all(test, feature = "kafka"))]
+mod tests {
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use common_daft_config::DaftExecutionConfig;
+    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_dsl::unresolved_col;
+    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+    use daft_logical_plan::{
+        sink_info::{KafkaKeyFormat, KafkaTopic, KafkaValueFormat, KafkaWriteInfo},
+        stats::StatsState,
+    };
+
+    use super::{BuilderContext, translate_physical_plan_to_pipeline, viz_pipeline_ascii};
+
+    #[test]
+    fn kafka_write_translates_to_named_pipeline_without_broker() {
+        let data_schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Utf8)]));
+        let file_schema = Arc::new(Schema::new(vec![Field::new("summary", DataType::UInt64)]));
+        let kafka_info = KafkaWriteInfo {
+            bootstrap_servers: "localhost:9092".to_string(),
+            topic: KafkaTopic::Static("topic-a".to_string()),
+            value_col: unresolved_col("value"),
+            key_col: None,
+            headers_col: None,
+            partition: None,
+            timestamp_ms_col: None,
+            value_format: KafkaValueFormat::Utf8,
+            key_format: KafkaKeyFormat::Utf8,
+            kafka_client_config: BTreeMap::new(),
+            timeout_ms: 1000,
+        }
+        .bind(&data_schema)
+        .unwrap();
+        let plan = LocalPhysicalPlan::kafka_write(
+            LocalPhysicalPlan::in_memory_scan(
+                0,
+                data_schema,
+                0,
+                StatsState::NotMaterialized,
+                LocalNodeContext::default(),
+            ),
+            kafka_info,
+            file_schema,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let ctx = BuilderContext::new();
+
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&plan, &cfg, &ctx).expect("translation succeeds");
+
+        let ascii = viz_pipeline_ascii(pipeline_node.as_ref(), true);
+        assert!(
+            ascii.contains("Kafka Write"),
+            "pipeline ASCII should include Kafka Write, got:\n{ascii}"
+        );
+    }
 }

@@ -21,6 +21,7 @@ use daft_dsl::{
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
     partitioning::RepartitionSpec,
+    sink_info::KafkaWriteInfo,
     stats::{PlanStats, StatsState},
 };
 use daft_scan::{Pushdowns, SourceConfig};
@@ -105,6 +106,7 @@ pub enum LocalPhysicalPlan {
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
+    KafkaWrite(KafkaWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
     #[cfg(feature = "python")]
@@ -184,6 +186,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
+            | Self::KafkaWrite(KafkaWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
             | Self::GatherWrite(GatherWrite { stats_state, .. })
@@ -237,6 +240,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::KafkaWrite(KafkaWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
@@ -287,6 +291,7 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
+            | Self::KafkaWrite(KafkaWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::GatherWrite(GatherWrite { context, .. })
@@ -1021,6 +1026,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn kafka_write(
+        input: LocalPhysicalPlanRef,
+        kafka_info: KafkaWriteInfo<BoundExpr>,
+        file_schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::KafkaWrite(KafkaWrite {
+            input,
+            kafka_info,
+            file_schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     #[cfg(feature = "python")]
     pub fn catalog_write(
         input: LocalPhysicalPlanRef,
@@ -1209,6 +1231,7 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
+            Self::KafkaWrite(KafkaWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { schema, .. }) => schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
@@ -1287,7 +1310,8 @@ impl LocalPhysicalPlan {
                 input, ..
             })
             | Self::PhysicalWrite(PhysicalWrite { input, .. })
-            | Self::CommitWrite(CommitWrite { input, .. }) => vec![input.clone()],
+            | Self::CommitWrite(CommitWrite { input, .. })
+            | Self::KafkaWrite(KafkaWrite { input, .. }) => vec![input.clone()],
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
@@ -1665,7 +1689,6 @@ impl LocalPhysicalPlan {
                     context.clone(),
                 ),
                 Self::CommitWrite(CommitWrite {
-                    input,
                     data_schema,
                     stats_state,
                     file_schema,
@@ -1680,9 +1703,21 @@ impl LocalPhysicalPlan {
                     stats_state.clone(),
                     context.clone(),
                 ),
+                Self::KafkaWrite(KafkaWrite {
+                    kafka_info,
+                    file_schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::kafka_write(
+                    new_child.clone(),
+                    kafka_info.clone(),
+                    file_schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
                 #[cfg(feature = "python")]
                 Self::DataSink(DataSink {
-                    input,
                     data_sink_info,
                     file_schema,
                     stats_state,
@@ -2313,6 +2348,16 @@ pub struct CommitWrite {
     pub context: LocalNodeContext,
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct KafkaWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub kafka_info: KafkaWriteInfo<BoundExpr>,
+    pub file_schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
 #[cfg(feature = "python")]
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -2489,6 +2534,9 @@ pub struct FlightShuffleReadInput {
 
 #[cfg(test)]
 mod task_topology_tests {
+    use daft_core::datatypes::{DataType, Field};
+    use daft_logical_plan::sink_info::{KafkaKeyFormat, KafkaTopic, KafkaValueFormat};
+
     use super::*;
 
     fn scan() -> LocalPhysicalPlanRef {
@@ -2583,5 +2631,70 @@ mod task_topology_tests {
         let plan = scan();
         let _retained = plan.clone();
         let _ = plan.mark_task_root();
+    }
+
+    #[test]
+    fn kafka_write_preserves_schema_child_and_info_with_new_children() {
+        let data_schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Utf8)]));
+        let file_schema = Arc::new(Schema::new(vec![Field::new("summary", DataType::UInt64)]));
+        let replacement_file_schema = Arc::new(Schema::new(vec![Field::new(
+            "replacement",
+            DataType::UInt64,
+        )]));
+        let kafka_info = daft_logical_plan::sink_info::KafkaWriteInfo {
+            bootstrap_servers: "localhost:9092".to_string(),
+            topic: KafkaTopic::Static("topic-a".to_string()),
+            value_col: daft_dsl::unresolved_col("value"),
+            key_col: None,
+            headers_col: None,
+            partition: None,
+            timestamp_ms_col: None,
+            value_format: KafkaValueFormat::Utf8,
+            key_format: KafkaKeyFormat::Utf8,
+            kafka_client_config: BTreeMap::new(),
+            timeout_ms: 1000,
+        }
+        .bind(&data_schema)
+        .unwrap();
+        let plan = LocalPhysicalPlan::kafka_write(
+            LocalPhysicalPlan::in_memory_scan(
+                0,
+                data_schema.clone(),
+                0,
+                StatsState::NotMaterialized,
+                LocalNodeContext::default(),
+            ),
+            kafka_info.clone(),
+            file_schema.clone(),
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+
+        assert_eq!(plan.schema(), &file_schema);
+        let children = plan.children();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].schema(), &data_schema);
+
+        let replacement = LocalPhysicalPlan::in_memory_scan(
+            1,
+            replacement_file_schema.clone(),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        let rewritten = plan.with_new_children(&[replacement]);
+
+        let LocalPhysicalPlan::KafkaWrite(KafkaWrite {
+            kafka_info: rewritten_info,
+            file_schema: rewritten_file_schema,
+            input,
+            ..
+        }) = rewritten.as_ref()
+        else {
+            panic!("expected KafkaWrite");
+        };
+        assert_eq!(rewritten_info, &kafka_info);
+        assert_eq!(rewritten_file_schema, &file_schema);
+        assert_eq!(input.schema(), &replacement_file_schema);
     }
 }

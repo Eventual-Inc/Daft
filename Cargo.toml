@@ -97,6 +97,7 @@ python = [
   "daft-image/python",
   "daft-io/python",
   "daft-json/python",
+  "daft-local-execution/kafka",
   "daft-local-execution/python",
   "daft-local-plan/python",
   "daft-logical-plan/python",
@@ -342,6 +343,7 @@ prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.9"
 rayon = "1.11.0"
+rdkafka = {version = "0.39.0", default-features = false, features = ["tokio", "libz", "zstd"]}
 regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}

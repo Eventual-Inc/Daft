@@ -89,11 +89,12 @@ See also [Apache Paimon](paimon.md) for detailed integration.
 
 !!! warning "Experimental"
 
-    This connector is experimental. Currently only bounded batch reads are supported — there is no streaming/unbounded mode and no offset commit management.
+    This connector is experimental. Reads are bounded batch reads without streaming/unbounded mode or offset commit management. Writes are at-least-once and do not support transactions.
 
-| Function                           | Description                                          |
-|------------------------------------|------------------------------------------------------|
-| [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
+| Function                                                 | Description                                          |
+|----------------------------------------------------------|------------------------------------------------------|
+| [`read_kafka`][daft.io.read_kafka]                       | Read messages from Kafka topic(s) into a DataFrame   |
+| [`write_kafka`][daft.dataframe.DataFrame.write_kafka]    | Write DataFrame rows to Kafka topic(s)               |
 
 See also [Kafka](kafka.md) for detailed integration.
 

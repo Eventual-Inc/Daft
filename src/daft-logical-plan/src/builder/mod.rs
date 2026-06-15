@@ -1,7 +1,7 @@
 mod resolve_expr;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     future::Future,
     sync::Arc,
 };
@@ -12,6 +12,8 @@ use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
+#[cfg(feature = "python")]
+use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
@@ -33,8 +35,10 @@ use {
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
+    pyo3::PyTypeCheck,
     pyo3::intern,
     pyo3::prelude::*,
+    pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString},
 };
 
 use crate::{
@@ -47,7 +51,10 @@ use crate::{
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
     partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
-    sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
+    sink_info::{
+        FormatSinkOption, KafkaConfigValue, KafkaKeyFormat, KafkaPartition, KafkaTopic,
+        KafkaValueFormat, KafkaWriteInfo, OutputFileInfo, SinkInfo,
+    },
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
@@ -120,6 +127,28 @@ impl IntoGlobPath for Vec<&str> {
         self.iter().map(|s| (*s).to_string()).collect()
     }
 }
+
+pub fn parse_kafka_value_format(format: &str) -> DaftResult<KafkaValueFormat> {
+    match format.to_ascii_lowercase().as_str() {
+        "raw" => Ok(KafkaValueFormat::Raw),
+        "utf8" => Ok(KafkaValueFormat::Utf8),
+        "json" => Ok(KafkaValueFormat::Json),
+        other => Err(DaftError::ValueError(format!(
+            "Unsupported Kafka value format: {other}. Expected one of: raw, utf8, json"
+        ))),
+    }
+}
+
+pub fn parse_kafka_key_format(format: &str) -> DaftResult<KafkaKeyFormat> {
+    match format.to_ascii_lowercase().as_str() {
+        "raw" => Ok(KafkaKeyFormat::Raw),
+        "utf8" => Ok(KafkaKeyFormat::Utf8),
+        other => Err(DaftError::ValueError(format!(
+            "Unsupported Kafka key format: {other}. Expected one of: raw, utf8"
+        ))),
+    }
+}
+
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
@@ -910,6 +939,79 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn kafka_write(
+        &self,
+        bootstrap_servers: String,
+        topic: Option<String>,
+        topic_col: Option<ExprRef>,
+        value_col: ExprRef,
+        key_col: Option<ExprRef>,
+        headers_col: Option<ExprRef>,
+        partition: Option<i32>,
+        partition_col: Option<ExprRef>,
+        timestamp_ms_col: Option<ExprRef>,
+        value_format: String,
+        key_format: String,
+        kafka_client_config: BTreeMap<String, KafkaConfigValue>,
+        timeout_ms: u64,
+    ) -> DaftResult<Self> {
+        let value_format = parse_kafka_value_format(&value_format)?;
+        let key_format = parse_kafka_key_format(&key_format)?;
+
+        let expr_resolver = ExprResolver::default();
+        let resolve_expr = |expr: ExprRef| -> DaftResult<ExprRef> {
+            expr_resolver.resolve_single(expr, self.plan.clone())
+        };
+
+        let topic = match (topic, topic_col) {
+            (Some(topic), None) => KafkaTopic::Static(topic),
+            (None, Some(topic_col)) => KafkaTopic::Dynamic(resolve_expr(topic_col)?),
+            (Some(_), Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Must provide exactly one of topic or topic_col for Kafka write".to_string(),
+                ));
+            }
+            (None, None) => {
+                return Err(DaftError::ValueError(
+                    "Must provide exactly one of topic or topic_col for Kafka write".to_string(),
+                ));
+            }
+        };
+
+        let partition = match (partition, partition_col) {
+            (Some(partition), None) => Some(KafkaPartition::Static(partition)),
+            (None, Some(partition_col)) => {
+                Some(KafkaPartition::Dynamic(resolve_expr(partition_col)?))
+            }
+            (Some(_), Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "Must provide at most one of partition or partition_col for Kafka write"
+                        .to_string(),
+                ));
+            }
+            (None, None) => None,
+        };
+
+        let sink_info = SinkInfo::KafkaInfo(KafkaWriteInfo {
+            bootstrap_servers,
+            topic,
+            value_col: resolve_expr(value_col)?,
+            key_col: key_col.map(&resolve_expr).transpose()?,
+            headers_col: headers_col.map(&resolve_expr).transpose()?,
+            partition,
+            timestamp_ms_col: timestamp_ms_col.map(&resolve_expr).transpose()?,
+            value_format,
+            key_format,
+            kafka_client_config,
+            timeout_ms,
+        });
+
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     #[cfg(feature = "python")]
     #[allow(clippy::too_many_arguments)]
     pub fn iceberg_write(
@@ -1255,6 +1357,45 @@ impl PyLogicalPlanBuilder {
 #[cfg(feature = "python")]
 fn pyexprs_to_exprs(vec: Vec<PyExpr>) -> Vec<ExprRef> {
     vec.into_iter().map(|e| e.into()).collect()
+}
+
+#[cfg(feature = "python")]
+fn py_kafka_client_config_to_config(
+    kafka_client_config: Option<&Bound<'_, PyDict>>,
+) -> PyResult<BTreeMap<String, KafkaConfigValue>> {
+    let Some(kafka_client_config) = kafka_client_config else {
+        return Ok(BTreeMap::new());
+    };
+
+    kafka_client_config
+        .iter()
+        .map(|(key, value)| {
+            let key: String = key.extract()?;
+            let value = if value.is_none() {
+                KafkaConfigValue::Null
+            } else if PyBool::type_check(&value) {
+                KafkaConfigValue::Bool(value.extract()?)
+            } else if PyInt::type_check(&value) {
+                KafkaConfigValue::Int(value.extract()?)
+            } else if PyFloat::type_check(&value) {
+                let value: f64 = value.extract()?;
+                if !value.is_finite() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "[write_kafka] kafka_client_config value for {key:?} must be finite"
+                    )));
+                }
+                KafkaConfigValue::Float(FloatWrapper(value))
+            } else if PyString::type_check(&value) {
+                KafkaConfigValue::String(value.extract()?)
+            } else {
+                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                    "[write_kafka] kafka_client_config value for {key:?} must be None, bool, int, float, or str"
+                )));
+            };
+
+            Ok((key, value))
+        })
+        .collect()
 }
 
 #[cfg(feature = "python")]
@@ -1704,6 +1845,60 @@ impl PyLogicalPlanBuilder {
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        bootstrap_servers,
+        topic,
+        topic_col,
+        value_col,
+        key_col,
+        headers_col,
+        partition,
+        partition_col,
+        timestamp_ms_col,
+        value_format,
+        key_format,
+        kafka_client_config=None,
+        timeout_ms=10000
+    ))]
+    pub fn kafka_write(
+        &self,
+        bootstrap_servers: String,
+        topic: Option<String>,
+        topic_col: Option<String>,
+        value_col: String,
+        key_col: Option<String>,
+        headers_col: Option<String>,
+        partition: Option<i32>,
+        partition_col: Option<String>,
+        timestamp_ms_col: Option<String>,
+        value_format: String,
+        key_format: String,
+        kafka_client_config: Option<&Bound<'_, PyDict>>,
+        timeout_ms: u64,
+    ) -> PyResult<Self> {
+        let kafka_client_config = py_kafka_client_config_to_config(kafka_client_config)?;
+
+        Ok(self
+            .builder
+            .kafka_write(
+                bootstrap_servers,
+                topic,
+                topic_col.map(|name| unresolved_col(name.as_str())),
+                unresolved_col(value_col.as_str()),
+                key_col.map(|name| unresolved_col(name.as_str())),
+                headers_col.map(|name| unresolved_col(name.as_str())),
+                partition,
+                partition_col.map(|name| unresolved_col(name.as_str())),
+                timestamp_ms_col.map(|name| unresolved_col(name.as_str())),
+                value_format,
+                key_format,
+                kafka_client_config,
+                timeout_ms,
             )?
             .into())
     }
