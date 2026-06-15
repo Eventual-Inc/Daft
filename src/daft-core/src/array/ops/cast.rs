@@ -256,7 +256,7 @@ impl DateArray {
                 let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
                 Ok(Utf8Array::from_iter(
                     self.name(),
-                    self.physical.into_iter().map(|opt_days| {
+                    self.physical.iter().map(|opt_days| {
                         opt_days.map(|days| {
                             let date = epoch + chrono::TimeDelta::days(days as i64);
                             format!("{}-{}-{}", date.year(), date.month(), date.day())
@@ -356,7 +356,7 @@ impl TimestampArray {
                 });
                 let str_array = Utf8Array::from_iter(
                     self.name(),
-                    self.physical.into_iter().map(|val| {
+                    self.physical.iter().map(|val| {
                         val.map(|val| match &tz_parsed {
                             Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
                                 timestamp_to_str_offset(val, unit, offset)
@@ -410,7 +410,7 @@ impl TimeArray {
             }
             DataType::Utf8 => Ok(Utf8Array::from_iter(
                 self.name(),
-                self.physical.into_iter().map(|val| {
+                self.physical.iter().map(|val| {
                     val.map(|val| {
                         let DataType::Time(unit) = &self.field.dtype else {
                             panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
@@ -1658,11 +1658,18 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map { .. } => Ok(MapArray::new(
-                Field::new(self.name(), dtype.clone()),
-                self.clone(),
-            )
-            .into_series()),
+            DataType::Map { key, value } => {
+                let physical_dtype = DataType::List(Box::new(DataType::Struct(vec![
+                    Field::new("key", *key.clone()),
+                    Field::new("value", *value.clone()),
+                ])));
+                let result = self.cast(&physical_dtype)?;
+                let map_array = MapArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.list()?.clone(),
+                );
+                Ok(map_array.into_series())
+            }
             DataType::Embedding(..) => {
                 let result = self.cast(&dtype.to_physical())?;
                 let embedding_array = EmbeddingArray::new(
@@ -2174,7 +2181,7 @@ mod tests {
         // Date is stored as days since epoch (1970-01-01)
         // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
         let date_array = result.date().unwrap();
-        let values: Vec<Option<i32>> = date_array.physical.into_iter().collect();
+        let values: Vec<Option<i32>> = date_array.physical.iter().collect();
         // Check that we got valid dates (not None from failed parse)
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");

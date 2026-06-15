@@ -6,11 +6,11 @@ import lance
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from daft_lance.lance_scan import LanceDBScanOperator, _lancedb_count_result_function
 
 import daft
 from daft import col
 from daft.daft import CountMode
-from daft.io.lance.lance_scan import LanceDBScanOperator, _lancedb_count_result_function
 from daft.recordbatch import RecordBatch
 
 

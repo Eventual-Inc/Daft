@@ -206,11 +206,13 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
+        let clustering_keys = scan_operator.0.clustering_keys();
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
+            clustering_keys,
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
         if let Some(file_path_column) = &scan_operator.0.file_path_column()
@@ -770,6 +772,7 @@ impl LogicalPlanBuilder {
         right_on: ExprRef,
         strategy: AsofJoinStrategy,
         options: JoinOptions,
+        assume_sorted_and_aligned: bool,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
@@ -808,6 +811,7 @@ impl LogicalPlanBuilder {
             right_on,
             right_cols_to_drop,
             strategy,
+            assume_sorted_and_aligned,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -1600,7 +1604,7 @@ impl PyLogicalPlanBuilder {
         Ok(result.into())
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix))]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix, assume_sorted_and_aligned=false))]
     pub fn join_asof(
         &self,
         right: &Self,
@@ -1611,6 +1615,7 @@ impl PyLogicalPlanBuilder {
         strategy: AsofJoinStrategy,
         prefix: Option<String>,
         suffix: Option<String>,
+        assume_sorted_and_aligned: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1622,6 +1627,7 @@ impl PyLogicalPlanBuilder {
                 right_on.into(),
                 strategy,
                 JoinOptions { prefix, suffix },
+                assume_sorted_and_aligned,
             )?
             .into())
     }

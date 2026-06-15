@@ -10,6 +10,10 @@ use crate::{Error, ParquetMetadataSnafu, task_err};
 
 const FOOTER_SIZE: usize = 8;
 
+/// Parquet key-value metadata key for the embedded Arrow schema hint written by
+/// pyarrow/arrow-cpp. See `parquet-format-thrift` KeyValue.
+const ARROW_SCHEMA_KEY: &str = "ARROW:schema";
+
 // ---------------------------------------------------------------------------
 // Arrow-rs field ID mapping
 // ---------------------------------------------------------------------------
@@ -221,23 +225,38 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
         })
         .collect();
 
-    // 4. Rebuild FileMetaData and ParquetMetaData
+    // 4. Rebuild FileMetaData and ParquetMetaData. Strip the embedded ARROW:schema
+    // hint: it still carries the original (physical) field names and disagrees with
+    // the renamed parquet type tree, causing arrow-rs to fail with
+    // `incompatible arrow schema, expected field named <physical> got <logical>`.
+    // Dropping it forces arrow-rs to infer from the renamed parquet types.
     Ok(Arc::new(ParquetMetaData::new(
-        rebuild_file_metadata(metadata.file_metadata(), new_schema_descr),
+        rebuild_file_metadata(metadata.file_metadata(), new_schema_descr, true),
         new_row_groups?,
     )))
 }
 
 /// Rebuild a `FileMetaData` with a new schema descriptor (preserving everything else).
+///
+/// When `strip_arrow_schema` is true the embedded `ARROW:schema` key-value entry is
+/// removed; this is required after a field-id rename where the embedded arrow schema
+/// would otherwise disagree with the renamed parquet types.
 fn rebuild_file_metadata(
     fm: &parquet::file::metadata::FileMetaData,
     new_schema_descr: Arc<parquet::schema::types::SchemaDescriptor>,
+    strip_arrow_schema: bool,
 ) -> parquet::file::metadata::FileMetaData {
+    let key_value_metadata = fm.key_value_metadata().map(|kv| {
+        kv.iter()
+            .filter(|entry| !strip_arrow_schema || entry.key != ARROW_SCHEMA_KEY)
+            .cloned()
+            .collect::<Vec<_>>()
+    });
     parquet::file::metadata::FileMetaData::new(
         fm.version(),
         fm.num_rows(),
         fm.created_by().map(str::to_string),
-        fm.key_value_metadata().cloned(),
+        key_value_metadata,
         new_schema_descr,
         fm.column_orders().cloned(),
     )
@@ -291,7 +310,7 @@ pub(crate) fn strip_string_types_from_parquet_metadata(
         .collect();
 
     Ok(Arc::new(ParquetMetaData::new(
-        rebuild_file_metadata(metadata.file_metadata(), new_schema_descr),
+        rebuild_file_metadata(metadata.file_metadata(), new_schema_descr, false),
         new_row_groups?,
     )))
 }

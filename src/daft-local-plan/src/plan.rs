@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, LockResult},
 };
 
@@ -23,7 +23,6 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -684,7 +683,7 @@ impl LocalPhysicalPlan {
         min_periods: usize,
         schema: SchemaRef,
         stats_state: StatsState,
-        aggregations: Vec<BoundAggExpr>,
+        functions: Vec<BoundWindowExpr>,
         aliases: Vec<String>,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -698,7 +697,7 @@ impl LocalPhysicalPlan {
             min_periods,
             schema,
             stats_state,
-            aggregations,
+            functions,
             aliases,
             context,
         })
@@ -1594,7 +1593,7 @@ impl LocalPhysicalPlan {
                     frame,
                     min_periods,
                     schema,
-                    aggregations,
+                    functions,
                     aliases,
                     context,
                     ..
@@ -1608,7 +1607,7 @@ impl LocalPhysicalPlan {
                     *min_periods,
                     schema.clone(),
                     StatsState::NotMaterialized,
-                    aggregations.clone(),
+                    functions.clone(),
                     aliases.clone(),
                     context.clone(),
                 ),
@@ -2388,7 +2387,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub min_periods: usize,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub aggregations: Vec<BoundAggExpr>,
+    pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
     pub context: LocalNodeContext,
 }
@@ -2475,9 +2474,17 @@ pub struct ShuffleRead {
     pub context: LocalNodeContext,
 }
 
+/// Fetch one output partition of a shuffle.
+///
+/// The exact refs to fetch (`(input_id << 32) | partition_idx`) are reconstructed
+/// from the map input ids that wrote data on each server. The map is shared (`Arc`)
+/// by all of a shuffle's reduce tasks, so the coordinator holds it once instead of
+/// one ref per (map input, partition).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub refs: Vec<FlightPartitionRef>,
+    pub shuffle_id: u64,
+    pub partition_idx: u32,
+    pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
 }
 
 #[cfg(test)]

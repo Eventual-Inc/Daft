@@ -18,7 +18,8 @@ pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
 use crate::{
     CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig, JsonSourceConfig,
     ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig, TextSourceConfig,
-    WarcSourceConfig, source::ShimSourceTask, storage_config::StorageConfig,
+    WarcSourceConfig, clustering::PyClusteringKeys, source::ShimSourceTask,
+    storage_config::StorageConfig,
 };
 
 /// A Rust [`DataSource`] exposed as a Python object.
@@ -1227,6 +1228,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib_scan_info::PyPartitionField>()?;
     parent.add_class::<pylib_scan_info::PyPartitionTransform>()?;
     parent.add_class::<pylib_scan_info::PyPushdowns>()?;
+    parent.add_class::<PyClusteringKeys>()?;
     parent.add_class::<PyDataSource>()?;
     parent.add_class::<PyDataSourceTask>()?;
 
