@@ -13,6 +13,15 @@ pub enum ClusteringKeys {
     /// Hash-partitioned by these keys: every row with the same hash of the keys lives in the same
     /// execution partition.
     Hash(Vec<ExprRef>),
+    /// Each partition covers a non-overlapping range of values for the declared columns in the
+    /// declared direction. `descending` and `nulls_first` apply uniformly to all keys;
+    /// `nulls_first` declares whether null key values live in the first partition or the last.
+    /// No guarantee is made about the sort order of rows within each partition.
+    Range {
+        keys: Vec<ExprRef>,
+        descending: bool,
+        nulls_first: bool,
+    },
 }
 
 impl ClusteringKeys {
@@ -20,10 +29,19 @@ impl ClusteringKeys {
         Self::Hash(keys)
     }
 
+    pub fn range(keys: Vec<ExprRef>, descending: bool, nulls_first: bool) -> Self {
+        Self::Range {
+            keys,
+            descending,
+            nulls_first,
+        }
+    }
+
     /// The clustering key expressions.
     pub fn keys(&self) -> &[ExprRef] {
         match self {
             Self::Hash(keys) => keys,
+            Self::Range { keys, .. } => keys,
         }
     }
 }
@@ -45,7 +63,6 @@ mod python {
 
     #[pymethods]
     impl PyClusteringKeys {
-        /// Declares hash-clustering by `exprs`.
         #[staticmethod]
         fn hash(exprs: Vec<PyExpr>) -> Self {
             Self {
@@ -53,15 +70,43 @@ mod python {
             }
         }
 
+        #[staticmethod]
+        #[pyo3(signature = (exprs, descending = false, nulls_first = None))]
+        fn range(exprs: Vec<PyExpr>, descending: bool, nulls_first: Option<bool>) -> Self {
+            Self {
+                keys: ClusteringKeys::Range {
+                    keys: exprs.into_iter().map(|e| e.expr).collect(),
+                    descending,
+                    // Default null placement follows sort semantics: nulls last when
+                    // ascending, first when descending.
+                    nulls_first: nulls_first.unwrap_or(descending),
+                },
+            }
+        }
+
         fn __repr__(&self) -> String {
-            let ClusteringKeys::Hash(keys) = &self.keys;
-            format!(
-                "ClusteringKeys.hash({})",
-                keys.iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            match &self.keys {
+                ClusteringKeys::Hash(keys) => format!(
+                    "ClusteringKeys.hash({})",
+                    keys.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ClusteringKeys::Range {
+                    keys,
+                    descending,
+                    nulls_first,
+                } => format!(
+                    "ClusteringKeys.range({}, descending={}, nulls_first={})",
+                    keys.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    descending,
+                    nulls_first
+                ),
+            }
         }
     }
 

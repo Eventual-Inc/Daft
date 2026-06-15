@@ -236,8 +236,8 @@ pub enum Expr {
         right: ExprRef,
     },
 
-    #[display("cast({_0} as {_1})")]
-    Cast(ExprRef, DataType),
+    #[display("{}", if *_2 { format!("try_cast({} as {})", _0, _1) } else { format!("cast({} as {})", _0, _1) })]
+    Cast(ExprRef, DataType, bool),
 
     #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
@@ -1315,7 +1315,11 @@ impl Expr {
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
-        Self::Cast(self, dtype.clone()).into()
+        Self::Cast(self, dtype.clone(), false).into()
+    }
+
+    pub fn try_cast(self: ExprRef, dtype: &DataType) -> ExprRef {
+        Self::Cast(self, dtype.clone(), true).into()
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
@@ -1571,9 +1575,10 @@ impl Expr {
             Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.cast({dtype})"))
+                let prefix = if *try_cast { "try_cast" } else { "cast" };
+                FieldID::new(format!("{child_id}.{prefix}({dtype})"))
             }
             Self::Not(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -1783,9 +1788,13 @@ impl Expr {
             Self::Literal(value) => Ok(format!("{value}")),
 
             // Recursive cases.
-            Self::Cast(expr, dtype) => {
+            Self::Cast(expr, dtype, try_cast) => {
                 let child_id = expr.display_name(schema)?;
-                Ok(format!("{child_id} to {dtype}"))
+                if *try_cast {
+                    Ok(format!("{child_id} to {dtype} (try_cast)"))
+                } else {
+                    Ok(format!("{child_id} to {dtype}"))
+                }
             }
             Self::Not(expr) => {
                 let child_id = expr.display_name(schema)?;
@@ -1937,9 +1946,10 @@ impl Expr {
             Self::NotNull(..) => {
                 Self::NotNull(children.first().expect("Should have 1 child").clone())
             }
-            Self::Cast(.., dtype) => Self::Cast(
+            Self::Cast(.., dtype, try_cast) => Self::Cast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
+                *try_cast,
             ),
             Self::InSubquery(_, subquery) => Self::InSubquery(
                 children.first().expect("Should have 1 child").clone(),
@@ -2076,7 +2086,7 @@ impl Expr {
         match self {
             Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
             Self::Agg(agg_expr) => agg_expr.to_field(schema),
-            Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
+            Self::Cast(expr, dtype, _try_cast) => Ok(Field::new(expr.name(), dtype.clone())),
             Self::Column(Column::Unresolved(UnresolvedColumn {
                 name,
                 plan_schema: Some(plan_schema),
@@ -2575,6 +2585,25 @@ pub fn is_exact_partition_match(a: &[BoundExpr], b: &[BoundExpr]) -> bool {
     a_set == b_set
 }
 
+/// Returns true when two range-partition specs are identical: same keys position-by-position,
+/// the same sort direction per key, and the same null placement per key.
+///
+/// Use this instead of [`is_exact_partition_match`] wherever key **order**, **direction**, and
+/// **null placement** are semantically significant (e.g. range-repartition skip for sorts).
+pub fn is_exact_range_partition_match(
+    a: &[BoundExpr],
+    a_descending: &[bool],
+    a_nulls_first: &[bool],
+    b: &[BoundExpr],
+    b_descending: &[bool],
+    b_nulls_first: &[bool],
+) -> bool {
+    a.len() == b.len()
+        && a_descending == b_descending
+        && a_nulls_first == b_nulls_first
+        && a.iter().zip(b).all(|(x, y)| x == y)
+}
+
 /// Returns true when `op_partition_cols` ⊇ `input_clustering_cols`.
 ///
 /// In that case partitioning by `op_partition_cols` keeps the existing clustering intact:
@@ -2697,7 +2726,7 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         Expr::IsIn(_, _) | Expr::Between(_, _, _) | Expr::InSubquery(_, _) | Expr::Exists(_) => 0.2,
 
         // Pass through for expressions that wrap other expressions
-        Expr::Cast(expr, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
+        Expr::Cast(expr, _, _) | Expr::Alias(expr, _) => estimated_selectivity(expr, schema),
 
         // Boolean literals
         Expr::Literal(lit) => match lit {

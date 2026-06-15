@@ -79,9 +79,15 @@ impl GatherNode {
             .await?;
 
         // Gather = single read task that consumes every ref from every worker.
-        self.shuffle_backend
-            .emit_read_tasks(vec![materialized], self.as_ref(), result_tx)
-            .await
+        let refs = materialized
+            .into_iter()
+            .flat_map(|output| output.into_inner().0)
+            .collect();
+        let task = self
+            .shuffle_backend
+            .build_refs_task_builder(refs, self.as_ref(), |plan| plan);
+        let _ = result_tx.send(task).await;
+        Ok(())
     }
 }
 
