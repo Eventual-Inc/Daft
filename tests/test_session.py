@@ -136,6 +136,29 @@ def test_list_tables_catalog_qualified_pattern():
     assert sess.list_tables("cat2.%") == [Identifier("cat2", "y")]
 
 
+def test_list_tables_narrows_to_current_namespace():
+    sess = Session()
+    cat = Catalog.from_pydict(
+        {"ns1.t1": {"x": [1]}, "ns1.t2": {"x": [2]}, "ns2.t3": {"x": [3]}},
+        name="cat1",
+    )
+    sess.attach_catalog(cat, alias="cat1")
+    sess.set_namespace("ns1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "ns1", "t1"), Identifier("cat1", "ns1", "t2")]
+
+
+def test_list_tables_only_current_catalog_without_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"a": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"b": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    # cat1 is auto-set as current; cat2 is only reachable via `cat2.%` pattern.
+    assert sess.list_tables() == [Identifier("cat1", "a")]
+
+
 def test_attach_view():
     sess = Session()
     view = daft.from_pydict({"x": [1, 2, 3]})
