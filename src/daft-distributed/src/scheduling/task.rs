@@ -741,7 +741,7 @@ pub(super) mod tests {
         pub fn with_resource_request(mut self, resource_request: ResourceRequest) -> Self {
             self.resource_request = TaskResourceRequest::new(
                 resource_request,
-                DaftExecutionConfig::default().min_cpu_per_task,
+                self.resource_request.min_cpu_per_task,
             );
             self
         }
