@@ -77,7 +77,7 @@ def _decode_lerobot_video_timestamp(
         with av_mod.open(f_open) as container:
             stream = container.streams.video[0]
             # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
-            container.seek(max(0, int(abs_ts / av_mod.time_base)), backward=True)
+            container.seek(max(0, int(abs_ts * av_mod.time_base)), backward=True) 
 
             tail_s = max(0.1, tolerance * 50.0, 1.0 / 24.0)
             for vf in container.decode(stream):
@@ -136,7 +136,29 @@ def read(
     include_stats: bool = False,
     load_video_frames: str | list[str] | bool = False,
 ) -> DataFrame:
-    """Read LeRobot v3 episode metadata as a lazy DataFrame (one row per frame with episode metadata)."""
+    """Read a LeRobot v3 dataset as a lazy DataFrame with one row per frame.
+
+    Reads the per-episode metadata under ``meta/episodes`` and the per-frame
+    sensor data under ``data``, joins them on ``episode_index``, and broadcasts
+    each episode's metadata across its frames. Optionally decodes the matching
+    video frame for one or more camera keys into an image column.
+
+    Args:
+        dataset_uri: Huggingface repo id (``org/name``), or a local / remote
+            directory (``s3://...``, ``hf://datasets/...``).
+        io_config: Optional IO configuration for remote reads.
+        include_stats: If True, keep the per-episode ``stats/*`` columns
+            (per-feature min/max/mean/std/quantiles). Defaults to False.
+        load_video_frames: Which camera keys to decode into image columns,
+            aligned to each frame's timestamp. Defaults to False (decode
+            nothing). Pass True to decode every video feature, a single key
+            (``"observation.image"``), or a list of keys. Decoding requires the
+            optional ``av`` (PyAV) and ``Pillow`` dependencies.
+
+    Returns:
+        Lazy DataFrame with one row per frame: the frame's sensor columns, the
+        broadcast episode metadata, and one image column per decoded video key.
+    """
     root = _normalize_dataset_root(dataset_uri)
     info = _read_info(root, io_config=io_config)
 
@@ -170,9 +192,8 @@ def read(
         tolerance_s = 1.0 / fps / 2.0  # half a frame period: any closer frame is unambiguously "the" frame
 
         # To increase parallelism, reduce batch size
-        df = df.into_batches(16)  # TODO (for later): Set it in the batch UDF instead?
+        df = df.into_batches(16)  
         for k in video_keys:
-            # TODO (for later): Optimize by using a batch UDF to avoid opening the same video multiple times
             df = df.with_column(
                 k,
                 _decode_lerobot_video_timestamp(
@@ -186,7 +207,6 @@ def read(
             )
             df = df.exclude(f"videos/{k}/video")
 
-        # TODO: What about raw images, what do i do about them? Is that a thing in LeRobot v3
 
     # Drop the internal per-episode video metadata we kept above (chunk/file index,
     # from/to timestamp). This restores read_episodes' default of hiding these.
@@ -211,14 +231,24 @@ def read_episodes(
         dataset_uri: Huggingface repo id (`org/name`),
             or a local / remote directory (`s3://...`, `hf://datasets/...`)
         io_config: Optional IO configuration for remote reads.
+        include_meta: If True, keep the internal ``meta/episodes/*`` columns
+            (the chunk/file indices locating each episode's own metadata shard).
+            These are bookkeeping for random access into the sharded metadata
+            and carry no analytical value once the rows are loaded. Defaults to
+            False.
+        include_stats: If True, keep the per-episode ``stats/*`` columns
+            (per-feature min/max/mean/std/quantiles). Defaults to False.
+        include_video_metadata: If True, keep the per-episode ``videos/{key}/*``
+            columns (the chunk/file indices and from/to timestamps locating each
+            episode's footage within its video shard). Defaults to False.
 
     Returns:
-        Lazy DataFrame of episode metadata.
+        Lazy DataFrame of episode metadata, one row per episode. Always includes
+        a ``videos/{key}/video`` file-handle column per video feature; the
+        ``include_*`` flags control which additional column families are kept.
     """
     root = _normalize_dataset_root(dataset_uri)
     info = _read_info(root, io_config=io_config)
-
-    # TODO: What is the `meta` episodes into used for? How is it different from the `videos` info?
     df = daft.read_parquet(f"{root}/meta/episodes/**/*.parquet", io_config=io_config)
     if not include_meta:
         df = df.exclude(*(c for c in df.column_names if c.startswith("meta/")))
