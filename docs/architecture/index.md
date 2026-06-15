@@ -33,7 +33,7 @@ Internally, this becomes a simple expression attached to the `Project` operator:
 
 ## Optimization
 
-Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization after execution is requested and before data processing begins.
+Executing the logical plan as written would be correct but often inefficient. Daft applies both rule-based and cost-based optimization once execution is requested.
 
 - **Rule-based pass.** Classical rewrite rules execute first: filter, projection, limit, and aggregation pushdowns; projection folding and splitting; pruning redundant repartitions; expression simplification; and subquery unnesting. These transform the plan structure without needing runtime statistics.
 - **Cost-based pass.** Joins are reordered using a brute-force enumerator that evaluates the cheapest ordering based on available statistics calculated from sources.
