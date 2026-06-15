@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
@@ -17,6 +18,15 @@ from pyiceberg.types import LongType, NestedField, StringType
 def _metadata_path(metadata_location: str) -> str:
     parsed = urlparse(metadata_location)
     return unquote(parsed.path) if parsed.scheme == "file" else metadata_location
+
+
+def _local_path(path: str) -> str:
+    parsed = urlparse(path)
+    return unquote(parsed.path) if parsed.scheme else path
+
+
+def _iceberg_data_file_local_paths(table) -> list[str]:
+    return sorted(_local_path(task.file.file_path) for task in table.scan().plan_files())
 
 
 def test_sql_read_iceberg_branch_and_tag_with_schema_evolution(tmp_path):
@@ -84,6 +94,47 @@ def test_sql_read_iceberg_branch_and_tag_with_schema_evolution(tmp_path):
             with pytest.raises(Exception, match=f"Iceberg {ref_kind} 'does_not_exist' does not exist") as exc_info:
                 daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', {ref_kind} => 'does_not_exist')")
             assert exc_info.type.__name__ == "InvalidSQLException"
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_ignore_corrupt_files_skips_data_file(tmp_path):
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t_corrupt", Schema(NestedField(1, "id", LongType())))
+
+        table.append(pa.table({"id": pa.array([1, 2, 3], type=pa.int64())}))
+        table.append(pa.table({"id": pa.array([4, 5, 6], type=pa.int64())}))
+
+        data_files = _iceberg_data_file_local_paths(table)
+        assert len(data_files) == 2
+
+        with open(data_files[0], "wb") as f:
+            f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+        metadata_location = _metadata_path(table.metadata_location)
+
+        with pytest.raises(Exception):
+            daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}')").collect()
+
+        df = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', ignore_corrupt_files => true)")
+        df.collect()
+
+        result = sorted(df.to_pydict()["id"])
+        assert len(result) == 3
+        assert set(result).issubset({1, 2, 3, 4, 5, 6})
+
+        skipped = df.skipped_corrupt_files
+        assert len(skipped) == 1
+        path, reason, partial = skipped[0]
+        assert os.path.basename(_local_path(path)) == os.path.basename(data_files[0])
+        assert reason
+        assert not partial
     finally:
         catalog.engine.dispose()
 

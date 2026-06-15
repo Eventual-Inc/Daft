@@ -404,6 +404,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
     branch: Option<String>,
     tag: Option<String>,
     io_config: Option<IOConfig>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     use pyo3::IntoPyObjectExt;
     let storage_config: StorageConfig = io_config.unwrap_or_default().into();
@@ -419,7 +420,12 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
-            .call1((iceberg_table, snapshot_id, storage_config))?
+            .call1((
+                iceberg_table,
+                snapshot_id,
+                storage_config,
+                ignore_corrupt_files,
+            ))?
             .into_py_any(py)?;
         Ok(ScanOperatorHandle::from_python_scan_operator(
             iceberg_scan,
@@ -436,6 +442,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
     _branch: Option<String>,
     _tag: Option<String>,
     _io_config: Option<IOConfig>,
+    _ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     panic!("Iceberg scan requires the 'python' feature to be enabled.")
 }
