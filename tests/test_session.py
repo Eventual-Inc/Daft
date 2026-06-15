@@ -95,6 +95,47 @@ def test_attach_table():
         sess.attach_table(view1, alias="tbl1")
 
 
+def test_list_tables_returns_identifiers():
+    # Regression: the Rust layer used to return Vec<String>, breaking `_from_pyidentifier`.
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="tbl")
+
+    tables = sess.list_tables()
+
+    assert len(tables) == 1
+    assert all(isinstance(t, Identifier) for t in tables)
+    assert tables[0] == Identifier("tbl")
+
+
+def test_list_tables_with_attached_catalog():
+    sess = Session()
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b")]
+
+
+def test_list_tables_temp_plus_catalog():
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="my_tmp")
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b"), Identifier("my_tmp")]
+
+
+def test_list_tables_catalog_qualified_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"x": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"y": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    assert sess.list_tables("cat2.%") == [Identifier("cat2", "y")]
+
+
 def test_attach_view():
     sess = Session()
     view = daft.from_pydict({"x": [1, 2, 3]})
