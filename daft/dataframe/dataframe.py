@@ -5826,7 +5826,6 @@ class DataFrame:
         self,
         batch_size: int = 1,
         *,
-        drop_last: bool = False,
         pin_memory: bool = False,
         pin_memory_device: str = "",
         prefetch_count: int = 0,
@@ -5840,11 +5839,10 @@ class DataFrame:
         [``sample``][daft.DataFrame.sample] on the DataFrame before calling this method.
 
         Note:
-            Batch sizing is best-effort. The last partition may be smaller than `batch_size` unless `drop_last=True`.
+            Batch sizing is best-effort. Batches may be smaller than `batch_size`.
 
         Args:
             batch_size: Target number of rows per batch.
-            drop_last: If `True`, skip the final partition when it has fewer than `batch_size` rows.
             pin_memory: If `True`, pin memory on returned tensors for faster GPU transfer.
             pin_memory_device: Optional device for pinned memory (PyTorch 2.x).
             prefetch_count: Number of batches loaded in advance. This will increase memory usage, but can
@@ -5870,7 +5868,6 @@ class DataFrame:
         return DaftTorchDataLoader(
             self,
             batch_size,
-            drop_last=drop_last,
             pin_memory=pin_memory,
             pin_memory_device=pin_memory_device,
             prefetch_count=prefetch_count,

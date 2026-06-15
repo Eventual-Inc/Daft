@@ -31,16 +31,6 @@ def test_to_torch_dataloader_batches():
     assert torch.equal(batches[1]["y"], torch.tensor([7, 8]))
 
 
-def test_to_torch_dataloader_drop_last():
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    loader = df.to_torch_dataloader(batch_size=2, drop_last=True)
-
-    batches = list(loader)
-    assert len(batches) == 1
-    assert batches[0]["x"].shape == (2,)
-    assert torch.equal(batches[0]["x"], torch.tensor([1, 2]))
-
-
 def test_to_torch_dataloader_invalid_batch_size():
     df = daft.from_pydict({"x": [1]})
     with pytest.raises(ValueError, match="batch_size must be greater than 0"):

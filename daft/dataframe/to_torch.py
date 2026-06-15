@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from daft.dependencies import torch
+from daft.dependencies import np, torch
 from daft.runners.partitioning import MaterializedResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from daft.dataframe.dataframe import DataFrame
-    from daft.recordbatch.micropartition import MicroPartition
+    from daft.recordbatch import MicroPartition
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +68,15 @@ class DaftTorchDataLoader:
         df: DataFrame,
         batch_size: int = 1,
         *,
-        drop_last: bool = False,
         pin_memory: bool = False,
         pin_memory_device: str = "",
         prefetch_count: int = 0,
+        # TODO: Add support for drop_last when we have strict into_batches
     ) -> None:
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
 
         self._batch_size = batch_size
-        self._drop_last = drop_last
         self._pin_memory = pin_memory
         self._pin_memory_device = pin_memory_device if pin_memory_device else None
         self._prefetch_count = prefetch_count
@@ -90,25 +89,21 @@ class DaftTorchDataLoader:
         results = self._batched_df._result
         if results is not None:
             for _, mat_result in results.items():
-                batch = self._partition_to_batch(mat_result.micropartition())
+                batch = self._to_torch_batch(mat_result.micropartition())
                 if batch is not None:
                     yield batch
         else:
+            buffer_size = self._prefetch_count if self._prefetch_count > 0 else None
             partitions_iter: Iterator[MaterializedResult[Any]] = get_or_create_runner().run_iter(
-                self._batched_df._builder, results_buffer_size=self._prefetch_count
+                self._batched_df._builder, results_buffer_size=buffer_size
             )
             for mat_result in partitions_iter:
-                batch = self._partition_to_batch(mat_result.micropartition())
+                batch = self._to_torch_batch(mat_result.micropartition())
                 if batch is not None:
                     yield batch
 
-    def _partition_to_batch(self, partition: MicroPartition) -> dict[str, Any] | None:
-        if self._drop_last and len(partition) < self._batch_size:
-            return None
-        return self._to_torch_batch(partition.to_pydict())
-
-    def _to_torch_batch(self, pydict: dict[str, list[Any]]) -> dict[str, Any]:
-        return {key: self._column_to_tensor(values) for key, values in pydict.items()}
+    def _to_torch_batch(self, batch: MicroPartition) -> dict[str, Any]:
+        return {key: self._column_to_tensor(values) for key, values in batch.to_pydict().items()}
 
     def _column_to_tensor(self, values: list[Any]) -> Any:
         if len(values) == 0:
@@ -119,8 +114,6 @@ class DaftTorchDataLoader:
         if isinstance(first, torch.Tensor):
             return self._pin(torch.stack(values))
         if hasattr(first, "__array__") and not isinstance(first, (str, bytes)):
-            import numpy as np
-
             if isinstance(first, np.ndarray) and first.ndim > 0:
                 return self._pin(torch.stack([torch.as_tensor(v) for v in values]))
             return self._pin(torch.as_tensor(values))
