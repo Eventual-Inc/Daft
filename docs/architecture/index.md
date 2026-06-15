@@ -47,7 +47,7 @@ This hybrid optimizer lets users focus on declarative queries while still obtain
 
 Execution is triggered by a materializing operation such as `collect()`, `show()`, `to_arrow()`, and write methods such as `write_parquet()`.
 
-Once optimization completes, the optimized logical plan is lowered into a physical plan and executed by either the native runner (single-machine) or the Ray runner (distributed).
+Once optimization completes, the plan is executed by either the native runner (single-machine) or the Ray runner (distributed).
 
 ### Native Runner (aka Swordfish)
 
