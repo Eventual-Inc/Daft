@@ -127,7 +127,7 @@ def test_sql_read_iceberg_ignore_corrupt_files_skips_data_file(tmp_path):
 
         result = sorted(df.to_pydict()["id"])
         assert len(result) == 3
-        assert set(result).issubset({1, 2, 3, 4, 5, 6})
+        assert result in ([1, 2, 3], [4, 5, 6])
 
         skipped = df.skipped_corrupt_files
         assert len(skipped) == 1
