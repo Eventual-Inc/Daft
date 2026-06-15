@@ -45,7 +45,7 @@ This hybrid optimizer lets users focus on declarative queries while still obtain
 
 ## Execution
 
-Execution is triggered by a materializing operation: an API call that needs concrete output instead of another lazy DataFrame plan. Examples include `collect()`, `show()`, `to_arrow()`, and write methods such as `write_parquet()`.
+Execution is triggered by a materializing operation such as `collect()`, `show()`, `to_arrow()`, and write methods such as `write_parquet()`.
 
 Once optimization completes, the optimized logical plan is lowered into a physical plan and executed by either the native runner (single-machine) or the Ray runner (distributed).
 
