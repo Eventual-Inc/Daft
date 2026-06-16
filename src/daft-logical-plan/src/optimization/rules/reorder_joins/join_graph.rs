@@ -28,13 +28,8 @@ use crate::{
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) enum JoinOrderTree {
-    Relation(usize, usize), // (ID, cardinality).
-    Join(
-        Box<JoinOrderTree>,
-        Box<JoinOrderTree>,
-        Vec<JoinCondition>,
-        usize,
-    ), // (subtree, subtree, join conditions, cardinality).
+    Relation(usize, usize),                                // (ID, cardinality).
+    Join(Box<Self>, Box<Self>, Vec<JoinCondition>, usize), // (subtree, subtree, join conditions, cardinality).
 }
 
 impl JoinOrderTree {

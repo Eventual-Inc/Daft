@@ -24,7 +24,7 @@ impl OptimizerRule for ShardScans {
 }
 
 impl ShardScans {
-    #[allow(clippy::only_used_in_recursion)]
+    #[allow(clippy::self_only_used_in_recursion)]
     fn try_optimize_node(plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match &*plan {
             LogicalPlan::Source(source) => match source.source_info.as_ref() {
