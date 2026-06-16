@@ -1,30 +1,10 @@
-# Connectors
+# Data Connectors
 
-Daft offers a variety of approaches to reading from and writing to various data sources (in-memory data, files, data catalogs, and integrations). Please see [Daft Connectors API docs](../api/io.md) for API details.
+Daft reads from and writes to a wide range of data sources — object storage, open table formats, catalogs, databases, files, and more. Please see [Daft Connectors API docs](../api/io.md) for API details.
 
-## In-Memory
+## Object Storage
 
-| Function                                          | Description                                             |
-|---------------------------------------------------|---------------------------------------------------------|
-| [`from_arrow`][daft.from_arrow]                   | Create a DataFrame from PyArrow Tables or RecordBatches |
-| [`from_dask_dataframe`][daft.from_dask_dataframe] | Create a DataFrame from a Dask DataFrame                |
-| [`from_pandas`][daft.from_pandas]                 | Create a DataFrame from a Pandas DataFrame              |
-| [`from_pydict`][daft.from_pydict]                 | Create a DataFrame from a python dictionary             |
-| [`from_pylist`][daft.from_pylist]                 | Create a DataFrame from a python list                   |
-| [`from_ray_dataset`][daft.from_ray_dataset]       | Create a DataFrame from a Ray Dataset                   |
-
-## Files
-
-| Function                                          | Description                                             |
-|---------------------------------------------------|---------------------------------------------------------|
-| [`from_files`][daft.io.from_files]                | Create a DataFrame of lazy file references from a glob pattern |
-| [`from_glob_path`][daft.from_glob_path]           | Create a DataFrame of file paths from a glob pattern    |
-
-See also [Files](files.md) for detailed usage.
-
-## Cloud Storage
-
-Daft natively supports reading and writing data to major cloud storage providers:
+Daft natively supports reading and writing data to major cloud object storage providers:
 
 | Provider | URL Protocols | Configuration |
 |----------|---------------|---------------|
@@ -33,15 +13,28 @@ Daft natively supports reading and writing data to major cloud storage providers
 | [Google Cloud Storage](gcs.md) | `gs://`, `gcs://` | [`GCSConfig`][daft.io.GCSConfig] |
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
 
-## CSV
+## Table Formats
 
-| Function                                          | Description                                            |
-|---------------------------------------------------|--------------------------------------------------------|
-| [`read_csv`][daft.io.read_csv]                    | Read a CSV file or multiple CSV files into a DataFrame |
-| [`write_csv`][daft.dataframe.DataFrame.write_csv] | Write a DataFrame to CSV files                         |
+Daft reads and writes the major open table formats.
 
+### Apache Hudi
 
-## Delta Lake
+| Function                         | Description                        |
+|----------------------------------|------------------------------------|
+| [`read_hudi`][daft.io.read_hudi] | Read a Hudi table into a DataFrame |
+
+See also [Apache Hudi](hudi.md) for detailed integration.
+
+### Apache Iceberg
+
+| Function                                                  | Description                            |
+|-----------------------------------------------------------|----------------------------------------|
+| [`read_iceberg`][daft.io.read_iceberg]                    | Read an Iceberg table into a DataFrame |
+| [`write_iceberg`][daft.dataframe.DataFrame.write_iceberg] | Write a DataFrame to an Iceberg table  |
+
+See also [Apache Iceberg](iceberg.md) for detailed integration.
+
+### Delta Lake
 
 | Function                                                      | Description                              |
 |---------------------------------------------------------------|------------------------------------------|
@@ -50,24 +43,7 @@ Daft natively supports reading and writing data to major cloud storage providers
 
 See also [Delta Lake](delta_lake.md) for detailed integration.
 
-## Hudi
-
-| Function                         | Description                        |
-|----------------------------------|------------------------------------|
-| [`read_hudi`][daft.io.read_hudi] | Read a Hudi table into a DataFrame |
-
-See also [Apache Hudi](hudi.md) for detailed integration.
-
-## Iceberg
-
-| Function                                                  | Description                            |
-|-----------------------------------------------------------|----------------------------------------|
-| [`read_iceberg`][daft.io.read_iceberg]                    | Read an Iceberg table into a DataFrame |
-| [`write_iceberg`][daft.dataframe.DataFrame.write_iceberg] | Write a DataFrame to an Iceberg table  |
-
-See also [Iceberg](iceberg.md) for detailed integration.
-
-## Paimon
+### Apache Paimon
 
 | Function                                                    | Description                            |
 |-------------------------------------------------------------|----------------------------------------|
@@ -76,28 +52,7 @@ See also [Iceberg](iceberg.md) for detailed integration.
 
 See also [Apache Paimon](paimon.md) for detailed integration.
 
-
-## JSON
-
-| Function                                            | Description                                              |
-|-----------------------------------------------------|----------------------------------------------------------|
-| [`read_json`][daft.io.read_json]                    | Read a JSON file or multiple JSON files into a DataFrame |
-| [`write_json`][daft.dataframe.DataFrame.write_json] | Write a DataFrame to JSON files                          |
-
-
-## Kafka
-
-!!! warning "Experimental"
-
-    This connector is experimental. Currently only bounded batch reads are supported — there is no streaming/unbounded mode and no offset commit management.
-
-| Function                           | Description                                          |
-|------------------------------------|------------------------------------------------------|
-| [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
-
-See also [Kafka](kafka.md) for detailed integration.
-
-## Lance
+### Lance
 
 | Function                                              | Description                           |
 |-------------------------------------------------------|---------------------------------------|
@@ -106,102 +61,24 @@ See also [Kafka](kafka.md) for detailed integration.
 
 See also [Lance](lance.md) for detailed integration.
 
-## Parquet
-
-| Function                                                  | Description                                                    |
-|-----------------------------------------------------------|----------------------------------------------------------------|
-| [`read_parquet`][daft.io.read_parquet]                    | Read a Parquet file or multiple Parquet files into a DataFrame |
-| [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
-
-
-## PostgreSQL
-
-| Function                                                | Description                                       |
-|---------------------------------------------------------|---------------------------------------------------|
-| [`Catalog.from_postgres`][daft.catalog.Catalog.from_postgres] | Create a catalog from a PostgreSQL database       |
-
-See also [PostgreSQL](postgres.md) for detailed integration.
-
-## MCAP
-
-!!! warning "Experimental"
-
-    This connector is experimental. See [MCAP](mcap.md) for details.
-
-| Function                           | Description                                  |
-|------------------------------------|----------------------------------------------|
-| [`read_mcap`][daft.io.read_mcap]   | Read MCAP files into a DataFrame             |
-
-See also [MCAP](mcap.md) for detailed integration.
-
-## SQL
-
-| Function                                          | Description                                    |
-|---------------------------------------------------|------------------------------------------------|
-| [`read_sql`][daft.io.read_sql]                    | Read data from a SQL database into a DataFrame |
-| [`write_sql`][daft.dataframe.DataFrame.write_sql] | Write a DataFrame to a SQL database            |
-
-## Text
-
-| Function                           | Description                                    |
-|------------------------------------|------------------------------------------------|
-| [`read_text`][daft.io.read_text]   | Read text files into a DataFrame               |
-
-See also [Text](text.md) for detailed usage.
-
-
-## Video
-
-| Function                                         | Description                        |
-|--------------------------------------------------|------------------------------------|
-| [`read_video_frames`][daft.io.read_video_frames] | Read video frames into a DataFrame |
-
-
-## WARC
-
-| Function                         | Description                                              |
-|----------------------------------|----------------------------------------------------------|
-| [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
-
-## Bigtable
-
-!!! warning "Experimental"
-
-    This connector is experimental and the API may change.
-
-| Function                                                      | Description                             |
-|---------------------------------------------------------------|-----------------------------------------|
-| [`write_bigtable`][daft.dataframe.DataFrame.write_bigtable]   | Write a DataFrame to Google Cloud Bigtable |
-
-See also [Bigtable](bigtable.md) for detailed integration.
-
-## ClickHouse
-
-| Function                                                        | Description                          |
-|-----------------------------------------------------------------|--------------------------------------|
-| [`write_clickhouse`][daft.dataframe.DataFrame.write_clickhouse] | Write a DataFrame to ClickHouse      |
-
-See also [ClickHouse](clickhouse.md) for detailed integration.
-
-## User-Defined
-
-| Function                                            | Description                                                        |
-|-----------------------------------------------------|--------------------------------------------------------------------|
-| [`DataSink`][daft.io.sink.DataSink]                 | Interface for writing data from DataFrames                         |
-| [`DataSource`][daft.io.source.DataSource]           | Interface for reading data into DataFrames                         |
-| [`DataSourceTask`][daft.io.source.DataSourceTask]   | Represents a partition of data that can be processed independently |
-| [`WriteResult`][daft.io.sink.WriteResult]           | Wrapper for intermediate results written by a DataSink             |
-| [`write_sink`][daft.dataframe.DataFrame.write_sink] | Write a DataFrame to the given DataSink                            |
-
-## Daft Catalogs
+## Catalogs
 
 !!! warning "Warning"
 
     These APIs are early in their development. Please feel free to [open feature requests and file issues](https://github.com/Eventual-Inc/Daft/issues/new/choose). We'd love to hear what you would like, thank you! 🤘
 
-Daft also provides APIs to work with catalogs. Catalogs are a centralized place to organize and govern your data. It is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
+Catalogs are a centralized place to organize and govern your data. A catalog is often responsible for creating objects such as tables and namespaces, managing transactions, and access control. Most importantly, the catalog abstracts away physical storage details, letting you focus on the logical structure of your data without worrying about file formats, partitioning schemes, or storage locations.
 
-Daft integrates with various catalog implementations using its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Iceberg](iceberg.md) and [Delta Lake](delta_lake.md).
+Daft integrates with these catalog implementations:
+
+| Catalog | Description |
+|---------|-------------|
+| [AWS Glue](glue.md) | AWS Glue Data Catalog |
+| [AWS S3 Tables](s3tables.md) | Amazon S3 Tables catalog |
+| [Apache Gravitino](gravitino.md) | Apache Gravitino metadata lake |
+| [Unity Catalog (Databricks)](unity_catalog.md) | Databricks Unity Catalog |
+
+Daft integrates with these via its `Catalog` and `Table` interfaces. These are high-level APIs to manage catalog objects (tables and namespaces), while also making it easy to leverage Daft's existing `daft.read_` and `df.write_` APIs for open table formats like [Apache Iceberg](iceberg.md) and [Delta Lake](delta_lake.md).
 
 ### Example
 
@@ -349,7 +226,6 @@ df = daft.read_table("my_temp_table")
 
     Today you can read from `pyiceberg` and `daft.unity` table objects.
 
-
 ### Reference
 
 !!! note "Note"
@@ -359,3 +235,173 @@ df = daft.read_table("my_temp_table")
 * [Catalog][daft.catalog.Catalog] - Interface for creating and accessing both tables and namespaces
 * [Identifier][daft.catalog.Identifier] - Paths to objects e.g. `catalog.namespace.table`
 * [Table][daft.catalog.Table] - Interface for reading and writing dataframes
+
+## Databases
+
+### Google Cloud Bigtable
+
+!!! warning "Experimental"
+
+    This connector is experimental and the API may change.
+
+| Function                                                      | Description                             |
+|---------------------------------------------------------------|-----------------------------------------|
+| [`write_bigtable`][daft.dataframe.DataFrame.write_bigtable]   | Write a DataFrame to Google Cloud Bigtable |
+
+See also [Bigtable](bigtable.md) for detailed integration.
+
+### ClickHouse
+
+| Function                                                        | Description                          |
+|-----------------------------------------------------------------|--------------------------------------|
+| [`write_clickhouse`][daft.dataframe.DataFrame.write_clickhouse] | Write a DataFrame to ClickHouse      |
+
+See also [ClickHouse](clickhouse.md) for detailed integration.
+
+### PostgreSQL
+
+| Function                                                | Description                                       |
+|---------------------------------------------------------|---------------------------------------------------|
+| [`Catalog.from_postgres`][daft.catalog.Catalog.from_postgres] | Create a catalog from a PostgreSQL database       |
+
+See also [Postgres](postgres.md) for detailed integration.
+
+### SQL Databases
+
+| Function                                          | Description                                    |
+|---------------------------------------------------|------------------------------------------------|
+| [`read_sql`][daft.io.read_sql]                    | Read data from a SQL database into a DataFrame |
+| [`write_sql`][daft.dataframe.DataFrame.write_sql] | Write a DataFrame to a SQL database            |
+
+See also [SQL Databases](sql.md) for detailed integration.
+
+### Turbopuffer
+
+| Function                                                              | Description                                  |
+|-----------------------------------------------------------------------|----------------------------------------------|
+| [`write_turbopuffer`][daft.dataframe.DataFrame.write_turbopuffer]     | Write a DataFrame to a Turbopuffer namespace |
+
+See also [Turbopuffer](turbopuffer.md) for detailed usage.
+
+## Files
+
+### File References
+
+| Function                                          | Description                                             |
+|---------------------------------------------------|---------------------------------------------------------|
+| [`from_files`][daft.io.from_files]                | Create a DataFrame of lazy file references from a glob pattern |
+| [`from_glob_path`][daft.from_glob_path]           | Create a DataFrame of file paths from a glob pattern    |
+
+See also [Files](files.md) for detailed usage.
+
+### CSV
+
+| Function                                          | Description                                            |
+|---------------------------------------------------|--------------------------------------------------------|
+| [`read_csv`][daft.io.read_csv]                    | Read a CSV file or multiple CSV files into a DataFrame |
+| [`write_csv`][daft.dataframe.DataFrame.write_csv] | Write a DataFrame to CSV files                         |
+
+### JSON
+
+| Function                                            | Description                                              |
+|-----------------------------------------------------|----------------------------------------------------------|
+| [`read_json`][daft.io.read_json]                    | Read a JSON file or multiple JSON files into a DataFrame |
+| [`write_json`][daft.dataframe.DataFrame.write_json] | Write a DataFrame to JSON files                          |
+
+### Parquet
+
+| Function                                                  | Description                                                    |
+|-----------------------------------------------------------|----------------------------------------------------------------|
+| [`read_parquet`][daft.io.read_parquet]                    | Read a Parquet file or multiple Parquet files into a DataFrame |
+| [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
+
+### Text
+
+| Function                           | Description                                    |
+|------------------------------------|------------------------------------------------|
+| [`read_text`][daft.io.read_text]   | Read text files into a DataFrame               |
+
+See also [Text Files](text.md) for detailed usage.
+
+### WARC
+
+| Function                         | Description                                              |
+|----------------------------------|----------------------------------------------------------|
+| [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
+
+### Video
+
+| Function                                         | Description                        |
+|--------------------------------------------------|------------------------------------|
+| [`read_video_frames`][daft.io.read_video_frames] | Read video frames into a DataFrame |
+
+### Generic File Source Options
+
+Options shared across the file-based readers above (compression, schema hints, and more). See [Generic File Source Options](generic-file-source-options.md) for the full list.
+
+## Other Sources
+
+### Apache Kafka
+
+!!! warning "Experimental"
+
+    This connector is experimental. Currently only bounded batch reads are supported — there is no streaming/unbounded mode and no offset commit management.
+
+| Function                           | Description                                          |
+|------------------------------------|------------------------------------------------------|
+| [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
+
+See also [Apache Kafka](kafka.md) for detailed integration.
+
+### MCAP
+
+!!! warning "Experimental"
+
+    This connector is experimental. See [MCAP](mcap.md) for details.
+
+| Function                           | Description                                  |
+|------------------------------------|----------------------------------------------|
+| [`read_mcap`][daft.io.read_mcap]   | Read MCAP files into a DataFrame             |
+
+See also [MCAP](mcap.md) for detailed integration.
+
+### Hugging Face Datasets
+
+| Function                                          | Description                                       |
+|---------------------------------------------------|---------------------------------------------------|
+| [`read_huggingface`][daft.read_huggingface]       | Read a Hugging Face dataset into a DataFrame      |
+
+See also [Hugging Face Datasets](huggingface.md) for detailed usage.
+
+## Custom
+
+### Custom Connectors
+
+Implement your own source or sink to read from and write to systems Daft does not support natively:
+
+| Function                                            | Description                                                        |
+|-----------------------------------------------------|--------------------------------------------------------------------|
+| [`DataSink`][daft.io.sink.DataSink]                 | Interface for writing data from DataFrames                         |
+| [`DataSource`][daft.io.source.DataSource]           | Interface for reading data into DataFrames                         |
+| [`DataSourceTask`][daft.io.source.DataSourceTask]   | Represents a partition of data that can be processed independently |
+| [`WriteResult`][daft.io.sink.WriteResult]           | Wrapper for intermediate results written by a DataSink             |
+| [`write_sink`][daft.dataframe.DataFrame.write_sink] | Write a DataFrame to the given DataSink                            |
+
+See also [Custom Connectors](custom.md) for detailed usage.
+
+### Custom Catalogs
+
+Implement your own catalog by extending Daft's `Catalog` and `Table` interfaces. See [Custom Catalogs](custom-catalogs.md) for detailed usage.
+
+## In-Memory
+
+Create DataFrames directly from in-memory Python objects:
+
+| Function                                          | Description                                             |
+|---------------------------------------------------|---------------------------------------------------------|
+| [`from_arrow`][daft.from_arrow]                   | Create a DataFrame from PyArrow Tables or RecordBatches |
+| [`from_dask_dataframe`][daft.from_dask_dataframe] | Create a DataFrame from a Dask DataFrame                |
+| [`from_pandas`][daft.from_pandas]                 | Create a DataFrame from a Pandas DataFrame              |
+| [`from_pydict`][daft.from_pydict]                 | Create a DataFrame from a python dictionary             |
+| [`from_pylist`][daft.from_pylist]                 | Create a DataFrame from a python list                   |
+| [`from_ray_dataset`][daft.from_ray_dataset]       | Create a DataFrame from a Ray Dataset                   |

@@ -123,8 +123,13 @@ impl PySession {
     }
 
     #[pyo3(signature = (pattern=None))]
-    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
-        Ok(self.0.list_tables(pattern)?)
+    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
+        Ok(self
+            .0
+            .list_tables(pattern)?
+            .into_iter()
+            .map(PyIdentifier::from)
+            .collect())
     }
 
     #[pyo3(signature = (ident))]
