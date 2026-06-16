@@ -279,6 +279,7 @@ pub struct BuilderContext {
             daft_dsl::expr::bound_expr::BoundExpr,
         )>,
     >,
+    pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 impl BuilderContext {
@@ -300,6 +301,7 @@ impl BuilderContext {
             context,
             shuffle_server,
             checkpoint: std::cell::RefCell::new(None),
+            skipped_corrupt_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -483,6 +485,7 @@ fn physical_plan_to_pipeline(
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
+                Some(ctx.skipped_corrupt_files.clone()),
             );
             SourceNode::new(
                 Box::new(scan_task_source),

@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -169,6 +172,7 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
+    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 #[cfg_attr(
@@ -284,6 +288,16 @@ impl PyNativeExecutor {
     }
 }
 
+/// Returns a fingerprint that is unique for each call when the caller does not
+/// supply one. Using a fixed value (e.g. 0) caused `NativeExecutor::run` to
+/// reuse the cached pipeline from a prior execution when the new plan requires
+/// a different `InputSender` variant, which reached the `unreachable!` branch
+/// in `InputSender::send` (see GitHub issue #7087).
+fn next_auto_fingerprint() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option<u32>) {
     let query_id = ctx
         .as_ref()
@@ -294,7 +308,7 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option
         .as_ref()
         .and_then(|c| c.get("plan_fingerprint"))
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
+        .unwrap_or_else(next_auto_fingerprint);
     let task_id = ctx
         .as_ref()
         .and_then(|c| c.get("task_id"))
@@ -519,6 +533,7 @@ impl NativeExecutor {
                     enqueue_input_sender: enqueue_input_tx,
                     stats_handle,
                     active_input_ids: HashSet::new(),
+                    skipped_corrupt_files: ctx.skipped_corrupt_files.clone(),
                 },
             );
         }
@@ -581,17 +596,30 @@ impl NativeExecutor {
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
                 plan_state.task_handle.await??;
+                let skipped = plan_state
+                    .skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
-                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                Ok(stats
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         } else {
             let stats_handle = plan_state.stats_handle.clone();
+            let skipped_corrupt_files = plan_state.skipped_corrupt_files.clone();
             Ok(async move {
+                let skipped = skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 Ok(stats_handle
                     .take_input_snapshot(input_id)
                     .await
-                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         }

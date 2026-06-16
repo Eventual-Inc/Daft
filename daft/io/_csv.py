@@ -35,6 +35,7 @@ def read_csv(
     io_config: IOConfig | None = None,
     file_path_column: str | None = None,
     hive_partitioning: bool = False,
+    ignore_corrupt_files: bool = False,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
     checkpoint: "CheckpointConfig | None" = None,
@@ -57,6 +58,9 @@ def read_csv(
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
+        ignore_corrupt_files: If True, corrupt or unreadable CSV files are silently skipped instead
+            of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after collection.
+            Defaults to False.
 
     Returns:
         DataFrame: parsed DataFrame
@@ -93,6 +97,7 @@ def read_csv(
         allow_variable_columns=allow_variable_columns,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     storage_config = StorageConfig(True, io_config)

@@ -1612,3 +1612,386 @@ def hamming_distance_str(left: Expression, right: Expression) -> Expression:
         (Showing first 3 of 3 rows)
     """
     return Expression._call_builtin_scalar_fn("hamming_distance_str", left, right)
+
+
+def levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Levenshtein edit distance between two strings.
+
+    The Levenshtein distance is the minimum number of single-character insertions,
+    deletions, or substitutions required to transform one string into the other.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Levenshtein distance for each pair of strings. Returns null when either
+        input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["kitten", "saturday", ""], "y": ["sitting", "sunday", "abc"]})
+        >>> df = df.with_column("distance", levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭──────────┬─────────┬──────────╮
+        │ x        ┆ y       ┆ distance │
+        │ ---      ┆ ---     ┆ ---      │
+        │ String   ┆ String  ┆ Int64    │
+        ╞══════════╪═════════╪══════════╡
+        │ kitten   ┆ sitting ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ saturday ┆ sunday  ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │          ┆ abc     ┆ 3        │
+        ╰──────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("levenshtein_distance", left, right)
+
+
+def jaro_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro similarity between two strings.
+
+    The Jaro similarity is a measure of similarity between two strings, based on
+    matching characters and transpositions. Returns a value between 0.0 (no similarity)
+    and 1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro similarity (0.0 to 1.0) for each pair of strings. Returns null when
+        either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9444444444444445 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8222222222222223 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.7666666666666666 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_similarity", left, right)
+
+
+def jaro_winkler_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro-Winkler similarity between two strings.
+
+    This is the Jaro similarity with a prefix bonus for strings sharing a common
+    prefix (up to 4 characters). Returns a value between 0.0 (no similarity) and
+    1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro-Winkler similarity (0.0 to 1.0) for each pair of strings. Returns
+        null when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_winkler_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_winkler_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9611111111111111 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8400000000000001 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.8133333333333332 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_winkler_similarity", left, right)
+
+
+def damerau_levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Damerau-Levenshtein distance between two strings.
+
+    This extends the Levenshtein distance by also counting transpositions of two
+    adjacent characters as a single edit operation (in addition to insertions,
+    deletions, and substitutions).
+
+    Note:
+        This computes the Optimal String Alignment (OSA) variant, which does not
+        allow a substring to be edited more than once. Results may differ from the
+        true Damerau-Levenshtein distance for inputs with overlapping transpositions
+        (e.g., ``"CA"`` to ``"ABC"`` is 3 under OSA but 2 under true
+        Damerau-Levenshtein). OSA does not satisfy the triangle inequality.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Damerau-Levenshtein (OSA) distance for each pair of strings. Returns null
+        when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import damerau_levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "acb", "abc"]})
+        >>> df = df.with_column("distance", damerau_levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬────────┬──────────╮
+        │ x      ┆ y      ┆ distance │
+        │ ---    ┆ ---    ┆ ---      │
+        │ String ┆ String ┆ Int64    │
+        ╞════════╪════════╪══════════╡
+        │ abc    ┆ bac    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ abc    ┆ acb    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │        ┆ abc    ┆ 3        │
+        ╰────────┴────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("damerau_levenshtein_distance", left, right)
+
+
+def translate(
+    expr: Expression,
+    from_str: str | Expression,
+    to_str: str | Expression,
+) -> Expression:
+    """Translates characters in the input string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+    Characters in 'from_str' without a corresponding character in 'to_str' are removed.
+    This is compatible with Spark's translate function.
+
+    Args:
+        expr: The string expression to translate
+        from_str: Characters to be replaced
+        to_str: Replacement characters
+
+    Returns:
+        Expression: a String expression with characters translated
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import translate
+        >>> df = daft.from_pydict({"x": ["AaBbCc", "hello", "world"]})
+        >>> df = df.select(translate(df["x"], "abc", "123"))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A1B2C3 │
+        ├╌╌╌╌╌╌╌╌┤
+        │ hello  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ world  │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("translate", expr, from_str, to_str)
+
+
+def substring_index(
+    expr: Expression,
+    delim: str | Expression,
+    count: int | Expression,
+) -> Expression:
+    """Returns the substring from string before count occurrences of the delimiter.
+
+    If count is positive, returns everything to the left of the final delimiter (counting from left).
+    If count is negative, returns everything to the right of the final delimiter (counting from right).
+    This is compatible with Spark's substring_index function.
+
+    Args:
+        expr: The string expression
+        delim: The delimiter string
+        count: The number of occurrences of the delimiter
+
+    Returns:
+        Expression: a String expression with the substring result
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import substring_index
+        >>> df = daft.from_pydict({"x": ["www.apache.org", "a.b.c.d"]})
+        >>> df = df.select(substring_index(df["x"], ".", 2))
+        >>> df.show()
+        ╭────────────╮
+        │ x          │
+        │ ---        │
+        │ String     │
+        ╞════════════╡
+        │ www.apache │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a.b        │
+        ╰────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("substring_index", expr, delim, count)
+
+
+def soundex(expr: Expression) -> Expression:
+    """Returns the Soundex code of the string.
+
+    Soundex is a phonetic algorithm that produces a 4-character code representing
+    the sound of the string. This is compatible with Spark's soundex function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: a String expression with the Soundex code
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import soundex
+        >>> df = daft.from_pydict({"x": ["Robert", "Rupert", "Smith"]})
+        >>> df = df.select(soundex(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ S530   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("soundex", expr)
+
+
+def ascii_func(expr: Expression) -> Expression:
+    """Returns the ASCII numeric value of the first character of the string.
+
+    Returns 0 for empty strings. This is compatible with Spark's ascii function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: an Int32 expression with the ASCII value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import ascii_func
+        >>> df = daft.from_pydict({"x": ["A", "abc", ""]})
+        >>> df = df.select(ascii_func(df["x"]))
+        >>> df.show()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int32 │
+        ╞═══════╡
+        │ 65    │
+        ├╌╌╌╌╌╌╌┤
+        │ 97    │
+        ├╌╌╌╌╌╌╌┤
+        │ 0     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("ascii", expr)
+
+
+def chr_func(expr: Expression) -> Expression:
+    """Converts an ASCII numeric value to a character.
+
+    Returns the character corresponding to the ASCII code.
+    This is compatible with Spark's chr function.
+
+    Args:
+        expr: An integer expression representing the ASCII code
+
+    Returns:
+        Expression: a String expression with the character
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import chr_func
+        >>> df = daft.from_pydict({"x": [65, 97, 48]})
+        >>> df = df.select(chr_func(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("chr", expr)
+
+
+def space(expr: Expression) -> Expression:
+    """Returns a string consisting of n space characters.
+
+    This is compatible with Spark's space function.
+
+    Args:
+        expr: An integer expression representing the number of spaces
+
+    Returns:
+        Expression: a String expression with n spaces
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import space
+        >>> df = daft.from_pydict({"x": [1, 3, 5]})
+        >>> df = df.select(space(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("space", expr)
