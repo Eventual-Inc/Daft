@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use opentelemetry::{Key, KeyValue};
+use opentelemetry::Key;
 // These match the OTEL_EXPORTER_OTLP_* environment variables from:
 // https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/#endpoint-configuration
 use opentelemetry_otlp::{
@@ -124,14 +124,7 @@ impl Config {
             })
             .unwrap_or_else(|| "daft".to_string());
 
-        Resource::builder_empty()
-            .with_attributes(
-                env_resource
-                    .iter()
-                    .map(|(key, value)| KeyValue::new(key.clone(), value.clone())),
-            )
-            .with_service_name(service_name)
-            .build()
+        Resource::builder().with_service_name(service_name).build()
     }
 }
 
