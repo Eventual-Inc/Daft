@@ -710,6 +710,10 @@ class Session:
         """
         # If a Provider instance is given, attach it and resolve to its name
         if isinstance(identifier, Provider):
+            if options:
+                raise TypeError(
+                    "Cannot pass keyword options when providing a Provider instance. Configure the Provider instance directly instead."
+                )
             self.attach_provider(identifier)
             identifier = identifier.name
 

@@ -403,6 +403,14 @@ def test_set_provider_with_provider_instance_twice_raises():
         sess.set_provider(provider)
 
 
+def test_set_provider_with_provider_instance_and_options_raises():
+    """Passing **options alongside a Provider instance should raise TypeError."""
+    sess = Session()
+    provider = MockProvider("no_options")
+    with pytest.raises(TypeError, match="Cannot pass"):
+        sess.set_provider(provider, api_key="sk-test", timeout=30)
+
+
 def test_set_provider_with_provider_instance_then_string():
     """After using set_provider with a Provider instance, switching by string name should work."""
     sess = Session()
