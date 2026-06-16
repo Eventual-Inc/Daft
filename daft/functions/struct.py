@@ -73,3 +73,60 @@ def to_struct(*fields: Expression, **named_fields: Expression) -> Expression:
     """
     all_fields = list(fields) + [Expression._to_expression(field).alias(name) for name, field in named_fields.items()]
     return Expression._call_builtin_scalar_fn("struct", *all_fields)
+
+
+def named_struct(*args: str | Expression) -> Expression:
+    """Constructs a struct from alternating field name and value pairs.
+
+    This mirrors the SQL ``named_struct`` function and accepts alternating string
+    field names and :class:`~daft.expressions.Expression` values as positional arguments.
+
+    Args:
+        *args: Alternating ``(field_name, value)`` pairs. Field names must be string
+            literals; values must be :class:`~daft.expressions.Expression` objects.
+
+    Returns:
+        An expression for a struct column with the given fields.
+
+    Raises:
+        ValueError: If an odd number of arguments is supplied, or if a field name is
+            not a string.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import named_struct
+        >>>
+        >>> df = daft.from_pydict({"a": ["a", "b", "c"], "b": [1, 2, 3]})
+        >>> df.select(named_struct("x", df["a"], "y", df["b"])).show()
+        ╭──────────────────────────────╮
+        │ struct                       │
+        │ ---                          │
+        │ Struct[x: String, y: Int64]  │
+        ╞══════════════════════════════╡
+        │ {x: a,                       │
+        │ y: 1,                        │
+        │ }                            │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {x: b,                       │
+        │ y: 2,                        │
+        │ }                            │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {x: c,                       │
+        │ y: 3,                        │
+        │ }                            │
+        ╰──────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    if len(args) == 0 or len(args) % 2 != 0:
+        raise ValueError("named_struct requires an even number of arguments (alternating field names and values)")
+
+    all_fields = []
+    for i in range(0, len(args), 2):
+        name = args[i]
+        value = args[i + 1]
+        if not isinstance(name, str):
+            raise ValueError(f"named_struct field names must be strings, got {type(name)} at position {i}")
+        all_fields.append(Expression._to_expression(value).alias(name))
+
+    return Expression._call_builtin_scalar_fn("struct", *all_fields)
