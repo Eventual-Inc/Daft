@@ -26,12 +26,18 @@ from tenacity import (
     wait_fixed,
 )
 
+from daft.exceptions import DaftTransientError
+
 T = TypeVar("T")
 
 
 # Substrings (case-insensitive) that indicate a transient network failure
-# unrelated to the code under test. Observed in CI logs across httpx,
-# httpcore, urllib3, requests, and Daft's Rust IO layer (reqwest).
+# coming from the *Python* HTTP stack used by ``load_dataset`` /
+# ``huggingface_hub`` (httpx, httpcore, urllib3, requests). The Daft Rust
+# IO layer is handled separately via ``isinstance(exc, DaftTransientError)``
+# so we deliberately do NOT match against reqwest's ``Debug`` output here:
+# that representation is not a stable contract and can drift between
+# reqwest releases.
 _TRANSIENT_NETWORK_MARKERS = (
     "connecttimeout",
     "connect timeout",
@@ -51,9 +57,6 @@ _TRANSIENT_NETWORK_MARKERS = (
     "bad gateway",
     "gateway timeout",
     "service unavailable",
-    "status(502",
-    "status(503",
-    "status(504",
 )
 
 
@@ -65,13 +68,24 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     5xx gateway errors) in addition to HTTP 429 rate-limit responses.
 
     Recognises the shapes we have observed in CI:
+      * Daft Rust IO via ``reqwest``: any ``DaftTransientError`` subclass
+        (``ThrottleError``, ``ConnectTimeoutError``, ``ReadTimeoutError``,
+        ``SocketError``, ``ByteStreamError``, ``MiscTransientError``).
+        This is the typed contract exposed by ``daft-io`` and must be
+        preferred over substring matching on the error message.
       * ``requests`` / ``urllib3``: response with ``status_code == 429``
       * ``huggingface_hub.HfHubHTTPError``: "HTTP Error 429 thrown while ..."
       * Generic strings: "429 Client Error: Too Many Requests", "rate limit"
-      * Daft Rust IO via ``reqwest``: ``DaftError::External ... Status(429, ...)``
       * ``httpx`` / ``httpcore``: ``ConnectTimeout``, ``ReadTimeout``,
         "handshake operation timed out", etc.
     """
+    # Daft IO layer: rely on the typed exception hierarchy. ``daft-io``
+    # classifies reqwest failures into ``DaftTransientError`` subclasses,
+    # so any instance of that base class is by definition a retryable
+    # transient failure for our purposes.
+    if isinstance(exc, DaftTransientError):
+        return True
+
     response = getattr(exc, "response", None)
     status_code = getattr(response, "status_code", None)
     if status_code == 429 or status_code in (502, 503, 504):
@@ -80,12 +94,11 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
     message = str(exc)
     lowered = message.lower()
 
-    # HTTP 429 rate-limit signatures.
+    # HTTP 429 rate-limit signatures (Python clients only).
     is_rate_limited = (
         "http error 429" in lowered
         or "rate limit" in lowered
         or "too many requests" in lowered
-        or "status(429" in lowered
         or "429 client error" in lowered
     )
     if is_rate_limited:
