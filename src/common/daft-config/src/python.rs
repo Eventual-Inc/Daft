@@ -269,6 +269,11 @@ impl PyDaftExecutionConfig {
         }
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
+            if min_cpu_per_task <= 0.0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "min_cpu_per_task must be > 0, got {min_cpu_per_task}"
+                )));
+            }
             config.min_cpu_per_task = min_cpu_per_task;
         }
 

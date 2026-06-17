@@ -23,9 +23,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
     pub resource_request: ResourceRequest,
-    /// Default used by `num_cpus()` when the plan's ResourceRequest leaves
-    /// `num_cpus` unset. Sourced from `DaftExecutionConfig::min_cpu_per_task`
-    /// at task construction. Explicit `num_cpus` values pass through unchanged.
+    /// Floor applied by `num_cpus()`. Sourced from `DaftExecutionConfig::min_cpu_per_task`.
     min_cpu_per_task: f64,
 }
 
@@ -40,7 +38,7 @@ impl TaskResourceRequest {
     pub fn num_cpus(&self) -> f64 {
         self.resource_request
             .num_cpus()
-            .unwrap_or(self.min_cpu_per_task)
+            .map_or(self.min_cpu_per_task, |v| v.max(self.min_cpu_per_task))
     }
 
     pub fn num_gpus(&self) -> f64 {
@@ -602,12 +600,9 @@ pub(super) mod tests {
 
     #[test]
     fn num_cpus_uses_min_cpu_per_task_when_unset() {
-        // Plan has no explicit num_cpus -> fall back to the configured min.
         let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
         assert_eq!(r.num_cpus(), 0.1);
 
-        // The default config preserves the pre-fix hardcoded fallback of 1.0,
-        // so no plan without an explicit num_cpus changes behavior.
         let r = TaskResourceRequest::new(
             ResourceRequest::default(),
             DaftExecutionConfig::default().min_cpu_per_task,
@@ -616,15 +611,17 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn num_cpus_respects_explicit_request() {
-        // Explicit num_cpus on the plan is honored even when below the config min.
+    fn num_cpus_passes_through_when_above_floor() {
         let explicit = ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap();
-        let r = TaskResourceRequest::new(explicit, 0.1);
+        let r = TaskResourceRequest::new(explicit, 0.5);
         assert_eq!(r.num_cpus(), 2.0);
+    }
 
+    #[test]
+    fn num_cpus_raises_explicit_to_floor() {
         let explicit = ResourceRequest::try_new_internal(Some(0.25), None, None).unwrap();
         let r = TaskResourceRequest::new(explicit, 0.5);
-        assert_eq!(r.num_cpus(), 0.25);
+        assert_eq!(r.num_cpus(), 0.5);
     }
 
     #[derive(Debug)]
@@ -739,10 +736,8 @@ pub(super) mod tests {
         }
 
         pub fn with_resource_request(mut self, resource_request: ResourceRequest) -> Self {
-            self.resource_request = TaskResourceRequest::new(
-                resource_request,
-                self.resource_request.min_cpu_per_task,
-            );
+            self.resource_request =
+                TaskResourceRequest::new(resource_request, self.resource_request.min_cpu_per_task);
             self
         }
 
