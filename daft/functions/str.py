@@ -1995,3 +1995,164 @@ def space(expr: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("space", expr)
+
+
+def find_in_set(needle: Expression, str_array: Expression) -> Expression:
+    """Returns the 1-based index of `needle` in the comma-separated `str_array`.
+
+    Returns 0 when `needle` is not found in `str_array`. Returns 0 when `needle`
+    contains a comma (since the search uses ``,`` as the only separator).
+    Returns null if either input is null. This is compatible with Spark's
+    ``find_in_set`` function.
+
+    Args:
+        needle: The string expression to search for.
+        str_array: A string expression of values separated by commas.
+
+    Returns:
+        Expression: an Int32 expression with the 1-based index, or 0 if not found.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import find_in_set
+        >>> df = daft.from_pydict({"x": ["ab", "d", "a,b"], "y": ["abc,b,ab,c", "a,b,c", "a,b,c"]})
+        >>> df = df.with_column("idx", find_in_set(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬────────────┬───────╮
+        │ x      ┆ y          ┆ idx   │
+        │ ---    ┆ ---        ┆ ---   │
+        │ String ┆ String     ┆ Int32 │
+        ╞════════╪════════════╪═══════╡
+        │ ab     ┆ abc,b,ab,c ┆ 3     │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ d      ┆ a,b,c      ┆ 0     │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ a,b    ┆ a,b,c      ┆ 0     │
+        ╰────────┴────────────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("find_in_set", needle, str_array)
+
+
+def overlay(
+    input: Expression,
+    replace: Expression,
+    pos: Expression | int,
+    length: Expression | int | None = None,
+) -> Expression:
+    """Replaces the substring of ``input`` starting at ``pos`` (1-based) with ``replace``.
+
+    ``length`` controls how many characters of the original string are removed.
+    When ``length`` is omitted or negative, the character length of ``replace`` is
+    used. Positions less than 1 are treated as 1. This is compatible with Spark's
+    ``overlay`` function.
+
+    Args:
+        input: The string expression to modify.
+        replace: The replacement string expression.
+        pos: 1-based starting position (integer expression or literal).
+        length: Number of characters to overwrite. If None or negative, uses the
+            length of ``replace``.
+
+    Returns:
+        Expression: a String expression with the substring overlaid.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import overlay
+        >>> df = daft.from_pydict({"x": ["Spark SQL", "Spark SQL", "Spark SQL"]})
+        >>> df = df.with_column("a", overlay(df["x"], lit("_"), 6))
+        >>> df = df.with_column("b", overlay(df["x"], lit("CORE"), 7))
+        >>> df = df.with_column("c", overlay(df["x"], lit("ANSI "), 7, 0))
+        >>> df.collect()
+        ╭───────────┬───────────┬────────────┬────────────────╮
+        │ x         ┆ a         ┆ b          ┆ c              │
+        │ ---       ┆ ---       ┆ ---        ┆ ---            │
+        │ String    ┆ String    ┆ String     ┆ String         │
+        ╞═══════════╪═══════════╪════════════╪════════════════╡
+        │ Spark SQL ┆ Spark_SQL ┆ Spark CORE ┆ Spark ANSI SQL │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Spark SQL ┆ Spark_SQL ┆ Spark CORE ┆ Spark ANSI SQL │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Spark SQL ┆ Spark_SQL ┆ Spark CORE ┆ Spark ANSI SQL │
+        ╰───────────┴───────────┴────────────┴────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    pos_expr = pos if isinstance(pos, Expression) else lit(pos)
+    if length is None:
+        return Expression._call_builtin_scalar_fn("overlay", input, replace, pos_expr)
+    length_expr = length if isinstance(length, Expression) else lit(length)
+    return Expression._call_builtin_scalar_fn("overlay", input, replace, pos_expr, length_expr)
+
+
+def url_encode(expr: Expression) -> Expression:
+    """Translates a string into ``application/x-www-form-urlencoded`` format using UTF-8.
+
+    Spaces become ``+`` and unsafe characters are percent-encoded. This is
+    compatible with Spark's ``url_encode`` function.
+
+    Args:
+        expr: The string expression to encode.
+
+    Returns:
+        Expression: a String expression with the URL-encoded result.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import url_encode
+        >>> df = daft.from_pydict({"x": ["Spark SQL", "https://daft.ai", "中文"]})
+        >>> df = df.with_column("encoded", url_encode(df["x"]))
+        >>> df.collect()
+        ╭─────────────────┬───────────────────────────╮
+        │ x               ┆ encoded                   │
+        │ ---             ┆ ---                       │
+        │ String          ┆ String                    │
+        ╞═════════════════╪═══════════════════════════╡
+        │ Spark SQL       ┆ Spark+SQL                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ https://daft.ai ┆ https%3A%2F%2Fdaft.ai     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 中文            ┆ %E4%B8%AD%E6%96%87        │
+        ╰─────────────────┴───────────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("url_encode", expr)
+
+
+def url_decode(expr: Expression) -> Expression:
+    """Decodes a string in ``application/x-www-form-urlencoded`` format using UTF-8.
+
+    ``+`` is converted to a space and ``%XX`` escape sequences are converted back
+    to bytes. This is compatible with Spark's ``url_decode`` function. Raises a
+    ValueError when the input contains invalid percent-encodings.
+
+    Args:
+        expr: The URL-encoded string expression to decode.
+
+    Returns:
+        Expression: a String expression with the decoded result.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import url_decode
+        >>> df = daft.from_pydict({"x": ["Spark+SQL", "https%3A%2F%2Fdaft.ai", "%E4%B8%AD"]})
+        >>> df = df.with_column("decoded", url_decode(df["x"]))
+        >>> df.collect()
+        ╭───────────────────────┬─────────────────╮
+        │ x                     ┆ decoded         │
+        │ ---                   ┆ ---             │
+        │ String                ┆ String          │
+        ╞═══════════════════════╪═════════════════╡
+        │ Spark+SQL             ┆ Spark SQL       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ https%3A%2F%2Fdaft.ai ┆ https://daft.ai │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ %E4%B8%AD             ┆ 中              │
+        ╰───────────────────────┴─────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("url_decode", expr)
