@@ -706,6 +706,20 @@ def test_udf_succeeds_with_some_actors_schedulable():
         assert result == {"udf_1": [1, 2, 3]}
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
+@pytest.mark.timeout(60)
+def test_actor_udf_with_into_partitions_does_not_deadlock():
+    with execution_config_ctx(actor_udf_ready_timeout=30):
+        df = daft.from_pydict({"a": [1, 2, 3]})
+
+        @udf(return_dtype=DataType.int64(), concurrency=1, num_cpus=1)
+        def udf_1(data):
+            return data
+
+        result = df.select(udf_1(col("a")).alias("udf_1")).into_partitions(2).to_pydict()
+        assert sorted(result["udf_1"]) == [1, 2, 3]
+
+
 def test_udf_error_serialize_err():
     """Test that UDF errors that can't be serialized are handled."""
 

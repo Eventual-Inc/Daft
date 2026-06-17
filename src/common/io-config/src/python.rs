@@ -1548,6 +1548,30 @@ impl HuggingFaceConfig {
     }
 }
 
+impl TosConfig {
+    const MULTIPART_SETTING_IGNORED_MSG: &str = "TosConfig multipart settings are no longer used; TOS I/O is now handled by OpenDAL, which manages multipart uploads internally.";
+
+    fn warn_multipart_settings(
+        multipart_size: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
+    ) {
+        if let Some(multipart_size) = multipart_size {
+            log::warn!(
+                "{} Ignoring multipart_size={}.",
+                Self::MULTIPART_SETTING_IGNORED_MSG,
+                multipart_size
+            );
+        }
+        if let Some(multipart_max_concurrency) = multipart_max_concurrency {
+            log::warn!(
+                "{} Ignoring multipart_max_concurrency={}.",
+                Self::MULTIPART_SETTING_IGNORED_MSG,
+                multipart_max_concurrency
+            );
+        }
+    }
+}
+
 #[pymethods]
 impl TosConfig {
     #[allow(clippy::too_many_arguments)]
@@ -1584,6 +1608,8 @@ impl TosConfig {
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
+        Self::warn_multipart_settings(multipart_size, multipart_max_concurrency);
+
         let def = crate::TosConfig::default();
         Ok(Self {
             config: crate::TosConfig {
@@ -1644,6 +1670,8 @@ impl TosConfig {
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
+        Self::warn_multipart_settings(multipart_size, multipart_max_concurrency);
+
         Ok(Self {
             config: crate::TosConfig {
                 region: region.or_else(|| self.config.region.clone()),
@@ -1742,9 +1770,27 @@ impl TosConfig {
         Ok(self.config.multipart_size)
     }
 
+    #[setter]
+    pub fn set_multipart_size(&mut self, multipart_size: u64) {
+        log::warn!(
+            "{} Ignoring multipart_size={multipart_size}.",
+            Self::MULTIPART_SETTING_IGNORED_MSG
+        );
+        self.config.multipart_size = multipart_size;
+    }
+
     #[getter]
     pub fn multipart_max_concurrency(&self) -> PyResult<u32> {
         Ok(self.config.multipart_max_concurrency)
+    }
+
+    #[setter]
+    pub fn set_multipart_max_concurrency(&mut self, multipart_max_concurrency: u32) {
+        log::warn!(
+            "{} Ignoring multipart_max_concurrency={multipart_max_concurrency}.",
+            Self::MULTIPART_SETTING_IGNORED_MSG
+        );
+        self.config.multipart_max_concurrency = multipart_max_concurrency;
     }
 }
 
