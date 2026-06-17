@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import daft
 from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
-from daft.expressions import col, lit
+from daft.expressions import col
 from daft.functions import (
     file,
     format,
@@ -18,6 +18,8 @@ from daft.io import GCSConfig, IOConfig
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
 
+
+_PUBLIC_GCS_BUCKET = "gs://gresearch/robotics/droid_raw"
 
 _METADATA_DTYPE = DataType.struct(
     {
@@ -56,8 +58,10 @@ _METADATA_DTYPE = DataType.struct(
 @PublicAPI
 def raw(
     # By default, use the official public GCS bucket
-    path: str = "gs://gresearch/robotics/droid_raw",
+    path: str = _PUBLIC_GCS_BUCKET,
     io_config: IOConfig | None = None,
+    *,
+    verify_videos: bool = True,
     # TODO: Add support for stereo videos
     # include_stereo: bool = False,
     # TODO: Add support for SVO camera recordings
@@ -85,6 +89,7 @@ def raw(
             GCS release at `gs://gresearch/robotics/droid_raw`. Also supports
             local paths and other remote object stores.
         io_config: IO configuration for accessing remote storage.
+        verify_videos: Whether to verify that the video files exist and are valid. Defaults to True.
 
     Returns:
         A DataFrame with one row per episode. Metadata fields from each episode's JSON
@@ -105,7 +110,7 @@ def raw(
         >>> df.select("episode_dir", "ext1_video").show()  # doctest: +SKIP
     """
     # Configure IO config with anonymous access to the public GCS bucket
-    if io_config is None:
+    if io_config is None and path == _PUBLIC_GCS_BUCKET:
         io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 
     episodes = (
@@ -113,7 +118,7 @@ def raw(
         .select(
             col("path")
             .download(io_config=io_config)
-            .cast(DataType.string())
+            .cast(DataType.string)
             .try_deserialize("json", _METADATA_DTYPE)
             .alias("metadata"),
             regexp_replace(col("path"), r"/metadata_[^/]+\.json$", "").alias("episode_dir"),
@@ -124,22 +129,34 @@ def raw(
     # Create a file column for the trajectory HDF5 file
     episodes = episodes.with_column(
         "trajectory",
-        file(format("{}/{}", col("episode_dir"), lit("trajectory.h5")), io_config=io_config),
+        file(format("{}/trajectory.h5", col("episode_dir")), io_config=io_config),
     )
 
     # Create VideoFile columns for MP4 camera recordings
     episodes = (
         episodes.with_column(
             "wrist_video",
-            video_file(format("{}/{}.mp4", col("episode_dir"), col("wrist_cam_serial")), io_config=io_config),
+            video_file(
+                format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("wrist_cam_serial")),
+                io_config=io_config,
+                verify=verify_videos,
+            ),
         )
         .with_column(
             "ext1_video",
-            video_file(format("{}/{}.mp4", col("episode_dir"), col("ext1_cam_serial")), io_config=io_config),
+            video_file(
+                format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("ext1_cam_serial")),
+                io_config=io_config,
+                verify=verify_videos,
+            ),
         )
         .with_column(
             "ext2_video",
-            video_file(format("{}/{}.mp4", col("episode_dir"), col("ext2_cam_serial")), io_config=io_config),
+            video_file(
+                format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("ext2_cam_serial")),
+                io_config=io_config,
+                verify=verify_videos,
+            ),
         )
     )
 

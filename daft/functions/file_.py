@@ -13,7 +13,7 @@ def file(url: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts a string containing a file reference to a `daft.File` reference.
 
     Args:
-        url (StringExpression): the url of the file
+        url (String Expression): the url of the file
         io_config (IOConfig, default=None): The IO configuration to use.
 
     Returns:
