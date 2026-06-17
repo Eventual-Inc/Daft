@@ -2,6 +2,7 @@
 # isort: dont-add-import: from __future__ import annotations
 import os
 import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
@@ -13,7 +14,6 @@ from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from collections.abc import Mapping
 
     import deltalake
     import pyarrow as pa
@@ -225,6 +225,275 @@ def update_deltalake(
         error_on_type_mismatch=not safe_cast,
         commit_properties=commit_properties,
     )
+
+
+@PublicAPI
+def merge_deltalake(
+    table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+    source: Union[DataFrame, "pa.Table"],
+    predicate: str,
+    io_config: IOConfig | None = None,
+    source_alias: str = "source",
+    target_alias: str = "target",
+    custom_metadata: dict[str, str] | None = None,
+    safe_cast: bool = True,
+    merge_schema: bool = False,
+    writer_properties: "deltalake.WriterProperties | None" = None,
+    streamed_exec: bool = True,
+    max_spill_size: int | None = None,
+    max_temp_directory_size: int | None = None,
+    post_commithook_properties: "deltalake.PostCommitHookProperties | None" = None,
+) -> "DeltaMergeBuilder":
+    """Create a Delta Lake MERGE operation builder for composable merge clauses.
+
+    Returns a merge builder that mirrors the underlying ``deltalake`` merge API.
+    Call ``.execute()`` on the builder to perform the merge and return a DataFrame with operation metrics.
+
+    Args:
+        table: Destination Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
+        source: Source records to merge from, as a Daft DataFrame or PyArrow table.
+        predicate: SQL merge predicate between ``target_alias`` and ``source_alias``.
+        io_config: Optional :class:`~daft.daft.IOConfig` used for object storage access.
+        source_alias: SQL alias for the source side of the merge predicate.
+        target_alias: SQL alias for the target side of the merge predicate.
+        custom_metadata: Optional key-value metadata to attach to the Delta commit.
+        safe_cast: If ``True``, safely cast source expressions to target column types when needed.
+        merge_schema: If ``True``, allow schema evolution during merge.
+        writer_properties: Optional Arrow writer properties to use when writing files.
+        streamed_exec: If ``True``, use the streamed execution path.
+        max_spill_size: Maximum spill size in bytes for streamed execution.
+        max_temp_directory_size: Maximum temporary directory size in bytes for streamed execution.
+        post_commithook_properties: Optional post-commit hook properties.
+
+    Returns:
+        DeltaMergeBuilder: A builder object for chaining merge clauses with ``.execute()`` finalizer that returns a DataFrame.
+
+    Note:
+        The returned DataFrame from ``.execute()`` contains merge metrics as columns and stores the raw metrics dict in ``_metadata["merge_metrics"]``.
+
+    Examples:
+        Basic upsert (update matching rows, insert new rows)::
+
+            result = (
+                merge_deltalake(
+                    table="path/to/table",
+                    source=source_df,
+                    predicate="target.id = source.id"
+                )
+                .when_matched_update_all()
+                .when_not_matched_insert_all()
+                .execute()
+            )
+            metrics = result._metadata["merge_metrics"]
+            print(f"Inserted: {metrics['num_target_rows_inserted']}")
+            print(f"Updated: {metrics['num_target_rows_updated']}")
+
+        State tracking with multiple conditions::
+
+            result = (
+                merge_deltalake(
+                    table="path/to/table",
+                    source=source_df,
+                    predicate="target.id = source.id"
+                )
+                .when_matched_update(
+                    predicate="source.attributes != target.attributes",
+                    updates={"attributes": "source.attributes", "status": "'UPDATED'"}
+                )
+                .when_matched_update(
+                    predicate="source.attributes = target.attributes",
+                    updates={"status": "'UNCHANGED'"}
+                )
+                .when_not_matched_insert_all()
+                .execute()
+            )
+            metrics = result._metadata["merge_metrics"]
+    """
+    from deltalake import CommitProperties
+
+    if isinstance(source, DataFrame):
+        source_data = source.to_arrow()
+    else:
+        source_data = source
+
+    resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
+    commit_properties = CommitProperties(custom_metadata=custom_metadata)
+
+    # Create the merge builder
+    merger = resolved_table.merge(
+        source=source_data,
+        predicate=predicate,
+        source_alias=source_alias,
+        target_alias=target_alias,
+        merge_schema=merge_schema,
+        error_on_type_mismatch=not safe_cast,
+        writer_properties=writer_properties,
+        streamed_exec=streamed_exec,
+        max_spill_size=max_spill_size,
+        max_temp_directory_size=max_temp_directory_size,
+        commit_properties=commit_properties,
+        post_commithook_properties=post_commithook_properties,
+    )
+
+    return DeltaMergeBuilder(merger)
+
+
+class DeltaMergeBuilder:
+    """Wrapper around deltalake.TableMerger that returns merge results as a DataFrame."""
+
+    def __init__(self, merger: "deltalake.TableMerger") -> None:
+        self._merger = merger
+
+    def when_matched_update(
+        self,
+        updates: "Mapping[str, str]",
+        predicate: str | None = None,
+    ) -> "DeltaMergeBuilder":
+        """Add a ``when_matched_update`` clause to the merge.
+
+        Args:
+            updates: Mapping from column name to SQL update expression.
+            predicate: Optional SQL predicate for matched rows.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_matched_update(dict(updates), predicate)
+        return self
+
+    def when_matched_update_all(
+        self,
+        predicate: str | None = None,
+        except_cols: list[str] | None = None,
+    ) -> "DeltaMergeBuilder":
+        """Add a ``when_matched_update_all`` clause to the merge.
+
+        Args:
+            predicate: Optional SQL predicate for matched rows.
+            except_cols: List of columns to exclude from update.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_matched_update_all(predicate, except_cols)
+        return self
+
+    def when_matched_delete(self, predicate: str | None = None) -> "DeltaMergeBuilder":
+        """Add a ``when_matched_delete`` clause to the merge."""
+        self._merger = self._merger.when_matched_delete(predicate)
+        return self
+
+    def when_not_matched_insert(
+        self,
+        updates: "Mapping[str, str]",
+        predicate: str | None = None,
+    ) -> "DeltaMergeBuilder":
+        """Add a ``when_not_matched_insert`` clause to the merge.
+
+        Args:
+            updates: Mapping from column name to SQL insert expression.
+            predicate: Optional SQL predicate for unmatched rows.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_not_matched_insert(dict(updates), predicate)
+        return self
+
+    def when_not_matched_insert_all(
+        self,
+        predicate: str | None = None,
+        except_cols: list[str] | None = None,
+    ) -> "DeltaMergeBuilder":
+        """Add a ``when_not_matched_insert_all`` clause to the merge.
+
+        Args:
+            predicate: Optional SQL predicate for unmatched rows.
+            except_cols: List of columns to exclude from insert.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_not_matched_insert_all(predicate, except_cols)
+        return self
+
+    def when_not_matched_by_source_update(
+        self,
+        updates: "Mapping[str, str]",
+        predicate: str | None = None,
+    ) -> "DeltaMergeBuilder":
+        """Add a ``when_not_matched_by_source_update`` clause to the merge.
+
+        Args:
+            updates: Mapping from column name to SQL update expression.
+            predicate: Optional SQL predicate for rows not matched by source.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_not_matched_by_source_update(dict(updates), predicate)
+        return self
+
+    def when_not_matched_by_source_delete(self, predicate: str | None = None) -> "DeltaMergeBuilder":
+        """Add a ``when_not_matched_by_source_delete`` clause to the merge.
+
+        Args:
+            predicate: Optional SQL predicate for rows not matched by source.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._merger = self._merger.when_not_matched_by_source_delete(predicate)
+        return self
+
+    def execute(self) -> "DataFrame":
+        """Execute the merge operation and return a DataFrame with metrics in metadata.
+
+        Returns a single-row DataFrame containing all merge metrics as columns.
+        The raw metrics dictionary is also stored in the DataFrame's _metadata.
+
+        Returns:
+            DataFrame: A single-row DataFrame with columns for each merge metric.
+        """
+        import pyarrow as pa
+
+        raw_metrics = self._merger.execute()
+        return _format_merge_metrics_as_dataframe(raw_metrics)
+
+
+def _format_merge_metrics_as_dataframe(raw_metrics: dict[str, Any]) -> "DataFrame":
+    """Format merge metrics as a single-row DataFrame with metrics in metadata.
+
+    Args:
+        raw_metrics: Raw metrics dict from deltalake merge operation.
+
+    Returns:
+        A DataFrame with a single row containing all metrics as columns.
+        The metrics dict is also stored in _metadata.
+    """
+    import pyarrow as pa
+
+    # Create a single-row DataFrame with all metrics
+    metrics_data = {
+        "num_source_rows": pa.array([raw_metrics.get("num_source_rows", 0)], type=pa.int64()),
+        "num_target_rows_inserted": pa.array([raw_metrics.get("num_target_rows_inserted", 0)], type=pa.int64()),
+        "num_target_rows_updated": pa.array([raw_metrics.get("num_target_rows_updated", 0)], type=pa.int64()),
+        "num_target_rows_deleted": pa.array([raw_metrics.get("num_target_rows_deleted", 0)], type=pa.int64()),
+        "num_target_rows_copied": pa.array([raw_metrics.get("num_target_rows_copied", 0)], type=pa.int64()),
+        "num_output_rows": pa.array([raw_metrics.get("num_output_rows", 0)], type=pa.int64()),
+        "num_target_files_added": pa.array([raw_metrics.get("num_target_files_added", 0)], type=pa.int64()),
+        "num_target_files_removed": pa.array([raw_metrics.get("num_target_files_removed", 0)], type=pa.int64()),
+        "execution_time_ms": pa.array([raw_metrics.get("execution_time_ms", 0)], type=pa.int64()),
+        "scan_time_ms": pa.array([raw_metrics.get("scan_time_ms", 0)], type=pa.int64()),
+        "rewrite_time_ms": pa.array([raw_metrics.get("rewrite_time_ms", 0)], type=pa.int64()),
+    }
+
+    df = DataFrame._from_arrow(pa.table(metrics_data))
+    # Store the raw metrics dict in metadata for programmatic access
+    df._metadata = {"merge_metrics": raw_metrics}
+    return df
+
+
 
 
 def delta_schema_to_pyarrow(schema: "deltalake.Schema") -> "pa.Schema":

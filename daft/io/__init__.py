@@ -18,7 +18,13 @@ from daft.daft import (
 from daft.lazy_import import LazyImport
 from daft.io._csv import read_csv
 from daft.io._text import read_text
-from daft.io.delta_lake._deltalake import delete_deltalake, history_deltalake, read_deltalake, update_deltalake
+from daft.io.delta_lake._deltalake import (
+    delete_deltalake,
+    history_deltalake,
+    merge_deltalake,
+    read_deltalake,
+    update_deltalake,
+)
 from daft.io.hudi._hudi import read_hudi
 from daft.io.iceberg._iceberg import read_iceberg
 from daft.io.paimon._paimon import read_paimon
@@ -85,4 +91,5 @@ __all__ = [
     "read_video_frames",
     "read_warc",
     "update_deltalake",
+    "merge_deltalake",
 ]
