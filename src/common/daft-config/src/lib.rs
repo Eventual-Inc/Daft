@@ -240,10 +240,9 @@ impl DaftExecutionConfig {
 
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
+            && val > 0.0
         {
-            if val > 0.0 {
-                cfg.min_cpu_per_task = val;
-            }
+            cfg.min_cpu_per_task = val;
         }
 
         if let Some(val) = parse_number_from_env(
