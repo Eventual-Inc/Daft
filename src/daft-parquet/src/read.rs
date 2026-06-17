@@ -14,6 +14,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DaftParquetMetadata, infer_schema_from_daft_metadata};
 
+/// (path, reason, partial). `partial=true` means some batches were already emitted before
+/// corruption was detected; the file is not fully skipped.
+type SkippedCorruptFilesCollector =
+    Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>>;
+
 /// How to decode Parquet BYTE_ARRAY columns annotated as strings.
 ///
 /// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
@@ -93,6 +98,8 @@ pub struct ParquetReadOptions {
     // The arrowrs reader currently reads its own metadata via ArrowReaderMetadata::load(),
     // but callers (e.g. scan_task.rs) already have pre-fetched DaftParquetMetadata from planning.
     pub metadata: Option<Arc<DaftParquetMetadata>>,
+    pub ignore_corrupt_files: bool,
+    pub skipped_corrupt_files: SkippedCorruptFilesCollector,
 }
 
 /// Per-file overrides for [`ParquetBulkReadOptions`].
@@ -165,6 +172,8 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
         delete_rows: per.delete_rows,
         batch_size: opts.batch_size,
         metadata: per.metadata,
+        ignore_corrupt_files: false,
+        skipped_corrupt_files: None,
     }
 }
 
@@ -175,10 +184,57 @@ pub async fn read_parquet(
     io_stats: Option<IOStatsRef>,
     opts: ParquetReadOptions,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let ignore_corrupt_files = opts.ignore_corrupt_files;
+    let skipped_corrupt_files = opts.skipped_corrupt_files.clone();
+    let uri_owned = uri.to_string();
     let mut local_path = String::new();
     let source = make_source(uri, &mut local_path, io_client, io_stats)?;
-    let (_schema, stream) = Box::pin(crate::reader::stream_parquet(source, &opts)).await?;
-    Ok(stream)
+    match Box::pin(crate::reader::stream_parquet(source, &opts)).await {
+        Ok((_schema, stream)) => {
+            if ignore_corrupt_files {
+                let uri_for_warn = uri_owned.clone();
+                let collector = skipped_corrupt_files.clone();
+                let saw_ok = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let filtered = stream.filter_map(move |result| {
+                    let uri_w = uri_for_warn.clone();
+                    let coll = collector.clone();
+                    let saw = saw_ok.clone();
+                    futures::future::ready(match result {
+                        Ok(batch) => {
+                            saw.store(true, std::sync::atomic::Ordering::Relaxed);
+                            Some(Ok(batch))
+                        }
+                        Err(ref e) if is_parquet_corrupt(e) => {
+                            let partial = saw.load(std::sync::atomic::Ordering::Relaxed);
+                            log::warn!(
+                                "Skipping corrupt row-group data in Parquet file {uri_w} (partial={partial}): {e}"
+                            );
+                            if let Some(ref c) = coll
+                                && let Ok(mut v) = c.lock()
+                            {
+                                v.push((uri_w, e.to_string(), partial));
+                            }
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    })
+                });
+                Ok(Box::pin(filtered))
+            } else {
+                Ok(stream)
+            }
+        }
+        Err(ref e) if ignore_corrupt_files && is_parquet_corrupt(e) => {
+            log::warn!("Skipping corrupt Parquet file {uri_owned}: {e}");
+            if let Some(ref c) = skipped_corrupt_files
+                && let Ok(mut v) = c.lock()
+            {
+                v.push((uri_owned, e.to_string(), false));
+            }
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Eager variant of `read_parquet`: collects the full stream into one
@@ -338,6 +394,22 @@ pub fn read_parquet_bulk_sync(
         .collect()
 }
 
+/// Returns true if the error represents genuine Parquet file corruption.
+///
+/// Bad magic bytes, truncated footer, and corrupt row-group data return true.
+/// Network errors, permission errors, and other transient failures return false.
+pub fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
+    use common_error::DaftError;
+    match err {
+        DaftError::CorruptFile(_) => true,
+        DaftError::IoError(io_err) => {
+            matches!(io_err.kind(), std::io::ErrorKind::UnexpectedEof)
+        }
+        DaftError::FileNotFound { .. } => true,
+        _ => false,
+    }
+}
+
 pub fn read_parquet_into_pyarrow_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
@@ -439,6 +511,38 @@ pub async fn read_parquet_metadata_bulk(
         results.push(res??);
     }
     Ok(results)
+}
+
+/// Optimized for count pushdowns: get the row count from metadata without reading data.
+///
+/// This path is only used when `ignore_corrupt_files` is false (the optimizer gates
+/// count pushdown via `supports_count_pushdown`), so metadata errors propagate normally.
+pub async fn stream_parquet_count_pushdown(
+    url: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    aggregation: &ExprRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let parquet_metadata =
+        read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
+
+    // Currently only CountMode::All is supported for count pushdown.
+    let count = parquet_metadata.num_rows();
+    let count_field = daft_core::datatypes::Field::new(
+        aggregation.name(),
+        daft_core::datatypes::DataType::UInt64,
+    );
+    let count_array =
+        UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
+    let count_batch = daft_recordbatch::RecordBatch::new_with_size(
+        Schema::new(vec![count_field]),
+        vec![count_array.into_series()],
+        1,
+    )?;
+    Ok(Box::pin(futures::stream::once(
+        async move { Ok(count_batch) },
+    )))
 }
 
 pub fn read_parquet_statistics(

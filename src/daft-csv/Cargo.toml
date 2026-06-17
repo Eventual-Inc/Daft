@@ -1,4 +1,5 @@
 [dependencies]
+log = {workspace = true}
 arrow-schema = {workspace = true}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
