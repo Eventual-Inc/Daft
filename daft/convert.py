@@ -300,6 +300,12 @@ def concat(dfs: Iterable["DataFrame"]) -> "DataFrame":
     dfs_list = list(dfs)
     if not dfs_list:
         raise ValueError("daft.concat requires at least one DataFrame")
+    expected_schema = dfs_list[0].schema()
+    for i, df in enumerate(dfs_list[1:], start=1):
+        if df.schema() != expected_schema:
+            raise ValueError(
+                f"DataFrame at index {i} has a different schema.\nExpected:\n{expected_schema}\n\nReceived:\n{df.schema()}"
+            )
     result = dfs_list[0]
     for df in dfs_list[1:]:
         result = result.concat(df)
