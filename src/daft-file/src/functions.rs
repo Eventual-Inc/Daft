@@ -10,7 +10,10 @@ use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
-use crate::file::{BUFFER_SIZE_SNIFF, DaftFile};
+use crate::{
+    file::{BUFFER_SIZE_SNIFF, DaftFile},
+    meta::file_exists_blocking,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct File;
@@ -428,6 +431,42 @@ impl ScalarUDF for Size {
         let name = input.to_field(schema)?.name;
 
         Ok(Field::new(name, DataType::UInt64))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct FileExists;
+
+#[typetag::serde]
+impl ScalarUDF for FileExists {
+    fn name(&self) -> &'static str {
+        "file_exists"
+    }
+
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let UnaryArg { input } = args.try_into()?;
+
+        with_match_file_types!(input.data_type(), |$P| {
+            let s = input.file::<$P>()?;
+
+            let out = s
+                .into_iter()
+                .map(|f| f.map(|f| file_exists_blocking(f)).transpose())
+                .collect::<DaftResult<Vec<Option<bool>>>>()?;
+
+            Ok(daft_core::prelude::BooleanArray::from_iter(s.name(), out.into_iter()).into_series())
+        })
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let UnaryArg { input } = args.try_into()?;
+        let name = input.to_field(schema)?.name;
+
+        Ok(Field::new(name, DataType::Boolean))
     }
 }
 
