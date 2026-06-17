@@ -309,7 +309,7 @@ from .str import (
     chr_func,
     space,
 )
-from .struct import unnest, to_struct
+from .struct import unnest, to_struct, named_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes, video_frames
@@ -595,6 +595,7 @@ __all__ = [
     "to_kebab_case",
     "to_list",
     "to_snake_case",
+    "named_struct",
     "to_struct",
     "to_title_case",
     "to_unix_epoch",
