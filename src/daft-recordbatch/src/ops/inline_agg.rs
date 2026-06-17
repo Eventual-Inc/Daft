@@ -194,6 +194,78 @@ define_sum_accum!(SumAccumU64, UInt64Type, u64);
 define_sum_accum!(SumAccumF32, Float32Type, f32);
 define_sum_accum!(SumAccumF64, Float64Type, f64);
 
+macro_rules! define_product_accum {
+    ($name:ident, $daft_type:ty, $native:ty) => {
+        struct $name {
+            accumulators: Vec<Option<$native>>,
+            source: DataArray<$daft_type>,
+        }
+
+        impl $name {
+            fn new(source: DataArray<$daft_type>) -> Self {
+                Self {
+                    accumulators: Vec::new(),
+                    source,
+                }
+            }
+
+            fn init_groups(&mut self, n: usize) {
+                self.accumulators.resize(n, None);
+            }
+
+            /// Vectorized batch update over pre-computed group_ids.
+            fn update_batch(&mut self, group_ids: &[u32]) {
+                let accs = &mut self.accumulators;
+                if self.source.null_count() == 0 {
+                    // Tight loop: no null checks needed on source values.
+                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
+                        let acc = &mut accs[gid as usize];
+                        *acc = Some(match *acc {
+                            Some(a) => a * val,
+                            None => val,
+                        });
+                    }
+                } else {
+                    // Source has nulls: check each value.
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        if let Some(val) = self.source.get(row_idx) {
+                            let acc = &mut accs[gid as usize];
+                            *acc = Some(match *acc {
+                                Some(a) => a * val,
+                                None => val,
+                            });
+                        }
+                    }
+                }
+            }
+
+            fn finalize(self, name: &str) -> DaftResult<Series> {
+                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
+                if has_nulls {
+                    Ok(DataArray::<$daft_type>::from_iter(
+                        self.source.field.clone(),
+                        self.accumulators.into_iter(),
+                    )
+                    .rename(name)
+                    .into_series())
+                } else {
+                    Ok(DataArray::<$daft_type>::from_field_and_values(
+                        self.source.field.clone(),
+                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
+                    )
+                    .rename(name)
+                    .into_series())
+                }
+            }
+        }
+    };
+}
+
+define_product_accum!(ProductAccumI64, Int64Type, i64);
+define_product_accum!(ProductAccumU64, UInt64Type, u64);
+define_product_accum!(ProductAccumF32, Float32Type, f32);
+define_product_accum!(ProductAccumF64, Float64Type, f64);
+
 macro_rules! define_minmax_accum {
     ($name:ident, $daft_type:ty, $native:ty, $cmp_fn:expr) => {
         struct $name {
@@ -467,7 +539,7 @@ macro_rules! define_agg_accumulator_enum {
     };
 }
 
-// Sum widens small integers (e.g. Int8 → Int64) so only 4 Sum variants are needed.
+// Sum/Product widen small integers (e.g. Int8 → Int64) so only 4 variants each are needed.
 // Min/Max preserve the original dtype, so each numeric type gets its own variant.
 define_agg_accumulator_enum!(
     Count(CountAccum),
@@ -475,6 +547,10 @@ define_agg_accumulator_enum!(
     SumU64(SumAccumU64),
     SumF32(SumAccumF32),
     SumF64(SumAccumF64),
+    ProductI64(ProductAccumI64),
+    ProductU64(ProductAccumU64),
+    ProductF32(ProductAccumF32),
+    ProductF64(ProductAccumF64),
     MinI8(MinAccumI8),
     MinI16(MinAccumI16),
     MinI32(MinAccumI32),
@@ -588,6 +664,43 @@ fn try_create_accumulator(
                 _ => Ok(None),
             }
         }
+        AggExpr::Product(expr) => {
+            let evaluated = source.eval_agg_child(expr)?;
+            let name = evaluated.name().to_string();
+            match evaluated.data_type() {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    let casted = evaluated.cast(&DataType::Int64)?;
+                    let arr = casted.i64()?;
+                    Ok(Some((
+                        AggAccumulator::ProductI64(ProductAccumI64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                    let casted = evaluated.cast(&DataType::UInt64)?;
+                    let arr = casted.u64()?;
+                    Ok(Some((
+                        AggAccumulator::ProductU64(ProductAccumU64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float32 => {
+                    let arr = evaluated.downcast::<Float32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::ProductF32(ProductAccumF32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float64 => {
+                    let arr = evaluated.downcast::<Float64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::ProductF64(ProductAccumF64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                _ => Ok(None),
+            }
+        }
         AggExpr::Min(expr) => {
             let evaluated = source.eval_agg_child(expr)?;
             let name = evaluated.name().to_string();
@@ -661,8 +774,8 @@ fn try_create_accumulator(
 /// Returns true if all agg expressions can be handled by the inline path.
 ///
 /// Requirements:
-/// 1. All agg expressions are Count, Sum, Min, Max, BoolAnd, or BoolOr.
-/// 2. For Sum/Min/Max, the value column dtype must be a supported numeric type.
+/// 1. All agg expressions are Count, Sum, Product, Min, Max, BoolAnd, or BoolOr.
+/// 2. For Sum/Product/Min/Max, the value column dtype must be a supported numeric type.
 /// 3. For BoolAnd/BoolOr, the value column dtype must be Boolean.
 ///
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
@@ -674,6 +787,7 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
             e.as_ref(),
             AggExpr::Count(..)
                 | AggExpr::Sum(..)
+                | AggExpr::Product(..)
                 | AggExpr::Min(..)
                 | AggExpr::Max(..)
                 | AggExpr::BoolAnd(..)
@@ -685,7 +799,7 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
     // Check value column dtypes via schema type inference (no data materialized).
     to_agg.iter().all(|e| match e.as_ref() {
         AggExpr::Count(..) => true,
-        AggExpr::Sum(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
+        AggExpr::Sum(expr) | AggExpr::Product(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
             if let Ok(field) = expr.to_field(&source.schema) {
                 matches!(
                     field.dtype,
@@ -2106,6 +2220,131 @@ mod tests {
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
         assert_batches_equal(&inline_result, &fallback_result);
     }
+    // --- Product tests ---
+
+    #[test]
+    fn test_inline_product_matches_fallback() {
+        let (rb, group_by, schema) = make_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_int_key_product_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_int_key_with_nulls_product_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    /// Helper for Float64 groupby with finite values chosen to avoid overflow ambiguity.
+    fn make_float_product_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Float64Array::from_iter(
+            Field::new("val", DataType::Float64),
+            vec![Some(1.1), Some(2.0), Some(0.5), Some(4.0), Some(2.0)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Float64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_product_float_matches_fallback() {
+        let (rb, group_by, schema) = make_float_product_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_all_null_vals_product_matches_fallback() {
+        let (rb, group_by, schema) = make_all_null_vals_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    /// Exercises the Int8/Int16/Int32/Int64 -> Int64 widening dispatch arm.
+    #[test]
+    fn test_inline_i32_product_matches_fallback() {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2)],
+        )
+        .into_series();
+        let vals = Int32Array::from_iter(
+            Field::new("val", DataType::Int32),
+            vec![Some(2), Some(3), Some(5), Some(7)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int32),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    /// Exercises the UInt8/UInt16/UInt32/UInt64 -> UInt64 widening dispatch arm.
+    #[test]
+    fn test_inline_u16_product_matches_fallback() {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2)],
+        )
+        .into_series();
+        let vals = UInt16Array::from_iter(
+            Field::new("val", DataType::UInt16),
+            vec![Some(2), Some(3), Some(5), Some(7)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::UInt16),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Product(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
     // --- Multi-column string+int tests (exercises symbolized path) ---
 
     /// Helper for multi-column groupby with Utf8 + Int64 keys.

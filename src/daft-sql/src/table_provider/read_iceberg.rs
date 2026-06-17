@@ -19,6 +19,7 @@ struct SqlReadIcebergArgs {
     branch: Option<String>,
     tag: Option<String>,
     io_config: Option<IOConfig>,
+    ignore_corrupt_files: bool,
 }
 
 impl SqlReadIcebergArgs {
@@ -26,7 +27,13 @@ impl SqlReadIcebergArgs {
     fn try_from(planner: &SQLPlanner, args: &TableFunctionArgs) -> SQLPlannerResult<Self> {
         planner.plan_function_args(
             &args.args,
-            &["snapshot_id", "branch", "tag", "io_config"],
+            &[
+                "snapshot_id",
+                "branch",
+                "tag",
+                "io_config",
+                "ignore_corrupt_files",
+            ],
             1,
         )
     }
@@ -44,12 +51,14 @@ impl TryFrom<SQLFunctionArguments> for SqlReadIcebergArgs {
         let branch: Option<String> = args.try_get_named("branch")?;
         let tag: Option<String> = args.try_get_named("tag")?;
         let io_config: Option<IOConfig> = functions::args::parse_io_config(&args)?.into();
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
         Ok(Self {
             metadata_location,
             snapshot_id,
             branch,
             tag,
             io_config,
+            ignore_corrupt_files,
         })
     }
 }
@@ -69,6 +78,7 @@ impl SQLTableFunction for SqlReadIceberg {
             args.branch,
             args.tag,
             args.io_config,
+            args.ignore_corrupt_files,
         )?)
     }
 }
