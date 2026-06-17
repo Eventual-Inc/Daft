@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     from daft.convert import ArrowStreamExportable
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
+    from daft.io.delta_lake._deltalake import DeltaMergeBuilder
     from daft.io.sink import WriteResultType
 
 from daft.schema import Schema
@@ -2043,6 +2044,85 @@ class DataFrame:
         )
         with_operations._metadata = write_df._metadata
         return with_operations
+
+    @DataframePublicAPI
+    def merge_deltalake(
+        self,
+        table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
+        predicate: str,
+        io_config: IOConfig | None = None,
+        source_alias: str = "source",
+        target_alias: str = "target",
+        custom_metadata: dict[str, str] | None = None,
+        safe_cast: bool = True,
+        merge_schema: bool = False,
+        writer_properties: "deltalake.WriterProperties | None" = None,
+        streamed_exec: bool = True,
+        max_spill_size: int | None = None,
+        max_temp_directory_size: int | None = None,
+        post_commithook_properties: "deltalake.PostCommitHookProperties | None" = None,
+    ) -> "DeltaMergeBuilder":
+        """Create a Delta Lake MERGE operation builder using this DataFrame.
+
+        Returns a merge builder that mirrors the underlying ``deltalake`` merge API.
+        Call ``.execute()`` on the builder to perform the merge and return a DataFrame with operation metrics in metadata.
+
+        Args:
+            table: Destination Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
+            predicate: SQL merge predicate between ``target_alias`` and ``source_alias``.
+            io_config: Optional :class:`~daft.daft.IOConfig` used for object storage access.
+            source_alias: SQL alias for this DataFrame in merge predicate expressions.
+            target_alias: SQL alias for the destination table in merge predicate expressions.
+            custom_metadata: Optional key-value metadata to attach to the Delta commit.
+            safe_cast: If ``True``, safely cast source expressions to target column types when needed.
+            merge_schema: If ``True``, allow schema evolution during merge.
+            writer_properties: Optional Arrow writer properties to use when writing files.
+            streamed_exec: If ``True``, use the streamed execution path.
+            max_spill_size: Maximum spill size in bytes for streamed execution.
+            max_temp_directory_size: Maximum temporary directory size in bytes for streamed execution.
+            post_commithook_properties: Optional post-commit hook properties.
+
+        Returns:
+            DeltaMergeBuilder: A builder object for chaining merge clauses with ``.execute()`` finalizer that returns a DataFrame.
+
+        Note:
+            The DataFrame is materialized to a PyArrow table when building the merge operation.
+            The returned DataFrame from ``.execute()`` contains merge metrics as columns and stores the raw metrics dict in ``_metadata["merge_metrics"]``.
+
+        Examples:
+            Basic upsert::
+
+                result = (
+                    self.merge_deltalake(
+                        table="path/to/table",
+                        predicate="target.id = source.id"
+                    )
+                    .when_matched_update_all()
+                    .when_not_matched_insert_all()
+                    .execute()
+                )
+                # Access metrics from result DataFrame
+                metrics = result._metadata["merge_metrics"]
+                print(f"Inserted: {metrics['num_target_rows_inserted']}")
+        """
+        from daft.io.delta_lake._deltalake import merge_deltalake
+
+        return merge_deltalake(
+            table=table,
+            source=self,
+            predicate=predicate,
+            io_config=io_config,
+            source_alias=source_alias,
+            target_alias=target_alias,
+            custom_metadata=custom_metadata,
+            safe_cast=safe_cast,
+            merge_schema=merge_schema,
+            writer_properties=writer_properties,
+            streamed_exec=streamed_exec,
+            max_spill_size=max_spill_size,
+            max_temp_directory_size=max_temp_directory_size,
+            post_commithook_properties=post_commithook_properties,
+        )
 
     def _write_deltalake_with_checkpoint(
         self,
