@@ -1884,6 +1884,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_normalize_endpoint_url_malformed_falls_back() {
+        // Even with the scheme prepended, an empty or invalid host still fails
+        // `Url::parse`, so the `Err(_)` fallback is exercised (and must not panic).
+        assert_eq!(normalize_endpoint_url(""), "https://");
+        assert_eq!(normalize_endpoint_url("a b.com"), "https://a b.com/");
+    }
+
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {
         let parquet_file_path = "s3://daft-public-data/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
