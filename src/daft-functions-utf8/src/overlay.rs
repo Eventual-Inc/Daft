@@ -203,9 +203,7 @@ fn compute_broadcast_len(input_len: usize, others: &[usize]) -> Result<usize, St
         if result_len == 1 {
             result_len = l;
         } else if result_len != l {
-            return Err(format!(
-                "broadcast length mismatch: {input_len} vs {others:?}"
-            ));
+            return Err(format!("broadcast length mismatch: {result_len} vs {l}"));
         }
     }
     Ok(result_len)
