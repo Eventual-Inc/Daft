@@ -3,7 +3,7 @@
 //! [`BoundClusteringSpec`] is the bound (`T = BoundExpr`) instantiation of the generic
 //! [`daft_logical_plan::partitioning::ClusteringSpec`]. The logical plan only ever deals with the
 //! resolved-by-name form (`ClusteringSpec`); binding happens here, at the logical -> pipeline
-//! boundary, so every downstream check (`needs_hash_repartition`, join co-partitioning) can compare
+//! boundary, so every downstream check (`can_skip_hash_repartition`, join co-partitioning) can compare
 //! bound expressions directly instead of re-binding on the fly.
 //!
 //! Pipeline nodes never call these helpers directly. Every node establishes its output clustering
@@ -44,6 +44,9 @@ pub(super) fn clustering_from_repartition_spec(
             c.num_partitions.unwrap_or(num_partitions),
             // Range repartition keys are already bound.
             c.by.clone(),
+            c.descending.clone(),
+            // The range-shuffle kernel routes nulls to the extreme partition consistent
+            // with default sort null placement (nulls_first = descending).
             c.descending.clone(),
         )),
         RepartitionSpec::Random(c) => BoundClusteringSpec::Random(RandomClusteringConfig::new(
@@ -134,13 +137,16 @@ pub(super) fn translate_clustering_through_projection(
     match translated {
         None => BoundClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
         Some(new_by) => match input {
-            BoundClusteringSpec::Range(RangeClusteringConfig { descending, .. }) => {
-                BoundClusteringSpec::Range(RangeClusteringConfig::new(
-                    num_partitions,
-                    new_by,
-                    descending.clone(),
-                ))
-            }
+            BoundClusteringSpec::Range(RangeClusteringConfig {
+                descending,
+                nulls_first,
+                ..
+            }) => BoundClusteringSpec::Range(RangeClusteringConfig::new(
+                num_partitions,
+                new_by,
+                descending.clone(),
+                nulls_first.clone(),
+            )),
             _ => BoundClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, new_by)),
         },
     }

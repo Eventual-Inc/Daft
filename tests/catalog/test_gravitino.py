@@ -503,6 +503,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=None,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -518,6 +520,8 @@ class TestGravitinoTable:
         mock_read_iceberg.assert_called_once_with(
             table=mock_pyiceberg_table,
             snapshot_id=12345,
+            branch=None,
+            tag=None,
             io_config=gravitino_table._inner.io_config,
         )
 
@@ -555,6 +559,16 @@ class TestGravitinoTable:
         """Test read with invalid option raises error."""
         with pytest.raises(ValueError, match="Unsupported option"):
             gravitino_table.read(invalid_option="value")
+
+    def test_read_postgres_with_invalid_option(self, postgres_gravitino_table):
+        """Test reading a Postgres table with invalid option raises error."""
+        with pytest.raises(ValueError, match="Unsupported option"):
+            postgres_gravitino_table.read(invalid_option="value")
+
+    def test_read_postgres_table_with_infer_schema(self, postgres_gravitino_table):
+        """Test reading a Postgres table with infer_schema option."""
+        result = postgres_gravitino_table.read(infer_schema=True)
+        assert result is not None
 
     def test_schema_calls_read(self, gravitino_table):
         """Test schema() method calls read().schema()."""

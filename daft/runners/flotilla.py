@@ -405,8 +405,7 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def _get_worker_startup_timeout() -> int:
-    return get_context().daft_execution_config.worker_startup_timeout
+DEFAULT_WORKER_STARTUP_TIMEOUT = 120
 
 
 def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
@@ -428,7 +427,10 @@ def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
         logger.warning("Failed to attach remote event log subscriber: %s", e)
 
 
-def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+def start_ray_workers(
+    existing_worker_ids: list[str],
+    worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
+) -> list[RaySwordfishWorker]:
     event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
     dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
     task_events_enabled = os.environ.get("DAFT_TASK_EVENTS_ENABLED")
@@ -480,29 +482,86 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             )
             actors.append((node, actor))
 
-    # Batch all IP address retrievals into a single ray.get call
-    actor_startup_timeout = _get_worker_startup_timeout()
-    try:
-        ip_addresses = ray.get(
-            [actor.get_address.remote() for _, actor in actors],
-            timeout=actor_startup_timeout,
-        )
-    except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
-
+    # Submit every address lookup up front so the actors start concurrently
+    # (preserving the original batched-startup latency), then wait against a
+    # single shared deadline. Resolving each ready ref individually isolates
+    # failures: a node that churns between the `ray.nodes()` snapshot and actor
+    # scheduling raises `ActorUnschedulableError`, a dead/unreachable actor
+    # raises `ActorDiedError`/`ActorUnavailableError`, and a worker whose
+    # `get_address` fails (e.g. the Flight shuffle server never started) raises
+    # `RayTaskError`. Actors still pending at the deadline are treated the same
+    # (slow / likely churned). Skip and kill those actors and continue with the
+    # workers that came up. The scheduler re-calls `start_ray_workers`
+    # incrementally (passing `existing_worker_ids`), so a skipped node's
+    # replacement is picked up on a later refresh. This mirrors the execution
+    # path, which already degrades gracefully on worker death (see
+    # `RaySwordfishTaskHandle._get_result`).
     handles = []
-    for (node, actor), ip_address in zip(actors, ip_addresses):
-        actor_handle = RaySwordfishActorHandle(actor)
-        handles.append(
-            RaySwordfishWorker(
-                node["NodeID"],
-                actor_handle,
-                int(node["Resources"]["CPU"]),
-                int(node["Resources"].get("GPU", 0)),
-                int(node["Resources"]["memory"]),
-                ip_address,
-            )
+    if actors:
+        address_refs = [actor.get_address.remote() for _, actor in actors]
+        ref_to_entry = {ref: (node, actor) for (node, actor), ref in zip(actors, address_refs)}
+
+        # `ray.wait` returns whatever resolved within the shared timeout window
+        # in `ready` (including tasks that errored, surfaced on `ray.get`) and
+        # the rest in `not_ready` -- so a timeout is handled as data here, never
+        # raised as `GetTimeoutError`.
+        ready, not_ready = ray.wait(
+            address_refs,
+            num_returns=len(address_refs),
+            timeout=worker_startup_timeout,
         )
+
+        to_skip = [ref_to_entry[ref] for ref in not_ready]
+        for ref in ready:
+            node, actor = ref_to_entry[ref]
+            try:
+                ip_address = ray.get(ref)  # already resolved; does not block
+            except (
+                ray.exceptions.ActorUnschedulableError,
+                ray.exceptions.ActorDiedError,
+                ray.exceptions.ActorUnavailableError,
+                ray.exceptions.RayTaskError,
+            ):
+                to_skip.append((node, actor))
+                continue
+            handles.append(
+                RaySwordfishWorker(
+                    node["NodeID"],
+                    RaySwordfishActorHandle(actor),
+                    int(node["Resources"]["CPU"]),
+                    int(node["Resources"].get("GPU", 0)),
+                    int(node["Resources"]["memory"]),
+                    ip_address,
+                )
+            )
+
+        for _node, actor in to_skip:
+            # Kill skipped actors so they don't hold the node's resources and
+            # block the replacement actor on the next refresh.
+            try:
+                ray.kill(actor, no_restart=True)
+            except Exception:
+                pass
+
+        if to_skip:
+            logger.warning(
+                "Skipped %d/%d unschedulable/unreachable flotilla worker(s) during "
+                "startup/refresh; continuing with %d. Replacement nodes are picked up "
+                "on a later refresh.",
+                len(to_skip),
+                len(actors),
+                len(handles),
+            )
+
+        # Hard-fail only genuine initial-startup total failure: we tried to
+        # schedule workers, none came up, and there is no pre-existing fleet to
+        # fall back on. During incremental refreshes (existing_worker_ids
+        # populated) a fully-failed batch is non-fatal -- the query keeps
+        # running on the existing workers and retries on the next refresh.
+        if not handles and not existing_worker_ids:
+            raise RuntimeError(
+                f"No flotilla workers became available within {worker_startup_timeout}s ({len(actors)} attempted)"
+            )
 
     return handles
 
@@ -515,12 +574,18 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     )
 
 
+def clear_autoscaling_requests() -> None:
+    # Clear any previously requested resources by the Ray autoscaler.
+    try_autoscale(bundles=[])
+
+
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
     def __init__(
         self,
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
+        worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
     ) -> None:
         _load_extensions_from_env()
         if dashboard_url:
@@ -546,7 +611,7 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        self.plan_runner = DistributedPhysicalPlanRunner(worker_startup_timeout)
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
@@ -670,7 +735,7 @@ class FlotillaRunner:
         the extension to existing workers.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
 
@@ -708,7 +773,9 @@ class FlotillaRunner:
             flotilla_options["runtime_env"] = {"env_vars": runner_env_vars}
 
         self.runner = RemoteFlotillaRunner.options(**flotilla_options).remote(  # type: ignore
-            dashboard_url=dashboard_url, event_log_dir=event_log_dir
+            dashboard_url=dashboard_url,
+            event_log_dir=event_log_dir,
+            worker_startup_timeout=worker_startup_timeout,
         )
         self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
 

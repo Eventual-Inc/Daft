@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub enum CheckpointStatus {
     /// Keys and files are being accumulated. Not visible to readers.
     Staged,
-    /// Sealed — keys and files are coupled and visible to readers.
+    /// Keys and files are coupled and visible to readers.
     Checkpointed,
     /// Catalog commit succeeded. Files no longer returned by
     /// `get_checkpointed_files`, but keys remain visible.
@@ -36,8 +36,8 @@ pub struct Checkpoint {
     pub status: CheckpointStatus,
     /// When the checkpoint entry was first created (first `stage_keys`/`stage_files` call).
     pub created_at: SystemTime,
-    /// When the checkpoint was sealed via `checkpoint()`.
-    pub sealed_at: Option<SystemTime>,
+    /// When the checkpoint transitioned to `Checkpointed` via `checkpoint()`.
+    pub checkpointed_at: Option<SystemTime>,
     /// When the checkpoint was marked committed via `mark_committed()`.
     pub committed_at: Option<SystemTime>,
 }
@@ -49,14 +49,14 @@ impl Checkpoint {
         id: CheckpointId,
         status: CheckpointStatus,
         created_at: SystemTime,
-        sealed_at: Option<SystemTime>,
+        checkpointed_at: Option<SystemTime>,
         committed_at: Option<SystemTime>,
     ) -> Self {
         Self {
             id,
             status,
             created_at,
-            sealed_at,
+            checkpointed_at,
             committed_at,
         }
     }
@@ -78,7 +78,7 @@ pub enum FileFormat {
 /// by the format-specific committer. The checkpoint store treats it as
 /// an opaque blob.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileMetadata {
     pub format: FileFormat,
     pub data: Vec<u8>,

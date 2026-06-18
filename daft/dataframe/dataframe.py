@@ -77,6 +77,7 @@ if TYPE_CHECKING:
     from daft.catalog.__unity._client import UnityCatalogTable
     from daft.checkpoint import IdempotentCommit
     from daft.convert import ArrowStreamExportable
+    from daft.dataframe.to_torch import DaftTorchDataLoader
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.sink import WriteResultType
@@ -203,6 +204,26 @@ class DataFrame:
             raise ValueError("Metrics are not available until the DataFrame has been materialized")
         else:
             return self._metadata.to_recordbatch() if self._metadata else None
+
+    @property
+    def skipped_corrupt_files(self) -> list[tuple[str, str, bool]]:
+        """Files skipped during the last execution due to ignore_corrupt_files=True.
+
+        Returns a list of ``(path, reason, partial)`` tuples. ``partial`` is ``True``
+        when some batches were already emitted before corruption was detected (the file
+        was not fully skipped). Only available after ``.collect()``.
+
+        Example::
+
+            df = daft.read_parquet("s3://bucket/data/", ignore_corrupt_files=True)
+            df.collect()
+            for path, reason, partial in df.skipped_corrupt_files:
+                tag = " (partial)" if partial else ""
+                print(f"Skipped{tag} {path}: {reason}")
+        """
+        if self._result_cache is None:
+            raise ValueError("skipped_corrupt_files is not available until the DataFrame has been collected")
+        return self._metadata.skipped_corrupt_files if self._metadata else []
 
     def pipe(
         self,
@@ -601,7 +622,7 @@ class DataFrame:
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
-        Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
+        Each partition will be returned as a daft.MicroPartition object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
@@ -3858,6 +3879,7 @@ class DataFrame:
         strategy: Literal["backward", "forward", "nearest"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
+        _assume_sorted_and_aligned: bool = False,
     ) -> "DataFrame":
         """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
 
@@ -3870,6 +3892,12 @@ class DataFrame:
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
             strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; For tie-breaking, prefer the larger/forward value.
+            _assume_sorted_and_aligned: Asserts that both inputs have the same number of
+                partitions with identical boundaries, and that rows within each partition are
+                sorted ascending by the on-key. Also requires
+                ``enable_scan_task_split_and_merge=False``. When these conditions hold, Daft
+                skips the distributed range-repartition shuffle and zips partitions by index.
+                Passing ``True`` when the conditions are not met produces incorrect results.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
@@ -3950,6 +3978,7 @@ class DataFrame:
             strategy=asof_strategy,
             prefix=prefix,
             suffix=suffix,
+            assume_sorted_and_aligned=_assume_sorted_and_aligned,
         )
         return DataFrame(builder)
 
@@ -5351,6 +5380,15 @@ class DataFrame:
             assert result is not None
             result.wait()
             self._metadata.write_mermaid()
+            skipped = self._metadata.skipped_corrupt_files if self._metadata else []
+            if skipped:
+                paths = "\n".join(f"  - {path}{' (partial)' if partial else ''}" for path, _, partial in skipped)
+                logger.warning(
+                    "%d file(s) were skipped due to corruption or being missing "
+                    "(ignore_corrupt_files=True). Use df.skipped_corrupt_files for details.\n%s",
+                    len(skipped),
+                    paths,
+                )
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":
@@ -5821,6 +5859,58 @@ class DataFrame:
             df = self
 
         return DaftTorchIterableDataset(df)
+
+    @DataframePublicAPI
+    def to_torch_dataloader(
+        self,
+        batch_size: int = 1,
+        *,
+        pin_memory: bool = False,
+        pin_memory_device: str = "",
+        prefetch_count: int = 0,
+    ) -> "DaftTorchDataLoader":
+        """Return a DataLoader-like iterator that streams batched partitions for PyTorch training.
+
+        Begins execution of the DataFrame when iterated. Each yielded batch is a dict mapping column
+        names to `torch.Tensor` values (or Python lists for non-numeric columns).
+
+        For row-level shuffling, use [``shuffle``][daft.DataFrame.shuffle] or
+        [``sample``][daft.DataFrame.sample] on the DataFrame before calling this method.
+
+        Note:
+            Batch sizing is best-effort. Batches may be smaller than `batch_size`.
+
+        Args:
+            batch_size: Target number of rows per batch.
+            pin_memory: If `True`, pin memory on returned tensors for faster GPU transfer.
+            pin_memory_device: Optional device for pinned memory (PyTorch 2.x).
+            prefetch_count: Number of batches loaded in advance. This will increase memory usage, but can
+            improve throughput.
+
+        Returns:
+            DaftTorchDataLoader: Iterable over batch dicts for use as
+            `for batch in df.to_torch_dataloader(batch_size): ...`
+
+        Examples:
+            >>> import daft
+            >>> import torch  # doctest: +SKIP
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4], "y": [5, 6, 7, 8]})
+            >>> for batch in df.to_torch_dataloader(batch_size=2):  # doctest: +SKIP
+            ...     assert batch["x"].shape == (2,)
+
+        Tip:
+            For the PyTorch `IterableDataset` + `DataLoader` composition, see
+            [``to_torch_iter_dataset``][daft.DataFrame.to_torch_iter_dataset].
+        """
+        from daft.dataframe.to_torch import DaftTorchDataLoader
+
+        return DaftTorchDataLoader(
+            self,
+            batch_size,
+            pin_memory=pin_memory,
+            pin_memory_device=pin_memory_device,
+            prefetch_count=prefetch_count,
+        )
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
