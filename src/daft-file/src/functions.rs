@@ -5,14 +5,14 @@ use daft_core::{
     series::IntoSeries,
     with_match_file_types,
 };
-use daft_dsl::functions::{UnaryArg, prelude::*};
+use daft_dsl::functions::{AsyncScalarUDF, UnaryArg, prelude::*};
 use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     file::{BUFFER_SIZE_SNIFF, DaftFile},
-    meta::file_exists_blocking,
+    meta::file_exists,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -438,12 +438,13 @@ impl ScalarUDF for Size {
 pub struct FileExists;
 
 #[typetag::serde]
-impl ScalarUDF for FileExists {
+#[async_trait::async_trait]
+impl AsyncScalarUDF for FileExists {
     fn name(&self) -> &'static str {
         "file_exists"
     }
 
-    fn call(
+    async fn call(
         &self,
         args: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
@@ -453,10 +454,13 @@ impl ScalarUDF for FileExists {
         with_match_file_types!(input.data_type(), |$P| {
             let s = input.file::<$P>()?;
 
-            let out = s
-                .into_iter()
-                .map(|f| f.map(|f| file_exists_blocking(f)).transpose())
-                .collect::<DaftResult<Vec<Option<bool>>>>()?;
+            let out = futures::future::try_join_all(s.into_iter().map(|f| async {
+                if let Some(f) = f {
+                    file_exists(f).await.map(Some)
+                } else {
+                    Ok(None)
+                }
+            })).await?;
 
             Ok(daft_core::prelude::BooleanArray::from_iter(s.name(), out.into_iter()).into_series())
         })
@@ -465,6 +469,13 @@ impl ScalarUDF for FileExists {
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = args.try_into()?;
         let name = input.to_field(schema)?.name;
+
+        if !matches!(input.to_field(schema)?.dtype, DataType::File(_)) {
+            return Err(DaftError::TypeError(format!(
+                "Expected File type for function 'file_exists', got: {}",
+                input.to_field(schema)?.dtype
+            )));
+        }
 
         Ok(Field::new(name, DataType::Boolean))
     }
