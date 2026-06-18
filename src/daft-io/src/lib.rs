@@ -16,7 +16,6 @@ mod retry;
 pub mod s3_like;
 mod stats;
 mod stream_utils;
-mod tos;
 #[cfg(feature = "python")]
 mod unity;
 
@@ -30,7 +29,6 @@ use google_cloud::GCSSource;
 pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
-use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
 #[cfg(test)]
@@ -287,9 +285,6 @@ impl IOClient {
                     unimplemented!("Unity Catalog source currently requires Python");
                 }
             }
-            SourceType::Tos => {
-                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
-            }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
@@ -303,27 +298,28 @@ impl IOClient {
             }
             SourceType::OpenDAL { scheme } => {
                 let empty_config = std::collections::BTreeMap::new();
-                let backend_config = if scheme == "cos" {
-                    // Extract bucket from the URL for COS config
-                    let parsed_url =
-                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
-                    let bucket = parsed_url.host_str().unwrap_or_default();
-                    let cos_config = self.config.cos.to_opendal_config(bucket);
-                    // Merge user-provided opendal_backends on top (if any)
-                    let mut merged = cos_config;
-                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
-                        for (k, v) in extra {
-                            merged.insert(k.clone(), v.clone());
+                let mut backend_config = match scheme.as_str() {
+                    "cos" | "tos" => {
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let bucket = parsed_url.host_str().unwrap_or_default();
+                        match scheme.as_str() {
+                            "cos" => self.config.cos.to_opendal_config(bucket),
+                            _ => self.config.tos.to_opendal_config(bucket),
                         }
                     }
-                    merged
-                } else {
-                    self.config
+                    _ => self
+                        .config
                         .opendal_backends
                         .get(scheme)
                         .unwrap_or(&empty_config)
-                        .clone()
+                        .clone(),
                 };
+                if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                    for (k, v) in extra {
+                        backend_config.insert(k.clone(), v.clone());
+                    }
+                }
                 OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
@@ -497,7 +493,6 @@ pub enum SourceType {
     GCS,
     HF,
     Unity,
-    Tos,
     Gravitino,
     OpenDAL { scheme: String },
 }
@@ -512,7 +507,6 @@ impl std::fmt::Display for SourceType {
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
-            Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -525,7 +519,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -624,7 +618,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
-        "tos" => Ok((SourceType::Tos, fixed_input)),
+        "tos" => Ok((
+            SourceType::OpenDAL {
+                scheme: "tos".to_string(),
+            },
+            fixed_input,
+        )),
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),
