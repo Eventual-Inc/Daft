@@ -2693,12 +2693,14 @@ dependencies = [
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-error",
  "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-io",
  "daft-schema",
+ "futures",
  "mime_guess",
  "pyo3",
  "serde",
