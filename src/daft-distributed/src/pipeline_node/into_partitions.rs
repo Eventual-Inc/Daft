@@ -6,7 +6,7 @@ use common_runtime::OrderedJoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 
 use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
@@ -145,7 +145,7 @@ impl IntoPartitionsNode {
                         LocalNodeContext::new(Some(node_id as usize)),
                     )
                 },
-            );
+            )?;
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -214,7 +214,7 @@ impl IntoPartitionsNode {
                         partition_refs,
                         self.as_ref(),
                         |input| input,
-                    );
+                    )?;
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -223,6 +223,64 @@ impl IntoPartitionsNode {
         }
 
         Ok(())
+    }
+
+    /// Flight-backend path for any input/output partition ratio.
+    ///
+    /// Each input task is wrapped with `IntoPartitions(flight, num_partitions)` so it
+    /// writes data for ALL global output partitions to the local flight server.
+    /// `emit_read_tasks_from_stream` then folds those per-input refs into one
+    /// `ShuffleRead` task per output partition.
+    ///
+    /// This is correct regardless of whether num_inputs < = > num_partitions because
+    /// the flight server stores per-(input, partition) slices and the reduce side
+    /// reconstructs the full partition by reading from all input servers.
+    async fn flight_into_partitions(
+        self: Arc<Self>,
+        builders: Vec<SwordfishTaskBuilder>,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<()> {
+        let num_partitions = self.num_partitions;
+        let node_id = self.node_id();
+
+        let submitted = builders
+            .into_iter()
+            .map(|builder| {
+                let wrapped = builder.map_plan(self.as_ref(), |plan| {
+                    LocalPhysicalPlan::into_partitions(
+                        plan,
+                        num_partitions,
+                        self.shuffle_backend.local_shuffle_backend(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                });
+                let submittable = wrapped.build(self.context.query_idx, &task_id_counter);
+                submittable.submit(&scheduler_handle)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        // Turn submitted futures into a stream of MaterializedOutputs, skipping cancelled tasks.
+        let materialized_stream = stream::iter(submitted)
+            .then(|task| task)
+            .filter_map(|result| async move {
+                match result {
+                    Ok(Some(output)) => Some(Ok(output)),
+                    Ok(None) => None,
+                    Err(e) => Some(Err(e)),
+                }
+            });
+
+        self.shuffle_backend
+            .emit_read_tasks_from_stream(
+                Box::pin(materialized_stream),
+                num_partitions,
+                self.as_ref(),
+                result_tx,
+            )
+            .await
     }
 
     async fn execute_into_partitions(
@@ -234,6 +292,17 @@ impl IntoPartitionsNode {
     ) -> DaftResult<()> {
         // Collect all input builders without materializing to count them
         let input_builders: Vec<SwordfishTaskBuilder> = input_stream.collect().await;
+
+        // The flight backend always writes every input to all num_partitions global
+        // output slots on the local flight server, then folds into per-partition
+        // ShuffleRead tasks.  split_tasks / coalesce_tasks are Ray-only constructs
+        // that don't apply to flight.
+        if let DistributedShuffleBackend::Flight(_) = self.shuffle_backend.backend() {
+            return self
+                .flight_into_partitions(input_builders, task_id_counter, result_tx, scheduler_handle)
+                .await;
+        }
+
         let num_input_tasks = input_builders.len();
 
         match num_input_tasks.cmp(&self.num_partitions) {

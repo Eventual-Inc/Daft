@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import shutil
+import signal
+import sys
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
@@ -255,6 +257,12 @@ class RaySwordfishActor:
                 return merged
 
             async for partition in result_handle:
+                if isinstance(partition, FlightPartitions):
+                    is_flight_shuffle = True
+                    refs = partition.partitions
+                    metas.extend(PartitionMetadata.from_flight_partition_ref(ref) for ref in refs)
+                    partition_refs.extend(refs)
+                    continue
                 if isinstance(partition, FlightPartitionRef):
                     is_flight_shuffle = True
                     metas.append(PartitionMetadata.from_flight_partition_ref(partition))
@@ -345,6 +353,11 @@ class RaySwordfishTaskHandle:
                     f"Expected exactly 1 FlightPartitions batch per finalize, got {len(flight_partitions)}. "
                     "Each blocking-sink finalize must produce a single FlightPartitionRefs output."
                 )
+                if not isinstance(flight_partitions[0], FlightPartitions):
+                    raise TypeError(
+                        "Expected FlightPartitions output from flight-shuffle finalize, "
+                        f"got {type(flight_partitions[0])!r}"
+                    )
                 refs = [ref for fp in flight_partitions for ref in fp.partitions]
                 assert len(refs) == len(task_metadata.partition_metadatas)
                 return RayTaskResult.success_flight(refs, task_metadata.stats)
@@ -611,6 +624,7 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
+        self._plan_shuffle_dirs: dict[str, list[str]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner(worker_startup_timeout)
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
@@ -629,6 +643,18 @@ class RemoteFlotillaRunner:
         }
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
+        shuffle_dirs = plan.flight_shuffle_dirs()
+        if shuffle_dirs:
+            self._plan_shuffle_dirs[plan.idx()] = [f"{d}/daft_shuffle" for d in shuffle_dirs]
+
+    async def cleanup_plan_shuffle(self, plan_id: str) -> None:
+        """Clean up flight shuffle dirs for a plan that failed or was cancelled."""
+        self.curr_plans.pop(plan_id, None)
+        self.curr_result_gens.pop(plan_id, None)
+        shuffle_dirs = self._plan_shuffle_dirs.pop(plan_id, [])
+        if shuffle_dirs:
+            logger.info("Cleaning up flight shuffle dirs after failure: %s", shuffle_dirs)
+            await clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | PyExecutionStats | None:
         from daft.runners.ray_runner import (
@@ -778,6 +804,23 @@ class FlotillaRunner:
             worker_startup_timeout=worker_startup_timeout,
         )
         self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
+        self._active_plan_id: str | None = None
+
+        # Clean up shuffle dirs if the driver process is stopped via SIGTERM (e.g. ray job stop).
+        _prev_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _sigterm_handler(signum: int, frame: object) -> None:
+            if self._active_plan_id is not None:
+                try:
+                    ray.get(self.runner.cleanup_plan_shuffle.remote(self._active_plan_id), timeout=30)
+                except Exception as e:
+                    logger.warning("Shuffle cleanup on SIGTERM failed: %s", e)
+            if callable(_prev_sigterm):
+                _prev_sigterm(signum, frame)
+            else:
+                sys.exit(0)
+
+        signal.signal(signal.SIGTERM, _sigterm_handler)
 
     def stream_plan(
         self,
@@ -795,9 +838,16 @@ class FlotillaRunner:
 
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
+        self._active_plan_id = plan_id
 
-        while True:
-            result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if isinstance(result, PyExecutionStats):
-                return result
-            yield result
+        try:
+            while True:
+                result = ray.get(self.runner.get_next_partition.remote(plan_id))
+                if isinstance(result, PyExecutionStats):
+                    return result
+                yield result
+        except Exception:
+            ray.get(self.runner.cleanup_plan_shuffle.remote(plan_id))
+            raise
+        finally:
+            self._active_plan_id = None

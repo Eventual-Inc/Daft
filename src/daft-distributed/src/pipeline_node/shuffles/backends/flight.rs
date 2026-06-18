@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
@@ -74,7 +74,11 @@ pub(crate) async fn fold_outputs_from_stream(
         let flight_ref = partition
             .as_any()
             .downcast_ref::<FlightPartitionRef>()
-            .expect("expected flight partition ref");
+            .ok_or_else(|| {
+                DaftError::InternalError(
+                    "expected flight partition ref while folding flight-shuffle outputs".to_string(),
+                )
+            })?;
         inputs_by_server
             .entry(flight_ref.server_address.clone())
             .or_default()
@@ -95,13 +99,17 @@ pub(crate) async fn fold_outputs_from_stream(
 /// (shuffle, partition idx).
 pub(crate) fn read_inputs_from_refs(
     partition_refs: Vec<PartitionRef>,
-) -> Vec<FlightShuffleReadInput> {
+) -> DaftResult<Vec<FlightShuffleReadInput>> {
     let mut groups: BTreeMap<(u64, u32), BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for partition in partition_refs {
         let flight_ref = partition
             .as_any()
             .downcast_ref::<FlightPartitionRef>()
-            .expect("expected flight partition ref");
+            .ok_or_else(|| {
+                DaftError::InternalError(
+                    "expected flight partition ref while reading flight-shuffle inputs".to_string(),
+                )
+            })?;
         groups
             .entry((flight_ref.shuffle_id, partition_idx_from_ref(flight_ref)))
             .or_default()
@@ -110,7 +118,7 @@ pub(crate) fn read_inputs_from_refs(
             .push(input_id_from_ref(flight_ref));
     }
 
-    groups
+    Ok(groups
         .into_iter()
         .map(
             |((shuffle_id, partition_idx), inputs_by_server)| FlightShuffleReadInput {
@@ -119,7 +127,7 @@ pub(crate) fn read_inputs_from_refs(
                 inputs_by_server: Arc::new(inputs_by_server),
             },
         )
-        .collect()
+        .collect())
 }
 
 pub(crate) async fn emit_read_tasks(

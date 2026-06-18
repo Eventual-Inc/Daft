@@ -85,7 +85,7 @@ impl GatherNode {
             .collect();
         let task = self
             .shuffle_backend
-            .build_refs_task_builder(refs, self.as_ref(), |plan| plan);
+            .build_refs_task_builder(refs, self.as_ref(), |plan| plan)?;
         let _ = result_tx.send(task).await;
         Ok(())
     }

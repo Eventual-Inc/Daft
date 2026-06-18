@@ -103,7 +103,7 @@ impl ShuffleBackend {
         partition_refs: Vec<PartitionRef>,
         node: &dyn PipelineNodeImpl,
         wrap_plan: F,
-    ) -> SwordfishTaskBuilder
+    ) -> DaftResult<SwordfishTaskBuilder>
     where
         F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
     {
@@ -119,10 +119,10 @@ impl ShuffleBackend {
                     LocalNodeContext::new(Some(node_id as usize)),
                 );
                 let plan = wrap_plan(in_memory_scan);
-                SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
+                Ok(SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs))
             }
             DistributedShuffleBackend::Flight(_) => {
-                let read_inputs = flight::read_inputs_from_refs(partition_refs);
+                let read_inputs = flight::read_inputs_from_refs(partition_refs)?;
                 let shuffle_read = LocalPhysicalPlan::shuffle_read(
                     node_id,
                     self.schema.clone(),
@@ -131,8 +131,8 @@ impl ShuffleBackend {
                     LocalNodeContext::new(Some(node_id as usize)),
                 );
                 let plan = wrap_plan(shuffle_read);
-                SwordfishTaskBuilder::new(plan, node, node_id)
-                    .with_flight_shuffle_reads(node_id, read_inputs)
+                Ok(SwordfishTaskBuilder::new(plan, node, node_id)
+                    .with_flight_shuffle_reads(node_id, read_inputs))
             }
         }
     }

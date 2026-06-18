@@ -124,6 +124,10 @@ impl PyDistributedPhysicalPlan {
         self.plan.idx().to_string()
     }
 
+    fn flight_shuffle_dirs(&self) -> Vec<String> {
+        self.plan.execution_config().flight_shuffle_dirs.clone()
+    }
+
     fn num_partitions(&self) -> PyResult<usize> {
         // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
