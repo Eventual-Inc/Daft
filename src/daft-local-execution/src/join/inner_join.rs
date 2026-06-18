@@ -14,6 +14,11 @@ const MIN_AVG_RUN_LEN_FOR_VECTORIZED_TAKE: usize = 8;
 
 type BuildMatch = (u64, usize, u64);
 
+struct MatchStats {
+    matched_probe_rows: usize,
+    build_table_runs: usize,
+}
+
 pub(crate) fn probe_inner(
     input: &MicroPartition,
     probe_state: &ProbeState,
@@ -28,16 +33,32 @@ pub(crate) fn probe_inner(
             let join_keys = input_table.eval_expression_list(&params.probe_on)?;
             let idx_iter = probe_state.probe_indices(join_keys)?;
             let mut matches = Vec::new();
+            let mut matched_probe_rows = 0;
+            let mut build_table_runs = 0;
+            let mut previous_build_table = None;
             for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
+                let probe_matches_start = matches.len();
                 if let Some(inner_iter) = inner_iter {
                     for (build_rb_idx, build_row_idx) in inner_iter {
-                        matches.push((probe_row_idx as u64, build_rb_idx as usize, build_row_idx));
+                        let build_rb_idx = build_rb_idx as usize;
+                        if previous_build_table != Some(build_rb_idx) {
+                            build_table_runs += 1;
+                            previous_build_table = Some(build_rb_idx);
+                        }
+                        matches.push((probe_row_idx as u64, build_rb_idx, build_row_idx));
                     }
                 }
+                if matches.len() > probe_matches_start {
+                    matched_probe_rows += 1;
+                }
             }
+            let match_stats = MatchStats {
+                matched_probe_rows,
+                build_table_runs,
+            };
 
             let build_side_table =
-                build_side_for_inner_matches(&build_side_tables, &matches, input_table.len())?;
+                build_side_for_inner_matches(&build_side_tables, &matches, &match_stats)?;
             let probe_side_table = {
                 let indices_arr = UInt64Array::from_vec(
                     "",
@@ -92,42 +113,32 @@ pub(crate) fn probe_inner(
 fn build_side_for_inner_matches(
     build_side_tables: &[&daft_recordbatch::RecordBatch],
     matches: &[BuildMatch],
-    probe_rows: usize,
+    match_stats: &MatchStats,
 ) -> DaftResult<daft_recordbatch::RecordBatch> {
-    if should_use_vectorized_take(matches, probe_rows) {
-        build_side_with_vectorized_take(build_side_tables, matches)
+    if should_use_vectorized_take(matches, match_stats) {
+        build_side_with_vectorized_take(build_side_tables, matches, match_stats)
     } else {
         build_side_with_growable(build_side_tables, matches)
     }
 }
 
-fn should_use_vectorized_take(matches: &[BuildMatch], probe_rows: usize) -> bool {
-    if matches.len() < MIN_MATCHES_FOR_VECTORIZED_TAKE || probe_rows == 0 {
+fn should_use_vectorized_take(matches: &[BuildMatch], match_stats: &MatchStats) -> bool {
+    if matches.len() < MIN_MATCHES_FOR_VECTORIZED_TAKE || match_stats.matched_probe_rows == 0 {
         return false;
     }
 
-    if matches.len() < probe_rows.saturating_mul(MIN_FANOUT_FOR_VECTORIZED_TAKE) {
+    if matches.len()
+        < match_stats
+            .matched_probe_rows
+            .saturating_mul(MIN_FANOUT_FOR_VECTORIZED_TAKE)
+    {
         return false;
     }
 
-    let run_count = count_build_table_runs(matches);
-    matches.len() >= run_count.saturating_mul(MIN_AVG_RUN_LEN_FOR_VECTORIZED_TAKE)
-}
-
-fn count_build_table_runs(matches: &[BuildMatch]) -> usize {
-    if matches.is_empty() {
-        return 0;
-    }
-
-    let mut runs = 1;
-    let mut current_build_table = matches[0].1;
-    for (_, build_table, _) in matches.iter().skip(1) {
-        if *build_table != current_build_table {
-            runs += 1;
-            current_build_table = *build_table;
-        }
-    }
-    runs
+    matches.len()
+        >= match_stats
+            .build_table_runs
+            .saturating_mul(MIN_AVG_RUN_LEN_FOR_VECTORIZED_TAKE)
 }
 
 fn build_side_with_growable(
@@ -147,12 +158,13 @@ fn build_side_with_growable(
 fn build_side_with_vectorized_take(
     build_side_tables: &[&daft_recordbatch::RecordBatch],
     matches: &[BuildMatch],
+    match_stats: &MatchStats,
 ) -> DaftResult<daft_recordbatch::RecordBatch> {
     if matches.is_empty() {
         return build_side_with_growable(build_side_tables, matches);
     }
 
-    let mut taken_tables = Vec::with_capacity(count_build_table_runs(matches));
+    let mut taken_tables = Vec::with_capacity(match_stats.build_table_runs);
     let mut current_build_table = matches[0].1;
     let mut run_row_idxs = Vec::new();
 

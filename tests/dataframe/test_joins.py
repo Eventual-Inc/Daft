@@ -276,23 +276,17 @@ def test_inner_join_high_build_side_fanout(make_df, n_partitions: int, with_defa
     right = make_df(
         {
             "A": right_keys,
-            "right_payload": [
-                f"right-{key}-{idx:02d}" for key in range(num_keys) for idx in range(fanout)
-            ],
+            "right_payload": [f"right-{key}-{idx:02d}" for key in range(num_keys) for idx in range(fanout)],
         },
         repartition=n_partitions,
         repartition_columns=["A"],
     )
 
-    joined = left.join(right, on="A", strategy="hash", how="inner").sort(
-        ["A", "right_payload"]
-    )
+    joined = left.join(right, on="A", strategy="hash", how="inner").sort(["A", "right_payload"])
     joined_data = joined.to_pydict()
 
     assert joined_data["A"] == [key for key in range(num_keys) for _ in range(fanout)]
-    assert joined_data["left_payload"] == [
-        f"left-{key}" for key in range(num_keys) for _ in range(fanout)
-    ]
+    assert joined_data["left_payload"] == [f"left-{key}" for key in range(num_keys) for _ in range(fanout)]
     assert joined_data["right_payload"] == [
         f"right-{key}-{idx:02d}" for key in range(num_keys) for idx in range(fanout)
     ]

@@ -248,9 +248,10 @@ def test_inner_join_high_fanout(benchmark, num_partitions) -> None:
     result = benchmark(bench_join)
 
     assert len(result) == small_length * fanout
-    assert result.groupby("keys").agg(col("right_payload").count()).sort("keys").to_pydict()[
-        "right_payload"
-    ] == [fanout] * small_length
+    assert (
+        result.groupby("keys").agg(col("right_payload").count()).sort("keys").to_pydict()["right_payload"]
+        == [fanout] * small_length
+    )
 
 
 @pytest.mark.benchmark(group="joins")
