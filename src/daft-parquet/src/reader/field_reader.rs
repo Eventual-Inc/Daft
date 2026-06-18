@@ -101,47 +101,55 @@ fn build_primitive_leaf_reader(
     ));
 
     let reader: Box<dyn ArrayReader> = if matches!(arrow_type, arrow::datatypes::DataType::Null) {
-        Box::new(NullArrayReader::<Int32Type>::new(pages, col_descr)?)
+        Box::new(NullArrayReader::<Int32Type>::new(
+            pages, col_descr, total_rows,
+        )?)
     } else {
         match physical_type {
             PhysicalType::BOOLEAN => Box::new(PrimitiveArrayReader::<BoolType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::INT32 => Box::new(PrimitiveArrayReader::<Int32Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::INT64 => Box::new(PrimitiveArrayReader::<Int64Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::FLOAT => Box::new(PrimitiveArrayReader::<FloatType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::DOUBLE => Box::new(PrimitiveArrayReader::<DoubleType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::INT96 => Box::new(PrimitiveArrayReader::<Int96Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
+                total_rows,
             )?),
             PhysicalType::BYTE_ARRAY => match arrow_type {
                 arrow::datatypes::DataType::Utf8View | arrow::datatypes::DataType::BinaryView => {
-                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type))?
+                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type), total_rows)?
                 }
-                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type))?,
+                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type), total_rows)?,
             },
             PhysicalType::FIXED_LEN_BYTE_ARRAY => {
-                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type))?
+                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type), total_rows)?
             }
         }
     };
