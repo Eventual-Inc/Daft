@@ -368,6 +368,135 @@ define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
     b
 });
 
+macro_rules! define_bool_and_accum {
+    ($name:ident) => {
+        struct $name {
+            accumulators: Vec<Option<bool>>,
+            source: BooleanArray,
+        }
+
+        impl $name {
+            fn new(source: BooleanArray) -> Self {
+                Self {
+                    accumulators: Vec::new(),
+                    source,
+                }
+            }
+
+            fn init_groups(&mut self, n: usize) {
+                self.accumulators.resize(n, None);
+            }
+
+            /// Vectorized batch update over pre-computed group_ids.
+            fn update_batch(&mut self, group_ids: &[u32]) {
+                let accs = &mut self.accumulators;
+                if self.source.null_count() == 0 {
+                    // Tight loop: no null checks needed on source values.
+                    let bitmap = self.source.to_bitmap();
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        let val = bitmap.value(row_idx);
+                        let acc = &mut accs[gid as usize];
+                        *acc = Some(match *acc {
+                            Some(a) => a && val,
+                            None => val,
+                        });
+                    }
+                } else {
+                    // Source has nulls: check each value.
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        if let Some(val) = self.source.get(row_idx) {
+                            let acc = &mut accs[gid as usize];
+                            *acc = Some(match *acc {
+                                Some(a) => a && val,
+                                None => val,
+                            });
+                        }
+                    }
+                }
+            }
+
+            fn finalize(self, name: &str) -> DaftResult<Series> {
+                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
+                if has_nulls {
+                    Ok(BooleanArray::from_iter(name, self.accumulators.into_iter()).into_series())
+                } else {
+                    Ok(BooleanArray::from_values(
+                        name,
+                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
+                    )
+                    .into_series())
+                }
+            }
+        }
+    };
+}
+
+macro_rules! define_bool_or_accum {
+    ($name:ident) => {
+        struct $name {
+            accumulators: Vec<Option<bool>>,
+            source: BooleanArray,
+        }
+
+        impl $name {
+            fn new(source: BooleanArray) -> Self {
+                Self {
+                    accumulators: Vec::new(),
+                    source,
+                }
+            }
+
+            fn init_groups(&mut self, n: usize) {
+                self.accumulators.resize(n, None);
+            }
+
+            /// Vectorized batch update over pre-computed group_ids.
+            fn update_batch(&mut self, group_ids: &[u32]) {
+                let accs = &mut self.accumulators;
+                if self.source.null_count() == 0 {
+                    // Tight loop: no null checks needed on source values.
+                    let bitmap = self.source.to_bitmap();
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        let val = bitmap.value(row_idx);
+                        let acc = &mut accs[gid as usize];
+                        *acc = Some(match *acc {
+                            Some(a) => a || val,
+                            None => val,
+                        });
+                    }
+                } else {
+                    // Source has nulls: check each value.
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        if let Some(val) = self.source.get(row_idx) {
+                            let acc = &mut accs[gid as usize];
+                            *acc = Some(match *acc {
+                                Some(a) => a || val,
+                                None => val,
+                            });
+                        }
+                    }
+                }
+            }
+
+            fn finalize(self, name: &str) -> DaftResult<Series> {
+                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
+                if has_nulls {
+                    Ok(BooleanArray::from_iter(name, self.accumulators.into_iter()).into_series())
+                } else {
+                    Ok(BooleanArray::from_values(
+                        name,
+                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
+                    )
+                    .into_series())
+                }
+            }
+        }
+    };
+}
+
+define_bool_and_accum!(BoolAndAccum);
+define_bool_or_accum!(BoolOrAccum);
+
 // ---------------------------------------------------------------------------
 // AggAccumulator enum — eliminates vtable dispatch in the hot loop
 // ---------------------------------------------------------------------------
@@ -442,6 +571,8 @@ define_agg_accumulator_enum!(
     MaxU64(MaxAccumU64),
     MaxF32(MaxAccumF32),
     MaxF64(MaxAccumF64),
+    BoolAnd(BoolAndAccum),
+    BoolOr(BoolOrAccum),
 );
 
 impl AggAccumulator {
@@ -604,6 +735,34 @@ fn try_create_accumulator(
                 Float64 => Float64Array => MaxF64(MaxAccumF64),
             )
         }
+        AggExpr::BoolAnd(expr) => {
+            let evaluated = source.eval_agg_child(expr)?;
+            let name = evaluated.name().to_string();
+            match evaluated.data_type() {
+                DataType::Boolean => {
+                    let arr = evaluated.downcast::<BooleanArray>()?;
+                    Ok(Some((
+                        AggAccumulator::BoolAnd(BoolAndAccum::new(arr.clone())),
+                        name,
+                    )))
+                }
+                _ => Ok(None),
+            }
+        }
+        AggExpr::BoolOr(expr) => {
+            let evaluated = source.eval_agg_child(expr)?;
+            let name = evaluated.name().to_string();
+            match evaluated.data_type() {
+                DataType::Boolean => {
+                    let arr = evaluated.downcast::<BooleanArray>()?;
+                    Ok(Some((
+                        AggAccumulator::BoolOr(BoolOrAccum::new(arr.clone())),
+                        name,
+                    )))
+                }
+                _ => Ok(None),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -615,8 +774,9 @@ fn try_create_accumulator(
 /// Returns true if all agg expressions can be handled by the inline path.
 ///
 /// Requirements:
-/// 1. All agg expressions are Count, Sum, Product, Min, or Max.
+/// 1. All agg expressions are Count, Sum, Product, Min, Max, BoolAnd, or BoolOr.
 /// 2. For Sum/Product/Min/Max, the value column dtype must be a supported numeric type.
+/// 3. For BoolAnd/BoolOr, the value column dtype must be Boolean.
 ///
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
 /// to avoid materializing computed columns just for a dtype check.
@@ -630,6 +790,8 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
                 | AggExpr::Product(..)
                 | AggExpr::Min(..)
                 | AggExpr::Max(..)
+                | AggExpr::BoolAnd(..)
+                | AggExpr::BoolOr(..)
         )
     }) {
         return false;
@@ -652,6 +814,13 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
                         | DataType::Float32
                         | DataType::Float64
                 )
+            } else {
+                false
+            }
+        }
+        AggExpr::BoolAnd(expr) | AggExpr::BoolOr(expr) => {
+            if let Ok(field) = expr.to_field(&source.schema) {
+                matches!(field.dtype, DataType::Boolean)
             } else {
                 false
             }
@@ -1894,6 +2063,163 @@ mod tests {
         assert_batches_equal(&inline_result, &fallback_result);
     }
 
+    // --- BoolAnd / BoolOr tests ---
+
+    /// Helper for groupby tests with Boolean values (Utf8 keys).
+    fn make_bool_val_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Series::from_arrow(
+            Arc::new(Field::new("key", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(vec![
+                Some("a"),
+                Some("b"),
+                Some("a"),
+                Some("b"),
+                Some("a"),
+                Some("c"),
+            ])),
+        )
+        .unwrap();
+        let vals = BooleanArray::from_iter(
+            "val",
+            vec![
+                Some(true),
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(true),
+            ]
+            .into_iter(),
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Utf8),
+            Field::new("val", DataType::Boolean),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for groupby tests with Boolean values and Int64 keys (FNV fast path).
+    fn make_int_key_bool_val_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = BooleanArray::from_iter(
+            "val",
+            vec![Some(true), Some(false), Some(true), Some(true), Some(false)].into_iter(),
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Boolean),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for groupby tests with nullable Boolean values.
+    fn make_bool_val_with_nulls_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1), Some(3)],
+        )
+        .into_series();
+        let vals = BooleanArray::from_iter(
+            "val",
+            vec![Some(true), None, Some(false), Some(true), None, None].into_iter(),
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Boolean),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    /// Helper for groupby where the Boolean value column is entirely null.
+    fn make_all_null_bool_val_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = BooleanArray::from_iter("val", vec![None, None, None, None, None].into_iter())
+            .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Boolean),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_bool_and_matches_fallback() {
+        let (rb, group_by, schema) = make_bool_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolAnd(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_bool_or_matches_fallback() {
+        let (rb, group_by, schema) = make_bool_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolOr(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_int_key_bool_and_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_bool_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolAnd(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_bool_and_with_nulls_matches_fallback() {
+        let (rb, group_by, schema) = make_bool_val_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolAnd(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_bool_or_with_nulls_matches_fallback() {
+        let (rb, group_by, schema) = make_bool_val_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolOr(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_all_null_bool_or_matches_fallback() {
+        let (rb, group_by, schema) = make_all_null_bool_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::BoolOr(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
     // --- Product tests ---
 
     #[test]
