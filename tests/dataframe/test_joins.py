@@ -259,6 +259,45 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
     }
 
 
+@pytest.mark.parametrize("n_partitions", [1, 4])
+def test_inner_join_high_build_side_fanout(make_df, n_partitions: int, with_default_morsel_size):
+    num_keys = 64
+    fanout = 32
+
+    left = make_df(
+        {
+            "A": list(range(num_keys)),
+            "left_payload": [f"left-{i}" for i in range(num_keys)],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+    right_keys = [key for key in range(num_keys) for _ in range(fanout)]
+    right = make_df(
+        {
+            "A": right_keys,
+            "right_payload": [
+                f"right-{key}-{idx:02d}" for key in range(num_keys) for idx in range(fanout)
+            ],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    joined = left.join(right, on="A", strategy="hash", how="inner").sort(
+        ["A", "right_payload"]
+    )
+    joined_data = joined.to_pydict()
+
+    assert joined_data["A"] == [key for key in range(num_keys) for _ in range(fanout)]
+    assert joined_data["left_payload"] == [
+        f"left-{key}" for key in range(num_keys) for _ in range(fanout)
+    ]
+    assert joined_data["right_payload"] == [
+        f"right-{key}-{idx:02d}" for key in range(num_keys) for idx in range(fanout)
+    ]
+
+
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize(
     "join_strategy",

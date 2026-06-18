@@ -215,6 +215,45 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions, join_type) -> No
 
 
 @pytest.mark.benchmark(group="joins")
+@pytest.mark.parametrize("num_partitions", [1, 10], ids=["1part", "10part"])
+def test_inner_join_high_fanout(benchmark, num_partitions) -> None:
+    """Test inner joins where each probe row matches many build-side rows."""
+    small_length = 1_000
+    fanout = 32
+
+    left_arr = np.arange(small_length)
+    np.random.shuffle(left_arr)
+    right_arr = np.repeat(np.arange(small_length), fanout)
+    np.random.shuffle(right_arr)
+
+    left_table = (
+        daft.from_pydict(
+            {
+                "keys": left_arr,
+            }
+        )
+        .into_partitions(num_partitions)
+        .collect()
+    )
+    right_table = daft.from_pydict(
+        {
+            "keys": right_arr,
+            "right_payload": [str(x) for x in right_arr],
+        }
+    ).collect()
+
+    def bench_join() -> DataFrame:
+        return left_table.join(right_table, on=["keys"], how="inner").collect()
+
+    result = benchmark(bench_join)
+
+    assert len(result) == small_length * fanout
+    assert result.groupby("keys").agg(col("right_payload").count()).sort("keys").to_pydict()[
+        "right_payload"
+    ] == [fanout] * small_length
+
+
+@pytest.mark.benchmark(group="joins")
 @pytest.mark.parametrize(
     "num_samples, num_partitions",
     [(10_000, 1), (10_000, 100)],
