@@ -1,6 +1,8 @@
 [dependencies]
 async-compression = {workspace = true}
+futures = {workspace = true}
 tokio = {workspace = true}
+tokio-tar = {workspace = true}
 url = {workspace = true}
 
 [lints]
