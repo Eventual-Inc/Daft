@@ -9,7 +9,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file, file_path, file_size
+from daft.functions import file, file_exists, file_path, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -167,6 +167,33 @@ def test_filesize_expr(tmp_path: Path):
 
     res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
     assert res == 2048
+
+
+def test_file_exists(tmp_path: Path):
+    existing_file = tmp_path / "exists.bin"
+    existing_file.write_bytes(b"data")
+    missing_file = tmp_path / "missing.bin"
+
+    assert daft.File(str(existing_file.absolute())).exists() is True
+    assert daft.File(str(missing_file.absolute())).exists() is False
+
+
+def test_file_exists_expr(tmp_path: Path):
+    existing_file = tmp_path / "exists.bin"
+    existing_file.write_bytes(b"data")
+    missing_file = tmp_path / "missing.bin"
+
+    df = daft.from_pydict(
+        {
+            "file": [
+                str(existing_file.absolute()),
+                str(missing_file.absolute()),
+            ]
+        }
+    )
+
+    result = df.select(file_exists(file(df["file"]))).to_pydict()["file"]
+    assert result == [True, False]
 
 
 @pytest.mark.parametrize(
