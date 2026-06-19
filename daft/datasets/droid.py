@@ -5,13 +5,15 @@ from typing import TYPE_CHECKING
 import daft
 from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
-from daft.expressions import col
+from daft.expressions import col, lit
 from daft.functions import (
     file,
+    file_exists,
     format,
     regexp_replace,
     unnest,
     video_file,
+    when,
 )
 from daft.io import GCSConfig, IOConfig
 
@@ -60,8 +62,6 @@ def raw(
     # By default, use the official public GCS bucket
     path: str = _PUBLIC_GCS_BUCKET,
     io_config: IOConfig | None = None,
-    *,
-    verify_videos: bool = True,
     # TODO: Add support for stereo videos
     # include_stereo: bool = False,
     # TODO: Add support for SVO camera recordings
@@ -72,17 +72,9 @@ def raw(
     provided dataset root, reads the episode metadata, and attaches lazy file references
     to the per-episode trajectory HDF5 file and MP4 camera recordings.
 
-    Each row corresponds to one DROID episode with the following layout on disk:
-
-        episode/
-        |---- metadata_<episode_id>.json    # Episode metadata like building ID, data collector ID etc.
-        |---- trajectory.h5                 # All low-dimensional information like action and proprioception trajectories.
-        |---- recordings/
-                  |---- MP4/
-                         |---- <camera_serial>.mp4
-                         |---- <camera_serial>-stereo.mp4  # Optional stereo views.
-                  |---- SVO/
-                         |---- <camera_serial>.svo         # Raw ZED SVO file with encoded camera recording information (contains some additional metadata)
+    Note:
+        The public dataset is missing camera recordings for some episodes. Those that are missing
+        will be set to `None`.
 
     Args:
         path: Root path to the raw DROID dataset. Defaults to the official public
@@ -130,34 +122,33 @@ def raw(
     episodes = episodes.with_column(
         "trajectory",
         file(format("{}/trajectory.h5", col("episode_dir")), io_config=io_config),
+    ).with_column(
+        "trajectory",
+        when(file_exists(col("trajectory")), col("trajectory")).otherwise(lit(None)),
     )
 
     # Create VideoFile columns for MP4 camera recordings
-    episodes = (
-        episodes.with_column(
-            "wrist_video",
-            video_file(
+    episodes = episodes.with_columns(
+        {
+            "wrist_video": video_file(
                 format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("wrist_cam_serial")),
                 io_config=io_config,
-                verify=verify_videos,
             ),
-        )
-        .with_column(
-            "ext1_video",
-            video_file(
+            "ext1_video": video_file(
                 format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("ext1_cam_serial")),
                 io_config=io_config,
-                verify=verify_videos,
             ),
-        )
-        .with_column(
-            "ext2_video",
-            video_file(
+            "ext2_video": video_file(
                 format("{}/recordings/MP4/{}.mp4", col("episode_dir"), col("ext2_cam_serial")),
                 io_config=io_config,
-                verify=verify_videos,
             ),
-        )
+        }
+    ).with_columns(
+        {
+            "wrist_video": when(file_exists(col("wrist_video")), col("wrist_video")).otherwise(lit(None)),
+            "ext1_video": when(file_exists(col("ext1_video")), col("ext1_video")).otherwise(lit(None)),
+            "ext2_video": when(file_exists(col("ext2_video")), col("ext2_video")).otherwise(lit(None)),
+        }
     )
 
     return episodes
