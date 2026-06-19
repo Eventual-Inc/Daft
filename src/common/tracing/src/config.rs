@@ -8,7 +8,7 @@ use opentelemetry_otlp::{
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, Protocol,
 };
-use opentelemetry_sdk::{Resource, resource::EnvResourceDetector};
+use opentelemetry_sdk::Resource;
 
 /// Environment variable for the general OTLP endpoint.
 pub const ENV_OLD_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
@@ -111,16 +111,15 @@ impl Config {
     }
 
     pub fn resource(&self) -> Resource {
-        let env_resource = Resource::builder_empty()
-            .with_detector(Box::new(EnvResourceDetector::new()))
-            .build();
+        let detected_resource = Resource::builder().build();
         let service_name = std::env::var("OTEL_SERVICE_NAME")
             .ok()
             .filter(|name| !name.is_empty())
             .or_else(|| {
-                env_resource
+                detected_resource
                     .get(&Key::new("service.name"))
                     .map(|value| value.to_string())
+                    .filter(|name| name != "unknown_service")
             })
             .unwrap_or_else(|| "daft".to_string());
 
@@ -213,6 +212,10 @@ mod tests {
                 assert_eq!(
                     resource.get(&Key::new("deployment.environment")),
                     Some(Value::from("staging"))
+                );
+                assert_eq!(
+                    resource.get(&Key::new("telemetry.sdk.language")),
+                    Some(Value::from("rust"))
                 );
                 assert_eq!(
                     resource.get(&Key::new("service.version")),
