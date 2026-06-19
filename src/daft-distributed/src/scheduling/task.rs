@@ -23,7 +23,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
     pub resource_request: ResourceRequest,
-    /// Floor applied by `num_cpus()`. Sourced from `DaftExecutionConfig::min_cpu_per_task`.
+    /// Fallback for `num_cpus()` when the plan leaves it unset.
     min_cpu_per_task: f64,
 }
 
@@ -38,7 +38,7 @@ impl TaskResourceRequest {
     pub fn num_cpus(&self) -> f64 {
         self.resource_request
             .num_cpus()
-            .map_or(self.min_cpu_per_task, |v| v.max(self.min_cpu_per_task))
+            .unwrap_or(self.min_cpu_per_task)
     }
 
     pub fn num_gpus(&self) -> f64 {
@@ -611,17 +611,14 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn num_cpus_passes_through_when_above_floor() {
+    fn num_cpus_honors_explicit_request() {
         let explicit = ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap();
         let r = TaskResourceRequest::new(explicit, 0.5);
         assert_eq!(r.num_cpus(), 2.0);
-    }
 
-    #[test]
-    fn num_cpus_raises_explicit_to_floor() {
         let explicit = ResourceRequest::try_new_internal(Some(0.25), None, None).unwrap();
         let r = TaskResourceRequest::new(explicit, 0.5);
-        assert_eq!(r.num_cpus(), 0.5);
+        assert_eq!(r.num_cpus(), 0.25);
     }
 
     #[derive(Debug)]

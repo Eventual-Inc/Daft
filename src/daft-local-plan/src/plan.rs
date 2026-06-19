@@ -1231,7 +1231,8 @@ impl LocalPhysicalPlan {
     }
 
     pub fn resource_request(self: &Arc<Self>) -> ResourceRequest {
-        let mut base = ResourceRequest::default_cpu();
+        // Leave num_cpus unset so task layer can fall back to min_cpu_per_task.
+        let mut base = ResourceRequest::default();
         self.apply(|plan| match plan.as_ref() {
             Self::UDFProject(UDFProject {
                 expr,
@@ -2509,6 +2510,13 @@ mod task_topology_tests {
             StatsState::NotMaterialized,
             LocalNodeContext::default(),
         )
+    }
+
+    #[test]
+    fn resource_request_leaves_num_cpus_unset_for_plain_plans() {
+        let plan = limit(scan(), 5);
+        let rr = plan.resource_request();
+        assert!(rr.num_cpus().is_none());
     }
 
     /// Constructors set `is_task_leaf` based on the node's children — leaves
