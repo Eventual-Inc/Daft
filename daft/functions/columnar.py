@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from daft.expressions import Expression, col
 from daft.functions.list import to_list
+from daft.functions.numeric import greatest, least
 
 
 def columns_sum(*exprs: Expression | str) -> Expression:
@@ -105,6 +106,11 @@ def columns_avg(*exprs: Expression | str) -> Expression:
 def columns_min(*exprs: Expression | str) -> Expression:
     """Find the minimum value across columns.
 
+    This is an alias for :func:`daft.functions.least`. Unlike a list-based
+    aggregation, this works on any comparable dtype (numeric, boolean, string,
+    temporal, etc.) and skips NULLs row-wise: the result is NULL only when all
+    inputs in that row are NULL.
+
     Args:
         exprs: The columns to find the minimum of.
 
@@ -131,11 +137,16 @@ def columns_min(*exprs: Expression | str) -> Expression:
     if not exprs:
         raise ValueError("columns_min requires at least one expression")
     exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
-    return to_list(*exprs_list).list_min().alias("columns_min")
+    return least(*exprs_list).alias("columns_min")
 
 
 def columns_max(*exprs: Expression | str) -> Expression:
     """Find the maximum value across columns.
+
+    This is an alias for :func:`daft.functions.greatest`. Unlike a list-based
+    aggregation, this works on any comparable dtype (numeric, boolean, string,
+    temporal, etc.) and skips NULLs row-wise: the result is NULL only when all
+    inputs in that row are NULL.
 
     Args:
         exprs: The columns to find the maximum of.
@@ -163,4 +174,4 @@ def columns_max(*exprs: Expression | str) -> Expression:
     if not exprs:
         raise ValueError("columns_max requires at least one expression")
     exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
-    return to_list(*exprs_list).list_max().alias("columns_max")
+    return greatest(*exprs_list).alias("columns_max")
