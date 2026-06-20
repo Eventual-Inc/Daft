@@ -272,9 +272,10 @@ impl WorkerManager for RayWorkerManager {
         let mut surpassed = false;
         let mut selected_bundles = Vec::new();
         for bundle in &bundles {
-            cpu_sum += bundle.resource_request.num_cpus().unwrap_or(0.0);
-            gpu_sum += bundle.resource_request.num_gpus().unwrap_or(0.0);
-            memory_sum += bundle.resource_request.memory_bytes().unwrap_or(0);
+            // Use wrapper methods so the min_cpu_per_task fallback applies.
+            cpu_sum += bundle.num_cpus();
+            gpu_sum += bundle.num_gpus();
+            memory_sum += bundle.memory_bytes();
             selected_bundles.push(bundle);
             if cpu_sum > high_water_mark_cpus
                 || gpu_sum > high_water_mark_gpus
