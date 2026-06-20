@@ -62,31 +62,38 @@ pub(crate) struct RayBundle {
 /// Aggregate per-task resource requests into integer Ray autoscaler bundles.
 ///
 /// Ray's `request_resources` requires integer bundle values, so a fractional
-/// `min_cpu_per_task` (e.g. 0.1) cannot be expressed per task directly. CPU-only
-/// tasks therefore have their fractional CPU summed and emitted as `ceil(sum)`
-/// unit `{"CPU": 1}` bundles — so N tasks at 0.1 CPU request `ceil(0.1 * N)` CPUs
-/// rather than N (issue #7123). Tasks carrying GPU or memory keep an individual
-/// bundle (CPU rounded up) because those resources pin placement and must stay
-/// co-located on a single node.
+/// `min_cpu_per_task` (e.g. 0.1) cannot be expressed per task directly. Only
+/// sub-CPU, CPU-only tasks are packed: their fractional CPU is summed and emitted
+/// as `ceil(sum)` unit `{"CPU": 1}` bundles — so N tasks at 0.1 CPU request
+/// `ceil(0.1 * N)` CPUs rather than N (issue #7123).
+///
+/// A task keeps its own individual bundle (CPU rounded up to at least 1) when it
+/// requests GPU, memory, or `num_cpus >= 1`: those resources pin the task to a
+/// single node, so splitting them across unit bundles could make the task
+/// unschedulable. Non-finite / non-positive CPU values contribute nothing (the
+/// config is validated upstream, but an explicit plan request is not).
 pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
-    let mut cpu_only_sum = 0.0;
+    let mut fractional_cpu_sum = 0.0;
     let mut bundles = Vec::new();
     for request in requests {
         let gpu = request.num_gpus().ceil() as i64;
         let memory = request.memory_bytes() as i64;
         let gpu = (gpu > 0).then_some(gpu);
         let memory = (memory > 0).then_some(memory);
-        if gpu.is_some() || memory.is_some() {
+        let cpus = request.num_cpus();
+        if gpu.is_some() || memory.is_some() || cpus > 1.0 {
             bundles.push(RayBundle {
-                cpu: request.num_cpus().ceil() as i64,
+                cpu: (cpus.ceil() as i64).max(1),
                 gpu,
                 memory,
             });
-        } else {
-            cpu_only_sum += request.num_cpus();
+        } else if cpus > 0.0 {
+            // `cpus > 0.0` is false for NaN, so a poisoned value is dropped
+            // rather than zeroing the whole batch's CPU request.
+            fractional_cpu_sum += cpus;
         }
     }
-    for _ in 0..(cpu_only_sum.ceil() as i64) {
+    for _ in 0..(fractional_cpu_sum.ceil() as i64) {
         bundles.push(RayBundle {
             cpu: 1,
             gpu: None,
@@ -688,6 +695,39 @@ pub(super) mod tests {
         let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
         let refs = vec![&r, &r, &r, &r, &r];
         assert_eq!(aggregate_ray_bundles(&refs).len(), 1);
+    }
+
+    #[test]
+    fn aggregate_ray_bundles_keeps_multi_cpu_tasks_individual() {
+        // A task needing 4 CPUs must stay one bundle, not 4 spread unit bundles,
+        // or the autoscaler could provision 4 single-CPU nodes and leave it
+        // unschedulable.
+        let multi = TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(Some(4.0), None, None).unwrap(),
+            1.0,
+        );
+        let frac = TaskResourceRequest::new(ResourceRequest::default(), 0.5);
+        let refs = vec![&multi, &frac, &frac];
+        let bundles = aggregate_ray_bundles(&refs);
+        assert!(bundles.contains(&RayBundle {
+            cpu: 4,
+            gpu: None,
+            memory: None
+        }));
+        // 0.5 + 0.5 = 1.0 -> one unit bundle.
+        assert_eq!(
+            bundles
+                .iter()
+                .filter(|b| **b
+                    == RayBundle {
+                        cpu: 1,
+                        gpu: None,
+                        memory: None
+                    })
+                .count(),
+            1
+        );
+        assert_eq!(bundles.len(), 2);
     }
 
     #[test]
