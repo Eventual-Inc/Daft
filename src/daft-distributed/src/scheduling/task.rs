@@ -48,32 +48,52 @@ impl TaskResourceRequest {
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }
-
-    /// Resource amounts for one Ray autoscaler bundle.
-    ///
-    /// CPU is kept fractional: Ray supports fractional CPU requests, so a
-    /// configured `min_cpu_per_task` of e.g. 0.1 must reach the autoscaler as
-    /// 0.1 rather than being rounded up to 1 (see issue #7123). GPU and memory
-    /// are integers, and zero values are dropped so Ray does not interpret a
-    /// bundle as a demand for zero-resource nodes.
-    pub fn autoscale_bundle(&self) -> AutoscaleBundle {
-        let gpu = self.num_gpus().ceil() as i64;
-        let memory = self.memory_bytes() as i64;
-        AutoscaleBundle {
-            cpu: self.num_cpus(),
-            gpu: (gpu > 0).then_some(gpu),
-            memory: (memory > 0).then_some(memory),
-        }
-    }
 }
 
-/// Resource amounts for a single Ray autoscaler bundle. See
-/// [`TaskResourceRequest::autoscale_bundle`].
+/// An integer-valued resource bundle for Ray's autoscaler `request_resources`,
+/// which (as of Ray 2.55) rejects non-integer bundle values.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AutoscaleBundle {
-    pub cpu: f64,
+pub(crate) struct RayBundle {
+    pub cpu: i64,
     pub gpu: Option<i64>,
     pub memory: Option<i64>,
+}
+
+/// Aggregate per-task resource requests into integer Ray autoscaler bundles.
+///
+/// Ray's `request_resources` requires integer bundle values, so a fractional
+/// `min_cpu_per_task` (e.g. 0.1) cannot be expressed per task directly. CPU-only
+/// tasks therefore have their fractional CPU summed and emitted as `ceil(sum)`
+/// unit `{"CPU": 1}` bundles — so N tasks at 0.1 CPU request `ceil(0.1 * N)` CPUs
+/// rather than N (issue #7123). Tasks carrying GPU or memory keep an individual
+/// bundle (CPU rounded up) because those resources pin placement and must stay
+/// co-located on a single node.
+pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
+    let mut cpu_only_sum = 0.0;
+    let mut bundles = Vec::new();
+    for request in requests {
+        let gpu = request.num_gpus().ceil() as i64;
+        let memory = request.memory_bytes() as i64;
+        let gpu = (gpu > 0).then_some(gpu);
+        let memory = (memory > 0).then_some(memory);
+        if gpu.is_some() || memory.is_some() {
+            bundles.push(RayBundle {
+                cpu: request.num_cpus().ceil() as i64,
+                gpu,
+                memory,
+            });
+        } else {
+            cpu_only_sum += request.num_cpus();
+        }
+    }
+    for _ in 0..(cpu_only_sum.ceil() as i64) {
+        bundles.push(RayBundle {
+            cpu: 1,
+            gpu: None,
+            memory: None,
+        });
+    }
+    bundles
 }
 
 pub(crate) type TaskID = u32;
@@ -648,21 +668,57 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn autoscale_bundle_keeps_fractional_cpu() {
-        // min_cpu_per_task=0.1 must reach the autoscaler as 0.1, not ceil'd to 1 (issue #7123).
-        let b = TaskResourceRequest::new(ResourceRequest::default(), 0.1).autoscale_bundle();
-        assert_eq!(b.cpu, 0.1);
-        assert_eq!(b.gpu, None);
-        assert_eq!(b.memory, None);
+    fn aggregate_ray_bundles_packs_fractional_cpu() {
+        // 4 CPU-only tasks at 0.25 -> one {CPU:1} bundle, not 4 (issue #7123).
+        let r = TaskResourceRequest::new(ResourceRequest::default(), 0.25);
+        let refs = vec![&r, &r, &r, &r];
+        assert_eq!(
+            aggregate_ray_bundles(&refs),
+            vec![RayBundle {
+                cpu: 1,
+                gpu: None,
+                memory: None
+            }]
+        );
     }
 
     #[test]
-    fn autoscale_bundle_rounds_gpu_and_keeps_memory() {
-        let rr = ResourceRequest::try_new_internal(Some(0.1), Some(1.0), Some(1024)).unwrap();
-        let b = TaskResourceRequest::new(rr, 1.0).autoscale_bundle();
-        assert_eq!(b.cpu, 0.1);
-        assert_eq!(b.gpu, Some(1));
-        assert_eq!(b.memory, Some(1024));
+    fn aggregate_ray_bundles_rounds_partial_cpu_up() {
+        // 0.1 * 5 = 0.5 -> ceil -> 1 bundle.
+        let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
+        let refs = vec![&r, &r, &r, &r, &r];
+        assert_eq!(aggregate_ray_bundles(&refs).len(), 1);
+    }
+
+    #[test]
+    fn aggregate_ray_bundles_keeps_gpu_and_memory_bundles() {
+        let cpu_only = TaskResourceRequest::new(ResourceRequest::default(), 0.5);
+        let gpu = TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(Some(0.1), Some(1.0), None).unwrap(),
+            1.0,
+        );
+        let mem = TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(Some(0.1), None, Some(1024)).unwrap(),
+            1.0,
+        );
+        let refs = vec![&cpu_only, &gpu, &mem];
+        let bundles = aggregate_ray_bundles(&refs);
+        assert_eq!(bundles.len(), 3);
+        assert!(bundles.contains(&RayBundle {
+            cpu: 1,
+            gpu: Some(1),
+            memory: None
+        }));
+        assert!(bundles.contains(&RayBundle {
+            cpu: 1,
+            gpu: None,
+            memory: Some(1024)
+        }));
+        assert!(bundles.contains(&RayBundle {
+            cpu: 1,
+            gpu: None,
+            memory: None
+        }));
     }
 
     #[derive(Debug)]

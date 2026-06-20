@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::WorkerSnapshot,
-    task::{SwordfishTask, TaskContext, TaskResourceRequest},
+    task::{SwordfishTask, TaskContext, TaskResourceRequest, aggregate_ray_bundles},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -294,21 +294,24 @@ impl WorkerManager for RayWorkerManager {
         }
 
         // 5. Send the selected bundles to Ray's autoscaler via request_resources().
-        //    Strip zero-valued GPU/memory keys so Ray doesn't interpret them as a demand
-        //    for zero-resource bundles on specialized nodes.
+        //    Ray (as of 2.55) rejects non-integer bundle values, so a fractional
+        //    min_cpu_per_task cannot be sent per task directly. aggregate_ray_bundles
+        //    sums CPU-only fractional demand into ceil(sum) unit {CPU:1} bundles so
+        //    the autoscaler is not asked for one full CPU per task (issue #7123),
+        //    while GPU/memory tasks keep their own (placement-pinning) bundle.
+        //    Zero-valued GPU/memory keys are omitted so Ray doesn't interpret them as
+        //    a demand for zero-resource bundles on specialized nodes.
+        let ray_bundles = aggregate_ray_bundles(&selected_bundles);
         Python::attach(|py| -> DaftResult<()> {
-            let python_bundles = selected_bundles
+            let python_bundles = ray_bundles
                 .iter()
                 .map(|bundle| {
-                    let b = bundle.autoscale_bundle();
                     let dict = pyo3::types::PyDict::new(py);
-                    // Keep CPU fractional — Ray supports fractional CPU and
-                    // rounding up would defeat min_cpu_per_task (issue #7123).
-                    dict.set_item("CPU", b.cpu)?;
-                    if let Some(gpu) = b.gpu {
+                    dict.set_item("CPU", bundle.cpu)?;
+                    if let Some(gpu) = bundle.gpu {
                         dict.set_item("GPU", gpu)?;
                     }
-                    if let Some(memory) = b.memory {
+                    if let Some(memory) = bundle.memory {
                         dict.set_item("memory", memory)?;
                     }
                     Ok::<_, PyErr>(dict)
