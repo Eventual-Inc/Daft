@@ -328,10 +328,20 @@ impl WorkerManager for RayWorkerManager {
         state.pending_release_blacklist.clear();
         state.last_refresh = None;
 
-        // 6. Record this request as the new high-water mark so the next cycle will
-        //    request exactly one bundle more, and so we never send a smaller request.
-        state.max_resources_requested =
-            ResourceRequest::try_new_internal(Some(cpu_sum), Some(gpu_sum), Some(memory_sum))?;
+        // 6. Record what we actually requested from Ray — the aggregated integer
+        //    bundle totals, not the fractional cpu_sum — as the new high-water mark.
+        //    Tracking the post-aggregation request keeps the mark in the same units
+        //    Ray sees, so each cycle escalates the real request by at least one CPU
+        //    rather than stalling for ~1/min_cpu_per_task cycles before the ceil
+        //    bumps. We never send a smaller request than before.
+        let requested_cpus: i64 = ray_bundles.iter().map(|b| b.cpu).sum();
+        let requested_gpus: i64 = ray_bundles.iter().filter_map(|b| b.gpu).sum();
+        let requested_memory: i64 = ray_bundles.iter().filter_map(|b| b.memory).sum();
+        state.max_resources_requested = ResourceRequest::try_new_internal(
+            Some(requested_cpus as f64),
+            Some(requested_gpus as f64),
+            Some(requested_memory as usize),
+        )?;
         state.last_autoscale_request_time = Some(Instant::now());
 
         Ok(())
