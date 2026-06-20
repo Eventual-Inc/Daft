@@ -296,24 +296,25 @@ impl WorkerManager for RayWorkerManager {
         // 5. Send the selected bundles to Ray's autoscaler via request_resources().
         //    Strip zero-valued GPU/memory keys so Ray doesn't interpret them as a demand
         //    for zero-resource bundles on specialized nodes.
-        let python_bundles = selected_bundles
-            .iter()
-            .map(|bundle| {
-                let mut dict = HashMap::new();
-                dict.insert("CPU", bundle.num_cpus().ceil() as i64);
-                let gpu = bundle.num_gpus().ceil() as i64;
-                if gpu > 0 {
-                    dict.insert("GPU", gpu);
-                }
-                let memory = bundle.memory_bytes() as i64;
-                if memory > 0 {
-                    dict.insert("memory", memory);
-                }
-                dict
-            })
-            .collect::<Vec<_>>();
-
         Python::attach(|py| -> DaftResult<()> {
+            let python_bundles = selected_bundles
+                .iter()
+                .map(|bundle| {
+                    let b = bundle.autoscale_bundle();
+                    let dict = pyo3::types::PyDict::new(py);
+                    // Keep CPU fractional — Ray supports fractional CPU and
+                    // rounding up would defeat min_cpu_per_task (issue #7123).
+                    dict.set_item("CPU", b.cpu)?;
+                    if let Some(gpu) = b.gpu {
+                        dict.set_item("GPU", gpu)?;
+                    }
+                    if let Some(memory) = b.memory {
+                        dict.set_item("memory", memory)?;
+                    }
+                    Ok::<_, PyErr>(dict)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
             flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (python_bundles,))?;
             Ok(())

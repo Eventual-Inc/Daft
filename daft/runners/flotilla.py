@@ -566,7 +566,7 @@ def start_ray_workers(
     return handles
 
 
-def try_autoscale(bundles: list[dict[str, int]]) -> None:
+def try_autoscale(bundles: list[dict[str, float]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
     request_resources(

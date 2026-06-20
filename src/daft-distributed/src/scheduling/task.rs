@@ -48,6 +48,32 @@ impl TaskResourceRequest {
     pub fn memory_bytes(&self) -> usize {
         self.resource_request.memory_bytes().unwrap_or(0)
     }
+
+    /// Resource amounts for one Ray autoscaler bundle.
+    ///
+    /// CPU is kept fractional: Ray supports fractional CPU requests, so a
+    /// configured `min_cpu_per_task` of e.g. 0.1 must reach the autoscaler as
+    /// 0.1 rather than being rounded up to 1 (see issue #7123). GPU and memory
+    /// are integers, and zero values are dropped so Ray does not interpret a
+    /// bundle as a demand for zero-resource nodes.
+    pub fn autoscale_bundle(&self) -> AutoscaleBundle {
+        let gpu = self.num_gpus().ceil() as i64;
+        let memory = self.memory_bytes() as i64;
+        AutoscaleBundle {
+            cpu: self.num_cpus(),
+            gpu: (gpu > 0).then_some(gpu),
+            memory: (memory > 0).then_some(memory),
+        }
+    }
+}
+
+/// Resource amounts for a single Ray autoscaler bundle. See
+/// [`TaskResourceRequest::autoscale_bundle`].
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AutoscaleBundle {
+    pub cpu: f64,
+    pub gpu: Option<i64>,
+    pub memory: Option<i64>,
 }
 
 pub(crate) type TaskID = u32;
@@ -619,6 +645,24 @@ pub(super) mod tests {
         let explicit = ResourceRequest::try_new_internal(Some(0.25), None, None).unwrap();
         let r = TaskResourceRequest::new(explicit, 0.5);
         assert_eq!(r.num_cpus(), 0.25);
+    }
+
+    #[test]
+    fn autoscale_bundle_keeps_fractional_cpu() {
+        // min_cpu_per_task=0.1 must reach the autoscaler as 0.1, not ceil'd to 1 (issue #7123).
+        let b = TaskResourceRequest::new(ResourceRequest::default(), 0.1).autoscale_bundle();
+        assert_eq!(b.cpu, 0.1);
+        assert_eq!(b.gpu, None);
+        assert_eq!(b.memory, None);
+    }
+
+    #[test]
+    fn autoscale_bundle_rounds_gpu_and_keeps_memory() {
+        let rr = ResourceRequest::try_new_internal(Some(0.1), Some(1.0), Some(1024)).unwrap();
+        let b = TaskResourceRequest::new(rr, 1.0).autoscale_bundle();
+        assert_eq!(b.cpu, 0.1);
+        assert_eq!(b.gpu, Some(1));
+        assert_eq!(b.memory, Some(1024));
     }
 
     #[derive(Debug)]

@@ -240,9 +240,17 @@ impl DaftExecutionConfig {
 
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
-            && val > 0.0
         {
-            cfg.min_cpu_per_task = val;
+            if val.is_finite() && val > 0.0 {
+                cfg.min_cpu_per_task = val;
+            } else {
+                eprintln!(
+                    "Invalid {} value: {}, must be a finite number > 0, using default {}",
+                    Self::ENV_DAFT_MIN_CPU_PER_TASK,
+                    val,
+                    cfg.min_cpu_per_task
+                );
+            }
         }
 
         if let Some(val) = parse_number_from_env(
@@ -536,6 +544,18 @@ mod tests {
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "-0.5");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.min_cpu_per_task, 1.0);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "nan");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.min_cpu_per_task, 1.0);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "inf");
             }
             let cfg = DaftExecutionConfig::from_env();
             assert_eq!(cfg.min_cpu_per_task, 1.0);
