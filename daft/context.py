@@ -285,7 +285,7 @@ def set_execution_config(
         pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
-        min_cpu_per_task: Floor on CPU allocation per task; plans with smaller explicit num_cpus are raised to this. Used by the flotilla scheduler for autoscaler bundle requests. Must be > 0. Defaults to 1.0.
+        min_cpu_per_task: Default CPU per task when a plan does not specify num_cpus. Explicit num_cpus on a plan passes through unchanged. Used by the flotilla scheduler for autoscaler bundle requests. Must be > 0. Defaults to 1.0.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
