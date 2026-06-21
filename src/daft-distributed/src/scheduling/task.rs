@@ -50,8 +50,7 @@ impl TaskResourceRequest {
     }
 }
 
-/// An integer-valued resource bundle for Ray's autoscaler `request_resources`,
-/// which (as of Ray 2.55) rejects non-integer bundle values.
+/// Integer-valued bundle for Ray's `request_resources` (rejects non-integer values).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RayBundle {
     pub cpu: i64,
@@ -60,11 +59,9 @@ pub(crate) struct RayBundle {
 }
 
 /// Aggregate per-task requests into integer Ray bundles (Ray rejects non-integer
-/// values). Sub-unit demand packs into unit bundles — `{CPU:1}` for CPU-only,
-/// `{CPU:1,GPU:1}` for GPU — so N tasks at 0.1 request `ceil(0.1*N)` units, not N
-/// (issue #7123); the GPU count covers both GPU and the tasks' co-located CPU.
-/// Unit shapes stay schedulable; `{CPU:N,GPU:1}` might fit no node. Memory /
-/// whole-unit (`> 1`) tasks keep an individual bundle.
+/// values). Sub-unit demand packs into unit `{CPU:1}` / `{CPU:1,GPU:1}` bundles —
+/// N tasks at 0.1 request `ceil(0.1*N)` units, not N (issue #7123); unit shapes
+/// stay single-node schedulable. Memory / whole-unit (`> 1`) tasks stay individual.
 pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
     let mut fractional_cpu_sum = 0.0;
     let mut fractional_gpu_sum = 0.0;
@@ -110,9 +107,7 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
 }
 
 /// Minimal prefix of `pending` whose fractional demand exceeds the high-water mark,
-/// aggregated into integer Ray bundles; `None` if demand hasn't grown past the last
-/// request (skip the cycle). Aggregation makes the request grow by whole CPUs/GPUs
-/// per cycle even with a fractional per-task fallback.
+/// aggregated into integer bundles; `None` if it hasn't grown (skip the cycle).
 pub(crate) fn next_autoscale_request(
     pending: &[TaskResourceRequest],
     high_water_cpus: f64,

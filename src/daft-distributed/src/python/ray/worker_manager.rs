@@ -302,9 +302,8 @@ impl WorkerManager for RayWorkerManager {
         state.pending_release_blacklist.clear();
         state.last_refresh = None;
 
-        // 5. Record the new high-water mark as the aggregated integer totals we just
-        //    requested — same units Ray sees, so each cycle escalates by a whole CPU/GPU
-        //    instead of stalling for ~1/min_cpu_per_task cycles before the ceil bumps.
+        // 5. Record the new high-water mark as the aggregated integer totals just
+        //    requested — same units Ray sees, so each cycle escalates by a whole unit.
         let requested_cpus: i64 = ray_bundles.iter().map(|b| b.cpu).sum();
         let requested_gpus: i64 = ray_bundles.iter().filter_map(|b| b.gpu).sum();
         let requested_memory: i64 = ray_bundles.iter().filter_map(|b| b.memory).sum();
