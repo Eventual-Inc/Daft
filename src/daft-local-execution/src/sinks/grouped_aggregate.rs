@@ -29,10 +29,11 @@ use crate::{
 const SHARD_THRESHOLD: usize = 32_768;
 
 /// Number of shard tasks spawned per morsel when the input crosses
-/// `SHARD_THRESHOLD`. Fixed rather than tied to `max_concurrency` because the
-/// framework already runs `max_concurrency` morsels concurrently; fanning out
-/// further per morsel would oversubscribe.
-const NUM_SHARDS_PER_MORSEL: usize = 4;
+/// `SHARD_THRESHOLD`. Empirically tuned via K = 2 / 4 / 8 / 16 sweep across
+/// low / mid cardinality on both string and int keys (see PR description for
+/// numbers); K=8 is the sweet spot. K=16 starts oversubscribing on mid-card
+/// shapes; K=4 lags K=8 by 5-10%.
+const NUM_SHARDS_PER_MORSEL: usize = 8;
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
