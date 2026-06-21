@@ -59,16 +59,12 @@ pub(crate) struct RayBundle {
     pub memory: Option<i64>,
 }
 
-/// Aggregate per-task requests into integer Ray autoscaler bundles (Ray's
-/// `request_resources` rejects non-integer values).
-///
-/// Sub-unit demand is packed: sub-GPU tasks sum into `ceil(sum)` `{CPU,GPU:1}`
-/// bundles, sub-CPU CPU-only tasks into `ceil(sum)` `{CPU:1}` bundles — so N tasks
-/// at 0.1 request `ceil(0.1*N)` units, not N (issue #7123). The packed tasks' CPU
-/// is carried on the GPU bundles (spread across them) so their co-located CPU is
-/// provisioned, not dropped. Tasks with memory or a whole unit (`> 1`) keep an
-/// individual, placement-pinned bundle. Non-positive values are dropped; non-finite
-/// is rejected by `try_new_internal`.
+/// Aggregate per-task requests into integer Ray bundles (Ray rejects non-integer
+/// values). Sub-unit demand packs into unit bundles — `{CPU:1}` for CPU-only,
+/// `{CPU:1,GPU:1}` for GPU — so N tasks at 0.1 request `ceil(0.1*N)` units, not N
+/// (issue #7123); the GPU count covers both GPU and the tasks' co-located CPU.
+/// Unit shapes stay schedulable; `{CPU:N,GPU:1}` might fit no node. Memory /
+/// whole-unit (`> 1`) tasks keep an individual bundle.
 pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
     let mut fractional_cpu_sum = 0.0;
     let mut fractional_gpu_sum = 0.0;
@@ -86,16 +82,13 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
                 memory: (memory > 0).then_some(memory),
             });
         } else if gpus > 0.0 {
-            // Sub-GPU task: pack into shared whole-GPU bundles, carrying its CPU so
-            // the CPU it needs co-located with the GPU is still provisioned.
+            // Sub-GPU: track GPU and its co-located CPU for the bundle count.
             fractional_gpu_sum += gpus;
             if cpus > 0.0 {
                 gpu_cpu_sum += cpus;
             }
         } else if cpus > 0.0 {
-            // Sub-CPU, CPU-only task: pack into shared whole-CPU bundles.
-            // `> 0.0` is false for NaN, so a poisoned value is dropped rather
-            // than zeroing the batch's request.
+            // `> 0.0` is false for NaN, dropping a poisoned value.
             fractional_cpu_sum += cpus;
         }
     }
@@ -106,16 +99,12 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
             memory: None,
         });
     }
-    let gpu_bundles = fractional_gpu_sum.ceil() as i64;
-    if gpu_bundles > 0 {
-        let cpu_per_bundle = (gpu_cpu_sum / gpu_bundles as f64).ceil().max(1.0) as i64;
-        for _ in 0..gpu_bundles {
-            bundles.push(RayBundle {
-                cpu: cpu_per_bundle,
-                gpu: Some(1),
-                memory: None,
-            });
-        }
+    for _ in 0..fractional_gpu_sum.max(gpu_cpu_sum).ceil() as i64 {
+        bundles.push(RayBundle {
+            cpu: 1,
+            gpu: Some(1),
+            memory: None,
+        });
     }
     bundles
 }
@@ -859,6 +848,13 @@ pub(super) mod tests {
         assert!(
             total_cpu > 1 || total_gpu > 1,
             "request must grow past 1/1, got {total_cpu}/{total_gpu}"
+        );
+        // Each bundle must fit a standard 1-CPU/1-GPU node.
+        assert!(
+            bundles
+                .iter()
+                .all(|b| b.cpu <= 1 && b.gpu.unwrap_or(0) <= 1),
+            "bundles must be single-node schedulable, got {bundles:?}"
         );
     }
 
