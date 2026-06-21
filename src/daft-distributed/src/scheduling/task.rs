@@ -74,7 +74,7 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
         if memory > 0 || cpus > 1.0 || gpus > 1.0 {
             let gpu = gpus.ceil() as i64;
             bundles.push(RayBundle {
-                cpu: (cpus.ceil() as i64).max(1),
+                cpu: cpus.ceil() as i64,
                 gpu: (gpu > 0).then_some(gpu),
                 memory: (memory > 0).then_some(memory),
             });
@@ -96,9 +96,10 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
             memory: None,
         });
     }
+    let gpu_bundle_cpu = i64::from(gpu_cpu_sum > 0.0);
     for _ in 0..fractional_gpu_sum.max(gpu_cpu_sum).ceil() as i64 {
         bundles.push(RayBundle {
-            cpu: 1,
+            cpu: gpu_bundle_cpu,
             gpu: Some(1),
             memory: None,
         });
@@ -123,9 +124,7 @@ pub(crate) fn next_autoscale_request(
         gpu_sum += request.num_gpus();
         memory_sum += request.memory_bytes();
         selected.push(request);
-        if cpu_sum > high_water_cpus
-            || gpu_sum > high_water_gpus
-            || memory_sum > high_water_memory
+        if cpu_sum > high_water_cpus || gpu_sum > high_water_gpus || memory_sum > high_water_memory
         {
             return Some(aggregate_ray_bundles(&selected));
         }
@@ -801,6 +800,32 @@ pub(super) mod tests {
         let total_gpu: i64 = bundles.iter().filter_map(|b| b.gpu).sum();
         assert_eq!(total_gpu, 2);
         assert!(bundles.iter().all(|b| b.gpu == Some(1) && b.cpu == 1));
+    }
+
+    #[test]
+    fn aggregate_ray_bundles_respects_explicit_zero_cpu() {
+        let gpu = TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(Some(0.0), Some(0.5), None).unwrap(),
+            1.0,
+        );
+        assert!(
+            aggregate_ray_bundles(&[&gpu, &gpu])
+                .iter()
+                .all(|b| b.cpu == 0 && b.gpu == Some(1))
+        );
+
+        let mem = TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(Some(0.0), None, Some(1024)).unwrap(),
+            1.0,
+        );
+        assert_eq!(
+            aggregate_ray_bundles(&[&mem]),
+            vec![RayBundle {
+                cpu: 0,
+                gpu: None,
+                memory: Some(1024)
+            }]
+        );
     }
 
     #[test]

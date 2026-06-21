@@ -281,7 +281,9 @@ impl WorkerManager for RayWorkerManager {
                 .iter()
                 .map(|bundle| {
                     let dict = pyo3::types::PyDict::new(py);
-                    dict.set_item("CPU", bundle.cpu)?;
+                    if bundle.cpu > 0 {
+                        dict.set_item("CPU", bundle.cpu)?;
+                    }
                     if let Some(gpu) = bundle.gpu {
                         dict.set_item("GPU", gpu)?;
                     }
