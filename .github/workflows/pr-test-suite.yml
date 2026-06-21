@@ -193,6 +193,9 @@ jobs:
           uv pip install "pyiceberg==0.7.0"
         fi
 
+    - name: Build hello extension (for extension tests)
+      run: cargo build --release --manifest-path examples/hello/Cargo.toml
+
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
       run: |
@@ -219,6 +222,28 @@ jobs:
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
+        # Drop corrupt .profraw files (e.g. from killed/SIGTERM'd workers) before
+        # running `cargo llvm-cov report`, otherwise `llvm-profdata merge` aborts the
+        # whole job with: "invalid instrumentation profile data (file header is corrupt)
+        # error: no profile can be merged".
+        # We probe each .profraw with `llvm-profdata show` and remove the unreadable ones.
+        LLVM_PROFDATA="$(rustc --print target-libdir)/../bin/llvm-profdata"
+        if [ ! -x "$LLVM_PROFDATA" ]; then
+          LLVM_PROFDATA="$(command -v llvm-profdata || true)"
+        fi
+        if [ -n "$LLVM_PROFDATA" ] && [ -x "$LLVM_PROFDATA" ]; then
+          removed=0
+          while IFS= read -r -d '' f; do
+            if ! "$LLVM_PROFDATA" show "$f" >/dev/null 2>&1; then
+              echo "Removing corrupt profraw: $f"
+              rm -f "$f"
+              removed=$((removed+1))
+            fi
+          done < <(find ./target -maxdepth 2 -name 'daft-coverage-*.profraw' -print0)
+          echo "Removed $removed corrupt profraw file(s)."
+        else
+          echo "llvm-profdata not found; skipping corrupt profraw filtering."
+        fi
         cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
           # output of `cargo llvm-cov show-env --export-prefix`
@@ -1301,7 +1326,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: blacksmith-8vcpu-ubuntu-2204
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2

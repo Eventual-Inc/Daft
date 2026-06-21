@@ -174,8 +174,8 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {workspace = true}
-tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
-tikv-jemallocator = {version = "0.6.0", features = [
+tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
+tikv-jemallocator = {version = "0.7.0", features = [
   "disable_initial_exec_tls"
 ]}
 
@@ -243,7 +243,6 @@ exclude = [
 
 [workspace.dependencies]
 arrow = "57.1.0"
-half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
 arrow-csv = "57.1.0"
@@ -312,6 +311,7 @@ daft-sql = {path = "src/daft-sql"}
 dashmap = "6.1.0"
 educe = "0.6.0"
 futures = "0.3.30"
+half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
@@ -329,7 +329,7 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = {version = "0.28", features = ["half"]}
-opendal = {version = "0.55", default-features = false}
+opendal = {version = "0.57", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}

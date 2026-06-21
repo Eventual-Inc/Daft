@@ -22,8 +22,8 @@ impl<'py> IntoPyObject<'py> for FileReference {
             self.media_type,
             self.url,
             io_config,
-            self.offset,
-            self.length,
+            self.position,
+            self.size,
         )
             .into_pyobject(py)
     }
@@ -39,10 +39,10 @@ impl<'py> FromPyObject<'_, 'py> for FileReference {
         if first.is_instance_of::<PyString>() {
             let url = first.extract::<String>()?;
             let io_config = tuple.get_item(2)?.extract::<Option<IOConfig>>()?;
-            let (offset, length) = if tuple.len() >= 5 {
-                let offset = tuple.get_item(3)?.extract::<Option<u64>>()?;
-                let length = tuple.get_item(4)?.extract::<Option<u64>>()?;
-                (offset, length)
+            let (position, size) = if tuple.len() >= 5 {
+                let position = tuple.get_item(3)?.extract::<Option<u64>>()?;
+                let size = tuple.get_item(4)?.extract::<Option<u64>>()?;
+                (position, size)
             } else {
                 (None, None)
             };
@@ -50,8 +50,8 @@ impl<'py> FromPyObject<'_, 'py> for FileReference {
                 media_type,
                 url,
                 io_config.map(|cfg| cfg.config),
-                offset,
-                length,
+                position,
+                size,
             ))
         } else {
             Err(PyErr::new::<PyTypeError, _>("Expected a string or bytes"))

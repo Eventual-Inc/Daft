@@ -65,8 +65,8 @@ where
     ) -> DaftResult<Self> {
         let mut io_conf_arr = LargeBinaryBuilder::new();
         let mut urls_arr = LargeStringBuilder::new();
-        let mut offset_arr: Vec<Option<i64>> = Vec::new();
-        let mut length_arr: Vec<Option<i64>> = Vec::new();
+        let mut position_arr: Vec<Option<i64>> = Vec::new();
+        let mut size_arr: Vec<Option<i64>> = Vec::new();
 
         for value in iter {
             let value = value?;
@@ -78,14 +78,14 @@ where
                             .expect("Failed to serialize IOConfig")
                     });
                     io_conf_arr.append_option(io_config);
-                    offset_arr.push(value.offset.map(|v| v as i64));
-                    length_arr.push(value.length.map(|v| v as i64));
+                    position_arr.push(value.position.map(|v| v as i64));
+                    size_arr.push(value.size.map(|v| v as i64));
                 }
                 None => {
                     urls_arr.append_null();
                     io_conf_arr.append_null();
-                    offset_arr.push(None);
-                    length_arr.push(None);
+                    position_arr.push(None);
+                    size_arr.push(None);
                 }
             }
         }
@@ -98,18 +98,18 @@ where
             Arc::new(Field::new("io_config", DataType::Binary)),
             Arc::new(io_conf_arr.finish()),
         )?;
-        let offset_series = Series::from_arrow(
-            Arc::new(Field::new("offset", DataType::Int64)),
-            Arc::new(arrow::array::Int64Array::from(offset_arr)),
+        let position_series = Series::from_arrow(
+            Arc::new(Field::new("position", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(position_arr)),
         )?;
-        let length_series = Series::from_arrow(
-            Arc::new(Field::new("length", DataType::Int64)),
-            Arc::new(arrow::array::Int64Array::from(length_arr)),
+        let size_series = Series::from_arrow(
+            Arc::new(Field::new("size", DataType::Int64)),
+            Arc::new(arrow::array::Int64Array::from(size_arr)),
         )?;
         let nulls = urls.nulls().cloned();
         let sa = StructArray::new(
             sa_field,
-            vec![urls, io_config, offset_series, length_series],
+            vec![urls, io_config, position_series, size_series],
             nulls,
         );
 
@@ -135,24 +135,24 @@ where
             .expect("Failed to set validity");
 
         let null_i64: Vec<Option<i64>> = vec![None; urls.len()];
-        let offset_series = Series::from_arrow(
-            Arc::new(Field::new("offset", DataType::Int64)),
+        let position_series = Series::from_arrow(
+            Arc::new(Field::new("position", DataType::Int64)),
             Arc::new(arrow::array::Int64Array::from(null_i64.clone())),
         )
-        .expect("Failed to create offset series");
-        let length_series = Series::from_arrow(
-            Arc::new(Field::new("length", DataType::Int64)),
+        .expect("Failed to create position series");
+        let size_series = Series::from_arrow(
+            Arc::new(Field::new("size", DataType::Int64)),
             Arc::new(arrow::array::Int64Array::from(null_i64)),
         )
-        .expect("Failed to create length series");
+        .expect("Failed to create size series");
 
         let sa = StructArray::new(
             sa_field,
             vec![
                 urls.clone().into_series().rename("url"),
                 io_conf.into_series(),
-                offset_series,
-                length_series,
+                position_series,
+                size_series,
             ],
             urls.nulls().cloned(),
         );
@@ -240,18 +240,18 @@ mod tests {
             media_type: _,
             url,
             io_config,
-            offset,
-            length,
+            position,
+            size,
         } = new_arr.get(0).expect("Failed to get data");
 
         assert_eq!(url, "file://example.com");
         assert_eq!(io_config, io_conf.map(Arc::new));
-        assert_eq!(offset, None);
-        assert_eq!(length, None);
+        assert_eq!(position, None);
+        assert_eq!(size, None);
     }
 
     #[test]
-    fn test_arrow_roundtrip_with_offset_and_length() {
+    fn test_arrow_roundtrip_with_position_and_size() {
         let io_conf = Some(IOConfig::default());
         let refs = vec![
             Ok(Some(FileReference::new_with_range(
@@ -281,13 +281,13 @@ mod tests {
 
         let ref0 = new_arr.get(0).expect("Failed to get data");
         assert_eq!(ref0.url, "file://example.com/blob");
-        assert_eq!(ref0.offset, Some(100));
-        assert_eq!(ref0.length, Some(50));
+        assert_eq!(ref0.position, Some(100));
+        assert_eq!(ref0.size, Some(50));
 
         let ref1 = new_arr.get(1).expect("Failed to get data");
         assert_eq!(ref1.url, "file://example.com/blob2");
-        assert_eq!(ref1.offset, None);
-        assert_eq!(ref1.length, None);
+        assert_eq!(ref1.position, None);
+        assert_eq!(ref1.size, None);
 
         assert!(new_arr.get(2).is_none());
     }

@@ -114,7 +114,7 @@ async fn test_lifecycle() {
     assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
 
-    // Seal makes data visible.
+    // checkpoint() makes data visible.
     store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
     assert_eq!(
@@ -216,16 +216,16 @@ async fn test_error_paths() {
         CheckpointError::CheckpointNotFound { .. } | CheckpointError::NotCheckpointed { .. }
     ));
 
-    // stage_keys after checkpoint() → AlreadySealed
+    // stage_keys after checkpoint() → AlreadyCheckpointed
     let id = CheckpointId::generate(0);
     store.stage_keys(&id, keys(&["a"])).await.unwrap();
     store.checkpoint(&id).await.unwrap();
 
     let err = store.stage_keys(&id, keys(&["b"])).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
     let err = store.stage_files(&id, vec![file(b"f")]).await.unwrap_err();
-    assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
+    assert!(matches!(err, CheckpointError::AlreadyCheckpointed { .. }));
 
     // mark_committed on staged (not yet checkpointed)
     let id2 = CheckpointId::generate(1);
@@ -326,15 +326,15 @@ async fn test_get_checkpoint_and_list() {
     store.stage_keys(&id1, keys(&["a"])).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Staged);
-    assert!(ckpt.sealed_at.is_none());
+    assert!(ckpt.checkpointed_at.is_none());
     assert!(ckpt.committed_at.is_none());
 
     store.checkpoint(&id1).await.unwrap();
     let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
-    assert!(ckpt.sealed_at.is_some());
+    assert!(ckpt.checkpointed_at.is_some());
     assert!(ckpt.committed_at.is_none());
-    assert!(ckpt.sealed_at.unwrap() >= ckpt.created_at);
+    assert!(ckpt.checkpointed_at.unwrap() >= ckpt.created_at);
 
     store
         .mark_committed(std::slice::from_ref(&id1))
@@ -393,7 +393,7 @@ async fn test_stage_keys_renames_to_canonical_column() {
     let id = CheckpointId::generate(0);
 
     // Pass in a series whose field name is the source's column ("file_id"),
-    // not the canonical sealed-keys column ("key"). The store must rename it
+    // not the canonical SEALED_KEYS_COLUMN ("key"). The store must rename it
     // on the way in so the on-disk parquet uses the canonical name.
     let source_named = Utf8Array::from_slice("file_id", &["a", "b", "c"]).into_series();
     assert_eq!(source_named.name(), "file_id");
@@ -584,25 +584,25 @@ async fn test_parquet_file_metadata_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
-// 14. sealed_file_paths visibility lifecycle
+// 14. checkpointed_file_paths visibility lifecycle
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_sealed_file_paths_lifecycle() {
+async fn test_checkpointed_file_paths_lifecycle() {
     let (_dir, store) = make_store();
 
     // Empty store → no paths.
-    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
 
     // Staged only → still no paths (staged-only keys must be invisible so the
     // current run doesn't wrongly skip work that was never durably recorded).
     let id = CheckpointId::generate(0);
     store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
-    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
 
-    // Sealed → at least one path.
+    // After checkpoint() → at least one path.
     store.checkpoint(&id).await.unwrap();
-    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(!store.checkpointed_file_paths().await.unwrap().is_empty());
 
     // After mark_committed, paths remain available — keys remain visible for
     // skip-on-rerun even after the associated files are committed.
@@ -610,7 +610,7 @@ async fn test_sealed_file_paths_lifecycle() {
         .mark_committed(std::slice::from_ref(&id))
         .await
         .unwrap();
-    assert!(!store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(!store.checkpointed_file_paths().await.unwrap().is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -624,8 +624,8 @@ async fn test_checkpoint_on_never_staged_id_is_a_noop() {
 
     // Empty-source case: pipeline produced 0 rows after the anti-join, sink
     // generated an id but no SCKO/sink call ever staged keys or files. We
-    // succeed quietly rather than sealing a content-less manifest — consumers
-    // can already tell "this id sealed nothing" from the absence of a manifest.
+    // succeed quietly rather than writing a content-less manifest — consumers
+    // can already tell "this id checkpointed nothing" from the absence of a manifest.
     store.checkpoint(&id).await.unwrap();
 
     let ckpt = store.get_checkpoint(&id).await;
@@ -633,7 +633,7 @@ async fn test_checkpoint_on_never_staged_id_is_a_noop() {
         ckpt,
         Err(CheckpointError::CheckpointNotFound { .. })
     ));
-    assert!(store.sealed_file_paths().await.unwrap().is_empty());
+    assert!(store.checkpointed_file_paths().await.unwrap().is_empty());
 
     // Idempotent retry — still a no-op.
     store.checkpoint(&id).await.unwrap();

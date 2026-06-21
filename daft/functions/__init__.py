@@ -102,7 +102,7 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
-from .file_ import file, file_path, file_size, video_file, audio_file, image_file, guess_mime_type
+from .file_ import file, file_path, file_size, file_exists, video_file, audio_file, image_file, guess_mime_type
 
 from .image import (
     resize,
@@ -147,6 +147,7 @@ from .misc import (
     random_int,
     eq_null_safe,
     cast,
+    try_cast,
     is_null,
     not_null,
     fill_null,
@@ -220,6 +221,10 @@ from .partition import (
     partition_years,
     partition_iceberg_bucket,
     partition_iceberg_truncate,
+    extract_minute_uuid7,
+    extract_hour_uuid7,
+    extract_day_uuid7,
+    extract_month_uuid7,
 )
 from .spatial import great_circle_distance
 from .str import (
@@ -272,6 +277,16 @@ from .str import (
     regexp_replace,
     find,
     hamming_distance_str,
+    levenshtein_distance,
+    jaro_similarity,
+    jaro_winkler_similarity,
+    damerau_levenshtein_distance,
+    translate,
+    substring_index,
+    soundex,
+    ascii_func,
+    chr_func,
+    space,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -301,6 +316,7 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "ascii_func",
     "audio_file",
     "audio_metadata",
     "avg",
@@ -315,6 +331,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
+    "chr_func",
     "chunk",
     "classify_image",
     "classify_text",
@@ -345,6 +362,7 @@ __all__ = [
     "current_date",
     "current_timestamp",
     "current_timezone",
+    "damerau_levenshtein_distance",
     "date",
     "date_add",
     "date_diff",
@@ -381,8 +399,13 @@ __all__ = [
     "exp",
     "explode",
     "expm1",
+    "extract_day_uuid7",
+    "extract_hour_uuid7",
+    "extract_minute_uuid7",
+    "extract_month_uuid7",
     "factorial",
     "file",
+    "file_exists",
     "file_path",
     "file_size",
     "fill_nan",
@@ -415,6 +438,8 @@ __all__ = [
     "is_nan",
     "is_null",
     "jaccard_similarity",
+    "jaro_similarity",
+    "jaro_winkler_similarity",
     "jq",
     "json_array_length",
     "json_object_keys",
@@ -426,6 +451,7 @@ __all__ = [
     "left",
     "length",
     "length_bytes",
+    "levenshtein_distance",
     "like",
     "list_agg",
     "list_agg_distinct",
@@ -525,6 +551,8 @@ __all__ = [
     "sinh",
     "skew",
     "slice",
+    "soundex",
+    "space",
     "split",
     "sqrt",
     "startswith",
@@ -533,6 +561,7 @@ __all__ = [
     "string_agg",
     "strip",
     "substr",
+    "substring_index",
     "sum",
     "tan",
     "tanh",
@@ -561,7 +590,9 @@ __all__ = [
     "total_minutes",
     "total_nanoseconds",
     "total_seconds",
+    "translate",
     "trunc",
+    "try_cast",
     "try_compress",
     "try_decode",
     "try_decompress",
