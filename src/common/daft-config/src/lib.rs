@@ -209,6 +209,11 @@ impl DaftExecutionConfig {
     const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
+
+    /// Single validity rule (finite, positive) shared by the env and Python setter.
+    pub(crate) fn is_valid_min_cpu_per_task(value: f64) -> bool {
+        value.is_finite() && value > 0.0
+    }
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
@@ -241,7 +246,7 @@ impl DaftExecutionConfig {
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
         {
-            if val.is_finite() && val > 0.0 {
+            if Self::is_valid_min_cpu_per_task(val) {
                 cfg.min_cpu_per_task = val;
             } else {
                 eprintln!(

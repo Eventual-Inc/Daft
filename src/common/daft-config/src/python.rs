@@ -269,7 +269,7 @@ impl PyDaftExecutionConfig {
         }
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
-            if !min_cpu_per_task.is_finite() || min_cpu_per_task <= 0.0 {
+            if !DaftExecutionConfig::is_valid_min_cpu_per_task(min_cpu_per_task) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
                     "min_cpu_per_task must be a finite number > 0, got {min_cpu_per_task}"
                 )));
