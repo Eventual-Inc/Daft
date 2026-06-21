@@ -62,14 +62,17 @@ pub(crate) struct RayBundle {
 /// Aggregate per-task requests into integer Ray autoscaler bundles (Ray's
 /// `request_resources` rejects non-integer values).
 ///
-/// Sub-unit demand is packed: sub-GPU tasks sum into `ceil(sum)` `{CPU:1,GPU:1}`
+/// Sub-unit demand is packed: sub-GPU tasks sum into `ceil(sum)` `{CPU,GPU:1}`
 /// bundles, sub-CPU CPU-only tasks into `ceil(sum)` `{CPU:1}` bundles — so N tasks
-/// at 0.1 request `ceil(0.1*N)` units, not N (issue #7123). Tasks with memory or a
-/// whole unit (`> 1`) keep an individual, placement-pinned bundle. Non-positive
-/// values are dropped; non-finite is rejected by `try_new_internal`.
+/// at 0.1 request `ceil(0.1*N)` units, not N (issue #7123). The packed tasks' CPU
+/// is carried on the GPU bundles (spread across them) so their co-located CPU is
+/// provisioned, not dropped. Tasks with memory or a whole unit (`> 1`) keep an
+/// individual, placement-pinned bundle. Non-positive values are dropped; non-finite
+/// is rejected by `try_new_internal`.
 pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
     let mut fractional_cpu_sum = 0.0;
     let mut fractional_gpu_sum = 0.0;
+    let mut gpu_cpu_sum = 0.0;
     let mut bundles = Vec::new();
     for request in requests {
         let cpus = request.num_cpus();
@@ -83,9 +86,12 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
                 memory: (memory > 0).then_some(memory),
             });
         } else if gpus > 0.0 {
-            // Sub-GPU task: pack into shared whole-GPU bundles. Its small CPU is
-            // covered by the GPU node, so it is not also counted as CPU demand.
+            // Sub-GPU task: pack into shared whole-GPU bundles, carrying its CPU so
+            // the CPU it needs co-located with the GPU is still provisioned.
             fractional_gpu_sum += gpus;
+            if cpus > 0.0 {
+                gpu_cpu_sum += cpus;
+            }
         } else if cpus > 0.0 {
             // Sub-CPU, CPU-only task: pack into shared whole-CPU bundles.
             // `> 0.0` is false for NaN, so a poisoned value is dropped rather
@@ -100,12 +106,16 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
             memory: None,
         });
     }
-    for _ in 0..(fractional_gpu_sum.ceil() as i64) {
-        bundles.push(RayBundle {
-            cpu: 1,
-            gpu: Some(1),
-            memory: None,
-        });
+    let gpu_bundles = fractional_gpu_sum.ceil() as i64;
+    if gpu_bundles > 0 {
+        let cpu_per_bundle = (gpu_cpu_sum / gpu_bundles as f64).ceil().max(1.0) as i64;
+        for _ in 0..gpu_bundles {
+            bundles.push(RayBundle {
+                cpu: cpu_per_bundle,
+                gpu: Some(1),
+                memory: None,
+            });
+        }
     }
     bundles
 }
@@ -834,6 +844,22 @@ pub(super) mod tests {
         let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
         let pending = vec![r.clone(), r];
         assert!(next_autoscale_request(&pending, 1.0, 0.0, 0).is_none());
+    }
+
+    #[test]
+    fn next_autoscale_request_grows_for_fractional_gpu_with_cpu_fallback() {
+        // @daft.cls(gpus=0.5): num_cpus=None -> fallback 1.0 CPU, num_gpus=0.5.
+        // At mark 1 CPU / 1 GPU the request must actually grow, not restate 1/1.
+        let rr = ResourceRequest::try_new_internal(None, Some(0.5), None).unwrap();
+        let t = TaskResourceRequest::new(rr, 1.0);
+        let pending = vec![t.clone(), t];
+        let bundles = next_autoscale_request(&pending, 1.0, 1.0, 0).unwrap();
+        let total_cpu: i64 = bundles.iter().map(|b| b.cpu).sum();
+        let total_gpu: i64 = bundles.iter().filter_map(|b| b.gpu).sum();
+        assert!(
+            total_cpu > 1 || total_gpu > 1,
+            "request must grow past 1/1, got {total_cpu}/{total_gpu}"
+        );
     }
 
     #[derive(Debug)]
