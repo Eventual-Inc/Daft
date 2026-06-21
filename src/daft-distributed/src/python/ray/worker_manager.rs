@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::WorkerSnapshot,
-    task::{SwordfishTask, TaskContext, TaskResourceRequest, aggregate_ray_bundles},
+    task::{SwordfishTask, TaskContext, TaskResourceRequest, next_autoscale_request},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -262,46 +262,20 @@ impl WorkerManager for RayWorkerManager {
             .unwrap_or(0)
             .max(cluster_memory_bytes);
 
-        // 3. Accumulate bundles one at a time until the running total surpasses the
-        //    high-water mark in any resource dimension (CPU, GPU, or memory). This ensures
-        //    each cycle's request is exactly one bundle larger than the previous max —
-        //    gradual enough to avoid exceeding an unknown cluster capacity limit.
-        let mut cpu_sum = 0.0;
-        let mut gpu_sum = 0.0;
-        let mut memory_sum = 0;
-        let mut surpassed = false;
-        let mut selected_bundles = Vec::new();
-        for bundle in &bundles {
-            // Use wrapper methods so the min_cpu_per_task fallback applies.
-            cpu_sum += bundle.num_cpus();
-            gpu_sum += bundle.num_gpus();
-            memory_sum += bundle.memory_bytes();
-            selected_bundles.push(bundle);
-            if cpu_sum > high_water_mark_cpus
-                || gpu_sum > high_water_mark_gpus
-                || memory_sum > high_water_mark_memory
-            {
-                surpassed = true;
-                break;
-            }
-        }
-
-        // 4. If we went through all pending bundles without surpassing the high-water mark,
-        //    the remaining demand is smaller than what we previously requested. Skip this
-        //    cycle — Ray still holds our previous (larger) request, so no downscale occurs.
-        if !surpassed {
+        // 3. Select the next request: one bundle larger than the previous high-water
+        //    mark, so the cluster ramps up gradually. None means demand hasn't grown
+        //    past the last request, so skip — Ray still holds that (larger) request.
+        let Some(ray_bundles) = next_autoscale_request(
+            &bundles,
+            high_water_mark_cpus,
+            high_water_mark_gpus,
+            high_water_mark_memory,
+        ) else {
             return Ok(());
-        }
+        };
 
-        // 5. Send the selected bundles to Ray's autoscaler via request_resources().
-        //    Ray (as of 2.55) rejects non-integer bundle values, so a fractional
-        //    min_cpu_per_task cannot be sent per task directly. aggregate_ray_bundles
-        //    sums CPU-only fractional demand into ceil(sum) unit {CPU:1} bundles so
-        //    the autoscaler is not asked for one full CPU per task (issue #7123),
-        //    while GPU/memory tasks keep their own (placement-pinning) bundle.
-        //    Zero-valued GPU/memory keys are omitted so Ray doesn't interpret them as
-        //    a demand for zero-resource bundles on specialized nodes.
-        let ray_bundles = aggregate_ray_bundles(&selected_bundles);
+        // 4. Send the bundles to Ray's autoscaler. Zero-valued GPU/memory keys are
+        //    omitted so Ray doesn't demand zero-resource bundles on specialized nodes.
         Python::attach(|py| -> DaftResult<()> {
             let python_bundles = ray_bundles
                 .iter()
@@ -328,12 +302,9 @@ impl WorkerManager for RayWorkerManager {
         state.pending_release_blacklist.clear();
         state.last_refresh = None;
 
-        // 6. Record what we actually requested from Ray — the aggregated integer
-        //    bundle totals, not the fractional cpu_sum — as the new high-water mark.
-        //    Tracking the post-aggregation request keeps the mark in the same units
-        //    Ray sees, so each cycle escalates the real request by at least one CPU
-        //    rather than stalling for ~1/min_cpu_per_task cycles before the ceil
-        //    bumps. We never send a smaller request than before.
+        // 5. Record the new high-water mark as the aggregated integer totals we just
+        //    requested — same units Ray sees, so each cycle escalates by a whole CPU/GPU
+        //    instead of stalling for ~1/min_cpu_per_task cycles before the ceil bumps.
         let requested_cpus: i64 = ray_bundles.iter().map(|b| b.cpu).sum();
         let requested_gpus: i64 = ray_bundles.iter().filter_map(|b| b.gpu).sum();
         let requested_memory: i64 = ray_bundles.iter().filter_map(|b| b.memory).sum();

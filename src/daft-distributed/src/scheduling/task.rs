@@ -59,37 +59,37 @@ pub(crate) struct RayBundle {
     pub memory: Option<i64>,
 }
 
-/// Aggregate per-task resource requests into integer Ray autoscaler bundles.
+/// Aggregate per-task requests into integer Ray autoscaler bundles (Ray's
+/// `request_resources` rejects non-integer values).
 ///
-/// Ray's `request_resources` requires integer bundle values, so a fractional
-/// `min_cpu_per_task` (e.g. 0.1) cannot be expressed per task directly. Only
-/// sub-CPU, CPU-only tasks are packed: their fractional CPU is summed and emitted
-/// as `ceil(sum)` unit `{"CPU": 1}` bundles — so N tasks at 0.1 CPU request
-/// `ceil(0.1 * N)` CPUs rather than N (issue #7123).
-///
-/// A task keeps its own individual bundle (CPU rounded up to at least 1) when it
-/// requests GPU, memory, or `num_cpus >= 1`: those resources pin the task to a
-/// single node, so splitting them across unit bundles could make the task
-/// unschedulable. Non-finite / non-positive CPU values contribute nothing (the
-/// config is validated upstream, but an explicit plan request is not).
+/// Sub-unit demand is packed: sub-GPU tasks sum into `ceil(sum)` `{CPU:1,GPU:1}`
+/// bundles, sub-CPU CPU-only tasks into `ceil(sum)` `{CPU:1}` bundles — so N tasks
+/// at 0.1 request `ceil(0.1*N)` units, not N (issue #7123). Tasks with memory or a
+/// whole unit (`> 1`) keep an individual, placement-pinned bundle. Non-positive
+/// values are dropped; non-finite is rejected by `try_new_internal`.
 pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<RayBundle> {
     let mut fractional_cpu_sum = 0.0;
+    let mut fractional_gpu_sum = 0.0;
     let mut bundles = Vec::new();
     for request in requests {
-        let gpu = request.num_gpus().ceil() as i64;
-        let memory = request.memory_bytes() as i64;
-        let gpu = (gpu > 0).then_some(gpu);
-        let memory = (memory > 0).then_some(memory);
         let cpus = request.num_cpus();
-        if gpu.is_some() || memory.is_some() || cpus > 1.0 {
+        let gpus = request.num_gpus();
+        let memory = request.memory_bytes() as i64;
+        if memory > 0 || cpus > 1.0 || gpus > 1.0 {
+            let gpu = gpus.ceil() as i64;
             bundles.push(RayBundle {
                 cpu: (cpus.ceil() as i64).max(1),
-                gpu,
-                memory,
+                gpu: (gpu > 0).then_some(gpu),
+                memory: (memory > 0).then_some(memory),
             });
+        } else if gpus > 0.0 {
+            // Sub-GPU task: pack into shared whole-GPU bundles. Its small CPU is
+            // covered by the GPU node, so it is not also counted as CPU demand.
+            fractional_gpu_sum += gpus;
         } else if cpus > 0.0 {
-            // `cpus > 0.0` is false for NaN, so a poisoned value is dropped
-            // rather than zeroing the whole batch's CPU request.
+            // Sub-CPU, CPU-only task: pack into shared whole-CPU bundles.
+            // `> 0.0` is false for NaN, so a poisoned value is dropped rather
+            // than zeroing the batch's request.
             fractional_cpu_sum += cpus;
         }
     }
@@ -100,7 +100,43 @@ pub(crate) fn aggregate_ray_bundles(requests: &[&TaskResourceRequest]) -> Vec<Ra
             memory: None,
         });
     }
+    for _ in 0..(fractional_gpu_sum.ceil() as i64) {
+        bundles.push(RayBundle {
+            cpu: 1,
+            gpu: Some(1),
+            memory: None,
+        });
+    }
     bundles
+}
+
+/// Minimal prefix of `pending` whose fractional demand exceeds the high-water mark,
+/// aggregated into integer Ray bundles; `None` if demand hasn't grown past the last
+/// request (skip the cycle). Aggregation makes the request grow by whole CPUs/GPUs
+/// per cycle even with a fractional per-task fallback.
+pub(crate) fn next_autoscale_request(
+    pending: &[TaskResourceRequest],
+    high_water_cpus: f64,
+    high_water_gpus: f64,
+    high_water_memory: usize,
+) -> Option<Vec<RayBundle>> {
+    let mut cpu_sum = 0.0;
+    let mut gpu_sum = 0.0;
+    let mut memory_sum = 0usize;
+    let mut selected: Vec<&TaskResourceRequest> = Vec::new();
+    for request in pending {
+        cpu_sum += request.num_cpus();
+        gpu_sum += request.num_gpus();
+        memory_sum += request.memory_bytes();
+        selected.push(request);
+        if cpu_sum > high_water_cpus
+            || gpu_sum > high_water_gpus
+            || memory_sum > high_water_memory
+        {
+            return Some(aggregate_ray_bundles(&selected));
+        }
+    }
+    None
 }
 
 pub(crate) type TaskID = u32;
@@ -759,6 +795,45 @@ pub(super) mod tests {
             gpu: None,
             memory: None
         }));
+    }
+
+    #[test]
+    fn aggregate_ray_bundles_packs_fractional_gpu() {
+        // 11 tasks at 0.1 GPU -> ceil(1.1) = 2 GPU bundles, not 11.
+        let rr = ResourceRequest::try_new_internal(Some(0.1), Some(0.1), None).unwrap();
+        let g = TaskResourceRequest::new(rr, 1.0);
+        let refs: Vec<_> = (0..11).map(|_| &g).collect();
+        let bundles = aggregate_ray_bundles(&refs);
+        let total_gpu: i64 = bundles.iter().filter_map(|b| b.gpu).sum();
+        assert_eq!(total_gpu, 2);
+        assert!(bundles.iter().all(|b| b.gpu == Some(1) && b.cpu == 1));
+    }
+
+    #[test]
+    fn next_autoscale_request_escalates_by_whole_cpu() {
+        // mark=1.0 -> select 11 tasks (cpu_sum>1.0) -> ceil(1.1) = 2 CPUs.
+        let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
+        let pending: Vec<_> = (0..50).map(|_| r.clone()).collect();
+        let bundles = next_autoscale_request(&pending, 1.0, 0.0, 0).unwrap();
+        let total_cpu: i64 = bundles.iter().map(|b| b.cpu).sum();
+        assert_eq!(total_cpu, 2);
+    }
+
+    #[test]
+    fn next_autoscale_request_packs_fractional_gpu() {
+        let rr = ResourceRequest::try_new_internal(Some(0.1), Some(0.1), None).unwrap();
+        let g = TaskResourceRequest::new(rr, 1.0);
+        let pending: Vec<_> = (0..30).map(|_| g.clone()).collect();
+        let bundles = next_autoscale_request(&pending, 100.0, 1.0, 0).unwrap();
+        let total_gpu: i64 = bundles.iter().filter_map(|b| b.gpu).sum();
+        assert_eq!(total_gpu, 2);
+    }
+
+    #[test]
+    fn next_autoscale_request_skips_below_mark() {
+        let r = TaskResourceRequest::new(ResourceRequest::default(), 0.1);
+        let pending = vec![r.clone(), r];
+        assert!(next_autoscale_request(&pending, 1.0, 0.0, 0).is_none());
     }
 
     #[derive(Debug)]
