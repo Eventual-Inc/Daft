@@ -1,11 +1,16 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct TableMetadata {
     pub length: usize,
-    /// Total uncompressed size in bytes, when known from file metadata (e.g. Parquet row group totals).
+    /// Uncompressed size in bytes per top-level column, when known from file metadata
+    /// (e.g. summed Parquet column-chunk totals across row groups). Keyed by column name
+    /// so that size estimates can respect column-projection pushdown. `None` when the
+    /// source does not expose per-column sizes.
     #[serde(default)]
-    pub size_bytes: Option<usize>,
+    pub column_sizes: Option<BTreeMap<String, u64>>,
 }
 
 impl TableMetadata {

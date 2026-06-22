@@ -68,7 +68,7 @@ impl ScanOperator for DummyScanOperator {
             .map(|i| {
                 let metadata = self.num_rows_per_task.map(|n| TableMetadata {
                     length: n,
-                    size_bytes: None,
+                    column_sizes: None,
                 });
                 Arc::new(ScanTask::new(
                     vec![ScanSource {

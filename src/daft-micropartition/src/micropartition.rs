@@ -92,7 +92,7 @@ impl MicroPartition {
             chunks: record_batches,
             metadata: TableMetadata {
                 length,
-                size_bytes: None,
+                column_sizes: None,
             },
             statistics,
         }

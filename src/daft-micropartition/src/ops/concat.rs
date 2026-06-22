@@ -34,7 +34,7 @@ impl MicroPartition {
             chunks: Arc::new(all_tables),
             metadata: TableMetadata {
                 length: new_len,
-                size_bytes: None,
+                column_sizes: None,
             },
             statistics: all_stats,
         })

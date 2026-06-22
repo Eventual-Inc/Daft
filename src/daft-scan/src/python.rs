@@ -601,7 +601,7 @@ pub mod pylib {
 
             let metadata = num_rows.map(|n| TableMetadata {
                 length: n as usize,
-                size_bytes: None,
+                column_sizes: None,
             });
 
             let data_source = ScanSource {
@@ -658,7 +658,7 @@ pub mod pylib {
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata {
                     length: n as usize,
-                    size_bytes: None,
+                    column_sizes: None,
                 }),
                 statistics,
                 partition_spec: None,
@@ -707,7 +707,7 @@ pub mod pylib {
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
-                    size_bytes: None,
+                    column_sizes: None,
                 }),
                 statistics,
                 partition_spec: None,
@@ -799,7 +799,7 @@ pub mod pylib {
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),
-                    size_bytes: None,
+                    column_sizes: None,
                 })
             } else {
                 None

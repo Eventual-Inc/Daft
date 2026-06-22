@@ -1,4 +1,4 @@
-use std::{sync::Arc, vec};
+use std::{collections::BTreeMap, sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
@@ -219,15 +219,20 @@ impl GlobScanOperator {
                         field_id_mapping.clone(),
                     )
                     .await?;
-                    let total_uncompressed_size: usize = metadata
-                        .row_groups()
-                        .map(|(_, rg)| rg.total_byte_size())
-                        .sum();
+                    // Sum the per-column uncompressed sizes across all row groups, keyed by
+                    // top-level column name. Storing per-column (rather than a single total)
+                    // lets size estimates respect column-projection pushdown.
+                    let mut column_sizes: BTreeMap<String, u64> = BTreeMap::new();
+                    for (_, rg) in metadata.row_groups() {
+                        for (name, bytes) in rg.column_uncompressed_sizes() {
+                            *column_sizes.entry(name).or_insert(0) += bytes;
+                        }
+                    }
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
                             length: metadata.num_rows(),
-                            size_bytes: Some(total_uncompressed_size),
+                            column_sizes: (!column_sizes.is_empty()).then_some(column_sizes),
                         },
                     ));
                     (schema, first_metadata, first_filepath)
