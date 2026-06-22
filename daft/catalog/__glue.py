@@ -443,7 +443,7 @@ class GlueIcebergTable(GlueTable):
 
     _io_config: IOConfig | None
     _pyiceberg_table: PyIcebergTable
-    _read_options: set[str] = {"snapshot_id", "branch", "tag"}
+    _read_options: set[str] = {"snapshot_id", "branch", "tag", "ignore_corrupt_files"}
 
     def __init__(self) -> None:
         raise ValueError("GlueIcebergTable.__init__() not supported!")
@@ -485,12 +485,14 @@ class GlueIcebergTable(GlueTable):
         from daft.io.iceberg._iceberg import read_iceberg
 
         Table._validate_options("Glue Iceberg read", options, self._read_options)
+        ignore_corrupt_files: bool = options.get("ignore_corrupt_files", False)
         return read_iceberg(
             table=self._pyiceberg_table,
             snapshot_id=options.get("snapshot_id"),
             branch=options.get("branch"),
             tag=options.get("tag"),
             io_config=self._io_config,
+            ignore_corrupt_files=ignore_corrupt_files,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:
