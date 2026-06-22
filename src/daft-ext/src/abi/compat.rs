@@ -1,6 +1,6 @@
 //! Feature-gated conversions for arrow-rs FFI types.
 //!
-//! Enable one of `arrow-56`, `arrow-57`, or `arrow-58` to get:
+//! Enable one of `arrow-56`, `arrow-57`, `arrow-58`, or `arrow-59` to get:
 //! - Safe `.into()` between `FFI_ArrowArray`/`FFI_ArrowSchema` and our types
 //! - `TryFrom` between `arrow_schema::Field` and our `ArrowSchema`
 
@@ -105,3 +105,6 @@ impl_arrow_conversions!(arrow_schema_57, arrow_data_57);
 
 #[cfg(feature = "arrow-58")]
 impl_arrow_conversions!(arrow_schema_58, arrow_data_58);
+
+#[cfg(feature = "arrow-59")]
+impl_arrow_conversions!(arrow_schema_59, arrow_data_59);

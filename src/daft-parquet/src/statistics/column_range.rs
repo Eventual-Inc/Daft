@@ -179,15 +179,11 @@ fn convert_int64_arrowrs(
     upper: i64,
     col_descr: &ArrowColumnDescriptor,
 ) -> super::Result<ColumnRangeStatistics> {
-    if let Some(ArrowLogicalType::Timestamp {
-        is_adjusted_to_u_t_c,
-        unit,
-    }) = col_descr.logical_type_ref()
-    {
-        let daft_tu = timeunit_to_daft(*unit);
+    if let Some(ArrowLogicalType::Timestamp(ts)) = col_descr.logical_type_ref() {
+        let daft_tu = timeunit_to_daft(ts.unit);
         return make_timestamp_column_range_statistics(
             daft_tu,
-            *is_adjusted_to_u_t_c,
+            ts.is_adjusted_to_u_t_c,
             lower,
             upper,
         );
@@ -229,17 +225,13 @@ fn convert_int96_arrowrs(
     let lower_raw: [u32; 3] = [lower_data[0], lower_data[1], lower_data[2]];
     let upper_raw: [u32; 3] = [upper_data[0], upper_data[1], upper_data[2]];
 
-    if let Some(ArrowLogicalType::Timestamp {
-        is_adjusted_to_u_t_c,
-        unit,
-    }) = col_descr.logical_type_ref()
-    {
-        let daft_tu = timeunit_to_daft(*unit);
+    if let Some(ArrowLogicalType::Timestamp(ts)) = col_descr.logical_type_ref() {
+        let daft_tu = timeunit_to_daft(ts.unit);
         let lower_ts = convert_i96_to_i64_timestamp(lower_raw, daft_tu);
         let upper_ts = convert_i96_to_i64_timestamp(upper_raw, daft_tu);
         return make_timestamp_column_range_statistics(
             daft_tu,
-            *is_adjusted_to_u_t_c,
+            ts.is_adjusted_to_u_t_c,
             lower_ts,
             upper_ts,
         );
@@ -289,10 +281,10 @@ fn convert_byte_array_arrowrs(
                     Utf8Array::from_slice("upper", [upper_str.as_str()].as_slice()).into_series();
                 return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?);
             }
-            ArrowLogicalType::Decimal { precision, scale } => {
+            ArrowLogicalType::Decimal(d) => {
                 return make_decimal_column_range_statistics(
-                    *precision as usize,
-                    *scale as usize,
+                    d.precision as usize,
+                    d.scale as usize,
                     lower_bytes,
                     upper_bytes,
                 );
@@ -335,10 +327,10 @@ fn convert_fixed_len_arrowrs(
     let lower_bytes = lower.data();
     let upper_bytes = upper.data();
 
-    if let Some(ArrowLogicalType::Decimal { precision, scale }) = col_descr.logical_type_ref() {
+    if let Some(ArrowLogicalType::Decimal(d)) = col_descr.logical_type_ref() {
         return make_decimal_column_range_statistics(
-            *precision as usize,
-            *scale as usize,
+            d.precision as usize,
+            d.scale as usize,
             lower_bytes,
             upper_bytes,
         );
