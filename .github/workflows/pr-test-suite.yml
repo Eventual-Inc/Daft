@@ -349,7 +349,8 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         source .venv/bin/activate
-        uv pip install -U twine toml maturin
+        # Pin maturin <1.14: 1.14 rejects `--timings=html` (used in the Build wheels step below).
+        uv pip install -U twine toml 'maturin<1.14'
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
