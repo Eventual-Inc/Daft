@@ -93,6 +93,10 @@ fn build_primitive_leaf_reader(
     let primitive_type = file_col_descr.self_type_ptr();
     let physical_type = file_col_descr.physical_type();
 
+    // Batch size to pass to array readers for initial internal buffer allocations
+    // We do this because for predicate pushdown, we use a chunk size of USIZE_MAX
+    let batch_size = chunk_size.min(total_rows);
+
     // def/rep levels here are the leaf's levels within its wrapping context
     // (may differ from the file-level descriptor's when nested).
     let col_descr = Arc::new(ColumnDescriptor::new(
@@ -104,7 +108,7 @@ fn build_primitive_leaf_reader(
 
     let reader: Box<dyn ArrayReader> = if matches!(arrow_type, arrow::datatypes::DataType::Null) {
         Box::new(NullArrayReader::<Int32Type>::new(
-            pages, col_descr, chunk_size,
+            pages, col_descr, batch_size,
         )?)
     } else {
         match physical_type {
@@ -112,46 +116,46 @@ fn build_primitive_leaf_reader(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::INT32 => Box::new(PrimitiveArrayReader::<Int32Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::INT64 => Box::new(PrimitiveArrayReader::<Int64Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::FLOAT => Box::new(PrimitiveArrayReader::<FloatType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::DOUBLE => Box::new(PrimitiveArrayReader::<DoubleType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::INT96 => Box::new(PrimitiveArrayReader::<Int96Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                chunk_size,
+                batch_size,
             )?),
             PhysicalType::BYTE_ARRAY => match arrow_type {
                 arrow::datatypes::DataType::Utf8View | arrow::datatypes::DataType::BinaryView => {
-                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?
+                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type), batch_size)?
                 }
-                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?,
+                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type), batch_size)?,
             },
             PhysicalType::FIXED_LEN_BYTE_ARRAY => {
-                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?
+                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type), batch_size)?
             }
         }
     };
