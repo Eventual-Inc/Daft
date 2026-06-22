@@ -3040,7 +3040,6 @@ class DataFrame:
                 If `size` exceeds the total number of rows:
                 - When `with_replacement=False`: raises ValueError
                 - When `with_replacement=True`: returns `size` rows (may contain duplicates)
-                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
@@ -3089,12 +3088,6 @@ class DataFrame:
         if size is not None:
             if size < 0:
                 raise ValueError(f"size should be non-negative, but got {size}")
-            if get_or_create_runner().name == "ray":
-                raise ValueError(
-                    "Sample by size only works on the native runner right now. "
-                    "Please use `daft.set_runner_native()` to switch to the native runner, "
-                    "or use `fraction` instead of `size` for sampling."
-                )
 
         builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
