@@ -148,22 +148,23 @@ fn compute_bucket(v: f64, mn: f64, mx: f64, nb: i64) -> Option<i64> {
     {
         return None;
     }
+    // f64 cast can round nb just below i64::MAX up to i64::MAX, so guard +1 with saturating_add.
     let bucket = if mn < mx {
         if v < mn {
             0
         } else if v >= mx {
-            nb + 1
+            nb.saturating_add(1)
         } else {
-            ((nb as f64) * (v - mn) / (mx - mn)) as i64 + 1
+            (((nb as f64) * (v - mn) / (mx - mn)) as i64).saturating_add(1)
         }
     } else {
         // Descending: roles of below/above flip so a smaller value sorts higher.
         if v > mn {
             0
         } else if v <= mx {
-            nb + 1
+            nb.saturating_add(1)
         } else {
-            ((nb as f64) * (mn - v) / (mn - mx)) as i64 + 1
+            (((nb as f64) * (mn - v) / (mn - mx)) as i64).saturating_add(1)
         }
     };
     Some(bucket)

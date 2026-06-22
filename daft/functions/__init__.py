@@ -209,11 +209,11 @@ from .numeric import (
     between,
     bin,
     conv,
-    width_bucket,
     is_nan,
     is_inf,
     not_nan,
     fill_nan,
+    width_bucket,
 )
 from .partition import (
     partition_days,

@@ -1232,21 +1232,23 @@ def test_width_bucket_below_and_above_range() -> None:
 
 
 def test_width_bucket_null_returning() -> None:
+    """Each invalid row exercises a distinct NULL-returning guard in compute_bucket."""
     from daft.functions import width_bucket
 
     i64_max = 2**63 - 1
+    nan, inf = math.nan, math.inf
     table = MicroPartition.from_pydict(
         {
-            "v": [1.0, 1.0, 1.0, 1.0, math.nan, 1.0, 1.0, 1.0],
-            "mn": [0.0, 0.0, 0.0, 5.0, 0.0, math.nan, 0.0, 0.0],
-            "mx": [10.0, 10.0, 10.0, 5.0, 10.0, 10.0, math.inf, 10.0],
-            "nb": [0, -3, i64_max, 4, 4, 4, 4, 4],
+            #     nb<=0  nb==i64::MAX  mn==mx  v=NaN  mn=NaN  mn=Inf  mx=NaN  mx=Inf  valid
+            "v": [1.0, 1.0, 1.0, nan, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "mn": [0.0, 0.0, 5.0, 0.0, nan, inf, 0.0, 0.0, 0.0],
+            "mx": [10.0, 10.0, 5.0, 10.0, 10.0, 10.0, nan, inf, 10.0],
+            "nb": [0, i64_max, 4, 4, 4, 4, 4, 4, 4],
         }
     )
     result = table.eval_expression_list([width_bucket(col("v"), col("mn"), col("mx"), col("nb")).alias("bucket")])
     values = result.get_column_by_name("bucket").to_pylist()
-    # Only the last row (all valid) should be non-NULL.
-    assert values[:-1] == [None] * 7
+    assert values[:-1] == [None] * 8
     assert values[-1] is not None
 
 
@@ -1282,3 +1284,16 @@ def test_width_bucket_bad_input() -> None:
     table = MicroPartition.from_pydict({"v": ["a", "b"]})
     with pytest.raises(ValueError, match="Expected `value` of width_bucket to be numeric"):
         table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5))])
+
+
+def test_width_bucket_huge_num_bucket() -> None:
+    """Nb just below i64::MAX must saturate, not wrap to i64::MIN."""
+    from daft.functions import width_bucket
+
+    nb = 2**63 - 2  # one below the i64::MAX None-guard; (nb as f64) rounds up to 2^63
+    table = MicroPartition.from_pydict({"v": [-1.0, 5.0, 11.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(nb)).alias("bucket")])
+    values = result.get_column_by_name("bucket").to_pylist()
+    assert values[0] == 0  # below range
+    assert values[1] == 2**62 + 1  # 2^63 * 0.5 truncated to i64, then saturating_add(1)
+    assert values[2] == 2**63 - 1  # at/above range: nb.saturating_add(1) -> i64::MAX
