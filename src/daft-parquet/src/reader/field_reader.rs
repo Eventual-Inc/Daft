@@ -59,6 +59,7 @@ pub(super) fn leaves_for_top_fields(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_primitive_leaf_reader(
     chunk_bytes: OffsetBytes,
     metadata: &ParquetMetaData,
@@ -67,6 +68,7 @@ fn build_primitive_leaf_reader(
     arrow_type: arrow::datatypes::DataType,
     def_level: i16,
     rep_level: i16,
+    chunk_size: usize,
 ) -> ParquetResult<Box<dyn ArrayReader>> {
     let rg = metadata.row_group(rg_idx);
     let col_chunk = rg.column(leaf_idx);
@@ -102,7 +104,7 @@ fn build_primitive_leaf_reader(
 
     let reader: Box<dyn ArrayReader> = if matches!(arrow_type, arrow::datatypes::DataType::Null) {
         Box::new(NullArrayReader::<Int32Type>::new(
-            pages, col_descr, total_rows,
+            pages, col_descr, chunk_size,
         )?)
     } else {
         match physical_type {
@@ -110,46 +112,46 @@ fn build_primitive_leaf_reader(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::INT32 => Box::new(PrimitiveArrayReader::<Int32Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::INT64 => Box::new(PrimitiveArrayReader::<Int64Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::FLOAT => Box::new(PrimitiveArrayReader::<FloatType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::DOUBLE => Box::new(PrimitiveArrayReader::<DoubleType>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::INT96 => Box::new(PrimitiveArrayReader::<Int96Type>::new(
                 pages,
                 col_descr,
                 Some(arrow_type),
-                total_rows,
+                chunk_size,
             )?),
             PhysicalType::BYTE_ARRAY => match arrow_type {
                 arrow::datatypes::DataType::Utf8View | arrow::datatypes::DataType::BinaryView => {
-                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type), total_rows)?
+                    make_byte_view_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?
                 }
-                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type), total_rows)?,
+                _ => make_byte_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?,
             },
             PhysicalType::FIXED_LEN_BYTE_ARRAY => {
-                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type), total_rows)?
+                make_fixed_len_byte_array_reader(pages, col_descr, Some(arrow_type), chunk_size)?
             }
         }
     };
@@ -260,6 +262,7 @@ fn build_top_field_reader(
     rg_idx: usize,
     top_field_idx: usize,
     arrow_field: &ArrowField,
+    chunk_size: usize,
 ) -> ParquetResult<(Box<dyn ArrayReader>, usize)> {
     let total_rows = metadata.row_group(rg_idx).num_rows() as usize;
     let mut leaf_idx = leaf_index_for_top_field(metadata, top_field_idx);
@@ -273,6 +276,7 @@ fn build_top_field_reader(
         chunks,
         metadata,
         rg_idx,
+        chunk_size,
     };
     let reader = builder.build(parquet_type, arrow_field.data_type(), 0, 0, &mut leaf_idx)?;
     Ok((reader, total_rows))
@@ -287,6 +291,7 @@ struct FieldReaderBuilder<'a> {
     chunks: &'a HashMap<usize, OffsetBytes>,
     metadata: &'a ParquetMetaData,
     rg_idx: usize,
+    chunk_size: usize,
 }
 
 impl FieldReaderBuilder<'_> {
@@ -375,6 +380,7 @@ impl FieldReaderBuilder<'_> {
                 inner_arrow_type,
                 def_level,
                 rep_level,
+                self.chunk_size,
             )?;
             return Ok(wrap_in_list_like(
                 inner_reader,
@@ -396,6 +402,7 @@ impl FieldReaderBuilder<'_> {
             arrow_type.clone(),
             def_level,
             rep_level,
+            self.chunk_size,
         )
     }
 
@@ -557,6 +564,7 @@ impl FieldReaderBuilder<'_> {
                 inner_arrow_field.data_type().clone(),
                 elem_def_level,
                 elem_rep_level,
+                self.chunk_size,
             )?;
             return Ok(wrap_in_list_like(
                 inner_reader,
@@ -725,6 +733,7 @@ pub(super) async fn decode_one_streaming(
             rg_idx,
             top_field_idx,
             &arrow_field,
+            chunk_size,
         )?;
 
         use parquet::arrow::arrow_reader::RowSelector;
