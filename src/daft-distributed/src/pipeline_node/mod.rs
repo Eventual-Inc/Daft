@@ -5,6 +5,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use clustering::{BoundClusteringSpec, translate_clustering_through_projection};
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
     DisplayLevel,
@@ -19,12 +20,12 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use materialize::{materialize_all_pipeline_outputs, task_outputs_from_pipeline};
-use serde::{Deserialize, Serialize};
+use materialize::materialize_all_pipeline_outputs;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -40,6 +41,7 @@ use crate::{
 #[cfg(feature = "python")]
 mod actor_udf;
 mod aggregate;
+pub(crate) mod clustering;
 mod concat;
 mod distinct;
 mod explode;
@@ -55,11 +57,13 @@ pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
+mod random_shuffle;
 mod sample;
 mod scan_source;
 mod shuffles;
 mod sink;
 mod sort;
+mod stage_checkpoint_keys;
 mod top_n;
 mod translate;
 mod udf;
@@ -68,6 +72,50 @@ mod vllm;
 mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
+
+/// Stream wrapper that fires a one-shot callback the first time the
+/// underlying stream returns `Poll::Ready(None)` *or* the wrapper itself
+/// is dropped (whichever comes first). Used to notify the
+/// `StatisticsManager` that a distributed pipeline node has finished
+/// producing tasks, including via cancellation / early termination.
+struct OnEndStream<S> {
+    inner: S,
+    on_end: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl<S> OnEndStream<S> {
+    fn new<F: FnOnce() + Send + 'static>(inner: S, on_end: F) -> Self {
+        Self {
+            inner,
+            on_end: Some(Box::new(on_end)),
+        }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for OnEndStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(None) => {
+                if let Some(cb) = self.on_end.take() {
+                    cb();
+                }
+                Poll::Ready(None)
+            }
+            other => other,
+        }
+    }
+}
+
+impl<S> Drop for OnEndStream<S> {
+    fn drop(&mut self) {
+        if let Some(cb) = self.on_end.take() {
+            cb();
+        }
+    }
+}
+
 pub(crate) type NodeID = u32;
 pub(crate) type NodeName = Arc<str>;
 /// Fingerprint identifying tasks with functionally identical plans.
@@ -200,68 +248,53 @@ impl MaterializedOutput {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FlightShufflePartitionRef {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_address: String,
-    pub cache_id: u32,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum ShufflePartitionRef {
-    Flight(FlightShufflePartitionRef),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ShuffleWriteOutput {
-    pub partitions: Vec<ShufflePartitionRef>,
-    worker_id: WorkerId,
-    task_id: TaskID,
-}
-
-impl ShuffleWriteOutput {
-    pub fn new(partitions: Vec<ShufflePartitionRef>, worker_id: WorkerId, task_id: TaskID) -> Self {
-        Self {
-            partitions,
-            worker_id,
-            task_id,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum TaskOutput {
-    Materialized(MaterializedOutput),
-    ShuffleWrite(ShuffleWriteOutput),
-}
-
-impl TaskOutput {
-    pub fn into_materialized(self) -> DaftResult<MaterializedOutput> {
-        match self {
-            Self::Materialized(materialized_output) => Ok(materialized_output),
-            Self::ShuffleWrite(_) => Err(common_error::DaftError::InternalError(
-                "Expected materialized task output but received shuffle write output".to_string(),
-            )),
-        }
-    }
+/// The sanctioned ways a pipeline node may establish its output [`BoundClusteringSpec`]. Every
+/// `PipelineNodeConfig::new` call must pass one of these, so deriving a node's clustering is an
+/// explicit, reviewable decision rather than an ad-hoc expression that's easy to get wrong or
+/// forget (e.g. cloning the child's spec verbatim through a column-reordering projection). Adding
+/// a new pipeline node forces its author to pick the right strategy here.
+pub(super) enum ClusteringStrategy<'a> {
+    /// Output is clustered exactly like `child` — for ops that preserve both the clustering keys
+    /// and the partition layout (filter, limit, sample, sink, ...).
+    Passthrough { child: &'a DistributedPipelineNode },
+    /// The child's clustering rewritten through this node's `projection`. Keys that survive the
+    /// projection are kept (rewritten to their output positions); any key whose columns the
+    /// projection drops downgrades the spec to `Unknown`. For project / UDF / actor-UDF nodes.
+    Projection {
+        child: &'a DistributedPipelineNode,
+        projection: &'a [BoundExpr],
+    },
+    /// The node sets its output clustering explicitly — a brand-new clustering or `Unknown`
+    /// (sources, joins, shuffles, aggregations). For clustering established by an explicit
+    /// repartition, build the spec with [`clustering_from_repartition_spec`] (which binds the
+    /// possibly resolved-by-name repartition keys against the input schema) and pass it here.
+    Explicit(BoundClusteringSpec),
 }
 
 #[derive(Clone)]
 pub(super) struct PipelineNodeConfig {
     pub schema: SchemaRef,
     pub execution_config: Arc<DaftExecutionConfig>,
-    pub clustering_spec: ClusteringSpecRef,
+    pub clustering_spec: BoundClusteringSpec,
 }
 
 impl PipelineNodeConfig {
     pub fn new(
         schema: SchemaRef,
         execution_config: Arc<DaftExecutionConfig>,
-        clustering_spec: ClusteringSpecRef,
+        clustering: ClusteringStrategy<'_>,
     ) -> Self {
+        let clustering_spec = match clustering {
+            ClusteringStrategy::Passthrough { child } => child.config().clustering_spec.clone(),
+            ClusteringStrategy::Projection { child, projection } => {
+                translate_clustering_through_projection(
+                    &child.config().clustering_spec,
+                    projection,
+                    &schema,
+                )
+            }
+            ClusteringStrategy::Explicit(spec) => spec,
+        };
         Self {
             schema,
             execution_config,
@@ -364,7 +397,15 @@ impl DistributedPipelineNode {
         self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
-        self.op.produce_tasks(plan_context)
+        let node_id = self.node_id();
+        let stats_manager = plan_context.statistics_manager().clone();
+        let inner = self.op.produce_tasks(plan_context);
+        TaskBuilderStream::new(
+            OnEndStream::new(inner.task_builder_stream, move || {
+                stats_manager.notify_produce_complete(node_id);
+            })
+            .boxed(),
+        )
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
@@ -479,18 +520,6 @@ impl TaskBuilderStream {
         materialize_all_pipeline_outputs(stream, scheduler_handle, None)
     }
 
-    pub fn task_outputs(
-        self,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-        query_idx: QueryIdx,
-        task_id_counter: TaskIDCounter,
-    ) -> impl Stream<Item = DaftResult<TaskOutput>> + Send + Unpin + 'static {
-        let stream = self
-            .task_builder_stream
-            .map(move |builder| builder.build(query_idx, &task_id_counter));
-        task_outputs_from_pipeline(stream, scheduler_handle, None)
-    }
-
     pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
@@ -512,6 +541,12 @@ impl Stream for TaskBuilderStream {
 }
 
 #[cfg(test)]
+pub(crate) mod test_helpers;
+
+#[cfg(test)]
+mod lifecycle_tests;
+
+#[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Arc;
 
@@ -521,7 +556,7 @@ pub(crate) mod tests {
         ops::{NodeCategory, NodeType},
     };
     use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-    use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+    use daft_logical_plan::stats::StatsState;
     use daft_schema::schema::Schema;
     use futures::{StreamExt, stream};
 
@@ -540,7 +575,7 @@ pub(crate) mod tests {
                 config: PipelineNodeConfig::new(
                     Arc::new(Schema::empty()),
                     Arc::new(DaftExecutionConfig::default()),
-                    Arc::new(ClusteringSpec::unknown()),
+                    ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(0)),
                 ),
                 context: PipelineNodeContext::new(
                     0,

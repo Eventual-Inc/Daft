@@ -2,15 +2,23 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Protocol, Union, runtime_checkable
 
 from daft.api_annotations import PublicAPI
+from daft.dependencies import pa
+
+
+@runtime_checkable
+class ArrowStreamExportable(Protocol):
+    """Protocol for objects implementing the Arrow PyCapsule Interface (``__arrow_c_stream__``)."""
+
+    def __arrow_c_stream__(self, requested_schema: Any = None) -> Any: ...
+
 
 if TYPE_CHECKING:
     import dask
     import numpy as np
     import pandas as pd
-    import pyarrow as pa
     from ray.data.dataset import Dataset as RayDataset
 
     from daft.dataframe import DataFrame
@@ -84,15 +92,20 @@ def from_pydict(data: dict[str, InputListType]) -> "DataFrame":
 
 @PublicAPI
 def from_arrow(
-    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"]],
+    data: Union["pa.Table", list["pa.Table"], Iterable["pa.Table"], ArrowStreamExportable],
 ) -> "DataFrame":
-    """Creates a DataFrame from a pyarrow Table.
+    """Creates a DataFrame from Arrow data.
+
+    Accepts pyarrow Tables, lists/iterables of pyarrow Tables, or any object
+    implementing the `Arrow PyCapsule Interface <https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface>`
+    (i.e. has an ``__arrow_c_stream__`` method). This includes pyarrow RecordBatchReaders,
+    pandas DataFrames (2.2+), nanoarrow arrays, and other Arrow-compatible libraries.
 
     Args:
-        data: pyarrow Table(s) that we wish to convert into a Daft DataFrame.
+        data: Arrow data to convert into a Daft DataFrame.
 
     Returns:
-        DataFrame: DataFrame created from the provided pyarrow Table.
+        DataFrame: DataFrame created from the provided Arrow data.
 
     Examples:
         >>> import pyarrow as pa
@@ -115,6 +128,11 @@ def from_arrow(
         (Showing first 3 of 3 rows)
     """
     from daft import DataFrame
+
+    # pa.Table implements __arrow_c_stream__ but we prefer the pyarrow-aware path
+    # because it handles types the Rust FFI stream cannot (e.g. extension types, Decimal256).
+    if not isinstance(data, pa.Table) and isinstance(data, ArrowStreamExportable):
+        return DataFrame._from_arrow_stream(data)
 
     return DataFrame._from_arrow(data)
 
@@ -236,3 +254,59 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     from daft import DataFrame
 
     return DataFrame._from_dask_dataframe(ddf)
+
+
+@PublicAPI
+def concat(dfs: Iterable["DataFrame"]) -> "DataFrame":
+    """Concatenates multiple DataFrames into a single DataFrame.
+
+    All DataFrames must have exactly the same schema.
+
+    Args:
+        dfs: DataFrames to concatenate.
+
+    Returns:
+        DataFrame: DataFrame with rows from each input DataFrame in order.
+
+    Raises:
+        ValueError: If ``dfs`` is empty or if schemas do not match.
+
+    Examples:
+        >>> import daft
+        >>> df1 = daft.from_pydict({"a": [1, 2], "b": [3, 4]})
+        >>> df2 = daft.from_pydict({"a": [5, 6], "b": [7, 8]})
+        >>> df3 = daft.from_pydict({"a": [9, 10], "b": [11, 12]})
+        >>> daft.concat([df1, df2, df3]).show()
+        ╭───────┬───────╮
+        │ a     ┆ b     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 3     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 4     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 5     ┆ 7     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 6     ┆ 8     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 9     ┆ 11    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 10    ┆ 12    │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 6 of 6 rows)
+    """
+    dfs_list = list(dfs)
+    if not dfs_list:
+        raise ValueError("daft.concat requires at least one DataFrame")
+    expected_schema = dfs_list[0].schema()
+    for i, df in enumerate(dfs_list[1:], start=1):
+        if df.schema() != expected_schema:
+            raise ValueError(
+                f"DataFrame at index {i} has a different schema.\nExpected:\n{expected_schema}\n\nReceived:\n{df.schema()}"
+            )
+    result = dfs_list[0]
+    for df in dfs_list[1:]:
+        result = result.concat(df)
+    return result

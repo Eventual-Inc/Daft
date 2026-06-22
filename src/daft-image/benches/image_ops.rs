@@ -216,6 +216,59 @@ fn bench_to_tensor(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_image_hash(c: &mut Criterion) {
+    use daft_image::functions::hash_method::HashMethod;
+
+    let mut group = c.benchmark_group("image_hash");
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(5));
+
+    let images_224 = make_rgb_image_series(224, 224, BATCH_SIZE);
+    let images_64 = make_rgb_image_series(64, 64, BATCH_SIZE);
+
+    for method in [
+        HashMethod::AHash,
+        HashMethod::DHash,
+        HashMethod::DHashVertical,
+        HashMethod::PHash,
+        HashMethod::PHashSimple,
+        HashMethod::WHash,
+        HashMethod::CropResistant,
+    ] {
+        let label = format!("{method}_224x224");
+        let s = images_224.clone();
+        group.bench_function(&label, |b| {
+            b.iter(|| series::image_hash(&s, method, 8, 3, 3).unwrap());
+        });
+    }
+
+    // colorhash across binbits
+    for binbits in [2u32, 3, 4] {
+        let label = format!("colorhash_224x224_binbits{binbits}");
+        let s = images_224.clone();
+        group.bench_function(&label, |b| {
+            b.iter(|| series::image_hash(&s, HashMethod::ColorHash, 8, binbits, 3).unwrap());
+        });
+    }
+
+    // pHash at different hash_sizes
+    for hash_size in [8u32, 16] {
+        let label = format!("phash_224x224_size{hash_size}");
+        let s = images_224.clone();
+        group.bench_function(&label, |b| {
+            b.iter(|| series::image_hash(&s, HashMethod::PHash, hash_size, 3, 3).unwrap());
+        });
+    }
+
+    // Small image baseline
+    let label = "phash_64x64";
+    group.bench_function(label, |b| {
+        b.iter(|| series::image_hash(&images_64, HashMethod::PHash, 8, 3, 3).unwrap());
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_decode,
@@ -223,6 +276,7 @@ criterion_group!(
     bench_crop,
     bench_to_mode,
     bench_encode,
-    bench_to_tensor
+    bench_to_tensor,
+    bench_image_hash
 );
 criterion_main!(benches);

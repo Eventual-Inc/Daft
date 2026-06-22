@@ -1,58 +1,193 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
+use common_runtime::OrderedJoinSet;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
+use daft_recordbatch::RecordBatch;
+use daft_shuffles::{
+    oneshot_writer::write_partitions_one_shot, server::flight_server::ShuffleFlightServer,
+    shuffle_cache::CHUNK_TARGET_BYTES,
+};
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
 };
 
-pub(crate) struct RepartitionState {
-    states: VecDeque<Vec<MicroPartition>>,
+// Worst-case buffered memory is `num_workers × num_inputs × threshold` — one
+// accumulator per (worker, input).
+const REPARTITION_MIN_BUFFER_THRESHOLD_BYTES: usize = 16 * 1024 * 1024; // 16 MB
+const REPARTITION_MAX_BUFFER_THRESHOLD_BYTES: usize = 256 * 1024 * 1024; // 256 MB
+
+/// Per-(worker, input) accumulator. Morsels are buffered until they cross
+/// the sink's threshold, then fused and partitioned in one pass.
+pub(crate) struct RepartitionAccState {
+    post_repartitioned: Vec<Vec<RecordBatch>>,
+    pre_repartitioned: Vec<RecordBatch>,
+    pre_repartitioned_size_bytes: usize,
+    bound_keys: Vec<BoundExpr>,
+    repartition_spec: RepartitionSpec,
+    input_id: InputId,
 }
 
-impl RepartitionState {
-    fn push(&mut self, parts: Vec<MicroPartition>) {
-        for (vec, part) in self.states.iter_mut().zip(parts) {
-            vec.push(part);
+impl RepartitionAccState {
+    fn new(
+        num_partitions: usize,
+        input_id: InputId,
+        bound_keys: Vec<BoundExpr>,
+        repartition_spec: RepartitionSpec,
+    ) -> Self {
+        Self {
+            post_repartitioned: (0..num_partitions).map(|_| Vec::new()).collect(),
+            pre_repartitioned: Vec::new(),
+            pre_repartitioned_size_bytes: 0,
+            bound_keys,
+            repartition_spec,
+            input_id,
         }
     }
 
-    fn emit(&mut self) -> Option<Vec<MicroPartition>> {
-        self.states.pop_front()
+    fn num_partitions(&self) -> usize {
+        self.post_repartitioned.len()
+    }
+
+    /// Fuse pre-repartitioned morsels, partition once, and append to post-repartitioned output.
+    fn flush_pre_partitioned(&mut self) -> DaftResult<()> {
+        if self.pre_repartitioned.is_empty() {
+            return Ok(());
+        }
+        let pre_repartitioned = std::mem::take(&mut self.pre_repartitioned);
+        self.pre_repartitioned_size_bytes = 0;
+
+        let concated = RecordBatch::concat(pre_repartitioned)?;
+        let num_partitions = self.num_partitions();
+
+        let partitioned = match &self.repartition_spec {
+            RepartitionSpec::Hash(_) => {
+                concated.partition_by_hash(self.bound_keys.as_slice(), num_partitions)?
+            }
+            RepartitionSpec::Random(config) => {
+                concated.partition_by_random(num_partitions, config.seed.unwrap_or(0))?
+            }
+            RepartitionSpec::Range(config) => {
+                concated.partition_by_range(&config.by, &config.boundaries, &config.descending)?
+            }
+        };
+
+        for (acc, part) in self.post_repartitioned.iter_mut().zip(partitioned) {
+            acc.push(part);
+        }
+        Ok(())
+    }
+}
+
+// TODO: unify shuffle backends in all local operations
+#[derive(Clone)]
+enum RepartitionBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        local_server: Arc<ShuffleFlightServer>,
+        shuffle_address: String,
+        compression: Option<arrow_ipc::CompressionType>,
+    },
+}
+
+impl RepartitionBackend {
+    fn name(&self) -> &'static str {
+        match &self {
+            Self::Ray => "Ray",
+            Self::Flight { .. } => "Flight",
+        }
+    }
+}
+
+fn repartition_buffer_threshold_bytes(
+    backend: &RepartitionBackend,
+    num_partitions: usize,
+) -> usize {
+    match backend {
+        RepartitionBackend::Ray => REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
+        RepartitionBackend::Flight { .. } => CHUNK_TARGET_BYTES
+            .saturating_mul(num_partitions.max(1))
+            .clamp(
+                REPARTITION_MIN_BUFFER_THRESHOLD_BYTES,
+                REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
+            ),
     }
 }
 
 pub struct RepartitionSink {
-    repartition_spec: RepartitionSpec,
-    num_partitions: usize,
+    backend: RepartitionBackend,
     schema: SchemaRef,
+    repartition_spec: RepartitionSpec,
+    bound_keys: Vec<BoundExpr>,
+    num_partitions: usize,
 }
 
 impl RepartitionSink {
-    pub fn new(
+    pub fn new_ray(
+        schema: SchemaRef,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
-        schema: SchemaRef,
-    ) -> Self {
-        Self {
-            repartition_spec,
-            num_partitions,
+    ) -> DaftResult<Self> {
+        let bound_keys = match &repartition_spec {
+            RepartitionSpec::Hash(config) => BoundExpr::bind_all(&config.by, &schema)?,
+            RepartitionSpec::Random(_) | RepartitionSpec::Range(_) => Vec::new(),
+        };
+        Ok(Self {
+            backend: RepartitionBackend::Ray,
             schema,
-        }
+            repartition_spec,
+            bound_keys,
+            num_partitions,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new_flight(
+        num_partitions: usize,
+        schema: SchemaRef,
+        shuffle_id: u64,
+        repartition_spec: RepartitionSpec,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+        local_server: Arc<ShuffleFlightServer>,
+        shuffle_address: String,
+    ) -> DaftResult<Self> {
+        let bound_keys = match &repartition_spec {
+            RepartitionSpec::Hash(config) => BoundExpr::bind_all(&config.by, &schema)?,
+            RepartitionSpec::Random(_) | RepartitionSpec::Range(_) => Vec::new(),
+        };
+        Ok(Self {
+            backend: RepartitionBackend::Flight {
+                shuffle_id,
+                shuffle_dirs,
+                local_server,
+                shuffle_address,
+                compression: parse_compression(compression.as_deref())?,
+            },
+            schema,
+            repartition_spec,
+            bound_keys,
+            num_partitions,
+        })
     }
 }
 
 impl BlockingSink for RepartitionSink {
-    type State = RepartitionState;
+    type State = RepartitionAccState;
 
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
@@ -62,31 +197,21 @@ impl BlockingSink for RepartitionSink {
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
-        let repartition_spec = self.repartition_spec.clone();
-        let num_partitions = self.num_partitions;
-        let schema = self.schema.clone();
+        let buffer_threshold_bytes =
+            repartition_buffer_threshold_bytes(&self.backend, self.num_partitions);
         spawner
             .spawn(
                 async move {
-                    let partitioned = match repartition_spec {
-                        RepartitionSpec::Hash(config) => {
-                            let bound_exprs = config
-                                .by
-                                .iter()
-                                .map(|e| BoundExpr::try_new(e.clone(), &schema))
-                                .collect::<DaftResult<Vec<_>>>()?;
-                            input.partition_by_hash(&bound_exprs, num_partitions)?
-                        }
-                        RepartitionSpec::Random(_) => {
-                            input.partition_by_random(num_partitions, 0)?
-                        }
-                        RepartitionSpec::Range(config) => input.partition_by_range(
-                            &config.by,
-                            &config.boundaries,
-                            &config.descending,
-                        )?,
-                    };
-                    state.push(partitioned);
+                    let input_bytes = input.size_bytes();
+                    state.pre_repartitioned_size_bytes += input_bytes;
+                    state
+                        .pre_repartitioned
+                        .extend(input.record_batches().iter().cloned());
+
+                    if state.pre_repartitioned_size_bytes >= buffer_threshold_bytes {
+                        state.flush_pre_partitioned()?;
+                    }
+
                     Ok(state)
                 },
                 Span::current(),
@@ -97,46 +222,77 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::finalize")]
     fn finalize(
         &self,
-        mut states: Vec<Self::State>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
+        let backend = self.backend.clone();
         let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
-                    let mut repart_states = states.iter_mut().collect::<Vec<_>>();
+                    let mut states = states;
+                    states
+                        .iter_mut()
+                        .try_for_each(RepartitionAccState::flush_pre_partitioned)?;
+                    let (per_partition, input_id) =
+                        flatten_per_partition(states, num_partitions, schema.clone())?;
 
-                    let mut outputs = Vec::new();
-                    for _ in 0..num_partitions {
-                        let data = repart_states
-                            .iter_mut()
-                            .flat_map(|state| state.emit().unwrap())
-                            .collect::<Vec<_>>();
-                        let schema = schema.clone();
-                        let fut = tokio::spawn(async move {
-                            let together = MicroPartition::concat(data)?;
-                            let concated = together.concat_or_get()?;
-                            let mp = MicroPartition::new_loaded(
+                    match backend {
+                        RepartitionBackend::Ray => {
+                            let mut joinset = OrderedJoinSet::new();
+                            for data in per_partition {
+                                joinset.spawn(async move {
+                                    let concated_rb = data.concat_or_get()?;
+                                    let mp = MicroPartition::new_loaded(
+                                        data.schema(),
+                                        Arc::new(concated_rb.into_iter().collect()),
+                                        None,
+                                    );
+                                    Ok::<_, DaftError>(mp)
+                                });
+                            }
+                            let mut partitions = Vec::with_capacity(num_partitions);
+                            while let Some(output) = joinset.join_next().await {
+                                partitions.push(output??);
+                            }
+                            Ok(BlockingSinkOutput::Partitions(partitions))
+                        }
+                        RepartitionBackend::Flight {
+                            shuffle_id,
+                            shuffle_dirs,
+                            local_server,
+                            shuffle_address,
+                            compression,
+                        } => {
+                            let partition_caches = write_partitions_one_shot(
+                                input_id,
+                                shuffle_id,
+                                &shuffle_dirs,
                                 schema,
-                                Arc::new(if let Some(t) = concated {
-                                    vec![t]
-                                } else {
-                                    vec![]
-                                }),
-                                None,
-                            );
-                            Ok(mp)
-                        });
-                        outputs.push(fut);
+                                compression,
+                                per_partition,
+                            )
+                            .await?;
+
+                            local_server
+                                .register_shuffle_partitions(shuffle_id, partition_caches.clone())
+                                .await?;
+                            Ok(BlockingSinkOutput::FlightPartitionRefs(
+                                partition_caches
+                                    .into_iter()
+                                    .map(|partition| FlightPartitionRef {
+                                        shuffle_id,
+                                        server_address: shuffle_address.clone(),
+                                        partition_ref_id: partition.partition_ref_id,
+                                        num_rows: partition.num_rows,
+                                        size_bytes: partition.size_bytes,
+                                    })
+                                    .collect(),
+                            ))
+                        }
                     }
-                    let outputs = futures::future::try_join_all(outputs)
-                        .await
-                        .unwrap()
-                        .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(outputs)
                 },
                 Span::current(),
             )
@@ -144,7 +300,7 @@ impl BlockingSink for RepartitionSink {
     }
 
     fn name(&self) -> NodeName {
-        "Repartition".into()
+        format!("Repartition({})", self.backend.name()).into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -152,36 +308,71 @@ impl BlockingSink for RepartitionSink {
     }
 
     fn multiline_display(&self) -> Vec<String> {
+        let backend_name = self.backend.name();
         match &self.repartition_spec {
             RepartitionSpec::Hash(config) => vec![format!(
-                "Repartition: By {} into {} partitions",
+                "Repartition({backend_name}): By {} into {} partitions",
                 config.by.iter().map(|e| e.to_string()).join(", "),
                 self.num_partitions
             )],
             RepartitionSpec::Random(_) => vec![format!(
-                "Repartition: Random into {} partitions",
+                "Repartition({backend_name}): Random into {} partitions",
                 self.num_partitions
             )],
-            RepartitionSpec::Range(config) => {
-                let pairs = config
-                    .by
-                    .iter()
-                    .zip(config.descending.iter())
-                    .map(|(sb, d)| {
-                        format!("({}, {})", sb, if *d { "descending" } else { "ascending" })
-                    })
-                    .join(", ");
-                vec![
-                    format!("Repartition: Range into {} partitions", self.num_partitions),
-                    format!("By: {:?}", pairs),
-                ]
-            }
+            RepartitionSpec::Range(_) => vec![format!(
+                "Repartition({backend_name}): Range into {} partitions",
+                self.num_partitions
+            )],
         }
     }
 
-    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        Ok(RepartitionState {
-            states: (0..self.num_partitions).map(|_| vec![]).collect(),
+    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
+        Ok(RepartitionAccState::new(
+            self.num_partitions,
+            input_id,
+            self.bound_keys.clone(),
+            self.repartition_spec.clone(),
+        ))
+    }
+}
+
+fn flatten_per_partition(
+    mut states: Vec<RepartitionAccState>,
+    num_partitions: usize,
+    schema: SchemaRef,
+) -> DaftResult<(Vec<MicroPartition>, InputId)> {
+    let input_id = states
+        .first()
+        .map(|s| s.input_id)
+        .expect("RepartitionSink::finalize called with no states");
+    debug_assert!(states.iter().all(|s| s.input_id == input_id));
+    debug_assert!(
+        states
+            .iter()
+            .all(|s| s.post_repartitioned.len() == num_partitions)
+    );
+
+    let per_partition = (0..num_partitions)
+        .map(|partition_idx| {
+            let chunks = states
+                .iter_mut()
+                .flat_map(|state| std::mem::take(&mut state.post_repartitioned[partition_idx]))
+                .collect::<Vec<_>>();
+            MicroPartition::new_loaded(schema.clone(), Arc::new(chunks), None)
         })
+        .collect::<Vec<_>>();
+
+    Ok((per_partition, input_id))
+}
+
+fn parse_compression(s: Option<&str>) -> DaftResult<Option<arrow_ipc::CompressionType>> {
+    match s {
+        None | Some("") | Some("none") => Ok(None),
+        Some("lz4") => Ok(Some(arrow_ipc::CompressionType::LZ4_FRAME)),
+        Some("zstd") => Ok(Some(arrow_ipc::CompressionType::ZSTD)),
+        Some(other) => Err(DaftError::ValueError(format!(
+            "Unsupported compression for shuffle IPC writer: {}, only lz4 and zstd are supported",
+            other
+        ))),
     }
 }

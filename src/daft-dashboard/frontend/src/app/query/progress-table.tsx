@@ -1,13 +1,19 @@
 import { useState, useEffect } from "react";
 import { ExecutingState, OperatorInfo } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 import {
   getStatusIcon,
   getStatusText,
   getStatusColor,
+  getEffectiveStatus,
   formatStatValue,
+  formatBytes,
   formatDuration,
+  statNumericValue,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
+  BYTES_IN_STAT_KEY,
+  BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
 
@@ -29,14 +35,17 @@ function OperatorDuration({ operator }: { operator: OperatorInfo }) {
 
 export default function ProgressTable({
   exec_state,
+  queryStatus,
 }: {
   exec_state: ExecutingState;
+  queryStatus: QueryStatusName;
 }) {
+  const isTerminal = queryStatus === "Finished" || queryStatus === "Failed" || queryStatus === "Canceled" || queryStatus === "Dead";
   return (
-    <div className="overflow-auto h-full">
-      <div className="min-w-[870px]">
+    <div className="overflow-auto h-full px-6 py-4">
+      <div className="min-w-[1130px]">
         {/* Table Headers */}
-        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
+        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
           <div className="px-3 py-4 border-r border-zinc-700 h-full flex items-center"></div>
           <div className="px-3 py-4 text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-center">
             ID
@@ -51,7 +60,13 @@ export default function ProgressTable({
             Rows In
           </div>
           <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+            Bytes In
+          </div>
+          <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
             Rows Out
+          </div>
+          <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+            Bytes Out
           </div>
           <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
             Duration
@@ -66,9 +81,17 @@ export default function ProgressTable({
           {Object.entries(exec_state.exec_info.operators)
             .sort(([a], [b]) => parseInt(a) - parseInt(b))
             .map(([operatorId, operator]) => {
+              const effectiveStatus = getEffectiveStatus(
+                operator,
+                operator.node_info.id,
+                exec_state.exec_info.task_store,
+                queryStatus,
+              );
               const name = operator.node_info.name;
               const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
               const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
+              const bytesIn = statNumericValue(operator.stats[BYTES_IN_STAT_KEY]);
+              const bytesOut = statNumericValue(operator.stats[BYTES_OUT_STAT_KEY]);
 
               const extraStats = Object.entries(operator.stats)
                 .filter(
@@ -76,6 +99,8 @@ export default function ProgressTable({
                     ![
                       ROWS_IN_STAT_KEY,
                       ROWS_OUT_STAT_KEY,
+                      BYTES_IN_STAT_KEY,
+                      BYTES_OUT_STAT_KEY,
                       DURATION_US_STAT_KEY,
                     ].includes(key)
                 )
@@ -89,17 +114,17 @@ export default function ProgressTable({
               return (
                 <div
                   key={operatorId}
-                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
+                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
                 >
                   <div className="px-3 py-4 flex items-center justify-end border-r border-zinc-700 h-full">
-                    {getStatusIcon(operator.status)}
+                    {getStatusIcon(effectiveStatus, isTerminal)}
                   </div>
                   <div className="px-3 py-4 text-center text-sm text-zinc-400 font-mono border-r border-zinc-700 h-full flex items-center justify-center">
                     {operatorId}
                   </div>
                   <div className="pr-3 py-4 text-right text-sm border-r border-zinc-700 h-full flex items-center justify-end">
-                    <span className={getStatusColor(operator.status)}>
-                      {getStatusText(operator.status)}
+                    <span className={getStatusColor(effectiveStatus)}>
+                      {getStatusText(effectiveStatus)}
                     </span>
                   </div>
                   <div
@@ -111,7 +136,13 @@ export default function ProgressTable({
                     {name.includes("Scan") ? "-" : rowsIn.toLocaleString()}
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+                    {name.includes("Scan") ? "-" : formatBytes(bytesIn)}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
                     {name.includes("Sink") ? "-" : rowsOut.toLocaleString()}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+                    {name.includes("Sink") ? "-" : formatBytes(bytesOut)}
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
                     <OperatorDuration operator={operator} />

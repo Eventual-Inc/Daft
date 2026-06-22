@@ -8,10 +8,13 @@ use daft_dsl::{
     expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
 use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -102,82 +105,65 @@ impl BlockingSink for WindowOrderByOnlySink {
         spawner
             .spawn(
                 async move {
-                    // Gather all partitions from all states
-                    let all_partitions = states
+                    let all_batches: Vec<RecordBatch> = states
                         .into_iter()
-                        .flat_map(|mut state| std::mem::take(&mut state.partitions))
-                        .collect::<Vec<_>>();
+                        .flat_map(|state| {
+                            state
+                                .partitions
+                                .into_iter()
+                                .flat_map(|mp| mp.record_batches().to_vec())
+                        })
+                        .collect();
 
-                    // Concatenate all partitions
-                    let concatenated = MicroPartition::concat(all_partitions)?;
+                    if all_batches.is_empty() {
+                        return Ok(BlockingSinkOutput::Partitions(vec![MicroPartition::empty(
+                            Some(params.original_schema.clone()),
+                        )]));
+                    }
 
-                    // Sort the concatenated partition by order_by
-                    let sorted = concatenated.sort(
+                    let sorted = RecordBatch::concat(&all_batches)?.sort(
                         &params.order_by,
                         &params.descending,
                         &params.nulls_first,
                     )?;
 
-                    if sorted.is_empty() {
-                        let empty_result =
-                            MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(vec![empty_result]);
-                    }
-
-                    // Convert to RecordBatch for window operations
-                    let tables = sorted.record_batches();
-                    let mut out_batches = Vec::with_capacity(tables.len());
-
-                    // Process each batch with window functions
-                    for batch in tables.iter().cloned() {
-                        if batch.is_empty() {
-                            continue;
-                        }
-
-                        let mut result_batch = batch;
-
-                        // Apply each window expression
-                        for (wexpr, name) in params.window_exprs.iter().zip(&params.aliases) {
-                            result_batch = match wexpr.as_ref() {
-                                WindowExpr::RowNumber => {
-                                    result_batch.window_row_number(name.clone())?
+                    let new_cols: Vec<Series> = params
+                        .window_exprs
+                        .iter()
+                        .zip(&params.aliases)
+                        .map(|(window_expr, name)| -> DaftResult<Series> {
+                            match window_expr.as_ref() {
+                                WindowExpr::RowNumber => sorted.window_row_number_col(name),
+                                WindowExpr::Rank => {
+                                    sorted.window_rank_col(name, &params.order_by, false)
                                 }
-                                WindowExpr::Rank => result_batch.window_rank(
-                                    name.clone(),
-                                    &params.order_by,
-                                    false,
-                                )?,
-                                WindowExpr::DenseRank => result_batch.window_rank(
-                                    name.clone(),
-                                    &params.order_by,
-                                    true,
-                                )?,
-                                _ => {
-                                    return Err(DaftError::ValueError(
-                                        format!(
-                                            "Unsupported window function for order by only: {:?}",
-                                            wexpr
-                                        )
-                                        .into(),
-                                    ));
+                                WindowExpr::DenseRank => {
+                                    sorted.window_rank_col(name, &params.order_by, true)
                                 }
-                            };
-                        }
-                        out_batches.push(result_batch);
-                    }
+                                _ => Err(DaftError::ValueError(
+                                    format!(
+                                        "Unsupported window function for order by only: {:?}",
+                                        window_expr
+                                    )
+                                    .into(),
+                                )),
+                            }
+                        })
+                        .collect::<DaftResult<_>>()?;
 
-                    // Create final output partition
-                    let output = if out_batches.is_empty() {
-                        MicroPartition::empty(Some(params.original_schema.clone()))
+                    let result = if new_cols.is_empty() {
+                        sorted
                     } else {
-                        MicroPartition::new_loaded(
-                            params.original_schema.clone(),
-                            out_batches.into(),
-                            None,
-                        )
+                        sorted.union(&RecordBatch::from_nonempty_columns(new_cols)?)?
                     };
 
-                    Ok(vec![output])
+                    Ok(BlockingSinkOutput::Partitions(vec![
+                        MicroPartition::new_loaded(
+                            params.original_schema.clone(),
+                            vec![result].into(),
+                            None,
+                        ),
+                    ]))
                 },
                 Span::current(),
             )

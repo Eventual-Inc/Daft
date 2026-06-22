@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from daft_lance.point_lookup import detect_point_lookup_columns
+
 from daft import col
-from daft.io.lance.point_lookup import detect_point_lookup_columns
 from daft.logical.schema import DataType
 
 

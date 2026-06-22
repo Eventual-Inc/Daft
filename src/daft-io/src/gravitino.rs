@@ -143,10 +143,29 @@ impl GravitinoSource {
         Ok(client)
     }
 
+    pub async fn resolve_url_and_config(&self, path: &str) -> super::Result<(String, IOConfig)> {
+        let (client, source_path) = self.fileset_path_to_client_and_url(path).await?;
+
+        let config: &IOConfig = &client.io_client.config;
+
+        Ok((source_path, config.clone()))
+    }
+
     async fn fileset_path_to_source_and_url(
         &self,
         path: &str,
     ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
+        let (client, source_path) = self.fileset_path_to_client_and_url(path).await?;
+
+        let source = client.io_client.get_source(&source_path).await?;
+
+        Ok((source, source_path))
+    }
+
+    async fn fileset_path_to_client_and_url(
+        &self,
+        path: &str,
+    ) -> super::Result<(Arc<ClientAndLocation>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
         // Check that the scheme is gvfs and host is fileset
@@ -183,9 +202,7 @@ impl GravitinoSource {
             format!("{}/{}", client.storage_location, fileset_path)
         };
 
-        let source = client.io_client.get_source(&source_path).await?;
-
-        Ok((source, source_path))
+        Ok((client, source_path))
     }
 }
 

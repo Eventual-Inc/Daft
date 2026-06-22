@@ -9,8 +9,8 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
@@ -18,16 +18,127 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
-import ResultPreview from "./result-preview";
+import TasksSidebar from "./tasks-sidebar";
 
-/**
- * Query detail page component
- * Displays details for a specific query by ID using query parameters
- */
+const TAB_TRIGGER_CLS = "rounded-none bg-transparent px-4 py-2.5 text-sm font-medium text-zinc-400 shadow-none transition-colors hover:text-zinc-100 data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-white data-[state=active]:-mb-px disabled:opacity-30";
+
+const MetaField = ({
+  label,
+  value,
+  href,
+  mono,
+  title,
+  align = "left",
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  mono?: boolean;
+  title?: string;
+  align?: "left" | "right";
+}) => (
+  <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
+    <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
+      {label}
+    </p>
+    {href ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-blue-400 hover:underline`}
+      >
+        {value}
+      </a>
+    ) : (
+      <p
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100 truncate`}
+        title={title ?? value}
+      >
+        {value}
+      </p>
+    )}
+  </div>
+);
+
 function QueryPageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const queryId = searchParams.get("id");
+  const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
+
+  const engine = query ? getEngineName(query.runner) : null;
+  const isFlotilla = engine === "Flotilla";
+
+  // Tab + tasks-sidebar state is URL-driven so deep links survive reload.
+  // - `tab`: active tab id
+  // - `tasks=open`: tasks sidebar visible (Flotilla + Execution tab only)
+  // - `node`: node id used as sidebar filter (containment in node_ids) and
+  //   sticky plan highlight.
+  const urlTab = searchParams.get("tab");
+  const urlNode = searchParams.get("node");
+  const nodeFilter = urlNode != null ? Number(urlNode) : null;
+  const activeTab = urlTab ?? "progress-table";
+  const tasksOpen = searchParams.get("tasks") === "open";
+
+  // Transient hover preview from the sidebar — not URL-backed (hover would
+  // thrash the URL). Drives the amber preview ring on the plan tree.
+  // Hovering a task highlights *all* nodes in its node_ids chain, so this
+  // genuinely needs to be a set; the click filter is a single id (nodeFilter).
+  const [hoveredNodeIds, setHoveredNodeIds] = useState<ReadonlySet<number> | null>(null);
+
+  const updateParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(updates)) {
+        if (v == null) params.delete(k);
+        else params.set(k, v);
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const handleTabChange = useCallback(
+    (next: string) => {
+      // Leaving the Execution tab clears the node hint so a fresh return
+      // doesn't carry a stale filter/highlight. Sidebar open-state persists.
+      updateParams({ tab: next, node: null });
+    },
+    [updateParams],
+  );
+
+  // Plan node -> open tasks sidebar, filtered to that node.
+  const handleViewTasksForNode = useCallback(
+    (nodeId: number) => {
+      updateParams({ tasks: "open", node: String(nodeId) });
+    },
+    [updateParams],
+  );
+
+  // Toolbar button -> open tasks sidebar, no filter.
+  const handleOpenTasks = useCallback(() => {
+    updateParams({ tasks: "open" });
+  }, [updateParams]);
+
+  const handleCloseTasks = useCallback(() => {
+    // Closing the sidebar also clears the filter so reopening starts fresh.
+    updateParams({ tasks: null, node: null });
+  }, [updateParams]);
+
+  // Task row chip click -> filter sidebar to tasks containing this node id.
+  const handleSelectNode = useCallback(
+    (nodeId: number) => {
+      updateParams({ node: String(nodeId) });
+    },
+    [updateParams],
+  );
+
+  const handleClearNodeFilter = useCallback(() => {
+    updateParams({ node: null });
+  }, [updateParams]);
 
   useEffect(() => {
     const es = new EventSource(genApiUrl(`/client/query/${queryId}/subscribe`));
@@ -40,20 +151,23 @@ function QueryPageInner() {
     // These overwrite
     es.addEventListener("initial_state", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] initial_state (query)", data);
       setQuery(data);
     });
     // TODO: Consistent ordering of statistics
     es.addEventListener("query_info", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] query_info", data);
       setQuery(data);
     });
     // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
+      const data: Record<number, OperatorInfo> = JSON.parse(event.data);
+      if (debug) console.log("[debug] operator_info", data);
       setQuery(prev => {
         if (!prev) return prev;
         if (!("exec_info" in prev.state)) return prev;
 
-        const data: Record<number, OperatorInfo> = JSON.parse(event.data);
         const new_exec_info = { ...prev.state.exec_info, operators: data };
         return {
           ...prev,
@@ -65,7 +179,7 @@ function QueryPageInner() {
       console.info("Closing query SSE endpoint");
       es.close();
     };
-  }, [queryId, setQuery]);
+  }, [queryId, debug, setQuery]);
 
   if (!query) {
     return <LoadingPage />;
@@ -74,121 +188,100 @@ function QueryPageInner() {
   const end_sec =
     query.state.status === "Finished" || query.state.status === "Canceled" || query.state.status === "Failed"
       ? query.state.end_sec
-      : null;
+      : query.state.status === "Dead"
+        ? query.state.marked_dead_sec
+        : null;
+
+  const isActive =
+    query.state.status === "Pending" ||
+    query.state.status === "Optimizing" ||
+    query.state.status === "Setup" ||
+    query.state.status === "Executing";
+  const last_heartbeat_sec = isActive || query.state.status === "Dead"
+    ? query.last_heartbeat_sec
+    : null;
 
   return (
     <div className="h-full flex flex-col">
-      {/* Fixed Header Section */}
-      <div className="flex-shrink-0 space-y-4">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink
-                asChild
-                className="text-lg font-mono text-zinc-400 hover:text-white"
-              >
-                <Link href="/queries">All Queries</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild className="text-lg font-mono font-bold">
-                <p>Query {queryId}</p>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+      {/* Compact Header */}
+      <div className="flex-shrink-0">
+        <div className="px-6 pb-1">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink
+                  asChild
+                  className="text-xs font-mono text-zinc-500 hover:text-white"
+                >
+                  <Link href="/queries">All Queries</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild className="text-xs font-mono text-zinc-300">
+                  <p>Query {queryId}</p>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
 
-        <div className="w-full flex border-b border-zinc-800">
-          <div className="w-1/4 border-r border-zinc-800 px-6 py-4">
+        <div className="w-full flex items-stretch">
+          {/* Status — fixed width so the divider never shifts during execution */}
+          <div className="w-52 flex-shrink-0 px-6 py-3 flex items-center justify-start">
             <Status
               status={query.state.status}
               start_sec={query.start_sec}
               end_sec={end_sec}
+              last_heartbeat_sec={last_heartbeat_sec}
+              errorMessage={query.state.status === "Failed" ? query.state.message : undefined}
             />
           </div>
-          <div className="flex-1 px-6 py-4">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Query ID
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {query.id}
-                  </p>
-                </div>
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Start Time
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {toHumanReadableDate(query.start_sec)}
-                  </p>
-                </div>
-                <div>
-                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                    Entrypoint
-                  </h3>
-                  <p className={`${main.className} text-sm font-mono break-all text-zinc-100`} title={query.entrypoint || ""}>
-                    {query.entrypoint || "-"}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    Engine
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {getEngineName(query.runner)}
-                  </p>
-                </div>
-                <div>
-                  <h3
-                    className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
-                  >
-                    End Time
-                  </h3>
-                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
-                    {end_sec ? toHumanReadableDate(end_sec) : "..."}
-                  </p>
-                </div>
-                {query.ray_dashboard_url && (
-                  <div>
-                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
-                      Ray Dashboard
-                    </h3>
-                    <a
-                      href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`${main.className} text-sm font-mono text-blue-500 hover:underline`}
-                    >
-                      Open in Ray
-                    </a>
-                  </div>
-                )}
-              </div>
-            </div>
+
+          <div className="w-px bg-zinc-800 my-4 flex-shrink-0" />
+
+          {/* Metadata — 4 columns, 2 rows */}
+          <div className="flex-1 px-6 py-3 grid grid-cols-4 gap-x-8 gap-y-3 content-center overflow-hidden">
+            {/* Row 1 */}
+            <MetaField label="Query ID" value={query.id} mono />
+            <MetaField label="Engine" value={getEngineName(query.runner)} mono />
+            <MetaField label="Start Time" value={toHumanReadableDate(query.start_sec)} mono />
+            <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono align="right" />
+
+            {/* Row 2 */}
+            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono title={query.entrypoint} />
+            <MetaField label="Daft Version" value={query.daft_version || "—"} mono />
+            {query.ray_dashboard_url ? (
+              <MetaField
+                label="Ray Dashboard"
+                href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
+                value="Open in Ray"
+              />
+            ) : (
+              <div />
+            )}
+            {(query.python_version || query.ray_version) ? (
+              <MetaField
+                label="Versions"
+                value={[query.python_version && `Python ${query.python_version}`, query.ray_version && `Ray ${query.ray_version}`].filter(Boolean).join(" | ")}
+                mono
+                align="right"
+              />
+            ) : (
+              <div />
+            )}
           </div>
         </div>
-        <div className="w-full h-[20px] flex"></div>
       </div>
 
       {/* Scrollable Content Section */}
       <div className="flex-1">
         <Tabs
-          defaultValue="progress-table"
+          value={activeTab}
+          onValueChange={handleTabChange}
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
+          <TabsList className="flex w-full flex-shrink-0 justify-start gap-x-0 rounded-none bg-transparent px-6 py-0 border-b border-zinc-800">
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -196,45 +289,69 @@ function QueryPageInner() {
                 query.state.status === "Optimizing" ||
                 query.state.status === "Setup"
               }
+              className={TAB_TRIGGER_CLS}
             >
               Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
-              disabled={!("plan_info" in query.state)}
+              disabled={!("plan_info" in query.state && query.state.plan_info)}
+              className={TAB_TRIGGER_CLS}
             >
               Optimized Plan
             </TabsTrigger>
-            <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
             <TabsTrigger
-              value="results"
-              disabled={query.state.status !== "Finished"}
+              value="unoptimized-plan"
+              className={TAB_TRIGGER_CLS}
             >
-              Results
+              Unoptimized Plan
             </TabsTrigger>
           </TabsList>
 
           <TabsContent
             value="progress-table"
-            className="mt-4 flex-1 overflow-auto"
+            className="flex-1 overflow-hidden"
           >
-            <div className="bg-zinc-900 h-full">
-              {query.state.status === "Pending" ||
-                query.state.status === "Optimizing" ? (
-                <div className="p-8 text-center">
+            <div className="h-full flex">
+              {"exec_info" in query.state && query.state.exec_info !== null ? (
+                <>
+                  <div className="flex-1 min-w-0 h-full">
+                    <PhysicalPlanTree
+                      exec_state={query.state as ExecutingState}
+                      highlightedNodeId={nodeFilter}
+                      hoveredNodeIds={hoveredNodeIds}
+                      onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
+                      tasksOpen={isFlotilla && tasksOpen}
+                      onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
+                      queryStatus={query.state.status}
+                    />
+                  </div>
+                  {isFlotilla && tasksOpen && queryId && (
+                    <div className="w-1/2 min-w-[940px] max-w-[1200px] flex-shrink-0 border-l border-zinc-800 h-full">
+                      <TasksSidebar
+                        exec_state={query.state as ExecutingState}
+                        nodeFilter={nodeFilter}
+                        onClearFilter={handleClearNodeFilter}
+                        onSelectNode={handleSelectNode}
+                        onHoverNodes={setHoveredNodeIds}
+                        onClose={handleCloseTasks}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="p-8 text-center w-full">
                   <p className={`${main.className} text-zinc-400`}>
-                    Execution not yet started
+                    No execution data available
                   </p>
                 </div>
-              ) : (
-                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
 
           <TabsContent
             value="optimized-plan"
-            className="mt-4 flex-1 overflow-auto"
+            className="flex-1 overflow-auto"
           >
             {query.state.status === "Pending" ? (
               <div className="bg-zinc-900 p-4">
@@ -245,7 +362,7 @@ function QueryPageInner() {
             ) : (
               <PlanVisualizer
                 planJson={
-                  "plan_info" in query.state
+                  "plan_info" in query.state && query.state.plan_info
                     ? query.state.plan_info.optimized_plan
                     : ""
                 }
@@ -255,18 +372,9 @@ function QueryPageInner() {
 
           <TabsContent
             value="unoptimized-plan"
-            className="mt-4 flex-1 overflow-auto"
+            className="flex-1 overflow-auto"
           >
             <PlanVisualizer planJson={query.unoptimized_plan} />
-          </TabsContent>
-
-          <TabsContent
-            value="results"
-            className="mt-4 flex-1 overflow-auto"
-          >
-            <div className="bg-zinc-900 h-full">
-              {queryId && <ResultPreview queryId={queryId} />}
-            </div>
           </TabsContent>
         </Tabs>
       </div>

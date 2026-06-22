@@ -65,6 +65,11 @@ pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
     pub enable_strict_filter_pushdown: bool,
+    /// Enable the DP-ccp join ordering algorithm (experimental).
+    /// When true, uses DP-ccp instead of brute force and raises the
+    /// max relations limit from 7 to 12.
+    /// See https://github.com/Eventual-Inc/Daft/issues/6765 for the path to enabling by default.
+    pub enable_dp_ccp_join_ordering: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -78,6 +83,8 @@ impl DaftPlanningConfig {
     const ENV_DAFT_DEV_DISABLE_JOIN_REORDERING: &'static str = "DAFT_DEV_DISABLE_JOIN_REORDERING";
     const ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN: &'static str =
         "DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN";
+    const ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING: &'static str =
+        "DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -89,6 +96,10 @@ impl DaftPlanningConfig {
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN) {
             cfg.enable_strict_filter_pushdown = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING) {
+            cfg.enable_dp_ccp_join_ordering = val;
         }
 
         cfg
@@ -140,6 +151,7 @@ pub struct DaftExecutionConfig {
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
+    pub flight_shuffle_compression: Option<String>,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -186,6 +198,7 @@ impl Default for DaftExecutionConfig {
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
+            flight_shuffle_compression: Some("lz4".to_string()),
             enable_multi_glob_path_tasks: false,
         }
     }
@@ -271,11 +284,51 @@ impl DaftExecutionConfig {
     }
 }
 
+/// Configurations for Daft Event Logging to use during the execution of a Dataframe
+///  Note that this should be immutable for a given end-to-end execution of a logical plan.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct DaftEventLogConfig {
+    pub enabled: bool,
+    pub path: String,
+}
+
+impl Default for DaftEventLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: "~/.daft/events".to_string(),
+        }
+    }
+}
+
+impl DaftEventLogConfig {
+    const ENV_DAFT_EVENT_LOG_ENABLED: &'static str = "DAFT_EVENT_LOG_ENABLED";
+    const ENV_DAFT_EVENT_LOG_DIR: &'static str = "DAFT_EVENT_LOG_DIR";
+
+    pub fn from_env() -> Self {
+        let mut config = Self::default();
+
+        if let Some(enabled) = parse_bool_from_env(Self::ENV_DAFT_EVENT_LOG_ENABLED) {
+            config.enabled = enabled;
+        }
+
+        if let Some(path) = parse_string_from_env(Self::ENV_DAFT_EVENT_LOG_DIR, true) {
+            config.enabled = true;
+            config.path = path;
+        }
+
+        config
+    }
+}
+
 #[cfg(feature = "python")]
 mod python;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
+pub use python::PyDaftEventLogConfig;
 #[cfg(feature = "python")]
 pub use python::PyDaftExecutionConfig;
 #[cfg(feature = "python")]
@@ -285,6 +338,7 @@ pub use python::PyDaftPlanningConfig;
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyDaftExecutionConfig>()?;
     parent.add_class::<python::PyDaftPlanningConfig>()?;
+    parent.add_class::<python::PyDaftEventLogConfig>()?;
 
     Ok(())
 }
@@ -350,6 +404,25 @@ mod tests {
                 std::env::remove_var(
                     DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN,
                 );
+            }
+        }
+
+        // ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING
+        {
+            let cfg = DaftPlanningConfig::from_env();
+            assert!(!cfg.enable_dp_ccp_join_ordering);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING,
+                    "1",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert!(cfg.enable_dp_ccp_join_ordering);
+
+            unsafe {
+                std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING);
             }
         }
     }

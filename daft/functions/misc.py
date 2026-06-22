@@ -50,26 +50,74 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
-def uuid() -> Expression:
+def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     """Generates a column of UUID strings.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
     (e.g. two separate columns) are independent and will produce different values.
 
+    Use the ``version`` argument to choose the UUID version:
+
+    - ``uuid()`` or ``uuid(version="v4")`` generates random UUIDv4 values.
+    - ``uuid(version="v7")`` generates time-ordered UUIDv7 values.
+
+    Args:
+        version: UUID version to generate. Supported values are ``"v4"`` and ``"v7"``.
+
     Returns:
-        Expression (String Expression): An expression that generates UUID strings.
+        Expression (UUID Expression): An expression that generates UUID values.
 
     Examples:
         >>> import daft
         >>> from daft.functions import uuid
-        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
-        >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
-        >>> df.schema()["u1"].dtype == daft.DataType.string()
+        >>> df = daft.from_pydict({"row": [1, 2]}).select(uuid_v4=uuid(), uuid_v7=uuid(version="v7"))
+        >>> df.show()  # doctest: +SKIP
+        ╭────────────────────────────────┬────────────────────────────────╮
+        │ uuid_v4                        ┆ uuid_v7                        │
+        │ ---                            ┆ ---                            │
+        │ UUID                           ┆ UUID                           │
+        ╞════════════════════════════════╪════════════════════════════════╡
+        │ 06b4460f-d44e-4f37-bb71-edb3b… ┆ 019eb73f-58c8-7f50-b31d-46f02… │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 74648614-aebf-41f3-9591-781d5… ┆ 019eb73f-58c8-7f50-b31d-47002… │
+        ╰────────────────────────────────┴────────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    if version == "v4":
+        return Expression._call_builtin_scalar_fn("uuid")
+    if version == "v7":
+        return Expression._call_builtin_scalar_fn("uuidv7")
+    raise ValueError("`version` must be 'v4' or 'v7'")
+
+
+def random_int(low: int, high: int, seed: int | None = None) -> Expression:
+    """Generates a column of random integer values.
+
+    Values are generated uniformly and independently in the closed interval ``[low, high]``.
+
+    Passing a ``seed`` makes generation best-effort stable for the same evaluated row layout,
+    but it is not guaranteed to be reproducible across repartitioning or other layout changes.
+
+    Args:
+        low: Inclusive lower bound.
+        high: Inclusive upper bound.
+        seed: Optional seed for best-effort stable generation.
+
+    Returns:
+        Expression (Int64 Expression): An expression that generates random integers.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import random_int
+        >>> df = daft.from_pydict({"a": [1, 2, 3]}).with_column("r", random_int(low=10, high=20, seed=7))
+        >>> df.schema()["r"].dtype == daft.DataType.int64()
         True
-        >>> df.schema()["u2"].dtype == daft.DataType.string()
+        >>> vals = df.to_pydict()["r"]
+        >>> all(10 <= v <= 20 for v in vals)
         True
     """
-    return Expression._call_builtin_scalar_fn("uuid")
+    return Expression._call_builtin_scalar_fn("random_int", low, high, seed=seed)
 
 
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
@@ -150,6 +198,45 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     dtype = DataType._infer(dtype)
     expr = Expression._to_expression(expr)
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
+
+
+def try_cast(expr: Expression, dtype: DataTypeLike) -> Expression:
+    """Attempts to cast an expression to the given datatype, returning null on failure.
+
+    Unlike `cast`, this function does not raise an error when the conversion fails.
+    Instead, it returns null for values that cannot be converted.
+
+    Returns:
+        Expression: Expression with the specified new datatype, with null for failed conversions
+
+    Note:
+        - If a string is provided, it will use the sql engine to parse the string into a data type.
+        - A python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pydict({"str_val": ["1", "2", "abc", None]})
+        >>> df = df.select(df["str_val"].try_cast(daft.DataType.int64()))
+        >>> df.show()
+        ╭─────────╮
+        │ str_val │
+        │ ---     │
+        │ Int64   │
+        ╞═════════╡
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    dtype = DataType._infer(dtype)
+    expr = Expression._to_expression(expr)
+    return Expression._from_pyexpr(expr._expr.try_cast(dtype._dtype))
 
 
 def is_null(expr: Expression) -> Expression:
@@ -372,6 +459,29 @@ def minhash(
     )
 
 
+def simhash(
+    text: Expression,
+    *,
+    ngram_size: int = 3,
+    hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+) -> Expression:
+    """Compute a SimHash fingerprint of the input text.
+
+    SimHash produces a 64-bit locality-sensitive hash from character n-grams.
+    Similar texts produce fingerprints with small bitwise Hamming distance,
+    making it useful for near-duplicate detection.
+
+    Args:
+        text (String Expression): The expression to hash.
+        ngram_size (int, default=3): Character n-gram size. Defaults to 3.
+        hash_function (str, default="xxhash3_64"): Hash function for n-grams. One of "murmurhash3", "xxhash" (alias for "xxhash3_64"), "xxhash32", "xxhash64", "xxhash3_64", or "sha1". Defaults to "xxhash3_64".
+
+    Returns:
+        Expression (UInt64 Expression): SimHash fingerprint.
+    """
+    return Expression._call_builtin_scalar_fn("simhash", text, ngram_size=ngram_size, hash_function=hash_function)
+
+
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
@@ -536,7 +646,13 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("coalesce", *args)
+    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
+
+    if len(args) == 0:
+        raise ValueError("coalesce requires at least one argument")
+    if len(args) == 1:
+        return args[0]
+    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
 
 def get(expr: Expression, key: int | str | Expression, default: Any = None) -> Expression:
@@ -693,6 +809,42 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     """
     key_expr = Expression._to_expression(key)
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
+
+
+def map_keys(expr: Expression) -> Expression:
+    """Returns a list of all keys in the map.
+
+    Args:
+        expr: the map expression to get from
+
+    Returns:
+        Expression: the keys list expression
+
+    Examples:
+        >>> import pyarrow as pa
+        >>> import daft
+        >>> pa_array = pa.array([[("a", 1), ("b", 2)], [("c", 3)], [], None], type=pa.map_(pa.string(), pa.int64()))
+        >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
+        >>> df = df.with_column("keys", df["map_col"].map_keys())
+        >>> df.show()
+        ╭────────────────────┬──────────────╮
+        │ map_col            ┆ keys         │
+        │ ---                ┆ ---          │
+        │ Map[String: Int64] ┆ List[String] │
+        ╞════════════════════╪══════════════╡
+        │ {"a": 1, "b": 2}   ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c": 3}           ┆ [c]          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}                 ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None               ┆ None         │
+        ╰────────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._from_pyexpr(expr._expr.map_keys())
 
 
 def slice(expr: Expression, start: int | Expression, end: int | Expression | None = None) -> Expression:

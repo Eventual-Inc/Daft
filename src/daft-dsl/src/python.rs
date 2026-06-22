@@ -15,6 +15,7 @@ use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
+    utils::stats,
 };
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
@@ -181,6 +182,11 @@ pub fn lit(item: Bound<PyAny>) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     Expr::List(items.into_iter().map(|item| item.into()).collect()).into()
+}
+
+#[pyfunction]
+pub fn coalesce(items: Vec<PyExpr>) -> PyExpr {
+    Expr::Coalesce(items.into_iter().map(|item| item.into()).collect()).into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -374,6 +380,37 @@ pub fn batch_udf(
     })
 }
 
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn udaf_expr(
+    func_id: &str,
+    func_name: &str,
+    cls_factory: Py<PyAny>,
+    init_args: Py<PyAny>,
+    original_args: Py<PyAny>,
+    return_dtype: PyDataType,
+    state_field_names: Vec<String>,
+    state_field_dtypes: Vec<PyDataType>,
+    expr_args: Vec<PyExpr>,
+) -> PyResult<PyExpr> {
+    let inputs: Vec<ExprRef> = expr_args.into_iter().map(|e| e.expr).collect();
+    let state_dtypes: Vec<DataType> = state_field_dtypes.into_iter().map(|d| d.into()).collect();
+
+    Ok(PyExpr {
+        expr: crate::python_udaf::py_udaf(
+            func_id,
+            func_name,
+            cls_factory.into(),
+            init_args.into(),
+            original_args.into(),
+            return_dtype.into(),
+            state_field_names,
+            state_dtypes,
+            inputs,
+        ),
+    })
+}
+
 /// Initializes all uninitialized UDFs in the expression
 #[pyfunction]
 pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
@@ -440,6 +477,10 @@ impl PyExpr {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }
 
+    pub fn try_cast(&self, dtype: PyDataType) -> PyResult<Self> {
+        Ok(self.expr.clone().try_cast(&dtype.into()).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self
             .expr
@@ -475,7 +516,7 @@ impl PyExpr {
         };
 
         for &p in &percentiles {
-            if !(0. ..=1.).contains(&p) {
+            if !stats::is_valid_percentile_percentage(p) {
                 return Err(PyValueError::new_err(format!(
                     "Provided percentile must be between 0 and 1: {}",
                     p
@@ -490,8 +531,21 @@ impl PyExpr {
             .into())
     }
 
+    pub fn percentile(&self, percentage: f64) -> PyResult<Self> {
+        if !stats::is_valid_percentile_percentage(percentage) {
+            return Err(PyValueError::new_err(format!(
+                "Provided percentile must be between 0 and 1: {percentage}"
+            )));
+        }
+        Ok(self.expr.clone().percentile(percentage).into())
+    }
+
     pub fn mean(&self) -> PyResult<Self> {
         Ok(self.expr.clone().mean().into())
+    }
+
+    pub fn median(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().median().into())
     }
 
     pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
@@ -520,6 +574,14 @@ impl PyExpr {
 
     pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().any_value(ignore_nulls).into())
+    }
+
+    pub fn first_value(&self, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().first_value(ignore_nulls).into())
+    }
+
+    pub fn last_value(&self, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().last_value(ignore_nulls).into())
     }
 
     pub fn skew(&self) -> PyResult<Self> {
@@ -659,6 +721,11 @@ impl PyExpr {
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
         use crate::functions::map::get;
         Ok(get(self.into(), key.into()).into())
+    }
+
+    pub fn map_keys(&self) -> PyResult<Self> {
+        use crate::functions::map::map_keys;
+        Ok(map_keys(self.into()).into())
     }
 
     pub fn partitioning_days(&self) -> PyResult<Self> {

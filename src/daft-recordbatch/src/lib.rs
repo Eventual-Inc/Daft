@@ -101,6 +101,66 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
+fn unpack_struct_state(struct_series: &Series) -> DaftResult<Vec<Series>> {
+    let DataType::Struct(fields) = struct_series.data_type() else {
+        return Err(DaftError::InternalError(format!(
+            "Expected Struct series for AggFn state, got {}",
+            struct_series.data_type()
+        )));
+    };
+    fields
+        .iter()
+        .map(|f| struct_series.struct_get(&f.name))
+        .collect()
+}
+
+fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResult<Series> {
+    Ok(StructArray::new(struct_field, state_series, None).into_series())
+}
+
+fn empty_agg_struct(struct_field: &Field) -> Series {
+    let DataType::Struct(fields) = &struct_field.dtype else {
+        unreachable!("empty_agg_struct called with non-Struct field");
+    };
+    let children: Vec<Series> = fields
+        .iter()
+        .map(|f| Series::empty(&f.name, &f.dtype))
+        .collect();
+    StructArray::new(struct_field.clone(), children, None).into_series()
+}
+
+fn dispatch_per_group(
+    inputs: Vec<Series>,
+    groups: Option<&GroupIndices>,
+    f: impl Fn(Vec<Series>) -> DaftResult<Vec<Literal>> + Sync,
+) -> DaftResult<Vec<Series>> {
+    use daft_core::series::from_lit::series_from_literals_iter;
+    use rayon::prelude::*;
+
+    let group_lits: Vec<Vec<Literal>> = match groups {
+        None => vec![f(inputs)?],
+        Some(groups) => groups
+            .par_iter()
+            .map(|indices| {
+                let idx = UInt64Array::from_vec("", indices.iter().copied().collect());
+                let group_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|s| s.take(&idx))
+                    .collect::<DaftResult<_>>()?;
+                f(group_inputs)
+            })
+            .collect::<DaftResult<_>>()?,
+    };
+
+    if group_lits.is_empty() {
+        return Ok(vec![]);
+    }
+    let num_fields = group_lits[0].len();
+    (0..num_fields)
+        .map(|fi| series_from_literals_iter(group_lits.iter().map(|g| Ok(g[fi].clone())), None))
+        .collect()
+}
+
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -543,7 +603,8 @@ impl RecordBatch {
         Self::concat(tables)
     }
 
-    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: impl AsRef<[T]>) -> DaftResult<Self> {
+        let tables = tables.as_ref();
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 RecordBatch to perform concat".to_string(),
@@ -639,7 +700,7 @@ impl RecordBatch {
     /// Evaluates an expression and broadcasts the result to match `self.len()` if needed.
     /// This is necessary for literal expressions which evaluate to a single-element Series,
     /// but aggregation functions expect the input to have as many elements as the RecordBatch.
-    fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
+    pub(crate) fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
         let result = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
         if result.len() != self.len() {
             result.broadcast(self.len())
@@ -702,6 +763,10 @@ impl RecordBatch {
                 }
             }
             AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
+            AggExpr::Median(expr) => self.eval_agg_child(expr)?.percentile(groups, 0.5),
+            AggExpr::Percentile(expr, percentile) => {
+                self.eval_agg_child(expr)?.percentile(groups, percentile.0)
+            }
             AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
@@ -720,6 +785,90 @@ impl RecordBatch {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
+            AggExpr::AggFn { .. } => Err(DaftError::InternalError(
+                "AggFn must be decomposed into AggFnMap + AggFnReduce by the planner \
+                 before execution; do not call eval_agg_expression with a raw AggFn"
+                    .to_string(),
+            )),
+            AggExpr::AggFnMap { handle, inputs } => {
+                let evaled_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|e| self.eval_agg_child(e))
+                    .collect::<DaftResult<_>>()?;
+                let input_fields: Vec<Field> =
+                    evaled_inputs.iter().map(|s| s.field().clone()).collect();
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let expected_name = format!("{}({})", handle.name(), inputs_str);
+                let state_fields = handle.state_fields(&input_fields)?;
+                let struct_field =
+                    Field::new(expected_name, DataType::Struct(state_fields.clone()));
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
+                let state_series =
+                    dispatch_per_group(evaled_inputs, groups, |g| handle.call_agg_block(g))?;
+                let state_series: Vec<Series> = state_series
+                    .into_iter()
+                    .zip(state_fields.iter())
+                    .map(|(s, f)| s.rename(&f.name))
+                    .collect();
+                Ok(StructArray::new(struct_field, state_series, None).into_series())
+            }
+            AggExpr::AggFnCombine { handle, partial } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                let struct_field = struct_series.field().clone();
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(empty_agg_struct(&struct_field));
+                }
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                pack_struct_state(struct_field, merged)
+            }
+            AggExpr::AggFnReduce {
+                handle,
+                partial,
+                return_field,
+            } => {
+                let struct_series = self.eval_agg_child(partial)?;
+                if groups.is_some_and(|g| g.is_empty()) {
+                    return Ok(Series::empty(&return_field.name, &return_field.dtype));
+                }
+                let state_series = unpack_struct_state(&struct_series)?;
+                let field_names: Vec<String> =
+                    state_series.iter().map(|s| s.name().to_string()).collect();
+                let merged =
+                    dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
+                let merged: Vec<Series> = merged
+                    .into_iter()
+                    .zip(field_names.iter())
+                    .map(|(s, n)| s.rename(n))
+                    .collect();
+                use daft_core::series::from_lit::series_from_literals_iter;
+                let n_groups = merged.first().map_or(0, Series::len);
+                let final_lits: Vec<Literal> = (0..n_groups)
+                    .map(|i| {
+                        let state: Vec<Literal> = merged.iter().map(|s| s.get_lit(i)).collect();
+                        handle.call_agg_finalize(state)
+                    })
+                    .collect::<DaftResult<_>>()?;
+                series_from_literals_iter(
+                    final_lits.into_iter().map(Ok),
+                    Some(return_field.dtype.clone()),
+                )
+                .map(|s| s.rename(&return_field.name))
+            }
         }
     }
 
@@ -754,13 +903,19 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_async_with_metrics(
-                    BoundExpr::new_unchecked(child.clone()),
-                    metrics,
-                )
-                .await?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_async_with_metrics(
+                        BoundExpr::new_unchecked(child.clone()),
+                        metrics,
+                    )
+                    .await?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1012,6 +1167,12 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
+                }
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
@@ -1033,6 +1194,66 @@ impl RecordBatch {
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
+            Expr::Coalesce(inputs) => {
+                if inputs.is_empty() {
+                    return Err(DaftError::ValueError("COALESCE requires at least one argument".to_string()));
+                }
+
+                let mut result = self.eval_expression_async_with_metrics(
+                    BoundExpr::try_new(inputs[0].clone(), self.schema.as_ref())?,
+                    metrics,
+                ).await?;
+
+                if result.len() != self.len() && result.len() == 1 {
+                    result = result.broadcast(self.len())?;
+                }
+
+                // DataType::Null has null_count() == 0 despite all values being null
+                if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                    if result.field().name != expected_field.name {
+                        result = result.rename(expected_field.name.as_ref());
+                    }
+                    if result.field().dtype != expected_field.dtype {
+                        result = result.cast(&expected_field.dtype)?;
+                    }
+                    return Ok(result);
+                }
+
+                for input in inputs.iter().skip(1) {
+                    let null_mask = result.is_null()?;
+                    let null_mask_bool = null_mask.bool()?;
+
+                    if null_mask_bool.false_count() == null_mask_bool.len() {
+                        break;
+                    }
+
+                    let filtered_batch = self.mask_filter(&null_mask)?;
+                    if filtered_batch.is_empty() {
+                        break;
+                    }
+
+                    let filtered_series = filtered_batch.eval_expression_async_with_metrics(
+                        BoundExpr::try_new(input.clone(), filtered_batch.schema.as_ref())?,
+                        metrics,
+                    ).await?;
+
+                    let full_fill = Self::scatter_with_mask(&filtered_series, null_mask_bool, result.len())?;
+                    result = result.fill_null(&full_fill)?;
+
+                    if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                        break;
+                    }
+                }
+
+                if result.field().name != expected_field.name {
+                    result = result.rename(expected_field.name.as_ref());
+                }
+                if result.field().dtype != expected_field.dtype {
+                    result = result.cast(&expected_field.dtype)?;
+                }
+
+                Ok(result)
+            },
         }?;
 
         if expected_field.name != series.field().name {
@@ -1089,9 +1310,15 @@ impl RecordBatch {
             Expr::WindowFunction(..) => Err(DaftError::ComputeError(
                 "Window expressions cannot be directly evaluated. Please specify a window using \"over\".".to_string(),
             )),
-            Expr::Cast(child, dtype) => self
-                .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?
-                .cast(dtype),
+            Expr::Cast(child, dtype, try_cast) => {
+                let child_series = self
+                    .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?;
+                if *try_cast {
+                    child_series.try_cast(dtype)
+                } else {
+                    child_series.cast(dtype)
+                }
+            }
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1263,6 +1490,12 @@ impl RecordBatch {
                         metrics,
                     )?);
                 }
+                let row_count = self.len();
+                for series in &mut args {
+                    if series.len() == 1 && row_count != 1 {
+                        *series = series.broadcast(row_count)?;
+                    }
+                }
                 #[cfg(feature = "python")]
                 {
                     if python_udf.is_async() {
@@ -1293,6 +1526,65 @@ impl RecordBatch {
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
+            Expr::Coalesce(inputs) => {
+                if inputs.is_empty() {
+                    return Err(DaftError::ValueError("COALESCE requires at least one argument".to_string()));
+                }
+                let mut result = self.eval_expression_internal(
+                    &BoundExpr::new_unchecked(inputs[0].clone()),
+                    metrics,
+                )?;
+
+                if result.len() != self.len() && result.len() == 1 {
+                    result = result.broadcast(self.len())?;
+                }
+
+                // DataType::Null has null_count() == 0 despite all values being null
+                if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                    if result.field().name != expected_field.name {
+                        result = result.rename(expected_field.name.as_ref());
+                    }
+                    if result.field().dtype != expected_field.dtype {
+                        result = result.cast(&expected_field.dtype)?;
+                    }
+                    return Ok(result);
+                }
+
+                for input in inputs.iter().skip(1) {
+                    let null_mask = result.is_null()?;
+                    let null_mask_bool = null_mask.bool()?;
+
+                    if null_mask_bool.false_count() == null_mask_bool.len() {
+                        break;
+                    }
+
+                    let filtered_batch = self.mask_filter(&null_mask)?;
+                    if filtered_batch.is_empty() {
+                        break;
+                    }
+
+                    let filtered_series = filtered_batch.eval_expression_internal(
+                        &BoundExpr::try_new(input.clone(), filtered_batch.schema.as_ref())?,
+                        metrics,
+                    )?;
+
+                    let full_fill = Self::scatter_with_mask(&filtered_series, null_mask_bool, result.len())?;
+                    result = result.fill_null(&full_fill)?;
+
+                    if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                        break;
+                    }
+                }
+
+                if result.field().name != expected_field.name {
+                    result = result.rename(expected_field.name.as_ref());
+                }
+                if result.field().dtype != expected_field.dtype {
+                    result = result.cast(&expected_field.dtype)?;
+                }
+
+                Ok(result)
+            },
         }?;
 
         if expected_field.name != series.field().name {
@@ -1450,6 +1742,36 @@ impl RecordBatch {
         };
 
         Self::new_with_broadcast(new_schema, result_series, num_rows)
+    }
+
+    /// Scatter `filtered_series` values back into a full-length series using a boolean mask.
+    /// Positions where mask is true get values from `filtered_series` (in order).
+    /// Positions where mask is false get null.
+    fn scatter_with_mask(
+        filtered_series: &Series,
+        mask: &BooleanArray,
+        total_len: usize,
+    ) -> DaftResult<Series> {
+        // If filtered_series is a broadcast value (length 1), return it directly.
+        // fill_null/if_else natively supports length-1 broadcasting.
+        if filtered_series.len() == 1 {
+            return Ok(filtered_series.clone());
+        }
+        let mut take_indices: Vec<Option<u64>> = Vec::with_capacity(total_len);
+        let mut j: u64 = 0;
+        for i in 0..total_len {
+            if mask.get(i) == Some(true) {
+                take_indices.push(Some(j));
+                j += 1;
+            } else {
+                take_indices.push(None);
+            }
+        }
+        let idx = UInt64Array::from_iter(
+            Field::new("__scatter_idx", DataType::UInt64),
+            take_indices.into_iter(),
+        );
+        filtered_series.take(&idx)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -1622,8 +1944,7 @@ impl RecordBatch {
             tables.push(record_batch);
         }
 
-        assert_eq!(tables.len(), 1);
-        Ok(tables.pop().expect("Expected exactly one table"))
+        Self::concat_or_empty(&tables, Some(schema))
     }
 }
 
@@ -1785,6 +2106,33 @@ mod test {
         let ipc_stream = table.to_ipc_stream()?;
         let roundtrip_table = RecordBatch::from_ipc_stream(&ipc_stream)?;
         assert_eq!(table, roundtrip_table);
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_ipc_stream_concatenates_multiple_batches() -> DaftResult<()> {
+        let first = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("a", vec![1, 2]).into_series(),
+            Utf8Array::from_slice("b", &["x", "y"]).into_series(),
+        ])?;
+        let second = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("a", vec![3]).into_series(),
+            Utf8Array::from_slice("b", &["z"]).into_series(),
+        ])?;
+
+        let expected = RecordBatch::concat([&first, &second])?;
+
+        let schema = first.schema.to_arrow()?;
+        let mut buffer = Vec::new();
+        {
+            let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &schema)?;
+            writer.write(&arrow_array::RecordBatch::try_from(first)?)?;
+            writer.write(&arrow_array::RecordBatch::try_from(second)?)?;
+            writer.finish()?;
+        }
+
+        let roundtrip = RecordBatch::from_ipc_stream(&buffer)?;
+        assert_eq!(expected, roundtrip);
         Ok(())
     }
 

@@ -30,7 +30,7 @@ macro_rules! collect_to_set_and_check_membership {
 impl<T> DaftIsIn<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as crate::datatypes::NumericNative>::ARROWTYPE as arrow::array::ArrowPrimitiveType>::Native:
         std::hash::Hash + std::cmp::Eq,
 {
@@ -42,7 +42,7 @@ where
 }
 
 macro_rules! impl_is_in_floating_array {
-    ($arr:ident, $T:ident) => {
+    ($arr:ident, $T:ty) => {
         impl DaftIsIn<&$arr> for $arr {
             type Output = DaftResult<BooleanArray>;
 
@@ -64,6 +64,7 @@ macro_rules! impl_is_in_floating_array {
         }
     };
 }
+impl_is_in_floating_array!(Float16Array, half::f16);
 impl_is_in_floating_array!(Float32Array, f32);
 impl_is_in_floating_array!(Float64Array, f64);
 

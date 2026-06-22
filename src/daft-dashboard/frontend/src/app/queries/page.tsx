@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -242,11 +243,13 @@ const EmptyState = () => {
 /**
  *  Main Component to display the queries in a table
  */
-export default function QueryList() {
+function QueryListInner() {
   "use no memo";
 
   const { queries, isLoading } = useQueries();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const debug = searchParams.has("debug");
 
   const table = useReactTable({
     data: queries,
@@ -266,7 +269,7 @@ export default function QueryList() {
     `px-[20px]`;
 
   const handleRowClick = (queryId: string) => {
-    router.push(`/query?id=${queryId}`);
+    router.push(`/query?id=${queryId}${debug ? "&debug" : ""}`);
   };
 
   if (isLoading) {
@@ -344,5 +347,13 @@ export default function QueryList() {
         </Table>
       </div>
     </div>
+  );
+}
+
+export default function QueryList() {
+  return (
+    <Suspense fallback={<LoadingPage />}>
+      <QueryListInner />
+    </Suspense>
   );
 }

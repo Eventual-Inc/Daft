@@ -1,10 +1,13 @@
 pub mod current;
+pub mod date_arithmetic;
+pub mod date_construction;
+pub mod date_navigation;
+pub mod epoch_conversions;
 mod time;
 mod to_string;
 mod total;
 pub mod truncate;
 mod unix_timestamp;
-
 use common_error::{DaftResult, ensure};
 use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
@@ -15,8 +18,15 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
+use date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween};
+use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
+use date_navigation::{LastDay, NextDay};
+use epoch_conversions::{
+    DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
+};
 use serde::{Deserialize, Serialize};
-use time::Time;
+use time::{ConvertTimeZone, ReplaceTimeZone, Time};
+pub use to_string::ToString;
 use truncate::Truncate;
 use unix_timestamp::UnixTimestamp;
 
@@ -98,7 +108,9 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(Quarter);
         parent.add_fn(Second);
         parent.add_fn(Time);
-        parent.add_fn(to_string::ToString);
+        parent.add_fn(ToString);
+        parent.add_fn(ConvertTimeZone);
+        parent.add_fn(ReplaceTimeZone);
         parent.add_fn(Truncate);
         parent.add_fn(TotalDays);
         parent.add_fn(TotalHours);
@@ -114,5 +126,20 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(CurrentDate);
         parent.add_fn(CurrentTimestamp);
         parent.add_fn(CurrentTimezone);
+        parent.add_fn(DateAdd);
+        parent.add_fn(DateSub);
+        parent.add_fn(DateDiff);
+        parent.add_fn(AddMonths);
+        parent.add_fn(MonthsBetween);
+        parent.add_fn(DateFromUnixDate);
+        parent.add_fn(TimestampSeconds);
+        parent.add_fn(TimestampMillis);
+        parent.add_fn(TimestampMicros);
+        parent.add_fn(FromUnixtime);
+        parent.add_fn(MakeDate);
+        parent.add_fn(MakeTimestamp);
+        parent.add_fn(MakeTimestampLtz);
+        parent.add_fn(LastDay);
+        parent.add_fn(NextDay);
     }
 }

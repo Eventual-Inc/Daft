@@ -8,9 +8,11 @@ use arrow::{
     datatypes::*,
 };
 use common_error::{DaftError, DaftResult};
-use num_traits::Float;
+
+use super::cmp::make_daft_comparator;
 
 #[allow(clippy::eq_op)]
+#[inline(never)]
 fn search_sorted_primitive_array<T>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
@@ -232,132 +234,6 @@ macro_rules! dispatch_primitive_search_sorted {
     }};
 }
 
-#[allow(clippy::eq_op)]
-#[inline]
-pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
-    match (l.is_nan(), r.is_nan()) {
-        (false, false) => unsafe { l.partial_cmp(r).unwrap_unchecked() },
-        (true, true) => Ordering::Equal,
-        (true, false) => Ordering::Greater,
-        (false, true) => Ordering::Less,
-    }
-}
-
-/// Build a NaN-aware comparator for float arrays without allocation.
-///
-/// Arrow-rs `make_comparator` uses IEEE 754 total ordering where -NaN sorts before -Inf.
-/// Daft treats ALL NaN as greater than regular values regardless of sign. This function
-/// builds a comparator using `cmp_float` for float types and delegates to `make_comparator`
-/// for all other types.
-fn build_nan_aware_comparator<T>(
-    left: PrimitiveArray<T>,
-    right: PrimitiveArray<T>,
-    sort_options: SortOptions,
-) -> Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>
-where
-    T: ArrowPrimitiveType,
-    T::Native: Float,
-{
-    let SortOptions {
-        descending,
-        nulls_first,
-    } = sort_options;
-
-    // Fast path: no nulls in either array, skip per-element validity bitmap checks.
-    if left.null_count() == 0 && right.null_count() == 0 {
-        let left_values = left.values().clone();
-        let right_values = right.values().clone();
-        Box::new(move |i: usize, j: usize| {
-            let cmp = cmp_float(&left_values[i], &right_values[j]);
-            if descending { cmp.reverse() } else { cmp }
-        })
-    } else {
-        Box::new(
-            move |i: usize, j: usize| match (left.is_valid(i), right.is_valid(j)) {
-                (true, true) => {
-                    let cmp = cmp_float(&left.value(i), &right.value(j));
-                    if descending { cmp.reverse() } else { cmp }
-                }
-                (false, false) => Ordering::Equal,
-                (false, _) => {
-                    if nulls_first {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }
-                (_, false) => {
-                    if nulls_first {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                }
-            },
-        )
-    }
-}
-
-/// Build a comparator that respects Daft's NaN ordering contract.
-///
-/// For float types, builds a zero-allocation comparator using `cmp_float`.
-/// For all other types, delegates to arrow-rs `make_comparator`.
-pub(crate) fn make_daft_comparator(
-    left: &dyn Array,
-    right: &dyn Array,
-    sort_options: SortOptions,
-) -> DaftResult<Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>> {
-    macro_rules! downcast_float {
-        ($t:ty) => {{
-            let left = left
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$t>>()
-                .unwrap()
-                .clone();
-            let right = right
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$t>>()
-                .unwrap()
-                .clone();
-            Ok(build_nan_aware_comparator(left, right, sort_options))
-        }};
-    }
-    match left.data_type() {
-        DataType::Float32 => downcast_float!(Float32Type),
-        DataType::Float64 => downcast_float!(Float64Type),
-        _ => Ok(make_comparator(left, right, sort_options)?),
-    }
-}
-
-/// Compare the values at two arbitrary indices in two arrays.
-pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
-
-pub fn build_partial_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
-    reversed: bool,
-) -> DaftResult<DynPartialComparator> {
-    // `reversed` is ambiguous, but based on historical behaviour, the default is to sort in ascending order and nulls last.
-    let comparator = make_daft_comparator(
-        left,
-        right,
-        SortOptions::new(
-            /*descending=*/ reversed, /*nulls_first=*/ reversed,
-        ),
-    )?;
-
-    let left_data = left.to_data();
-    let right_data = right.to_data();
-    Ok(Box::new(move |i: usize, j: usize| {
-        match (left_data.is_valid(i), right_data.is_valid(j)) {
-            (true, true) => Some(comparator(i, j)),
-            (false, true) => Some(Ordering::Greater),
-            (true, false) => Some(Ordering::Less),
-            (false, false) => None,
-        }
-    }))
-}
-
 pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
     key_arrays: &Vec<&dyn Array>,
@@ -460,6 +336,7 @@ pub fn search_sorted(
         | DataType::UInt16
         | DataType::UInt32
         | DataType::UInt64
+        | DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::Decimal128(_, _)
@@ -473,6 +350,7 @@ pub fn search_sorted(
                 DataType::UInt16 => UInt16Type,
                 DataType::UInt32 => UInt32Type,
                 DataType::UInt64 => UInt64Type,
+                DataType::Float16 => Float16Type,
                 DataType::Float32 => Float32Type,
                 DataType::Float64 => Float64Type,
                 DataType::Decimal128(_, _) => Decimal128Type,

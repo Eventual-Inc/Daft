@@ -1,20 +1,24 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats, snapshot::StatSnapshotImpl,
+    QueryID, Stat, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY,
+    snapshot::StatSnapshotImpl,
 };
 use daft_context::get_context;
 
-use crate::statistics::{StatisticsSubscriber, TaskEvent};
+use crate::{
+    pipeline_node::NodeID,
+    scheduling::task::TaskContext,
+    statistics::{StatisticsSubscriber, TaskEvent, stats::RuntimeNodeManager},
+};
 
 pub struct DashboardStatisticsSubscriber {
     query_id: QueryID,
-    operator_stats: Mutex<HashMap<usize, HashMap<Arc<str>, Stat>>>,
-    started_operators: Mutex<HashSet<usize>>,
+    runtime_node_managers: Option<Arc<HashMap<NodeID, RuntimeNodeManager>>>,
     initialized_subscriber: Mutex<bool>,
 }
 
@@ -22,14 +26,69 @@ impl DashboardStatisticsSubscriber {
     pub fn new(query_id: QueryID) -> Self {
         Self {
             query_id,
-            operator_stats: Mutex::new(HashMap::new()),
-            started_operators: Mutex::new(HashSet::new()),
+            runtime_node_managers: None,
             initialized_subscriber: Mutex::new(false),
+        }
+    }
+
+    /// Emit the latest per-operator stats (snapshot metrics + task lifecycle
+    /// counters) for every manager whose node participated in `task_ctx`.
+    fn emit_stats_for(&self, task_ctx: &TaskContext) {
+        let Some(managers) = &self.runtime_node_managers else {
+            return;
+        };
+        // Filter by participating node first so we only snapshot + build
+        // Stats for managers this task actually touched — O(participating)
+        // rather than O(all managers) per event.
+        let relevant_stats = managers
+            .values()
+            .filter(|mgr| task_ctx.node_ids.contains(&(mgr.node_id() as u32)))
+            .map(|mgr| {
+                let (info, snapshot) = mgr.export_snapshot();
+                let mut stats = snapshot.to_stats();
+                // `task.count` is already in `stats` via `snapshot.to_stats()`:
+                // it's the per-operator attributed work counter (incremented
+                // once per distributed task whose worker snapshots matched
+                // this node's origin). The four `task.*` counters appended
+                // below are distinct — they are scheduler-lifecycle state
+                // on the manager, incremented for every task whose
+                // `context.node_ids` includes this node regardless of origin
+                // attribution. So `task.completed >= task.count` at any
+                // given node.
+                stats
+                    .0
+                    .push((TASK_ACTIVE_KEY.into(), Stat::Count(mgr.active_task_count())));
+                stats.0.push((
+                    TASK_COMPLETED_KEY.into(),
+                    Stat::Count(mgr.completed_task_count()),
+                ));
+                stats
+                    .0
+                    .push((TASK_FAILED_KEY.into(), Stat::Count(mgr.failed_task_count())));
+                stats.0.push((
+                    TASK_CANCELLED_KEY.into(),
+                    Stat::Count(mgr.cancelled_task_count()),
+                ));
+                // use `id` here because it's a distributed node
+                // these nodes do not have an `origin_node_id`
+                (info.id, stats)
+            })
+            .collect::<Vec<_>>();
+
+        if !relevant_stats.is_empty()
+            && let Err(e) =
+                get_context().notify_exec_emit_stats(self.query_id.clone(), relevant_stats)
+        {
+            tracing::error!("Failed to notify exec emit stats: {}", e);
         }
     }
 }
 
 impl StatisticsSubscriber for DashboardStatisticsSubscriber {
+    fn set_runtime_node_managers(&mut self, managers: Arc<HashMap<NodeID, RuntimeNodeManager>>) {
+        self.runtime_node_managers = Some(managers);
+    }
+
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         // Skip all dashboard functionality when RAY_DISABLE_DASHBOARD=1
         if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() == Ok("1") {
@@ -40,61 +99,6 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
         let should_notify = std::env::var("DAFT_DASHBOARD_URL").is_ok();
         if !should_notify {
             return Ok(());
-        }
-
-        // Accumulate statistics first
-        match event {
-            TaskEvent::Submitted {
-                context: task_ctx, ..
-            } => {
-                let mut started = self.started_operators.lock().unwrap();
-                for node_id in &task_ctx.node_ids {
-                    let node_id = *node_id as usize;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
-                }
-            }
-            TaskEvent::Completed { stats, .. } => {
-                let mut accumulated = self.operator_stats.lock().unwrap();
-                let mut started = self.started_operators.lock().unwrap();
-
-                for (node_info, task_stats) in &stats.nodes {
-                    let node_id = node_info.id;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
-
-                    let entry = accumulated.entry(node_id).or_default();
-                    let task_stats = task_stats.to_stats();
-                    for (key, stat) in &task_stats.0 {
-                        let mapped_key = match key.as_ref() {
-                            "rows_in" => ROWS_IN_KEY,
-                            "rows_out" => ROWS_OUT_KEY,
-                            "duration_us" => DURATION_KEY,
-                            _ => key.as_ref(),
-                        };
-                        let arc_key: Arc<str> = Arc::from(mapped_key);
-                        match entry.entry(arc_key) {
-                            std::collections::hash_map::Entry::Occupied(mut e) => {
-                                let current_stat = e.get_mut();
-                                match (current_stat, stat) {
-                                    (Stat::Count(c1), Stat::Count(c2)) => *c1 += *c2,
-                                    (Stat::Bytes(b1), Stat::Bytes(b2)) => *b1 += *b2,
-                                    (Stat::Duration(d1), Stat::Duration(d2)) => *d1 += *d2,
-                                    _ => {}
-                                }
-                            }
-                            std::collections::hash_map::Entry::Vacant(e) => {
-                                e.insert(stat.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {
-                // Only process submitted and completed events for now
-            }
         }
 
         // Initialize dashboard subscriber if needed
@@ -119,58 +123,29 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             }
         }
 
-        // Send dashboard notifications
+        // Send dashboard notifications. Lifecycle counters (task.active,
+        // task.completed, task.failed, task.cancelled) are updated on the
+        // manager by StatisticsManager before this subscriber runs, so we
+        // emit stats for every event that changes a counter — otherwise
+        // `task.active` wouldn't be visible until the first task ends.
+        // OperatorStart / OperatorEnd are emitted centrally by
+        // `StatisticsManager` (independent of dashboard configuration),
+        // so this subscriber only needs to push stats snapshots.
         match event {
             TaskEvent::Submitted {
                 context: task_ctx, ..
-            } => {
-                // Notify about newly started operators
-                let node_ids_to_notify = {
-                    let started = self.started_operators.lock().unwrap();
-                    task_ctx
-                        .node_ids
-                        .iter()
-                        .map(|id| *id as usize)
-                        .filter(|id| started.contains(id))
-                        .collect::<Vec<_>>()
-                };
-
-                for node_id in node_ids_to_notify {
-                    // Handle notifications non-blockingly
-                    if let Err(e) =
-                        context.notify_exec_operator_start(self.query_id.clone(), node_id)
-                    {
-                        tracing::error!("Failed to notify exec operator start: {}", e);
-                    }
-                }
             }
-            TaskEvent::Completed { .. } => {
-                // Send accumulated statistics to dashboard
-                let all_stats = {
-                    let accumulated = self.operator_stats.lock().unwrap();
-                    accumulated
-                        .iter()
-                        .map(|(node_id, stats)| {
-                            let snapshot = Stats(
-                                stats
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect::<smallvec::SmallVec<[(Arc<str>, Stat); 3]>>(),
-                            );
-                            (*node_id, snapshot)
-                        })
-                        .collect::<Vec<(usize, Stats)>>()
-                };
-
-                // Send the stats notification
-                if !all_stats.is_empty()
-                    && let Err(e) = context.notify_exec_emit_stats(self.query_id.clone(), all_stats)
-                {
-                    tracing::error!("Failed to notify exec emit stats: {}", e);
-                }
+            | TaskEvent::Scheduled {
+                context: task_ctx, ..
             }
-            _ => {
-                // For now, we only emit notifications for submitted and completed events
+            | TaskEvent::Completed {
+                context: task_ctx, ..
+            }
+            | TaskEvent::Failed {
+                context: task_ctx, ..
+            }
+            | TaskEvent::Cancelled { context: task_ctx } => {
+                self.emit_stats_for(task_ctx);
             }
         }
         Ok(())

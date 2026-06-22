@@ -2,7 +2,7 @@ pub mod aggregate;
 pub mod blocking_sink;
 pub mod commit_write;
 pub mod dedup;
-pub mod flight_shuffle_write;
+pub mod gather;
 pub mod grouped_aggregate;
 pub mod into_partitions;
 pub mod pivot;

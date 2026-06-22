@@ -4,5 +4,6 @@ pub mod filter;
 pub mod intermediate_op;
 pub mod into_batches;
 pub mod project;
+pub mod stage_checkpoint_keys;
 pub mod udf;
 pub mod unpivot;

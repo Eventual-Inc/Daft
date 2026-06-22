@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use daft_catalog::error::CatalogResult;
+#[cfg(not(feature = "python"))]
+use daft_catalog::error::CatalogError;
+use daft_catalog::{FunctionRef, error::CatalogResult};
 
 /// A Python UDF class (daft.udf.py:UDF).
 type PythonScalarFunction = daft_dsl::functions::python::WrappedUDFClass;
@@ -24,10 +26,41 @@ impl ScalarFunction {
             #[cfg(feature = "python")]
             Self::Python(udf) => Ok(udf.name()?),
             #[cfg(not(feature = "python"))]
-            Self::Python(_) => Err(daft_catalog::error::CatalogError::unsupported(
+            Self::Python(_) => Err(CatalogError::unsupported(
                 "Python UDFs require the python feature",
             )),
             Self::Native(factory) => Ok(factory.name().to_string()),
+        }
+    }
+
+    /// Convert a [`FunctionRef`] into a [`ScalarFunction`].
+    ///
+    /// Dispatches based on [`Function::is_python`]:
+    /// - **Python functions**: wraps via [`Function::to_py`] into a
+    ///   [`ScalarFunction::Python`] (a `WrappedUDFClass`).
+    /// - **Native functions**: wraps via [`Function::to_scalar_function_factory`]
+    ///   into a [`ScalarFunction::Native`].
+    pub fn from_function_ref(function_ref: &FunctionRef) -> Self {
+        if function_ref.is_python() {
+            #[cfg(feature = "python")]
+            {
+                use daft_dsl::functions::python::WrappedUDFClass;
+
+                pyo3::Python::attach(|py| {
+                    let callable = function_ref
+                        .to_py(py)
+                        .expect("failed to convert catalog Function to Python object");
+                    Self::Python(WrappedUDFClass {
+                        inner: std::sync::Arc::new(callable),
+                    })
+                })
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                unreachable!("Python functions require the python feature")
+            }
+        } else {
+            Self::Native(function_ref.to_scalar_function_factory())
         }
     }
 }

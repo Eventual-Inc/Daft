@@ -14,7 +14,8 @@ use opentelemetry::KeyValue;
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        NodeID, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+        ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -24,6 +25,9 @@ pub struct ExplodeStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
+    num_tasks: Counter,
     amplification: Gauge,
     node_kv: Vec<KeyValue>,
 }
@@ -35,6 +39,9 @@ impl ExplodeStats {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             amplification: meter.f64_gauge("amplification"),
             node_kv,
         }
@@ -59,6 +66,10 @@ impl RuntimeStats for ExplodeStats {
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
+        self.bytes_out
+            .add(snapshot.bytes_out, self.node_kv.as_slice());
 
         let amplification = Self::amplification(snapshot.rows_in, snapshot.rows_out);
         self.amplification
@@ -74,7 +85,14 @@ impl RuntimeStats for ExplodeStats {
             rows_in,
             rows_out,
             amplification,
+            bytes_in: self.bytes_in.load(Ordering::SeqCst),
+            bytes_out: self.bytes_out.load(Ordering::SeqCst),
+            num_tasks: self.num_tasks.load(Ordering::SeqCst),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -110,7 +128,7 @@ impl ExplodeNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

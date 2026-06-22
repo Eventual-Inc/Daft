@@ -1,5 +1,4 @@
 pub mod client;
-#[cfg(feature = "python")]
-pub mod python;
+pub mod oneshot_writer;
 pub mod server;
 pub mod shuffle_cache;

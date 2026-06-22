@@ -1,4 +1,5 @@
 pub mod anti_semi_join;
+pub mod asof_join;
 pub mod build;
 pub mod cross_join;
 pub mod hash_join;
@@ -12,6 +13,7 @@ pub mod probe;
 pub mod sort_merge_join;
 pub mod stats;
 
+pub use asof_join::AsofJoinOperator;
 pub use cross_join::CrossJoinOperator;
 pub use hash_join::HashJoinOperator;
 pub use join_node::JoinNode;

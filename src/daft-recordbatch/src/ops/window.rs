@@ -1,13 +1,11 @@
 use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    array::ops::{IntoGroups, arrow::comparison::build_multi_array_is_equal},
-    prelude::*,
-};
+use daft_core::{array::ops::arrow::comparison::build_multi_array_is_equal, prelude::*};
 use daft_dsl::{
-    AggExpr, WindowBoundary, WindowFrame,
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
+    AggExpr, WindowBoundary, WindowExpr, WindowFrame,
+    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
 };
+use daft_groupby::IntoGroups;
 
 use crate::{
     RecordBatch,
@@ -30,10 +28,13 @@ impl RecordBatch {
         let agg_exprs = to_agg.to_vec();
 
         if let [agg_expr] = agg_exprs.as_slice()
-            && matches!(agg_expr.as_ref(), AggExpr::MapGroups { .. })
+            && matches!(
+                agg_expr.as_ref(),
+                AggExpr::MapGroups { .. } | AggExpr::AggFn { .. } | AggExpr::AggFnCombine { .. }
+            )
         {
             return Err(DaftError::ValueError(
-                "MapGroups not supported in window functions".into(),
+                "MapGroups and extension aggregations (AggFn) are not supported in window functions".into(),
             ));
         }
 
@@ -77,23 +78,6 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let window_result = Self::from_nonempty_columns(window_cols)?;
-        self.union(&window_result)
-    }
-
-    pub fn window_agg(&self, to_agg: &BoundAggExpr, name: String) -> DaftResult<Self> {
-        if matches!(to_agg.as_ref(), AggExpr::MapGroups { .. }) {
-            return Err(DaftError::ValueError(
-                "MapGroups not supported in window functions".into(),
-            ));
-        }
-
-        let agg_result = self.eval_agg_expression(to_agg, None)?;
-        let window_col = agg_result.rename(&name);
-
-        // Broadcast the aggregation result to match the length of the partition
-        let broadcast_result = window_col.broadcast(self.len())?;
-
-        let window_result = Self::from_nonempty_columns(vec![broadcast_result])?;
         self.union(&window_result)
     }
 
@@ -292,16 +276,16 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn window_agg_dynamic_frame(
+    pub fn window_agg_dynamic_frame_col(
         &self,
-        name: String,
-        agg_expr: &BoundAggExpr,
+        name: &str,
+        window_expr: &BoundWindowExpr,
         order_by: &[BoundExpr],
         descending: &[bool],
         min_periods: usize,
         dtype: &DataType,
         frame: &WindowFrame,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         let total_rows = self.len();
 
         if matches!(frame.start, WindowBoundary::UnboundedFollowing) {
@@ -316,20 +300,19 @@ impl RecordBatch {
             ));
         }
 
-        let child_exprs = agg_expr
+        let child_exprs = window_expr
             .as_ref()
             .children()
             .into_iter()
             .map(BoundExpr::new_unchecked)
             .collect::<Vec<_>>();
         let sources = self.eval_expression_list(&child_exprs)?;
-        // Check if we can initialize an incremental state
-        match create_window_agg_state(&sources, agg_expr, total_rows)? {
+        match create_window_agg_state(&sources, window_expr, total_rows)? {
             Some(agg_state) => {
                 if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
-                    self.window_agg_range_incremental(
-                        &name,
+                    self.window_agg_range_incremental_col(
+                        name,
                         &frame.start,
                         &frame.end,
                         &order_by[0],
@@ -340,8 +323,8 @@ impl RecordBatch {
                     )
                 } else {
                     let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
-                    self.window_agg_rows_incremental(
-                        &name,
+                    self.window_agg_rows_incremental_col(
+                        name,
                         start,
                         end,
                         min_periods,
@@ -351,11 +334,15 @@ impl RecordBatch {
                 }
             }
             None => {
+                let agg_expr = match window_expr.as_ref() {
+                    WindowExpr::Agg(agg) => BoundAggExpr::new_unchecked(agg.clone()),
+                    _ => unreachable!("non-incremental fallback only handles Agg variants"),
+                };
                 if Self::is_range_frame(&frame.start, &frame.end) {
                     Self::validate_range_frame_order_by(order_by)?;
-                    self.window_agg_range(
-                        agg_expr,
-                        &name,
+                    self.window_agg_range_col(
+                        &agg_expr,
+                        name,
                         dtype,
                         &frame.start,
                         &frame.end,
@@ -366,9 +353,9 @@ impl RecordBatch {
                     )
                 } else {
                     let (start, end) = Self::extract_row_offsets(&frame.start, &frame.end);
-                    self.window_agg_rows(
-                        agg_expr,
-                        &name,
+                    self.window_agg_rows_col(
+                        &agg_expr,
+                        name,
                         dtype,
                         start,
                         end,
@@ -381,7 +368,7 @@ impl RecordBatch {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows_incremental(
+    fn window_agg_rows_incremental_col(
         &self,
         name: &str,
         start_boundary: Option<i64>,
@@ -389,7 +376,7 @@ impl RecordBatch {
         min_periods: usize,
         total_rows: usize,
         mut agg_state: Box<dyn WindowAggStateOps>,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
@@ -429,13 +416,11 @@ impl RecordBatch {
         let nulls = NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
-        let renamed_result = agg_state.with_nulls(nulls)?;
-        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
-        self.union(&window_batch)
+        agg_state.with_nulls(nulls)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_rows(
+    fn window_agg_rows_col(
         &self,
         agg_expr: &BoundAggExpr,
         name: &str,
@@ -444,7 +429,7 @@ impl RecordBatch {
         end_boundary: Option<i64>,
         min_periods: usize,
         total_rows: usize,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         let null_series = Series::full_null(name, dtype, 1);
 
         // Use the non-optimized implementation (recalculate for each row)
@@ -472,15 +457,12 @@ impl RecordBatch {
             }
         }
 
-        // Rename the result and create the final record batch
         let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
-        let renamed_result = final_result_series.rename(name);
-        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
-        self.union(&window_batch)
+        Ok(final_result_series.rename(name))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_range_incremental(
+    fn window_agg_range_incremental_col(
         &self,
         name: &str,
         start_boundary: &WindowBoundary,
@@ -490,7 +472,7 @@ impl RecordBatch {
         min_periods: usize,
         total_rows: usize,
         mut agg_state: Box<dyn WindowAggStateOps>,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
         let order_by_col = self.eval_expression(order_by)?;
@@ -552,13 +534,11 @@ impl RecordBatch {
         let nulls = NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
-        let renamed_result = agg_state.with_nulls(nulls)?;
-        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
-        self.union(&window_batch)
+        agg_state.with_nulls(nulls)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn window_agg_range(
+    fn window_agg_range_col(
         &self,
         agg_expr: &BoundAggExpr,
         name: &str,
@@ -569,7 +549,7 @@ impl RecordBatch {
         descending: bool,
         min_periods: usize,
         total_rows: usize,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         let order_by_col = self.eval_expression(order_by)?;
         let null_series = Series::full_null(name, dtype, 1);
 
@@ -622,32 +602,24 @@ impl RecordBatch {
             }
         }
 
-        // Rename the result and create the final record batch
         let final_result_series = Series::concat(&result_series.iter().collect::<Vec<_>>())?;
-        let renamed_result = final_result_series.rename(name);
-        let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
-        self.union(&window_batch)
+        Ok(final_result_series.rename(name))
     }
 
-    pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
+    pub fn window_row_number_col(&self, name: &str) -> DaftResult<Series> {
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
-        let row_number_series = UInt64Array::from_vec(name.as_str(), row_numbers).into_series();
-        let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
-
-        self.union(&row_number_batch)
+        Ok(UInt64Array::from_vec(name, row_numbers).into_series())
     }
 
-    pub fn window_rank(
+    pub fn window_rank_col(
         &self,
-        name: String,
+        name: &str,
         order_by: &[BoundExpr],
         dense: bool,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         if self.is_empty() {
             // Empty partition case - no work needed
-            let rank_series = UInt64Array::from_vec(name.as_str(), Vec::<u64>::new()).into_series();
-            let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-            return self.union(&rank_batch);
+            return Ok(UInt64Array::from_vec(name, Vec::<u64>::new()).into_series());
         }
 
         // Get the order_by columns
@@ -693,25 +665,20 @@ impl RecordBatch {
             }))
             .collect();
 
-        let rank_series = UInt64Array::from_vec(name.as_str(), rank_numbers).into_series();
-        let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
-
-        self.union(&rank_batch)
+        Ok(UInt64Array::from_vec(name, rank_numbers).into_series())
     }
 
-    pub fn window_offset(
+    pub fn window_offset_col(
         &self,
-        name: String,
+        name: &str,
         expr: BoundExpr,
         offset: isize,
         default: Option<BoundExpr>,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Series> {
         // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
             let expr_col = self.eval_expression(&expr)?;
-            let renamed_col = expr_col.rename(&name);
-            let result_batch = Self::from_nonempty_columns(vec![renamed_col])?;
-            return self.union(&result_batch);
+            return Ok(expr_col.rename(name));
         }
 
         let expr_col = self.eval_expression(&expr)?;
@@ -749,7 +716,7 @@ impl RecordBatch {
             }
         };
 
-        let mut result_col = if self.is_empty() || abs_offset >= self.len() {
+        let result_col = if self.is_empty() || abs_offset >= self.len() {
             // Special case: empty array or offset exceeds array length
             process_default(&default, expr_col.data_type(), 0, self.len(), self.len())?
         } else if offset > 0 {
@@ -778,9 +745,6 @@ impl RecordBatch {
             Series::concat(&cols)?
         };
 
-        result_col = result_col.rename(&name);
-        let offset_batch = Self::from_nonempty_columns(vec![result_col])?;
-
-        self.union(&offset_batch)
+        Ok(result_col.rename(name))
     }
 }

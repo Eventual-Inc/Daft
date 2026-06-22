@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
+use daft_ai::python::PyProviderWrapper;
 use daft_catalog::{
     Identifier,
-    python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
+    python::{PyCatalogWrapper, PyIdentifier, PyTableSource, PyTableWrapper},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::{prelude::*, types::PyTuple};
@@ -27,17 +27,21 @@ impl PySession {
     }
 
     pub fn attach_catalog(&self, catalog: Bound<PyAny>, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_catalog(pyobj_to_catalog(catalog)?, alias)?)
+        Ok(self
+            .0
+            .attach_catalog(PyCatalogWrapper::from(catalog).arced(), alias)?)
     }
 
     pub fn attach_provider(&self, provider: Bound<PyAny>, alias: String) -> PyResult<()> {
         Ok(self
             .0
-            .attach_provider(pyobj_to_provider(provider)?, alias)?)
+            .attach_provider(PyProviderWrapper::from(provider).arced(), alias)?)
     }
 
     pub fn attach_table(&self, table: Bound<PyAny>, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_table(pyobj_to_table(table)?, alias)?)
+        Ok(self
+            .0
+            .attach_table(PyTableWrapper::from(table).arced(), alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
@@ -119,8 +123,13 @@ impl PySession {
     }
 
     #[pyo3(signature = (pattern=None))]
-    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
-        Ok(self.0.list_tables(pattern)?)
+    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
+        Ok(self
+            .0
+            .list_tables(pattern)?
+            .into_iter()
+            .map(PyIdentifier::from)
+            .collect())
     }
 
     #[pyo3(signature = (ident))]
@@ -179,12 +188,10 @@ impl PySession {
             FunctionArg, FunctionArgs,
             scalar::{BuiltinScalarFn, ScalarFn},
         };
+        let parts: Vec<String> = name.split('.').map(str::to_string).collect();
+        let ident = daft_catalog::Identifier::new(parts);
 
-        let func = self.0.get_function(name)?.ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "function '{name}' not found in session"
-            ))
-        })?;
+        let func = self.0.get_function(&ident)?;
 
         let inputs: Vec<FunctionArg<daft_dsl::ExprRef>> = args
             .iter()
@@ -211,14 +218,45 @@ impl PySession {
             )),
         }
     }
+
+    #[pyo3(signature = (name, *args))]
+    pub fn get_aggregate_function(
+        &self,
+        name: &str,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<daft_dsl::python::PyExpr> {
+        use daft_dsl::expr::{AggExpr, Expr};
+
+        let handle = self.0.get_aggregate_function(name)?.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "aggregate function '{name}' not found in session"
+            ))
+        })?;
+
+        let inputs: Vec<daft_dsl::ExprRef> = args
+            .iter()
+            .map(|py| -> PyResult<_> {
+                let expr = py.extract::<daft_dsl::python::PyExpr>()?;
+                Ok(expr.expr)
+            })
+            .collect::<PyResult<_>>()?;
+
+        let expr: daft_dsl::ExprRef = Expr::Agg(AggExpr::AggFn { handle, inputs }).arced();
+        Ok(expr.into())
+    }
 }
 
-fn pyobj_to_provider(obj: Bound<PyAny>) -> PyResult<ProviderRef> {
-    // no current rust-based providers, so just wrap
-    Ok(Arc::new(PyProviderWrapper::from(obj.unbind())))
+#[pyo3::pyfunction]
+pub fn get_loaded_extension_paths() -> PyResult<Vec<String>> {
+    Ok(daft_ext_internal::module::loaded_module_paths()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect())
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PySession>()?;
+    parent.add_function(pyo3::wrap_pyfunction!(get_loaded_extension_paths, parent)?)?;
     Ok(())
 }

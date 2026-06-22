@@ -6,8 +6,8 @@ use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
 
 use crate::{
-    LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
-    optimization::rules::OptimizerRule, source_info::SourceInfo,
+    LogicalPlan, logical_plan::Aggregate, optimization::rules::OptimizerRule,
+    source_info::SourceInfo,
 };
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
@@ -75,11 +75,12 @@ impl OptimizerRule for PushDownAggregation {
 
                                         let new_external_info =
                                             external_info.with_pushdowns(new_pushdowns);
-                                        let new_source = LogicalPlan::Source(LogicalSource::new(
-                                            new_schema,
+                                        let mut new_source_node = source.clone().with_source_info(
                                             SourceInfo::Physical(new_external_info).into(),
-                                        ))
-                                        .into();
+                                        );
+                                        new_source_node.output_schema = new_schema;
+                                        let new_source =
+                                            LogicalPlan::Source(new_source_node).into();
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,

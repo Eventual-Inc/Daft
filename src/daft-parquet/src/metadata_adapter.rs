@@ -36,18 +36,6 @@ impl DaftParquetMetadata {
         }
     }
 
-    /// Construct from arrow-rs metadata with explicit original indices.
-    pub fn from_arrowrs_with_indices(
-        metadata: Arc<ParquetMetaData>,
-        original_indices: Vec<usize>,
-    ) -> Self {
-        debug_assert_eq!(metadata.row_groups().len(), original_indices.len());
-        Self {
-            inner: metadata,
-            original_indices,
-        }
-    }
-
     /// Total number of rows across all row groups.
     pub fn num_rows(&self) -> usize {
         self.inner.file_metadata().num_rows() as usize

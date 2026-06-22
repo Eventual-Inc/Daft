@@ -22,13 +22,11 @@ use arrow::{
     datatypes::ArrowNativeType,
 };
 
-/// # Safety
-/// `indices[i] < values.len()` for all i
 #[inline]
-fn k_element_sort_inner<T, F>(values: &mut [T], descending: bool, limit: usize, mut cmp: F)
+fn k_element_sort_inner<T, F>(values: &mut [T], descending: bool, limit: usize, cmp: F)
 where
     T: ArrowNativeType,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    F: Fn(&T, &T) -> std::cmp::Ordering,
 {
     if descending {
         let (before, _, _) = values.select_nth_unstable_by(limit, |x, y| cmp(y, x));
@@ -39,10 +37,10 @@ where
     }
 }
 
-fn sort_values<T, F>(values: &mut [T], mut cmp: F, descending: bool, limit: usize)
+fn sort_values<T, F>(values: &mut [T], cmp: F, descending: bool, limit: usize)
 where
     T: ArrowNativeType,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    F: Fn(&T, &T) -> std::cmp::Ordering,
 {
     if limit != values.len() {
         return k_element_sort_inner(values, descending, limit, cmp);
@@ -51,10 +49,11 @@ where
     if descending {
         values.sort_unstable_by(|x, y| cmp(y, x));
     } else {
-        values.sort_unstable_by(cmp);
+        values.sort_unstable_by(|x, y| cmp(x, y));
     }
 }
 
+#[inline(never)]
 fn sort_nullable<T, F>(
     values: &[T],
     nulls: &NullBuffer,
@@ -64,7 +63,7 @@ fn sort_nullable<T, F>(
 ) -> (Buffer, Option<NullBuffer>)
 where
     T: ArrowNativeType,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    F: Fn(&T, &T) -> std::cmp::Ordering,
 {
     assert!(limit <= values.len());
     if options.nulls_first && limit < nulls.null_count() {
@@ -128,6 +127,7 @@ where
 }
 
 /// Sorts a [`PrimitiveArray`] according to `cmp` comparator and [`SortOptions`].
+#[inline(never)]
 pub fn sort_by<T, F>(
     array: &PrimitiveArray<T>,
     cmp: F,
@@ -136,7 +136,7 @@ pub fn sort_by<T, F>(
 ) -> PrimitiveArray<T>
 where
     T: ArrowPrimitiveType,
-    F: FnMut(&T::Native, &T::Native) -> std::cmp::Ordering,
+    F: Fn(&T::Native, &T::Native) -> std::cmp::Ordering,
 {
     let limit = limit.unwrap_or_else(|| array.len());
     let limit = limit.min(array.len());

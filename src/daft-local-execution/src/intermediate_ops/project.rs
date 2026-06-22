@@ -20,7 +20,7 @@ use crate::{
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
@@ -71,6 +71,7 @@ fn is_interesting(expr: &Arc<Expr>) -> bool {
         Expr::Alias(expr, ..) => is_interesting(expr),
         Expr::InSubquery(expr, _) => is_interesting(expr),
         Expr::List(exprs) => exprs.iter().any(is_interesting),
+        Expr::Coalesce(inputs) => inputs.iter().any(is_interesting),
     }
 }
 
@@ -151,6 +152,7 @@ impl IntermediateOperator for ProjectOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import io
 import os
 import tempfile
 import uuid
@@ -13,7 +14,9 @@ import pytest
 
 import daft
 from daft.datatype import DataType, TimeUnit
+from daft.exceptions import DaftCoreException
 from daft.expressions import col
+from daft.io.writer import ParquetFileWriter
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 
@@ -137,6 +140,157 @@ def test_row_groups():
     assert df.count_rows() == 20
 
 
+def test_read_parquet_validates_arguments():
+    path = "tests/assets/parquet-data/mvp.parquet"
+
+    with pytest.raises(ValueError, match="Cannot read DataFrame from empty list of Parquet filepaths"):
+        daft.read_parquet([])
+
+    with pytest.raises(ValueError, match="row_groups must be the same length as the list of paths provided"):
+        daft.read_parquet([path], row_groups=[[0], [1]])
+
+    with pytest.raises(ValueError, match="row_groups are only supported when reading multiple"):
+        daft.read_parquet(path, row_groups=[[0]])
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot read DataFrame with infer_schema=False and schema=None",
+    ):
+        daft.read_parquet(path, infer_schema=False)
+
+
+def test_read_empty_pyarrow_parquet_file(tmp_path):
+    path = tmp_path / "empty.parquet"
+    table = pa.table(
+        {
+            "a": pa.array([], type=pa.int64()),
+            "b": pa.array([], type=pa.large_string()),
+        }
+    )
+    papq.write_table(table, path)
+
+    assert daft.read_parquet(str(path)).to_arrow() == table
+
+
+def test_read_parquet_row_group_edges(tmp_path):
+    path = tmp_path / "row_groups.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3, 4]}), path, row_group_size=2)
+
+    assert daft.read_parquet([str(path)], row_groups=[[1]]).to_pydict() == {"x": [3, 4]}
+    assert daft.read_parquet([str(path)], row_groups=[[]]).to_pydict() == {"x": []}
+
+    with pytest.raises(DaftCoreException, match="Row group index 2 out of bounds"):
+        daft.read_parquet([str(path)], row_groups=[[2]]).to_pydict()
+
+
+def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_i32.parquet"
+    int64_path = tmp_path / "map_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[("a", 1)]], type=pa.map_(pa.string(), pa.int32()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[("b", 2)]], type=pa.map_(pa.string(), pa.int64()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.int64())},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", 1)], [("b", 2)]]}
+
+
+def test_read_parquet_casts_map_logical_values_to_explicit_schema(tmp_path):
+    path = tmp_path / "map_timestamp.parquet"
+    ts = datetime.datetime.fromisoformat("2024-01-01T12:00:00")
+
+    papq.write_table(pa.table({"m": pa.array([[("a", ts)]], type=pa.map_(pa.string(), pa.timestamp("ns")))}), path)
+
+    df = daft.read_parquet(
+        [str(path)],
+        schema={"m": DataType.map(DataType.string(), DataType.timestamp(TimeUnit.us()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", ts)]]}
+
+
+def test_read_parquet_casts_map_keys_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_key_i32.parquet"
+    int64_path = tmp_path / "map_key_i64.parquet"
+
+    papq.write_table(pa.table({"m": pa.array([[(1, "a")]], type=pa.map_(pa.int32(), pa.string()))}), int32_path)
+    papq.write_table(pa.table({"m": pa.array([[(2, "b")]], type=pa.map_(pa.int64(), pa.string()))}), int64_path)
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.int64(), DataType.string())},
+    )
+
+    assert df.to_pydict() == {"m": [[(1, "a")], [(2, "b")]]}
+
+
+def test_read_parquet_casts_nested_map_values_to_explicit_schema(tmp_path):
+    int32_path = tmp_path / "map_list_i32.parquet"
+    int64_path = tmp_path / "map_list_i64.parquet"
+
+    papq.write_table(
+        pa.table({"m": pa.array([[("a", [1, 2])]], type=pa.map_(pa.string(), pa.list_(pa.int32())))}),
+        int32_path,
+    )
+    papq.write_table(
+        pa.table({"m": pa.array([[("b", [3, 4])]], type=pa.map_(pa.string(), pa.list_(pa.int64())))}),
+        int64_path,
+    )
+
+    df = daft.read_parquet(
+        [str(int32_path), str(int64_path)],
+        schema={"m": DataType.map(DataType.string(), DataType.list(DataType.int64()))},
+    )
+
+    assert df.to_pydict() == {"m": [[("a", [1, 2])], [("b", [3, 4])]]}
+
+
+def test_read_parquet_fills_map_struct_values_to_explicit_schema(tmp_path):
+    struct_x_path = tmp_path / "map_struct_x.parquet"
+    struct_xy_path = tmp_path / "map_struct_xy.parquet"
+
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("a", {"x": 1})]],
+                    type=pa.map_(pa.string(), pa.struct([pa.field("x", pa.int64())])),
+                )
+            }
+        ),
+        struct_x_path,
+    )
+    papq.write_table(
+        pa.table(
+            {
+                "m": pa.array(
+                    [[("b", {"x": 2, "y": "present"})]],
+                    type=pa.map_(
+                        pa.string(),
+                        pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.large_string())]),
+                    ),
+                )
+            }
+        ),
+        struct_xy_path,
+    )
+
+    df = daft.read_parquet(
+        [str(struct_x_path), str(struct_xy_path)],
+        schema={
+            "m": DataType.map(
+                DataType.string(),
+                DataType.struct({"x": DataType.int64(), "y": DataType.string()}),
+            )
+        },
+    )
+
+    assert df.to_pydict() == {"m": [[("a", {"x": 1, "y": None})], [("b", {"x": 2, "y": "present"})]]}
+
+
 # Test fix for issue #2537.
 # This issue arose when the last row of a top-level column has a leaf field with values that span
 # more than one data page.
@@ -242,7 +396,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
 
     def test_parquet_helper(data_and_type, use_daft_writer):
         data, data_type = data_and_type
-        index_data = [x for x in range(0, len(data))]
+        index_data = [x for x in range(len(data))]
         file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
 
         # Test Daft roundtrip. Daft does not support the dictionary logical type, hence we skip
@@ -435,7 +589,7 @@ def test_parquet_read_databricks_generated_file():
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-def test_parquet_count(tmp_path_factory, capsys):
+def test_parquet_count(tmp_path_factory):
     path = str(tmp_path_factory.mktemp("parquet_count"))
     data = {
         "string_content": ["a"] * 10,
@@ -445,11 +599,9 @@ def test_parquet_count(tmp_path_factory, capsys):
     df.write_parquet(path, write_mode="overwrite")
 
     df = daft.read_parquet(path).count(1)
-    _ = capsys.readouterr()
-    df.explain(True)
-    actual = capsys.readouterr()
-
-    assert "Project: col(int_id) as count" in actual.out
+    actual = io.StringIO()
+    df.explain(True, file=actual)
+    assert "Project: col(int_id) as count" in actual.getvalue()
 
     result = df.to_pydict()
     assert result == {"count": [10]}
@@ -461,3 +613,216 @@ def test_write_and_read_empty_parquet(tmp_path_factory):
     df.write_parquet(empty_parquet_files, write_mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
+
+
+def test_write_parquet_success_file(tmp_path_factory):
+    import os
+
+    # Test with write_success_file=True
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_true"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=True)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    # Test with write_success_file=False (default)
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_false"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=False)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert not os.path.exists(success_file_path), f"_SUCCESS file should not exist at {success_file_path}"
+
+    # Test with append mode
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_append"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="append", write_success_file=True)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+
+    # Test with overwrite-partitions mode
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_overwrite_partitions"))
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(output_dir, write_mode="overwrite-partitions", write_success_file=True, partition_cols=["b"])
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
+    assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
+
+    # Test with partition columns
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_partitioned"))
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=True, partition_cols=["b"])
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
+    assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
+
+
+@pytest.mark.parametrize("use_native", [True, False])
+def test_write_parquet_with_trailing_slash(tmp_path, use_native):
+    # Regression: https://github.com/Eventual-Inc/Daft/issues/6978
+    # write_parquet with a trailing-slash root_dir used to produce
+    # "{dir}//{file}" paths, which PyArrow's object-store filesystems reject
+    # with ArrowInvalid: Empty path component.
+    from daft.context import execution_config_ctx
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    with execution_config_ctx(native_parquet_writer=use_native):
+        manifest = df.write_parquet(f"{tmp_path}/").to_pydict()
+
+    assert manifest["path"], "no files written"
+    for written_path in manifest["path"]:
+        assert "//" not in written_path, written_path
+
+    assert daft.read_parquet(str(tmp_path)).to_pydict() == {"x": [1, 2, 3]}
+
+
+def _column_codecs(parquet_path: str) -> dict[str, str]:
+    meta = papq.ParquetFile(parquet_path).metadata
+    rg = meta.row_group(0)
+    return {rg.column(i).path_in_schema: rg.column(i).compression for i in range(rg.num_columns)}
+
+
+def test_write_parquet_global_compression_honored_on_native_writer(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(str(tmp_path), compression="zstd")
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "ZSTD"
+    assert codecs["b"] == "ZSTD"
+
+
+def test_write_parquet_per_column_compression(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [1.0, 2.0, 3.0]})
+    df.write_parquet(
+        str(tmp_path),
+        compression="zstd",
+        column_compression={"a": "snappy", "b": "none"},
+    )
+
+    f = next(tmp_path.glob("*.parquet"))
+    codecs = _column_codecs(str(f))
+    assert codecs["a"] == "SNAPPY"
+    assert codecs["b"] == "UNCOMPRESSED"
+    assert codecs["c"] == "ZSTD"
+
+
+def test_write_parquet_invalid_codec_raises(tmp_path):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(Exception, match="unsupported parquet compression"):
+        df.write_parquet(str(tmp_path), compression="bogus")
+
+
+def _make_parquet_writer(tmp_path, compression, column_compression):
+    return ParquetFileWriter(
+        root_dir=str(tmp_path),
+        file_idx=0,
+        compression=compression,
+        column_compression=column_compression,
+    )
+
+
+def test_resolve_column_compression_flat_schema(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"a": "snappy", "b": "none"},
+    )
+    schema = pa.schema([("a", pa.int64()), ("b", pa.string()), ("c", pa.float64())])
+    assert writer._resolve_column_compression(schema) == {
+        "a": "snappy",
+        "b": "none",
+        "c": "zstd",
+    }
+
+
+def test_resolve_column_compression_default_is_none_string(tmp_path):
+    # When the user omits `compression`, self.compression is normalized to "none"
+    # (never the Python None), so unmatched leaves fall back to a valid codec.
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression=None,
+        column_compression={"a": "snappy"},
+    )
+    schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
+    assert writer._resolve_column_compression(schema) == {"a": "snappy", "b": "none"}
+
+
+def test_resolve_column_compression_struct_nesting(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"s.x": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("s", pa.struct([("x", pa.int64()), ("y", pa.string())])),
+        ]
+    )
+    assert writer._resolve_column_compression(schema) == {
+        "a": "zstd",
+        "s.x": "snappy",
+        "s.y": "zstd",
+    }
+
+
+def test_resolve_column_compression_list_top_level_ok(tmp_path):
+    # Overrides at the top-level list column are fine; only leaves nested
+    # *inside* list/large_list/map types are unsupported on the PyArrow path.
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"items": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("items", pa.list_(pa.struct([("x", pa.int64())]))),
+        ]
+    )
+    assert writer._resolve_column_compression(schema) == {"a": "zstd", "items": "snappy"}
+
+
+def test_resolve_column_compression_nested_in_list_raises(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"items.list.element.x": "snappy"},
+    )
+    schema = pa.schema(
+        [
+            ("a", pa.int64()),
+            ("items", pa.list_(pa.struct([("x", pa.int64())]))),
+        ]
+    )
+    with pytest.raises(ValueError, match="do not match any leaf column"):
+        writer._resolve_column_compression(schema)
+
+
+def test_resolve_column_compression_unknown_key_raises(tmp_path):
+    writer = _make_parquet_writer(
+        tmp_path,
+        compression="zstd",
+        column_compression={"does_not_exist": "snappy"},
+    )
+    schema = pa.schema([("a", pa.int64())])
+    with pytest.raises(ValueError, match="does_not_exist"):
+        writer._resolve_column_compression(schema)

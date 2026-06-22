@@ -2,7 +2,7 @@
 
 mod wrappers;
 
-use std::{hash::Hasher, sync::Arc};
+use std::hash::Hasher;
 
 use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -25,6 +25,11 @@ impl PyCatalog {
         self.0.name()
     }
 
+    fn create_function(&self, ident: PyIdentifier, function: Bound<'_, PyAny>) -> PyResult<()> {
+        let func_ref = crate::pyobj_to_function(function)?;
+        Ok(self.0.create_function(&ident.0, func_ref)?)
+    }
+
     fn create_namespace(&self, ident: PyIdentifier) -> PyResult<()> {
         Ok(self.0.create_namespace(&ident.0)?)
     }
@@ -43,6 +48,10 @@ impl PyCatalog {
     }
     fn drop_table(&self, ident: PyIdentifier) -> PyResult<()> {
         Ok(self.0.drop_table(&ident.0)?)
+    }
+
+    fn get_function(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {
+        self.0.get_function(&ident.0)?.to_py(py)
     }
 
     fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {
@@ -140,22 +149,6 @@ impl PyTable {
     #[staticmethod]
     fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<Py<PyAny>> {
         MemoryTable::new(name, schema.schema)?.to_py(py)
-    }
-}
-
-pub fn pyobj_to_catalog(obj: Bound<PyAny>) -> PyResult<CatalogRef> {
-    if obj.is_instance_of::<PyCatalog>() {
-        Ok(obj.extract::<PyCatalog>()?.0)
-    } else {
-        Ok(Arc::new(PyCatalogWrapper(obj.unbind())))
-    }
-}
-
-pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
-    if obj.is_instance_of::<PyTable>() {
-        Ok(obj.extract::<PyTable>()?.0)
-    } else {
-        Ok(Arc::new(PyTableWrapper(obj.unbind())))
     }
 }
 

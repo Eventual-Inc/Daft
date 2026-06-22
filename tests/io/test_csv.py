@@ -8,6 +8,8 @@ import pytest
 
 import daft
 from daft import DataType, TimeUnit
+from daft.io.writer import CSVFileWriter
+from daft.recordbatch.micropartition import MicroPartition
 
 
 @pytest.mark.parametrize(
@@ -433,3 +435,15 @@ def test_pyarrow_csv_writer_custom_formats(tmp_path):
     # Check timestamp formatting (YYYY-MM-DD HH:MM:SS)
     assert "2024-01-15 10:30:45" in text
     assert "2024-12-31 23:59:59" in text
+
+
+def test_csv_file_writer_empty_micropartition(tmp_path):
+    empty = MicroPartition.from_arrow(pa.table({"id": pa.array([], type=pa.int64())}))
+    writer = CSVFileWriter(root_dir=str(tmp_path), file_idx=0)
+    bytes_written = writer.write(empty)
+    assert bytes_written == 0
+    result = writer.close()
+
+    # Empty micropartition should result in an empty record batch.
+    assert len(result) == 0
+    assert "path" in result.schema().column_names()

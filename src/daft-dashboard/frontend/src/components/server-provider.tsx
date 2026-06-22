@@ -45,6 +45,11 @@ export function fetcher(
 
 // ---------------------- Server Provider ---------------------- //
 
+function isDebug(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).has("debug");
+}
+
 export function ServerProvider({ children }: { children: React.ReactNode }) {
   const { onQueryStart, onQueryEnd } = useNotifications();
   const [queries, setQueries] = useState<QuerySummaryMap | null>(null);
@@ -61,6 +66,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     es.addEventListener("initial_state", event => {
       const allQueries: QuerySummaryMap = JSON.parse(event.data);
+      if (isDebug()) console.log("[debug] initial_state (queries)", allQueries);
       setQueries(allQueries);
     });
     es.addEventListener("status_update", event => {
@@ -102,6 +108,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      if (isDebug()) console.log("[debug] status_update", queryUpdate);
       setQueries(prev => {
         return { ...prev, [queryUpdate.id]: queryUpdate };
       });

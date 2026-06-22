@@ -3,7 +3,8 @@ use std::sync::{Arc, atomic::Ordering};
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, CHECKPOINT_FILES_STAGED_KEY, CHECKPOINTS_SEALED_KEY, Counter, Meter,
+    ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_CHECKPOINTS, UNIT_FILES, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -19,8 +20,8 @@ use opentelemetry::KeyValue;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -34,8 +35,12 @@ use crate::{
 pub struct WriteStats {
     duration_us: Counter,
     rows_in: Counter,
+    bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
+    checkpoint_files_staged: Counter,
+    checkpoints_sealed: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -45,6 +50,7 @@ impl WriteStats {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
+            bytes_in: meter.bytes_in_metric(),
             rows_written: meter.u64_counter_with_desc_and_unit(
                 ROWS_WRITTEN_KEY,
                 None,
@@ -54,6 +60,17 @@ impl WriteStats {
                 BYTES_WRITTEN_KEY,
                 None,
                 Some(UNIT_BYTES.into()),
+            ),
+            num_tasks: meter.num_tasks_metric(),
+            checkpoint_files_staged: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINT_FILES_STAGED_KEY,
+                None,
+                Some(UNIT_FILES.into()),
+            ),
+            checkpoints_sealed: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINTS_SEALED_KEY,
+                None,
+                Some(UNIT_CHECKPOINTS.into()),
             ),
             node_kv,
         }
@@ -68,10 +85,16 @@ impl RuntimeStats for WriteStats {
         self.duration_us
             .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
         self.rows_written
             .add(snapshot.rows_written, self.node_kv.as_slice());
         self.bytes_written
             .add(snapshot.bytes_written, self.node_kv.as_slice());
+        self.checkpoint_files_staged
+            .add(snapshot.checkpoint_files_staged, self.node_kv.as_slice());
+        self.checkpoints_sealed
+            .add(snapshot.checkpoints_sealed, self.node_kv.as_slice());
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -80,7 +103,15 @@ impl RuntimeStats for WriteStats {
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_written: self.rows_written.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
+            bytes_in: self.bytes_in.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            checkpoint_files_staged: self.checkpoint_files_staged.load(Ordering::Relaxed),
+            checkpoints_sealed: self.checkpoints_sealed.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -154,7 +185,7 @@ impl SinkNode {
         let config = PipelineNodeConfig::new(
             file_schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

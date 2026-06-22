@@ -9,11 +9,13 @@ import boto3
 import botocore
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Table
 from daft.datatype import DataType
 from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mypy_boto3_glue import GlueClient
     from mypy_boto3_glue.type_defs import ColumnOutputTypeDef as GlueColumnInfo
     from mypy_boto3_glue.type_defs import TableTypeDef as GlueTableInfo
@@ -138,6 +140,9 @@ class GlueCatalog(Catalog):
     def name(self) -> str:
         return self._name
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Glue does not support function registration.")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         try:
             self._client.create_database(
@@ -174,6 +179,9 @@ class GlueCatalog(Catalog):
             self._client.delete_table(DatabaseName=database_name, Name=name)
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _get_table(self, identifier: Identifier) -> Table:
         if len(identifier) != 2:
@@ -435,6 +443,7 @@ class GlueIcebergTable(GlueTable):
 
     _io_config: IOConfig | None
     _pyiceberg_table: PyIcebergTable
+    _read_options: set[str] = {"snapshot_id", "branch", "tag"}
 
     def __init__(self) -> None:
         raise ValueError("GlueIcebergTable.__init__() not supported!")
@@ -475,8 +484,13 @@ class GlueIcebergTable(GlueTable):
     def read(self, **options: Any) -> DataFrame:
         from daft.io.iceberg._iceberg import read_iceberg
 
+        Table._validate_options("Glue Iceberg read", options, self._read_options)
         return read_iceberg(
-            table=self._pyiceberg_table, snapshot_id=options.get("snapshot_id"), io_config=self._io_config
+            table=self._pyiceberg_table,
+            snapshot_id=options.get("snapshot_id"),
+            branch=options.get("branch"),
+            tag=options.get("tag"),
+            io_config=self._io_config,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:

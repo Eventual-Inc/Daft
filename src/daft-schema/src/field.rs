@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
+const ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
+const ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME: &str = "arrow.fixed_shape_tensor";
+
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
 /// to reverse the coercion so PyArrow sees the original storage type.
@@ -110,6 +113,15 @@ impl Field {
                     metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), metadata.clone());
                 }
                 physical.with_metadata(metadata_map)
+            }
+            // Use the canonical arrow extension type `arrow.uuid`
+            DataType::Uuid => {
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
+                    ARROW_UUID_EXTENSION_NAME.to_string(),
+                );
+                self.to_physical().to_arrow()?.with_metadata(metadata_map)
             }
             dtype @ DataType::Embedding(..)
             | dtype @ DataType::Image(..)
@@ -214,51 +226,108 @@ impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
     fn try_from(field: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        if field.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
-            let metadata = field.extension_type_metadata()
-                         .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
-            let dtype = DataType::from_json(metadata)?;
+        match field.extension_type_name() {
+            Some(DAFT_SUPER_EXTENSION_NAME) => {
+                let metadata = field.extension_type_metadata()
+                    .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
+                let dtype = DataType::from_json(metadata)?;
 
-            let mut metadata = field.metadata().clone();
-            metadata.remove(EXTENSION_TYPE_NAME_KEY);
-            metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+                let mut metadata = field.metadata().clone();
+                metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                metadata.remove(EXTENSION_TYPE_METADATA_KEY);
 
-            Ok(Self {
-                name: Arc::from(field.name().as_str()),
-                dtype,
-                metadata: Arc::new(metadata.into_iter().collect()),
-            })
-        } else if let Some(extension_name) = field.extension_type_name() {
-            // Generic extension type (e.g. daft.uuid)
-            let physical = DataType::try_from(field.data_type())?;
-            let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype,
+                    metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(ARROW_UUID_EXTENSION_NAME) => {
+                let mut metadata = field.metadata().clone();
+                metadata.remove(EXTENSION_TYPE_NAME_KEY);
 
-            // Remember the original arrow storage type so to_arrow() can
-            // reverse the coercion (e.g. Binary instead of LargeBinary).
-            EXTENSION_TYPE_REGISTRY
-                .lock()
-                .unwrap()
-                .insert(extension_name.to_string(), field.data_type().clone());
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::Uuid,
+                    metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME) => {
+                // Arrow canonical extension type for fixed-shape tensors.
+                // Metadata is JSON: {"shape": [d1, d2, ...], ...}
+                let metadata_str = field.extension_type_metadata().ok_or_else(|| {
+                    DaftError::TypeError(format!(
+                        "{ARROW_FIXED_SHAPE_TENSOR_EXTENSION_NAME} missing metadata"
+                    ))
+                })?;
+                let parsed: serde_json::Value = serde_json::from_str(metadata_str)
+                    .map_err(|e| DaftError::TypeError(format!("Invalid tensor metadata: {e}")))?;
+                let shape = parsed
+                    .get("shape")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| DaftError::TypeError("tensor metadata missing 'shape'".into()))?
+                    .iter()
+                    .map(|v| {
+                        v.as_u64()
+                            .ok_or_else(|| DaftError::TypeError("invalid shape value".into()))
+                    })
+                    .collect::<DaftResult<Vec<u64>>>()?;
 
-            let mut field_metadata = field.metadata().clone();
-            field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
-            field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+                // The storage type is FixedSizeList<value_type>[product(shape)].
+                // Extract the value type from the storage type's inner field.
+                let value_dtype = match field.data_type() {
+                    arrow_schema::DataType::FixedSizeList(inner, _) => {
+                        DataType::try_from(inner.data_type())?
+                    }
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Expected FixedSizeList storage for fixed_shape_tensor, got {:?}",
+                            field.data_type()
+                        )));
+                    }
+                };
 
-            Ok(Self {
-                name: Arc::from(field.name().as_str()),
-                dtype: DataType::Extension(
-                    extension_name.to_string(),
-                    Box::new(physical),
-                    ext_metadata,
-                ),
-                metadata: Arc::new(field_metadata.into_iter().collect()),
-            })
-        } else {
-            Ok(Self {
+                let mut field_metadata = field.metadata().clone();
+                field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::FixedShapeTensor(Box::new(value_dtype), shape),
+                    metadata: Arc::new(field_metadata.into_iter().collect()),
+                })
+            }
+            Some(extension_name) => {
+                // Generic extension type (e.g. daft.uuid)
+                let physical = DataType::try_from(field.data_type())?;
+                let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
+
+                // Remember the original arrow storage type so to_arrow() can
+                // reverse the coercion (e.g. Binary instead of LargeBinary).
+                EXTENSION_TYPE_REGISTRY
+                    .lock()
+                    .unwrap()
+                    .insert(extension_name.to_string(), field.data_type().clone());
+
+                let mut field_metadata = field.metadata().clone();
+                field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::Extension(
+                        extension_name.to_string(),
+                        Box::new(physical),
+                        ext_metadata,
+                    ),
+                    metadata: Arc::new(field_metadata.into_iter().collect()),
+                })
+            }
+            None => Ok(Self {
                 name: Arc::from(field.name().as_str()),
                 dtype: field.try_into()?,
                 metadata: Arc::new(field.metadata().clone().into_iter().collect()),
-            })
+            }),
         }
     }
 }
@@ -315,6 +384,7 @@ mod tests {
     #[case(DataType::File(MediaType::Video))]
     #[case(DataType::File(MediaType::Unknown))]
     #[case(DataType::File(MediaType::Audio))]
+    #[case(DataType::File(MediaType::Image))]
     #[case(DataType::List(Box::new(DataType::Image(Some(ImageMode::RGBA16)))))]
     #[case(DataType::List(Box::new(DataType::Embedding(Box::new(DataType::Float64), 128))))]
     #[case(DataType::List(Box::new(DataType::Tensor(Box::new(DataType::Int32)))))]

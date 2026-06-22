@@ -38,6 +38,12 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
         pc_type = dtype.to_arrow_dtype()
         return pc_expr.cast(pc_type)
 
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> pc.Expression:
+        """Converts the try_cast with safe=True cast options."""
+        pc_expr = self.visit(expr)
+        pc_type = dtype.to_arrow_dtype()
+        return pc_expr.cast(pc_type, safe=True)
+
     def visit_list(self, items: list[Expression]) -> pc.Expression:
         raise ValueError("pyarrow.compute does not have a make_list function.")
 
@@ -115,6 +121,21 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
             pc_func = self._get_pc_func(name)
             pc_args = [self.visit(arg) for arg in args]
             return pc_func(*pc_args)
+
+    def visit_coalesce(self, args: list[Expression]) -> pc.Expression:
+        """Convert coalesce as a special form to pyarrow's if_else chain."""
+        if not args:
+            raise ValueError("coalesce requires at least one argument")
+
+        # Start with the last argument as the default
+        result = self.visit(args[-1])
+
+        # Work backwards, wrapping each in if_else
+        for arg in reversed(args[:-1]):
+            pc_arg = self.visit(arg)
+            result = pc.if_else(~pc_arg.is_null(), pc_arg, result)
+
+        return result
 
     def _get_pc_func(self, name: str) -> Any:
         """Resolve the pyarrow.compute function from the module, otherwise error."""

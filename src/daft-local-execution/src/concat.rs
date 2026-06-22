@@ -96,6 +96,9 @@ impl ConcatNode {
                     );
                     break;
                 }
+                PipelineMessage::FlightPartitionRef { .. } => {
+                    unreachable!("ConcatNode should not receive flight partition refs from child")
+                }
             }
         }
 

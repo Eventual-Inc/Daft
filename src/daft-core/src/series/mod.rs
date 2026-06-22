@@ -235,9 +235,21 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
+    pub(crate) fn str_value_result(&self, idx: usize) -> DaftResult<String> {
+        self.inner.str_value(idx)
+    }
+
     pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }
+}
+
+#[macro_export]
+/// Convenient macro to create a `half::f16` from a float literal, e.g. `hf16!(1.0)`.
+macro_rules! hf16 {
+    ($val:expr) => {
+        half::f16::from_f32($val)
+    };
 }
 
 #[macro_export]

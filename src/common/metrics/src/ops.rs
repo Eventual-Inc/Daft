@@ -17,12 +17,14 @@ pub enum NodeType {
 
     // Intermediate Ops
     // Consumes a MicroPartition and immediately produces a resulting one. Little internal state
+    CheckpointFilter,
     DistributedActorPoolProject,
     Explode,
     Filter,
     IntoBatches,
     Project,
     Sample,
+    StageCheckpointKeys,
     UDFProject,
     Unpivot,
     VLLMProject,
@@ -37,6 +39,8 @@ pub enum NodeType {
     IntoPartitions,
     Pivot,
     Repartition,
+    Gather,
+    RandomShuffle,
     Sort,
     TopN,
     Window,
@@ -53,9 +57,11 @@ pub enum NodeType {
     // Join Operators
     HashJoin,
     SortMergeJoin,
+    AsofJoin,
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,
+    KeyFilteringJoin,
 }
 
 impl Display for NodeType {
@@ -84,21 +90,39 @@ impl Display for NodeCategory {
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: NodeID,
-    pub node_origin_id: NodeID,
+    pub node_origin_id: Option<NodeID>,
     #[allow(dead_code)]
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
+    /// True iff this node is the root of its enclosing distributed task's
+    /// local plan; its `rows.out`/`bytes.out` is the task's external output.
+    /// Set on the driver via `LocalPhysicalPlan::mark_task_topology`.
+    #[serde(default)]
+    pub is_task_root: bool,
+    /// True iff this node is a leaf of its enclosing distributed task's
+    /// local plan; its `rows.in`/`bytes.in` is the task's external input.
+    #[serde(default)]
+    pub is_task_leaf: bool,
 }
 
 impl NodeInfo {
     pub fn to_key_values(&self) -> Vec<KeyValue> {
         let mut kvs = vec![
-            KeyValue::new(ATTR_NODE_ORIGIN_ID, self.node_origin_id.to_string()),
             KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
         ];
+        // Add node_origin_id if present. This is used by distributed
+        // pipeline nodes, which create one or more local plan nodes
+        // for local execution, to associate those local nodes back to the
+        // distributed node that created them.
+        if let Some(node_origin_id) = &self.node_origin_id {
+            kvs.push(KeyValue::new(
+                ATTR_NODE_ORIGIN_ID,
+                node_origin_id.to_string(),
+            ));
+        }
         // Add node phase if present. This is used by distributed
         // pipeline nodes that have multiple execution phases.
         if let Some(phase) = self.node_phase.as_ref() {

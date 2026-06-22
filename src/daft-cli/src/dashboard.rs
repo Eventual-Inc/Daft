@@ -52,6 +52,9 @@ struct StartArgs {
     /// The directory used to store the LOG file
     #[arg(long)]
     log_dir: Option<String>,
+    /// (experimental) Path to event log for importing a query into the dashboard
+    #[arg(long)]
+    event_log_file: Option<String>,
 }
 
 #[derive(Args)]
@@ -153,12 +156,12 @@ fn start(py: Python, opts: StartArgs) {
     let filter = Directive::from_str(if opts.verbose { "INFO" } else { "ERROR" })
         .expect("Failed to parse tracing filter");
 
-    let addr = opts.addr;
-    let port = opts.port;
+    let server_options = daft_dashboard::ServerOptions::new(opts.addr, opts.port)
+        .with_event_log(opts.event_log_file);
 
-    print_addr_warning(addr);
+    print_addr_warning(server_options.addr());
 
-    let socket_addr = build_socket_addr(addr, port);
+    let socket_addr = build_socket_addr(server_options.addr(), server_options.port());
 
     let _ = tracing_subscriber::registry()
         .with(
@@ -192,7 +195,7 @@ fn start(py: Python, opts: StartArgs) {
                 .magenta()
                 .underlined(),
         );
-        daft_dashboard::launch_server(addr, port, async move { shutdown_rx.await.unwrap() })
+        daft_dashboard::launch_server(server_options, async move { shutdown_rx.await.unwrap() })
             .await
             .expect("Failed to launch dashboard server");
     });

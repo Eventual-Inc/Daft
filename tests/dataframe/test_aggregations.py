@@ -608,10 +608,8 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
                 ]
             )
 
-            df = df.collect()
-
             if get_tests_daft_runner_name() != "native":
-                assert df._result.num_partitions() == min(min_partitions, partition_size)
+                assert df.num_partitions() == min(min_partitions, partition_size)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -1133,9 +1131,13 @@ def test_join_on_hash_partitioned_df_does_not_shuffle():
     df.explain(True, file=plan_io)
     captured = plan_io.getvalue()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
-    assert captured.count("Repartition") == 3, (
-        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    # The logical plan should retain the user repartition, and the physical plan should
+    # execute it as a single Ray shuffle without adding an extra shuffle for the groupby.
+    assert captured.count("Repartition") == 2, (
+        f"Expected 'Repartition' to appear twice in logical plans, got {captured.count('Repartition')}\n{captured}"
+    )
+    assert captured.count("RayShuffle") == 1, (
+        f"Expected a single physical RayShuffle, got {captured.count('RayShuffle')}\n{captured}"
     )
 
 

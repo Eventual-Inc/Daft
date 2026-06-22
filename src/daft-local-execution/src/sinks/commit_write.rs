@@ -14,7 +14,9 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -153,7 +155,7 @@ impl BlockingSink for CommitWriteSink {
                         overwrite_files(
                             root_uri.to_string(),
                             written_paths,
-                            get_io_client(true, file_info.io_config.unwrap_or_default().into())?,
+                            get_io_client(true, file_info.io_config.clone().unwrap_or_default().into())?,
                             matches!(file_info.write_mode, WriteMode::OverwritePartitions),
                         )
                         .await?;
@@ -163,7 +165,29 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(vec![written_file_paths_mp])
+
+                    // Create _SUCCESS file if write_success_file is true.
+                    if file_info.write_success_file {
+                        let (_, root_uri) = parse_url(&file_info.root_dir)?;
+                        let io_client =
+                            get_io_client(true, file_info.io_config.clone().unwrap_or_default().into())?;
+                        let source = io_client.get_source(&root_uri).await?;
+                        let success_file_path =
+                            format!("{}/_SUCCESS", root_uri.trim_end_matches('/'));
+
+                        if let Err(e) = source
+                            .put(&success_file_path, tokio_util::bytes::Bytes::new(), None)
+                            .await
+                        {
+                            log::warn!(
+                                "Failed to create _SUCCESS file at {}: {}.",
+                                success_file_path,
+                                e
+                            );
+                        }
+                    }
+
+                    Ok(BlockingSinkOutput::Partitions(vec![written_file_paths_mp]))
                 },
                 Span::current(),
             )

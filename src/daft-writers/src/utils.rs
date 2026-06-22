@@ -94,7 +94,7 @@ fn build_local_file_path(
     partition_path: PathBuf,
     filename: String,
 ) -> DaftResult<PathBuf> {
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+    let root_dir = Path::new(daft_io::strip_file_uri_to_path(root_dir).unwrap_or(root_dir));
     let dir = root_dir.join(partition_path);
     Ok(dir.join(filename))
 }

@@ -1,5 +1,4 @@
 [dependencies]
-async-trait = {workspace = true}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}

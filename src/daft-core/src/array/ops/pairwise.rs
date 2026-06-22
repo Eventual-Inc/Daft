@@ -9,6 +9,7 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
+    #[inline(never)]
     pub fn pairwise_compare<F>(
         &self,
         other: &Self,

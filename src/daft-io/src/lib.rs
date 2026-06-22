@@ -3,7 +3,7 @@ mod azure_blob;
 mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "python")]
-mod gravitino;
+pub mod gravitino;
 mod http;
 mod huggingface;
 mod local;
@@ -16,7 +16,6 @@ mod retry;
 pub mod s3_like;
 mod stats;
 mod stream_utils;
-mod tos;
 #[cfg(feature = "python")]
 mod unity;
 
@@ -27,10 +26,9 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
-use gravitino::GravitinoSource;
+pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
-use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
 #[cfg(test)]
@@ -230,6 +228,7 @@ impl IOClient {
         !self.config.disable_suffix_range
     }
 
+    /// Gets the source (a ObjectSource client object) and a normalized path for the source.
     pub async fn get_source_and_path(
         &self,
         input: &str,
@@ -287,9 +286,6 @@ impl IOClient {
                     unimplemented!("Unity Catalog source currently requires Python");
                 }
             }
-            SourceType::Tos => {
-                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
-            }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
@@ -303,27 +299,28 @@ impl IOClient {
             }
             SourceType::OpenDAL { scheme } => {
                 let empty_config = std::collections::BTreeMap::new();
-                let backend_config = if scheme == "cos" {
-                    // Extract bucket from the URL for COS config
-                    let parsed_url =
-                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
-                    let bucket = parsed_url.host_str().unwrap_or_default();
-                    let cos_config = self.config.cos.to_opendal_config(bucket);
-                    // Merge user-provided opendal_backends on top (if any)
-                    let mut merged = cos_config;
-                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
-                        for (k, v) in extra {
-                            merged.insert(k.clone(), v.clone());
+                let mut backend_config = match scheme.as_str() {
+                    "cos" | "tos" => {
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let bucket = parsed_url.host_str().unwrap_or_default();
+                        match scheme.as_str() {
+                            "cos" => self.config.cos.to_opendal_config(bucket),
+                            _ => self.config.tos.to_opendal_config(bucket),
                         }
                     }
-                    merged
-                } else {
-                    self.config
+                    _ => self
+                        .config
                         .opendal_backends
                         .get(scheme)
                         .unwrap_or(&empty_config)
-                        .clone()
+                        .clone(),
                 };
+                if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                    for (k, v) in extra {
+                        backend_config.insert(k.clone(), v.clone());
+                    }
+                }
                 OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
@@ -381,8 +378,28 @@ impl IOClient {
             });
         }
 
-        let get_result = source
-            .get(path.as_ref(), range.clone(), io_stats.clone())
+        let path: Arc<str> = Arc::from(path.as_ref());
+        let get_result = crate::retry::ExponentialBackoff::default()
+            .retry(|| {
+                let source = source.clone();
+                let path = path.clone();
+                let range = range.clone();
+                let io_stats = io_stats.clone();
+                async move {
+                    source
+                        .get(&path, range, io_stats)
+                        .await
+                        .map_err(|e| match &e {
+                            Error::MiscTransient { .. }
+                            | Error::SocketError { .. }
+                            | Error::ConnectTimeout { .. } => {
+                                log::warn!("Transient error during GET, will retry: {}", &e);
+                                crate::retry::RetryError::Transient(e)
+                            }
+                            _ => crate::retry::RetryError::Permanent(e),
+                        })
+                }
+            })
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }
@@ -477,7 +494,6 @@ pub enum SourceType {
     GCS,
     HF,
     Unity,
-    Tos,
     Gravitino,
     OpenDAL { scheme: String },
 }
@@ -492,7 +508,6 @@ impl std::fmt::Display for SourceType {
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
-            Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -505,7 +520,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -536,6 +551,28 @@ pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
     Some(path)
 }
 
+/// Returns true if the path looks like a Windows drive-letter path (e.g. `C:/foo`).
+fn starts_with_windows_drive(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// Builds a `file://` URI from a local path, ensuring the canonical
+/// triple-slash form for Windows drive-letter paths.
+///
+/// - POSIX absolute paths (`/tmp/foo`) → `file:///tmp/foo` (two slashes + leading `/`).
+/// - Windows drive-letter paths (`C:/Users/...`) → `file:///C:/Users/...` (three slashes).
+/// - Anything else (relative paths) → `file://{path}` (preserves prior behavior).
+///
+/// Inverse of [`strip_file_uri_to_path`] for absolute inputs.
+pub fn local_path_to_file_uri(local_path: &str) -> String {
+    if starts_with_windows_drive(local_path) {
+        format!("file:///{local_path}")
+    } else {
+        format!("file://{local_path}")
+    }
+}
+
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion
@@ -545,7 +582,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
+                Some((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -555,7 +592,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let url = match url::Url::parse(input) {
         Ok(url) => Ok(url),
         Err(ParseError::RelativeUrlWithoutBase) => {
-            fixed_input = Cow::Owned(format!("file://{input}"));
+            fixed_input = Cow::Owned(local_path_to_file_uri(input));
 
             url::Url::parse(fixed_input.as_ref())
         }
@@ -582,7 +619,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
-        "tos" => Ok((SourceType::Tos, fixed_input)),
+        "tos" => Ok((
+            SourceType::OpenDAL {
+                scheme: "tos".to_string(),
+            },
+            fixed_input,
+        )),
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),
@@ -593,7 +635,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
-            Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
+            Ok((SourceType::File, Cow::Owned(local_path_to_file_uri(input))))
         }
         _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }

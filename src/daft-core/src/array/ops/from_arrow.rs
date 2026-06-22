@@ -7,7 +7,7 @@ use arrow::{
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef,
         logical::LogicalArray,
@@ -171,6 +171,88 @@ impl FromArrow for StructArray {
     }
 }
 
+impl FromArrow for UnionArray {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+
+        match (&field.dtype, arrow_arr.data_type()) {
+            (
+                DataType::Union(fields, ids, mode),
+                arrow::datatypes::DataType::Union(arrow_fields, arrow_mode),
+            ) => {
+                if fields.len() != arrow_fields.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with {} fields from Arrow array with {} fields: {} vs {}",
+                        fields.len(),
+                        arrow_fields.len(),
+                        &field.dtype,
+                        arrow_arr.data_type(),
+                    )));
+                }
+
+                for (id, (arrow_id, _)) in ids.iter().zip(arrow_fields.iter()) {
+                    if *id != arrow_id {
+                        return Err(DaftError::ValueError(format!(
+                            "Attempting to create Daft UnionArray with id {} from Arrow array with id {}",
+                            id, arrow_id,
+                        )));
+                    }
+                }
+
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow::array::UnionArray>()
+                    .unwrap();
+
+                if mode.is_dense() != arrow_arr.is_dense() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with mode {} from Arrow array with mode {:?}",
+                        mode, arrow_mode,
+                    )));
+                }
+
+                let sparse_offset = if mode.is_dense() {
+                    0
+                } else {
+                    let first_child_len = ids
+                        .first()
+                        .map(|id| arrow_arr.child(*id).len())
+                        .unwrap_or(0);
+                    if first_child_len > arrow_arr.len() {
+                        arrow_arr.type_ids().inner().ptr_offset()
+                    } else {
+                        0
+                    }
+                };
+                let sparse_len = arrow_arr.len();
+
+                let child_series = fields
+                    .iter()
+                    .zip(ids.iter())
+                    .map(|(field, id)| {
+                        let arrow_child = arrow_arr.child(*id);
+                        let sliced = if mode.is_dense() {
+                            arrow_child.clone()
+                        } else {
+                            arrow_child.slice(sparse_offset, sparse_len)
+                        };
+                        Series::from_arrow(Arc::new(field.clone()), sliced)
+                    })
+                    .collect::<DaftResult<Vec<Series>>>()?;
+
+                let ids = arrow_arr.type_ids().to_vec();
+                let offsets = arrow_arr.offsets().map(|o| o.to_vec());
+
+                Ok(Self::new(field, ids, child_series, offsets))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft UnionArray with type {} from arrow array with type {}",
+                d, a
+            ))),
+        }
+    }
+}
+
 impl FromArrow for MapArray {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field: FieldRef = field.into();
@@ -309,6 +391,7 @@ impl FromArrow for LogicalArray<TimeType> {
     }
 }
 impl_logical_from_arrow!(DurationType);
+impl_logical_from_arrow!(UuidType);
 impl_logical_from_arrow!(ImageType);
 impl_logical_from_arrow!(TimestampType);
 impl_logical_from_arrow!(TensorType);
@@ -345,9 +428,10 @@ mod tests {
 
     use crate::{
         array::ListArray,
+        hf16,
         prelude::{
-            Float32Array, Float64Array, FromArrow, Int8Array, Int16Array, Int32Array, Int64Array,
-            UInt8Array, UInt16Array, UInt32Array, UInt64Array, *,
+            Float16Array, Float32Array, Float64Array, FromArrow, Int8Array, Int16Array, Int32Array,
+            Int64Array, UInt8Array, UInt16Array, UInt32Array, UInt64Array, *,
         },
         series,
         series::Series,
@@ -378,6 +462,11 @@ mod tests {
     test_arrow_roundtrip!(test_arrow_roundtrip_u32, UInt32Array, vec![1, 2, 3]);
     test_arrow_roundtrip!(test_arrow_roundtrip_i64, Int64Array, vec![1, 2, 3]);
     test_arrow_roundtrip!(test_arrow_roundtrip_u64, UInt64Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(
+        test_arrow_roundtrip_f16,
+        Float16Array,
+        vec![hf16!(1.0), hf16!(2.0), hf16!(3.0)]
+    );
     test_arrow_roundtrip!(test_arrow_roundtrip_f32, Float32Array, vec![1.0, 2.0, 3.0]);
     test_arrow_roundtrip!(test_arrow_roundtrip_f64, Float64Array, vec![1.0, 2.0, 3.0]);
 
@@ -387,6 +476,7 @@ mod tests {
     #[case(series![1i16, 2i16, 3i16])]
     #[case(series![1i32, 2i32, 3i32])]
     #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![hf16!(1.0), hf16!(2.0)])]
     #[case(series![1f32, 2f32, 3f32])]
     #[case(series![1f64, 2f64, 3f64])]
     #[case(series!["a", "b", "c"])]

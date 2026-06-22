@@ -2,10 +2,10 @@
 
 Daft supports working with audio natively via the new `daft.AudioFile` and its parent `daft.File`.
 
-Audio data is usually stored in file formats such as MP3, WAV, or OGG. As a continuous waveform, the length of an audio file is directly proportional to its size. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
+Audio data is usually stored in file formats such as MP3, WAV, or OGG. Audio files can grow large quickly since their size scales with duration. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
 
 !!! note "Contribute to `daft.AudioFile`"
-If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).
+If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://daft.ai/slack) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).
 
 In this guide, we'll cover how to work with audio using `daft.AudioFile` and `daft.File` to perform common use cases like:
 
@@ -195,13 +195,13 @@ if __name__ == "__main__":
         .with_column(
             "filename_sanitized",
             sanitize_filename(
-                col("path").split("/").list.get(-1).split(".").list.get(0)
+                col("path").split("/")[-1].split(".")[0]
             ),
         )
         .with_column(
             "resampled_path",
             write_audio_to_mp3(
-                audio=col("audio").struct.get("audio_array"),
+                audio=col("audio")["audio_array"],
                 destination=format(
                     "{}{}{}", lit(DEST_URI), col("filename_sanitized"), lit(".mp3")
                 ),
@@ -282,7 +282,7 @@ df_transcript = (
     daft.from_glob_path(SOURCE_URI)
 
     # Wrap the path as a daft.File
-    .with_column("audio_file", file(col("path")))
+    .with_column("audio_file", file(daft.col("path")))
 
     # Transcribe the audio file with Voice Activity Detection (VAD) using Faster Whisper
     .with_column("result", fwt.transcribe(daft.col("audio_file")))
@@ -290,7 +290,7 @@ df_transcript = (
     # Unpack Results
     .select("path", daft.col("result").unnest())
     .explode("segments")
-    .select("path", "info", "transcript", unnest(daft.col("segments")))
+    .select("path", "info", "transcript", daft.functions.unnest(daft.col("segments")))
 )
 
 df_transcript.show(3, format="fancy", max_width=40)

@@ -29,6 +29,7 @@ if "COV_CORE_SOURCE" in os.environ:
 from daft.daft import build_type as _build_type
 from daft.daft import version as _version
 from daft.daft import refresh_logger as _refresh_logger
+from daft.daft import get_loaded_extension_paths
 
 
 def get_version() -> str:
@@ -61,11 +62,18 @@ from daft.catalog import (
     Identifier,
     Table,
 )
+from daft.checkpoint import CheckpointConfig, CheckpointStore, IdempotentCommit, KeyFilteringSettings
 from daft.context import (
+    get_context,
+    attach_subscriber,
+    detach_subscriber,
     set_execution_config,
     set_planning_config,
+    with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
+    set_event_log_config,
+    event_log_ctx,
 )
 from daft.convert import (
     from_arrow,
@@ -74,8 +82,9 @@ from daft.convert import (
     from_pydict,
     from_pylist,
     from_ray_dataset,
+    concat,
 )
-from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
@@ -88,11 +97,13 @@ from daft.session import (
     attach_provider,
     attach_function,
     attach_table,
+    attach_view,
     create_namespace,
     create_namespace_if_not_exists,
     create_table,
     create_table_if_not_exists,
     create_temp_table,
+    create_temp_view,
     current_catalog,
     current_model,
     current_namespace,
@@ -106,6 +117,7 @@ from daft.session import (
     drop_table,
     get_catalog,
     get_function,
+    get_aggregate_function,
     get_provider,
     get_table,
     has_catalog,
@@ -124,7 +136,7 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method, metrics
+from daft.udf import udf, udaf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
@@ -149,7 +161,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile
+from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -160,7 +172,7 @@ from daft import datasets
 from daft import functions
 
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io import read_lance
 
@@ -174,15 +186,20 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointConfig",
+    "CheckpointStore",
     "DataFrame",
     "DataType",
     "Expression",
     "File",
     "IOConfig",
+    "IdempotentCommit",
     "Identifier",
+    "ImageFile",
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "KeyFilteringSettings",
     "MediaType",
     "ResourceRequest",
     "Schema",
@@ -190,21 +207,26 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "UnionMode",
     "VideoFile",
     "Window",
     "attach",
     "attach_catalog",
     "attach_function",
     "attach_provider",
+    "attach_subscriber",
     "attach_table",
+    "attach_view",
     "cls",
     "col",
+    "concat",
     "context",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
+    "create_temp_view",
     "current_catalog",
     "current_model",
     "current_namespace",
@@ -214,6 +236,7 @@ __all__ = [
     "detach_catalog",
     "detach_function",
     "detach_provider",
+    "detach_subscriber",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -229,8 +252,11 @@ __all__ = [
     "from_ray_dataset",
     "func",
     "functions",
+    "get_aggregate_function",
     "get_catalog",
+    "get_context",
     "get_function",
+    "get_loaded_extension_paths",
     "get_or_create_runner",
     "get_or_infer_runner_type",
     "get_provider",
@@ -247,6 +273,7 @@ __all__ = [
     "load_extension",
     "method",
     "metrics",
+    "open_file",
     "planning_config_ctx",
     "range",
     "read_csv",
@@ -280,6 +307,8 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "udaf",
     "udf",
+    "with_subscriber",
     "write_table",
 ]

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+from contextlib import contextmanager
+
 import pyarrow as pa
 import pytest
 
@@ -8,6 +11,13 @@ from daft import col
 from daft.datatype import DataType
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
+
+
+@contextmanager
+def flight_shuffle_ctx():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+            yield ctx
 
 
 def get_n_partitions():
@@ -1268,6 +1278,23 @@ def test_sort_merge_join_small_partitions(make_df, with_default_morsel_size):
     out.collect()
 
     pd = out.to_pydict()
+    assert pd["k"] == [2, 3]
+    assert pd["lv"] == [20, 30]
+    assert pd["rv"] == [200, 300]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed sort-merge join backend routing is only relevant on the ray runner",
+)
+def test_sort_merge_join_uses_ray_shuffle_path_under_flight_shuffle_config(make_df, with_default_morsel_size):
+    with flight_shuffle_ctx():
+        left = make_df({"k": [1, 2, 3], "lv": [10, 20, 30]}, repartition=3, repartition_columns=["k"])
+        right = make_df({"k": [2, 3], "rv": [200, 300]}, repartition=2, repartition_columns=["k"])
+
+        out = left.join(right, on=["k"], how="inner", strategy="sort_merge").sort("k")
+        pd = out.to_pydict()
+
     assert pd["k"] == [2, 3]
     assert pd["lv"] == [20, 30]
     assert pd["rv"] == [200, 300]

@@ -95,6 +95,102 @@ def test_attach_table():
         sess.attach_table(view1, alias="tbl1")
 
 
+def test_list_tables_returns_identifiers():
+    # Regression: the Rust layer used to return Vec<String>, breaking `_from_pyidentifier`.
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="tbl")
+
+    tables = sess.list_tables()
+
+    assert len(tables) == 1
+    assert all(isinstance(t, Identifier) for t in tables)
+    assert tables[0] == Identifier("tbl")
+
+
+def test_list_tables_with_attached_catalog():
+    sess = Session()
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b")]
+
+
+def test_list_tables_temp_plus_catalog():
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="my_tmp")
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b"), Identifier("my_tmp")]
+
+
+def test_list_tables_catalog_qualified_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"x": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"y": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    assert sess.list_tables("cat2.%") == [Identifier("cat2", "y")]
+
+
+def test_list_tables_narrows_to_current_namespace():
+    sess = Session()
+    cat = Catalog.from_pydict(
+        {"ns1.t1": {"x": [1]}, "ns1.t2": {"x": [2]}, "ns2.t3": {"x": [3]}},
+        name="cat1",
+    )
+    sess.attach_catalog(cat, alias="cat1")
+    sess.set_namespace("ns1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "ns1", "t1"), Identifier("cat1", "ns1", "t2")]
+
+
+def test_list_tables_only_current_catalog_without_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"a": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"b": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    # cat1 is auto-set as current; cat2 is only reachable via `cat2.%` pattern.
+    assert sess.list_tables() == [Identifier("cat1", "a")]
+
+
+def test_attach_view():
+    sess = Session()
+    view = daft.from_pydict({"x": [1, 2, 3]})
+
+    sess.attach_view(view, alias="my_view")
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [6]}
+
+    with pytest.raises(Exception, match="already exists"):
+        sess.attach_view(view, alias="my_view")
+
+
+def test_create_temp_view_replaces_existing():
+    sess = Session()
+
+    sess.create_temp_view("my_view", daft.from_pydict({"x": [1, 2]}))
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [3]}
+
+    sess.create_temp_view("my_view", daft.from_pydict({"x": [10, 20]}))
+    assert sess.sql("SELECT SUM(x) AS sx FROM my_view").to_pydict() == {"sx": [30]}
+
+
+def test_attach_accepts_dataframe_with_alias():
+    sess = Session()
+    view = daft.from_pydict({"x": [1, 2, 3]})
+
+    sess.attach(view, alias="my_view")
+    assert sess.sql("SELECT COUNT(*) AS ct FROM my_view").to_pydict() == {"ct": [3]}
+
+    with pytest.raises(ValueError, match="Cannot attach a DataFrame without an alias"):
+        sess.attach(view)
+
+
 def test_detach_table():
     sess = Session()
     #
@@ -238,6 +334,12 @@ def test_exception_surfacing():
         def _list_tables(self, pattern=None):
             raise NotImplementedError
 
+        def _create_function(self, ident, function):
+            raise NotImplementedError
+
+        def _get_function(self, ident):
+            raise NotFoundError(f"Function '{ident}' not found")
+
         def _has_namespace(self, ident):
             raise NotImplementedError
 
@@ -338,3 +440,108 @@ def test_current_session_drop_table():
 
     daft.drop_namespace("ns")
     assert not cata.has_namespace("ns")
+
+
+###
+# CATALOG FUNCTION FALLBACK
+###
+
+
+from daft.catalog.__internal import MemoryCatalog
+
+_function_catalog = MemoryCatalog._new("func_catalog")
+
+
+def test_session_catalog_function_fallback():
+    """Test that catalog _get_function is used during SQL plan resolution."""
+    from tests.udf.my_funcs import catalog_udf
+
+    _function_catalog.create_function("my_catalog_udf", catalog_udf)
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+
+    # Verify the catalog itself returns the function
+    assert _function_catalog.get_function("my_catalog_udf")(1) is not None
+
+    # Verify the function is accessible via SQL plan resolution.
+    # The UDF registered in the catalog should be found during SQL planning.
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT my_catalog_udf(x) FROM t")
+    assert result is not None
+
+
+def test_session_catalog_function_fallback_raises():
+    """Test that catalog get_function raises DaftCoreException when function is not found."""
+    from daft.exceptions import DaftCoreException
+
+    # Catalog itself should raise DaftCoreException for nonexistent functions
+    with pytest.raises(DaftCoreException, match="function with name nonexistent_function not found"):
+        _function_catalog.get_function("nonexistent_function")
+
+
+def test_session_function_priority_over_catalog():
+    """Test that session-scoped functions take priority over catalog functions."""
+    from tests.udf.my_funcs import catalog_udf
+
+    _function_catalog.create_function("shared_fn", catalog_udf)
+
+    @daft.func(return_dtype=daft.DataType.int64())
+    def session_udf(x):
+        return x + 1
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+    sess.attach_function(session_udf, alias="shared_fn")
+
+    # Both catalog and session have "shared_fn", but session should take priority.
+    # Verify via SQL that the function resolves (session-scoped wins).
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT shared_fn(x) FROM t").to_pydict()
+    assert result == {"x": [2, 3, 4]}
+
+
+def test_dataframe_select_with_catalog_get_function():
+    """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
+    from tests.udf.my_funcs import double_value
+
+    _function_catalog.create_function("double_value", double_value)
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+    daft.set_session(sess)
+
+    # Retrieve the UDF from the catalog and use it directly in dataframe.select
+    udf_fn = _function_catalog.get_function("double_value")
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    result = df.select(udf_fn(df["x"]))
+
+    assert result.to_pydict() == {"x": [2, 4, 6]}
+
+
+def test_catalog_register_cls_udf_from_external_module():
+    """Test that a @daft.cls UDF can be loaded from an external module via register_function."""
+    from tests.udf.my_funcs import MockModelPredictor
+
+    _function_catalog.create_function("mock_predictor", MockModelPredictor)
+
+    predictor_fn = _function_catalog.get_function("mock_predictor")
+    assert predictor_fn is not None
+
+    predictor = predictor_fn("bert-base")
+    df = daft.from_pydict({"text": ["hello", "world", "daft"]})
+    result = df.select(predictor(df["text"])).to_pydict()
+
+    expected = {
+        "text": [
+            "model bert-base predict hello",
+            "model bert-base predict world",
+            "model bert-base predict daft",
+        ]
+    }
+    assert result == expected

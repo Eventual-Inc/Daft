@@ -7,7 +7,7 @@ use super::{DaftCountAggable, GroupIndices};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     count_mode::CountMode,
     datatypes::*,
 };
@@ -122,6 +122,7 @@ macro_rules! impl_daft_count_aggable {
 impl_daft_count_aggable!(FixedSizeListArray);
 impl_daft_count_aggable!(ListArray);
 impl_daft_count_aggable!(StructArray);
+impl_daft_count_aggable!(UnionArray);
 
 #[cfg(feature = "python")]
 impl_daft_count_aggable!(PythonArray);

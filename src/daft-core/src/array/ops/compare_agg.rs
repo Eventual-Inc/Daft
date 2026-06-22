@@ -7,13 +7,14 @@ use super::{DaftCompareAggable, GroupIndices, full::FullNull};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     datatypes::*,
 };
 
+#[inline(never)]
 fn grouped_cmp_native<T, F>(
     array: &DataArray<T>,
-    mut op: F,
+    op: F,
     groups: &GroupIndices,
 ) -> DaftResult<DataArray<T>>
 where
@@ -41,7 +42,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| array.get(*i as usize).unwrap())
-                    .reduce(&mut op)
+                    .reduce(&op)
                     .unwrap()
             }),
         )
@@ -123,7 +124,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -182,7 +183,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -248,7 +249,7 @@ where
             arrow::array::FixedSizeBinaryArray::try_from_iter(groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }))?;
         FixedSizeBinaryArray::from_arrow(data_array.field.clone(), Arc::new(arrow_result))
@@ -409,6 +410,7 @@ impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
 impl_todo_daft_comparable!(ExtensionArray);
 impl_todo_daft_comparable!(IntervalArray);
+impl_todo_daft_comparable!(UnionArray);
 
 #[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

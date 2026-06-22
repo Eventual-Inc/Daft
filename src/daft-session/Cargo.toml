@@ -13,10 +13,15 @@ uuid = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "daft-ai/python",
   "daft-catalog/python",
   "daft-core/python",
   "daft-logical-plan/python"
 ]
+
+[dev-dependencies]
+serde = {workspace = true}
+typetag = {workspace = true}
 
 [lints]
 workspace = true

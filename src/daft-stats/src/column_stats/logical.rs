@@ -9,6 +9,11 @@ impl std::ops::Not for &ColumnRangeStatistics {
         match self {
             ColumnRangeStatistics::Missing => Ok(ColumnRangeStatistics::Missing),
             ColumnRangeStatistics::Loaded(lower, upper) => {
+                // If stats are Null-typed (e.g., null_lit() substitution for a missing
+                // column), we can't evaluate NOT — return Missing (conservative).
+                if *lower.data_type() == daft_core::prelude::DataType::Null {
+                    return Ok(ColumnRangeStatistics::Missing);
+                }
                 let new_lower = upper.not().context(DaftCoreComputeSnafu)?;
                 let new_upper = lower.not().context(DaftCoreComputeSnafu)?;
 

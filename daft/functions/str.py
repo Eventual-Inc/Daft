@@ -91,6 +91,141 @@ def jq(expr: Expression, filter: str) -> Expression:
     return Expression._call_builtin_scalar_fn("jq", expr, filter=filter)
 
 
+def json_array_length(expr: Expression) -> Expression:
+    """Returns the number of elements in the outermost JSON array.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an array. Equivalent to Spark's
+    ``json_array_length``.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: An ``Int32`` expression with the array length.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_array_length
+        >>>
+        >>> df = daft.from_pydict({"col": ["[1, 2, 3]", "[]", '{"a": 1}', None]})
+        >>> df.with_column("len", json_array_length(df["col"])).collect()
+        ╭───────────┬───────╮
+        │ col       ┆ len   │
+        │ ---       ┆ ---   │
+        │ String    ┆ Int32 │
+        ╞═══════════╪═══════╡
+        │ [1, 2, 3] ┆ 3     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ []        ┆ 0     │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ {"a": 1}  ┆ None  │
+        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ None      ┆ None  │
+        ╰───────────┴───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_array_length", expr)
+
+
+def json_object_keys(expr: Expression) -> Expression:
+    """Returns the top-level keys of a JSON object as a list of strings.
+
+    Returns ``NULL`` when the input is ``NULL``, cannot be parsed as JSON,
+    or the parsed JSON is not an object. Returns an empty list for empty
+    objects.
+
+    Note:
+        Keys are returned in **sorted alphabetical order**, not source
+        insertion order. This differs from Spark's ``json_object_keys``,
+        which preserves insertion order.
+
+    Args:
+        expr: A string expression containing JSON.
+
+    Returns:
+        Expression: A ``List[String]`` expression with the object's keys.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_object_keys
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": 2}', "{}", "[1, 2]", None]})
+        >>> df.with_column("keys", json_object_keys(df["col"])).collect()
+        ╭──────────────────┬──────────────╮
+        │ col              ┆ keys         │
+        │ ---              ┆ ---          │
+        │ String           ┆ List[String] │
+        ╞══════════════════╪══════════════╡
+        │ {"a": 1, "b": 2} ┆ [a, b]       │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {}               ┆ []           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2]           ┆ None         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None             ┆ None         │
+        ╰──────────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    return Expression._call_builtin_scalar_fn("json_object_keys", expr)
+
+
+def json_tuple(expr: Expression, *fields: str) -> Expression:
+    """Extracts the values for the given top-level keys from a JSON object string.
+
+    Spark's ``json_tuple`` returns one column per requested key (``c0``,
+    ``c1``, ...). To fit Daft's single-output expression model, this returns
+    a ``Struct`` whose field names are the requested keys, each typed as
+    ``String``. Use ``.get("key")`` to pull individual fields out.
+
+    Behavior:
+
+    * Non-string scalar values (numbers, booleans) are stringified without
+      surrounding quotes (e.g. ``"1"``, ``"true"``).
+    * Nested objects/arrays are returned as their JSON-encoded string form.
+    * Missing keys yield ``NULL`` for that field only; the row itself is
+      still valid as long as the input parses as a JSON object.
+    * Malformed JSON, non-object roots, and ``NULL`` inputs yield a
+      row-level ``NULL`` (``is_null()`` returns ``True``); every child
+      field is also ``NULL``.
+    * Field names must be unique; passing a duplicate raises an error.
+
+    Args:
+        expr: A string expression containing JSON.
+        *fields: One or more top-level keys to extract.
+
+    Returns:
+        Expression: A ``Struct`` expression with one ``String`` field per key.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import json_tuple
+        >>>
+        >>> df = daft.from_pydict({"col": ['{"a": 1, "b": "x"}', '{"a": 2}', None]})
+        >>> df = df.with_column("t", json_tuple(df["col"], "a", "b"))
+        >>> df.select(df["t"].get("a").alias("a"), df["t"].get("b").alias("b")).collect()
+        ╭────────┬────────╮
+        │ a      ┆ b      │
+        │ ---    ┆ ---    │
+        │ String ┆ String │
+        ╞════════╪════════╡
+        │ 1      ┆ x      │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2      ┆ None   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ None   ┆ None   │
+        ╰────────┴────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    if not fields:
+        raise ValueError("json_tuple requires at least one field name")
+    field_lits = [lit(f) for f in fields]
+    return Expression._call_builtin_scalar_fn("json_tuple", expr, *field_lits)
+
+
 def format(f_string: str, *args: Expression | str) -> Expression:
     """Format a string using the given arguments.
 
@@ -148,6 +283,87 @@ def format(f_string: str, *args: Expression | str) -> Expression:
         result = result + expr
 
     return result
+
+
+def concat_ws(sep: str, *exprs: Expression) -> Expression:
+    """Concatenates strings with a separator, skipping null values.
+
+    Null values in any expression are skipped rather than propagating nulls.
+    The separator is only inserted between non-null values. Returns null only
+    if all inputs are null for that row.
+
+    Args:
+        sep (str): The separator string to place between values.
+        *exprs (Expression): Two or more string expressions to concatenate.
+
+    Returns:
+        Expression (String Expression): An expression with the joined strings,
+            or null if all inputs are null for that row.
+
+    Examples:
+        >>> import daft
+        >>> from daft import col, lit
+        >>> from daft.functions import concat_ws
+        >>>
+        >>> # Basic usage with a separator
+        >>> df = daft.from_pydict({"a": ["foo"], "b": ["bar"]})
+        >>> df.select(concat_ws(",", col("a"), col("b"))).collect()
+        ╭─────────╮
+        │ a       │
+        │ ---     │
+        │ String  │
+        ╞═════════╡
+        │ foo,bar │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+        >>>
+        >>> # Nulls are skipped, not propagated
+        >>> df = daft.from_pydict({"first": ["Alice", "Bob", None], "last": ["Smith", None, "Jones"]})
+        >>> df.select(concat_ws(" ", col("first"), col("last"))).collect()
+        ╭─────────────╮
+        │ first       │
+        │ ---         │
+        │ String      │
+        ╞═════════════╡
+        │ Alice Smith │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Jones       │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+        >>>
+        >>> # All nulls returns null
+        >>> df = daft.from_pydict({"a": [None], "b": [None]})
+        >>> df.select(concat_ws(",", col("a"), col("b"))).collect()
+        ╭────────╮
+        │ a      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ None   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+        >>>
+        >>> # Works with literals and columns
+        >>> df = daft.from_pydict({"name": ["alice", "bob"]})
+        >>> df.select(concat_ws("-", lit("my-prefix"), col("name"))).collect()
+        ╭─────────────────╮
+        │ literal         │
+        │ ---             │
+        │ String          │
+        ╞═════════════════╡
+        │ my-prefix-alice │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ my-prefix-bob   │
+        ╰─────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("concat_ws", sep, *exprs)
 
 
 def contains(expr: Expression, substr: str | Expression) -> Expression:
@@ -1359,3 +1575,423 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("find", expr, substr)
+
+
+def hamming_distance_str(left: Expression, right: Expression) -> Expression:
+    """Compute the character-level Hamming distance between two strings.
+
+    The Hamming distance is the number of positions at which the corresponding
+    characters are different.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Hamming distance for each pair of strings. Returns null when either input
+        is null or the two strings have different lengths.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import hamming_distance_str
+        >>> df = daft.from_pydict({"x": ["ronald", "ronald", "ronald"], "y": ["ronald", "renuld", "ronaldo"]})
+        >>> df = df.with_column("distance", hamming_distance_str(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬─────────┬──────────╮
+        │ x      ┆ y       ┆ distance │
+        │ ---    ┆ ---     ┆ ---      │
+        │ String ┆ String  ┆ Int64    │
+        ╞════════╪═════════╪══════════╡
+        │ ronald ┆ ronald  ┆ 0        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ renuld  ┆ 2        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ ronald ┆ ronaldo ┆ None     │
+        ╰────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("hamming_distance_str", left, right)
+
+
+def levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Levenshtein edit distance between two strings.
+
+    The Levenshtein distance is the minimum number of single-character insertions,
+    deletions, or substitutions required to transform one string into the other.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Levenshtein distance for each pair of strings. Returns null when either
+        input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["kitten", "saturday", ""], "y": ["sitting", "sunday", "abc"]})
+        >>> df = df.with_column("distance", levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭──────────┬─────────┬──────────╮
+        │ x        ┆ y       ┆ distance │
+        │ ---      ┆ ---     ┆ ---      │
+        │ String   ┆ String  ┆ Int64    │
+        ╞══════════╪═════════╪══════════╡
+        │ kitten   ┆ sitting ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ saturday ┆ sunday  ┆ 3        │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │          ┆ abc     ┆ 3        │
+        ╰──────────┴─────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("levenshtein_distance", left, right)
+
+
+def jaro_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro similarity between two strings.
+
+    The Jaro similarity is a measure of similarity between two strings, based on
+    matching characters and transpositions. Returns a value between 0.0 (no similarity)
+    and 1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro similarity (0.0 to 1.0) for each pair of strings. Returns null when
+        either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9444444444444445 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8222222222222223 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.7666666666666666 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_similarity", left, right)
+
+
+def jaro_winkler_similarity(left: Expression, right: Expression) -> Expression:
+    """Compute the Jaro-Winkler similarity between two strings.
+
+    This is the Jaro similarity with a prefix bonus for strings sharing a common
+    prefix (up to 4 characters). Returns a value between 0.0 (no similarity) and
+    1.0 (identical strings).
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Jaro-Winkler similarity (0.0 to 1.0) for each pair of strings. Returns
+        null when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import jaro_winkler_similarity
+        >>> df = daft.from_pydict({"x": ["martha", "dwayne", "dixon"], "y": ["marhta", "duane", "dicksonx"]})
+        >>> df = df.with_column("similarity", jaro_winkler_similarity(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬──────────┬────────────────────╮
+        │ x      ┆ y        ┆ similarity         │
+        │ ---    ┆ ---      ┆ ---                │
+        │ String ┆ String   ┆ Float64            │
+        ╞════════╪══════════╪════════════════════╡
+        │ martha ┆ marhta   ┆ 0.9611111111111111 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dwayne ┆ duane    ┆ 0.8400000000000001 │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ dixon  ┆ dicksonx ┆ 0.8133333333333332 │
+        ╰────────┴──────────┴────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("jaro_winkler_similarity", left, right)
+
+
+def damerau_levenshtein_distance(left: Expression, right: Expression) -> Expression:
+    """Compute the Damerau-Levenshtein distance between two strings.
+
+    This extends the Levenshtein distance by also counting transpositions of two
+    adjacent characters as a single edit operation (in addition to insertions,
+    deletions, and substitutions).
+
+    Note:
+        This computes the Optimal String Alignment (OSA) variant, which does not
+        allow a substring to be edited more than once. Results may differ from the
+        true Damerau-Levenshtein distance for inputs with overlapping transpositions
+        (e.g., ``"CA"`` to ``"ABC"`` is 3 under OSA but 2 under true
+        Damerau-Levenshtein). OSA does not satisfy the triangle inequality.
+
+    Args:
+        left: The left string expression to compare.
+        right: The right string expression to compare against.
+
+    Returns:
+        The Damerau-Levenshtein (OSA) distance for each pair of strings. Returns null
+        when either input is null.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import damerau_levenshtein_distance
+        >>> df = daft.from_pydict({"x": ["abc", "abc", ""], "y": ["bac", "acb", "abc"]})
+        >>> df = df.with_column("distance", damerau_levenshtein_distance(df["x"], df["y"]))
+        >>> df.collect()
+        ╭────────┬────────┬──────────╮
+        │ x      ┆ y      ┆ distance │
+        │ ---    ┆ ---    ┆ ---      │
+        │ String ┆ String ┆ Int64    │
+        ╞════════╪════════╪══════════╡
+        │ abc    ┆ bac    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ abc    ┆ acb    ┆ 1        │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │        ┆ abc    ┆ 3        │
+        ╰────────┴────────┴──────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("damerau_levenshtein_distance", left, right)
+
+
+def translate(
+    expr: Expression,
+    from_str: str | Expression,
+    to_str: str | Expression,
+) -> Expression:
+    """Translates characters in the input string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+    Characters in 'from_str' without a corresponding character in 'to_str' are removed.
+    This is compatible with Spark's translate function.
+
+    Args:
+        expr: The string expression to translate
+        from_str: Characters to be replaced
+        to_str: Replacement characters
+
+    Returns:
+        Expression: a String expression with characters translated
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import translate
+        >>> df = daft.from_pydict({"x": ["AaBbCc", "hello", "world"]})
+        >>> df = df.select(translate(df["x"], "abc", "123"))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A1B2C3 │
+        ├╌╌╌╌╌╌╌╌┤
+        │ hello  │
+        ├╌╌╌╌╌╌╌╌┤
+        │ world  │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("translate", expr, from_str, to_str)
+
+
+def substring_index(
+    expr: Expression,
+    delim: str | Expression,
+    count: int | Expression,
+) -> Expression:
+    """Returns the substring from string before count occurrences of the delimiter.
+
+    If count is positive, returns everything to the left of the final delimiter (counting from left).
+    If count is negative, returns everything to the right of the final delimiter (counting from right).
+    This is compatible with Spark's substring_index function.
+
+    Args:
+        expr: The string expression
+        delim: The delimiter string
+        count: The number of occurrences of the delimiter
+
+    Returns:
+        Expression: a String expression with the substring result
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import substring_index
+        >>> df = daft.from_pydict({"x": ["www.apache.org", "a.b.c.d"]})
+        >>> df = df.select(substring_index(df["x"], ".", 2))
+        >>> df.show()
+        ╭────────────╮
+        │ x          │
+        │ ---        │
+        │ String     │
+        ╞════════════╡
+        │ www.apache │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a.b        │
+        ╰────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("substring_index", expr, delim, count)
+
+
+def soundex(expr: Expression) -> Expression:
+    """Returns the Soundex code of the string.
+
+    Soundex is a phonetic algorithm that produces a 4-character code representing
+    the sound of the string. This is compatible with Spark's soundex function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: a String expression with the Soundex code
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import soundex
+        >>> df = daft.from_pydict({"x": ["Robert", "Rupert", "Smith"]})
+        >>> df = df.select(soundex(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ R163   │
+        ├╌╌╌╌╌╌╌╌┤
+        │ S530   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("soundex", expr)
+
+
+def ascii_func(expr: Expression) -> Expression:
+    """Returns the ASCII numeric value of the first character of the string.
+
+    Returns 0 for empty strings. This is compatible with Spark's ascii function.
+
+    Args:
+        expr: The string expression
+
+    Returns:
+        Expression: an Int32 expression with the ASCII value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import ascii_func
+        >>> df = daft.from_pydict({"x": ["A", "abc", ""]})
+        >>> df = df.select(ascii_func(df["x"]))
+        >>> df.show()
+        ╭───────╮
+        │ x     │
+        │ ---   │
+        │ Int32 │
+        ╞═══════╡
+        │ 65    │
+        ├╌╌╌╌╌╌╌┤
+        │ 97    │
+        ├╌╌╌╌╌╌╌┤
+        │ 0     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("ascii", expr)
+
+
+def chr_func(expr: Expression) -> Expression:
+    """Converts an ASCII numeric value to a character.
+
+    Returns the character corresponding to the ASCII code.
+    This is compatible with Spark's chr function.
+
+    Args:
+        expr: An integer expression representing the ASCII code
+
+    Returns:
+        Expression: a String expression with the character
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import chr_func
+        >>> df = daft.from_pydict({"x": [65, 97, 48]})
+        >>> df = df.select(chr_func(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ a      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 0      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("chr", expr)
+
+
+def space(expr: Expression) -> Expression:
+    """Returns a string consisting of n space characters.
+
+    This is compatible with Spark's space function.
+
+    Args:
+        expr: An integer expression representing the number of spaces
+
+    Returns:
+        Expression: a String expression with n spaces
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import space
+        >>> df = daft.from_pydict({"x": [1, 3, 5]})
+        >>> df = df.select(space(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ├╌╌╌╌╌╌╌╌┤
+        │        │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("space", expr)

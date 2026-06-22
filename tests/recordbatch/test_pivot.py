@@ -50,7 +50,7 @@ def test_pivot_multipartition(input: MicroPartition) -> None:
         "1": [3, 1],
         "2": [2, 4],
     }
-    assert daft_recordbatch.to_pydict() == expected
+    assert daft_recordbatch.sort([col("group")]).to_pydict() == expected
 
 
 def test_pivot_column_names_subset() -> None:
@@ -67,7 +67,7 @@ def test_pivot_column_names_subset() -> None:
         "group": ["A", "B"],
         "1": [1, 3],
     }
-    assert daft_recordbatch.to_pydict() == expected
+    assert daft_recordbatch.sort([col("group")]).to_pydict() == expected
 
 
 def test_pivot_column_names_superset() -> None:
@@ -86,7 +86,7 @@ def test_pivot_column_names_superset() -> None:
         "2": [2, None],
         "3": [None, None],
     }
-    assert daft_recordbatch.to_pydict() == expected
+    assert daft_recordbatch.sort([col("group")]).to_pydict() == expected
 
 
 def test_pivot_nulls_in_group() -> None:
@@ -104,7 +104,7 @@ def test_pivot_nulls_in_group() -> None:
         "1": [1, None, 2],
         "2": [None, 3, 4],
     }
-    assert daft_recordbatch.to_pydict() == expected
+    assert daft_recordbatch.sort([col("group")]).to_pydict() == expected
 
 
 def test_pivot_nulls_in_pivot() -> None:
@@ -122,4 +122,4 @@ def test_pivot_nulls_in_pivot() -> None:
         "1": [1, 3],
         "None": [2, 4],
     }
-    assert daft_recordbatch.to_pydict() == expected
+    assert daft_recordbatch.sort([col("group")]).to_pydict() == expected

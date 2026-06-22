@@ -1,0 +1,923 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+    time::SystemTime,
+};
+
+use async_trait::async_trait;
+use bytes::Bytes;
+use chrono::{DateTime, Utc};
+use daft_core::series::Series;
+use daft_io::{IOClient, IOConfig, get_io_client, strip_file_uri_to_path};
+use futures::{
+    StreamExt, TryStreamExt,
+    future::{join_all, try_join_all},
+    stream::{self, BoxStream},
+};
+use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
+
+use crate::{
+    Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
+    error::{CheckpointError, CheckpointResult},
+};
+
+fn rfc3339_from(t: SystemTime) -> String {
+    DateTime::<Utc>::from(t)
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
+}
+
+fn system_time_from_rfc3339(s: &str) -> CheckpointResult<SystemTime> {
+    s.parse::<DateTime<Utc>>()
+        .map(SystemTime::from)
+        .map_err(|e| CheckpointError::Internal {
+            message: format!("failed to parse timestamp {s:?}: {e}"),
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ManifestStatus {
+    Checkpointed,
+    Committed,
+}
+
+/// Written to `{prefix}/{id}/manifest.json` by `checkpoint()`.
+///
+/// Presence of this file transitions the checkpoint to `Checkpointed`. `mark_committed()` overwrites
+/// it with `committed_at` set, transitioning the checkpoint to the `Committed` state.
+#[derive(Clone, Serialize, Deserialize)]
+struct Manifest {
+    checkpoint_id: String,
+    status: ManifestStatus,
+    created_at: String,
+    checkpointed_at: String,
+    committed_at: Option<String>,
+    num_key_files: usize,
+    num_file_files: usize,
+}
+
+/// On-disk wire format for a batch of `FileMetadata`, written by one
+/// `stage_files()` call. Tagged-enum versioning — add `V2(...)` to evolve;
+/// do not modify `V1`.
+#[derive(Serialize, Deserialize)]
+enum FileMetadataBatch {
+    V1 { files: Vec<FileMetadata> },
+}
+
+struct StagedEntry {
+    num_key_files: usize,
+    num_file_files: usize,
+    created_at: SystemTime,
+    /// In-flight PUTs spawned by `stage_keys` / `stage_files`.
+    /// Drained by `checkpoint()`. Aborts on drop (e.g. abandoned checkpoint).
+    pending: JoinSet<CheckpointResult<()>>,
+    /// First background-PUT failure for this checkpoint, as a formatted message.
+    /// Read by `stage_*` and `checkpoint()` to fail fast.
+    /// `Arc` so spawned futures can write to it without re-locking the staged map.
+    first_error: Arc<OnceLock<String>>,
+}
+
+impl StagedEntry {
+    fn new() -> Self {
+        Self {
+            num_key_files: 0,
+            num_file_files: 0,
+            created_at: SystemTime::now(),
+            pending: JoinSet::new(),
+            first_error: Arc::new(OnceLock::new()),
+        }
+    }
+}
+
+/// S3-backed [`CheckpointStore`].
+///
+/// # Layout
+///
+/// ```text
+/// {prefix}/
+///   {checkpoint_id}/
+///     keys/
+///       0000.parquet      ← one file per stage_keys() call
+///       ...
+///     files/
+///       0000.bin          ← FileMetadata blob; one file per stage_files() call
+///       ...
+///     manifest.json       ← written by checkpoint(); presence = Checkpointed;
+///                           overwritten by mark_committed() with committed_at set
+/// ```
+pub struct S3CheckpointStore {
+    prefix: String,
+    client: Arc<IOClient>,
+    staged: Mutex<HashMap<CheckpointId, StagedEntry>>,
+}
+
+impl S3CheckpointStore {
+    /// Create a new checkpoint store rooted at `prefix` (trailing slashes stripped).
+    pub fn new(prefix: impl Into<String>, io_config: Arc<IOConfig>) -> CheckpointResult<Self> {
+        let client = get_io_client(true, io_config).map_err(|e| CheckpointError::Internal {
+            message: format!("failed to create IO client: {e}"),
+        })?;
+        Ok(Self {
+            prefix: prefix.into().trim_end_matches('/').to_string(),
+            client,
+            staged: Mutex::new(HashMap::new()),
+        })
+    }
+
+    fn manifest_path(&self, id: &CheckpointId) -> String {
+        format!("{}/{}/manifest.json", self.prefix, id)
+    }
+
+    fn key_path(&self, id: &CheckpointId, idx: usize) -> String {
+        format!("{}/{}/keys/{:04}.parquet", self.prefix, id, idx)
+    }
+
+    fn file_path(&self, id: &CheckpointId, idx: usize) -> String {
+        format!("{}/{}/files/{:04}.bin", self.prefix, id, idx)
+    }
+
+    fn manifests_glob(&self) -> String {
+        format!("{}/*/manifest.json", self.prefix)
+    }
+
+    async fn put_bytes(client: &IOClient, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
+        // Local filesystem backend (`file://`) requires parent directories
+        // to exist before writing — S3 does not. Use `strip_file_uri_to_path`
+        // (rather than a hand-rolled `strip_prefix("file://")`) so the
+        // Windows-canonical `file:///C:/Users/...` form has its leading slash
+        // before the drive letter stripped — otherwise `std::path::Path` fails
+        // with os error 123 on Windows.
+        if let Some(local) = strip_file_uri_to_path(path)
+            && let Some(parent) = std::path::Path::new(local).parent()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| CheckpointError::Internal {
+                message: format!("failed to create directory {}: {e}", parent.display()),
+            })?;
+        }
+        client
+            .single_url_put(path, Bytes::from(data), None)
+            .await
+            .map_err(|e| CheckpointError::Internal {
+                message: format!("PUT {path} failed: {e}"),
+            })
+    }
+
+    /// Returns empty vec if the prefix doesn't exist yet. Propagates other errors
+    /// (permission failures, network errors, malformed URLs).
+    async fn glob_paths(&self, pattern: &str) -> CheckpointResult<Vec<String>> {
+        match self
+            .client
+            .as_ref()
+            .glob(pattern.to_string(), None, None, None, None, None)
+            .await
+        {
+            Ok(stream) => {
+                let items: Vec<CheckpointResult<String>> = stream
+                    .map(|r| {
+                        r.map(|fm| fm.filepath)
+                            .map_err(|e| CheckpointError::Internal {
+                                message: format!("glob {pattern} entry failed: {e}"),
+                            })
+                    })
+                    .collect()
+                    .await;
+                items.into_iter().collect()
+            }
+            Err(daft_io::Error::NotFound { .. }) => Ok(Vec::new()),
+            Err(e) => Err(CheckpointError::Internal {
+                message: format!("glob {pattern} failed: {e}"),
+            }),
+        }
+    }
+
+    /// Packs all `files` into a single blob written by one `stage_files()` call.
+    ///
+    /// Wire format: bincode (legacy config) over [`FileMetadataBatch`], a
+    /// versioned tagged enum. Today's only variant is `V1 { files }`. To
+    /// evolve, add a `V2(...)` variant — do not mutate `V1`. Old readers
+    /// fail loudly on unknown variants (correct default for forward-compat).
+    fn encode_file_metadata(files: &[FileMetadata]) -> CheckpointResult<Vec<u8>> {
+        let batch = FileMetadataBatch::V1 {
+            files: files.to_vec(),
+        };
+        bincode::serde::encode_to_vec(&batch, bincode::config::legacy()).map_err(|e| {
+            CheckpointError::Internal {
+                message: format!("failed to encode FileMetadata batch: {e}"),
+            }
+        })
+    }
+
+    fn decode_file_metadata(bytes: &[u8]) -> CheckpointResult<Vec<FileMetadata>> {
+        let (batch, _): (FileMetadataBatch, _) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::legacy()).map_err(|e| {
+                CheckpointError::Internal {
+                    message: format!("failed to decode FileMetadata batch: {e}"),
+                }
+            })?;
+        match batch {
+            FileMetadataBatch::V1 { files } => Ok(files),
+        }
+    }
+
+    fn parse_id_from_manifest_path(&self, path: &str) -> Option<CheckpointId> {
+        let after_prefix = path.strip_prefix(&self.prefix)?.strip_prefix('/')?;
+        let id_str = after_prefix.strip_suffix("/manifest.json")?;
+        if !CheckpointId::is_valid(id_str) {
+            return None;
+        }
+        Some(CheckpointId::from_string(id_str.to_string()))
+    }
+
+    async fn read_manifest(&self, id: &CheckpointId) -> CheckpointResult<Manifest> {
+        let path = self.manifest_path(id);
+        let result = self
+            .client
+            .single_url_get(path.clone(), None, None)
+            .await
+            .map_err(|e| match e {
+                daft_io::Error::NotFound { .. } => {
+                    CheckpointError::CheckpointNotFound { id: id.clone() }
+                }
+                e => CheckpointError::Internal {
+                    message: format!("GET {path} failed: {e}"),
+                },
+            })?;
+        let raw = result
+            .bytes()
+            .await
+            .map_err(|e| CheckpointError::Internal {
+                message: format!("reading bytes from {path} failed: {e}"),
+            })?;
+        serde_json::from_slice(&raw).map_err(|e| CheckpointError::Internal {
+            message: format!("failed to parse manifest at {path}: {e}"),
+        })
+    }
+
+    async fn write_manifest(&self, id: &CheckpointId, manifest: &Manifest) -> CheckpointResult<()> {
+        let path = self.manifest_path(id);
+        let raw = serde_json::to_vec(manifest).map_err(|e| CheckpointError::Internal {
+            message: format!("failed to serialize manifest: {e}"),
+        })?;
+        Self::put_bytes(&self.client, &path, raw).await
+    }
+
+    /// Ensures the checkpoint is not yet `Checkpointed`, then atomically reserves index
+    /// slots by calling `update` inside the staged lock.
+    ///
+    /// Returns `AlreadyCheckpointed` if `manifest.json` already exists for this ID
+    /// and the ID is not tracked in the in-memory staged map (i.e., this
+    /// process didn't stage it).
+    async fn reserve_slots(
+        &self,
+        id: &CheckpointId,
+        update: impl FnOnce(&mut StagedEntry) -> usize,
+    ) -> CheckpointResult<usize> {
+        {
+            let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            if let Some(entry) = staged.get_mut(id) {
+                return Ok(update(entry));
+            }
+        }
+
+        // First call for this ID — check S3 to catch post-restart misuse.
+        match self.read_manifest(id).await {
+            Ok(_) => return Err(CheckpointError::AlreadyCheckpointed { id: id.clone() }),
+            Err(CheckpointError::CheckpointNotFound { .. }) => {}
+            Err(e) => return Err(e),
+        }
+
+        let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+            message: format!("staged lock poisoned: {e}"),
+        })?;
+        let entry = staged.entry(id.clone()).or_insert_with(StagedEntry::new);
+        Ok(update(entry))
+    }
+
+    /// Returns all visible manifests (`Checkpointed` + `Committed`) as `(id, manifest)`
+    /// pairs. Re-globs and re-reads on every call — there is intentionally no
+    /// cache. The store is observed across processes (workers write, drivers
+    /// read), so a cached snapshot in one process would silently miss writes
+    /// committed by another.
+    async fn checkpointed_manifests(&self) -> CheckpointResult<Vec<(CheckpointId, Manifest)>> {
+        let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
+        let ids: Vec<CheckpointId> = manifest_paths
+            .iter()
+            .filter_map(|path| self.parse_id_from_manifest_path(path))
+            .collect();
+
+        // A manifest that was listed but returns NotFound on GET means external
+        // deletion or a code bug — neither is safe to skip silently. Fail loudly so
+        // the caller can surface the inconsistency rather than hiding it.
+        //
+        // Pre-compute owned path Strings so the stream closure captures no borrows,
+        // which lets `buffered` run up to 64 GETs concurrently without HRTB issues.
+        // `buffered` (vs `buffer_unordered`) preserves the id↔manifest order needed
+        // for the zip below.
+        let paths: Vec<String> = ids.iter().map(|id| self.manifest_path(id)).collect();
+        let client = Arc::clone(&self.client);
+        let manifests: Vec<Manifest> = futures::stream::iter(paths)
+            .map(|path| {
+                let client = Arc::clone(&client);
+                async move {
+                    let result = client
+                        .single_url_get(path.clone(), None, None)
+                        .await
+                        .map_err(|e| CheckpointError::Internal {
+                            message: format!("GET {path} failed: {e}"),
+                        })?;
+                    let raw = result
+                        .bytes()
+                        .await
+                        .map_err(|e| CheckpointError::Internal {
+                            message: format!("reading bytes from {path} failed: {e}"),
+                        })?;
+                    serde_json::from_slice::<Manifest>(&raw).map_err(|e| {
+                        CheckpointError::Internal {
+                            message: format!("failed to parse manifest at {path}: {e}"),
+                        }
+                    })
+                }
+            })
+            .buffered(64)
+            .try_collect()
+            .await?;
+        Ok(ids.into_iter().zip(manifests).collect())
+    }
+
+    fn fetch_paths<T: Send + 'static>(
+        client: Arc<IOClient>,
+        paths: Vec<String>,
+        decode: impl Fn(&[u8]) -> CheckpointResult<T> + Send + Sync + 'static,
+    ) -> BoxStream<'static, CheckpointResult<T>> {
+        let decode = Arc::new(decode);
+        Box::pin(
+            futures::stream::iter(paths)
+                .map(move |path| {
+                    let client = Arc::clone(&client);
+                    let decode = Arc::clone(&decode);
+                    async move {
+                        let result = client
+                            .single_url_get(path.clone(), None, None)
+                            .await
+                            .map_err(|e| CheckpointError::Internal {
+                                message: format!("GET {path}: {e}"),
+                            })?;
+                        let raw = result
+                            .bytes()
+                            .await
+                            .map_err(|e| CheckpointError::Internal {
+                                message: format!("reading {path}: {e}"),
+                            })?;
+                        decode(&raw)
+                    }
+                })
+                .buffer_unordered(16),
+        )
+    }
+
+    /// Returns Err early if a prior background PUT for this id failed,
+    /// so callers fail fast on the next operation rather than waiting for `checkpoint()`.
+    fn check_first_error(&self, id: &CheckpointId) -> CheckpointResult<()> {
+        let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+            message: format!("staged lock poisoned: {e}"),
+        })?;
+        if let Some(entry) = staged.get(id)
+            && let Some(msg) = entry.first_error.get()
+        {
+            return Err(CheckpointError::Internal {
+                message: msg.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Spawn a PUT onto the I/O runtime and push the handle into the entry's `pending` JoinSet.
+    /// Failure of the spawned PUT records the message in `first_error` (first one wins).
+    fn spawn_put(&self, id: &CheckpointId, path: String, data: Vec<u8>) -> CheckpointResult<()> {
+        let io_runtime = common_runtime::get_io_runtime(true);
+        let client = Arc::clone(&self.client);
+
+        let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+            message: format!("staged lock poisoned: {e}"),
+        })?;
+        let entry = staged
+            .get_mut(id)
+            .ok_or_else(|| CheckpointError::Internal {
+                message: format!(
+                    "staged entry for {id} disappeared between reserve_slots and spawn_put"
+                ),
+            })?;
+        let first_error = Arc::clone(&entry.first_error);
+
+        entry.pending.spawn_on(
+            async move {
+                let result = Self::put_bytes(&client, &path, data).await;
+                if let Err(ref e) = result {
+                    let _ = first_error.set(format!("{e}"));
+                }
+                result
+            },
+            io_runtime.runtime.handle(),
+        );
+        Ok(())
+    }
+
+    /// Enumerate paths of visible (`Checkpointed` or `Committed`) key parquet files.
+    pub async fn checkpointed_file_paths(&self) -> CheckpointResult<Vec<String>> {
+        let manifests = self.checkpointed_manifests().await?;
+        let mut paths: Vec<String> = Vec::new();
+        for (id, manifest) in &manifests {
+            for i in 0..manifest.num_key_files {
+                paths.push(self.key_path(id, i));
+            }
+        }
+        Ok(paths)
+    }
+}
+
+#[async_trait]
+impl CheckpointStore for S3CheckpointStore {
+    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
+        self.check_first_error(id)?;
+        // Persist under the canonical column name so the on-disk key files
+        // are stable across renames of the source column. The scan operator
+        // and the optimizer rule both read using `SEALED_KEYS_COLUMN`.
+        let canonical = keys.rename(common_checkpoint_config::SEALED_KEYS_COLUMN);
+        let parquet_bytes = super::keys_codec::write_series_as_parquet(&canonical)?;
+        let idx = self
+            .reserve_slots(id, |e| {
+                let i = e.num_key_files;
+                e.num_key_files += 1;
+                i
+            })
+            .await?;
+        self.spawn_put(id, self.key_path(id, idx), parquet_bytes)
+    }
+
+    async fn stage_files(
+        &self,
+        id: &CheckpointId,
+        files: Vec<FileMetadata>,
+    ) -> CheckpointResult<()> {
+        if files.is_empty() {
+            return Ok(());
+        }
+        self.check_first_error(id)?;
+        let blob = Self::encode_file_metadata(&files)?;
+        let idx = self
+            .reserve_slots(id, |e| {
+                let i = e.num_file_files;
+                e.num_file_files += 1;
+                i
+            })
+            .await?;
+        self.spawn_put(id, self.file_path(id, idx), blob)
+    }
+
+    async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
+        // Take ownership of the staged entry's `pending` JoinSet (replacing with empty)
+        // and copy its scalar fields. Holding the lock for the swap is fine — the swap
+        // doesn't await, and keeping the entry in the map lets a retry of `checkpoint()`
+        // after a write_manifest failure proceed (drained pending → empty → re-write).
+        let drain = {
+            let mut staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            staged.get_mut(id).map(|entry| {
+                let pending = std::mem::replace(&mut entry.pending, JoinSet::new());
+                (
+                    entry.num_key_files,
+                    entry.num_file_files,
+                    entry.created_at,
+                    pending,
+                )
+            })
+        };
+
+        let (num_key_files, num_file_files, created_at, pending) = match drain {
+            Some(data) => data,
+            None => {
+                // No in-memory staged entry for this id. Two sub-cases, both
+                // handled as a no-op success:
+                //   (a) Already `Checkpointed` in a prior call — idempotent retry.
+                //       read_manifest succeeds; nothing more to do.
+                //   (b) Never staged at all (e.g. 0-row source after the
+                //       anti-join — the sink generated an id but no SCKO or
+                //       sink call ever landed keys/files). Succeed quietly —
+                //       consumers using `list_checkpoints` simply see no
+                //       Checkpointed entry for this id, which matches the
+                //       empty-input flow's expected semantics.
+                return match self.read_manifest(id).await {
+                    Ok(_) => Ok(()),
+                    Err(CheckpointError::CheckpointNotFound { .. }) => Ok(()),
+                    Err(e) => Err(e),
+                };
+            }
+        };
+
+        // Drain all in-flight PUTs; surface the first one that returned `Err`.
+        // `join_all` resumes panics — those are bugs in `put_bytes` and should propagate.
+        // Cancellation can't occur in this flow: the JoinSet was just `mem::replace`d
+        // out of the staged entry and is owned solely by this stack.
+        for r in pending.join_all().await {
+            r?;
+        }
+
+        // manifest.json is written last — its presence atomically transitions the entry to Checkpointed.
+        let manifest = Manifest {
+            checkpoint_id: id.to_string(),
+            status: ManifestStatus::Checkpointed,
+            created_at: rfc3339_from(created_at),
+            checkpointed_at: rfc3339_from(SystemTime::now()),
+            committed_at: None,
+            num_key_files,
+            num_file_files,
+        };
+        self.write_manifest(id, &manifest).await?;
+
+        // Remove from staged only after manifest is durably written.
+        self.staged
+            .lock()
+            .map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?
+            .remove(id);
+
+        Ok(())
+    }
+
+    async fn get_checkpointed_keys(
+        &self,
+    ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Series>>> {
+        // Include both checkpointed and committed keys — all are needed for the
+        // skip-on-rerun filter.
+        let mut key_paths: Vec<String> = Vec::new();
+        for (id, manifest) in &self.checkpointed_manifests().await? {
+            for i in 0..manifest.num_key_files {
+                key_paths.push(self.key_path(id, i));
+            }
+        }
+
+        Ok(Self::fetch_paths(
+            Arc::clone(&self.client),
+            key_paths,
+            super::keys_codec::read_series_from_parquet,
+        ))
+    }
+
+    async fn get_checkpointed_files(
+        &self,
+    ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>> {
+        let mut file_paths: Vec<String> = Vec::new();
+        for (id, manifest) in &self.checkpointed_manifests().await? {
+            if manifest.status == ManifestStatus::Committed {
+                continue; // Already committed to the catalog — files no longer needed.
+            }
+            for i in 0..manifest.num_file_files {
+                file_paths.push(self.file_path(id, i));
+            }
+        }
+
+        // Each .bin holds a batch of FileMetadata items (one blob per stage_files() call).
+        let batch_stream = Self::fetch_paths(Arc::clone(&self.client), file_paths, |raw| {
+            Self::decode_file_metadata(raw)
+        });
+        Ok(Box::pin(batch_stream.flat_map(|result| {
+            stream::iter(match result {
+                Ok(batch) => batch.into_iter().map(Ok).collect::<Vec<_>>(),
+                Err(e) => vec![Err(e)],
+            })
+        })))
+    }
+
+    async fn get_checkpoint(&self, id: &CheckpointId) -> CheckpointResult<Checkpoint> {
+        {
+            let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            if let Some(entry) = staged.get(id) {
+                return Ok(Checkpoint::new(
+                    id.clone(),
+                    CheckpointStatus::Staged,
+                    entry.created_at,
+                    None,
+                    None,
+                ));
+            }
+        }
+
+        let manifest = self.read_manifest(id).await?;
+
+        let status = if manifest.status == ManifestStatus::Committed {
+            CheckpointStatus::Committed
+        } else {
+            CheckpointStatus::Checkpointed
+        };
+
+        Ok(Checkpoint::new(
+            id.clone(),
+            status,
+            system_time_from_rfc3339(&manifest.created_at)?,
+            Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
+            manifest
+                .committed_at
+                .as_deref()
+                .map(system_time_from_rfc3339)
+                .transpose()?,
+        ))
+    }
+
+    async fn list_checkpoints(
+        &self,
+    ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Checkpoint>>> {
+        let manifests = self.checkpointed_manifests().await?;
+        let manifest_ids: std::collections::HashSet<&CheckpointId> =
+            manifests.iter().map(|(id, _)| id).collect();
+
+        let mut checkpoints: Vec<Checkpoint> = Vec::new();
+
+        // Staged entries — skip any id that already has a manifest on S3, as the
+        // `Checkpointed` state is authoritative and takes precedence over the in-memory entry.
+        {
+            let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            for (id, entry) in staged.iter() {
+                if manifest_ids.contains(id) {
+                    continue;
+                }
+                checkpoints.push(Checkpoint::new(
+                    id.clone(),
+                    CheckpointStatus::Staged,
+                    entry.created_at,
+                    None,
+                    None,
+                ));
+            }
+        }
+
+        for (id, manifest) in &manifests {
+            let status = if manifest.status == ManifestStatus::Committed {
+                CheckpointStatus::Committed
+            } else {
+                CheckpointStatus::Checkpointed
+            };
+            checkpoints.push(Checkpoint::new(
+                id.clone(),
+                status,
+                system_time_from_rfc3339(&manifest.created_at)?,
+                Some(system_time_from_rfc3339(&manifest.checkpointed_at)?),
+                manifest
+                    .committed_at
+                    .as_deref()
+                    .map(system_time_from_rfc3339)
+                    .transpose()?,
+            ));
+        }
+
+        Ok(Box::pin(futures::stream::iter(
+            checkpoints.into_iter().map(Ok),
+        )))
+    }
+
+    async fn mark_committed(&self, ids: &[CheckpointId]) -> CheckpointResult<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        // Read all manifests concurrently — also validates each checkpoint has reached `Checkpointed`.
+        // Use join_all (not try_join_all) so we can map errors to specific types.
+        let results = join_all(ids.iter().map(|id| self.read_manifest(id))).await;
+
+        let mut to_update: Vec<(&CheckpointId, Manifest)> = Vec::new();
+        for (id, result) in ids.iter().zip(results) {
+            match result {
+                Ok(m) if m.status == ManifestStatus::Committed => {}
+                Ok(m) => to_update.push((id, m)),
+                Err(CheckpointError::CheckpointNotFound { .. }) => {
+                    // Distinguish staged (not yet checkpointed) from completely unknown.
+                    let staged = self.staged.lock().map_err(|e| CheckpointError::Internal {
+                        message: format!("staged lock poisoned: {e}"),
+                    })?;
+                    return if staged.contains_key(id) {
+                        Err(CheckpointError::NotCheckpointed { id: id.clone() })
+                    } else {
+                        Err(CheckpointError::CheckpointNotFound { id: id.clone() })
+                    };
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        if to_update.is_empty() {
+            return Ok(());
+        }
+
+        let committed_at = rfc3339_from(SystemTime::now());
+
+        // Partial failure is safe — each write is idempotent, caller can retry.
+        try_join_all(to_update.iter().map(|(id, manifest)| {
+            let updated = Manifest {
+                status: ManifestStatus::Committed,
+                committed_at: Some(committed_at.clone()),
+                ..manifest.clone()
+            };
+            async move { self.write_manifest(id, &updated).await }
+        }))
+        .await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::types::FileFormat;
+
+    #[test]
+    fn test_encode_decode_file_metadata_roundtrip() {
+        // Mixed formats in one batch — one blob per stage_files() call.
+        let batch = vec![
+            FileMetadata::new(FileFormat::Iceberg, vec![1, 2, 3, 4]),
+            FileMetadata::new(FileFormat::Parquet, vec![5, 6]),
+            FileMetadata::new(FileFormat::Iceberg, vec![]),
+        ];
+        let encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
+        let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();
+        assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn test_encode_decode_file_metadata_single_item() {
+        for format in [FileFormat::Iceberg, FileFormat::Parquet] {
+            let batch = vec![FileMetadata::new(format, vec![0xde, 0xad])];
+            let encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
+            let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();
+            assert_eq!(decoded, batch);
+        }
+    }
+
+    #[test]
+    fn test_encode_decode_file_metadata_empty_batch() {
+        let encoded = S3CheckpointStore::encode_file_metadata(&[]).unwrap();
+        let decoded = S3CheckpointStore::decode_file_metadata(&encoded).unwrap();
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_decode_file_metadata_unknown_variant() {
+        // Simulate a future writer emitting a V2-tagged blob. Today's
+        // decoder only knows V1; must fail loudly, not silently misread.
+        #[derive(Serialize)]
+        enum FutureBatch {
+            #[allow(dead_code)]
+            V1Placeholder,
+            V2(u32),
+        }
+        let bytes =
+            bincode::serde::encode_to_vec(FutureBatch::V2(42), bincode::config::legacy()).unwrap();
+        let err = S3CheckpointStore::decode_file_metadata(&bytes).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_decode_file_metadata_too_short() {
+        let err = S3CheckpointStore::decode_file_metadata(&[0, 0, 0]).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_decode_file_metadata_truncated() {
+        let batch = vec![FileMetadata::new(FileFormat::Iceberg, vec![1, 2, 3, 4])];
+        let mut encoded = S3CheckpointStore::encode_file_metadata(&batch).unwrap();
+        encoded.truncate(encoded.len() - 2);
+        let err = S3CheckpointStore::decode_file_metadata(&encoded).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_decode_file_metadata_garbage() {
+        let err = S3CheckpointStore::decode_file_metadata(&[0xff; 32]).unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+
+    #[test]
+    fn test_parse_id_from_manifest_path() {
+        let store =
+            S3CheckpointStore::new("s3://my-bucket/my-job", Arc::new(IOConfig::default())).unwrap();
+        let id = CheckpointId::generate(0);
+        let path = store.manifest_path(&id);
+        let parsed = store.parse_id_from_manifest_path(&path).unwrap();
+        assert_eq!(parsed, id);
+    }
+
+    #[test]
+    fn test_parse_id_from_manifest_path_invalid() {
+        let store =
+            S3CheckpointStore::new("s3://my-bucket/my-job", Arc::new(IOConfig::default())).unwrap();
+        // Wrong bucket — prefix doesn't match.
+        assert!(
+            store
+                .parse_id_from_manifest_path(
+                    "s3://other-bucket/my-job/task-0-checkpoint-abc/manifest.json"
+                )
+                .is_none()
+        );
+        // Empty segment between prefix and manifest.json.
+        assert!(
+            store
+                .parse_id_from_manifest_path("s3://my-bucket/my-job//manifest.json")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_path_helpers() {
+        let store =
+            S3CheckpointStore::new("s3://bucket/prefix/", Arc::new(IOConfig::default())).unwrap();
+        assert!(store.prefix.ends_with("prefix"));
+        let id = CheckpointId::generate(3);
+        let id_str = id.to_string();
+        assert_eq!(
+            store.key_path(&id, 3),
+            format!("s3://bucket/prefix/{id_str}/keys/0003.parquet")
+        );
+        assert_eq!(
+            store.file_path(&id, 0),
+            format!("s3://bucket/prefix/{id_str}/files/0000.bin")
+        );
+        assert_eq!(
+            store.manifest_path(&id),
+            format!("s3://bucket/prefix/{id_str}/manifest.json")
+        );
+        assert_eq!(store.manifests_glob(), "s3://bucket/prefix/*/manifest.json");
+    }
+
+    #[test]
+    fn test_manifest_serde_roundtrip() {
+        let now = rfc3339_from(SystemTime::now());
+        let manifest = Manifest {
+            checkpoint_id: "task-0-checkpoint-abc".to_string(),
+            status: ManifestStatus::Checkpointed,
+            created_at: now.clone(),
+            checkpointed_at: now.clone(),
+            committed_at: None,
+            num_key_files: 3,
+            num_file_files: 1,
+        };
+        let raw = serde_json::to_vec(&manifest).unwrap();
+        let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(decoded.checkpoint_id, manifest.checkpoint_id);
+        assert_eq!(decoded.status, ManifestStatus::Checkpointed);
+        assert_eq!(decoded.created_at, now);
+        assert_eq!(decoded.checkpointed_at, now);
+        assert_eq!(decoded.committed_at, None);
+        assert_eq!(decoded.num_key_files, 3);
+        assert_eq!(decoded.num_file_files, 1);
+    }
+
+    #[test]
+    fn test_manifest_committed_at_serde_roundtrip() {
+        let now = rfc3339_from(SystemTime::now());
+        let manifest = Manifest {
+            checkpoint_id: "task-0-checkpoint-abc".to_string(),
+            status: ManifestStatus::Committed,
+            created_at: now.clone(),
+            checkpointed_at: now.clone(),
+            committed_at: Some(now.clone()),
+            num_key_files: 1,
+            num_file_files: 0,
+        };
+        let raw = serde_json::to_vec(&manifest).unwrap();
+        let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(decoded.status, ManifestStatus::Committed);
+        assert_eq!(decoded.committed_at, Some(now));
+    }
+
+    #[test]
+    fn test_rfc3339_roundtrip() {
+        let original = SystemTime::now();
+        let s = rfc3339_from(original);
+        let recovered = system_time_from_rfc3339(&s).unwrap();
+        let diff = original
+            .duration_since(recovered)
+            .or_else(|e| Ok::<_, ()>(e.duration()))
+            .unwrap();
+        assert!(diff < Duration::from_millis(1));
+        assert!(s.ends_with('Z'));
+        assert_eq!(s.len(), "2026-04-03T10:30:00.000Z".len());
+    }
+
+    #[test]
+    fn test_system_time_from_rfc3339_error() {
+        let err = system_time_from_rfc3339("not-a-timestamp").unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
+    }
+}

@@ -1,9 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig};
+use common_daft_config::{PyDaftEventLogConfig, PyDaftExecutionConfig, PyDaftPlanningConfig};
 use common_metrics::QueryEndState;
 use daft_core::python::PySchema;
-use daft_micropartition::python::PyMicroPartition;
 use pyo3::prelude::*;
 
 use crate::{
@@ -18,13 +17,17 @@ pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
 #[pymethods]
 impl PyQueryMetadata {
     #[new]
-    #[pyo3(signature = (output_schema, unoptimized_plan, runner, ray_dashboard_url=None, entrypoint=None))]
+    #[pyo3(signature = (output_schema, unoptimized_plan, runner, ray_dashboard_url=None, entrypoint=None, python_version=None, daft_version=None, ray_version=None))]
+    #[allow(clippy::too_many_arguments)]
     fn __new__(
         output_schema: PySchema,
         unoptimized_plan: &str,
         runner: &str,
         ray_dashboard_url: Option<String>,
         entrypoint: Option<String>,
+        python_version: Option<String>,
+        daft_version: Option<String>,
+        ray_version: Option<String>,
     ) -> Self {
         Self(Arc::new(QueryMetadata {
             output_schema: output_schema.into(),
@@ -32,6 +35,9 @@ impl PyQueryMetadata {
             runner: runner.into(),
             ray_dashboard_url,
             entrypoint,
+            python_version,
+            daft_version,
+            ray_version,
         }))
     }
     #[getter]
@@ -53,6 +59,18 @@ impl PyQueryMetadata {
     #[getter]
     pub fn entrypoint(&self) -> Option<String> {
         self.0.entrypoint.clone()
+    }
+    #[getter]
+    pub fn python_version(&self) -> Option<String> {
+        self.0.python_version.clone()
+    }
+    #[getter]
+    pub fn daft_version(&self) -> Option<String> {
+        self.0.daft_version.clone()
+    }
+    #[getter]
+    pub fn ray_version(&self) -> Option<String> {
+        self.0.ray_version.clone()
     }
 }
 
@@ -189,6 +207,22 @@ impl PyDaftContext {
         py.detach(|| self.inner.set_planning_config(config.config));
     }
 
+    #[getter(_daft_event_log_config)]
+    pub fn get_daft_event_log_config(&self, py: Python) -> PyResult<PyDaftEventLogConfig> {
+        let config = py.detach(|| self.inner.event_log_config());
+        Ok(PyDaftEventLogConfig { config })
+    }
+
+    #[setter(_daft_event_log_config)]
+    pub fn set_daft_event_log_config(
+        &self,
+        py: Python,
+        config: PyDaftEventLogConfig,
+    ) -> PyResult<()> {
+        py.detach(|| self.inner.set_event_log_config(config.config));
+        Ok(())
+    }
+
     pub fn attach_subscriber(&self, py: Python, alias: String, subscriber: Py<PyAny>) {
         py.detach(|| {
             self.inner.attach_subscriber(
@@ -216,21 +250,16 @@ impl PyDaftContext {
         Ok(())
     }
 
+    pub fn notify_query_heartbeat(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.detach(|| self.inner.notify_query_heartbeat(query_id.into()))?;
+        Ok(())
+    }
+
     pub fn notify_query_end(&self, py: Python, query_id: String, query_result: PyQueryResult) {
         py.detach(|| {
             self.inner
                 .notify_query_end(query_id.into(), query_result.into());
         });
-    }
-
-    pub fn notify_result_out(
-        &self,
-        py: Python,
-        query_id: String,
-        result: PyMicroPartition,
-    ) -> PyResult<()> {
-        py.detach(|| self.inner.notify_result_out(query_id.into(), result.into()))?;
-        Ok(())
     }
 
     pub fn notify_optimization_start(&self, py: Python, query_id: String) -> PyResult<()> {

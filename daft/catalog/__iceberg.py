@@ -11,7 +11,6 @@ from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
 from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
 from pyiceberg.partitioning import _PartitionNameGenerator
-from pyiceberg.schema import Schema as PyIcebergSchema
 from pyiceberg.schema import assign_fresh_schema_ids
 from pyiceberg.table import Table as InnerTable
 from pyiceberg.transforms import (
@@ -24,10 +23,14 @@ from pyiceberg.transforms import (
     YearTransform,
 )
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pyiceberg.schema import Schema as PyIcebergSchema
+
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
 
@@ -140,6 +143,12 @@ class IcebergCatalog(Catalog):
     # create_*
     ###
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Iceberg does not support function registration.")
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         ident = _to_pyiceberg_ident(identifier)
         self._inner.create_namespace(ident)
@@ -238,7 +247,7 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
-    _read_options = {"snapshot_id"}
+    _read_options = {"snapshot_id", "branch", "tag"}
     _write_options: set[str] = set()
 
     def __init__(self) -> None:
@@ -262,7 +271,12 @@ class IcebergTable(Table):
 
     def read(self, **options: Any | None) -> DataFrame:
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)
-        return read_iceberg(self._inner, snapshot_id=options.get("snapshot_id"))
+        return read_iceberg(
+            self._inner,
+            snapshot_id=options.get("snapshot_id"),
+            branch=options.get("branch"),
+            tag=options.get("tag"),
+        )
 
     def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Iceberg write", options, IcebergTable._write_options)

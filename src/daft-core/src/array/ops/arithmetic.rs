@@ -53,6 +53,7 @@ use crate::{
 //   the same throughput. At n=1K the conversion overhead dominates for the kernel paths.
 
 /// Perform an element-wise arithmetic operation on two DataArrays, with broadcasting.
+#[inline(never)]
 fn arithmetic_helper<T, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
@@ -180,6 +181,7 @@ where
 /// Null-aware binary operation on equal-length DataArrays.
 /// Unlike `arithmetic_helper`, this checks validity before computing each element,
 /// avoiding panics from operations like division on garbage values at null positions.
+#[inline(never)]
 fn null_aware_binary<T, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
@@ -211,6 +213,7 @@ where
 
 /// Helper for broadcast-left (lhs=scalar) with null-aware rhs iteration.
 /// Used by div/rem when rhs has nulls that might contain garbage zeros.
+#[inline(never)]
 fn broadcast_left_null_aware<T, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
@@ -357,6 +360,7 @@ impl Div for &Decimal128Array {
     }
 }
 
+#[inline(never)]
 fn fixed_sized_list_arithmetic_helper<Kernel>(
     lhs: &FixedSizeListArray,
     rhs: &FixedSizeListArray,

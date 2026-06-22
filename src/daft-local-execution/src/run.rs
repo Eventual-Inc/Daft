@@ -1,6 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -10,10 +13,20 @@ use common_error::DaftResult;
 use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
-use daft_context::{DaftContext, Subscriber};
+use daft_context::{
+    DaftContext, Subscriber,
+    subscribers::{
+        Event, event_header,
+        events::{TaskInfo, TaskStartEvent},
+    },
+};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
+use daft_shuffles::server::flight_server::{
+    FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
+};
 use futures::{FutureExt, future::BoxFuture};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
@@ -24,7 +37,10 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt},
+    daft_partition_refs::PyFlightPartitionRef,
+    pyo3::{
+        Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
+    },
 };
 
 use crate::{
@@ -37,6 +53,11 @@ use crate::{
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
 };
+
+enum ExecutionEngineResultItem {
+    Partition(MicroPartition),
+    FlightPartitionRef(FlightPartitionRef),
+}
 
 /// Global tokio runtime shared by all NativeExecutor instances
 static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
@@ -57,23 +78,33 @@ fn get_global_runtime() -> &'static Handle {
 
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
-    unimplemented!("get_global_runtime is not implemented without python feature");
+    GLOBAL_RUNTIME.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build global tokio runtime for NativeExecutor");
+        let handle = rt.handle().clone();
+        // Keep the runtime alive for the duration of the process.
+        std::thread::spawn(move || {
+            rt.block_on(futures::future::pending::<()>());
+        });
+        handle
+    })
 }
 
 /// Message sent to the execution task to enqueue inputs
-#[derive(Clone)]
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
     /// Plan inputs grouped by source_id
     inputs: HashMap<SourceId, Input>,
     /// Sender for results of this input_id
-    result_sender: UnboundedSender<MicroPartition>,
+    result_sender: UnboundedSender<ExecutionEngineResultItem>,
 }
 
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
-    output_senders: HashMap<InputId, UnboundedSender<MicroPartition>>,
+    output_senders: HashMap<InputId, UnboundedSender<ExecutionEngineResultItem>>,
     /// Wall-clock start instant when each `input_id` was enqueued to the pipeline.
     input_start_times: HashMap<InputId, Instant>,
 }
@@ -98,13 +129,26 @@ impl MessageRouter {
                 partition,
             } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(partition);
+                    let _ = sender.send(ExecutionEngineResultItem::Partition(partition));
+                }
+            }
+            PipelineMessage::FlightPartitionRef {
+                input_id,
+                partition_ref,
+            } => {
+                if let Some(sender) = self.output_senders.get(&input_id) {
+                    let _ =
+                        sender.send(ExecutionEngineResultItem::FlightPartitionRef(partition_ref));
                 }
             }
         }
     }
 
-    fn insert_output_sender(&mut self, input_id: InputId, sender: UnboundedSender<MicroPartition>) {
+    fn insert_output_sender(
+        &mut self,
+        input_id: InputId,
+        sender: UnboundedSender<ExecutionEngineResultItem>,
+    ) {
         self.input_start_times.insert(input_id, Instant::now());
         self.output_senders.insert(input_id, sender);
     }
@@ -127,6 +171,7 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
+    skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
 }
 
 #[cfg_attr(
@@ -135,12 +180,13 @@ struct PlanState {
 )]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
+    address: Option<String>,
 }
 
 #[cfg(feature = "python")]
 impl Default for PyNativeExecutor {
     fn default() -> Self {
-        Self::new()
+        Self::new(false, "")
     }
 }
 
@@ -148,10 +194,17 @@ impl Default for PyNativeExecutor {
 #[pymethods]
 impl PyNativeExecutor {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        let executor = NativeExecutor::new(is_flotilla_worker, ip);
+        let address = executor.shuffle_address();
         Self {
-            executor: Arc::new(Mutex::new(NativeExecutor::new())),
+            executor: Arc::new(Mutex::new(executor)),
+            address,
         }
+    }
+
+    pub fn shuffle_address(&self) -> Option<String> {
+        self.address.clone()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -233,7 +286,17 @@ impl PyNativeExecutor {
     }
 }
 
-fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
+/// Returns a fingerprint that is unique for each call when the caller does not
+/// supply one. Using a fixed value (e.g. 0) caused `NativeExecutor::run` to
+/// reuse the cached pipeline from a prior execution when the new plan requires
+/// a different `InputSender` variant, which reached the `unreachable!` branch
+/// in `InputSender::send` (see GitHub issue #7087).
+fn next_auto_fingerprint() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option<u32>) {
     let query_id = ctx
         .as_ref()
         .and_then(|c| c.get("query_id"))
@@ -243,8 +306,23 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
         .as_ref()
         .and_then(|c| c.get("plan_fingerprint"))
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
-    (query_id, fingerprint)
+        .unwrap_or_else(next_auto_fingerprint);
+    let task_id = ctx
+        .as_ref()
+        .and_then(|c| c.get("task_id"))
+        .and_then(|s| s.parse::<u32>().ok());
+
+    (query_id, fingerprint, task_id)
+}
+
+// TODO: fix configuration for events
+// This is copied from task_lifecycle.rs to avoid the daft-distributed dependency
+pub fn task_events_enabled() -> bool {
+    if let Ok(val) = std::env::var("DAFT_TASK_EVENTS_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_TASK_EVENTS_ENABLED=true
+    }
 }
 
 /// The core execution loop that drives a pipeline to completion.
@@ -327,17 +405,43 @@ async fn run_execution_loop(
     result
 }
 
-pub(crate) struct NativeExecutor {
+pub struct NativeExecutor {
     cancel: CancellationToken,
+    is_flotilla_worker: bool,
+    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server_connection: Option<FlightServerConnectionHandle>,
     plans: HashMap<u64, PlanState>,
 }
 
 impl NativeExecutor {
-    pub fn new() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            plans: HashMap::new(),
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        // Determine if we are running in a flotilla worker.
+        if is_flotilla_worker {
+            let shuffle_server = Arc::new(ShuffleFlightServer::new());
+            let shuffle_server_connection = Some(start_server_loop(ip, shuffle_server.clone()));
+
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: true,
+                shuffle_server: Some(shuffle_server),
+                shuffle_server_connection,
+                plans: HashMap::new(),
+            }
+        } else {
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: false,
+                shuffle_server: None,
+                shuffle_server_connection: None,
+                plans: HashMap::new(),
+            }
         }
+    }
+
+    pub fn shuffle_address(&self) -> Option<String> {
+        self.shuffle_server_connection
+            .as_ref()
+            .map(|conn| conn.shuffle_address())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -351,18 +455,60 @@ impl NativeExecutor {
         input_id: InputId,
         maintain_order: bool,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
-        let (query_id, fingerprint) = parse_context(additional_context.as_ref());
+        let (query_id, fingerprint, task_id) = parse_context(additional_context.as_ref());
+
+        if self.is_flotilla_worker {
+            debug_assert_eq!(
+                task_id,
+                Some(input_id),
+                "Flotilla invariant violated: task_id must match input_id"
+            );
+        }
+
+        let task_start_dispatch = if self.is_flotilla_worker
+            && task_events_enabled()
+            && let Some(task_id) = task_id
+        {
+            Some((
+                Event::TaskStart(TaskStartEvent {
+                    header: event_header(query_id.clone()),
+                    task: Arc::new(TaskInfo {
+                        id: task_id,
+                        last_node_id: 0,  // TODO: propagate last_node_id
+                        node_ids: vec![], // TODO: propagate node_ids
+                        plan_fingerprint: fingerprint as u32,
+                        name: None,
+                    }),
+                    worker_id: None, // TODO: propagate worker id
+                }),
+                subscribers.clone(),
+            ))
+        } else {
+            None
+        };
 
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
-            let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+            let shuffle_address = self.shuffle_address();
+            let ctx = BuilderContext::new_with_context(
+                query_id.clone(),
+                additional_context,
+                self.shuffle_server
+                    .as_ref()
+                    .map(|server| (server.clone(), shuffle_address.unwrap())),
+            );
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
             let handle = get_global_runtime();
-            let stats_manager =
-                RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+            let stats_manager = RuntimeStatsManager::try_new(
+                handle,
+                &pipeline,
+                subscribers,
+                query_id,
+                self.is_flotilla_worker,
+            )?;
             let stats_handle = stats_manager.handle();
 
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
@@ -385,6 +531,7 @@ impl NativeExecutor {
                     enqueue_input_sender: enqueue_input_tx,
                     stats_handle,
                     active_input_ids: HashSet::new(),
+                    skipped_corrupt_files: ctx.skipped_corrupt_files.clone(),
                 },
             );
         }
@@ -407,6 +554,12 @@ impl NativeExecutor {
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
                 }
+
+                // Send the event after the task has been enqueued for execution
+                if let Some((event, subscribers)) = task_start_dispatch {
+                    dispatch_task_start_event(&subscribers, &event);
+                }
+
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
                 })
@@ -441,17 +594,30 @@ impl NativeExecutor {
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
                 plan_state.task_handle.await??;
+                let skipped = plan_state
+                    .skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 // If the snapshot failed (e.g. pipeline died), return empty stats.
-                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                Ok(stats
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         } else {
             let stats_handle = plan_state.stats_handle.clone();
+            let skipped_corrupt_files = plan_state.skipped_corrupt_files.clone();
             Ok(async move {
+                let skipped = skipped_corrupt_files
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
                 Ok(stats_handle
                     .take_input_snapshot(input_id)
                     .await
-                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]))
+                    .with_skipped_corrupt_files(skipped))
             }
             .boxed())
         }
@@ -504,16 +670,35 @@ impl NativeExecutor {
 impl Drop for NativeExecutor {
     fn drop(&mut self) {
         self.cancel.cancel();
+        if let Some(conn) = &mut self.shuffle_server_connection {
+            let _ = conn.shutdown();
+        }
     }
 }
 
 pub struct ExecutionEngineResult {
-    receiver: crate::channel::UnboundedReceiver<MicroPartition>,
+    receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<MicroPartition> {
+    async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
         self.receiver.recv().await
+    }
+
+    /// Consume all pipeline output for this input_id until EOF, returning any
+    /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
+    /// are only relevant when shuffles are enabled). Intended for tests that
+    /// exercise `NativeExecutor` end-to-end and need the pipeline to finish
+    /// producing output before `try_finish` is called — mirroring what the
+    /// production Python `__anext__` loop does.
+    pub async fn collect_partitions_for_testing(mut self) -> Vec<MicroPartition> {
+        let mut out = Vec::new();
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::Partition(p) = item {
+                out.push(p);
+            }
+        }
+        out
     }
 }
 
@@ -544,7 +729,23 @@ impl PyResultReceiver {
                 .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
-            Ok(part.map(PyMicroPartition::from))
+            Python::attach(|py| {
+                Ok(match part {
+                    None => py.None(),
+                    Some(ExecutionEngineResultItem::Partition(partition)) => {
+                        PyMicroPartition::from(partition)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                        PyFlightPartitionRef::from(partition_ref)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                })
+            })
         })
     }
 
@@ -566,5 +767,13 @@ impl PyResultReceiver {
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
         })
+    }
+}
+
+fn dispatch_task_start_event(subscribers: &[Arc<dyn Subscriber>], event: &Event) {
+    for subscriber in subscribers {
+        if let Err(e) = subscriber.on_event(event.clone()) {
+            log::debug!("Failed to dispatch task start event: {}", e);
+        }
     }
 }

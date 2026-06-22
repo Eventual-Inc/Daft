@@ -40,10 +40,7 @@ impl ScalarUDF for BinaryDecode {
         let Args { input, codec } = inputs.try_into()?;
         let input = input.to_field(schema)?;
 
-        if codec == Codec::Utf8 {
-            // special-case for decode('utf-8')
-            return Ok(Field::new(input.name, DataType::Utf8));
-        }
+        ensure!(codec != Codec::Utf8, TypeError: "codec must not be utf-8. should have been converted to cast(input, string)");
         ensure!(
             matches!(input.dtype, DataType::Binary | DataType::FixedSizeBinary(_)),
             TypeError: "Expected argument to be a Binary or FixedSizeBinary, but received {}",
@@ -59,10 +56,6 @@ impl ScalarUDF for BinaryDecode {
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
-        if codec == Codec::Utf8 {
-            // special-case for decode('utf-8')
-            return input.cast(&DataType::Utf8);
-        }
 
         match input.data_type() {
             DataType::Binary => {

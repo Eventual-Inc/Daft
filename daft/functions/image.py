@@ -183,6 +183,92 @@ def image_channel(image: Expression) -> Expression:
     return image_attribute(image, "channel")
 
 
+def image_hash(
+    image: Expression,
+    *,
+    method: Literal[
+        "phash", "phash_simple", "dhash", "dhash_vertical", "ahash", "whash", "crop_resistant", "colorhash"
+    ] = "phash",
+    hash_size: int = 8,
+    binbits: int = 3,
+    segments: int = 3,
+) -> Expression:
+    """Compute a perceptual hash of an image column for near-duplicate detection.
+
+    Returns a ``FixedSizeBinary`` column.
+
+    Output size by method:
+
+    - Single-segment methods: ``hash_size * hash_size`` bits.
+    - ``"crop_resistant"``: ``segments * segments * hash_size * hash_size`` bits.
+    - ``"colorhash"``: ``14 * binbits`` bits (14 colour/intensity bins).
+
+    Two hashes with a low Hamming distance indicate visually similar images.
+
+    Args:
+        image (Image Expression): image column to hash.
+        method (str, default="phash"): Hash algorithm to use. One of:
+
+            - ``"phash"``: Full 2D DCT perceptual hash -- most robust (default).
+            - ``"phash_simple"``: Row-wise DCT only, compared to mean -- faster variant.
+            - ``"dhash"``: Horizontal difference/gradient hash -- fast and accurate.
+            - ``"dhash_vertical"``: Vertical difference hash -- compares top/bottom neighbours.
+            - ``"ahash"``: Average hash -- fastest, least robust.
+            - ``"whash"``: Multi-level Haar wavelet hash, bit-exact with ``imagehash.whash``.
+                          Requires ``hash_size`` to be a power of 2.
+            - ``"crop_resistant"``: Segment-based hash robust against cropping
+                                    (``segments × segments`` grid).
+            - ``"colorhash"``: Color distribution hash in HSV space.
+
+        hash_size (int, default=8): Grid size for spatial hash methods. The output
+            has ``hash_size * hash_size`` bits per segment. Common values: 8 (64-bit),
+            16 (256-bit). Must be a power of 2 for ``"whash"``. Ignored for ``"colorhash"``.
+        binbits (int, default=3): Bits per bin for ``"colorhash"``. The output has
+            ``14 * binbits`` bits total (default: 42 bits = 6 bytes). Ignored for
+            all other methods.
+        segments (int, default=3): Grid dimension for ``"crop_resistant"``. The image is
+            divided into ``segments × segments`` equal tiles, each hashed independently.
+            The total output has ``segments * segments * hash_size * hash_size`` bits.
+            Ignored for all other methods.
+
+    Returns:
+        Expression (FixedSizeBinary Expression): Hash bytes for each image.
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import image_hash
+        >>> df = daft.from_pydict({"img": [...]})  # doctest: +SKIP
+        >>> df = df.with_column("hash", image_hash(df["img"], method="phash"))  # doctest: +SKIP
+        >>> # crop-resistant hash with a 4×4 grid
+        >>> df = df.with_column("ch", image_hash(df["img"], method="crop_resistant", segments=4))  # doctest: +SKIP
+        >>> # colour-distribution hash
+        >>> df = df.with_column("chash", image_hash(df["img"], method="colorhash"))  # doctest: +SKIP
+    """
+    _VALID_METHODS = (
+        "phash",
+        "phash_simple",
+        "dhash",
+        "dhash_vertical",
+        "ahash",
+        "whash",
+        "crop_resistant",
+        "colorhash",
+    )
+    if method not in _VALID_METHODS:
+        raise ValueError(f"method must be one of {_VALID_METHODS!r}, but got: {method!r}")
+    if not isinstance(hash_size, int) or hash_size <= 0:
+        raise ValueError(f"hash_size must be a positive integer, but got: {hash_size!r}")
+    if method == "whash" and (hash_size & (hash_size - 1)) != 0:
+        raise ValueError(f"hash_size must be a power of 2 for 'whash', but got: {hash_size}")
+    if not isinstance(binbits, int) or binbits <= 0:
+        raise ValueError(f"binbits must be a positive integer, but got: {binbits!r}")
+    if not isinstance(segments, int) or segments <= 0:
+        raise ValueError(f"segments must be a positive integer, but got: {segments!r}")
+    return Expression._call_builtin_scalar_fn(
+        "image_hash", image, method=method, hash_size=hash_size, binbits=binbits, segments=segments
+    )
+
+
 def image_mode(image: Expression) -> Expression:
     """Gets the mode of an image.
 

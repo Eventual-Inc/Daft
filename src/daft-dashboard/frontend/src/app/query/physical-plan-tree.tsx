@@ -1,24 +1,99 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import { ExecutingState, OperatorInfo, OperatorStatus, PhysicalPlanNode, TaskStore } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 import {
   getStatusIcon,
-  getStatusBorderColor,
+  getEffectiveStatus,
   formatStatValue,
   formatDuration,
+  statNumericValue,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
+  BYTES_IN_STAT_KEY,
+  BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
-import { categoryColors, defaultColor } from "./tree-colors";
+import EdgeLabel from "./edge-label";
+import { getHeatmapStyle, FINISHED_STYLE, FAILED_STYLE, CANCELED_STYLE } from "./tree-colors";
 
-function getCategoryColor(node: PhysicalPlanNode) {
-  // Try node.type first (e.g. "Source", "Join"), then node.category
-  return categoryColors[node.type] ?? categoryColors[node.category] ?? defaultColor;
+function getCpuSec(operator?: OperatorInfo): number {
+  if (!operator) return 0;
+  const cpuStat = operator.stats[DURATION_US_STAT_KEY];
+  if (cpuStat?.type === "Duration") {
+    return cpuStat.value.secs + cpuStat.value.nanos / 1e9;
+  }
+  return 0;
+}
+
+function getCountStat(
+  operator: OperatorInfo | undefined,
+  key: string,
+): number | null {
+  const stat = operator?.stats[key];
+  if (!stat || stat.type !== "Count") return null;
+  return stat.value;
+}
+
+/**
+ * NodeType variants where (rows_in - rows_out) is a meaningful queue-depth
+ * signal — i.e. the operator is a true 1:1 row transform in steady state.
+ *
+ * Excluded on purpose:
+ *   - Reductive: Filter, Sample, Limit (rows_in > rows_out by design,
+ *     would otherwise be misread as a stuck queue)
+ *   - Amplifying: Explode, Unpivot (rows_in < rows_out)
+ *   - Multi-input / variable cardinality: Concat, all join variants
+ *   - Blocking sinks (Aggregate, Sort, Write, ...) and sources — handled
+ *     by cpu_fraction alone
+ */
+const QUEUE_SIGNAL_NODE_TYPES = new Set<string>([
+  "Project",
+  "UDFProject",
+  "VLLMProject",
+  "AsyncUDFProject",
+  "DistributedActorPoolProject",
+  "IntoBatches",
+  "MonotonicallyIncreasingId",
+]);
+
+/**
+ * Combined bottleneck signal in [0, 1].
+ *
+ * Two signals, take whichever is louder:
+ *   1. cpu_fraction = cpu_us / max(cpu_us across operators)
+ *      — flags CPU-bound work (image_decode, image_resize, sync compute).
+ *   2. queue_fraction = (rows_in - rows_out) / rows_in
+ *      — flags ops sitting on input they haven't emitted (UDF predict
+ *        batching for GPU, async stalls). Only applied to operators in
+ *        QUEUE_SIGNAL_NODE_TYPES so that reductive/amplifying ops don't
+ *        produce false positives.
+ */
+function getBottleneckIntensity(
+  operator: OperatorInfo | undefined,
+  nodeType: string | undefined,
+  maxCpuSec: number,
+): number {
+  if (!operator) return 0;
+
+  const cpuFraction =
+    maxCpuSec > 0 ? Math.min(1, getCpuSec(operator) / maxCpuSec) : 0;
+
+  let queueFraction = 0;
+  if (nodeType && QUEUE_SIGNAL_NODE_TYPES.has(nodeType)) {
+    const rowsIn = getCountStat(operator, ROWS_IN_STAT_KEY);
+    const rowsOut = getCountStat(operator, ROWS_OUT_STAT_KEY);
+    if (rowsIn != null && rowsOut != null && rowsIn > 0) {
+      queueFraction = Math.max(0, (rowsIn - rowsOut) / rowsIn);
+    }
+  }
+
+  return Math.max(cpuFraction, queueFraction);
 }
 
 function useWallClockDuration(operator?: OperatorInfo): string | null {
@@ -40,15 +115,42 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
 function PhysicalNodeCard({
   node,
   operator,
+  intensity,
+  effectiveStatus,
+  isHighlighted,
+  isHovered,
+  queryStatus,
+  onViewTasks,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
+  intensity: number;
+  effectiveStatus: OperatorStatus;
+  /** Sticky highlight — typically set by the URL/node filter from the Tasks sidebar. */
+  isHighlighted: boolean;
+  /** Transient hover preview — set when the user hovers a task row in the sidebar. */
+  isHovered: boolean;
+  queryStatus: QueryStatusName;
+  /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
+  onViewTasks?: (nodeId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const catColor = getCategoryColor(node);
-  const status = operator?.status ?? "Pending";
-  const statusBorder = getStatusBorderColor(status);
+  const isTerminal = queryStatus === "Finished" || queryStatus === "Failed" || queryStatus === "Canceled" || queryStatus === "Dead";
   const wallClock = useWallClockDuration(operator);
+  const cardStyle: React.CSSProperties =
+    effectiveStatus === "Failed"   ? FAILED_STYLE :
+    effectiveStatus === "Finished" ? FINISHED_STYLE :
+    effectiveStatus === "Canceled" ? CANCELED_STYLE :
+    getHeatmapStyle(intensity);
+
+  // Scroll into view only when the *sticky* (click-driven) highlight becomes
+  // active — scrubbing the sidebar via hover shouldn't jump the plan around.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+  }, [isHighlighted]);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
@@ -64,22 +166,56 @@ function PhysicalNodeCard({
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
+  // Sticky click highlight: magenta outer ring (existing).
+  // Transient hover preview: amber inner glow (lower intensity).
+  // When both apply we layer them: amber inner + magenta outer.
+  const ringShadows: string[] = [];
+  if (isHovered) {
+    ringShadows.push(
+      "inset 0 0 0 2px rgb(245, 158, 11), inset 0 0 12px 0px rgba(245, 158, 11, 0.45)",
+    );
+  }
+  if (isHighlighted) {
+    ringShadows.push(
+      "0 0 0 2px rgb(217, 70, 219), 0 0 18px 2px rgba(217, 70, 219, 0.55)",
+    );
+  }
+  const ringStyle: React.CSSProperties =
+    ringShadows.length > 0 ? { boxShadow: ringShadows.join(", ") } : {};
+
   return (
     <div
-      className={`${catColor.bg} ${statusBorder} border-2 rounded-lg px-4 py-2.5 cursor-pointer
-        hover:brightness-125 transition-all min-w-[180px] max-w-[320px]`}
+      ref={cardRef}
+      className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
+        hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
+      style={{ ...cardStyle, ...ringStyle }}
       onClick={() => setExpanded(!expanded)}
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
-        {getStatusIcon(status)}
+        {getStatusIcon(effectiveStatus, isTerminal)}
         <span
-          className={`${main.className} ${catColor.text} text-sm font-bold tracking-wide truncate`}
+          className={`${main.className} text-zinc-100 text-sm font-bold tracking-wide truncate`}
         >
           {node.name}
         </span>
+        {onViewTasks && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewTasks(node.id);
+            }}
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-md
+              bg-zinc-900/60 border border-zinc-700 text-[10px] text-zinc-300
+              hover:text-white hover:border-fuchsia-600 transition-colors"
+            title="View tasks originating from this node"
+          >
+            <ListChecks size={11} />
+            tasks
+          </button>
+        )}
         {hasExpandable && (
-          <span className="text-zinc-500 text-xs ml-auto">
+          <span className={`text-zinc-500 text-xs ${onViewTasks ? "" : "ml-auto"}`}>
             {expanded ? "▾" : "▸"}
           </span>
         )}
@@ -141,8 +277,24 @@ function PhysicalNodeCard({
 
 export default function PhysicalPlanTree({
   exec_state,
+  highlightedNodeId,
+  hoveredNodeIds,
+  onViewTasks,
+  tasksOpen,
+  onOpenTasks,
+  queryStatus,
 }: {
   exec_state: ExecutingState;
+  /** Sticky highlight — driven by the URL/node filter (click-to-filter). */
+  highlightedNodeId?: number | null;
+  /** Transient hover preview set — driven by sidebar row hovers. */
+  hoveredNodeIds?: ReadonlySet<number> | null;
+  onViewTasks?: (nodeId: number) => void;
+  /** Whether the tasks sidebar is currently open. Flotilla only. */
+  tasksOpen?: boolean;
+  /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
+  onOpenTasks?: () => void;
+  queryStatus: QueryStatusName;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -157,11 +309,47 @@ export default function PhysicalPlanTree({
   }
 
   const operators = exec_state.exec_info.operators;
+  const taskStore = exec_state.exec_info.task_store;
+  const maxCpuSec = Math.max(
+    0.001,
+    ...Object.values(operators).map(getCpuSec),
+  );
+
+  const maxBytes = useMemo(() => {
+    let m = 0;
+    for (const op of Object.values(operators)) {
+      const out = statNumericValue(op.stats[BYTES_OUT_STAT_KEY]);
+      if (out > m) m = out;
+    }
+    return m;
+  }, [operators]);
+
+  const renderEdge = useCallback(
+    (
+      _parent: PhysicalPlanNode,
+      child: PhysicalPlanNode,
+      position: "single" | "branch",
+    ) => {
+      const childOp = operators[child.id];
+      const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
+      const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
+      const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
+      return (
+        <EdgeLabel
+          bytes={bytesOut}
+          amplification={amplification}
+          maxBytes={maxBytes}
+          position={position}
+        />
+      );
+    },
+    [operators, maxBytes],
+  );
 
   return (
-    <div className="bg-zinc-900 h-full flex flex-col">
+    <div className="h-full flex flex-col">
       {/* View toggle */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-zinc-800">
+      <div className="flex items-center gap-2 px-6 pt-3 pb-2 border-b border-zinc-800">
         {plan && (
           <button
             onClick={() => setViewMode("tree")}
@@ -196,6 +384,17 @@ export default function PhysicalPlanTree({
             JSON
           </button>
         )}
+        {onOpenTasks && !tasksOpen && (
+          <button
+            onClick={onOpenTasks}
+            className={`${main.className} ml-auto flex items-center gap-1 text-xs px-3 py-1 rounded-md
+              text-zinc-400 hover:text-zinc-200 transition-colors`}
+            title="Show tasks sidebar"
+          >
+            <PanelRightOpen size={13} />
+            Tasks
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -205,9 +404,28 @@ export default function PhysicalPlanTree({
             <TreeLayout
               node={plan}
               getChildren={(node) => node.children ?? []}
-              renderNode={(node) => (
-                <PhysicalNodeCard node={node} operator={operators[node.id]} />
-              )}
+              renderNode={(node) => {
+                const op = operators[node.id];
+                const intensity = getBottleneckIntensity(
+                  op,
+                  node.type,
+                  maxCpuSec,
+                );
+                const effectiveStatus = getEffectiveStatus(op, node.id, taskStore, queryStatus);
+                return (
+                  <PhysicalNodeCard
+                    node={node}
+                    operator={op}
+                    intensity={intensity}
+                    effectiveStatus={effectiveStatus}
+                    isHighlighted={highlightedNodeId === node.id}
+                    isHovered={hoveredNodeIds?.has(node.id) ?? false}
+                    queryStatus={queryStatus}
+                    onViewTasks={onViewTasks}
+                  />
+                );
+              }}
+              renderEdge={renderEdge}
             />
           </div>
         ) : viewMode === "json" && plan ? (
@@ -217,7 +435,7 @@ export default function PhysicalPlanTree({
             {JSON.stringify(plan, null, 2)}
           </pre>
         ) : (
-          <ProgressTable exec_state={exec_state} />
+          <ProgressTable exec_state={exec_state} queryStatus={queryStatus} />
         )}
       </div>
     </div>

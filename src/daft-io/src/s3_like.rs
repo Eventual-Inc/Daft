@@ -245,7 +245,9 @@ impl From<Error> for super::Error {
             err: E,
         ) -> super::Error {
             match err.code() {
-                Some("InternalError") => super::Error::MiscTransient {
+                // None: S3 returned a service error with no Code element -- observed on AWS
+                // for connection resets / malformed error bodies, which are always transient.
+                Some("InternalError") | None => super::Error::MiscTransient {
                     path,
                     source: err.into(),
                 },
@@ -561,12 +563,24 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
         fn default_client() -> SharedHttpClient {
             use aws_smithy_http_client::{
-                Builder,
+                Connector,
+                proxy::ProxyConfig,
                 tls::{Provider, rustls_provider::CryptoMode},
             };
-            Builder::new()
-                .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
-                .build_https()
+            use aws_smithy_runtime_api::client::http::{
+                HttpConnectorSettings, SharedHttpConnector, http_client_fn,
+            };
+
+            let proxy_config = ProxyConfig::from_env();
+
+            http_client_fn(move |settings: &HttpConnectorSettings, _components| {
+                let connector = Connector::builder()
+                    .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+                    .proxy_config(proxy_config.clone())
+                    .connector_settings(settings.clone())
+                    .build();
+                SharedHttpConnector::new(connector)
+            })
         }
 
         fn no_verify_hostname_client() -> SharedHttpClient {

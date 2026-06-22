@@ -497,6 +497,19 @@ class Expression:
 
         return cast(self, dtype)
 
+    def try_cast(self, dtype: DataTypeLike) -> Expression:
+        """Attempts to cast an expression to the given datatype, returning null on failure.
+
+        Unlike `cast`, this method does not raise an error when the conversion fails.
+        Instead, it returns null for values that cannot be converted.
+
+        Tip: See Also
+            [`daft.functions.try_cast`](https://docs.daft.ai/en/stable/api/functions/try_cast/)
+        """
+        from daft.functions import try_cast
+
+        return try_cast(self, dtype)
+
     if TYPE_CHECKING:
 
         def as_int8(self) -> Expression: ...
@@ -1050,6 +1063,26 @@ class Expression:
 
         return mean(self)
 
+    def percentile(self, percentage: builtins.float) -> Expression:
+        """Calculates the exact percentile for a column of numeric values.
+
+        Tip: See Also
+            [`daft.functions.percentile`](https://docs.daft.ai/en/stable/api/functions/percentile/)
+        """
+        from daft.functions import percentile
+
+        return percentile(self, percentage)
+
+    def median(self) -> Expression:
+        """Calculates the median of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.median`](https://docs.daft.ai/en/stable/api/functions/median/)
+        """
+        from daft.functions import median
+
+        return median(self)
+
     def stddev(self, ddof: int = 1) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 
@@ -1319,6 +1352,31 @@ class Expression:
 
         return minhash(self, num_hashes=num_hashes, ngram_size=ngram_size, seed=seed, hash_function=hash_function)
 
+    def simhash(
+        self,
+        *,
+        ngram_size: int = 3,
+        hash_function: Literal["murmurhash3", "xxhash", "xxhash32", "xxhash64", "xxhash3_64", "sha1"] = "xxhash3_64",
+    ) -> Expression:
+        """Compute a SimHash fingerprint of this string expression.
+
+        Tip: See Also
+            [`daft.functions.simhash`](https://docs.daft.ai/en/stable/api/functions/simhash/)
+        """
+        from daft.functions import simhash
+
+        return simhash(self, ngram_size=ngram_size, hash_function=hash_function)
+
+    def hamming_distance(self, other: Expression) -> Expression:
+        """Compute the bitwise Hamming distance between two hash fingerprints.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance`](https://docs.daft.ai/en/stable/api/functions/hamming_distance/)
+        """
+        from daft.functions import hamming_distance
+
+        return hamming_distance(self, other)
+
     def encode(self, charset: ENCODING_CHARSET) -> Expression:
         """Encode binary or string values using the specified character set.
 
@@ -1451,6 +1509,26 @@ class Expression:
         from daft.functions import over
 
         return over(self, window)
+
+    def first_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the first value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the first non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import first_value
+
+        return first_value(self, ignore_nulls=ignore_nulls)
+
+    def last_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the last value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the last non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import last_value
+
+        return last_value(self, ignore_nulls=ignore_nulls)
 
     def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
@@ -1890,6 +1968,26 @@ class Expression:
 
         return to_datetime(self, format, timezone)
 
+    def convert_time_zone(self, to_timezone: builtins.str, from_timezone: builtins.str | None = None) -> Expression:
+        """Converts a timestamp to another timezone while preserving the instant in time.
+
+        Tip: See Also
+            [`daft.functions.convert_time_zone`](https://docs.daft.ai/en/stable/api/functions/convert_time_zone/)
+        """
+        from daft.functions import convert_time_zone
+
+        return convert_time_zone(self, to_timezone, from_timezone)
+
+    def replace_time_zone(self, timezone: builtins.str | None = None) -> Expression:
+        """Replaces the timezone of a timestamp while preserving the local time.
+
+        Tip: See Also
+            [`daft.functions.replace_time_zone`](https://docs.daft.ai/en/stable/api/functions/replace_time_zone/)
+        """
+        from daft.functions import replace_time_zone
+
+        return replace_time_zone(self, timezone)
+
     def contains(self, substr: builtins.str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
@@ -2266,6 +2364,56 @@ class Expression:
 
         return length_bytes(self)
 
+    def hamming_distance_str(self, other: Expression) -> Expression:
+        """Compute the character-level Hamming distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.hamming_distance_str`](https://docs.daft.ai/en/stable/api/functions/hamming_distance_str/)
+        """
+        from daft.functions import hamming_distance_str
+
+        return hamming_distance_str(self, other)
+
+    def levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Levenshtein edit distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/levenshtein_distance/)
+        """
+        from daft.functions import levenshtein_distance
+
+        return levenshtein_distance(self, other)
+
+    def jaro_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_similarity/)
+        """
+        from daft.functions import jaro_similarity
+
+        return jaro_similarity(self, other)
+
+    def jaro_winkler_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro-Winkler similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_winkler_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_winkler_similarity/)
+        """
+        from daft.functions import jaro_winkler_similarity
+
+        return jaro_winkler_similarity(self, other)
+
+    def damerau_levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Damerau-Levenshtein distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.damerau_levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/damerau_levenshtein_distance/)
+        """
+        from daft.functions import damerau_levenshtein_distance
+
+        return damerau_levenshtein_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -2315,6 +2463,19 @@ class Expression:
         from daft.functions import list_join
 
         return list_join(self, delimiter)
+
+    def list_flatten(self) -> Expression:
+        """Flattens one level of nesting in each list.
+
+        Outer null rows are preserved as null. Null inner lists are skipped while flattening,
+        and null leaf values are preserved in the output.
+
+        Tip: See Also
+            [`daft.functions.list_flatten`](https://docs.daft.ai/en/stable/api/functions/list_flatten/)
+        """
+        from daft.functions import list_flatten
+
+        return list_flatten(self)
 
     def list_count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
@@ -2428,6 +2589,16 @@ class Expression:
 
         return list_map(self, mapper)
 
+    def list_filter(self, predicate: Expression) -> Expression:
+        """Filters elements in the list using a boolean predicate over `daft.element()`.
+
+        Tip: See Also
+            [`daft.functions.list_filter`](https://docs.daft.ai/en/stable/api/functions/list_filter/)
+        """
+        from daft.functions import list_filter
+
+        return list_filter(self, predicate)
+
     def encode_image(self, image_format: builtins.str | ImageFormat) -> Expression:
         """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
@@ -2540,6 +2711,46 @@ class Expression:
 
         return find(self, substr)
 
+    def translate(self, from_str: builtins.str | Expression, to_str: builtins.str | Expression) -> Expression:
+        """Translates characters in the string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+        Tip: See Also
+            [`daft.functions.translate`](https://docs.daft.ai/en/stable/api/functions/translate/)
+        """
+        from daft.functions import translate
+
+        return translate(self, from_str, to_str)
+
+    def substring_index(self, delim: builtins.str | Expression, count: builtins.int | Expression) -> Expression:
+        """Returns the substring from string before count occurrences of the delimiter.
+
+        Tip: See Also
+            [`daft.functions.substring_index`](https://docs.daft.ai/en/stable/api/functions/substring_index/)
+        """
+        from daft.functions import substring_index
+
+        return substring_index(self, delim, count)
+
+    def soundex(self) -> Expression:
+        """Returns the Soundex code of the string.
+
+        Tip: See Also
+            [`daft.functions.soundex`](https://docs.daft.ai/en/stable/api/functions/soundex/)
+        """
+        from daft.functions import soundex
+
+        return soundex(self)
+
+    def ascii(self) -> Expression:
+        """Returns the ASCII numeric value of the first character of the string.
+
+        Tip: See Also
+            [`daft.functions.ascii_func`](https://docs.daft.ai/en/stable/api/functions/ascii_func/)
+        """
+        from daft.functions import ascii_func
+
+        return ascii_func(self)
+
     def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
         """Convert an image expression to the specified mode.
 
@@ -2589,6 +2800,16 @@ class Expression:
         from daft.functions import map_get
 
         return map_get(self, key)
+
+    def map_keys(self) -> Expression:
+        """Returns a list of all keys in the map.
+
+        Tip: See Also
+            [`daft.functions.map_keys`](https://docs.daft.ai/en/stable/api/functions/map_keys/)
+        """
+        from daft.functions import map_keys
+
+        return map_keys(self)
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Get a subset of each list or binary value.
@@ -2760,6 +2981,41 @@ class Expression:
 
         return image_mode(self)
 
+    def image_hash(
+        self,
+        *,
+        method: Literal[
+            "phash",
+            "phash_simple",
+            "dhash",
+            "dhash_vertical",
+            "ahash",
+            "whash",
+            "crop_resistant",
+            "colorhash",
+        ] = "phash",
+        hash_size: int = 8,
+        binbits: int = 3,
+    ) -> Expression:
+        """Computes a perceptual hash of an image.
+
+        Tip: See Also
+            [`daft.functions.image_hash`](https://docs.daft.ai/en/stable/api/functions/image_hash/)
+        """
+        from daft.functions import image_hash
+
+        return image_hash(self, method=method, hash_size=hash_size, binbits=binbits)
+
+    def file_path(self) -> Expression:
+        """Gets the path (URL) of a file as a string.
+
+        Tip: See Also
+            [`daft.functions.file_path`](https://docs.daft.ai/en/stable/api/functions/file_path/)
+        """
+        from daft.functions import file_path
+
+        return file_path(self)
+
     def file_size(self) -> Expression:
         """Gets the size of a file in bytes.
 
@@ -2769,6 +3025,76 @@ class Expression:
         from daft.functions import file_size
 
         return file_size(self)
+
+    def file_exists(self) -> Expression:
+        """Checks whether a file exists.
+
+        Tip: See Also
+            [`daft.functions.file_exists`](https://docs.daft.ai/en/stable/api/functions/file_exists/)
+        """
+        from daft.functions import file_exists
+
+        return file_exists(self)
+
+    def video_metadata(self) -> Expression:
+        """Gets metadata for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_metadata`](https://docs.daft.ai/en/stable/api/functions/video_metadata/)
+        """
+        from daft.functions import video_metadata
+
+        return video_metadata(self)
+
+    def video_keyframes(self, *, start_time: float = 0, end_time: float | None = None) -> Expression:
+        """Gets keyframes for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_keyframes`](https://docs.daft.ai/en/stable/api/functions/video_keyframes/)
+        """
+        from daft.functions import video_keyframes
+
+        return video_keyframes(self, start_time=start_time, end_time=end_time)
+
+    def video_frames(
+        self,
+        *,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        is_key_frame: bool | None = None,
+    ) -> Expression:
+        """Decodes video frames from a video file.
+
+        Tip: See Also
+            [`daft.functions.video_frames`](https://docs.daft.ai/en/stable/api/functions/video_frames/)
+        """
+        from daft.functions import video_frames
+
+        return video_frames(
+            self,
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+        )
+
+    def image_file_metadata(self) -> Expression:
+        """Gets metadata for an image file (width, height, format, mode).
+
+        Reads only the file header without decoding pixel data.
+        """
+        from daft.functions import image_file_metadata
+
+        return image_file_metadata(self)
+
+    def decode_image_file(self) -> Expression:
+        """Decodes an image file into an Image column."""
+        from daft.functions import decode_image_file
+
+        return decode_image_file(self)
 
 
 class WhenExpr(Expression):

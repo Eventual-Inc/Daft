@@ -30,7 +30,7 @@ You can take the IP address and port and pass it to Daft with [`set_runner_ray`]
 ```python
 >>> import daft
 >>> daft.set_runner_ray("ray://127.0.0.1:10001")
-DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001', max_task_backlog=None), _disallow_set_runner=True, _runner=None)
+DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001'), _disallow_set_runner=True, _runner=None)
 
 >>> df = daft.from_pydict({
 ...   'text': ['hello', 'world']
@@ -42,7 +42,7 @@ DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x
 ╭───────╮
 │ text  │
 │ ---   │
-│ Utf8  │
+│ String │
 ╞═══════╡
 │ hello │
 ├╌╌╌╌╌╌╌┤
@@ -145,3 +145,25 @@ ray job submit \
     The runtime env parameter specifies that Daft should be installed on the Ray workers. Alternative methods of including Daft in the worker dependencies can be found [here](https://docs.ray.io/en/latest/ray-core/handling-dependencies.html).
 
 For more information about Ray jobs, see [Ray docs -> Ray Jobs Overview](https://docs.ray.io/en/latest/cluster/running-applications/job-submission/index.html).
+
+### Autoscaling and downscaling
+
+When Daft runs on a Ray cluster managed by the Ray autoscaler (including KubeRay), it can send scale-up requests based on pending task demand. Ray's autoscaler request API is sticky: without additional coordination, the autoscaler may keep previously requested capacity even when the workload becomes idle.
+
+Daft can optionally retire idle Flotilla workers (scale-in) and clear outstanding autoscaler requests to make it easier for Ray to scale the cluster back down. This feature is **opt-in**.
+
+You can enable it via `set_runner_ray`:
+
+```python
+import daft
+
+daft.set_runner_ray(
+    address="ray://<head_node_host>:10001",
+    downscale_enabled=True,
+    downscale_idle_seconds=60,
+    min_survivor_workers=1,
+    pending_release_exclude_seconds=120,
+)
+```
+
+Or via environment variables (useful for Ray Jobs / KubeRay manifests): `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` (default: false), `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS` (default: 60), `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS` (default: 1), and `DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS` (default: 120).

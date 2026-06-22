@@ -2,7 +2,8 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, CHECKPOINT_FILES_STAGED_KEY, CHECKPOINTS_SEALED_KEY, Counter, Meter,
+    ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_CHECKPOINTS, UNIT_FILES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -14,7 +15,9 @@ use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
 use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -24,8 +27,12 @@ use crate::{
 pub(crate) struct WriteStats {
     duration_us: Counter,
     rows_in: Counter,
+    bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
+    num_tasks: Counter,
+    checkpoint_files_staged: Counter,
+    checkpoints_sealed: Counter,
 
     node_kv: Vec<KeyValue>,
 }
@@ -46,6 +53,7 @@ impl RuntimeStats for WriteStats {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
+            bytes_in: meter.bytes_in_metric(),
             rows_written: meter.u64_counter_with_desc_and_unit(
                 ROWS_WRITTEN_KEY,
                 None,
@@ -55,6 +63,17 @@ impl RuntimeStats for WriteStats {
                 BYTES_WRITTEN_KEY,
                 None,
                 Some(UNIT_BYTES.into()),
+            ),
+            num_tasks: meter.num_tasks_metric(),
+            checkpoint_files_staged: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINT_FILES_STAGED_KEY,
+                None,
+                Some(UNIT_FILES.into()),
+            ),
+            checkpoints_sealed: meter.u64_counter_with_desc_and_unit(
+                CHECKPOINTS_SEALED_KEY,
+                None,
+                Some(UNIT_CHECKPOINTS.into()),
             ),
 
             node_kv,
@@ -71,6 +90,10 @@ impl RuntimeStats for WriteStats {
             rows_in,
             rows_written,
             bytes_written,
+            bytes_in: self.bytes_in.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
+            checkpoint_files_staged: self.checkpoint_files_staged.load(ordering),
+            checkpoints_sealed: self.checkpoints_sealed.load(ordering),
         })
     }
 
@@ -84,6 +107,26 @@ impl RuntimeStats for WriteStats {
 
     fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+
+    fn add_bytes_in(&self, bytes: u64) {
+        self.bytes_in.add(bytes, self.node_kv.as_slice());
+    }
+
+    // bytes_out for WriteSink doesn't make sense — bytes_written is the meaningful metric.
+    fn add_bytes_out(&self, _bytes: u64) {}
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
+    }
+
+    fn add_checkpoint_files_staged(&self, files: u64) {
+        self.checkpoint_files_staged
+            .add(files, self.node_kv.as_slice());
+    }
+
+    fn add_checkpoints_sealed(&self, n: u64) {
+        self.checkpoints_sealed.add(n, self.node_kv.as_slice());
     }
 }
 
@@ -105,13 +148,23 @@ pub enum WriteFormat {
 
 pub(crate) struct WriteState {
     writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
+    runtime_stats: Option<Arc<WriteStats>>,
+    total_rows_input: usize,
+    reported_rows: usize,
+    reported_bytes: usize,
 }
 
 impl WriteState {
     pub fn new(
         writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     ) -> Self {
-        Self { writer }
+        Self {
+            writer,
+            runtime_stats: None,
+            total_rows_input: 0,
+            reported_rows: 0,
+            reported_bytes: 0,
+        }
     }
 }
 
@@ -153,7 +206,13 @@ impl BlockingSink for WriteSink {
         spawner
             .spawn(
                 async move {
+                    if state.runtime_stats.is_none() {
+                        state.runtime_stats = Some(runtime_stats.clone());
+                    }
+                    state.total_rows_input += input.len();
                     let write_result = state.writer.write(input).await?;
+                    state.reported_rows += write_result.rows_written;
+                    state.reported_bytes += write_result.bytes_written;
                     runtime_stats.add_write_result(write_result);
                     Ok(state)
                 },
@@ -175,9 +234,21 @@ impl BlockingSink for WriteSink {
                     let mut results = vec![];
                     for mut state in states {
                         results.extend(state.writer.close().await?);
+                        if let Some(stats) = &state.runtime_stats {
+                            let total_bytes: usize = state.writer.bytes_per_file().iter().sum();
+                            let bytes_delta = total_bytes.saturating_sub(state.reported_bytes);
+                            let rows_delta =
+                                state.total_rows_input.saturating_sub(state.reported_rows);
+                            if bytes_delta > 0 || rows_delta > 0 {
+                                stats.add_write_result(WriteResult {
+                                    bytes_written: bytes_delta,
+                                    rows_written: rows_delta,
+                                });
+                            }
+                        }
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
-                    Ok(vec![mp])
+                    Ok(BlockingSinkOutput::Partitions(vec![mp]))
                 },
                 Span::current(),
             )

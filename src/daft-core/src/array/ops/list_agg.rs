@@ -5,7 +5,7 @@ use super::{DaftListAggable, GroupIndices};
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray,
         growable::{Growable, GrowableArray},
     },
     datatypes::DaftArrowBackedType,
@@ -82,5 +82,9 @@ impl DaftListAggable for StructArray {
 
 #[cfg(feature = "python")]
 impl DaftListAggable for PythonArray {
+    impl_daft_list_agg!();
+}
+
+impl DaftListAggable for UnionArray {
     impl_daft_list_agg!();
 }

@@ -96,7 +96,7 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         self.pending_tasks.extend(tasks);
     }
 
-    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>> {
+    fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>) {
         // Check if any worker has active tasks
         let has_active_tasks = self
             .worker_snapshots
@@ -105,14 +105,19 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
         // If there are active tasks, don't schedule any new ones
         if has_active_tasks {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
 
         let mut scheduled = Vec::new();
         let mut unscheduled = Vec::new();
+        let mut cancelled = Vec::new();
 
         // Process all tasks in the queue
         while let Some(task) = self.pending_tasks.pop() {
+            if task.is_cancelled() {
+                cancelled.push(task);
+                continue;
+            }
             if let Some(worker_id) = self.try_schedule_task(&task) {
                 self.worker_snapshots
                     .get_mut(&worker_id)
@@ -129,7 +134,7 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 
         // Put unscheduled tasks back in the queue
         self.pending_tasks.extend(unscheduled);
-        scheduled
+        (scheduled, cancelled)
     }
 
     fn num_pending_tasks(&self) -> usize {
@@ -140,8 +145,8 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
         // If we need to autoscale, return the resource requests of the pending tasks
         let needs_autoscaling = self.needs_autoscaling();
         needs_autoscaling.then(|| {
-            self.pending_tasks
-                .iter()
+            super::pending_tasks_in_priority_order(&self.pending_tasks)
+                .into_iter()
                 .next()
                 .map(|task| vec![task.task.resource_request().clone()])
                 .unwrap_or_default()
@@ -151,6 +156,8 @@ impl<T: Task> Scheduler<T> for LinearScheduler<T> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
+    use common_resource_request::ResourceRequest;
 
     use super::*;
     use crate::scheduling::{
@@ -180,14 +187,14 @@ mod tests {
 
         // Enqueue and schedule tasks
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only one task should be scheduled because of linear scheduling
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
         // Try to schedule more tasks - should fail because one task is already running
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
@@ -199,7 +206,7 @@ mod tests {
         scheduler.update_worker_state(&worker_snapshots);
 
         // Now we should be able to schedule another task
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
     }
@@ -221,7 +228,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only one task should be scheduled
         assert_eq!(result.len(), 1);
@@ -234,7 +241,7 @@ mod tests {
             panic!("Task should have worker affinity strategy");
         }
 
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 1);
 
@@ -245,7 +252,7 @@ mod tests {
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 0);
 
@@ -254,6 +261,51 @@ mod tests {
         } else {
             panic!("Task should have worker affinity strategy");
         }
+    }
+
+    #[test]
+    fn test_linear_scheduler_autoscaling_request_follows_priority_order() {
+        let mut scheduler: LinearScheduler<MockTask> = setup_scheduler(&HashMap::new());
+
+        let tasks = vec![
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(1)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(1.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(3)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(3.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+            PendingTask::new(
+                MockTaskBuilder::default()
+                    .with_priority(2)
+                    .with_resource_request(
+                        ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap(),
+                    )
+                    .build(),
+                crate::utils::channel::create_oneshot_channel().0,
+                tokio_util::sync::CancellationToken::new(),
+            ),
+        ];
+
+        scheduler.enqueue_tasks(tasks);
+
+        let autoscaling_request = scheduler.get_autoscaling_request().unwrap();
+
+        assert_eq!(autoscaling_request.len(), 1);
+        assert_eq!(autoscaling_request[0].num_cpus(), 3.0);
     }
 
     #[test]
@@ -278,7 +330,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         // Only one task should be scheduled
         assert_eq!(result.len(), 1);
@@ -291,7 +343,7 @@ mod tests {
             panic!("Task should have worker affinity strategy");
         }
 
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);
 
@@ -302,7 +354,7 @@ mod tests {
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
 
@@ -343,7 +395,7 @@ mod tests {
         scheduler.enqueue_tasks(vec![high_priority_task]);
 
         // The high priority task should be scheduled first
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
         assert_eq!(result.len(), 1);
         assert_eq!(scheduler.num_pending_tasks(), 1);
         assert_eq!(result[0].task.task_id(), 2);
@@ -359,7 +411,7 @@ mod tests {
         ];
 
         scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
+        let (result, _) = scheduler.schedule_tasks();
 
         assert_eq!(result.len(), 0);
         assert_eq!(scheduler.num_pending_tasks(), 2);

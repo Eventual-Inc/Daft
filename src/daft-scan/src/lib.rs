@@ -28,6 +28,7 @@ pub use file_format_config::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
     WarcSourceConfig,
 };
+pub mod clustering;
 pub mod glob;
 mod hive;
 mod partitioning;
@@ -38,6 +39,8 @@ pub mod scan_state;
 pub mod scan_task_iters;
 mod sharder;
 mod source_config;
+pub mod statistics;
+pub use clustering::ClusteringKeys;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
@@ -48,7 +51,11 @@ pub use source_config::SourceConfig;
 pub mod test_utils;
 
 // Re-export source module for DataSource and DataSourceTask traits.
-pub use source::{DataSource, DataSourceStatistics, DataSourceTask, Precision};
+pub use source::{
+    DataSource, DataSourceRef, DataSourceTask, DataSourceTaskRef, DataSourceTaskStream,
+    ReadOptions, RecordBatchStream, ShimSourceTask,
+};
+pub use statistics::{ColumnStatistics, Precision, Statistics};
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -376,7 +383,7 @@ fn warc_column_sizes() -> &'static HashMap<&'static str, usize> {
     WARC_COLUMN_SIZES.get_or_init(|| {
         let mut m = HashMap::new();
         // Average sizes based on analysis of Common Crawl WARC files.
-        m.insert("WARC-Record-ID", 36); // UUID-style identifiers.
+        m.insert("WARC-Record-ID", 16); // UUID-style identifiers.
         m.insert("WARC-Type", 8); // e.g. "response".
         m.insert("WARC-Date", 8); // Timestamp stored as i64 nanoseconds.
         m.insert("Content-Length", 8); // i64.
@@ -955,6 +962,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }));
 
         ScanTask::new(
@@ -973,6 +981,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         });
 
         let mut sources: Vec<String> = Vec::new();
@@ -1248,6 +1257,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1299,6 +1309,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1343,6 +1354,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1392,6 +1404,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1454,6 +1467,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1563,6 +1577,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,

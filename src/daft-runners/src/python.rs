@@ -41,15 +41,15 @@ pub fn get_or_infer_runner_type(py: Python) -> PyResult<pyo3::Py<pyo3::PyAny>> {
 #[pyfunction(signature = (
     address = None,
     noop_if_initialized = false,
-    max_task_backlog = None,
-    force_client_mode = false
+    force_client_mode = false,
+    worker_startup_timeout = None
 ))]
 pub fn set_runner_ray(
     py: Python,
     address: Option<String>,
     noop_if_initialized: Option<bool>,
-    max_task_backlog: Option<usize>,
     force_client_mode: Option<bool>,
+    worker_startup_timeout: Option<usize>,
 ) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let noop_if_initialized = noop_if_initialized.unwrap_or(false);
 
@@ -63,8 +63,8 @@ pub fn set_runner_ray(
 
     let runner = Arc::new(Runner::Ray(RayRunner::try_new(
         address,
-        max_task_backlog,
         force_client_mode,
+        worker_startup_timeout,
     )?));
 
     match runners::DAFT_RUNNER.set(runner.clone()) {

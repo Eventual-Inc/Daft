@@ -38,7 +38,7 @@ pub mod pylib {
     use std::sync::LazyLock;
 
     use common_logging::GLOBAL_LOGGER;
-    use common_tracing::init_opentelemetry_providers;
+    use common_tracing::init_tracing;
     use pyo3::prelude::*;
 
     static LOG_RESET_HANDLE: LazyLock<pyo3_log::ResetHandle> = LazyLock::new(|| {
@@ -109,7 +109,7 @@ pub mod pylib {
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
-        init_opentelemetry_providers();
+        init_tracing();
 
         common_daft_config::register_modules(m)?;
         common_system_info::register_modules(m)?;
@@ -118,6 +118,7 @@ pub mod pylib {
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
+        daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
@@ -132,12 +133,12 @@ pub mod pylib {
         daft_local_plan::register_modules(m)?;
         daft_logical_plan::register_modules(m)?;
         daft_parquet::register_modules(m)?;
+        daft_partition_refs::register_modules(m)?;
         daft_micropartition::register_modules(m)?;
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
-        daft_shuffles::python::register_modules(m)?;
         daft_file::python::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
@@ -171,16 +172,20 @@ pub mod pylib {
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+        functions_registry.register::<daft_functions::random::RandomFunctions>();
+        functions_registry.register::<daft_geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
+        functions_registry.add_fn(daft_file::FilePath);
+        functions_registry.add_async_fn(daft_file::FileExists);
         functions_registry.add_fn(daft_file::Size);
         functions_registry.add_fn(daft_file::VideoFile);
         functions_registry.add_fn(daft_file::AudioFile);
+        functions_registry.add_fn(daft_file::ImageFile);
         functions_registry.add_fn(daft_file::GuessMimeType);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
-        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         Ok(())
     }

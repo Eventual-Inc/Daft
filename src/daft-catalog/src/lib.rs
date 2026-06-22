@@ -1,5 +1,6 @@
 mod bindings;
 mod catalog;
+mod function;
 mod identifier;
 mod impls;
 mod pattern;
@@ -7,6 +8,7 @@ mod table;
 
 pub use bindings::*;
 pub use catalog::*;
+pub use function::*;
 pub use identifier::*;
 pub use table::*;
 

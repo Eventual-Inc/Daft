@@ -6,22 +6,57 @@ use std::{
     time::SystemTime,
 };
 
-use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
 use crate::subscribers::{
-    QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    Event, QueryMetadata, QueryResult, Subscriber,
+    events::{
+        InMemoryScanSource, OperatorEndEvent, OperatorStartEvent, PhysicalScanSource, StatsEvent,
+        TaskEndEvent, TaskScheduledEvent, TaskSource, TaskStatsUpdateEvent, TaskSubmitEvent,
+    },
 };
 
-const TOTAL_ROWS: usize = 10;
+// `daft-dashboard` does not (and shouldn't) depend on `daft-context`, so these
+// `From` impls live here. The orphan rule permits them because the trait's
+// input type (`TaskSource` etc.) is local to this crate.
+
+impl From<&PhysicalScanSource> for daft_dashboard::engine::PhysicalScanSourceArgs {
+    fn from(p: &PhysicalScanSource) -> Self {
+        Self {
+            source_id: p.source_id,
+            scan_tasks: p.scan_tasks,
+            paths: p.paths.clone(),
+            storage_bytes: p.storage_bytes.map(|b| b as u64),
+            estimated_memory_bytes: p.estimated_memory_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&InMemoryScanSource> for daft_dashboard::engine::InMemoryScanSourceArgs {
+    fn from(m: &InMemoryScanSource) -> Self {
+        Self {
+            source_id: m.source_id,
+            partitions: m.partitions as u64,
+            total_bytes: m.total_bytes.map(|b| b as u64),
+        }
+    }
+}
+
+impl From<&TaskSource> for daft_dashboard::engine::TaskSourceArgs {
+    fn from(source: &TaskSource) -> Self {
+        match source {
+            TaskSource::PhysicalScan(p) => Self::PhysicalScan(p.into()),
+            TaskSource::InMemoryScan(m) => Self::InMemoryScan(m.into()),
+        }
+    }
+}
+
 const DASHBOARD_EVENT_LIMIT: usize = 512;
 const DASHBOARD_SHUTDOWN_TIMEOUT_MS: u64 = 500;
 
@@ -44,7 +79,6 @@ pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
-    preview_rows: DashMap<QueryID, Vec<MicroPartition>>,
     execution_ids: DashMap<QueryID, String>,
     worker_id: Option<String>,
 
@@ -59,7 +93,6 @@ impl std::fmt::Debug for DashboardSubscriber {
             .field("url", &self.url)
             .field("client", &self.client)
             .field("runtime", &self.runtime.runtime)
-            .field("preview_rows", &self.preview_rows)
             .field("execution_ids", &self.execution_ids)
             .field("worker_id", &self.worker_id)
             .field("dashboard_tx", &self.dashboard_tx.is_some())
@@ -139,13 +172,18 @@ impl DashboardSubscriber {
             url,
             client,
             runtime,
-            preview_rows: DashMap::new(),
             execution_ids: DashMap::new(),
             worker_id,
             dashboard_tx: Some(dashboard_tx),
             dashboard_worker: Some(dashboard_worker),
             dropped_events: AtomicU64::new(0),
         }))
+    }
+
+    /// Returns true if this process is a flotilla worker.
+    /// Workers should not emit most lifecycle events (they race with the driver).
+    fn is_worker(&self) -> bool {
+        self.worker_id.is_some()
     }
 
     async fn handle_request(request: RequestBuilder) -> DaftResult<()> {
@@ -208,6 +246,339 @@ impl DashboardSubscriber {
             }
         }
     }
+
+    // ---- event handlers ----
+
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/start", query_id),
+            "query_start",
+            &daft_dashboard::engine::StartQueryArgs {
+                start_sec: secs_from_epoch(),
+                unoptimized_plan: metadata.unoptimized_plan.clone(),
+                runner: Some(metadata.runner.clone()),
+                ray_dashboard_url: metadata.ray_dashboard_url.clone(),
+                entrypoint: metadata.entrypoint.clone(),
+                python_version: metadata.python_version.clone(),
+                daft_version: metadata.daft_version.clone(),
+                ray_version: metadata.ray_version.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_query_heartbeat(&self, query_id: QueryID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/heartbeat", query_id),
+            "query_heartbeat",
+            &daft_dashboard::engine::QueryHeartbeatArgs {
+                timestamp_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/end", query_id),
+            "query_end",
+            &daft_dashboard::engine::FinalizeArgs {
+                end_sec: secs_from_epoch(),
+                end_state: end_result.end_state,
+                error_message: end_result.error_message,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/plan_start", query_id),
+            "optimization_start",
+            &daft_dashboard::engine::PlanStartArgs {
+                plan_start_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/plan_end", query_id),
+            "optimization_end",
+            &daft_dashboard::engine::PlanEndArgs {
+                plan_end_sec: secs_from_epoch(),
+                optimized_plan,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_start_with_id(
+        &self,
+        query_id: QueryID,
+        execution_id: &str,
+        physical_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.execution_ids
+            .insert(query_id.clone(), execution_id.to_string());
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/start", query_id),
+            "exec_start",
+            &daft_dashboard::engine::ExecStartArgs {
+                exec_start_sec: secs_from_epoch(),
+                physical_plan,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+        self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
+    }
+
+    fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.execution_ids.remove(&query_id);
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/end", query_id),
+            "exec_end",
+            &daft_dashboard::engine::ExecEndArgs {
+                exec_end_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
+        self.on_exec_end_with_id(query_id, "unknown")
+    }
+
+    fn on_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/start",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_start",
+        );
+        Ok(())
+    }
+
+    fn on_stats(&self, event: &StatsEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/emit_stats", query_id),
+            "exec_emit_stats",
+            &daft_dashboard::engine::ExecEmitStatsArgsSend {
+                source_id,
+                stats: event
+                    .stats
+                    .iter()
+                    .map(|(node_id, snapshot)| {
+                        (
+                            *node_id,
+                            snapshot
+                                .0
+                                .iter()
+                                .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/end",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_end",
+        );
+        Ok(())
+    }
+
+    fn on_task_stats_update(&self, event: &TaskStatsUpdateEvent) -> DaftResult<()> {
+        if event.tasks.is_empty() {
+            return Ok(());
+        }
+        let query_id = event.header.query_id.clone();
+        self.enqueue_json(
+            format!("engine/query/{}/tasks/stats", query_id),
+            "tasks_stats_update",
+            &daft_dashboard::engine::TasksStatsUpdateArgs {
+                timestamp_sec: event.header.timestamp_epoch_secs,
+                tasks: event
+                    .tasks
+                    .iter()
+                    .map(|t| daft_dashboard::engine::TaskStatsEntry {
+                        task_id: t.task_id,
+                        totals: daft_dashboard::engine::TaskTotals {
+                            cpu_us: t.cpu_us,
+                            rows_in: t.rows_in,
+                            rows_out: t.rows_out,
+                            bytes_in: t.bytes_in,
+                            bytes_out: t.bytes_out,
+                        },
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_submit(&self, event: &TaskSubmitEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        let sources = event.sources.iter().map(Into::into).collect::<Vec<_>>();
+        self.enqueue_json(
+            format!("engine/query/{}/task/submit", query_id),
+            "task_submit",
+            &daft_dashboard::engine::TaskSubmitArgs {
+                submit_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                name: task.name.as_deref().map(str::to_string),
+                sources,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_scheduled(&self, event: &TaskScheduledEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+        self.enqueue_json(
+            format!("engine/query/{}/task/schedule", query_id),
+            "task_schedule",
+            &daft_dashboard::engine::TaskScheduledArgs {
+                scheduled_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_task_end(&self, event: &TaskEndEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let task = &event.task;
+
+        // Aggregate per-snapshot scalars across the task's local plan nodes.
+        // `is_task_root` / `is_task_leaf` filtering (and the source-leaf
+        // `rows.out` / `bytes.read` fallback) lives in
+        // `common_metrics::task_io::TaskExternalIo` so this site and the
+        // mid-flight aggregator in `daft-local-execution` stay in lockstep.
+        let mut io = common_metrics::task_io::TaskExternalIo::default();
+        for (node_info, snapshot) in &event.stats {
+            io.accumulate(node_info, snapshot);
+        }
+        let totals = daft_dashboard::engine::TaskTotals {
+            cpu_us: io.cpu_us,
+            rows_in: io.rows_in,
+            rows_out: io.rows_out,
+            bytes_in: io.bytes_in,
+            bytes_out: io.bytes_out,
+        };
+
+        let outcome = match &event.outcome {
+            crate::subscribers::events::TaskOutcome::Success => {
+                daft_dashboard::engine::TaskOutcomeArgs::Success
+            }
+            crate::subscribers::events::TaskOutcome::Failed { message } => {
+                daft_dashboard::engine::TaskOutcomeArgs::Failed {
+                    message: message.clone(),
+                }
+            }
+            crate::subscribers::events::TaskOutcome::Cancelled => {
+                daft_dashboard::engine::TaskOutcomeArgs::Cancelled
+            }
+        };
+
+        self.enqueue_json(
+            format!("engine/query/{}/task/end", query_id),
+            "task_end",
+            &daft_dashboard::engine::TaskEndArgs {
+                end_sec: event.header.timestamp_epoch_secs,
+                task_id: task.id,
+                last_node_id: task.last_node_id as usize,
+                node_ids: task.node_ids.iter().map(|n| *n as usize).collect(),
+                plan_fingerprint: task.plan_fingerprint,
+                worker_id: event.worker_id.as_deref().map(str::to_string),
+                outcome,
+                totals,
+            },
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -237,279 +608,57 @@ impl Drop for DashboardSubscriber {
     }
 }
 
-#[async_trait]
 impl Subscriber for DashboardSubscriber {
-    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        self.preview_rows.insert(
-            query_id.clone(),
-            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
-        );
-
-        self.enqueue_json(
-            format!("engine/query/{}/start", query_id),
-            "query_start",
-            &daft_dashboard::engine::StartQueryArgs {
-                start_sec: secs_from_epoch(),
-                unoptimized_plan: metadata.unoptimized_plan.clone(),
-                runner: Some(metadata.runner.clone()),
-                ray_dashboard_url: metadata.ray_dashboard_url.clone(),
-                entrypoint: metadata.entrypoint.clone(),
-            },
-        );
-        Ok(())
-    }
-
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
-        // Limit to TOTAL_ROWS rows
-        // TODO: Limit by X MB and # of rows
-        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
-            return Err(DaftError::ValueError(format!(
-                "Query `{}` not started or already ended in DashboardSubscriber",
-                query_id
-            )));
-        };
-
-        let all_results = entry.value_mut();
-        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
-        if num_rows < TOTAL_ROWS && !result.is_empty() {
-            let result = result.head(TOTAL_ROWS - num_rows)?;
-            all_results.push(result);
-        }
-        Ok(())
-    }
-
-    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-        let results = self.preview_rows.remove(&query_id);
-        let results_ipc = if let Some((_, results)) = results {
-            let result = MicroPartition::concat(results)?;
-            debug_assert!(result.len() <= TOTAL_ROWS);
-            let results_ipc = result.write_to_ipc_stream()?;
-            if results_ipc.len() > 1024 * 1024 * 2 {
-                // 2MB, our dashboard cap
-                None
-            } else {
-                Some(results_ipc)
+    fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::QueryStart(e) => {
+                self.on_query_start(e.header.query_id, e.metadata)?;
             }
-        } else {
-            None
-        };
-
-        self.enqueue_json(
-            format!("engine/query/{}/end", query_id),
-            "query_end",
-            &daft_dashboard::engine::FinalizeArgs {
-                end_sec: secs_from_epoch(),
-                end_state: end_result.end_state,
-                error_message: end_result.error_message,
-                results: results_ipc,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
+            Event::QueryHeartbeat(e) => {
+                self.on_query_heartbeat(e.header.query_id)?;
+            }
+            Event::QueryEnd(e) => {
+                self.on_query_end(e.header.query_id, e.result)?;
+            }
+            Event::OptimizationStart(e) => {
+                self.on_optimization_start(e.header.query_id)?;
+            }
+            Event::OptimizationComplete(e) => {
+                self.on_optimization_end(e.header.query_id, e.optimized_plan)?;
+            }
+            Event::ExecStart(e) => {
+                self.on_exec_start(e.header.query_id, e.physical_plan)?;
+            }
+            Event::ExecEnd(e) => {
+                self.on_exec_end(e.header.query_id)?;
+            }
+            Event::OperatorStart(e) => {
+                self.on_operator_start(&e)?;
+            }
+            Event::OperatorEnd(e) => {
+                self.on_operator_end(&e)?;
+            }
+            Event::Stats(e) => {
+                self.on_stats(&e)?;
+            }
+            Event::TaskStatsUpdate(e) => {
+                self.on_task_stats_update(&e)?;
+            }
+            Event::ProcessStats(_e) => {}
+            Event::TaskSubmit(e) => {
+                self.on_task_submit(&e)?;
+            }
+            Event::TaskScheduled(e) => {
+                self.on_task_scheduled(&e)?;
+            }
+            // Worker-side TaskStart not yet wired to the dashboard; the
+            // driver's TaskScheduled stands in as the "running" signal until
+            // worker-side wiring lands.
+            Event::TaskStart(_) => {}
+            Event::TaskEnd(e) => {
+                self.on_task_end(&e)?;
+            }
         }
-
-        self.enqueue_json(
-            format!("engine/query/{}/plan_start", query_id),
-            "optimization_start",
-            &daft_dashboard::engine::PlanStartArgs {
-                plan_start_sec: secs_from_epoch(),
-            },
-        );
-        Ok(())
-    }
-
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        self.enqueue_json(
-            format!("engine/query/{}/plan_end", query_id),
-            "optimization_end",
-            &daft_dashboard::engine::PlanEndArgs {
-                plan_end_sec: secs_from_epoch(),
-                optimized_plan,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_exec_start_with_id(
-        &self,
-        query_id: QueryID,
-        execution_id: &str,
-        physical_plan: QueryPlan,
-    ) -> DaftResult<()> {
-        self.execution_ids
-            .insert(query_id.clone(), execution_id.to_string());
-
-        self.enqueue_json(
-            format!("engine/query/{}/exec/start", query_id),
-            "exec_start",
-            &daft_dashboard::engine::ExecStartArgs {
-                exec_start_sec: secs_from_epoch(),
-                physical_plan,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
-        self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
-    }
-
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/start", query_id, node_id),
-            "exec_operator_start",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats_with_id(
-        &self,
-        query_id: QueryID,
-        execution_id: &str,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        self.enqueue_json(
-            format!("engine/query/{}/exec/emit_stats", query_id),
-            "exec_emit_stats",
-            &daft_dashboard::engine::ExecEmitStatsArgsSend {
-                source_id: execution_id.to_string(),
-                stats: stats
-                    .iter()
-                    .map(|(node_id, snapshot)| {
-                        (
-                            *node_id,
-                            snapshot
-                                .0
-                                .iter()
-                                .map(|(name, stat)| (name.to_string(), stat.clone()))
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats(
-        &self,
-        query_id: QueryID,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-        self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
-            .await
-    }
-
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/end", query_id, node_id),
-            "exec_operator_end",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
-        self.execution_ids.remove(&query_id);
-
-        self.enqueue_json(
-            format!("engine/query/{}/exec/end", query_id),
-            "exec_end",
-            &daft_dashboard::engine::ExecEndArgs {
-                exec_end_sec: secs_from_epoch(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        self.on_exec_end_with_id(query_id, "unknown").await
-    }
-
-    async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!(
-                "engine/query/{}/exec/{}/start",
-                event.header.query_id, event.operator.node_id
-            ),
-            "exec_operator_start",
-        );
-        Ok(())
-    }
-
-    async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        let query_id = event.header.query_id.clone();
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-
-        self.enqueue_json(
-            format!("engine/query/{}/exec/emit_stats", query_id),
-            "exec_emit_stats",
-            &daft_dashboard::engine::ExecEmitStatsArgsSend {
-                source_id,
-                stats: event
-                    .stats
-                    .iter()
-                    .map(|(node_id, snapshot)| {
-                        (
-                            *node_id,
-                            snapshot
-                                .0
-                                .iter()
-                                .map(|(name, stat)| (name.to_string(), stat.clone()))
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!(
-                "engine/query/{}/exec/{}/end",
-                event.header.query_id, event.operator.node_id
-            ),
-            "exec_operator_end",
-        );
         Ok(())
     }
 }

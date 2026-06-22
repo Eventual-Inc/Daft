@@ -43,7 +43,7 @@ fn grower_from_dtype(dtype: &DataType, capacity: usize) -> ValueGrower {
             builder: BooleanBufferBuilder::new(capacity),
         },
         DataType::Int8 | DataType::UInt8 => fixed_width(1),
-        DataType::Int16 | DataType::UInt16 => fixed_width(2),
+        DataType::Int16 | DataType::UInt16 | DataType::Float16 => fixed_width(2),
         DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Date => fixed_width(4),
         DataType::Int64
         | DataType::UInt64
@@ -207,6 +207,7 @@ where
         self.len += additional;
     }
 
+    #[inline(never)]
     fn build(&mut self) -> DaftResult<Series> {
         let null_buffer = self.validity.as_mut().and_then(|v| v.finish());
 
@@ -241,6 +242,10 @@ where
         let arrow_array = make_array(data);
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
         Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
+    }
+
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -278,6 +283,11 @@ impl Growable for ArrowNullGrowable {
         let len = self.len;
         self.len = 0;
         Ok(NullArray::full_null(&self.name, &self.dtype, len).into_series())
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 

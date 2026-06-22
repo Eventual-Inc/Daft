@@ -3,6 +3,7 @@
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
 pub mod coalesce;
+pub mod concat_ws;
 pub mod distance;
 pub mod float;
 pub mod hash;
@@ -12,6 +13,8 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod random;
+pub mod simhash;
 pub mod similarity;
 pub mod slice;
 pub mod to_struct;
@@ -25,11 +28,14 @@ use length::Length;
 use minhash::MinHashFunction;
 #[cfg(feature = "python")]
 pub use python::register as register_modules;
+use simhash::SimHashFunction;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
-use uuid::Uuid;
+use uuid::{
+    ExtractDayUuid7, ExtractHourUuid7, ExtractMinuteUuid7, ExtractMonthUuid7, Uuid, UuidV7,
+};
 
-use crate::slice::Slice;
+use crate::{concat_ws::ConcatWs, slice::Slice};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -62,11 +68,18 @@ pub struct MiscFunctions;
 
 impl FunctionModule for MiscFunctions {
     fn register(parent: &mut FunctionRegistry) {
+        parent.add_fn(ConcatWs);
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
+        parent.add_fn(SimHashFunction);
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
         parent.add_fn(Uuid);
+        parent.add_fn(UuidV7);
+        parent.add_fn(ExtractMinuteUuid7);
+        parent.add_fn(ExtractHourUuid7);
+        parent.add_fn(ExtractDayUuid7);
+        parent.add_fn(ExtractMonthUuid7);
     }
 }

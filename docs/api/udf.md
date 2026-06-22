@@ -2,33 +2,17 @@
 
 User-Defined Functions (UDFs) are a mechanism to run Python code on the data that lives in a DataFrame. A UDF can be used just like [Expressions](expressions.md), allowing users to express computation that should be executed by Daft lazily.
 
-To write a UDF, you should use the `@udf` decorator, which can decorate either a Python function or a Python class, producing a UDF.
+To write a UDF, use the `@daft.func` or `@daft.cls` decorators to turn Python functions into Daft operations that work seamlessly with DataFrame expressions. Daft also supports custom aggregation functions, or UDAFs with `@daft.udaf` with a three-stage pipeline (aggregate, combine, finalize) that plugs into Daft's distributed aggregation engine.
 
-Learn more about [UDFs](../custom-code/udfs.md) in Daft User Guide.
+Learn more about user-defined functions in the user guide: [`daft.func`](../custom-code/func.md), [`daft.cls`](../custom-code/cls.md), [`daft.udaf`](../custom-code/udaf.md).
 
-## Creating UDFs
-
-::: daft.udf.udf
-    options:
-        heading_level: 3
-
-<!-- this function needs serious reformatting with the example and resource request section should not be a heading -->
-
-## Using UDFs
-
-::: daft.udf.UDF
-    options:
-        filters: ["!^_", "__call__"]
-
-## New UDFs
-
-`@daft.func` and `@daft.cls` are the new interface for creating user-defined functions in Daft. They provide a streamlined way to turn Python functions into Daft operations that work seamlessly with DataFrame expressions.
-
-Learn more in the [User Guide](../custom-code/func.md).
+## Stateless Function UDFs
 
 ::: daft.func
 
 ::: daft.udf._FuncDecorator
+
+## Stateful Class UDFs
 
 ::: daft.cls
 
@@ -37,3 +21,37 @@ Learn more in the [User Guide](../custom-code/func.md).
 ::: daft.udf._MethodDecorator
 
 ::: daft.udf.udf_v2.Func
+
+## Aggregate UDFs
+
+::: daft.udaf
+
+## Legacy UDFs
+
+!!! danger "To Be Removed in 0.8.0"
+
+    The `@daft.udf` decorator has been **deprecated** since Daft 0.7.0 and **will be removed in 0.8.0**.
+    Please use `@daft.func` and `@daft.cls` instead.
+
+    Using `@daft.udf` emits the following warning:
+
+    ```
+    DeprecationWarning: The `@daft.udf` decorator is deprecated since Daft version >= 0.7.0
+    and will be removed in >= 0.8.0. Please use `@daft.func` and `@daft.cls` instead.
+    See the migration guide for more details:
+    https://docs.daft.ai/en/stable/custom-code/migration/
+    ```
+
+    See the [migration guide](../custom-code/migration.md) for how to update your code.
+
+### Creating Legacy UDFs
+
+::: daft.udf.udf
+    options:
+        heading_level: 4
+
+### Using Legacy UDFs
+
+::: daft.udf.UDF
+    options:
+        filters: ["!^_", "__call__"]

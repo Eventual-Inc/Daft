@@ -1,12 +1,15 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+};
 
 use super::{
     task::{SchedulingStrategy, Task, TaskDetails},
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::TaskOutput,
-    scheduling::task::{TaskContext, TaskResourceRequest},
+    pipeline_node::MaterializedOutput,
+    scheduling::task::{TaskContext, TaskMetadata, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
 
@@ -23,21 +26,35 @@ use tokio_util::sync::CancellationToken;
 pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn update_worker_state(&mut self, worker_snapshots: &[WorkerSnapshot]);
     fn enqueue_tasks(&mut self, tasks: Vec<PendingTask<T>>);
-    fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
+    /// Returns `(scheduled, cancelled)`. Cancelled tasks are popped from the
+    /// pending queue without being dispatched; caller emits terminal events.
+    fn schedule_tasks(&mut self) -> (Vec<ScheduledTask<T>>, Vec<PendingTask<T>>);
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
 }
 
+fn pending_tasks_in_priority_order<T: Task>(
+    pending_tasks: &BinaryHeap<PendingTask<T>>,
+) -> Vec<&PendingTask<T>> {
+    let mut ordered_tasks = pending_tasks
+        .iter()
+        .filter(|t| !t.is_cancelled())
+        .collect::<Vec<_>>();
+    // Match the order that repeated BinaryHeap::pop() calls would produce.
+    ordered_tasks.sort_unstable_by(|a, b| b.cmp(a));
+    ordered_tasks
+}
+
 pub(crate) struct PendingTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> PendingTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -55,14 +72,22 @@ impl<T: Task> PendingTask<T> {
         self.task.task_context()
     }
 
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_token.is_cancelled()
+    }
+
     pub fn into_inner(
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Option<TaskOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
+    }
+
+    fn task_metadata(&self) -> TaskMetadata {
+        self.task.task_metadata()
     }
 }
 
@@ -99,7 +124,7 @@ impl<T: Task> Ord for PendingTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
@@ -132,7 +157,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Option<TaskOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)

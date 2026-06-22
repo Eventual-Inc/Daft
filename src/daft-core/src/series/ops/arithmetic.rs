@@ -7,8 +7,13 @@ use daft_schema::prelude::*;
 use crate::series::utils::python_fn::run_python_binary_operator_fn;
 use crate::{
     array::prelude::*,
-    datatypes::{InferDataType, Int32Type, Utf8Array},
-    series::{IntoSeries, Series, utils::cast::cast_downcast_op},
+    datatypes::{
+        DaftArrowBackedType, DaftNumericType, Float64Type, InferDataType, Int32Type, Utf8Array,
+    },
+    series::{
+        IntoSeries, Series, array_impl::ArrayWrapper, series_like::SeriesLike,
+        utils::cast::cast_downcast_op,
+    },
     with_match_integer_daft_types, with_match_numeric_daft_types,
 };
 
@@ -33,6 +38,79 @@ macro_rules! arithmetic_op_not_implemented {
             $output_ty,
         )
     };
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ArithmeticOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+}
+
+impl ArithmeticOp {
+    fn apply<T>(self, lhs: &DataArray<T>, rhs: &DataArray<T>) -> DaftResult<DataArray<T>>
+    where
+        T: DaftNumericType,
+        for<'a> &'a DataArray<T>: Add<Output = DaftResult<DataArray<T>>>
+            + Sub<Output = DaftResult<DataArray<T>>>
+            + Mul<Output = DaftResult<DataArray<T>>>
+            + Div<Output = DaftResult<DataArray<T>>>
+            + Rem<Output = DaftResult<DataArray<T>>>,
+    {
+        match self {
+            Self::Add => lhs.add(rhs),
+            Self::Sub => lhs.sub(rhs),
+            Self::Mul => lhs.mul(rhs),
+            Self::Div => lhs.div(rhs),
+            Self::Rem => lhs.rem(rhs),
+        }
+    }
+}
+
+fn cast_downcast_numeric_op<T>(
+    lhs: &Series,
+    rhs: &Series,
+    dtype: &DataType,
+    op: ArithmeticOp,
+) -> DaftResult<Series>
+where
+    T: DaftNumericType + DaftArrowBackedType,
+    ArrayWrapper<DataArray<T>>: SeriesLike,
+    for<'a> &'a DataArray<T>: Add<Output = DaftResult<DataArray<T>>>
+        + Sub<Output = DaftResult<DataArray<T>>>
+        + Mul<Output = DaftResult<DataArray<T>>>
+        + Div<Output = DaftResult<DataArray<T>>>
+        + Rem<Output = DaftResult<DataArray<T>>>,
+{
+    let lhs = lhs.cast(dtype)?;
+    let rhs = rhs.cast(dtype)?;
+    let lhs = lhs.downcast::<DataArray<T>>()?;
+    let rhs = rhs.downcast::<DataArray<T>>()?;
+    Ok(op.apply(lhs, rhs)?.into_series())
+}
+
+fn numeric_series_binary_op(
+    lhs: &Series,
+    rhs: &Series,
+    output_type: &DataType,
+    op: ArithmeticOp,
+) -> DaftResult<Series> {
+    with_match_numeric_daft_types!(output_type, |$T| {
+        cast_downcast_numeric_op::<$T>(lhs, rhs, output_type, op)
+    })
+}
+
+fn integer_series_binary_op(
+    lhs: &Series,
+    rhs: &Series,
+    output_type: &DataType,
+    op: ArithmeticOp,
+) -> DaftResult<Series> {
+    with_match_integer_daft_types!(output_type, |$T| {
+        cast_downcast_numeric_op::<$T>(lhs, rhs, output_type, op)
+    })
 }
 
 impl Add for &Series {
@@ -77,9 +155,7 @@ impl Add for &Series {
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
-                with_match_numeric_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)?.into_series())
-                })
+                numeric_series_binary_op(lhs, rhs, output_type, ArithmeticOp::Add)
             }
             // ----------------
             // Decimal Types
@@ -177,9 +253,7 @@ impl Sub for &Series {
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
-                with_match_numeric_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, sub)?.into_series())
-                })
+                numeric_series_binary_op(lhs, rhs, output_type, ArithmeticOp::Sub)
             }
             // ----------------
             // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
@@ -275,9 +349,7 @@ impl Mul for &Series {
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
-                with_match_numeric_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, mul)?.into_series())
-                })
+                numeric_series_binary_op(lhs, rhs, output_type, ArithmeticOp::Mul)
             }
             // ----------------
             // Decimal Types
@@ -336,12 +408,12 @@ impl Div for &Series {
             // ----------------
             // Numeric types
             // ----------------
-            DataType::Float64 => {
-                Ok(
-                    cast_downcast_op!(lhs, rhs, &DataType::Float64, Float64Array, div)?
-                        .into_series(),
-                )
-            }
+            DataType::Float64 => cast_downcast_numeric_op::<Float64Type>(
+                lhs,
+                rhs,
+                &DataType::Float64,
+                ArithmeticOp::Div,
+            ),
             // ----------------
             // Decimal Types
             // ----------------
@@ -370,9 +442,7 @@ impl Rem for &Series {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "mod"),
             output_type if output_type.is_numeric() => {
-                with_match_numeric_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, rem)?.into_series())
-                })
+                numeric_series_binary_op(lhs, rhs, output_type, ArithmeticOp::Rem)
             }
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Rem)
@@ -391,9 +461,7 @@ impl Series {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "floordiv"),
             output_type if output_type.is_integer() => {
-                with_match_integer_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, div)?.into_series())
-                })
+                integer_series_binary_op(lhs, rhs, output_type, ArithmeticOp::Div)
             }
             output_type if output_type.is_numeric() => {
                 let div_floor = lhs.div(rhs)?.floor()?;

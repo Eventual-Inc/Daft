@@ -94,7 +94,8 @@ impl GetResult {
                         Err(
                             super::Error::SocketError { .. }
                             | super::Error::UnableToReadBytes { .. }
-                            | super::Error::UnableToOpenFile { .. },
+                            | super::Error::UnableToOpenFile { .. }
+                            | super::Error::MiscTransient { .. },
                         ) if let Some(rp) = &retry_params => {
                             let jitter =
                                 rand::rng().random_range(0..((1 << (attempt - 1)) * JITTER_MS));
@@ -193,7 +194,8 @@ impl ResumableByteStream {
                         match e {
                             super::Error::SocketError { .. }
                             | super::Error::UnableToReadBytes { .. }
-                            | super::Error::UnableToOpenFile { .. } => {
+                            | super::Error::UnableToOpenFile { .. }
+                            | super::Error::MiscTransient { .. } => {
                                 self.attempt += 1;
                                 if self.attempt > MAX_NUM_TRIES {
                                     yield Err(e);
