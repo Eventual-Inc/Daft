@@ -45,6 +45,9 @@ pub(super) fn clustering_from_repartition_spec(
             // Range repartition keys are already bound.
             c.by.clone(),
             c.descending.clone(),
+            // The range-shuffle kernel routes nulls to the extreme partition consistent
+            // with default sort null placement (nulls_first = descending).
+            c.descending.clone(),
         )),
         RepartitionSpec::Random(c) => BoundClusteringSpec::Random(RandomClusteringConfig::new(
             c.num_partitions.unwrap_or(num_partitions),
@@ -134,13 +137,16 @@ pub(super) fn translate_clustering_through_projection(
     match translated {
         None => BoundClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
         Some(new_by) => match input {
-            BoundClusteringSpec::Range(RangeClusteringConfig { descending, .. }) => {
-                BoundClusteringSpec::Range(RangeClusteringConfig::new(
-                    num_partitions,
-                    new_by,
-                    descending.clone(),
-                ))
-            }
+            BoundClusteringSpec::Range(RangeClusteringConfig {
+                descending,
+                nulls_first,
+                ..
+            }) => BoundClusteringSpec::Range(RangeClusteringConfig::new(
+                num_partitions,
+                new_by,
+                descending.clone(),
+                nulls_first.clone(),
+            )),
             _ => BoundClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, new_by)),
         },
     }

@@ -119,7 +119,7 @@ fn write_single_col_int64(compression: Compression) -> PathBuf {
     let schema = Arc::new(Schema::new(vec![Field::new("col", DataType::Int64, false)]));
     let props = WriterProperties::builder()
         .set_compression(compression)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
@@ -154,7 +154,7 @@ fn write_wide_table() -> PathBuf {
     let schema = Arc::new(Schema::new(fields));
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
@@ -185,7 +185,7 @@ fn write_string_dict_encoded() -> PathBuf {
     let schema = Arc::new(Schema::new(vec![Field::new("col", DataType::Utf8, false)]));
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
@@ -215,7 +215,7 @@ fn write_nested_list_of_int() -> PathBuf {
     )]));
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
@@ -246,7 +246,7 @@ fn write_nested_struct() -> PathBuf {
     )]));
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
@@ -273,7 +273,7 @@ fn write_boolean_column() -> PathBuf {
     )]));
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
-        .set_max_row_group_size(NUM_ROWS)
+        .set_max_row_group_row_count(Some(NUM_ROWS))
         .build();
     let file = fs::File::create(&path).unwrap();
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();

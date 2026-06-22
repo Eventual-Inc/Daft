@@ -402,23 +402,54 @@ pub struct HFSource {
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            HFBucketDeleteFailed, HFBucketWritesUnsupported, UnableToDetermineSize,
-            UnableToOpenFile,
+            HFBucketDeleteFailed, HFBucketWritesUnsupported, PrivateDataset, UnableToConnect,
+            UnableToDetermineSize, UnableToOpenFile, UnableToReadBytes, Unauthorized,
         };
         match error {
-            UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404 | 410) => Self::NotFound {
-                    path,
-                    source: source.into(),
-                },
-                None | Some(_) => Self::UnableToOpenFile {
-                    path,
-                    source: source.into(),
-                },
-            },
+            UnableToOpenFile { path, source } => {
+                // Preserve the existing 401 -> Unauthorized mapping, but
+                // delegate the remaining classification to the shared
+                // typed-error helpers in `http.rs` so 429 / 5xx /
+                // connect+read timeouts surface as DaftTransientError
+                // subclasses instead of opaque `External` strings.
+                if source.status().map(|s| s.as_u16()) == Some(401) {
+                    return Self::Unauthorized {
+                        store: super::SourceType::HF,
+                        path,
+                        source: source.into(),
+                    };
+                }
+                crate::http::classify_reqwest_error(path, source)
+            }
+            UnableToConnect { path, source } => {
+                crate::http::classify_middleware_error(path, source)
+            }
+            UnableToReadBytes { path, source } => {
+                if source.is_timeout() {
+                    Self::ReadTimeout {
+                        path,
+                        source: source.into(),
+                    }
+                } else {
+                    Self::SocketError {
+                        path,
+                        source: source.into(),
+                    }
+                }
+            }
             UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
             HFBucketWritesUnsupported { .. } | HFBucketDeleteFailed { .. } => Self::Generic {
                 store: super::SourceType::HFBucket,
+                source: error.into(),
+            },
+            Unauthorized => Self::Unauthorized {
+                store: super::SourceType::HF,
+                path: String::new(),
+                source: error.into(),
+            },
+            PrivateDataset => Self::Unauthorized {
+                store: super::SourceType::HF,
+                path: String::new(),
                 source: error.into(),
             },
             _ => Self::Generic {
