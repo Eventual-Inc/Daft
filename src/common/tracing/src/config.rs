@@ -112,15 +112,11 @@ impl Config {
 
     pub fn resource(&self) -> Resource {
         let detected_resource = Resource::builder().build();
-        let service_name = std::env::var("OTEL_SERVICE_NAME")
-            .ok()
-            .filter(|name| !name.is_empty())
-            .or_else(|| {
-                detected_resource
-                    .get(&Key::new("service.name"))
-                    .map(|value| value.to_string())
-                    .filter(|name| name != "unknown_service")
-            })
+        let service_name = detected_resource
+            .get(&Key::new("service.name"))
+            .map(|value| value.to_string())
+            // OpenTelemetry uses this placeholder when no service name is configured.
+            .filter(|name| name != "unknown_service")
             .unwrap_or_else(|| "daft".to_string());
 
         Resource::builder().with_service_name(service_name).build()
