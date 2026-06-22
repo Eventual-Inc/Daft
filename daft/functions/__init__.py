@@ -209,6 +209,7 @@ from .numeric import (
     between,
     bin,
     conv,
+    width_bucket,
     is_nan,
     is_inf,
     not_nan,
@@ -612,5 +613,6 @@ __all__ = [
     "week_of_year",
     "weekofyear",
     "when",
+    "width_bucket",
     "year",
 ]
