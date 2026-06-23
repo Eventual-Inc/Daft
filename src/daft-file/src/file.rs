@@ -121,6 +121,7 @@ impl DaftFile {
             .map(|c| c.size())
             .ok_or(DaftError::IoError(std::io::Error::other("File not open")))
     }
+
     /// Attempt to guess the MIME type of the file.
     /// If we are unable to determine the MIME type, returns None.
     pub fn guess_mime_type(&mut self) -> Option<String> {

@@ -11,6 +11,7 @@ from daft.ai.transformers.protocols.text_classifier import (
     TransformersTextClassifier,
     TransformersTextClassifierDescriptor,
 )
+from tests._hf_retry import call_with_hf_retry
 
 
 class MockProvider(Provider):
@@ -92,7 +93,9 @@ def test_instantiate():
         classify_options={},
     )
 
-    classifier = descriptor.instantiate()
+    # Pipeline construction downloads model files from HuggingFace Hub, which
+    # is occasionally rate-limited (HTTP 429) on shared CI runners.
+    classifier = call_with_hf_retry(descriptor.instantiate)
     assert isinstance(classifier, TransformersTextClassifier)
     assert classifier._model == "facebook/bart-large-mnli"
     assert classifier._pipeline, "Current implementation should have a pipeline."
@@ -110,7 +113,10 @@ def test_classify_text_with_default():
 
     df = df.with_column("label", classify_text(df["comment"], labels=["statement", "question"]))
 
-    assert df.select("label").to_pylist() == [
+    # Materializing the result triggers HuggingFace Hub model downloads, which
+    # is occasionally rate-limited (HTTP 429) on shared CI runners.
+    result = call_with_hf_retry(lambda: df.select("label").to_pylist())
+    assert result == [
         {"label": "statement"},
         {"label": "question"},
     ]

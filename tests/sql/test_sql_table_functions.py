@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pyarrow as pa
+import pyarrow.parquet as papq
 import pytest
 
 import daft
@@ -94,6 +96,12 @@ def test_sql_read_parquet():
     assert_eq(actual, expect)
 
 
+def test_sql_read_parquet_named_path():
+    actual = daft.sql("SELECT * FROM read_parquet(path => 'tests/assets/parquet-data/mvp.parquet')")
+    expect = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
+    assert actual.to_pydict() == expect.to_pydict()
+
+
 def test_sql_read_parquet_path():
     actual = daft.sql("SELECT * FROM 'tests/assets/parquet-data/mvp.parquet'")
     expect = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
@@ -108,6 +116,20 @@ def test_sql_read_parquet_paths():
     actual = daft.sql(f"SELECT * FROM read_parquet({to_sql_array(paths)})")
     expect = daft.read_parquet(paths)
     assert_eq(actual, expect)
+
+
+def test_sql_read_parquet_file_options(tmp_path):
+    table_dir = tmp_path / "country=us"
+    table_dir.mkdir()
+    file_path = table_dir / "data.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), file_path)
+
+    glob_path = f"{tmp_path.as_posix()}/**"
+    actual = daft.sql(
+        f"SELECT * FROM read_parquet('{glob_path}', file_path_column => 'filepath', hive_partitioning => true)"
+    )
+    expect = daft.read_parquet(glob_path, file_path_column="filepath", hive_partitioning=True)
+    assert actual.to_pydict() == expect.to_pydict()
 
 
 def test_sql_read_csv(sample_csv_path):

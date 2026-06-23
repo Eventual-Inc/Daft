@@ -28,6 +28,7 @@ opendal = {workspace = true, features = [
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
   "services-obs",  # Huawei Cloud Object Storage
+  "services-tos",  # Volcengine TOS (Torch Object Storage)
   "services-memory",  # In-memory backend (used for testing)
   "services-fs",  # Local filesystem (used for integration testing)
   "services-github"  # GitHub repository contents
@@ -45,7 +46,6 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
 uuid = {workspace = true}
-ve-tos-rust-sdk = "2.9.9"
 
 [dependencies.reqwest]
 default-features = false
