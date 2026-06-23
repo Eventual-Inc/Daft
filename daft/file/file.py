@@ -164,6 +164,10 @@ class File:
         """The size of the file in bytes, derived from the underlying file."""
         return PyDaftFile._from_file_reference(self._inner, buffer_size=BUFFER_SNIFF).size()
 
+    def exists(self) -> bool:
+        """Whether the file exists at its path or URL."""
+        return self._inner.exists()
+
     def mime_type(self) -> str:
         """Attempts to determine the MIME type of the file.
 

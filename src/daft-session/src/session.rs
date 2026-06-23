@@ -396,9 +396,75 @@ impl Session {
         Ok(self.state().catalogs.list(pattern))
     }
 
-    /// Lists all tables matching the pattern.
-    pub fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
-        Ok(self.state().tables.list(pattern))
+    /// Lists all namespaces visible to the session, mirroring [`Self::list_tables`]'s resolution:
+    /// - Rule 3: `<catalog>.<rest>` dispatches exclusively to that attached catalog.
+    /// - Otherwise: namespaces in the current catalog (none if no catalog is set).
+    pub fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if let Some(p) = pattern
+            && let Some((head, rest)) = p.split_once('.')
+            && self.has_catalog(head)
+        {
+            let inner = (!rest.is_empty()).then_some(rest);
+            return Ok(self
+                .get_catalog(head)?
+                .list_namespaces(inner)?
+                .into_iter()
+                .map(|id| id.qualify([head.to_string()]))
+                .collect());
+        }
+
+        let Some(alias) = self.state().options.curr_catalog.clone() else {
+            return Ok(vec![]);
+        };
+        Ok(self
+            .get_catalog(&alias)?
+            .list_namespaces(pattern)?
+            .into_iter()
+            .map(|id| id.qualify([alias.clone()]))
+            .collect())
+    }
+
+    /// Lists all tables visible to the session, mirroring [`Self::get_table`]'s resolution rules:
+    /// - Rule 0: session-level temp tables.
+    /// - Rules 1+2: current catalog, narrowed to the current namespace when set.
+    /// - Rule 3: `<catalog>.<rest>` dispatches exclusively to that attached catalog.
+    pub fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if let Some(p) = pattern
+            && let Some((head, rest)) = p.split_once('.')
+            && self.has_catalog(head)
+        {
+            let inner = (!rest.is_empty()).then_some(rest);
+            return Ok(self
+                .get_catalog(head)?
+                .list_tables(inner)?
+                .into_iter()
+                .map(|id| id.qualify([head.to_string()]))
+                .collect());
+        }
+
+        let mut out: Vec<Identifier> = self
+            .state()
+            .tables
+            .list(pattern)
+            .into_iter()
+            .map(Identifier::simple)
+            .collect();
+
+        // Qualify with the session alias so identifiers round-trip through `get_table`.
+        let curr_alias = self.state().options.curr_catalog.clone();
+        if let Some(alias) = curr_alias {
+            let catalog = self.get_catalog(&alias)?;
+            let forwarded =
+                forward_pattern_with_namespace(pattern, self.current_namespace()?.as_deref());
+            out.extend(
+                catalog
+                    .list_tables(forwarded.as_deref())?
+                    .into_iter()
+                    .map(|id| id.qualify([alias.clone()])),
+            );
+        }
+
+        Ok(out)
     }
 
     /// Sets the current_catalog.
@@ -600,6 +666,20 @@ impl SessionState {
 impl Default for Session {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+/// Pass `pattern` through, or narrow to `<namespace>.%` when only a namespace is set.
+fn forward_pattern_with_namespace(
+    pattern: Option<&str>,
+    namespace: Option<&[String]>,
+) -> Option<String> {
+    if let Some(p) = pattern {
+        Some(p.to_string())
+    } else {
+        namespace
+            .filter(|ns| !ns.is_empty())
+            .map(|ns| format!("{}.%", ns.join(".")))
     }
 }
 
