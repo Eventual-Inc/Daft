@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{binary_geom_to_f64, validate_geometry_field};
 
 fn geom_distance(a: &Geometry, b: &Geometry) -> f64 {
+    let euclidean = Euclidean;
     match (a, b) {
-        (Geometry::Point(pa), Geometry::Point(pb)) => Euclidean::distance(pa, pb),
-        (Geometry::Point(p), Geometry::Polygon(poly)) => Euclidean::distance(p, poly),
-        (Geometry::Polygon(poly), Geometry::Point(p)) => Euclidean::distance(poly, p),
-        (Geometry::Polygon(a), Geometry::Polygon(b)) => Euclidean::distance(a, b),
-        (Geometry::LineString(a), Geometry::Point(p)) => Euclidean::distance(a, p),
-        (Geometry::Point(p), Geometry::LineString(ls)) => Euclidean::distance(p, ls),
+        (Geometry::Point(pa), Geometry::Point(pb)) => euclidean.distance(pa, pb),
+        (Geometry::Point(p), Geometry::Polygon(poly)) => euclidean.distance(p, poly),
+        (Geometry::Polygon(poly), Geometry::Point(p)) => euclidean.distance(poly, p),
+        (Geometry::Polygon(a), Geometry::Polygon(b)) => euclidean.distance(a, b),
+        (Geometry::LineString(a), Geometry::Point(p)) => euclidean.distance(a, p),
+        (Geometry::Point(p), Geometry::LineString(ls)) => euclidean.distance(p, ls),
         _ => f64::NAN,
     }
 }

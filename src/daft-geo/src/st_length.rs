@@ -1,16 +1,18 @@
 use common_error::DaftResult;
 use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
 use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
-use geo::{Euclidean, Geometry, Length};
+use geo::{Euclidean, Geometry};
+use geo::line_measures::LengthMeasurable;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{unary_geom_to_f64, validate_geometry_field};
 
 fn geom_length(g: &Geometry) -> f64 {
+    let euclidean = Euclidean;
     match g {
-        Geometry::Line(l) => l.length::<Euclidean>(),
-        Geometry::LineString(ls) => ls.length::<Euclidean>(),
-        Geometry::MultiLineString(mls) => mls.length::<Euclidean>(),
+        Geometry::Line(l) => l.length(&euclidean),
+        Geometry::LineString(ls) => ls.length(&euclidean),
+        Geometry::MultiLineString(mls) => mls.length(&euclidean),
         _ => 0.0,
     }
 }
