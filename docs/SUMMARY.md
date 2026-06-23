@@ -31,6 +31,7 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
+        * [DROID](datasets/droid.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * Object Storage
