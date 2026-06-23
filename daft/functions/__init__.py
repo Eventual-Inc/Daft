@@ -102,7 +102,7 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
-from .file_ import file, file_path, file_size, video_file, audio_file, image_file, guess_mime_type
+from .file_ import file, file_path, file_size, file_exists, video_file, audio_file, image_file, guess_mime_type
 
 from .image import (
     resize,
@@ -426,6 +426,7 @@ __all__ = [
     "extract_month_uuid7",
     "factorial",
     "file",
+    "file_exists",
     "file_path",
     "file_size",
     "fill_nan",

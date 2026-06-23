@@ -47,9 +47,9 @@ openai = ["openai<2.39.0", "numpy<2.4.0", "pillow==12.2.0"]
 pandas = ["pandas<2.4.0"]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
+  # floor is 2.11: flotilla uses ray.exceptions.ActorUnavailableError, added in ray 2.11
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]<2.56.0,>=2.11.0; platform_system != "Windows"',
-  'ray[data, client]>=2.11.0,<2.56.0; platform_system == "Windows"'  # floor is 2.11: flotilla uses ray.exceptions.ActorUnavailableError, added in ray 2.11
+  'ray[data, client]<2.56.0,>=2.11.0'
 ]
 transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.13.0", "torchvision<0.28.0", "pillow==12.2.0"]
 # connectorx 0.4.4 is needed for pgvector support.

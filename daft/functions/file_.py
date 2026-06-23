@@ -101,6 +101,18 @@ def file_size(file: Expression) -> Expression:
     return file._eval_expressions("file_size")
 
 
+def file_exists(file: Expression) -> Expression:
+    """Returns whether the file exists.
+
+    Args:
+        file (File Expression): expression to evaluate.
+
+    Returns:
+        Expression (Boolean Expression): expression indicating whether the file exists
+    """
+    return file._eval_expressions("file_exists")
+
+
 def guess_mime_type(bytes_expr: Expression) -> Expression:
     r"""Guess the MIME type of binary data by inspecting magic bytes.
 

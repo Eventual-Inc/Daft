@@ -243,18 +243,17 @@ exclude = [
 ]
 
 [workspace.dependencies]
-arrow = "57.1.0"
-half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
-arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
-arrow-buffer = "57.1.0"
-arrow-csv = "57.1.0"
-arrow-data = "57.1.0"
-arrow-flight = "57.1.0"
-arrow-ipc = {version = "57.1.0", features = ["lz4", "zstd"]}
-arrow-json = "57.1.0"
-arrow-row = "57.1.0"
-arrow-schema = "57.1.0"
-arrow-select = "57.1.0"
+arrow = "59.0.0"
+arrow-array = {version = "59.0.0", features = ["chrono-tz"]}
+arrow-buffer = "59.0.0"
+arrow-csv = "59.0.0"
+arrow-data = "59.0.0"
+arrow-flight = "59.0.0"
+arrow-ipc = {version = "59.0.0", features = ["lz4", "zstd"]}
+arrow-json = "59.0.0"
+arrow-row = "59.0.0"
+arrow-schema = "59.0.0"
+arrow-select = "59.0.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -311,14 +310,15 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 educe = "0.6.0"
 futures = "0.3.30"
-geo = "0.29"
+geo = "0.33.1"
 geohash = "0.13"
 geojson = "1.0"
-h3o = "0.6"
+h3o = "0.10.0"
 wkt = { version = "0.14", features = ["geo-types"] }
+half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
@@ -341,7 +341,7 @@ opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.5"
-parquet = "57.1.0"
+parquet = "59.0.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"

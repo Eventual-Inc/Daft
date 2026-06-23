@@ -60,14 +60,16 @@ def test_read_huggingface_fallback_on_400_error():
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
         )
 
-        # This should trigger the fallback to datasets library
-        df = daft.read_huggingface(repo)
+        # This should trigger the fallback to datasets library, which itself
+        # hits the HF Hub and can flake on transient network errors
+        # (TLS handshake / connect timeouts) on shared CI runners.
+        df = call_with_hf_retry(daft.read_huggingface, repo)
 
         # Verify read_parquet was called with the correct HF path
         mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
 
         # Load expected data using datasets library (all splits)
-        ds = load_dataset(repo)
+        ds = call_with_hf_retry(load_dataset, repo)
         expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
 
         # Compare the results
@@ -96,7 +98,10 @@ def test_read_huggingface_multi_split_dataset():
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
         )
 
-        df_fallback = daft.read_huggingface(repo)
+        # Fallback uses the datasets library, which hits the HF Hub and can
+        # flake on transient network errors (TLS handshake / connect
+        # timeouts) on shared CI runners.
+        df_fallback = call_with_hf_retry(daft.read_huggingface, repo)
         fallback_result = df_fallback.to_pandas()
 
     # Both paths should return the same data

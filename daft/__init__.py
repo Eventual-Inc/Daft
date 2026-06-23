@@ -82,6 +82,7 @@ from daft.convert import (
     from_pydict,
     from_pylist,
     from_ray_dataset,
+    concat,
 )
 from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
@@ -222,6 +223,7 @@ __all__ = [
     "attach_view",
     "cls",
     "col",
+    "concat",
     "context",
     "create_namespace",
     "create_namespace_if_not_exists",
