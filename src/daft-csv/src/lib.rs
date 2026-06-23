@@ -13,7 +13,7 @@ pub use metadata::read_csv_schema_bulk;
 pub use options::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use read::{read_csv, read_csv_bulk, stream_csv};
+pub use read::{is_csv_corrupt, read_csv, read_csv_bulk, stream_csv};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -43,8 +43,39 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
+        // Inspect CSV-specific errors before falling through to External so that:
+        // - Format errors (bad encoding, wrong field count) get DaftError::CorruptFile
+        // - IO errors embedded inside csv_async/csv readers get DaftError::IoError
+        //   rather than being lost inside External.
+        let is_csv_format_err = match &err {
+            Error::CSVError { source } => !source.is_io_error(),
+            Error::SyncCSVError { source } => !matches!(source.kind(), csv::ErrorKind::Io(_)),
+            _ => false,
+        };
+        if is_csv_format_err {
+            return Self::CorruptFile(err.to_string());
+        }
+
         match err {
             Error::IOError { source } => source.into(),
+            Error::CSVError { source } => {
+                if let csv_async::ErrorKind::Io(io_err) = source.into_kind() {
+                    Self::IoError(io_err)
+                } else {
+                    Self::External(Box::new(std::io::Error::other(
+                        "CSV IO error kind mismatch (csv_async)",
+                    )))
+                }
+            }
+            Error::SyncCSVError { source } => {
+                if let csv::ErrorKind::Io(io_err) = source.into_kind() {
+                    Self::IoError(io_err)
+                } else {
+                    Self::External(Box::new(std::io::Error::other(
+                        "CSV IO error kind mismatch (csv)",
+                    )))
+                }
+            }
             _ => Self::External(err.into()),
         }
     }

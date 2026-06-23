@@ -54,8 +54,12 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     """Generates a column of UUID strings.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
-    (e.g. two separate columns) are independent and will produce different values. By default,
-    this generates UUIDv4 values. Pass ``version="v7"`` to generate time-ordered UUIDv7 values.
+    (e.g. two separate columns) are independent and will produce different values.
+
+    Use the ``version`` argument to choose the UUID version:
+
+    - ``uuid()`` or ``uuid(version="v4")`` generates random UUIDv4 values.
+    - ``uuid(version="v7")`` generates time-ordered UUIDv7 values.
 
     Args:
         version: UUID version to generate. Supported values are ``"v4"`` and ``"v7"``.
@@ -66,12 +70,19 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     Examples:
         >>> import daft
         >>> from daft.functions import uuid
-        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
-        >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
-        >>> df.schema()["u1"].dtype == daft.DataType.uuid()
-        True
-        >>> df.schema()["u2"].dtype == daft.DataType.uuid()
-        True
+        >>> df = daft.from_pydict({"row": [1, 2]}).select(uuid_v4=uuid(), uuid_v7=uuid(version="v7"))
+        >>> df.show()  # doctest: +SKIP
+        ╭────────────────────────────────┬────────────────────────────────╮
+        │ uuid_v4                        ┆ uuid_v7                        │
+        │ ---                            ┆ ---                            │
+        │ UUID                           ┆ UUID                           │
+        ╞════════════════════════════════╪════════════════════════════════╡
+        │ 06b4460f-d44e-4f37-bb71-edb3b… ┆ 019eb73f-58c8-7f50-b31d-46f02… │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 74648614-aebf-41f3-9591-781d5… ┆ 019eb73f-58c8-7f50-b31d-47002… │
+        ╰────────────────────────────────┴────────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
     """
     if version == "v4":
         return Expression._call_builtin_scalar_fn("uuid")
@@ -187,6 +198,45 @@ def cast(expr: Expression, dtype: DataTypeLike) -> Expression:
     dtype = DataType._infer(dtype)
     expr = Expression._to_expression(expr)
     return Expression._from_pyexpr(expr._expr.cast(dtype._dtype))
+
+
+def try_cast(expr: Expression, dtype: DataTypeLike) -> Expression:
+    """Attempts to cast an expression to the given datatype, returning null on failure.
+
+    Unlike `cast`, this function does not raise an error when the conversion fails.
+    Instead, it returns null for values that cannot be converted.
+
+    Returns:
+        Expression: Expression with the specified new datatype, with null for failed conversions
+
+    Note:
+        - If a string is provided, it will use the sql engine to parse the string into a data type.
+        - A python `type` can also be provided, in which case the corresponding Daft data type will be used.
+
+    Examples:
+        >>> import daft
+        >>> df = daft.from_pydict({"str_val": ["1", "2", "abc", None]})
+        >>> df = df.select(df["str_val"].try_cast(daft.DataType.int64()))
+        >>> df.show()
+        ╭─────────╮
+        │ str_val │
+        │ ---     │
+        │ Int64   │
+        ╞═════════╡
+        │ 1       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 2       │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ None    │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+    """
+    dtype = DataType._infer(dtype)
+    expr = Expression._to_expression(expr)
+    return Expression._from_pyexpr(expr._expr.try_cast(dtype._dtype))
 
 
 def is_null(expr: Expression) -> Expression:

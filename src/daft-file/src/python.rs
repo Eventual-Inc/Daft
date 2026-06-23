@@ -91,12 +91,17 @@ impl PyFileReference {
         Ok(url.clone())
     }
 
-    fn offset(&self) -> PyResult<Option<u64>> {
-        Ok(self.inner.offset)
+    fn position(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.position)
     }
 
-    fn length(&self) -> PyResult<Option<u64>> {
-        Ok(self.inner.length)
+    fn size(&self) -> PyResult<Option<u64>> {
+        Ok(self.inner.size)
+    }
+
+    fn exists(&self, py: Python<'_>) -> PyResult<bool> {
+        let file_ref = self.inner.as_ref().clone();
+        py.detach(move || crate::meta::file_exists_blocking(file_ref).map_err(|e| e.into()))
     }
 }
 

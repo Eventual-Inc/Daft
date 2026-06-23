@@ -123,8 +123,23 @@ impl PySession {
     }
 
     #[pyo3(signature = (pattern=None))]
-    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
-        Ok(self.0.list_tables(pattern)?)
+    pub fn list_namespaces(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
+        Ok(self
+            .0
+            .list_namespaces(pattern)?
+            .into_iter()
+            .map(PyIdentifier::from)
+            .collect())
+    }
+
+    #[pyo3(signature = (pattern=None))]
+    pub fn list_tables(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
+        Ok(self
+            .0
+            .list_tables(pattern)?
+            .into_iter()
+            .map(PyIdentifier::from)
+            .collect())
     }
 
     #[pyo3(signature = (ident))]
@@ -241,7 +256,17 @@ impl PySession {
     }
 }
 
+#[pyo3::pyfunction]
+pub fn get_loaded_extension_paths() -> PyResult<Vec<String>> {
+    Ok(daft_ext_internal::module::loaded_module_paths()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect())
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PySession>()?;
+    parent.add_function(pyo3::wrap_pyfunction!(get_loaded_extension_paths, parent)?)?;
     Ok(())
 }

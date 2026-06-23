@@ -497,6 +497,19 @@ class Expression:
 
         return cast(self, dtype)
 
+    def try_cast(self, dtype: DataTypeLike) -> Expression:
+        """Attempts to cast an expression to the given datatype, returning null on failure.
+
+        Unlike `cast`, this method does not raise an error when the conversion fails.
+        Instead, it returns null for values that cannot be converted.
+
+        Tip: See Also
+            [`daft.functions.try_cast`](https://docs.daft.ai/en/stable/api/functions/try_cast/)
+        """
+        from daft.functions import try_cast
+
+        return try_cast(self, dtype)
+
     if TYPE_CHECKING:
 
         def as_int8(self) -> Expression: ...
@@ -1497,6 +1510,26 @@ class Expression:
 
         return over(self, window)
 
+    def first_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the first value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the first non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import first_value
+
+        return first_value(self, ignore_nulls=ignore_nulls)
+
+    def last_value(self, ignore_nulls: bool = False) -> Expression:
+        """Returns the last value in the window frame.
+
+        When ``ignore_nulls=True``, skips null values and returns the last non-null value.
+        Must be used with ``over()`` to specify the window.
+        """
+        from daft.functions import last_value
+
+        return last_value(self, ignore_nulls=ignore_nulls)
+
     def lag(self, offset: int = 1, default: Any | None = None) -> Expression:
         """Get the value from a previous row within a window partition.
 
@@ -2341,6 +2374,46 @@ class Expression:
 
         return hamming_distance_str(self, other)
 
+    def levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Levenshtein edit distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/levenshtein_distance/)
+        """
+        from daft.functions import levenshtein_distance
+
+        return levenshtein_distance(self, other)
+
+    def jaro_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_similarity/)
+        """
+        from daft.functions import jaro_similarity
+
+        return jaro_similarity(self, other)
+
+    def jaro_winkler_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaro-Winkler similarity between two strings.
+
+        Tip: See Also
+            [`daft.functions.jaro_winkler_similarity`](https://docs.daft.ai/en/stable/api/functions/jaro_winkler_similarity/)
+        """
+        from daft.functions import jaro_winkler_similarity
+
+        return jaro_winkler_similarity(self, other)
+
+    def damerau_levenshtein_distance(self, other: Expression) -> Expression:
+        """Compute the Damerau-Levenshtein distance between two strings.
+
+        Tip: See Also
+            [`daft.functions.damerau_levenshtein_distance`](https://docs.daft.ai/en/stable/api/functions/damerau_levenshtein_distance/)
+        """
+        from daft.functions import damerau_levenshtein_distance
+
+        return damerau_levenshtein_distance(self, other)
+
     def value_counts(self) -> Expression:
         """Counts the occurrences of each distinct value in the list.
 
@@ -2638,6 +2711,46 @@ class Expression:
 
         return find(self, substr)
 
+    def translate(self, from_str: builtins.str | Expression, to_str: builtins.str | Expression) -> Expression:
+        """Translates characters in the string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+        Tip: See Also
+            [`daft.functions.translate`](https://docs.daft.ai/en/stable/api/functions/translate/)
+        """
+        from daft.functions import translate
+
+        return translate(self, from_str, to_str)
+
+    def substring_index(self, delim: builtins.str | Expression, count: builtins.int | Expression) -> Expression:
+        """Returns the substring from string before count occurrences of the delimiter.
+
+        Tip: See Also
+            [`daft.functions.substring_index`](https://docs.daft.ai/en/stable/api/functions/substring_index/)
+        """
+        from daft.functions import substring_index
+
+        return substring_index(self, delim, count)
+
+    def soundex(self) -> Expression:
+        """Returns the Soundex code of the string.
+
+        Tip: See Also
+            [`daft.functions.soundex`](https://docs.daft.ai/en/stable/api/functions/soundex/)
+        """
+        from daft.functions import soundex
+
+        return soundex(self)
+
+    def ascii(self) -> Expression:
+        """Returns the ASCII numeric value of the first character of the string.
+
+        Tip: See Also
+            [`daft.functions.ascii_func`](https://docs.daft.ai/en/stable/api/functions/ascii_func/)
+        """
+        from daft.functions import ascii_func
+
+        return ascii_func(self)
+
     def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
         """Convert an image expression to the specified mode.
 
@@ -2912,6 +3025,16 @@ class Expression:
         from daft.functions import file_size
 
         return file_size(self)
+
+    def file_exists(self) -> Expression:
+        """Checks whether a file exists.
+
+        Tip: See Also
+            [`daft.functions.file_exists`](https://docs.daft.ai/en/stable/api/functions/file_exists/)
+        """
+        from daft.functions import file_exists
+
+        return file_exists(self)
 
     def video_metadata(self) -> Expression:
         """Gets metadata for a video file.

@@ -35,10 +35,10 @@ impl DaftFile {
             .await
             .map_err(DaftError::from)?;
 
-        match (file_ref.offset, file_ref.length) {
-            (Some(offset), Some(length)) => {
+        match (file_ref.position, file_ref.size) {
+            (Some(position), Some(size)) => {
                 let range = Some(GetRange::Bounded(
-                    offset as usize..(offset + length) as usize,
+                    position as usize..(position + size) as usize,
                 ));
                 let result = source
                     .get(&path, range, None)
@@ -52,7 +52,7 @@ impl DaftFile {
             }
             (Some(_), None) | (None, Some(_)) => {
                 return Err(DaftError::ValueError(
-                    "Both offset and length must be specified for byte-range reads".to_string(),
+                    "Both position and size must be specified for byte-range reads".to_string(),
                 ));
             }
             (None, None) => {}
@@ -121,6 +121,7 @@ impl DaftFile {
             .map(|c| c.size())
             .ok_or(DaftError::IoError(std::io::Error::other("File not open")))
     }
+
     /// Attempt to guess the MIME type of the file.
     /// If we are unable to determine the MIME type, returns None.
     pub fn guess_mime_type(&mut self) -> Option<String> {

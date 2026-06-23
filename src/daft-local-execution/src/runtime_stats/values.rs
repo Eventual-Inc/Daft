@@ -35,6 +35,12 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     /// not directly comparable across operator kinds — interpret relative
     /// to the operator's own scale.
     fn increment_num_tasks(&self);
+
+    /// Record file-metadata blobs staged to a checkpoint store. No-op unless
+    /// the node is a checkpoint-enabled write sink.
+    fn add_checkpoint_files_staged(&self, _files: u64) {}
+    /// Record a sealed checkpoint. No-op unless the node is a checkpoint-enabled sink.
+    fn add_checkpoints_sealed(&self, _n: u64) {}
 }
 
 pub struct DefaultRuntimeStats {

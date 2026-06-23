@@ -16,13 +16,26 @@ pub(super) struct SqlReadIceberg;
 struct SqlReadIcebergArgs {
     metadata_location: String,
     snapshot_id: Option<usize>,
+    branch: Option<String>,
+    tag: Option<String>,
     io_config: Option<IOConfig>,
+    ignore_corrupt_files: bool,
 }
 
 impl SqlReadIcebergArgs {
     /// Like a TryFrom<SQLFunctionArguments> but from TalbeFunctionArgs directly and passing the planner.
     fn try_from(planner: &SQLPlanner, args: &TableFunctionArgs) -> SQLPlannerResult<Self> {
-        planner.plan_function_args(&args.args, &["snapshot_id", "io_config"], 1)
+        planner.plan_function_args(
+            &args.args,
+            &[
+                "snapshot_id",
+                "branch",
+                "tag",
+                "io_config",
+                "ignore_corrupt_files",
+            ],
+            1,
+        )
     }
 }
 
@@ -35,11 +48,17 @@ impl TryFrom<SQLFunctionArguments> for SqlReadIcebergArgs {
             .try_get_positional(0)?
             .expect("read_iceberg requires a path");
         let snapshot_id: Option<usize> = args.try_get_named("snapshot_id")?;
+        let branch: Option<String> = args.try_get_named("branch")?;
+        let tag: Option<String> = args.try_get_named("tag")?;
         let io_config: Option<IOConfig> = functions::args::parse_io_config(&args)?.into();
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
         Ok(Self {
             metadata_location,
             snapshot_id,
+            branch,
+            tag,
             io_config,
+            ignore_corrupt_files,
         })
     }
 }
@@ -56,7 +75,10 @@ impl SQLTableFunction for SqlReadIceberg {
         Ok(daft_logical_plan::scan_builder::iceberg_scan(
             args.metadata_location,
             args.snapshot_id,
+            args.branch,
+            args.tag,
             args.io_config,
+            args.ignore_corrupt_files,
         )?)
     }
 }
