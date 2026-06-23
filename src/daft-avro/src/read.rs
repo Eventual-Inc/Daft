@@ -1,14 +1,68 @@
 use std::sync::Arc;
 
 use arrow_array::RecordBatch as ArrowRecordBatch;
-use arrow_avro::reader::ReaderBuilder;
+use arrow_avro::{
+    errors::AvroError as ArrowAvroError,
+    reader::{AsyncFileReader, ReaderBuilder},
+};
 use arrow_schema::Schema as ArrowSchema;
+use bytes::Bytes;
+use daft_io::GetRange;
 use daft_recordbatch::RecordBatch;
 use futures::StreamExt;
 
-use crate::{AvroError, Result, schema::arrow_type_to_daft_type};
+use crate::{AvroError, Result};
+
+/// Wraps `daft_io::IOClient` to implement arrow_avro's `AsyncFileReader` trait
+/// for range-based remote reads.
+struct RemoteAvroReader {
+    uri: String,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: Option<daft_io::IOStatsRef>,
+}
+
+impl AsyncFileReader for RemoteAvroReader {
+    fn get_bytes(
+        &mut self,
+        range: std::ops::Range<u64>,
+    ) -> futures::future::BoxFuture<'_, Result<Bytes, ArrowAvroError>> {
+        Box::pin(async move {
+            let get_result = self
+                .io_client
+                .single_url_get(
+                    self.uri.clone(),
+                    Some(GetRange::Bounded(range.start as usize..range.end as usize)),
+                    self.io_stats.clone(),
+                )
+                .await
+                .map_err(|e| ArrowAvroError::External(Box::new(e)))?;
+            get_result
+                .bytes()
+                .await
+                .map_err(|e| ArrowAvroError::External(Box::new(e)))
+        })
+    }
+}
+
+#[cfg(test)]
+fn read_avro_from_bytes(
+    bytes: Vec<u8>,
+    column_projection: Option<&Vec<String>>,
+    max_records: Option<usize>,
+) -> Result<RecordBatch> {
+    let cursor = std::io::Cursor::new(bytes);
+    let reader = ReaderBuilder::new()
+        .build(std::io::BufReader::new(cursor))
+        .map_err(|e| AvroError::ReadError {
+            message: format!("Failed to create Avro reader: {}", e),
+        })?;
+    let arrow_schema = reader.schema();
+    drain_reader(reader, &arrow_schema, column_projection, max_records)
+}
 
 /// Read an Avro file into a RecordBatch.
+/// Local files use BufReader<File> via spawn_blocking;
+/// remote streams use AsyncAvroFileReader with range-based reads.
 pub async fn read_avro(
     uri: &str,
     io_client: Arc<daft_io::IOClient>,
@@ -17,45 +71,94 @@ pub async fn read_avro(
     max_records: Option<usize>,
 ) -> Result<RecordBatch> {
     let get_result = io_client
-        .single_url_get(uri.to_string(), None, io_stats)
+        .single_url_get(uri.to_string(), None, io_stats.clone())
         .await
         .map_err(|e| AvroError::IOError { source: e })?;
 
-    let bytes = match get_result {
+    match get_result {
         daft_io::GetResult::File(file) => {
-            tokio::fs::read(file.path)
-                .await
-                .map_err(|e| AvroError::ReadError {
-                    message: format!("Failed to read Avro file: {}", e),
-                })?
+            let path = file.path.clone();
+            tokio::task::spawn_blocking(move || {
+                let file = std::fs::File::open(&path).map_err(|e| AvroError::ReadError {
+                    message: format!("Failed to open Avro file {}: {}", path.display(), e),
+                })?;
+                let reader = ReaderBuilder::new()
+                    .build(std::io::BufReader::new(file))
+                    .map_err(|e| AvroError::ReadError {
+                        message: format!("Failed to create Avro reader: {}", e),
+                    })?;
+                let arrow_schema = reader.schema();
+                drain_reader(
+                    reader,
+                    &arrow_schema,
+                    column_projection.as_ref(),
+                    max_records,
+                )
+            })
+            .await
+            .map_err(|e| AvroError::ReadError {
+                message: format!("Failed to join blocking task: {}", e),
+            })?
         }
         daft_io::GetResult::Stream(stream, ..) => {
-            let mut data = Vec::new();
-            futures::pin_mut!(stream);
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|e| AvroError::IOError { source: e })?;
-                data.extend_from_slice(&chunk);
+            // Drop the full-file download; use range-based reads instead.
+            drop(stream);
+
+            let file_size = io_client
+                .single_url_get_size(uri.to_string(), io_stats.clone())
+                .await
+                .map_err(|e| AvroError::IOError { source: e })? as u64;
+
+            let remote = RemoteAvroReader {
+                uri: uri.to_string(),
+                io_client,
+                io_stats,
+            };
+
+            let mut avro_reader =
+                arrow_avro::reader::AsyncAvroFileReader::builder(remote, file_size, 1024)
+                    .try_build()
+                    .await
+                    .map_err(|e| AvroError::ReadError {
+                        message: format!("Failed to create async Avro reader: {}", e),
+                    })?;
+
+            let arrow_schema = avro_reader.schema();
+            let mut batches: Vec<ArrowRecordBatch> = Vec::new();
+            let mut total_rows = 0usize;
+            while let Some(batch) = avro_reader.next().await {
+                let batch = batch.map_err(|e| AvroError::ArrowError { source: e })?;
+                let batch_rows = batch.num_rows();
+                if let Some(max) = max_records {
+                    let remaining = max.saturating_sub(total_rows);
+                    if remaining == 0 {
+                        break;
+                    }
+                    if batch_rows > remaining {
+                        let sliced = batch.slice(0, remaining);
+                        batches.push(sliced);
+                        break;
+                    }
+                }
+                total_rows += batch_rows;
+                batches.push(batch);
             }
-            data
+
+            finish_batches(batches, &arrow_schema, column_projection.as_ref())
         }
-    };
+    }
+}
 
-    let cursor = std::io::Cursor::new(bytes);
-    let reader = ReaderBuilder::new()
-        .build(std::io::BufReader::new(cursor))
-        .map_err(|e| AvroError::ReadError {
-            message: format!("Failed to create Avro reader: {}", e),
-        })?;
-
-    let arrow_schema = reader.schema();
-
-    // Collect all Arrow RecordBatches
+fn drain_reader<R: std::io::BufRead>(
+    reader: arrow_avro::reader::Reader<R>,
+    arrow_schema: &Arc<ArrowSchema>,
+    column_projection: Option<&Vec<String>>,
+    max_records: Option<usize>,
+) -> Result<RecordBatch> {
     let mut batches: Vec<ArrowRecordBatch> = Vec::new();
     let mut total_rows = 0usize;
     for batch in reader {
-        let batch = batch.map_err(|e| AvroError::ReadError {
-            message: format!("Failed to read Avro record batch: {}", e),
-        })?;
+        let batch = batch.map_err(|e| AvroError::ArrowError { source: e })?;
         let batch_rows = batch.num_rows();
         if let Some(max) = max_records {
             let remaining = max.saturating_sub(total_rows);
@@ -72,29 +175,28 @@ pub async fn read_avro(
         batches.push(batch);
     }
 
+    finish_batches(batches, arrow_schema, column_projection)
+}
+
+fn finish_batches(
+    batches: Vec<ArrowRecordBatch>,
+    arrow_schema: &Arc<ArrowSchema>,
+    column_projection: Option<&Vec<String>>,
+) -> Result<RecordBatch> {
     if batches.is_empty() {
-        let daft_schema = arrow_schema_to_daft_schema(&arrow_schema)?;
+        let daft_schema =
+            daft_schema::schema::Schema::try_from(arrow_schema.as_ref()).map_err(|e| {
+                AvroError::SchemaConversionError {
+                    message: format!("Failed to convert Arrow schema: {}", e),
+                }
+            })?;
         return Ok(RecordBatch::empty(Some(Arc::new(daft_schema))));
     }
 
-    // Concatenate batches
-    let combined = arrow::compute::concat_batches(&arrow_schema, batches.iter())
+    let combined = arrow::compute::concat_batches(arrow_schema, batches.iter())
         .map_err(|e| AvroError::ArrowError { source: e })?;
 
-    // Convert to Daft RecordBatch
-    arrow_batch_to_daft(&combined, &arrow_schema, column_projection.as_ref())
-}
-
-fn arrow_schema_to_daft_schema(arrow_schema: &ArrowSchema) -> Result<daft_schema::schema::Schema> {
-    let fields: Vec<daft_core::datatypes::Field> = arrow_schema
-        .fields()
-        .iter()
-        .map(|f| {
-            let dtype = arrow_type_to_daft_type(f.data_type())?;
-            Ok(daft_core::datatypes::Field::new(f.name().clone(), dtype))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(daft_schema::schema::Schema::new(fields))
+    arrow_batch_to_daft(&combined, arrow_schema, column_projection)
 }
 
 fn arrow_batch_to_daft(
@@ -125,8 +227,11 @@ fn arrow_batch_to_daft(
             .iter()
             .filter(|f| col_set.contains(f.name().as_str()))
             .map(|f| {
-                let dtype = arrow_type_to_daft_type(f.data_type())?;
-                Ok(daft_core::datatypes::Field::new(f.name().clone(), dtype))
+                f.as_ref()
+                    .try_into()
+                    .map_err(|e| AvroError::SchemaConversionError {
+                        message: format!("Failed to convert Arrow field: {}", e),
+                    })
             })
             .collect::<Result<Vec<_>>>()?
     } else {
@@ -134,8 +239,11 @@ fn arrow_batch_to_daft(
             .fields()
             .iter()
             .map(|f| {
-                let dtype = arrow_type_to_daft_type(f.data_type())?;
-                Ok(daft_core::datatypes::Field::new(f.name().clone(), dtype))
+                f.as_ref()
+                    .try_into()
+                    .map_err(|e| AvroError::SchemaConversionError {
+                        message: format!("Failed to convert Arrow field: {}", e),
+                    })
             })
             .collect::<Result<Vec<_>>>()?
     };
@@ -172,39 +280,7 @@ mod tests {
         column_projection: Option<Vec<String>>,
         max_records: Option<usize>,
     ) -> RecordBatch {
-        let cursor = std::io::Cursor::new(bytes);
-        let reader = ReaderBuilder::new()
-            .build(std::io::BufReader::new(cursor))
-            .unwrap();
-        let arrow_schema = reader.schema();
-
-        let mut batches: Vec<ArrowRecordBatch> = Vec::new();
-        let mut total_rows = 0usize;
-        for batch in reader {
-            let batch = batch.unwrap();
-            let batch_rows = batch.num_rows();
-            if let Some(max) = max_records {
-                let remaining = max.saturating_sub(total_rows);
-                if remaining == 0 {
-                    break;
-                }
-                if batch_rows > remaining {
-                    let sliced = batch.slice(0, remaining);
-                    batches.push(sliced);
-                    break;
-                }
-            }
-            total_rows += batch_rows;
-            batches.push(batch);
-        }
-
-        if batches.is_empty() {
-            let daft_schema = arrow_schema_to_daft_schema(&arrow_schema).unwrap();
-            return RecordBatch::empty(Some(Arc::new(daft_schema)));
-        }
-
-        let combined = arrow::compute::concat_batches(&arrow_schema, batches.iter()).unwrap();
-        arrow_batch_to_daft(&combined, &arrow_schema, column_projection.as_ref()).unwrap()
+        read_avro_from_bytes(bytes.to_vec(), column_projection.as_ref(), max_records).unwrap()
     }
 
     #[test]

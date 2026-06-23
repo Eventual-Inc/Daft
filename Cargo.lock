@@ -278,6 +278,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-avro"
+version = "59.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2835d67df2b69bf5de251ee6d289f85650d41b8169dcee0f950ea88747812c32"
+dependencies = [
+ "arrow-array 59.0.0",
+ "arrow-buffer 59.0.0",
+ "arrow-schema 59.0.0",
+ "bytes",
+ "bzip2 0.6.1",
+ "crc",
+ "flate2",
+ "futures",
+ "indexmap",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+ "snap",
+ "strum_macros 0.28.0",
+ "tokio",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
 name = "arrow-buffer"
 version = "56.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2427,9 +2452,10 @@ name = "daft-avro"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "arrow-array 57.3.0",
+ "arrow-array 59.0.0",
  "arrow-avro",
- "arrow-schema 57.3.0",
+ "arrow-schema 59.0.0",
+ "bytes",
  "common-error",
  "common-py-serde",
  "common-runtime",
@@ -7681,7 +7707,7 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
 ]
 
 [[package]]
@@ -7689,6 +7715,18 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -9129,15 +9167,6 @@ name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
-
-[[package]]
-name = "xz"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c887690ff2a2e233e8e49633461521f98ec57fbff9d59a884c9a4f04ec1da34"
-dependencies = [
- "xz2",
-]
 
 [[package]]
 name = "xz2"
