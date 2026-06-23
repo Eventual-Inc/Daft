@@ -688,7 +688,7 @@ def test_udf_fails_with_no_actors_schedulable():
             return data
 
         result = df.select(udf_1(col("a")).alias("udf_1"))
-        with pytest.raises(RuntimeError, match="RuntimeError: UDF actors failed to start within 10 seconds"):
+        with pytest.raises(RuntimeError, match="No single actor can be scheduled"):
             result.collect()
 
 
@@ -718,6 +718,19 @@ def test_actor_udf_with_into_partitions_does_not_deadlock():
 
         result = df.select(udf_1(col("a")).alias("udf_1")).into_partitions(2).to_pydict()
         assert sorted(result["udf_1"]) == [1, 2, 3]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
+def test_udf_fails_when_single_actor_exceeds_cluster_capacity():
+    df = daft.from_pydict({"a": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.int64(), concurrency=1, num_cpus=1024)
+    def udf_1(data):
+        return data
+
+    result = df.select(udf_1(col("a")).alias("udf_1"))
+    with pytest.raises(RuntimeError, match="No single actor can be scheduled"):
+        result.collect()
 
 
 def test_udf_error_serialize_err():

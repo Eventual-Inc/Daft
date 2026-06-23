@@ -201,6 +201,31 @@ impl DaftRowGroupMetaData {
     pub fn compressed_size(&self) -> usize {
         self.inner.compressed_size() as usize
     }
+
+    /// Uncompressed (encoded) size in bytes for each column chunk in this row group,
+    /// keyed by the top-level (root) column name.
+    ///
+    /// Nested columns are flattened to their root: every leaf chunk (e.g.
+    /// `position_ids.list.element`) is attributed to its top-level field
+    /// (`position_ids`). The caller is responsible for summing across row groups.
+    pub fn column_uncompressed_sizes(&self) -> Vec<(String, u64)> {
+        self.inner
+            .columns()
+            .iter()
+            .map(|col| {
+                let root = col
+                    .column_descr()
+                    .path()
+                    .parts()
+                    .first()
+                    .cloned()
+                    .unwrap_or_default();
+                // `uncompressed_size()` is an i64 and is always non-negative in practice;
+                // clamp defensively so a malformed (negative) value can't wrap to a huge u64.
+                (root, col.uncompressed_size().max(0) as u64)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
