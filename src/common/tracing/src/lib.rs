@@ -1,9 +1,6 @@
 mod config;
 
-use std::{
-    sync::{LazyLock, Mutex},
-    time::Duration,
-};
+use std::sync::{LazyLock, Mutex};
 
 use common_runtime::get_io_runtime;
 pub use config::Config;
@@ -53,7 +50,7 @@ impl TraceFormat {
 
 pub fn init_tracing() {
     let config = Config::from_env();
-    let resource = Resource::builder().with_service_name("daft").build();
+    let resource = config.resource();
     let tracer_provider = if config.enabled() {
         let runtime = get_io_runtime(true);
         runtime.block_on_current_thread(async {
@@ -158,7 +155,6 @@ fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Res
     let log_exporter = opentelemetry_otlp::LogExporter::builder()
         .with_tonic()
         .with_endpoint(otlp_endpoint)
-        .with_timeout(Duration::from_secs(10))
         .build()
         .expect("Failed to build OTLP logger exporter.");
 
@@ -188,14 +184,12 @@ fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resourc
             opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_endpoint(endpoint)
-            .with_timeout(Duration::from_secs(10))
             .build()
         }
         Protocol::HttpBinary => {
             opentelemetry_otlp::MetricExporter::builder()
             .with_http()
             .with_endpoint(endpoint)
-            .with_timeout(Duration::from_secs(10))
             .with_protocol(config.otlp_protocol)
             .build()
         }
@@ -242,7 +236,6 @@ fn init_otlp_tracer_provider(
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint(otlp_endpoint)
-        .with_timeout(Duration::from_secs(10))
         .build()
         .expect("Failed to build OTLP span exporter for tracing");
 
