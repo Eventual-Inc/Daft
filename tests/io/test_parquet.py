@@ -826,3 +826,43 @@ def test_resolve_column_compression_unknown_key_raises(tmp_path):
     schema = pa.schema([("a", pa.int64())])
     with pytest.raises(ValueError, match="does_not_exist"):
         writer._resolve_column_compression(schema)
+
+
+def test_drop_parquet_dataset_local(tmp_path):
+    parquet_path = tmp_path / "parquet_dataset"
+    daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_parquet(str(parquet_path))
+
+    assert parquet_path.exists()
+    daft.DataFrame.drop_parquet(str(parquet_path))
+    assert not parquet_path.exists()
+
+
+def test_drop_parquet_file_local(tmp_path):
+    parquet_file = tmp_path / "single.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), str(parquet_file))
+
+    assert parquet_file.exists()
+    daft.DataFrame.drop_parquet(str(parquet_file))
+    assert not parquet_file.exists()
+
+
+def test_drop_parquet_missing_path_raises(tmp_path):
+    missing = tmp_path / "missing_parquet_path"
+    with pytest.raises(FileNotFoundError):
+        daft.DataFrame.drop_parquet(str(missing))
+
+
+@pytest.mark.integration()
+def test_drop_parquet_dataset_s3(minio_io_config):
+    bucket_name = f"drop-parquet-{uuid.uuid4()}"
+    parquet_path = f"s3://{bucket_name}/dataset"
+
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        daft.from_pydict({"a": [1, 2], "b": ["m", "n"]}).write_parquet(parquet_path, io_config=minio_io_config)
+
+        assert daft.read_parquet(parquet_path, io_config=minio_io_config).to_arrow().num_rows == 2
+
+        daft.DataFrame.drop_parquet(parquet_path, io_config=minio_io_config)
+
+        with pytest.raises(Exception):
+            daft.read_parquet(parquet_path, io_config=minio_io_config).to_arrow()

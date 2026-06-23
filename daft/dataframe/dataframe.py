@@ -2247,6 +2247,57 @@ class DataFrame:
         except Exception as e:
             raise RuntimeError(f"Error deleting table at {table_uri}: {e}") from e
 
+    @staticmethod
+    @DataframePublicAPI
+    def drop_parquet(
+        table: Union[str, pathlib.Path],
+        io_config: IOConfig | None = None,
+    ) -> None:
+        """Delete a Parquet table path from the filesystem.
+
+        Removes either a Parquet dataset directory or a single Parquet file.
+        This operation cannot be undone.
+
+        Args:
+            table (Union[str, pathlib.Path]): Parquet file path or dataset directory URI/path.
+            io_config (IOConfig, optional): Configurations to use when interacting with remote storage.
+
+        Raises:
+            FileNotFoundError: If the target path does not exist.
+            PermissionError: If insufficient permissions to delete the target.
+
+        Note:
+            This operation is **blocking** and immediately deletes data from storage.
+
+        Examples:
+            >>> import daft
+            >>> daft.DataFrame.drop_parquet("path/to/parquet_dataset")  # doctest: +SKIP
+            >>> daft.DataFrame.drop_parquet("s3://bucket/path/to/file.parquet", io_config=...)  # doctest: +SKIP
+        """
+        import pyarrow.fs as pafs
+
+        from daft.filesystem import _resolve_paths_and_filesystem
+
+        table_uri = str(table)
+        resolved_paths, fs = _resolve_paths_and_filesystem(table_uri, io_config=io_config)
+        resolved_path = resolved_paths[0].rstrip("/")
+
+        target_info = fs.get_file_info(resolved_path)
+        if target_info.type == pafs.FileType.NotFound:
+            raise FileNotFoundError(f"Parquet path not found: {table_uri}")
+
+        try:
+            if target_info.type == pafs.FileType.Directory:
+                fs.delete_dir(resolved_path)
+            elif target_info.type == pafs.FileType.File:
+                fs.delete_file(resolved_path)
+            else:
+                raise RuntimeError(f"Unsupported path type for deletion: {target_info.type}")
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied when deleting parquet path {table_uri}: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Error deleting parquet path {table_uri}: {e}") from e
+
     def _write_deltalake_with_checkpoint(
         self,
         table: "deltalake.DeltaTable | None",
