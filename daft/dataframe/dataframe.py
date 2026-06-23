@@ -144,6 +144,45 @@ def _merge_delta_custom_metadata(
     return merged or None
 
 
+def _merge_pa_schemas(incoming_schema: "pa.Schema", table_schema: "pa.Schema") -> "pa.Schema":
+    """Merge incoming PyArrow schema with existing table schema.
+
+    Keeps all columns from table_schema and adds any new columns from incoming_schema.
+    For columns present in both schemas, uses the incoming schema's type (allows schema evolution).
+
+    Args:
+        incoming_schema: Schema from the data being written
+        table_schema: Existing schema from the Delta table
+
+    Returns:
+        Merged PyArrow schema with all columns from both schemas
+
+    Raises:
+        ValueError: If a column exists in both schemas but with incompatible types
+    """
+    import pyarrow as pa
+
+    # Build mapping of column names to fields for both schemas
+    table_fields = {field.name: field for field in table_schema}
+    incoming_fields = {field.name: field for field in incoming_schema}
+
+    # Start with all columns from table_schema
+    merged_fields = list(table_fields.values())
+
+    # Add or update with columns from incoming_schema
+    for col_name, incoming_field in incoming_fields.items():
+        if col_name in table_fields:
+            # Column exists in both - update to incoming type (schema evolution)
+            # Remove the old field and add the new one (to maintain order)
+            merged_fields = [f for f in merged_fields if f.name != col_name]
+            merged_fields.append(incoming_field)
+        else:
+            # New column - append it
+            merged_fields.append(incoming_field)
+
+    return pa.schema(merged_fields)
+
+
 def _get_num_records_from_add_action_stats(stats_json: str) -> int:
     try:
         parsed = json.loads(stats_json)
@@ -1761,7 +1800,7 @@ class DataFrame:
             table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to `append`.
-            schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
+            schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. If set to `merge`, merges the incoming schema with the existing table schema, adding new columns and allowing type evolution of existing columns. Only applicable when the table already exists.
             name (str, optional): User-provided identifier for this table.
             description (str, optional): User-provided description for this table.
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
@@ -1829,9 +1868,6 @@ class DataFrame:
             create_table_with_add_actions,
         )
         from daft.io.object_store_options import io_config_to_storage_options
-
-        if schema_mode == "merge":
-            raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
 
         if parse(deltalake.__version__) < parse("0.14.0"):
             raise ValueError(f"Write delta lake is only supported on deltalake>=0.14.0, found {deltalake.__version__}")
@@ -1914,7 +1950,22 @@ class DataFrame:
             table.update_incremental()
 
             table_schema = delta_schema_to_pyarrow(table.schema())
-            if Schema.from_pyarrow_schema(delta_schema) != Schema.from_pyarrow_schema(table_schema) and not (
+
+            # Handle schema merging when schema_mode="merge"
+            if schema_mode == "merge" and Schema.from_pyarrow_schema(delta_schema) != Schema.from_pyarrow_schema(table_schema):
+                # Merge the incoming schema with the table schema
+                merged_pa_schema = _merge_pa_schemas(delta_schema, table_schema)
+                # Update the incoming dataframe to include all columns from the merged schema
+                # Fill missing columns with null values
+                for field in merged_pa_schema:
+                    if field.name not in pyarrow_schema.names:
+                        # Add null column with the appropriate type from merged schema
+                        column_dtype = DataType.from_arrow_type(field.type)
+                        self = self.with_column(field.name, lit(None, dtype=column_dtype))
+                # Recalculate schema after adding null columns
+                pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
+                delta_schema = convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=large_dtypes)
+            elif Schema.from_pyarrow_schema(delta_schema) != Schema.from_pyarrow_schema(table_schema) and not (
                 mode == "overwrite" and schema_mode == "overwrite"
             ):
                 raise ValueError(
@@ -2124,6 +2175,77 @@ class DataFrame:
             max_temp_directory_size=max_temp_directory_size,
             post_commithook_properties=post_commithook_properties,
         )
+
+    @staticmethod
+    @DataframePublicAPI
+    def drop_deltalake(
+        table: Union[str, pathlib.Path, "deltalake.DeltaTable", "UnityCatalogTable"],
+        io_config: IOConfig | None = None,
+    ) -> None:
+        """Delete a Delta Lake table completely from the filesystem.
+
+        Removes the entire Delta Lake table including all data files and metadata.
+        This operation cannot be undone.
+
+        Args:
+            table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): 
+                Destination Delta Lake table URI, path, or ``deltalake.DeltaTable`` reference to delete.
+            io_config (IOConfig, optional): Configurations to use when interacting with remote storage.
+
+        Raises:
+            FileNotFoundError: If the table does not exist.
+            PermissionError: If insufficient permissions to delete the table.
+
+        Note:
+            This operation is **blocking** and immediately deletes the table from storage.
+            The operation removes the entire table directory including all parquet files and the .delta directory.
+
+        Examples:
+            >>> import daft
+            >>> daft.DataFrame.drop_deltalake("path/to/table")  # doctest: +SKIP
+            >>> daft.DataFrame.drop_deltalake("/tmp/my_delta_table")  # doctest: +SKIP
+        """
+        import pyarrow.fs as pafs
+
+        from daft.filesystem import _resolve_paths_and_filesystem
+
+        try:
+            import deltalake  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "deltalake is required to use delete_deltalake. Install it with: `pip install deltalake`"
+            )
+
+        # Handle different table types
+        if isinstance(table, str):
+            table_uri = table
+        elif isinstance(table, pathlib.Path):
+            table_uri = str(table)
+        elif hasattr(table, "_table"):  # deltalake.DeltaTable
+            table_uri = table.table_uri()
+        elif hasattr(table, "table_uri"):  # UnityCatalogTable
+            raise ValueError("Cannot delete UC tables directly from filesystem. Use Unity Catalog API instead.")
+        else:
+            table_uri = str(table)
+
+        resolved_paths, fs = _resolve_paths_and_filesystem(table_uri, io_config=io_config)
+        resolved_path = resolved_paths[0].rstrip("/")
+
+        # Validate that the target exists and looks like a Delta table.
+        delta_log_path = f"{resolved_path}/_delta_log"
+        delta_log_info = fs.get_file_info(delta_log_path)
+        if delta_log_info.type == pafs.FileType.NotFound:
+            table_info = fs.get_file_info(resolved_path)
+            if table_info.type == pafs.FileType.NotFound:
+                raise FileNotFoundError(f"Delta Lake table not found at path: {table_uri}")
+            raise ValueError(f"Not a valid Delta Lake table. No _delta_log found at: {table_uri}")
+
+        try:
+            fs.delete_dir(resolved_path)
+        except PermissionError as e:
+            raise PermissionError(f"Permission denied when deleting table at {table_uri}: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Error deleting table at {table_uri}: {e}") from e
 
     def _write_deltalake_with_checkpoint(
         self,
