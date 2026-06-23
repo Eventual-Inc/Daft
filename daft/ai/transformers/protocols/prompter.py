@@ -88,11 +88,15 @@ class TransformersPrompter(Prompter):
         # consumed by get_udf_options, everything else is forwarded to the call.
         opts: dict[str, Any] = dict(prompt_options or {})
         pipeline_kwargs: dict[str, Any] = opts.pop("pipeline_kwargs", {})
+        opts.pop("return_full_text", None)  # always set to False in _sync_prompt
         for udf_only_key in UDFOptions.__annotations__:
             opts.pop(udf_only_key, None)
         self.generation_kwargs: dict[str, Any] = opts
 
-        pipeline_init: dict[str, Any] = {"device": get_torch_device(), **pipeline_kwargs}
+        # device and device_map are mutually exclusive.
+        pipeline_init: dict[str, Any] = dict(pipeline_kwargs)
+        if "device" not in pipeline_init and "device_map" not in pipeline_init:
+            pipeline_init["device"] = get_torch_device()
         with _model_loading_lock:
             self._pipeline = pipeline(task="text-generation", model=model_name, **pipeline_init)
 

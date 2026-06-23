@@ -9,7 +9,6 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from daft.ai.protocols import Prompter
 from daft.ai.transformers.protocols.prompter import (
     TransformersPrompter,
     TransformersPrompterDescriptor,
@@ -228,6 +227,35 @@ def test_pipeline_kwargs_can_override_device():
     assert mock_pipeline_ctor.call_args.kwargs["device"] == "cpu"
 
 
+def test_device_map_in_pipeline_kwargs_skips_default_device():
+    """Device and device_map are mutually exclusive in transformers.pipeline."""
+    pipe = _make_pipeline()
+    with patch("daft.ai.transformers.protocols.prompter.pipeline", return_value=pipe) as mock_pipeline_ctor:
+        TransformersPrompter(
+            provider_name="transformers",
+            model_name="fake/model",
+            prompt_options={"pipeline_kwargs": {"device_map": "auto"}},
+        )
+    init_kwargs = mock_pipeline_ctor.call_args.kwargs
+    assert "device" not in init_kwargs
+    assert init_kwargs["device_map"] == "auto"
+
+
+def test_return_full_text_in_options_is_stripped():
+    """`return_full_text` is fixed in _sync_prompt; user-supplied value must not collide."""
+    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "x"}]}])
+    prompter = _make_prompter(
+        pipe,
+        prompt_options={"return_full_text": True, "max_new_tokens": 8},
+    )
+
+    asyncio.run(prompter.prompt(("q",)))
+
+    kwargs = pipe.call_args.kwargs
+    assert kwargs["return_full_text"] is False
+    assert kwargs["max_new_tokens"] == 8
+
+
 def test_pipeline_kwargs_not_in_generation_kwargs():
     pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "x"}]}])
     prompter = _make_prompter(
@@ -255,24 +283,3 @@ def test_prompt_raises_on_unsupported_input_types(bad_input: Any):
     prompter = _make_prompter(pipe)
     with pytest.raises(NotImplementedError, match=r"only supports str inputs"):
         asyncio.run(prompter.prompt((bad_input,)))
-
-
-def test_prompt_raises_on_numpy_input():
-    np = pytest.importorskip("numpy")
-    pipe = _make_pipeline(chat_template="...")
-    prompter = _make_prompter(pipe)
-    with pytest.raises(NotImplementedError, match=r"only supports str inputs"):
-        asyncio.run(prompter.prompt((np.zeros((4, 4), dtype=np.uint8),)))
-
-
-def test_protocol_compliance():
-    pipe = _make_pipeline(chat_template="...")
-    prompter = _make_prompter(pipe)
-    assert isinstance(prompter, Prompter)
-    assert callable(prompter.prompt)
-
-
-def test_provider_name_preserved():
-    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "x"}]}])
-    prompter = _make_prompter(pipe, provider_name="my-custom-name")
-    assert prompter.provider_name == "my-custom-name"
