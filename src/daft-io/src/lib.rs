@@ -228,6 +228,7 @@ impl IOClient {
         !self.config.disable_suffix_range
     }
 
+    /// Gets the source (a ObjectSource client object) and a normalized path for the source.
     pub async fn get_source_and_path(
         &self,
         input: &str,

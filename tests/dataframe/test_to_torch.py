@@ -25,10 +25,18 @@ def test_to_torch_dataloader_batches():
         assert batch["x"].shape == (2,)
         assert batch["y"].shape == (2,)
 
-    assert torch.equal(batches[0]["x"], torch.tensor([1, 2]))
-    assert torch.equal(batches[0]["y"], torch.tensor([5, 6]))
-    assert torch.equal(batches[1]["x"], torch.tensor([3, 4]))
-    assert torch.equal(batches[1]["y"], torch.tensor([7, 8]))
+    # Order is non-deterministic
+    assert (
+        torch.equal(batches[0]["x"], torch.tensor([1, 2]))
+        and torch.equal(batches[0]["y"], torch.tensor([5, 6]))
+        and torch.equal(batches[1]["x"], torch.tensor([3, 4]))
+        and torch.equal(batches[1]["y"], torch.tensor([7, 8]))
+    ) or (
+        torch.equal(batches[0]["x"], torch.tensor([3, 4]))
+        and torch.equal(batches[0]["y"], torch.tensor([7, 8]))
+        and torch.equal(batches[1]["x"], torch.tensor([1, 2]))
+        and torch.equal(batches[1]["y"], torch.tensor([5, 6]))
+    )
 
 
 def test_to_torch_dataloader_invalid_batch_size():
