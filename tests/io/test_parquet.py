@@ -837,6 +837,25 @@ def test_drop_parquet_dataset_local(tmp_path):
     assert not parquet_path.exists()
 
 
+def test_resolve_parquet_from_write_result(tmp_path):
+    parquet_path = tmp_path / "parquet_dataset"
+    write_df = daft.from_pydict({"a": [1, 2, 3]}).write_parquet(str(parquet_path), write_mode="overwrite")
+
+    resolved_path = write_df.resolve_parquet()
+
+    assert resolved_path == str(parquet_path)
+
+
+def test_drop_parquet_with_resolved_path(tmp_path):
+    parquet_path = tmp_path / "parquet_dataset"
+    write_df = daft.from_pydict({"a": [1, 2, 3]}).write_parquet(str(parquet_path), write_mode="overwrite")
+
+    resolved_path = write_df.resolve_parquet()
+    daft.DataFrame.drop_parquet(str(resolved_path))
+
+    assert not parquet_path.exists()
+
+
 def test_drop_parquet_file_local(tmp_path):
     parquet_file = tmp_path / "single.parquet"
     papq.write_table(pa.table({"x": [1, 2]}), str(parquet_file))
