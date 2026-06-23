@@ -159,6 +159,61 @@ def test_list_tables_only_current_catalog_without_pattern():
     assert sess.list_tables() == [Identifier("cat1", "a")]
 
 
+def test_list_namespaces_with_attached_catalog():
+    sess = Session()
+    cat = Catalog.from_pydict({"ns1.t1": {"x": [1]}, "ns2.t2": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    namespaces = sorted(sess.list_namespaces(), key=str)
+
+    # Qualified with the session alias so results round-trip through other APIs.
+    assert namespaces == [Identifier("cat1", "ns1"), Identifier("cat1", "ns2")]
+
+
+def test_list_namespaces_catalog_qualified_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"ns_b.t": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    assert sess.list_namespaces("cat2.%") == [Identifier("cat2", "ns_b")]
+
+
+def test_list_namespaces_only_current_catalog_without_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"ns_b.t": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    # cat1 is auto-set as current; cat2 is only reachable via `cat2.%` pattern.
+    assert sess.list_namespaces() == [Identifier("cat1", "ns_a")]
+
+
+def test_list_namespaces_returns_empty_without_current_catalog():
+    sess = Session()
+    assert sess.list_namespaces() == []
+
+    # Rule 3 dispatch still works even without a current catalog.
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.set_catalog(None)
+    assert sess.list_namespaces("cat1.%") == [Identifier("cat1", "ns_a")]
+
+
+def test_list_namespaces_round_trips_with_list_tables():
+    sess = Session()
+    sess.attach_catalog(
+        Catalog.from_pydict({"sandbox.scratch": {"x": [1]}, "ops.metrics": {"y": [2]}}, name="dev"),
+        alias="dev",
+    )
+
+    tables = []
+    for ns in sorted(sess.list_namespaces("dev.%"), key=str):
+        tables.extend(sess.list_tables(f"{ns}.%"))
+
+    assert sorted(tables, key=str) == [
+        Identifier("dev", "ops", "metrics"),
+        Identifier("dev", "sandbox", "scratch"),
+    ]
+
+
 def test_attach_view():
     sess = Session()
     view = daft.from_pydict({"x": [1, 2, 3]})
