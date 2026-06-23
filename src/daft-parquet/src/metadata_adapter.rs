@@ -220,7 +220,9 @@ impl DaftRowGroupMetaData {
                     .first()
                     .cloned()
                     .unwrap_or_default();
-                (root, col.uncompressed_size() as u64)
+                // `uncompressed_size()` is an i64 and is always non-negative in practice;
+                // clamp defensively so a malformed (negative) value can't wrap to a huge u64.
+                (root, col.uncompressed_size().max(0) as u64)
             })
             .collect()
     }
