@@ -346,6 +346,75 @@ pub fn binary_geom_to_bool(
     Ok(BooleanArray::from_iter(out_name, values.into_iter()).into_series())
 }
 
+/// Apply a binary mapping over two geometry columns → Geometry (WKB) Series.
+pub fn binary_geom_to_geom(
+    lhs: &Series,
+    rhs: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry, &Geometry) -> Option<Geometry>,
+) -> DaftResult<Series> {
+    use wkb::geom_to_wkb;
+
+    let lhs_bin = get_geometry_binary(lhs)?;
+    let rhs_bin = get_geometry_binary(rhs)?;
+
+    // support scalar broadcast: rhs may be length 1
+    let rhs_scalar = rhs_bin.len() == 1;
+
+    let rhs_geom_scalar: Option<Option<Geometry>> = if rhs_scalar {
+        Some(
+            rhs_bin
+                .into_iter()
+                .next()
+                .flatten()
+                .and_then(|b| parse_wkb(b).ok()),
+        )
+    } else {
+        None
+    };
+
+    let len = lhs_bin.len();
+    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
+
+    let compute = |lopt: Option<&[u8]>, rg: Option<&Geometry>| -> Option<Vec<u8>> {
+        let lg = lopt.and_then(|b| parse_wkb(b).ok())?;
+        let rg = rg?;
+        f(&lg, rg).and_then(|g| geom_to_wkb(&g).ok())
+    };
+
+    if let Some(rhs_opt) = rhs_geom_scalar {
+        for lopt in lhs_bin.into_iter() {
+            wkb_values.push(compute(lopt, rhs_opt.as_ref()));
+        }
+    } else {
+        for (lopt, ropt) in lhs_bin.into_iter().zip(rhs_bin.into_iter()) {
+            let rg = ropt.and_then(|b| parse_wkb(b).ok());
+            wkb_values.push(compute(lopt, rg.as_ref()));
+        }
+    }
+
+    // Wrap as Geometry logical array (identical to unary_geom_to_geom's tail)
+    let field = Field::new(out_name, DataType::Geometry);
+    let mut builder = arrow_buffer::NullBufferBuilder::new(len);
+    let phys: Vec<Option<&[u8]>> = wkb_values
+        .iter()
+        .map(|v| {
+            if v.is_some() {
+                builder.append_non_null();
+            } else {
+                builder.append_null();
+            }
+            v.as_deref()
+        })
+        .collect();
+
+    let phys_field = Field::new(out_name, DataType::Binary);
+    let phys_arr = BinaryArray::from_iter(&phys_field.name, phys.into_iter());
+
+    use daft_core::prelude::{GeometryType, LogicalArray};
+    Ok(LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?).into_series())
+}
+
 /// Apply a binary geometry → Float64 function (e.g. distance).
 pub fn binary_geom_to_f64(
     lhs: &Series,

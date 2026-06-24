@@ -351,6 +351,59 @@ def test_st_isvalid_bowtie_false():
     assert result["v"][0] is False
 
 
+def test_union_area():
+    """Union area = 4+4-1=7; intersection area = 1 for two overlapping 2×2 squares."""
+    from daft.functions import st_union, st_intersection
+    a = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    b = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
+    df = daft.from_pydict({"a": [a], "b": [b]}).select(
+        st_area(st_union(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("u"),
+        st_area(st_intersection(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("i"),
+    ).to_pydict()
+    assert abs(df["u"][0] - 7.0) < 1e-6, f"union area: {df['u'][0]}"
+    assert abs(df["i"][0] - 1.0) < 1e-6, f"intersection area: {df['i'][0]}"
+
+
+def test_difference_symdifference_area():
+    """difference = 3 (A minus overlap); symdifference = 6 (total minus 2*overlap)."""
+    from daft.functions import st_difference, st_symdifference
+    a = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    b = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
+    df = daft.from_pydict({"a": [a], "b": [b]}).select(
+        st_area(st_difference(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("d"),
+        st_area(st_symdifference(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("sd"),
+    ).to_pydict()
+    assert abs(df["d"][0] - 3.0) < 1e-6, f"difference area: {df['d'][0]}"
+    assert abs(df["sd"][0] - 6.0) < 1e-6, f"symdifference area: {df['sd'][0]}"
+
+
+def test_overlay_non_polygon_yields_null():
+    """Non-polygon geometries (Point) return null for overlay ops."""
+    from daft.functions import st_union
+    df = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(1 1)"]}).select(
+        st_union(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("u"),
+    ).to_pydict()
+    assert df["u"][0] is None, f"Expected null for point union, got {df['u'][0]}"
+
+
+def test_overlay_sql_parity():
+    """SQL overlay results match Python for union and intersection."""
+    from daft.functions import st_union, st_intersection
+    a_wkt = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    b_wkt = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
+    df = daft.from_pydict({"a": [a_wkt], "b": [b_wkt]})  # noqa: F841
+    py = daft.from_pydict({"a": [a_wkt], "b": [b_wkt]}).select(
+        st_area(st_union(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("u"),
+        st_area(st_intersection(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("i"),
+    ).to_pydict()
+    sql = daft.sql(
+        "SELECT st_area(st_union(st_geomfromtext(a), st_geomfromtext(b))) AS u, "
+        "st_area(st_intersection(st_geomfromtext(a), st_geomfromtext(b))) AS i FROM df"
+    ).to_pydict()
+    assert abs(py["u"][0] - sql["u"][0]) < 1e-6, f"union parity: py={py['u'][0]} sql={sql['u'][0]}"
+    assert abs(py["i"][0] - sql["i"][0]) < 1e-6, f"intersection parity: py={py['i'][0]} sql={sql['i'][0]}"
+
+
 def test_st_isvalid_sql_parity():
     """SQL st_isvalid should match Python result for both valid and invalid geometries."""
     df = daft.from_pydict({

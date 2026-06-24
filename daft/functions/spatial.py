@@ -237,6 +237,72 @@ def st_equals(geom_a: Expression, geom_b: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_equals", geom_a, geom_b)
 
 
+# ── Overlay (set-operation) functions ──────────────────────────────────────
+
+
+def st_union(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return the geometric union of two polygon geometries.
+
+    Both operands must be Polygon or MultiPolygon; other types (e.g. Point,
+    LineString) return null.
+
+    Args:
+        geom_a: First geometry column (Geometry or Binary WKB).
+        geom_b: Second geometry column (Geometry or Binary WKB).
+
+    Returns:
+        Geometry column (MultiPolygon). Returns null for non-polygon inputs
+        or if the underlying boolean operation raises an error.
+    """
+    return Expression._call_builtin_scalar_fn("st_union", geom_a, geom_b)
+
+
+def st_intersection(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return the geometric intersection of two polygon geometries.
+
+    Both operands must be Polygon or MultiPolygon; other types return null.
+
+    Args:
+        geom_a: First geometry column (Geometry or Binary WKB).
+        geom_b: Second geometry column (Geometry or Binary WKB).
+
+    Returns:
+        Geometry column (MultiPolygon). Returns null for non-polygon inputs.
+    """
+    return Expression._call_builtin_scalar_fn("st_intersection", geom_a, geom_b)
+
+
+def st_difference(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return the part of geometry A that does not intersect geometry B.
+
+    Both operands must be Polygon or MultiPolygon; other types return null.
+
+    Args:
+        geom_a: First geometry column (Geometry or Binary WKB).
+        geom_b: Second geometry column (Geometry or Binary WKB).
+
+    Returns:
+        Geometry column (MultiPolygon). Returns null for non-polygon inputs.
+    """
+    return Expression._call_builtin_scalar_fn("st_difference", geom_a, geom_b)
+
+
+def st_symdifference(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return the symmetric difference (XOR) of two polygon geometries.
+
+    Returns the regions in either geometry but not in both.
+    Both operands must be Polygon or MultiPolygon; other types return null.
+
+    Args:
+        geom_a: First geometry column (Geometry or Binary WKB).
+        geom_b: Second geometry column (Geometry or Binary WKB).
+
+    Returns:
+        Geometry column (MultiPolygon). Returns null for non-polygon inputs.
+    """
+    return Expression._call_builtin_scalar_fn("st_symdifference", geom_a, geom_b)
+
+
 # ── Geometry-producing functions ────────────────────────────────────────────
 
 
