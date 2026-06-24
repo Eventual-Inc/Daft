@@ -2092,6 +2092,19 @@ class DataFrame:
                 )
             table.update_incremental()
 
+        # Persist geo metadata to Delta table configuration when Geometry columns are present.
+        # The delta-kernel (deltalake >= 1.0.0) validates known table properties at write time
+        # and rejects unknown keys, so we write the geo property directly to the delta log
+        # as a metadata-only commit after the data commit completes.
+        # This is done for new tables (mode != "append") and for overwrite operations.
+        # Append mode inherits geo metadata from the existing table's configuration.
+        if mode != "append" or table is None:
+            from daft.io._geoparquet import build_geo_metadata, _write_geo_metadata_to_delta_log
+
+            geo_json = build_geo_metadata(self.schema())
+            if geo_json is not None:
+                _write_geo_metadata_to_delta_log(table_uri, geo_json)
+
         with_operations = from_pydict(
             {
                 "operation": pa.array(operations, type=pa.string()),

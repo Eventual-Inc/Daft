@@ -209,7 +209,28 @@ class DeltaLakeScanOperator(ScanOperator):
         delta_schema = self._table.schema()
         self._schema = Schema.from_pyarrow_schema(delta_schema_to_pyarrow(delta_schema))
 
-        cm_mode = self._table.metadata().configuration.get("delta.columnMapping.mode", "none").lower()
+        # Re-type Binary columns to Geometry when a daft.geo table property is present.
+        # The property was written by write_deltalake and holds a GeoParquet 1.1.0 JSON blob.
+        configuration = self._table.metadata().configuration
+        geo_property = configuration.get("daft.geo")
+        if geo_property is not None:
+            try:
+                from daft.io._geoparquet import detect_geo_columns
+                from daft.schema import Field
+
+                geo_cols = set(detect_geo_columns(geo_property, self._schema))
+                if geo_cols:
+                    self._schema = Schema._from_fields(
+                        [
+                            Field.create(f.name, daft.DataType.geometry() if f.name in geo_cols else f.dtype)
+                            for f in self._schema
+                        ]
+                    )
+            except Exception:
+                # Lenient: malformed daft.geo → plain read (Binary)
+                pass
+
+        cm_mode = configuration.get("delta.columnMapping.mode", "none").lower()
         if cm_mode not in ("none", "id", "name"):
             raise NotImplementedError(f"Unsupported Delta Lake column mapping mode: {cm_mode!r}")
         # delta-rs validates that every mapped field carries `delta.columnMapping.id` at
