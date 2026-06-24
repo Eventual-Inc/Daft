@@ -53,10 +53,6 @@ def test_deltalake_geo_roundtrip_non_geo_table_unaffected(tmp_path):
     assert result["value"] == ["a", "b"]
 
 
-@pytest.mark.xfail(
-    reason="delta-rs does not inherit daft.geo field metadata through append; documented limitation",
-    strict=False,
-)
 def test_deltalake_geo_roundtrip_append(tmp_path):
     """Geometry dtype survives an append to an existing geo Delta table (field metadata inherited from the table schema)."""
     pytest.importorskip("deltalake")
