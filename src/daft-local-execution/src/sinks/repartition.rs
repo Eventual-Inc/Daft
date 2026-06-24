@@ -657,6 +657,12 @@ mod tests {
         let mut state = make_state(num_partitions, vec![]); // no spill dirs
         push_and_flush(&mut state, &make_mp(50))?;
 
+        // With no spill dirs, spilling must be a no-op.
+        assert!(
+            !state.spill_largest_bucket()?,
+            "spill_largest_bucket should return false (no-op) when spill_dirs is empty"
+        );
+
         let bytes_before = state.post_repartitioned_size_bytes;
         // With no spill dirs, spill_largest_bucket returns Ok(false) — no-op.
         assert_eq!(
