@@ -1031,9 +1031,11 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let dedup_sink = DedupSink::new(columns).with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            let dedup_spill = build_spill_config(cfg.agg_spill_threshold_bytes, cfg);
+            let dedup_sink =
+                DedupSink::new(columns, dedup_spill).with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
             BlockingSinkNode::new(
                 Arc::new(dedup_sink),
                 child_node,
