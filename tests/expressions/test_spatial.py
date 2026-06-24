@@ -620,3 +620,113 @@ def test_geojson_to_wkt():
     result = df["out"][0]
     assert result is not None
     assert result.upper().startswith("POINT")
+
+
+# ── Python⇄SQL parity sweep ──────────────────────────────────────────────────
+
+
+def test_python_sql_parity():
+    """Comprehensive Python⇄SQL parity sweep across all spatial function families.
+
+    For each family (predicate, overlay op, geodesic measure, processing op,
+    constructor) we compute the same result via both the Python DataFrame API
+    and via daft.sql(), then assert they are equal.
+    """
+    from daft.functions import (
+        st_contains,
+        st_union,
+        st_distance,
+        st_simplify,
+        st_point,
+        st_x,
+        st_y,
+        st_astext,
+        st_area,
+    )
+
+    poly_wkt = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    point_wkt = "POINT(1 1)"
+    poly_b_wkt = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
+    # Line for simplify: near-collinear middle point should be dropped at tolerance=0.1
+    line_wkt = "LINESTRING(0 0, 1 0.01, 2 0)"
+
+    # ── 1. Predicate: st_contains ─────────────────────────────────────────────
+    base_pred = daft.from_pydict({"a": [poly_wkt], "b": [point_wkt]})  # noqa: F841
+    py_pred = daft.from_pydict({"a": [poly_wkt], "b": [point_wkt]}).select(
+        st_contains(
+            st_geomfromtext(daft.col("a")),
+            st_geomfromtext(daft.col("b")),
+        ).alias("c")
+    ).to_pydict()
+    sql_pred = daft.sql(
+        "SELECT st_contains(st_geomfromtext(a), st_geomfromtext(b)) AS c FROM base_pred"
+    ).to_pydict()
+    assert py_pred["c"] == [True], f"predicate py: {py_pred['c']}"
+    assert sql_pred["c"] == [True], f"predicate sql: {sql_pred['c']}"
+    assert py_pred["c"] == sql_pred["c"], "predicate parity failed"
+
+    # ── 2. Overlay op: st_union area ─────────────────────────────────────────
+    base_overlay = daft.from_pydict({"a": [poly_wkt], "b": [poly_b_wkt]})  # noqa: F841
+    py_overlay = daft.from_pydict({"a": [poly_wkt], "b": [poly_b_wkt]}).select(
+        st_area(st_union(
+            st_geomfromtext(daft.col("a")),
+            st_geomfromtext(daft.col("b")),
+        )).alias("u")
+    ).to_pydict()
+    sql_overlay = daft.sql(
+        "SELECT st_area(st_union(st_geomfromtext(a), st_geomfromtext(b))) AS u FROM base_overlay"
+    ).to_pydict()
+    assert abs(py_overlay["u"][0] - 7.0) < 1e-6, f"overlay py area: {py_overlay['u'][0]}"
+    assert abs(py_overlay["u"][0] - sql_overlay["u"][0]) < 1e-6, (
+        f"overlay parity: py={py_overlay['u'][0]} sql={sql_overlay['u'][0]}"
+    )
+
+    # ── 3. Geodesic measure with use_spheroid=True: st_distance ──────────────
+    # POINT(0 0) lon=0,lat=0 and POINT(0 1) lon=0,lat=1 → ~110574 m WGS84
+    base_geo = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(0 1)"]})  # noqa: F841
+    py_geo = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(0 1)"]}).select(
+        st_distance(
+            st_geomfromtext(daft.col("a")),
+            st_geomfromtext(daft.col("b")),
+            use_spheroid=True,
+        ).alias("d")
+    ).to_pydict()
+    sql_geo = daft.sql(
+        "SELECT st_distance(st_geomfromtext(a), st_geomfromtext(b), true) AS d FROM base_geo"
+    ).to_pydict()
+    assert abs(py_geo["d"][0] - 110574.0) < 300.0, f"geodesic py: {py_geo['d'][0]}"
+    assert abs(py_geo["d"][0] - sql_geo["d"][0]) < 1.0, (
+        f"geodesic parity: py={py_geo['d'][0]} sql={sql_geo['d'][0]}"
+    )
+
+    # ── 4. Processing op: st_simplify ────────────────────────────────────────
+    base_proc = daft.from_pydict({"g": [line_wkt]})  # noqa: F841
+    py_proc = daft.from_pydict({"g": [line_wkt]}).select(
+        st_astext(st_simplify(st_geomfromtext(daft.col("g")), 0.1)).alias("s")
+    ).to_pydict()
+    sql_proc = daft.sql(
+        "SELECT st_astext(st_simplify(st_geomfromtext(g), 0.1)) AS s FROM base_proc"
+    ).to_pydict()
+    assert py_proc["s"][0] is not None, "simplify py returned null"
+    assert "1 0.01" not in py_proc["s"][0], f"simplify py did not reduce: {py_proc['s'][0]}"
+    assert py_proc["s"][0] == sql_proc["s"][0], (
+        f"processing parity: py={py_proc['s'][0]} sql={sql_proc['s'][0]}"
+    )
+
+    # ── 5. Constructor: st_point → st_x / st_y ───────────────────────────────
+    base_ctor = daft.from_pydict({"x": [3.0], "y": [4.0]})  # noqa: F841
+    py_ctor = daft.from_pydict({"x": [3.0], "y": [4.0]}).select(
+        st_x(st_point(daft.col("x"), daft.col("y"))).alias("px"),
+        st_y(st_point(daft.col("x"), daft.col("y"))).alias("py_coord"),
+    ).to_pydict()
+    sql_ctor = daft.sql(
+        "SELECT st_x(st_point(x, y)) AS px, st_y(st_point(x, y)) AS py_coord FROM base_ctor"
+    ).to_pydict()
+    assert py_ctor["px"] == [3.0], f"constructor py x: {py_ctor['px']}"
+    assert py_ctor["py_coord"] == [4.0], f"constructor py y: {py_ctor['py_coord']}"
+    assert py_ctor["px"] == sql_ctor["px"], (
+        f"constructor parity x: py={py_ctor['px']} sql={sql_ctor['px']}"
+    )
+    assert py_ctor["py_coord"] == sql_ctor["py_coord"], (
+        f"constructor parity y: py={py_ctor['py_coord']} sql={sql_ctor['py_coord']}"
+    )
