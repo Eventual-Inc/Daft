@@ -23,7 +23,9 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    spill::{SpillStore, SpillWriter},
+    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
+        reconcile_reservation},
+    spill::{SpillConfig, SpillStore, SpillWriter},
 };
 
 // Worst-case buffered memory is `num_workers × num_inputs × threshold` — one
@@ -42,10 +44,16 @@ pub(crate) struct RepartitionAccState {
     repartition_spec: RepartitionSpec,
     input_id: InputId,
     schema: SchemaRef,
-    /// Spill files produced by previous flushes of `post_repartitioned` (Flight only).
-    spill_stores: Vec<SpillStore>,
+    /// Single lazily-created spill writer (Flight only). Sealed to `spill_store` before finalize.
+    spill_writer: Option<SpillWriter>,
+    /// Sealed store (set after `seal_spill_writer`). Read during finalize.
+    spill_store: Option<SpillStore>,
     /// Directories to spill into (empty for Ray backend — spill disabled).
     spill_dirs: Vec<String>,
+    /// Shared spill-pool reservation held for the lifetime of this state.
+    reservation: MemoryReservation,
+    /// Per-operator cap (from `SpillConfig::cap()`); `None` means pool-only trigger.
+    cap: Option<u64>,
 }
 
 impl RepartitionAccState {
@@ -56,6 +64,8 @@ impl RepartitionAccState {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         spill_dirs: Vec<String>,
+        reservation: MemoryReservation,
+        cap: Option<u64>,
     ) -> Self {
         Self {
             post_repartitioned: (0..num_partitions).map(|_| Vec::new()).collect(),
@@ -66,8 +76,11 @@ impl RepartitionAccState {
             repartition_spec,
             input_id,
             schema,
-            spill_stores: Vec::new(),
+            spill_writer: None,
+            spill_store: None,
             spill_dirs,
+            reservation,
+            cap,
         }
     }
 
@@ -105,37 +118,69 @@ impl RepartitionAccState {
         Ok(())
     }
 
-    /// Spill all `post_repartitioned` buckets to disk and clear them from memory.
-    /// No-op if `spill_dirs` is empty.
-    async fn spill_post_repartitioned(&mut self) -> DaftResult<()> {
+    /// Spill a single bucket `p` to disk. No-op if `spill_dirs` is empty.
+    fn spill_bucket(&mut self, p: usize) -> DaftResult<()> {
         if self.spill_dirs.is_empty() {
             return Ok(());
         }
+        let batches = std::mem::take(&mut self.post_repartitioned[p]);
+        let freed: usize = batches.iter().map(|b| b.size_bytes()).sum();
+        self.post_repartitioned_size_bytes -= freed.min(self.post_repartitioned_size_bytes);
+        if batches.is_empty() {
+            return Ok(());
+        }
         let num_partitions = self.post_repartitioned.len();
-        let batches_per_partition: Vec<Vec<RecordBatch>> =
-            self.post_repartitioned.iter_mut().map(std::mem::take).collect();
-        self.post_repartitioned_size_bytes = 0;
-
-        let schema = self.schema.clone();
-        let spill_dirs = self.spill_dirs.clone();
-
-        let store = get_io_runtime(true)
-            .spawn_blocking(move || -> DaftResult<SpillStore> {
-                let mut writer =
-                    SpillWriter::new(num_partitions, &schema, spill_dirs, "repartition")?;
-                for (bucket, batches) in batches_per_partition.into_iter().enumerate() {
-                    for batch in &batches {
-                        if batch.len() > 0 {
-                            writer.write_batch(bucket, batch)?;
-                        }
-                    }
-                }
-                writer.finish()
-            })
-            .await??;
-
-        self.spill_stores.push(store);
+        let writer = match &mut self.spill_writer {
+            Some(w) => w,
+            None => {
+                let w = SpillWriter::new(
+                    num_partitions,
+                    &self.schema,
+                    self.spill_dirs.clone(),
+                    "daft_repartition_spill_",
+                )?;
+                self.spill_writer = Some(w);
+                self.spill_writer.as_mut().unwrap()
+            }
+        };
+        for b in &batches {
+            if b.len() > 0 {
+                writer.write_batch(p, b)?;
+            }
+        }
         Ok(())
+    }
+
+    /// Seal the `spill_writer` into an immutable `spill_store`. Called before finalize.
+    fn seal_spill_writer(&mut self) -> DaftResult<()> {
+        if let Some(writer) = self.spill_writer.take() {
+            self.spill_store = Some(writer.finish()?);
+        }
+        Ok(())
+    }
+}
+
+impl SpillableBuckets for RepartitionAccState {
+    fn resident_bytes(&self) -> u64 {
+        self.post_repartitioned_size_bytes as u64
+    }
+
+    fn spill_largest_bucket(&mut self) -> DaftResult<bool> {
+        if self.spill_dirs.is_empty() {
+            return Ok(false);
+        }
+        let Some((p, _)) = self
+            .post_repartitioned
+            .iter()
+            .enumerate()
+            .map(|(p, v)| (p, v.iter().map(|b| b.size_bytes()).sum::<usize>()))
+            .filter(|(_, b)| *b > 0)
+            .max_by_key(|(_, b)| *b)
+        else {
+            return Ok(false);
+        };
+        self.spill_bucket(p)?;
+        Ok(true)
     }
 }
 
@@ -149,7 +194,7 @@ enum RepartitionBackend {
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
         compression: Option<arrow_ipc::CompressionType>,
-        spill_threshold: Option<usize>,
+        spill_config: Option<SpillConfig>,
     },
 }
 
@@ -214,7 +259,7 @@ impl RepartitionSink {
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
-        spill_threshold: Option<usize>,
+        spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
         let bound_keys = match &repartition_spec {
             RepartitionSpec::Hash(config) => BoundExpr::bind_all(&config.by, &schema)?,
@@ -227,7 +272,7 @@ impl RepartitionSink {
                 local_server,
                 shuffle_address,
                 compression: parse_compression(compression.as_deref())?,
-                spill_threshold,
+                spill_config,
             },
             schema,
             repartition_spec,
@@ -236,9 +281,9 @@ impl RepartitionSink {
         })
     }
 
-    fn spill_threshold(&self) -> Option<usize> {
+    fn spill_config(&self) -> Option<SpillConfig> {
         match &self.backend {
-            RepartitionBackend::Flight { spill_threshold, .. } => *spill_threshold,
+            RepartitionBackend::Flight { spill_config, .. } => spill_config.clone(),
             RepartitionBackend::Ray => None,
         }
     }
@@ -264,7 +309,6 @@ impl BlockingSink for RepartitionSink {
     ) -> BlockingSinkSinkResult<Self> {
         let buffer_threshold_bytes =
             repartition_buffer_threshold_bytes(&self.backend, self.num_partitions);
-        let spill_threshold = self.spill_threshold();
         spawner
             .spawn(
                 async move {
@@ -278,13 +322,18 @@ impl BlockingSink for RepartitionSink {
                         state.flush_pre_partitioned()?;
                     }
 
-                    if let Some(threshold) = spill_threshold {
-                        if state.post_repartitioned_size_bytes >= threshold {
-                            state.spill_post_repartitioned().await?;
-                        }
+                    if state.spill_dirs.is_empty() {
+                        return Ok(state);
                     }
-
-                    Ok(state)
+                    let mut s = state;
+                    let cap = s.cap;
+                    let mut res = std::mem::replace(
+                        &mut s.reservation,
+                        get_or_init_memory_manager().reservation(),
+                    );
+                    reconcile_reservation(&mut s, &mut res, cap)?;
+                    s.reservation = res;
+                    Ok(s)
                 },
                 Span::current(),
             )
@@ -340,12 +389,16 @@ impl BlockingSink for RepartitionSink {
                             compression,
                             ..
                         } => {
-                            // Flush remaining pre-repartitioned data in a blocking thread.
+                            // Flush remaining pre-repartitioned data and seal spill writers
+                            // in a blocking thread.
                             let mut states = get_io_runtime(true)
                                 .spawn_blocking(move || -> DaftResult<Vec<RepartitionAccState>> {
                                     states
                                         .iter_mut()
                                         .try_for_each(RepartitionAccState::flush_pre_partitioned)?;
+                                    states
+                                        .iter_mut()
+                                        .try_for_each(RepartitionAccState::seal_spill_writer)?;
                                     Ok(states)
                                 })
                                 .await??;
@@ -357,7 +410,7 @@ impl BlockingSink for RepartitionSink {
                             let next_partition = move |p: usize| -> DaftResult<MicroPartition> {
                                 let mut chunks: Vec<RecordBatch> = Vec::new();
                                 for state in states.iter_mut() {
-                                    for store in &state.spill_stores {
+                                    if let Some(store) = &state.spill_store {
                                         if store.is_spilled(p) {
                                             chunks.extend(store.read_bucket(p)?);
                                         }
@@ -433,6 +486,10 @@ impl BlockingSink for RepartitionSink {
     }
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
+        let (reservation, cap) = match self.spill_config() {
+            Some(sc) => (get_or_init_memory_manager().reservation(), sc.cap()),
+            None => (get_or_init_memory_manager().reservation(), None),
+        };
         Ok(RepartitionAccState::new(
             self.num_partitions,
             input_id,
@@ -440,6 +497,8 @@ impl BlockingSink for RepartitionSink {
             self.repartition_spec.clone(),
             self.schema.clone(),
             self.spill_dirs(),
+            reservation,
+            cap,
         ))
     }
 }
@@ -465,7 +524,7 @@ fn flatten_per_partition(
             let mut chunks: Vec<RecordBatch> = Vec::new();
             for state in &mut states {
                 // Read back any spilled batches for this partition first.
-                for store in &state.spill_stores {
+                if let Some(store) = &state.spill_store {
                     if store.is_spilled(partition_idx) {
                         chunks.extend(store.read_bucket(partition_idx)?);
                     }
@@ -520,6 +579,8 @@ mod tests {
             RepartitionSpec::Random(RandomShuffleConfig::new(Some(num_partitions))),
             test_schema(),
             spill_dirs,
+            get_or_init_memory_manager().reservation(),
+            None,
         )
     }
 
@@ -538,47 +599,24 @@ mod tests {
 
     // ── tests ─────────────────────────────────────────────────────────────────
 
-    /// `spill_post_repartitioned` flushes all in-memory buckets to disk and
-    /// clears them; a subsequent `flatten_per_partition` recovers every row.
+    /// `spill_largest_bucket` flushes the largest in-memory bucket to disk;
+    /// looping until empty leaves all data spilled; `flatten_per_partition` recovers every row.
     #[tokio::test]
     async fn test_spill_then_flatten_recovers_all_rows() -> DaftResult<()> {
         let tmp = tempfile::tempdir().unwrap();
         let spill_dirs = vec![tmp.path().to_str().unwrap().to_string()];
         let num_partitions = 4;
         let total_rows = 1000usize;
-
         let mut state = make_state(num_partitions, spill_dirs);
         push_and_flush(&mut state, &make_mp(total_rows))?;
-
-        // Sanity: data is in-memory before spill
-        assert!(
-            state.post_repartitioned_size_bytes > 0,
-            "expected in-memory data before spill"
-        );
-        assert!(state.spill_stores.is_empty(), "no spill stores yet");
-
-        // Trigger spill
-        state.spill_post_repartitioned().await?;
-
-        assert!(
-            !state.spill_stores.is_empty(),
-            "spill stores should be populated after spill"
-        );
-        assert_eq!(
-            state.post_repartitioned_size_bytes, 0,
-            "in-memory size should be 0 after spill"
-        );
-        assert!(
-            state.post_repartitioned.iter().all(|v| v.is_empty()),
-            "all in-memory buckets should be empty after spill"
-        );
-
-        // Recover via flatten_per_partition
+        // Spill every bucket.
+        while state.spill_largest_bucket()? {}
+        assert_eq!(state.post_repartitioned_size_bytes, 0);
+        state.seal_spill_writer()?;
         let (per_partition, _) =
             flatten_per_partition(vec![state], num_partitions, test_schema())?;
         let recovered: usize = per_partition.iter().map(|mp| mp.len()).sum();
-        assert_eq!(recovered, total_rows, "all rows must be recovered from spill");
-
+        assert_eq!(recovered, total_rows);
         Ok(())
     }
 
@@ -591,21 +629,19 @@ mod tests {
 
         let mut state = make_state(num_partitions, spill_dirs);
 
-        // First batch → flush → spill
+        // First batch → flush → spill largest bucket
         push_and_flush(&mut state, &make_mp(200))?;
-        state.spill_post_repartitioned().await?;
-        assert_eq!(state.spill_stores.len(), 1);
+        state.spill_largest_bucket()?;
 
-        // Second batch → flush → spill
+        // Second batch → flush → spill largest bucket
         push_and_flush(&mut state, &make_mp(300))?;
-        state.spill_post_repartitioned().await?;
-        assert_eq!(state.spill_stores.len(), 2);
+        state.spill_largest_bucket()?;
 
         // Third batch → flush → stays in memory (no spill)
         push_and_flush(&mut state, &make_mp(100))?;
-        assert_eq!(state.spill_stores.len(), 2, "third batch not spilled");
         assert!(state.post_repartitioned_size_bytes > 0, "third batch in memory");
 
+        state.seal_spill_writer()?;
         let (per_partition, _) =
             flatten_per_partition(vec![state], num_partitions, test_schema())?;
         let recovered: usize = per_partition.iter().map(|mp| mp.len()).sum();
@@ -614,7 +650,7 @@ mod tests {
         Ok(())
     }
 
-    /// With no spill dirs configured the spill is a no-op and all data stays in memory.
+    /// With no spill dirs configured spill_largest_bucket returns false and all data stays in memory.
     #[tokio::test]
     async fn test_no_spill_dirs_is_noop() -> DaftResult<()> {
         let num_partitions = 2;
@@ -622,16 +658,13 @@ mod tests {
         push_and_flush(&mut state, &make_mp(50))?;
 
         let bytes_before = state.post_repartitioned_size_bytes;
-        state.spill_post_repartitioned().await?; // should be a no-op
+        // With no spill dirs, spill_largest_bucket returns Ok(false) — no-op.
         assert_eq!(
             state.post_repartitioned_size_bytes, bytes_before,
-            "spill_post_repartitioned should be no-op with empty spill_dirs"
-        );
-        assert!(
-            state.spill_stores.is_empty(),
-            "no spill stores with empty dirs"
+            "no spill should occur with empty spill_dirs"
         );
 
+        state.seal_spill_writer()?;
         let (per_partition, _) =
             flatten_per_partition(vec![state], num_partitions, test_schema())?;
         let recovered: usize = per_partition.iter().map(|mp| mp.len()).sum();
@@ -650,11 +683,12 @@ mod tests {
 
         let mut state_a = make_state(num_partitions, spill_dirs.clone());
         push_and_flush(&mut state_a, &make_mp(400))?;
-        state_a.spill_post_repartitioned().await?; // spilled
+        while state_a.spill_largest_bucket()? {} // spill all
+        state_a.seal_spill_writer()?;
 
         let mut state_b = make_state(num_partitions, spill_dirs);
         push_and_flush(&mut state_b, &make_mp(600))?;
-        // state_b NOT spilled — stays in memory
+        state_b.seal_spill_writer()?; // no-op, nothing spilled
 
         let (per_partition, _) =
             flatten_per_partition(vec![state_a, state_b], num_partitions, test_schema())?;
