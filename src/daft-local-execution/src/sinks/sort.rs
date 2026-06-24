@@ -17,6 +17,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    resource_manager::{MemoryReservation, get_or_init_memory_manager},
     spill::{SpillConfig, SpillRunReader, SpillRunWriter, SpilledRun},
 };
 
@@ -70,6 +71,8 @@ pub(crate) struct SortState {
     runs: Vec<SpilledRun>,
     /// Round-robin index into the spill dirs.
     spill_rr: usize,
+    /// Resident reservation against the shared spill pool (only used when spilling is enabled).
+    reservation: MemoryReservation,
 }
 
 struct SortParams {
@@ -96,14 +99,13 @@ impl SortSink {
         spill_config: Option<SpillConfig>,
         output_morsel_rows: usize,
     ) -> Self {
-        // Only enable spilling when the threshold is positive *and* every sort-key type can be
-        // encoded by arrow-row (the k-way merge relies on it). Otherwise fall back to in-memory
-        // sort — correctness over OOM-safety for exotic key types.
-        let spill_config = spill_config.filter(|sc| {
-            sc.threshold_bytes > 0
-                && build_sort_fields(&sort_by, &descending, &nulls_first, &schema)
-                    .map(|fields| RowConverter::supports_fields(&fields))
-                    .unwrap_or(false)
+        // Only enable spilling when every sort-key type can be encoded by arrow-row (the k-way
+        // merge relies on it). Otherwise fall back to in-memory sort — correctness over OOM-safety
+        // for exotic key types. The opt-out via threshold is handled at build time now.
+        let spill_config = spill_config.filter(|_sc| {
+            build_sort_fields(&sort_by, &descending, &nulls_first, &schema)
+                .map(|fields| RowConverter::supports_fields(&fields))
+                .unwrap_or(false)
         });
         Self {
             params: Arc::new(SortParams {
@@ -134,42 +136,50 @@ impl BlockingSink for SortSink {
             .spawn(
                 async move {
                     let mut state = state;
-                    let SortState {
-                        buffer,
-                        buffer_bytes,
-                        runs,
-                        spill_rr,
-                    } = &mut state;
 
-                    *buffer_bytes += input.size_bytes();
-                    buffer.push(input);
+                    state.buffer_bytes += input.size_bytes();
+                    let added = input.size_bytes() as u64;
+                    state.buffer.push(input);
 
-                    // Spill a sorted run once the in-memory buffer exceeds the budget.
-                    if let Some(sc) = &params.spill_config
-                        && *buffer_bytes >= sc.threshold_bytes
-                    {
-                        let to_spill = std::mem::take(buffer);
-                        *buffer_bytes = 0;
-                        let sorted = MicroPartition::concat(to_spill)?.sort(
-                            &params.sort_by,
-                            &params.descending,
-                            &params.nulls_first,
-                        )?;
-                        if sorted.len() > 0 {
-                            let dir = &sc.spill_dirs[*spill_rr % sc.spill_dirs.len()];
-                            *spill_rr += 1;
-                            let mut writer =
-                                SpillRunWriter::open(dir, "daft_sort_run_", &params.schema)?;
-                            for rb in sorted.record_batches() {
-                                let n = rb.len();
-                                let mut start = 0;
-                                while start < n {
-                                    let end = (start + MERGE_RUN_BATCH_ROWS).min(n);
-                                    writer.write_batch(&rb.slice(start, end)?)?;
-                                    start = end;
+                    if let Some(sc) = &params.spill_config {
+                        let cap = sc.cap();
+                        let over_cap =
+                            cap.is_some_and(|c| state.reservation.held() + added > c);
+                        if over_cap || !state.reservation.try_grow(added) {
+                            // Spill the entire in-memory buffer as one sorted run.
+                            let SortState {
+                                buffer,
+                                buffer_bytes,
+                                runs,
+                                spill_rr,
+                                reservation,
+                            } = &mut state;
+                            let to_spill = std::mem::take(buffer);
+                            *buffer_bytes = 0;
+                            let sorted = MicroPartition::concat(to_spill)?.sort(
+                                &params.sort_by,
+                                &params.descending,
+                                &params.nulls_first,
+                            )?;
+                            if sorted.len() > 0 {
+                                let dir = &sc.spill_dirs[*spill_rr % sc.spill_dirs.len()];
+                                *spill_rr += 1;
+                                let mut writer =
+                                    SpillRunWriter::open(dir, "daft_sort_run_", &params.schema)?;
+                                for rb in sorted.record_batches() {
+                                    let n = rb.len();
+                                    let mut start = 0;
+                                    while start < n {
+                                        let end = (start + MERGE_RUN_BATCH_ROWS).min(n);
+                                        writer.write_batch(&rb.slice(start, end)?)?;
+                                        start = end;
+                                    }
                                 }
+                                runs.push(writer.finish()?);
                             }
-                            runs.push(writer.finish()?);
+                            // Everything in memory was spilled; release the reservation.
+                            let held = reservation.held();
+                            reservation.shrink(held);
                         }
                     }
                     Ok(state)
@@ -277,6 +287,7 @@ impl BlockingSink for SortSink {
             buffer_bytes: 0,
             runs: Vec::new(),
             spill_rr: 0,
+            reservation: get_or_init_memory_manager().reservation(),
         })
     }
 
