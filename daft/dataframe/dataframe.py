@@ -4195,7 +4195,17 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        if how == "cross":
+        on_predicate = None
+        if how != "cross" and on is not None and isinstance(on, Expression) and not on.is_column():
+            # `on` is a boolean predicate expression (e.g. st_intersects(...)) → predicate join.
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is a predicate expression, `left_on`/`right_on` must be None")
+            if how != "inner":
+                raise ValueError("Predicate (e.g. spatial) joins support how='inner' only")
+            on_predicate = on
+            left_on = []
+            right_on = []
+        elif how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
             if strategy is not None:
@@ -4229,6 +4239,7 @@ class DataFrame:
             strategy=join_strategy,
             prefix=prefix,
             suffix=suffix,
+            on_predicate=on_predicate._expr if on_predicate is not None else None,
         )
         return DataFrame(builder)
 

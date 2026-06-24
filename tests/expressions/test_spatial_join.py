@@ -27,3 +27,23 @@ def test_sql_spatial_join_on():
     assert result["pid"] == [1]
     assert result["qid"] == [10]
     assert len(result["pid"]) == 1
+
+
+def test_python_join_on_predicate():
+    pts, polys = _points_polys()
+    result = (
+        pts.join(polys, on=st_intersects(pts["pgeom"], polys["qgeom"]))
+        .select("pid", "qid")
+        .sort("pid")
+        .to_pydict()
+    )
+    assert result["pid"] == [1]
+    assert result["qid"] == [10]
+
+
+def test_python_join_on_predicate_rejects_outer():
+    import pytest
+
+    pts, polys = _points_polys()
+    with pytest.raises(ValueError, match="inner"):
+        pts.join(polys, on=st_intersects(pts["pgeom"], polys["qgeom"]), how="left")
