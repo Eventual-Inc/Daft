@@ -33,15 +33,17 @@ def great_circle_distance(lat1: Expression, lon1: Expression, lat2: Expression, 
 # ── Unary geometry functions ────────────────────────────────────────────────
 
 
-def st_area(geom: Expression) -> Expression:
+def st_area(geom: Expression, use_spheroid: bool = False) -> Expression:
     """Return the 2D area of a geometry.
 
     Args:
         geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+        use_spheroid: If True, compute geodesic area in WGS84 square meters (lon/lat input
+            assumed). Default False uses planar (coordinate-system units squared).
 
     Returns:
-        Float64 column with the unsigned area in coordinate-system units squared.
-        Returns null for null or unparseable geometries.
+        Float64 column with the unsigned area in coordinate-system units squared (planar)
+        or WGS84 square meters (geodesic). Returns null for null or unparseable geometries.
 
     Examples:
         >>> import daft
@@ -49,18 +51,25 @@ def st_area(geom: Expression) -> Expression:
         >>> df = daft.from_pydict({"geom": [b"...wkb..."]})  # doctest: +SKIP
         >>> df.select(st_area(df["geom"])).show()  # doctest: +SKIP
     """
+    if use_spheroid:
+        return Expression._call_builtin_scalar_fn("st_area", geom, use_spheroid)
     return Expression._call_builtin_scalar_fn("st_area", geom)
 
 
-def st_length(geom: Expression) -> Expression:
-    """Return the Euclidean length of a geometry.
+def st_length(geom: Expression, use_spheroid: bool = False) -> Expression:
+    """Return the length of a geometry.
 
     Args:
         geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+        use_spheroid: If True, compute geodesic length in WGS84 meters (lon/lat input
+            assumed). Default False uses planar Euclidean length (coordinate units).
 
     Returns:
         Float64 column. For points returns 0, for polygons returns perimeter length.
+        Planar by default; WGS84 geodesic meters when use_spheroid=True.
     """
+    if use_spheroid:
+        return Expression._call_builtin_scalar_fn("st_length", geom, use_spheroid)
     return Expression._call_builtin_scalar_fn("st_length", geom)
 
 
@@ -166,16 +175,21 @@ def st_within(geom_a: Expression, geom_b: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_within", geom_a, geom_b)
 
 
-def st_distance(geom_a: Expression, geom_b: Expression) -> Expression:
-    """Return the minimum Euclidean distance between two geometries.
+def st_distance(geom_a: Expression, geom_b: Expression, use_spheroid: bool = False) -> Expression:
+    """Return the minimum distance between two geometries.
 
     Args:
         geom_a: First geometry column.
         geom_b: Second geometry column (supports scalar broadcast).
+        use_spheroid: If True, compute WGS84 geodesic distance in meters (lon/lat point
+            inputs assumed). Default False uses planar Euclidean distance (coordinate units).
 
     Returns:
-        Float64 column.
+        Float64 column. Planar by default; WGS84 geodesic meters when use_spheroid=True
+        (point inputs only; other geometry pairs return NaN in geodesic mode).
     """
+    if use_spheroid:
+        return Expression._call_builtin_scalar_fn("st_distance", geom_a, geom_b, use_spheroid)
     return Expression._call_builtin_scalar_fn("st_distance", geom_a, geom_b)
 
 

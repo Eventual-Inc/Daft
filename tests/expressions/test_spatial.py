@@ -7,7 +7,7 @@ import pytest
 
 import daft
 import daft.functions
-from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext
+from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext, st_distance
 
 
 def _great_circle_distance(
@@ -223,6 +223,21 @@ def test_st_crosses():
         st_crosses(st_geomfromtext(daft.col("line")), st_geomfromtext(daft.col("poly"))).alias("c"),
     ).to_pydict()
     assert df["c"] == [True, False]
+
+
+def test_geodesic_distance_meters():
+    # Great-circle distance between two lon/lat points; planar vs spheroid differ massively.
+    # POINT(0 0) = lon=0, lat=0; POINT(0 1) = lon=0, lat=1 (1° latitude difference).
+    # Planar (Euclidean) distance is 1.0 (coordinate units).
+    # WGS84 geodesic: geographiclib gives ~110574 m for 1° lat at equator.
+    a = "POINT(0 0)"
+    b = "POINT(0 1)"
+    df = daft.from_pydict({"a": [a], "b": [b]}).select(
+        st_distance(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("planar"),
+        st_distance(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")), use_spheroid=True).alias("geo"),
+    ).to_pydict()
+    assert abs(df["planar"][0] - 1.0) < 1e-9      # planar = 1.0 (degrees)
+    assert abs(df["geo"][0] - 110574.0) < 200.0   # geodesic meters, WGS84 (geo crate)
 
 
 def test_st_overlaps():
