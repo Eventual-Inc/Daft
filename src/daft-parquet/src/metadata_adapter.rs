@@ -202,27 +202,43 @@ impl DaftRowGroupMetaData {
         self.inner.compressed_size() as usize
     }
 
-    /// Uncompressed (encoded) size in bytes for each column chunk in this row group,
-    /// keyed by the top-level (root) column name.
+    /// Estimated in-memory (materialized) size in bytes for each column chunk in this
+    /// row group, keyed by the top-level (root) column name.
+    ///
+    /// For fixed-width physical types we use `num_values * physical_width`, which is the
+    /// size of the decoded Arrow buffer and is *independent of the on-disk encoding*. This
+    /// matters for dictionary/RLE-encoded data, where the Parquet "uncompressed" size is
+    /// the encoded (dictionary index) size and can be many times smaller than the
+    /// materialized buffer. For variable-width `BYTE_ARRAY` (e.g. Utf8/Binary) the byte
+    /// count is not derivable from `num_values`, so we fall back to the uncompressed size.
     ///
     /// Nested columns are flattened to their root: every leaf chunk (e.g.
-    /// `position_ids.list.element`) is attributed to its top-level field
-    /// (`position_ids`). The caller is responsible for summing across row groups.
-    pub fn column_uncompressed_sizes(&self) -> Vec<(String, u64)> {
+    /// `position_ids.list.element`) is attributed to its top-level field (`position_ids`).
+    /// Offset/validity buffers are not added (they are negligible next to the value
+    /// buffers). The caller is responsible for summing across row groups.
+    pub fn column_materialized_sizes(&self) -> Vec<(String, u64)> {
+        use parquet::basic::Type;
+
         self.inner
             .columns()
             .iter()
             .map(|col| {
-                let root = col
-                    .column_descr()
-                    .path()
-                    .parts()
-                    .first()
-                    .cloned()
-                    .unwrap_or_default();
-                // `uncompressed_size()` is an i64 and is always non-negative in practice;
-                // clamp defensively so a malformed (negative) value can't wrap to a huge u64.
-                (root, col.uncompressed_size().max(0) as u64)
+                let descr = col.column_descr();
+                let root = descr.path().parts().first().cloned().unwrap_or_default();
+                // `num_values()` is an i64 and always non-negative in practice; clamp
+                // defensively so a malformed (negative) value can't wrap to a huge u64.
+                let num_values = col.num_values().max(0) as u64;
+                let bytes = match descr.physical_type() {
+                    Type::BOOLEAN => num_values.div_ceil(8), // 1 bit per value
+                    Type::INT32 | Type::FLOAT => num_values * 4,
+                    Type::INT64 | Type::DOUBLE => num_values * 8,
+                    Type::INT96 => num_values * 12,
+                    Type::FIXED_LEN_BYTE_ARRAY => num_values * descr.type_length().max(0) as u64,
+                    // Variable-width: byte count isn't derivable from num_values, so fall
+                    // back to the uncompressed (encoded) size as a proxy.
+                    Type::BYTE_ARRAY => col.uncompressed_size().max(0) as u64,
+                };
+                (root, bytes)
             })
             .collect()
     }
@@ -275,5 +291,75 @@ mod tests {
 
         let m3 = DaftParquetMetadata::from_arrowrs(make_test_metadata(1000));
         assert_ne!(m1, m3);
+    }
+
+    #[test]
+    fn test_column_materialized_sizes() {
+        use std::collections::BTreeMap;
+
+        use parquet::{
+            basic::Type as PhysicalType,
+            file::metadata::{ColumnChunkMetaData, RowGroupMetaData},
+            schema::types::{SchemaDescriptor, Type as SchemaType},
+        };
+
+        let schema = SchemaType::group_type_builder("schema")
+            .with_fields(vec![
+                Arc::new(
+                    SchemaType::primitive_type_builder("ids", PhysicalType::INT64)
+                        .build()
+                        .unwrap(),
+                ),
+                Arc::new(
+                    SchemaType::primitive_type_builder("flag", PhysicalType::BOOLEAN)
+                        .build()
+                        .unwrap(),
+                ),
+                Arc::new(
+                    SchemaType::primitive_type_builder("name", PhysicalType::BYTE_ARRAY)
+                        .build()
+                        .unwrap(),
+                ),
+            ])
+            .build()
+            .unwrap();
+        let descr = Arc::new(SchemaDescriptor::new(Arc::new(schema)));
+
+        let rg = RowGroupMetaData::builder(descr.clone())
+            .set_num_rows(100)
+            .set_column_metadata(vec![
+                // INT64: dictionary-encoded so its uncompressed size would be small, but
+                // the materialized buffer is num_values * 8.
+                ColumnChunkMetaData::builder(descr.column(0))
+                    .set_num_values(100)
+                    .set_total_uncompressed_size(40) // encoded; deliberately tiny
+                    .build()
+                    .unwrap(),
+                ColumnChunkMetaData::builder(descr.column(1))
+                    .set_num_values(64)
+                    .build()
+                    .unwrap(),
+                // BYTE_ARRAY: byte count isn't derivable from num_values, so fall back to
+                // the uncompressed size.
+                ColumnChunkMetaData::builder(descr.column(2))
+                    .set_num_values(100)
+                    .set_total_uncompressed_size(777)
+                    .build()
+                    .unwrap(),
+            ])
+            .build()
+            .unwrap();
+
+        let sizes: BTreeMap<String, u64> = DaftRowGroupMetaData::from_arrowrs(rg)
+            .column_materialized_sizes()
+            .into_iter()
+            .collect();
+
+        // INT64 uses num_values * 8, NOT the tiny encoded size.
+        assert_eq!(sizes["ids"], 100 * 8);
+        // BOOLEAN is 1 bit per value.
+        assert_eq!(sizes["flag"], 64 / 8);
+        // BYTE_ARRAY falls back to the uncompressed size.
+        assert_eq!(sizes["name"], 777);
     }
 }
