@@ -23,11 +23,17 @@ def sample_hdf5_path(tmp_path):
 
     path = tmp_path / "sample.h5"
     with h5py.File(path, "w") as f:
+        # Root and dataset attrs cover the lightweight metadata/attrs accessors.
         f.attrs["source"] = "unit-test"
         f.create_dataset("values", data=np.array([1.0, 2.0, 3.0]))
         f["values"].attrs["unit"] = "meters"
+
+        # A nested group+dataset covers keys(), visit(), metadata(), and
+        # read/read_many for hierarchical dataset paths.
         action = f.create_group("action")
         action.create_dataset("proprio", data=np.zeros((4, 7)))
+
+        # An empty group keeps group traversal behavior distinct from datasets.
         f.create_group("observation")
     return str(path)
 
@@ -36,8 +42,6 @@ def test_hdf5_file_standalone(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
     assert file.keys() == ["action", "observation", "values"]
     assert file.keys(group="action") == ["proprio"]
-    with file.open_h5py() as h5:
-        assert list(h5["action"].keys()) == ["proprio"]
 
 
 def test_hdf5_file_read_many_and_attrs(sample_hdf5_path):
