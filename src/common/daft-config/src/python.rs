@@ -127,6 +127,7 @@ impl PyDaftExecutionConfig {
         hash_join_spill_threshold_bytes=None,
         sort_spill_threshold_bytes=None,
         agg_spill_threshold_bytes=None,
+        dedup_spill_threshold_bytes=None,
         window_spill_threshold_bytes=None,
         repartition_spill_threshold_bytes=None,
         spill_pool_bytes=None,
@@ -171,6 +172,7 @@ impl PyDaftExecutionConfig {
         hash_join_spill_threshold_bytes: Option<usize>,
         sort_spill_threshold_bytes: Option<usize>,
         agg_spill_threshold_bytes: Option<usize>,
+        dedup_spill_threshold_bytes: Option<usize>,
         window_spill_threshold_bytes: Option<usize>,
         repartition_spill_threshold_bytes: Option<usize>,
         spill_pool_bytes: Option<usize>,
@@ -339,6 +341,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(agg_spill_threshold_bytes) = agg_spill_threshold_bytes {
             config.agg_spill_threshold_bytes = Some(agg_spill_threshold_bytes);
+        }
+
+        if let Some(dedup_spill_threshold_bytes) = dedup_spill_threshold_bytes {
+            config.dedup_spill_threshold_bytes = Some(dedup_spill_threshold_bytes);
         }
 
         if let Some(window_spill_threshold_bytes) = window_spill_threshold_bytes {
@@ -529,6 +535,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn agg_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.config.agg_spill_threshold_bytes)
+    }
+
+    #[getter]
+    fn dedup_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.dedup_spill_threshold_bytes)
     }
 
     #[getter]

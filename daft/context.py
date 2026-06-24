@@ -247,6 +247,7 @@ def set_execution_config(
     hash_join_spill_threshold_bytes: int | None = None,
     sort_spill_threshold_bytes: int | None = None,
     agg_spill_threshold_bytes: int | None = None,
+    dedup_spill_threshold_bytes: int | None = None,
     window_spill_threshold_bytes: int | None = None,
     repartition_spill_threshold_bytes: int | None = None,
     spill_pool_bytes: int | None = None,
@@ -300,7 +301,8 @@ def set_execution_config(
         flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to "lz4". Pass "none" to disable compression; passing Python None leaves the current config unchanged.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
         sort_spill_threshold_bytes: Memory budget (bytes) for the Sort operator before it spills to disk (external merge sort) under `flight_shuffle_dirs`. Defaults to None, which auto-derives a threshold from the engine memory budget (spilling on by default). Pass 0 to disable spilling.
-        agg_spill_threshold_bytes: Memory budget (bytes) for the grouped Aggregation operator before it spills to disk (grace aggregation) under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable spilling. Note: dedup (``distinct()``) spilling is also governed by this threshold — setting it to 0 disables spilling for both grouped aggregation and dedup.
+        agg_spill_threshold_bytes: Memory budget (bytes) for the grouped Aggregation operator before it spills to disk (grace aggregation) under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable spilling. Governs only grouped aggregation; dedup (``distinct()``) uses ``dedup_spill_threshold_bytes``.
+        dedup_spill_threshold_bytes: Memory budget (bytes) for the Dedup/Distinct operator before it spills to disk (grace dedup) under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable spilling.
         window_spill_threshold_bytes: Memory budget (bytes) for partitioned Window operators before they spill to disk under `flight_shuffle_dirs`. Defaults to None, which auto-derives from the engine memory budget (spilling on by default). Pass 0 to disable. Spill relieves memory between window partitions; a single partition_by group must still fit in memory.
         repartition_spill_threshold_bytes: Spill threshold (bytes) for the RepartitionSink (Flight backend) post_repartitioned buffer. Defaults to None (auto-derives ~30% of engine memory budget). Pass 0 to disable.
         spill_pool_bytes: Total size in bytes of the shared spill pool used by all spill-capable
@@ -352,6 +354,7 @@ def set_execution_config(
             hash_join_spill_threshold_bytes=hash_join_spill_threshold_bytes,
             sort_spill_threshold_bytes=sort_spill_threshold_bytes,
             agg_spill_threshold_bytes=agg_spill_threshold_bytes,
+            dedup_spill_threshold_bytes=dedup_spill_threshold_bytes,
             window_spill_threshold_bytes=window_spill_threshold_bytes,
             repartition_spill_threshold_bytes=repartition_spill_threshold_bytes,
             spill_pool_bytes=spill_pool_bytes,

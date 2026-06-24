@@ -344,9 +344,10 @@ def test_spill_matches_no_spill(op):
     with daft.context.execution_config_ctx(
         sort_spill_threshold_bytes=0,
         agg_spill_threshold_bytes=0,
+        dedup_spill_threshold_bytes=0,
     ):
-        # Dedup reuses agg_spill_threshold_bytes as its opt-out (see pipeline.rs Dedup arm),
-        # so agg_spill_threshold_bytes=0 disables spilling for the dedup case too.
+        # dedup now has its own opt-out (dedup_spill_threshold_bytes); setting it to 0
+        # disables dedup spilling independently of agg_spill_threshold_bytes.
         no_spill = run(base)
     with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
         spilled = run(base)

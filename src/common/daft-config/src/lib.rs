@@ -164,6 +164,10 @@ pub struct DaftExecutionConfig {
     /// spilled to `flight_shuffle_dirs`. Interpreted as the total budget across all hash buckets.
     /// `None` auto-derives from the engine memory budget (on by default). `Some(0)` disables.
     pub agg_spill_threshold_bytes: Option<usize>,
+    /// Spill threshold (bytes) for the Dedup/Distinct blocking sink's grace dedup,
+    /// spilled to `flight_shuffle_dirs`. Interpreted as the total budget across all hash buckets.
+    /// `None` auto-derives from the engine memory budget (on by default). `Some(0)` disables.
+    pub dedup_spill_threshold_bytes: Option<usize>,
     /// Spill threshold (bytes) for partitioned Window operators, spilled to `flight_shuffle_dirs`.
     /// Interpreted as the total budget across all hash buckets. `None` auto-derives from the engine
     /// memory budget (on by default). `Some(0)` disables.
@@ -228,6 +232,7 @@ impl Default for DaftExecutionConfig {
             hash_join_spill_threshold_bytes: None,
             sort_spill_threshold_bytes: None,
             agg_spill_threshold_bytes: None,
+            dedup_spill_threshold_bytes: None,
             window_spill_threshold_bytes: None,
             repartition_spill_threshold_bytes: None,
             spill_pool_bytes: None,
@@ -249,6 +254,7 @@ impl DaftExecutionConfig {
     const ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD: &'static str = "DAFT_HASH_JOIN_SPILL_THRESHOLD";
     const ENV_DAFT_SORT_SPILL_THRESHOLD: &'static str = "DAFT_SORT_SPILL_THRESHOLD";
     const ENV_DAFT_AGG_SPILL_THRESHOLD: &'static str = "DAFT_AGG_SPILL_THRESHOLD";
+    const ENV_DAFT_DEDUP_SPILL_THRESHOLD: &'static str = "DAFT_DEDUP_SPILL_THRESHOLD";
     const ENV_DAFT_WINDOW_SPILL_THRESHOLD: &'static str = "DAFT_WINDOW_SPILL_THRESHOLD";
     const ENV_DAFT_REPARTITION_SPILL_THRESHOLD: &'static str = "DAFT_REPARTITION_SPILL_THRESHOLD";
     const ENV_DAFT_SPILL_POOL_BYTES: &'static str = "DAFT_SPILL_POOL_BYTES";
@@ -340,6 +346,14 @@ impl DaftExecutionConfig {
                 cfg.agg_spill_threshold_bytes = Some(parsed);
             } else {
                 eprintln!("Invalid DAFT_AGG_SPILL_THRESHOLD value: {val}, ignoring");
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_DEDUP_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.dedup_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_DEDUP_SPILL_THRESHOLD value: {val}, ignoring");
             }
         }
 
