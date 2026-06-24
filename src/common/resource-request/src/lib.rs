@@ -30,19 +30,10 @@ impl ResourceRequest {
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
     ) -> DaftResult<Self> {
-        if let Some(num_cpus) = num_cpus
-            && !(num_cpus.is_finite() && num_cpus >= 0.0)
-        {
-            return Err(DaftError::ValueError(format!(
-                "ResourceRequest num_cpus must be a finite, nonnegative number, got {}",
-                num_cpus
-            )));
-        }
-
         if let Some(num_gpus) = num_gpus {
-            if !(num_gpus.is_finite() && num_gpus >= 0.0) {
+            if num_gpus < 0.0 {
                 return Err(DaftError::ValueError(format!(
-                    "ResourceRequest num_gpus must be a finite, nonnegative number, got {}",
+                    "ResourceRequest num_gpus must be nonnegative, got {}",
                     num_gpus
                 )));
             }
@@ -283,27 +274,4 @@ impl_bincode_py_state_serialization!(ResourceRequest);
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<ResourceRequest>()?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_non_finite_or_negative_cpus() {
-        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.5] {
-            assert!(ResourceRequest::try_new_internal(Some(bad), None, None).is_err());
-        }
-        assert!(ResourceRequest::try_new_internal(Some(0.0), None, None).is_ok());
-        assert!(ResourceRequest::try_new_internal(Some(0.25), None, None).is_ok());
-    }
-
-    #[test]
-    fn rejects_non_finite_or_negative_gpus() {
-        for bad in [f64::NAN, f64::INFINITY, -1.0] {
-            assert!(ResourceRequest::try_new_internal(None, Some(bad), None).is_err());
-        }
-        assert!(ResourceRequest::try_new_internal(None, Some(0.5), None).is_ok());
-        assert!(ResourceRequest::try_new_internal(None, Some(2.0), None).is_ok());
-    }
 }

@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
     scheduler::WorkerSnapshot,
-    task::{SwordfishTask, TaskContext, TaskResourceRequest, next_autoscale_request},
+    task::{SwordfishTask, TaskContext, TaskResourceRequest},
     worker::{Worker, WorkerId, WorkerManager},
 };
 
@@ -262,38 +262,57 @@ impl WorkerManager for RayWorkerManager {
             .unwrap_or(0)
             .max(cluster_memory_bytes);
 
-        // 3. Select the next request: one bundle larger than the previous high-water
-        //    mark, so the cluster ramps up gradually. None means demand hasn't grown
-        //    past the last request, so skip — Ray still holds that (larger) request.
-        let Some(ray_bundles) = next_autoscale_request(
-            &bundles,
-            high_water_mark_cpus,
-            high_water_mark_gpus,
-            high_water_mark_memory,
-        ) else {
+        // 3. Accumulate bundles one at a time until the running total surpasses the
+        //    high-water mark in any resource dimension (CPU, GPU, or memory). This ensures
+        //    each cycle's request is exactly one bundle larger than the previous max —
+        //    gradual enough to avoid exceeding an unknown cluster capacity limit.
+        let mut cpu_sum = 0.0;
+        let mut gpu_sum = 0.0;
+        let mut memory_sum = 0;
+        let mut surpassed = false;
+        let mut selected_bundles = Vec::new();
+        for bundle in &bundles {
+            cpu_sum += bundle.resource_request.num_cpus().unwrap_or(0.0);
+            gpu_sum += bundle.resource_request.num_gpus().unwrap_or(0.0);
+            memory_sum += bundle.resource_request.memory_bytes().unwrap_or(0);
+            selected_bundles.push(bundle);
+            if cpu_sum > high_water_mark_cpus
+                || gpu_sum > high_water_mark_gpus
+                || memory_sum > high_water_mark_memory
+            {
+                surpassed = true;
+                break;
+            }
+        }
+
+        // 4. If we went through all pending bundles without surpassing the high-water mark,
+        //    the remaining demand is smaller than what we previously requested. Skip this
+        //    cycle — Ray still holds our previous (larger) request, so no downscale occurs.
+        if !surpassed {
             return Ok(());
-        };
+        }
 
-        // 4. Send the bundles to Ray's autoscaler. Zero-valued GPU/memory keys are
-        //    omitted so Ray doesn't demand zero-resource bundles on specialized nodes.
+        // 5. Send the selected bundles to Ray's autoscaler via request_resources().
+        //    Strip zero-valued GPU/memory keys so Ray doesn't interpret them as a demand
+        //    for zero-resource bundles on specialized nodes.
+        let python_bundles = selected_bundles
+            .iter()
+            .map(|bundle| {
+                let mut dict = HashMap::new();
+                dict.insert("CPU", bundle.num_cpus().ceil() as i64);
+                let gpu = bundle.num_gpus().ceil() as i64;
+                if gpu > 0 {
+                    dict.insert("GPU", gpu);
+                }
+                let memory = bundle.memory_bytes() as i64;
+                if memory > 0 {
+                    dict.insert("memory", memory);
+                }
+                dict
+            })
+            .collect::<Vec<_>>();
+
         Python::attach(|py| -> DaftResult<()> {
-            let python_bundles = ray_bundles
-                .iter()
-                .map(|bundle| {
-                    let dict = pyo3::types::PyDict::new(py);
-                    if bundle.cpu > 0 {
-                        dict.set_item("CPU", bundle.cpu)?;
-                    }
-                    if let Some(gpu) = bundle.gpu {
-                        dict.set_item("GPU", gpu)?;
-                    }
-                    if let Some(memory) = bundle.memory {
-                        dict.set_item("memory", memory)?;
-                    }
-                    Ok::<_, PyErr>(dict)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
             flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (python_bundles,))?;
             Ok(())
@@ -304,16 +323,10 @@ impl WorkerManager for RayWorkerManager {
         state.pending_release_blacklist.clear();
         state.last_refresh = None;
 
-        // 5. Record the new high-water mark as the aggregated integer totals just
-        //    requested — same units Ray sees, so each cycle escalates by a whole unit.
-        let requested_cpus: i64 = ray_bundles.iter().map(|b| b.cpu).sum();
-        let requested_gpus: i64 = ray_bundles.iter().filter_map(|b| b.gpu).sum();
-        let requested_memory: i64 = ray_bundles.iter().filter_map(|b| b.memory).sum();
-        state.max_resources_requested = ResourceRequest::try_new_internal(
-            Some(requested_cpus as f64),
-            Some(requested_gpus as f64),
-            Some(requested_memory as usize),
-        )?;
+        // 6. Record this request as the new high-water mark so the next cycle will
+        //    request exactly one bundle more, and so we never send a smaller request.
+        state.max_resources_requested =
+            ResourceRequest::try_new_internal(Some(cpu_sum), Some(gpu_sum), Some(memory_sum))?;
         state.last_autoscale_request_time = Some(Instant::now());
 
         Ok(())

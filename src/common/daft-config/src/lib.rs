@@ -192,7 +192,7 @@ impl Default for DaftExecutionConfig {
             pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
-            min_cpu_per_task: 1.0,
+            min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
             enable_dynamic_batching: false,
@@ -209,11 +209,6 @@ impl DaftExecutionConfig {
     const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
-
-    /// Single validity rule (finite, positive) shared by the env and Python setter.
-    pub(crate) fn is_valid_min_cpu_per_task(value: f64) -> bool {
-        value.is_finite() && value > 0.0
-    }
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
@@ -246,16 +241,11 @@ impl DaftExecutionConfig {
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
         {
-            if Self::is_valid_min_cpu_per_task(val) {
-                cfg.min_cpu_per_task = val;
-            } else {
-                eprintln!(
-                    "Invalid {} value: {}, must be a finite number > 0, using default {}",
-                    Self::ENV_DAFT_MIN_CPU_PER_TASK,
-                    val,
-                    cfg.min_cpu_per_task
-                );
-            }
+            eprintln!(
+                "{} is deprecated and has no effect on Flotilla scheduling. It will be removed in the next minor version.",
+                Self::ENV_DAFT_MIN_CPU_PER_TASK
+            );
+            cfg.min_cpu_per_task = val;
         }
 
         if let Some(val) = parse_number_from_env(
@@ -527,7 +517,7 @@ mod tests {
         // ENV_DAFT_MIN_CPU_PER_TASK
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
+            assert_eq!(cfg.min_cpu_per_task, 0.5);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "0.1");
@@ -539,31 +529,7 @@ mod tests {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "invalid");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "0");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "-0.5");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "nan");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "inf");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 1.0);
+            assert_eq!(cfg.min_cpu_per_task, 0.5);
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK);
