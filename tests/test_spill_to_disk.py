@@ -290,6 +290,8 @@ def test_hash_join_spills_by_default():
         right = daft.from_pydict({"k": list(range(20000)), "w": list(range(20000))})
         out = left.join(right, on="k").sort("k").to_pydict()
         assert out["k"] == list(range(20000))
+        assert out["v"] == list(range(20000))
+        assert out["w"] == list(range(20000))
 
 
 def test_dedup_spills_and_matches_in_memory():
@@ -312,6 +314,7 @@ def test_large_pipeline_completes_under_tiny_pool():
         df = daft.from_pydict({"k": list(range(n)), "v": list(range(n))})
         out = df.sort("k").to_pydict()
     assert out["k"] == list(range(n))
+    assert out["v"] == list(range(n))
 
 
 def test_two_spilling_operators_share_one_pool():
@@ -342,6 +345,8 @@ def test_spill_matches_no_spill(op):
         sort_spill_threshold_bytes=0,
         agg_spill_threshold_bytes=0,
     ):
+        # Dedup reuses agg_spill_threshold_bytes as its opt-out (see pipeline.rs Dedup arm),
+        # so agg_spill_threshold_bytes=0 disables spilling for the dedup case too.
         no_spill = run(base)
     with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
         spilled = run(base)
