@@ -277,3 +277,105 @@ def test_window_spill_files_cleaned_up(tmp_path):
         _ = daft.from_pydict(data).with_column("ws", col("v").sum().over(wspec)).to_pydict()
     leftover = list(tmp_path.rglob("daft_window_spill_*"))
     assert leftover == [], f"window spill files were not cleaned up: {leftover}"
+
+
+# ─────────────────── Shared spill pool / new operator coverage ───────────────
+
+
+def test_hash_join_spills_by_default():
+    # No explicit hash_join_spill_threshold_bytes — must spill via the shared pool.
+    # 1 MiB pool is far too small for 20 000-row tables, so spilling is forced.
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):  # 1 MiB pool
+        left = daft.from_pydict({"k": list(range(20000)), "v": list(range(20000))})
+        right = daft.from_pydict({"k": list(range(20000)), "w": list(range(20000))})
+        out = left.join(right, on="k").sort("k").to_pydict()
+        assert out["k"] == list(range(20000))
+
+
+def test_dedup_spills_and_matches_in_memory():
+    data = {"a": [i % 5000 for i in range(50000)]}
+    expected = sorted(set(data["a"]))
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
+        got = daft.from_pydict(data).distinct().sort("a").to_pydict()["a"]
+    assert got == expected
+
+
+def test_repartition_completes_under_tiny_pool():
+    # Large-ish input, tiny pool: must spill during accumulation AND stream at finalize.
+    n = 200000
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
+        df = daft.from_pydict({"k": list(range(n)), "v": list(range(n))})
+        out = df.repartition(16, "k").sort("k").to_pydict()
+    assert out["k"] == list(range(n))
+
+
+def test_two_spilling_operators_share_one_pool():
+    # An aggregation feeding a sort, both under one small pool — must stay correct.
+    n = 100000
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
+        df = daft.from_pydict({"g": [i % 1000 for i in range(n)], "v": list(range(n))})
+        out = df.groupby("g").sum("v").sort("g").to_pydict()
+    assert out["g"] == list(range(1000))
+    # sum of v for group g = sum of i where i % 1000 == g
+    expected = [sum(i for i in range(n) if i % 1000 == g) for g in range(1000)]
+    assert out["v"] == expected
+
+
+@pytest.mark.parametrize("op", ["sort", "agg", "dedup"])
+def test_spill_matches_no_spill(op):
+    n = 30000
+    base = daft.from_pydict({"g": [i % 777 for i in range(n)], "v": list(range(n))})
+
+    def run(df):
+        if op == "sort":
+            return df.sort("v").to_pydict()
+        if op == "agg":
+            return df.groupby("g").sum("v").sort("g").to_pydict()
+        return df.select("g").distinct().sort("g").to_pydict()
+
+    with daft.context.execution_config_ctx(
+        sort_spill_threshold_bytes=0,
+        agg_spill_threshold_bytes=0,
+    ):
+        no_spill = run(base)
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
+        spilled = run(base)
+    assert no_spill == spilled
+
+
+def test_outer_join_spills_correct():
+    # LEFT OUTER join under a tiny pool (exercises the bitmap-tracked spill path).
+    # Expected result is computed with spilling disabled for comparison.
+    n = 10000
+    left = daft.from_pydict({"k": list(range(n)), "lv": list(range(n))})
+    # right has keys 0..n/2 — so the upper half of left produces NULL right-side rows.
+    right = daft.from_pydict({"k": list(range(n // 2)), "rv": list(range(n // 2))})
+
+    def run_join(disable_hash_join_spill: bool):
+        ctx_kwargs = {}
+        if disable_hash_join_spill:
+            ctx_kwargs["hash_join_spill_threshold_bytes"] = 0
+        else:
+            ctx_kwargs["spill_pool_bytes"] = 1 << 20  # 1 MiB — forces spilling
+        with daft.context.execution_config_ctx(**ctx_kwargs):
+            return left.join(right, on="k", how="left").sort("k").to_pydict()
+
+    no_spill = run_join(disable_hash_join_spill=True)
+    spilled = run_join(disable_hash_join_spill=False)
+    assert _rows(no_spill) == _rows(spilled)
+
+
+def test_join_multi_partition_spill():
+    # Enough distinct keys and a tiny pool so multiple build partitions spill.
+    # Result must equal the no-spill result.
+    n = 20000
+    left = daft.from_pydict({"k": list(range(n)), "lv": list(range(n))})
+    right = daft.from_pydict({"k": list(range(n)), "rv": list(range(n))})
+
+    with daft.context.execution_config_ctx(hash_join_spill_threshold_bytes=0):
+        no_spill = left.join(right, on="k").sort("k").to_pydict()
+
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 20):
+        spilled = left.join(right, on="k").sort("k").to_pydict()
+
+    assert _rows(no_spill) == _rows(spilled)
