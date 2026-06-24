@@ -1070,6 +1070,10 @@ class DataFrame:
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
+        If the DataFrame contains ``Geometry`` columns, GeoParquet 1.1.0 ``"geo"`` footer metadata is
+        emitted automatically (WKB encoding; no CRS transforms). Use ``crs=`` to embed a CRS string,
+        or ``geometry_columns=`` to restrict which Geometry columns are included in the metadata.
+
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
