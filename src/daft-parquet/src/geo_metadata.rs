@@ -25,6 +25,10 @@ pub struct GeoColumn {
 
 /// Build the GeoParquet `"geo"` metadata JSON for the Geometry columns of `schema`.
 /// Returns None when there are no Geometry columns to declare.
+///
+/// `crs`, when supplied, is embedded as a JSON string identifier (e.g. "OGC:CRS84"); a full
+/// PROJJSON object is not supported (Daft has no CRS concept). When `None`, `crs` is omitted,
+/// which GeoParquet interprets as the default OGC:CRS84 (lon/lat WGS84).
 pub fn build_geo_metadata(
     schema: &Schema,
     crs: Option<&str>,
@@ -141,5 +145,19 @@ mod tests {
         // declared column absent from schema -> skipped
         let missing = r#"{"version":"1.1.0","primary_column":"x","columns":{"x":{"encoding":"WKB"}}}"#;
         assert!(detect_geo_columns(missing, &read_schema).is_empty());
+    }
+
+    #[test]
+    fn test_build_only_columns_filters_primary() {
+        let s = Schema::new(vec![
+            Field::new("a", DataType::Geometry),
+            Field::new("b", DataType::Geometry),
+        ]);
+        let only = vec!["b".to_string()];
+        let json = build_geo_metadata(&s, None, Some(&only)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["primary_column"], "b");
+        assert!(v["columns"].get("a").is_none());
+        assert_eq!(v["columns"]["b"]["encoding"], "WKB");
     }
 }
