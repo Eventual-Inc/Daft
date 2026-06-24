@@ -40,15 +40,12 @@ pub(crate) struct SinglePartitionDedupState {
     bytes: usize,
 }
 
-pub(crate) enum DedupState {
-    Accumulating {
-        inner_states: Vec<SinglePartitionDedupState>,
-        spill_dirs: Option<Vec<String>>,
-        spill_writer: Option<SpillWriter>,
-        reservation: MemoryReservation,
-        cap: Option<u64>,
-    },
-    Done,
+pub(crate) struct DedupState {
+    inner_states: Vec<SinglePartitionDedupState>,
+    spill_dirs: Option<Vec<String>>,
+    spill_writer: Option<SpillWriter>,
+    reservation: MemoryReservation,
+    cap: Option<u64>,
 }
 
 impl DedupState {
@@ -56,7 +53,7 @@ impl DedupState {
         let inner_states = (0..num_partitions)
             .map(|_| SinglePartitionDedupState::default())
             .collect::<Vec<_>>();
-        Self::Accumulating {
+        Self {
             inner_states,
             spill_dirs,
             spill_writer: None,
@@ -66,16 +63,13 @@ impl DedupState {
     }
 
     fn push(&mut self, input: MicroPartition, columns: &[BoundExpr]) -> DaftResult<()> {
-        let Self::Accumulating {
+        let Self {
             inner_states,
             spill_dirs,
             spill_writer,
             reservation,
             cap,
-        } = self
-        else {
-            panic!("DropDuplicatesSink should be in Accumulating state");
-        };
+        } = self;
 
         let partitioned = input.partition_by_hash(columns, inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
@@ -211,14 +205,11 @@ impl BlockingSink for DedupSink {
                     let mut inners: Vec<Vec<SinglePartitionDedupState>> = Vec::new();
                     let mut stores: Vec<Option<SpillStore>> = Vec::new();
                     for state in states {
-                        let DedupState::Accumulating {
+                        let DedupState {
                             inner_states,
                             spill_writer,
                             ..
-                        } = state
-                        else {
-                            panic!("DropDuplicatesSink should be in Accumulating state");
-                        };
+                        } = state;
                         inners.push(inner_states);
                         stores.push(match spill_writer {
                             Some(w) => Some(w.finish()?),
