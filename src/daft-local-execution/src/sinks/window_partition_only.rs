@@ -14,7 +14,7 @@ use super::{
         BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
     },
     window_base::{
-        WindowBaseState, WindowSinkParams, finalize_partitioned_windows, window_bucket_budget,
+        WindowBaseState, WindowSinkParams, finalize_partitioned_windows,
         window_spill_dirs,
     },
 };
@@ -48,7 +48,6 @@ impl WindowSinkParams for WindowPartitionOnlyParams {
 pub struct WindowPartitionOnlySink {
     window_partition_only_params: Arc<WindowPartitionOnlyParams>,
     spill_config: Option<SpillConfig>,
-    budget_per_bucket: usize,
 }
 
 impl WindowPartitionOnlySink {
@@ -59,7 +58,6 @@ impl WindowPartitionOnlySink {
         schema: &SchemaRef,
         spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
-        let budget_per_bucket = window_bucket_budget(&spill_config);
         Ok(Self {
             window_partition_only_params: Arc::new(WindowPartitionOnlyParams {
                 agg_exprs: agg_exprs.to_vec(),
@@ -68,7 +66,6 @@ impl WindowPartitionOnlySink {
                 original_schema: schema.clone(),
             }),
             spill_config,
-            budget_per_bucket,
         })
     }
 
@@ -157,7 +154,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         WindowBaseState::make_base_state(
             self.num_partitions(),
             window_spill_dirs(&self.spill_config),
-            self.budget_per_bucket,
+            self.spill_config.as_ref().and_then(|sc| sc.cap()),
         )
     }
 }

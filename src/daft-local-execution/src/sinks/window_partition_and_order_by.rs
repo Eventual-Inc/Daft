@@ -18,7 +18,7 @@ use super::{
     },
     window_base::{
         WindowBaseState, WindowSinkParams, finalize_partitioned_windows, partition_into_groups,
-        sort_and_materialize_groups, window_bucket_budget, window_spill_dirs,
+        sort_and_materialize_groups, window_spill_dirs,
     },
 };
 use crate::{
@@ -54,7 +54,6 @@ impl WindowSinkParams for WindowPartitionAndOrderByParams {
 pub struct WindowPartitionAndOrderBySink {
     window_partition_and_order_by_params: Arc<WindowPartitionAndOrderByParams>,
     spill_config: Option<SpillConfig>,
-    budget_per_bucket: usize,
 }
 
 impl WindowPartitionAndOrderBySink {
@@ -68,7 +67,6 @@ impl WindowPartitionAndOrderBySink {
         schema: &SchemaRef,
         spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
-        let budget_per_bucket = window_bucket_budget(&spill_config);
         Ok(Self {
             window_partition_and_order_by_params: Arc::new(WindowPartitionAndOrderByParams {
                 window_exprs: window_exprs.to_vec(),
@@ -80,7 +78,6 @@ impl WindowPartitionAndOrderBySink {
                 original_schema: schema.clone(),
             }),
             spill_config,
-            budget_per_bucket,
         })
     }
 
@@ -253,7 +250,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
         WindowBaseState::make_base_state(
             self.num_partitions(),
             window_spill_dirs(&self.spill_config),
-            self.budget_per_bucket,
+            self.spill_config.as_ref().and_then(|sc| sc.cap()),
         )
     }
 }
