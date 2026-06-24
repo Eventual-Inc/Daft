@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from numbers import Integral
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
@@ -215,13 +216,13 @@ class DeltaLakeScanOperator(ScanOperator):
         # GeoParquet 1.1.0 JSON blob.  Any one geometry field's metadata holds the full table-level
         # "geo" JSON, so we read it from the first field that has the key.
         try:
-            from daft.io._geoparquet import detect_geo_columns
+            from daft.io._geoparquet import GEO_FIELD_METADATA_KEY, detect_geo_columns
             from daft.schema import Field
 
             geo_json: str | None = None
             for i in range(len(arrow_schema)):
                 field_meta = arrow_schema.field(i).metadata or {}
-                raw = field_meta.get(b"daft.geo")
+                raw = field_meta.get(GEO_FIELD_METADATA_KEY.encode())
                 if raw is not None:
                     geo_json = raw.decode() if isinstance(raw, bytes) else raw
                     break
@@ -235,9 +236,12 @@ class DeltaLakeScanOperator(ScanOperator):
                             for f in self._schema
                         ]
                     )
-        except Exception:
-            # Lenient: malformed daft.geo field metadata → plain read (Binary)
-            pass
+        except Exception as e:
+            # Lenient: never let geo re-typing break a normal Delta read, but surface the cause.
+            warnings.warn(
+                f"daft.geo field metadata could not be applied; reading geometry columns as Binary: {e}",
+                stacklevel=2,
+            )
 
         configuration = self._table.metadata().configuration
         cm_mode = configuration.get("delta.columnMapping.mode", "none").lower()

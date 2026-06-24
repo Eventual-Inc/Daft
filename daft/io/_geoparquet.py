@@ -111,7 +111,7 @@ def attach_geo_field_metadata(schema: "pa.Schema", geo_json: str) -> "pa.Schema"
         field = schema.field(i)
         if field.name in geo_col_names:
             existing_meta = dict(field.metadata or {})
-            existing_meta[b"daft.geo"] = geo_json_bytes
+            existing_meta[GEO_FIELD_METADATA_KEY.encode()] = geo_json_bytes
             field = field.with_metadata(existing_meta)
         new_fields.append(field)
 

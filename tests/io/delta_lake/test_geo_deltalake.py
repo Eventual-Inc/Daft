@@ -7,8 +7,7 @@ import daft
 from daft.functions import st_astext, st_point
 
 
-@pytest.mark.parametrize("runner", ["native"])
-def test_deltalake_geo_roundtrip(tmp_path, runner):
+def test_deltalake_geo_roundtrip(tmp_path):
     """Write a DataFrame with a Geometry column to Delta Lake, read it back, and verify the dtype is preserved."""
     pytest.importorskip("deltalake")
 
@@ -52,3 +51,33 @@ def test_deltalake_geo_roundtrip_non_geo_table_unaffected(tmp_path):
     result = back.to_pydict()
     assert result["id"] == [1, 2]
     assert result["value"] == ["a", "b"]
+
+
+@pytest.mark.xfail(
+    reason="delta-rs does not inherit daft.geo field metadata through append; documented limitation",
+    strict=False,
+)
+def test_deltalake_geo_roundtrip_append(tmp_path):
+    """Geometry dtype survives an append to an existing geo Delta table (field metadata inherited from the table schema)."""
+    pytest.importorskip("deltalake")
+
+    df1 = daft.from_pydict({"id": [1, 2], "x": [1.0, 2.0], "y": [4.0, 5.0]}).select(
+        daft.col("id"),
+        st_point(daft.col("x"), daft.col("y")).alias("geom"),
+    )
+    df1.write_deltalake(str(tmp_path))
+
+    df2 = daft.from_pydict({"id": [3], "x": [3.0], "y": [6.0]}).select(
+        daft.col("id"),
+        st_point(daft.col("x"), daft.col("y")).alias("geom"),
+    )
+    df2.write_deltalake(str(tmp_path), mode="append")
+
+    back = daft.read_deltalake(str(tmp_path))
+    assert back.schema()["geom"].dtype == daft.DataType.geometry(), (
+        f"Expected Geometry dtype after append, got {back.schema()['geom'].dtype}"
+    )
+    out = back.select(daft.col("id"), st_astext(daft.col("geom")).alias("wkt")).sort("id").to_pydict()
+    assert out["id"] == [1, 2, 3]
+    for wkt in out["wkt"]:
+        assert wkt is not None and wkt.upper().startswith("POINT")
