@@ -7,7 +7,7 @@ import pytest
 
 import daft
 import daft.functions
-from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext, st_distance
+from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext, st_distance, st_buffer, st_area, st_isvalid
 
 
 def _great_circle_distance(
@@ -299,3 +299,73 @@ def test_geodesic_length_polygon_returns_zero():
     ).to_pydict()
     assert result["planar"][0] == 0.0, f"planar polygon length should be 0.0, got {result['planar'][0]}"
     assert result["geodesic"][0] == 0.0, f"geodesic polygon length should be 0.0, got {result['geodesic'][0]}"
+
+
+# ── st_buffer tests ──────────────────────────────────────────────────────────
+
+
+def test_st_buffer_point_area_approx_pi():
+    """Buffer of radius-1 around a point should have area ≈ π (64-gon circle)."""
+    df = daft.from_pydict({"w": ["POINT(0 0)"]})
+    geom = st_geomfromtext(daft.col("w"))
+    result = df.select(st_area(st_buffer(geom, 1.0)).alias("a")).to_pydict()
+    area = result["a"][0]
+    assert abs(area - math.pi) < 0.01, f"Expected area ≈ π, got {area}"
+
+
+def test_st_buffer_point_area_approx_pi_sql():
+    """SQL: buffer of radius-1 around a point should have area ≈ π."""
+    df = daft.from_pydict({"w": ["POINT(0 0)"]})
+    result = daft.sql(
+        "SELECT st_area(st_buffer(st_geomfromtext(w), 1.0)) AS a FROM df"
+    ).to_pydict()
+    area = result["a"][0]
+    assert abs(area - math.pi) < 0.01, f"SQL: expected area ≈ π, got {area}"
+
+
+def test_st_buffer_polygon_expands():
+    """Buffer of a unit-square polygon should produce a larger geometry."""
+    df = daft.from_pydict({"w": ["POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"]})
+    geom = st_geomfromtext(daft.col("w"))
+    result = df.select(st_area(st_buffer(geom, 1.0)).alias("a")).to_pydict()
+    area = result["a"][0]
+    # Area must be larger than the unit square (area=1)
+    assert area > 1.0, f"Buffered polygon area {area} should exceed unit square area"
+
+
+# ── st_isvalid tests ─────────────────────────────────────────────────────────
+
+
+def test_st_isvalid_simple_square():
+    """A simple square polygon is valid."""
+    df = daft.from_pydict({"w": ["POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"]})
+    result = df.select(st_isvalid(st_geomfromtext(daft.col("w"))).alias("v")).to_pydict()
+    assert result["v"][0] is True
+
+
+def test_st_isvalid_bowtie_false():
+    """A bowtie (self-intersecting) polygon is invalid."""
+    # Ring: (0,0)→(2,2)→(2,0)→(0,2)→(0,0) — edges cross at (1,1)
+    df = daft.from_pydict({"w": ["POLYGON((0 0, 2 2, 2 0, 0 2, 0 0))"]})
+    result = df.select(st_isvalid(st_geomfromtext(daft.col("w"))).alias("v")).to_pydict()
+    assert result["v"][0] is False
+
+
+def test_st_isvalid_sql_parity():
+    """SQL st_isvalid should match Python result for both valid and invalid geometries."""
+    df = daft.from_pydict({
+        "w": [
+            "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",   # valid square
+            "POLYGON((0 0, 2 2, 2 0, 0 2, 0 0))",   # bowtie → invalid
+        ]
+    })
+    # Python
+    py_result = df.select(
+        st_isvalid(st_geomfromtext(daft.col("w"))).alias("v")
+    ).to_pydict()
+    # SQL
+    sql_result = daft.sql(
+        "SELECT st_isvalid(st_geomfromtext(w)) AS v FROM df"
+    ).to_pydict()
+    assert py_result["v"] == [True, False]
+    assert sql_result["v"] == [True, False]

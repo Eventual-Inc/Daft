@@ -82,5 +82,6 @@ impl FunctionModule for SpatialFunctions {
         parent.add_fn(StGeomFromText);
         parent.add_fn(StGeomFromGeoJson);
         parent.add_fn(StGeoJsonFromGeom);
+        parent.add_fn(StBuffer);
     }
 }

@@ -117,23 +117,26 @@ impl SQLFunction for SQLStBuffer {
         }
         let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
         let distance_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
-        let distance = distance_expr
+        // Validate that distance is a numeric literal at plan time
+        let _ = distance_expr
             .as_literal()
-            .and_then(|l| l.as_f64())
+            .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
             .ok_or_else(|| crate::error::PlannerError::invalid_operation(
                 "st_buffer: distance must be a numeric literal",
             ))?;
+        // Pass distance as a trailing positional arg so StBuffer (unit struct) can read it
         Ok(BuiltinScalarFn {
-            func: BuiltinScalarFnVariant::Sync(Arc::new(StBuffer {
-                distance: ordered_float::OrderedFloat(distance),
-            })),
-            inputs: FunctionArgs::new_unchecked(vec![daft_dsl::functions::FunctionArg::unnamed(geom)]),
+            func: BuiltinScalarFnVariant::Sync(Arc::new(StBuffer)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                daft_dsl::functions::FunctionArg::unnamed(geom),
+                daft_dsl::functions::FunctionArg::unnamed(distance_expr),
+            ]),
         }
         .into())
     }
 
     fn docstrings(&self, _alias: &str) -> String {
-        "Returns a geometry expanded by the given distance.".to_string()
+        "Returns a geometry expanded by the given distance (planar Cartesian).".to_string()
     }
 }
 
