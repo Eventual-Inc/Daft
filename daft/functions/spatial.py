@@ -180,7 +180,16 @@ def st_distance(geom_a: Expression, geom_b: Expression) -> Expression:
 
 
 def st_geomfromtext(wkt: Expression) -> Expression:
-    """Parse a Well-Known Text (WKT) string and return a WKB geometry."""
+    """Parse a Well-Known Text (WKT) string and return a WKB geometry.
+
+    Args:
+        wkt: A Utf8 column of WKT geometry strings (e.g. ``'POINT(1 2)'``,
+            ``'POLYGON((0 0,1 0,1 1,0 1,0 0))'``).
+
+    Returns:
+        Geometry (WKB) column.  Returns null for rows where the input is null
+        or the WKT string cannot be parsed as a valid geometry.
+    """
     return Expression._call_builtin_scalar_fn("st_geomfromtext", wkt)
 
 

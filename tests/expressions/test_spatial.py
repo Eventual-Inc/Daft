@@ -7,6 +7,7 @@ import pytest
 
 import daft
 import daft.functions
+from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext
 
 
 def _great_circle_distance(
@@ -191,8 +192,6 @@ def test_great_circle_distance_sql_smoke() -> None:
 
 # ── Spatial predicate tests ──────────────────────────────────────────────────
 
-from daft.functions import st_touches, st_disjoint, st_equals, st_geomfromtext  # noqa: E402
-
 
 def test_st_disjoint_and_touches():
     # two unit squares sharing an edge → touch, not disjoint
@@ -212,3 +211,27 @@ def test_st_equals():
         st_equals(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("a"))).alias("e"),
     ).to_pydict()
     assert df["e"] == [True]
+
+
+def test_st_crosses():
+    # A line that crosses the polygon boundary (enters the interior) → True
+    line_crossing = "LINESTRING(-1 1, 3 1)"
+    polygon = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    # A line entirely outside → False
+    line_outside = "LINESTRING(5 5, 6 6)"
+    df = daft.from_pydict({"line": [line_crossing, line_outside], "poly": [polygon, polygon]}).select(
+        st_crosses(st_geomfromtext(daft.col("line")), st_geomfromtext(daft.col("poly"))).alias("c"),
+    ).to_pydict()
+    assert df["c"] == [True, False]
+
+
+def test_st_overlaps():
+    # Two partially overlapping same-dimension polygons → True
+    poly_a = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    poly_b = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
+    # poly_a fully contains poly_small — not an overlap (containment) → False
+    poly_small = "POLYGON((0.5 0.5,1 0.5,1 1,0.5 1,0.5 0.5))"
+    df = daft.from_pydict({"a": [poly_a, poly_a], "b": [poly_b, poly_small]}).select(
+        st_overlaps(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("o"),
+    ).to_pydict()
+    assert df["o"] == [True, False]
