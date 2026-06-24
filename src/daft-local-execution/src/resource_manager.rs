@@ -91,6 +91,11 @@ pub(crate) trait SpillableBuckets {
 /// pool admits the total. `cap` (per-operator deprecated cap) forces spilling once `held` would
 /// exceed it even if the pool has room. Never blocks: if nothing can be spilled, returns with a
 /// bounded (one-morsel) overshoot.
+///
+/// Note: because [`MemoryReservation::try_grow`] is all-or-nothing, an operator may hold more
+/// resident data than it could charge when the pool is contended (another concurrent operator
+/// holds the pool). The shared spill pool is therefore a *soft/pressure* bound that drives
+/// spill decisions, not a hard cap on the total aggregate in-memory bytes across all operators.
 pub(crate) fn reconcile_reservation<S: SpillableBuckets>(
     state: &mut S,
     reservation: &mut MemoryReservation,

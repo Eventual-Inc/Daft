@@ -92,6 +92,9 @@ impl DedupState {
     }
 }
 
+/// Maximum recursive sub-partitioning depth for an oversized dedup bucket at finalize.
+const MAX_DEDUP_RECURSION: u64 = 4;
+
 /// Adapter so `reconcile_reservation` can spill dedup buckets. Dedup is idempotent, so spilled
 /// partially-deduped batches are re-deduped against in-memory ones at finalize.
 struct DedupBuckets<'a> {
@@ -198,6 +201,11 @@ impl BlockingSink for DedupSink {
     ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
+        // No spill → usize::MAX budget → no recursion (identical to previous behavior).
+        let budget = match &self.spill_config {
+            Some(sc) => (sc.pool_bytes / num_partitions.max(1)).max(1),
+            None => usize::MAX,
+        };
         spawner
             .spawn(
                 async move {
@@ -242,10 +250,7 @@ impl BlockingSink for DedupSink {
                                     }
                                 }
                             }
-                            if pieces.is_empty() {
-                                return Ok::<Option<MicroPartition>, DaftError>(None);
-                            }
-                            Ok(Some(MicroPartition::concat(pieces)?.dedup(&columns)?))
+                            combine_deduped(pieces, &columns, budget, 0)
                         });
                     }
                     let mut results = vec![];
@@ -289,5 +294,96 @@ impl BlockingSink for DedupSink {
             self.spill_config.as_ref().map(|sc| sc.spill_dirs.clone()),
             self.spill_config.as_ref().and_then(|sc| sc.cap()),
         ))
+    }
+}
+
+/// Concatenate + dedup `pieces` for one bucket. If the combined size exceeds `budget`, recursively
+/// sub-partition by the dedup `columns` (sub-buckets hold disjoint key groups, so dedup is exact)
+/// with a per-level hash seed, bounding peak memory. Returns `None` if empty.
+fn combine_deduped(
+    pieces: Vec<MicroPartition>,
+    columns: &[BoundExpr],
+    budget: usize,
+    seed: u64,
+) -> DaftResult<Option<MicroPartition>> {
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    let total: usize = pieces.iter().map(MicroPartition::size_bytes).sum();
+    if seed >= MAX_DEDUP_RECURSION || total <= budget.max(1) {
+        return Ok(Some(MicroPartition::concat(pieces)?.dedup(columns)?));
+    }
+    let sub_n = ((total / budget.max(1)) + 1).clamp(2, 64);
+    let mut subs: Vec<Vec<MicroPartition>> = (0..sub_n).map(|_| vec![]).collect();
+    for piece in pieces {
+        for (i, sub) in piece
+            .partition_by_hash_seeded(columns, sub_n, seed)?
+            .into_iter()
+            .enumerate()
+        {
+            if sub.len() > 0 {
+                subs[i].push(sub);
+            }
+        }
+    }
+    let mut results = vec![];
+    for sub in subs {
+        if let Some(c) = combine_deduped(sub, columns, budget, seed + 1)? {
+            results.push(c);
+        }
+    }
+    if results.is_empty() {
+        Ok(None)
+    } else {
+        // Sub-buckets hold disjoint keys, so concatenation is the combined deduped result.
+        Ok(Some(MicroPartition::concat(results)?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::prelude::{DataType, Field, Int32Array, Schema};
+    use daft_core::series::IntoSeries;
+    use daft_dsl::expr::bound_col;
+    use daft_dsl::expr::bound_expr::BoundExpr;
+    use daft_micropartition::MicroPartition;
+    use daft_recordbatch::RecordBatch;
+
+    use super::combine_deduped;
+
+    /// Build a single-column MicroPartition of Int32 values from `vals`.
+    fn make_mp(vals: &[i32]) -> MicroPartition {
+        let field = Field::new("id", DataType::Int32);
+        let series = Int32Array::from_field_and_values(field.clone(), vals.iter().copied()).into_series();
+        let schema = Arc::new(Schema::new(vec![field]));
+        let rb = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], vals.len());
+        MicroPartition::new_loaded(schema.into(), vec![rb].into(), None)
+    }
+
+    /// Bound expression referencing column index 0 ("id").
+    fn bound_id_col() -> BoundExpr {
+        BoundExpr::new_unchecked(bound_col(0, Field::new("id", DataType::Int32)))
+    }
+
+    #[test]
+    fn combine_deduped_recursion_branch_exact_distinct_set() {
+        // Each piece covers the full range 0..50 — 5 pieces → 250 rows, 50 distinct.
+        // Budget is set to 1 byte to force recursion into combine_deduped's sub-partitioning path.
+        let columns = vec![bound_id_col()];
+        let vals: Vec<i32> = (0..50).collect();
+        let pieces: Vec<MicroPartition> = (0..5).map(|_| make_mp(&vals)).collect();
+
+        let result = combine_deduped(pieces, &columns, 1, 0)
+            .expect("combine_deduped must succeed")
+            .expect("non-empty input must yield Some");
+
+        assert_eq!(
+            result.len(),
+            50,
+            "Expected exactly 50 distinct rows, got {}",
+            result.len()
+        );
     }
 }
