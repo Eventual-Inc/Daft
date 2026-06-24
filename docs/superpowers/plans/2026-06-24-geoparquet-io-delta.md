@@ -39,7 +39,7 @@
 
 ---
 
-## Task 1: Shared geo-metadata module (Rust + PyO3)
+## Task 1: Shared geo-metadata module (Rust)
 
 **Files:**
 - Create: `src/daft-parquet/src/geo_metadata.rs`
