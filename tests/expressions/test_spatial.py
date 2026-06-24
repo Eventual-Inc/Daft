@@ -250,3 +250,52 @@ def test_st_overlaps():
         st_overlaps(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("o"),
     ).to_pydict()
     assert df["o"] == [True, False]
+
+
+def test_sql_geodesic_distance():
+    # Verify the SQL path exercises geodesic distance via SQLStMeasureBinary.
+    # POINT(0 0) = lon=0,lat=0; POINT(0 1) = lon=0,lat=1 (1 degree latitude apart).
+    # Planar Euclidean distance = 1.0 coordinate unit.
+    # WGS84 geodesic distance ≈ 110574 m (geo crate / geographiclib value at equator).
+    base = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(0 1)"]})  # noqa: F841
+    geo_out = daft.sql(
+        "SELECT st_distance(st_geomfromtext(a), st_geomfromtext(b), true) AS d FROM base"
+    ).to_pydict()
+    assert abs(geo_out["d"][0] - 110574.0) < 300.0, f"geodesic SQL distance: {geo_out['d'][0]}"
+
+    planar_out = daft.sql(
+        "SELECT st_distance(st_geomfromtext(a), st_geomfromtext(b)) AS d FROM base"
+    ).to_pydict()
+    assert abs(planar_out["d"][0] - 1.0) < 1e-9, f"planar SQL distance: {planar_out['d'][0]}"
+
+
+def test_sql_geodesic_length():
+    # Verify SQL path for st_length with use_spheroid=true.
+    # A linestring spanning 1 degree of latitude should have geodesic length ~110574 m.
+    # Planar length = 1.0 coordinate unit.
+    ls = daft.from_pydict({"geom": ["LINESTRING(0 0, 0 1)"]})  # noqa: F841
+    geo_out = daft.sql(
+        "SELECT st_length(st_geomfromtext(geom), true) AS l FROM ls"
+    ).to_pydict()
+    assert abs(geo_out["l"][0] - 110574.0) < 300.0, f"geodesic SQL length: {geo_out['l'][0]}"
+
+    planar_out = daft.sql(
+        "SELECT st_length(st_geomfromtext(geom)) AS l FROM ls"
+    ).to_pydict()
+    assert abs(planar_out["l"][0] - 1.0) < 1e-9, f"planar SQL length: {planar_out['l'][0]}"
+
+
+def test_geodesic_length_polygon_returns_zero():
+    # Verify geodesic st_length returns 0.0 for polygons, matching the planar branch.
+    # Users needing geodesic perimeter of polygons should use st_area (GeodesicArea).
+    poly = "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
+    df = daft.from_pydict({"g": [poly]}).select(
+        st_geomfromtext(daft.col("g")).alias("geom")
+    )
+    import daft.functions as F
+    result = df.select(
+        F.st_length(daft.col("geom")).alias("planar"),
+        F.st_length(daft.col("geom"), use_spheroid=True).alias("geodesic"),
+    ).to_pydict()
+    assert result["planar"][0] == 0.0, f"planar polygon length should be 0.0, got {result['planar'][0]}"
+    assert result["geodesic"][0] == 0.0, f"geodesic polygon length should be 0.0, got {result['geodesic'][0]}"

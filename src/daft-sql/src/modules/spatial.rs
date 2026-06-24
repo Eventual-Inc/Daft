@@ -262,7 +262,7 @@ impl SQLFunction for SQLStMeasureBinary {
         ];
         if use_spheroid {
             args.push(daft_dsl::functions::FunctionArg::named(
-                Arc::from("use_spheroid"),
+                "use_spheroid",
                 lit(use_spheroid),
             ));
         }

@@ -10,6 +10,55 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared use_spheroid helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Extract an optional boolean arg from `FunctionArgs<Series>` by positional index or name.
+///
+/// Used by `st_area`, `st_length`, and `st_distance` to read their `use_spheroid` argument.
+pub fn read_bool_arg(
+    inputs: &FunctionArgs<Series>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<bool> {
+    let opt = inputs.optional((pos, name))?;
+    match opt {
+        None => Ok(false),
+        Some(s) => {
+            if s.data_type().is_boolean() && s.len() == 1 {
+                Ok(s.bool().unwrap().get(0).unwrap_or(false))
+            } else {
+                Err(DaftError::ValueError(format!(
+                    "{fn_name}: {name} must be a boolean literal"
+                )))
+            }
+        }
+    }
+}
+
+/// Extract an optional boolean arg from `FunctionArgs<ExprRef>` by positional index or name.
+///
+/// Used at planning time (`get_return_field`) by `st_area`, `st_length`, and `st_distance`.
+pub fn read_bool_arg_expr(
+    inputs: &FunctionArgs<ExprRef>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<bool> {
+    let opt = inputs.optional((pos, name))?;
+    match opt {
+        None => Ok(false),
+        Some(expr) => expr
+            .as_literal()
+            .and_then(|l| l.as_bool())
+            .ok_or_else(|| {
+                DaftError::ValueError(format!("{fn_name}: {name} must be a boolean literal"))
+            }),
+    }
+}
 use geo::Geometry;
 use wkb::wkb_to_geom;
 

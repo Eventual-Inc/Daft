@@ -57,7 +57,12 @@ def st_area(geom: Expression, use_spheroid: bool = False) -> Expression:
 
 
 def st_length(geom: Expression, use_spheroid: bool = False) -> Expression:
-    """Return the length of a geometry.
+    """Return the length of line geometries.
+
+    Supported geometry types: ``Line``, ``LineString``, ``MultiLineString``.
+    All other types (``Point``, ``Polygon``, ``MultiPolygon``, etc.) return 0.0 —
+    to obtain the geodesic perimeter of a polygon use ``st_area`` with
+    ``use_spheroid=True`` (``GeodesicArea.geodesic_perimeter``).
 
     Args:
         geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
@@ -65,8 +70,8 @@ def st_length(geom: Expression, use_spheroid: bool = False) -> Expression:
             assumed). Default False uses planar Euclidean length (coordinate units).
 
     Returns:
-        Float64 column. For points returns 0, for polygons returns perimeter length.
-        Planar by default; WGS84 geodesic meters when use_spheroid=True.
+        Float64 column. Returns 0.0 for Points, Polygons, and all other non-line types.
+        Planar (coordinate units) by default; WGS84 geodesic meters when use_spheroid=True.
     """
     if use_spheroid:
         return Expression._call_builtin_scalar_fn("st_length", geom, use_spheroid)
