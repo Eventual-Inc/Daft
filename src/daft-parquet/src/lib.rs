@@ -1,6 +1,7 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod geo_metadata;
 mod helpers;
 pub mod metadata;
 mod metadata_adapter;
