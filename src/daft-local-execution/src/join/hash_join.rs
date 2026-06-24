@@ -236,10 +236,10 @@ impl SpillableBuckets for JoinBuildBuckets<'_> {
             return Ok(false);
         };
         let batches = std::mem::take(&mut self.per_partition_tables[p]);
-        self.per_partition_size_bytes[p] = 0;
         for b in &batches {
             self.spill_writer.write_batch(p, b)?;
         }
+        self.per_partition_size_bytes[p] = 0;
         Ok(true)
     }
 }
