@@ -25,8 +25,6 @@ use daft_recordbatch::RecordBatch;
 /// Configuration for spill-to-disk.
 #[derive(Clone, Debug)]
 pub(crate) struct SpillConfig {
-    /// DEPRECATED (removed once all operators use the pool): legacy per-operator budget.
-    pub threshold_bytes: usize,
     /// Directories to create spill files in (round-robined per bucket/run).
     pub spill_dirs: Vec<String>,
     /// Shared spill pool size; used only to size `partition_count` and finalize recursion budgets.
@@ -38,7 +36,6 @@ pub(crate) struct SpillConfig {
 impl SpillConfig {
     pub fn new(pool_bytes: usize, spill_dirs: Vec<String>) -> Self {
         Self {
-            threshold_bytes: pool_bytes,
             spill_dirs,
             pool_bytes,
             cap_bytes: None,
@@ -316,7 +313,6 @@ mod tests {
     fn test_partition_count_from_pool_bytes() {
         // 1 GiB pool / 256 MiB target = 4 partitions.
         let sc = SpillConfig {
-            threshold_bytes: 0,
             spill_dirs: vec!["/tmp".to_string()],
             pool_bytes: 1024 * 1024 * 1024,
             cap_bytes: None,
@@ -324,7 +320,6 @@ mod tests {
         assert_eq!(sc.partition_count(), 4);
         // Tiny pool floors at 2.
         let sc2 = SpillConfig {
-            threshold_bytes: 0,
             spill_dirs: vec!["/tmp".to_string()],
             pool_bytes: 1,
             cap_bytes: None,

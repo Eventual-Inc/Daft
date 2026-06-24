@@ -180,6 +180,7 @@ impl MemoryManager {
 
     /// Total memory budget (bytes) the engine is allowed to use, from `DAFT_MEMORY_LIMIT` or
     /// system memory. Used to auto-derive spill thresholds for blocking sinks.
+    #[allow(dead_code)]
     pub fn total_bytes(&self) -> u64 {
         self.total_bytes
     }
@@ -187,6 +188,12 @@ impl MemoryManager {
     /// Current configured size of the resident spill pool (bytes).
     pub fn spill_pool_bytes(&self) -> u64 {
         self.state.lock().unwrap().spill_pool_bytes
+    }
+
+    /// Bytes of the spill pool currently held across all live reservations (diagnostics).
+    #[allow(dead_code)]
+    pub fn spill_used_bytes(&self) -> u64 {
+        self.state.lock().unwrap().spill_used_bytes
     }
 
     /// Override the spill pool size (last-writer-wins; called at pipeline build from config).
@@ -468,6 +475,18 @@ mod tests {
         assert_eq!(f.spilled, vec![0]); // largest spilled first
         assert_eq!(f.resident_bytes(), 70); // 40 + 30 remain
         assert_eq!(r.held(), 70); // exactly charged
+    }
+
+    #[test]
+    fn test_spill_used_bytes_tracks_reservations() {
+        let manager = Arc::new(MemoryManager::new());
+        manager.set_spill_pool_bytes(1000);
+        let mut r = manager.reservation();
+        assert_eq!(manager.spill_used_bytes(), 0);
+        assert!(r.try_grow(300));
+        assert_eq!(manager.spill_used_bytes(), 300);
+        drop(r);
+        assert_eq!(manager.spill_used_bytes(), 0);
     }
 
     #[test]

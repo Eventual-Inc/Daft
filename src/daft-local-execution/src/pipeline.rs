@@ -438,24 +438,6 @@ pub fn translate_physical_plan_to_pipeline(
     Ok((pipeline_node, input_senders))
 }
 
-/// Resolve a blocking-sink spill threshold (bytes). `explicit` is the user override:
-/// `Some(0)` disables spilling, `Some(n)` sets an explicit threshold, `None` auto-derives ~30% of
-/// the engine memory budget divided across `divisor` concurrent buffers (floored at 64 MiB).
-fn auto_spill_threshold(explicit: Option<usize>, divisor: usize) -> Option<usize> {
-    const SPILL_FRACTION: f64 = 0.3;
-    const MIN_THRESHOLD_BYTES: usize = 64 * 1024 * 1024;
-    match explicit {
-        Some(0) => None,
-        Some(n) => Some(n),
-        None => {
-            let total = crate::resource_manager::get_or_init_memory_manager().total_bytes();
-            let derived =
-                ((total as f64 * SPILL_FRACTION) as usize / divisor.max(1)).max(MIN_THRESHOLD_BYTES);
-            Some(derived)
-        }
-    }
-}
-
 /// Build the optional `SpillConfig` for one operator. Applies the global pool size from config to
 /// the shared memory manager, honours the per-operator opt-out (`Some(0)` → disabled) and the
 /// deprecated positive-value cap.
