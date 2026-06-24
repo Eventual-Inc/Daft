@@ -36,8 +36,6 @@ def test_hdf5_file_standalone(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
     assert file.keys() == ["action", "observation", "values"]
     assert file.keys(group="action") == ["proprio"]
-    with file.open_h5py() as h5:
-        assert list(h5["action"].keys()) == ["proprio"]
 
 
 def test_hdf5_file_read_many_and_attrs(sample_hdf5_path):
