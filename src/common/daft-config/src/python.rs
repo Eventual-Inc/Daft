@@ -128,6 +128,7 @@ impl PyDaftExecutionConfig {
         sort_spill_threshold_bytes=None,
         agg_spill_threshold_bytes=None,
         window_spill_threshold_bytes=None,
+        repartition_spill_threshold_bytes=None,
     ))]
     fn with_config_values(
         &self,
@@ -170,6 +171,7 @@ impl PyDaftExecutionConfig {
         sort_spill_threshold_bytes: Option<usize>,
         agg_spill_threshold_bytes: Option<usize>,
         window_spill_threshold_bytes: Option<usize>,
+        repartition_spill_threshold_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -339,6 +341,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(window_spill_threshold_bytes) = window_spill_threshold_bytes {
             config.window_spill_threshold_bytes = Some(window_spill_threshold_bytes);
+        }
+
+        if let Some(repartition_spill_threshold_bytes) = repartition_spill_threshold_bytes {
+            config.repartition_spill_threshold_bytes = Some(repartition_spill_threshold_bytes);
         }
 
         Ok(Self {
@@ -522,6 +528,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn window_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.config.window_spill_threshold_bytes)
+    }
+
+    #[getter]
+    fn repartition_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.repartition_spill_threshold_bytes)
     }
     
     #[getter]

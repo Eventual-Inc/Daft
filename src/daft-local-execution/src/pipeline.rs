@@ -1759,6 +1759,8 @@ fn physical_plan_to_pipeline(
                     let (shuffle_server, shuffle_address) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
+                    let spill_threshold =
+                        auto_spill_threshold(cfg.repartition_spill_threshold_bytes, 1);
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         schema.clone(),
@@ -1768,6 +1770,7 @@ fn physical_plan_to_pipeline(
                         compression.clone(),
                         shuffle_server,
                         shuffle_address,
+                        spill_threshold,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),

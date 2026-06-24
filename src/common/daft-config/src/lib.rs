@@ -168,6 +168,12 @@ pub struct DaftExecutionConfig {
     /// Interpreted as the total budget across all hash buckets. `None` auto-derives from the engine
     /// memory budget (on by default). `Some(0)` disables.
     pub window_spill_threshold_bytes: Option<usize>,
+    /// Spill threshold (bytes) for the `RepartitionSink` (Flight backend) `post_repartitioned`
+    /// buffer, spilled to `flight_shuffle_dirs`. The buffer accumulates all hash-partitioned
+    /// batches in memory until finalize; without spilling this grows to the full task dataset size
+    /// and causes OOM for large inputs. `None` auto-derives ~30 % of the engine memory budget
+    /// (spilling on by default). `Some(0)` disables spilling (legacy, pure in-memory behaviour).
+    pub repartition_spill_threshold_bytes: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -219,6 +225,7 @@ impl Default for DaftExecutionConfig {
             sort_spill_threshold_bytes: None,
             agg_spill_threshold_bytes: None,
             window_spill_threshold_bytes: None,
+            repartition_spill_threshold_bytes: None,
         }
     }
 }
@@ -238,6 +245,7 @@ impl DaftExecutionConfig {
     const ENV_DAFT_SORT_SPILL_THRESHOLD: &'static str = "DAFT_SORT_SPILL_THRESHOLD";
     const ENV_DAFT_AGG_SPILL_THRESHOLD: &'static str = "DAFT_AGG_SPILL_THRESHOLD";
     const ENV_DAFT_WINDOW_SPILL_THRESHOLD: &'static str = "DAFT_WINDOW_SPILL_THRESHOLD";
+    const ENV_DAFT_REPARTITION_SPILL_THRESHOLD: &'static str = "DAFT_REPARTITION_SPILL_THRESHOLD";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -334,6 +342,14 @@ impl DaftExecutionConfig {
                 cfg.window_spill_threshold_bytes = Some(parsed);
             } else {
                 eprintln!("Invalid DAFT_WINDOW_SPILL_THRESHOLD value: {val}, ignoring");
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_REPARTITION_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.repartition_spill_threshold_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_REPARTITION_SPILL_THRESHOLD value: {val}, ignoring");
             }
         }
 
