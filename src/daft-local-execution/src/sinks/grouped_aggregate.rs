@@ -212,12 +212,11 @@ impl GroupedAggregateState {
                 cap,
                 ..
             } = self;
-            let dirs = spill_dirs.as_ref().unwrap().clone();
             let decomposable = !params.partial_agg_exprs.is_empty();
             let mut buckets = AggBuckets {
                 inner_states,
                 spill_writer,
-                spill_dirs: dirs,
+                spill_dirs: spill_dirs.as_ref().unwrap().as_slice(),
                 decomposable,
                 params,
             };
@@ -288,7 +287,7 @@ impl GroupedAggregateState {
 struct AggBuckets<'a> {
     inner_states: &'a mut [Option<SinglePartitionAggregateState>],
     spill_writer: &'a mut Option<SpillWriter>,
-    spill_dirs: Vec<String>,
+    spill_dirs: &'a [String],
     decomposable: bool,
     params: &'a GroupedAggregateParams,
 }
@@ -340,6 +339,7 @@ impl SpillableBuckets for AggBuckets<'_> {
             let unagg = std::mem::take(&mut st.unaggregated);
             st.unaggregated_size = 0;
             st.unagg_bytes = 0;
+            st.partial_bytes = 0;
             if unagg.is_empty() {
                 return Ok(true);
             }
@@ -357,7 +357,7 @@ impl SpillableBuckets for AggBuckets<'_> {
                 let w = SpillWriter::new(
                     num_buckets,
                     &schema,
-                    self.spill_dirs.clone(),
+                    self.spill_dirs.to_vec(),
                     "daft_agg_spill_",
                 )?;
                 *self.spill_writer = Some(w);
@@ -505,7 +505,7 @@ impl BlockingSink for GroupedAggregateSink {
         let num_partitions = self.num_partitions();
         // No spill => no recursion (unbounded budget keeps the original single-pass behavior).
         let recursion_budget = match &self.spill_config {
-            Some(sc) => (sc.pool_bytes / self.num_partitions().max(1)).max(1),
+            Some(sc) => (sc.pool_bytes / num_partitions.max(1)).max(1),
             None => usize::MAX,
         };
         spawner
