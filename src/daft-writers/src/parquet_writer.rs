@@ -7,6 +7,7 @@ use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use daft_schema::geo_metadata::build_geo_metadata;
 #[allow(deprecated)]
 use parquet::{
     arrow::{
@@ -15,6 +16,7 @@ use parquet::{
     },
     basic::Compression,
     file::{
+        metadata::KeyValue,
         properties::{WriterProperties, WriterVersion},
         writer::SerializedFileWriter,
     },
@@ -53,10 +55,13 @@ pub(crate) fn parse_compression(s: &str) -> DaftResult<Compression> {
 ///
 /// `default_compression` applies to every column unless overridden by `column_compression`.
 /// Each entry in `column_compression` is `(dot-separated column path, parsed compression)`.
+/// `geo_metadata`, when `Some`, is injected as the `"geo"` key-value entry in the file footer
+/// before the Arrow schema is appended (so both keys coexist in the metadata).
 fn native_parquet_writer_properties(
     arrow_schema: &arrow_schema::Schema,
     default_compression: Compression,
     column_compression: &[(String, Compression)],
+    geo_metadata: Option<&str>,
 ) -> WriterProperties {
     let mut builder = WriterProperties::builder()
         .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -64,6 +69,11 @@ fn native_parquet_writer_properties(
     for (path, compression) in column_compression {
         let parts: Vec<String> = path.split('.').map(str::to_string).collect();
         builder = builder.set_column_compression(ColumnPath::new(parts), *compression);
+    }
+    // Inject geo metadata before build so add_encoded_arrow_schema_to_metadata can append ARROW:schema
+    if let Some(geo) = geo_metadata {
+        let kv = KeyValue::new("geo".to_string(), geo.to_string());
+        builder = builder.set_key_value_metadata(Some(vec![kv]));
     }
     let mut props = builder.build();
     add_encoded_arrow_schema_to_metadata(arrow_schema, &mut props);
@@ -86,7 +96,7 @@ pub(crate) fn native_parquet_writer_supported(
 
     // Schema convertibility is independent of the chosen compression, so use defaults here.
     let writer_properties =
-        native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[]);
+        native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[], None);
     Ok(ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
         .convert(&arrow_schema)
@@ -101,6 +111,8 @@ pub(crate) fn create_native_parquet_writer(
     io_config: Option<IOConfig>,
     compression: Option<&str>,
     column_compression: Option<&[(String, String)]>,
+    crs: Option<&str>,
+    geometry_columns: Option<&[String]>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
@@ -125,10 +137,12 @@ pub(crate) fn create_native_parquet_writer(
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
     let arrow_schema = Arc::new(schema.to_arrow()?.into());
+    let geo_meta = build_geo_metadata(schema.as_ref(), crs, geometry_columns);
     let writer_properties = native_parquet_writer_properties(
         &arrow_schema,
         default_compression,
         &parsed_column_compression,
+        geo_meta.as_deref(),
     );
 
     let parquet_schema = ArrowSchemaConverter::new()
@@ -460,7 +474,7 @@ mod tests {
                 .is_some_and(|n| n == "arrow.uuid")
         );
 
-        let props = native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[]);
+        let props = native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[], None);
         let kv = props
             .key_value_metadata()
             .expect("expected key_value_metadata");
@@ -503,6 +517,7 @@ mod tests {
             &arrow_schema,
             Compression::ZSTD(Default::default()),
             &overrides,
+            None,
         );
 
         assert_eq!(
@@ -524,7 +539,7 @@ mod tests {
             .extension_type_name()
             .map(str::to_string);
 
-        let props = native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[]);
+        let props = native_parquet_writer_properties(&arrow_schema, Compression::SNAPPY, &[], None);
         let mut buffer = Vec::new();
         {
             let mut writer = ArrowWriter::try_new(&mut buffer, arrow_schema.clone(), Some(props))

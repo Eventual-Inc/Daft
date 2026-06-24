@@ -1063,6 +1063,8 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         column_compression: dict[str, str] | None = None,
+        crs: str | None = None,
+        geometry_columns: list[str] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
@@ -1076,6 +1078,8 @@ class DataFrame:
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
+            crs (Optional[str], optional): CRS identifier to embed in GeoParquet `"geo"` metadata (e.g. `"OGC:CRS84"`). When `None`, the CRS key is omitted, which GeoParquet interprets as the default OGC:CRS84 (lon/lat WGS84). Only relevant when the DataFrame contains Geometry columns. Defaults to None.
+            geometry_columns (Optional[List[str]], optional): explicit list of geometry column names to include in GeoParquet metadata. When `None`, all columns with a Geometry dtype are included automatically. Defaults to None.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -1106,9 +1110,11 @@ class DataFrame:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
         file_format_option: PyFormatSinkOption | None = None
-        if column_compression:
+        if column_compression or crs is not None or geometry_columns is not None:
             file_format_option = PyFormatSinkOption.parquet(
-                column_compression=list(column_compression.items()),
+                column_compression=list(column_compression.items()) if column_compression else None,
+                crs=crs,
+                geometry_columns=geometry_columns,
             )
 
         builder = self._builder.write_tabular(
