@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import json
-import time
 
 from daft.datatype import DataType
 from daft.schema import Schema
 
 _GEOPARQUET_VERSION = "1.1.0"
 GEO_METADATA_KEY = "geo"  # parquet footer key
-GEO_DELTA_PROPERTY = "daft.geo"  # delta table-configuration key
+GEO_FIELD_METADATA_KEY = "daft.geo"  # Arrow field metadata key (persisted via delta-rs field metadata)
 
 
 def build_geo_metadata(
@@ -60,8 +59,8 @@ def build_geo_metadata(
 def detect_geo_columns(geo_json: str, schema: Schema) -> list[str]:
     """Return column names that should be re-typed to ``DataType.geometry()``.
 
-    Parses *geo_json* (value of the ``daft.geo`` table property) and returns
-    column names whose:
+    Parses *geo_json* (value of the ``daft.geo`` field metadata or table property)
+    and returns column names whose:
     - encoding is ``"WKB"`` (case-insensitive), and
     - current dtype in *schema* is ``Binary`` or ``Geometry`` (both are WKB-
       compatible).
@@ -84,68 +83,36 @@ def detect_geo_columns(geo_json: str, schema: Schema) -> list[str]:
     ]
 
 
-def _write_geo_metadata_to_delta_log(table_uri: str, geo_json: str) -> None:
-    """Append a metadata-only Delta commit that stores *geo_json* in the table configuration.
+def attach_geo_field_metadata(schema: "pa.Schema", geo_json: str) -> "pa.Schema":
+    """Return a copy of *schema* with geometry columns annotated with *geo_json*.
 
-    The delta-kernel (deltalake >= 1.0.0) validates known table properties at
-    write time and rejects unknown keys like ``daft.geo``.  The workaround is to
-    write the commit entry directly into the ``_delta_log`` directory, bypassing
-    kernel validation.  The delta log *reader* happily returns arbitrary string
-    values from ``configuration``.
+    For each column named in the ``"columns"`` dict of *geo_json*, the
+    corresponding PyArrow field gets ``{b"daft.geo": geo_json.encode()}``
+    added to its field metadata.  This survives the delta-rs 1.6 write→read
+    round-trip through the normal ``write_deltalake`` API and is remote-safe.
 
-    This function:
-    1. Opens the existing DeltaTable to read current metadata (id, schema, etc.).
-    2. Writes a new ``<version+1>`` JSON log file containing a ``metaData`` block
-       with ``configuration = {"daft.geo": geo_json}``.
-
-    Thread/process safety: this is a best-effort single-writer operation; it is
-    the caller's responsibility to ensure no concurrent writers are racing on the
-    same table version.  For the round-trip use-case (fresh write then annotate)
-    this is safe.
+    Non-geometry fields are left untouched.  Returns *schema* unchanged if
+    *geo_json* cannot be parsed or no matching fields exist.
     """
-    import os
-
-    from deltalake import DeltaTable
+    import pyarrow as pa
 
     try:
-        t = DeltaTable(table_uri)
-    except Exception:
-        # Table can't be opened — skip silently so the primary write is not
-        # rolled back.
-        return
+        meta = json.loads(geo_json)
+        geo_col_names: set[str] = set(meta.get("columns", {}).keys())
+    except (ValueError, KeyError, TypeError):
+        return schema
 
-    meta = t.metadata()
-    schema_str = t.schema().to_json()
+    if not geo_col_names:
+        return schema
 
-    log_path = os.path.join(table_uri, "_delta_log")
-    next_version = t.version() + 1
-    log_file = os.path.join(log_path, f"{next_version:020d}.json")
+    geo_json_bytes = geo_json.encode()
+    new_fields = []
+    for i in range(len(schema)):
+        field = schema.field(i)
+        if field.name in geo_col_names:
+            existing_meta = dict(field.metadata or {})
+            existing_meta[b"daft.geo"] = geo_json_bytes
+            field = field.with_metadata(existing_meta)
+        new_fields.append(field)
 
-    commit_info = json.dumps(
-        {
-            "commitInfo": {
-                "timestamp": int(time.time() * 1000),
-                "operation": "SET TBLPROPERTIES",
-                "operationParameters": {"properties": json.dumps({GEO_DELTA_PROPERTY: geo_json})},
-                "engineInfo": "daft",
-            }
-        }
-    )
-    metadata_entry = json.dumps(
-        {
-            "metaData": {
-                "id": meta.id,
-                "name": meta.name,
-                "description": meta.description,
-                "format": {"provider": "parquet", "options": {}},
-                "schemaString": schema_str,
-                "partitionColumns": meta.partition_columns,
-                "createdTime": int(time.time() * 1000),
-                "configuration": {GEO_DELTA_PROPERTY: geo_json},
-            }
-        }
-    )
-
-    with open(log_file, "w") as fh:
-        fh.write(commit_info + "\n")
-        fh.write(metadata_entry + "\n")
+    return pa.schema(new_fields, metadata=schema.metadata)

@@ -1998,6 +1998,19 @@ class DataFrame:
                 if self.schema()[c].dtype == DataType.binary():
                     raise NotImplementedError("Binary partition columns are not yet supported for Delta Lake writes")
 
+        # Attach geo metadata as Arrow field metadata on geometry columns.
+        # This is remote-safe: it goes through the normal write_deltalake / create_table_with_add_actions
+        # API and is preserved by delta-rs in the Delta log schema, surviving a read-back via
+        # DeltaTable.schema().to_arrow().field(name).metadata.
+        # We annotate when creating a new table (table is None) or when overwriting (mode == "overwrite").
+        # Pure appends to an existing table inherit the field metadata already in the table schema.
+        if table is None or mode == "overwrite":
+            from daft.io._geoparquet import attach_geo_field_metadata, build_geo_metadata
+
+            geo_json = build_geo_metadata(self.schema())
+            if geo_json is not None:
+                delta_schema = attach_geo_field_metadata(delta_schema, geo_json)
+
         if checkpoint is not None:
             return self._write_deltalake_with_checkpoint(
                 table=table,
@@ -2092,18 +2105,6 @@ class DataFrame:
                 )
             table.update_incremental()
 
-        # Persist geo metadata to Delta table configuration when Geometry columns are present.
-        # The delta-kernel (deltalake >= 1.0.0) validates known table properties at write time
-        # and rejects unknown keys, so we write the geo property directly to the delta log
-        # as a metadata-only commit after the data commit completes.
-        # This is done for new tables (mode != "append") and for overwrite operations.
-        # Append mode inherits geo metadata from the existing table's configuration.
-        if mode != "append" or table is None:
-            from daft.io._geoparquet import build_geo_metadata, _write_geo_metadata_to_delta_log
-
-            geo_json = build_geo_metadata(self.schema())
-            if geo_json is not None:
-                _write_geo_metadata_to_delta_log(table_uri, geo_json)
 
         with_operations = from_pydict(
             {

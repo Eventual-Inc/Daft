@@ -207,18 +207,27 @@ class DeltaLakeScanOperator(ScanOperator):
         self._storage_config = storage_config
 
         delta_schema = self._table.schema()
-        self._schema = Schema.from_pyarrow_schema(delta_schema_to_pyarrow(delta_schema))
+        arrow_schema = delta_schema_to_pyarrow(delta_schema)
+        self._schema = Schema.from_pyarrow_schema(arrow_schema)
 
-        # Re-type Binary columns to Geometry when a daft.geo table property is present.
-        # The property was written by write_deltalake and holds a GeoParquet 1.1.0 JSON blob.
-        configuration = self._table.metadata().configuration
-        geo_property = configuration.get("daft.geo")
-        if geo_property is not None:
-            try:
-                from daft.io._geoparquet import detect_geo_columns
-                from daft.schema import Field
+        # Re-type Binary columns to Geometry when any Arrow field carries daft.geo field metadata.
+        # The metadata was written by write_deltalake (via attach_geo_field_metadata) and holds a
+        # GeoParquet 1.1.0 JSON blob.  Any one geometry field's metadata holds the full table-level
+        # "geo" JSON, so we read it from the first field that has the key.
+        try:
+            from daft.io._geoparquet import detect_geo_columns
+            from daft.schema import Field
 
-                geo_cols = set(detect_geo_columns(geo_property, self._schema))
+            geo_json: str | None = None
+            for i in range(len(arrow_schema)):
+                field_meta = arrow_schema.field(i).metadata or {}
+                raw = field_meta.get(b"daft.geo")
+                if raw is not None:
+                    geo_json = raw.decode() if isinstance(raw, bytes) else raw
+                    break
+
+            if geo_json is not None:
+                geo_cols = set(detect_geo_columns(geo_json, self._schema))
                 if geo_cols:
                     self._schema = Schema._from_fields(
                         [
@@ -226,10 +235,11 @@ class DeltaLakeScanOperator(ScanOperator):
                             for f in self._schema
                         ]
                     )
-            except Exception:
-                # Lenient: malformed daft.geo → plain read (Binary)
-                pass
+        except Exception:
+            # Lenient: malformed daft.geo field metadata → plain read (Binary)
+            pass
 
+        configuration = self._table.metadata().configuration
         cm_mode = configuration.get("delta.columnMapping.mode", "none").lower()
         if cm_mode not in ("none", "id", "name"):
             raise NotImplementedError(f"Unsupported Delta Lake column mapping mode: {cm_mode!r}")
