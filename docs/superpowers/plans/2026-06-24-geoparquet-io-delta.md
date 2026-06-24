@@ -4,9 +4,9 @@
 
 **Goal:** Read and write GeoParquet (geometry columns as WKB + a `"geo"` file-metadata JSON) in Daft, and round-trip geometry through Delta tables via a persisted `daft.geo` table property.
 
-**Architecture:** A single Rust geo-metadata module (serde model + `build`/`detect`, plus a PyO3 binding) is the source of truth for the GeoParquet `"geo"` JSON. The native Parquet writer injects it into the footer kv-metadata for `Geometry` columns; the Parquet reader parses it and re-types the declared Binary columns to `Geometry` after schema inference. The Python Delta write/read paths reuse the same module to persist/parse the JSON as the Delta table `configuration` key `daft.geo`.
+**Architecture:** A Rust geo-metadata module (serde model + `build`/`detect`) backs the GeoParquet `"geo"` JSON for the Parquet read/write paths: the native Parquet writer injects it into the footer kv-metadata for `Geometry` columns; the Parquet reader parses it and re-types the declared Binary columns to `Geometry` after schema inference. The Delta path is pure Python (delta-rs), so it uses a small mirror Python helper (`daft/io/_geoparquet.py`) to build/parse the same `"geo"` JSON, persisting it as the Delta table `configuration` key `daft.geo`; a cross-consistency test keeps the Python and Rust JSON shapes aligned.
 
-**Tech Stack:** Rust (`daft-parquet`, `daft-writers`, `daft-scan` crates; `serde_json`), arrow-rs `parquet` (WriterProperties / footer kv-metadata), PyO3, Python (`daft/io/_parquet.py`, `daft/io/delta_lake/`, `daft/dataframe/dataframe.py`), the Python `deltalake` (delta-rs) package, `pytest`.
+**Tech Stack:** Rust (`daft-parquet`, `daft-writers`, `daft-scan` crates; `serde_json`), arrow-rs `parquet` (WriterProperties / footer kv-metadata), Python (`daft/io/_parquet.py`, `daft/io/_geoparquet.py`, `daft/io/delta_lake/`, `daft/dataframe/dataframe.py`), the Python `deltalake` (delta-rs) package, `pytest`.
 
 ## Global Constraints
 
@@ -27,8 +27,9 @@
 
 | File | Responsibility | Tasks |
 |---|---|---|
-| `src/daft-parquet/src/geo_metadata.rs` (new) | `GeoMetadata` serde model; `build`/`detect`; PyO3 fns | 1 |
-| `src/daft-parquet/src/lib.rs`, `python.rs` | module decl + PyO3 registration | 1 |
+| `src/daft-parquet/src/geo_metadata.rs` (new) | `GeoMetadata` serde model; `build`/`detect` (Rust, Parquet paths) | 1 |
+| `src/daft-parquet/src/lib.rs` | module declaration | 1 |
+| `daft/io/_geoparquet.py` (new) | Python mirror geo-metadata build/detect for the Delta path | 4 |
 | `src/daft-writers/src/parquet_writer.rs` | inject `"geo"` kv-metadata when Geometry cols | 2 |
 | `src/daft-logical-plan/src/sink_info.rs`, `daft-writers/src/physical.rs`, `daft/dataframe/dataframe.py` | write_parquet `crs`/`geometry_columns` plumbing | 2 |
 | `src/daft-parquet/src/metadata.rs` / `metadata_adapter.rs` | surface footer `"geo"` value | 3 |
@@ -42,14 +43,14 @@
 
 **Files:**
 - Create: `src/daft-parquet/src/geo_metadata.rs`
-- Modify: `src/daft-parquet/src/lib.rs` (`pub mod geo_metadata;`), `src/daft-parquet/src/python.rs` (register PyO3 fns)
+- Modify: `src/daft-parquet/src/lib.rs` (`pub mod geo_metadata;`)
 - Test: `src/daft-parquet/src/geo_metadata.rs` (`#[cfg(test)]`)
 
 **Interfaces:**
-- Produces:
+- Produces (Rust, for the Parquet read/write paths — no PyO3; the Delta path uses a Python mirror added in Task 4):
   - `pub fn build_geo_metadata(schema: &daft_core::prelude::Schema, crs: Option<&str>, only_columns: Option<&[String]>) -> Option<String>` — returns the `"geo"` JSON, or `None` if no Geometry columns.
   - `pub fn detect_geo_columns(geo_json: &str, schema: &daft_core::prelude::Schema) -> Vec<String>` — geometry column names to re-type (WKB-encoded, present-and-Binary). Lenient: returns `vec![]` on parse failure.
-  - PyO3: `build_geo_metadata_py(schema: PySchema, crs: Option<String>, only_columns: Option<Vec<String>>) -> Option<String>`, `detect_geo_columns_py(geo_json: String, schema: PySchema) -> Vec<String>`.
+  - `pub const GEO_METADATA_KEY: &str = "geo";`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -188,32 +189,15 @@ pub fn detect_geo_columns(geo_json: &str, schema: &Schema) -> Vec<String> {
 Run: `cargo test -p daft-parquet --lib geo_metadata`
 Expected: PASS.
 
-- [ ] **Step 5: Register module + PyO3 bindings**
+- [ ] **Step 5: Register the module**
 
-In `src/daft-parquet/src/lib.rs` add `pub mod geo_metadata;`. In `src/daft-parquet/src/python.rs`, add PyO3 wrappers (mirroring the file's existing `#[pyfunction]` + module registration pattern):
-```rust
-#[pyfunction]
-pub fn build_geo_metadata_py(schema: PySchema, crs: Option<String>, only_columns: Option<Vec<String>>) -> Option<String> {
-    crate::geo_metadata::build_geo_metadata(&schema.schema, crs.as_deref(), only_columns.as_deref())
-}
-#[pyfunction]
-pub fn detect_geo_columns_py(geo_json: String, schema: PySchema) -> Vec<String> {
-    crate::geo_metadata::detect_geo_columns(&geo_json, &schema.schema)
-}
-```
-Register both in the module's `register`/`add_function` block (follow how existing `daft-parquet` pyfunctions like `read_parquet` are added). Confirm `PySchema` import path and its `.schema` field name.
+In `src/daft-parquet/src/lib.rs` add `pub mod geo_metadata;` alongside the other `pub mod` lines. No Python binding — the Parquet read/write tasks call this Rust module directly (Rust→Rust); the Delta path gets a Python mirror in Task 4.
 
-- [ ] **Step 6: Build + smoke-test the binding**
-
-Run: `make build` then
-`DAFT_RUNNER=native uv run python -c "from daft.daft import build_geo_metadata_py; print('ok')"` (confirm the actual import path of the registered fns; adjust if they live under a submodule).
-Expected: `ok`.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/daft-parquet/src/geo_metadata.rs src/daft-parquet/src/lib.rs src/daft-parquet/src/python.rs
-git commit -m "feat(geoparquet): shared geo-metadata module (build/detect) + PyO3 bindings"
+git add src/daft-parquet/src/geo_metadata.rs src/daft-parquet/src/lib.rs
+git commit -m "feat(geoparquet): shared Rust geo-metadata module (build/detect)"
 ```
 
 ---
@@ -371,11 +355,12 @@ git commit -m "feat(geoparquet): auto-detect geo metadata on read; re-type WKB c
 ## Task 4: GeoParquet→Delta round-trip
 
 **Files:**
+- Create: `daft/io/_geoparquet.py` (Python mirror geo helper)
 - Modify: `daft/dataframe/dataframe.py` (`write_deltalake`), `daft/io/delta_lake/delta_lake_write.py`, `daft/io/delta_lake/_deltalake.py` (read path)
 - Test: `tests/io/delta_lake/test_geo_deltalake.py` (new) or extend `tests/io/test_geoparquet.py`
 
 **Interfaces:**
-- Consumes: PyO3 `build_geo_metadata_py` / `detect_geo_columns_py` (Task 1).
+- Produces: `daft/io/_geoparquet.py` with `build_geo_metadata(schema: Schema, crs: str | None = None, only_columns: list[str] | None = None) -> str | None` and `detect_geo_columns(geo_json: str, schema: Schema) -> list[str]` — pure-Python mirror of the Rust module (same `"geo"` JSON shape, version 1.1.0, WKB-only, lenient parse).
 - Produces: geometry columns persisted to Delta as `LargeBinary` + `daft.geo` table property; `read_deltalake` re-types from it.
 
 - [ ] **Step 1: Write the failing test**
@@ -400,30 +385,74 @@ def test_deltalake_geo_roundtrip(tmp_path):
 Run: `make build && DAFT_RUNNER=native make test EXTRA_ARGS="-v -k deltalake_geo_roundtrip tests/io/"`
 Expected: FAIL — geom returns as Binary (no `daft.geo`, no re-type).
 
-- [ ] **Step 3: Persist `daft.geo` on write**
+- [ ] **Step 3: Create the Python geo helper**
 
-In the Delta write path (`daft/dataframe/dataframe.py` `write_deltalake` ~line 1782, where `configuration`/`custom_metadata` are assembled, and/or `daft/io/delta_lake/delta_lake_write.py`), before the write, compute the geo JSON from the Daft schema:
+Create `daft/io/_geoparquet.py` mirroring the Rust module's shape (GeoParquet 1.1.0, WKB-only, lenient):
 ```python
-from daft.daft import build_geo_metadata_py  # adjust import to the registered path
-geo = build_geo_metadata_py(self.schema()._schema, None, None)
+"""Geo metadata helpers for the GeoParquet/Delta path (Python mirror of daft-parquet's geo_metadata)."""
+from __future__ import annotations
+import json
+from daft.schema import Schema
+from daft.datatype import DataType
+
+_GEOPARQUET_VERSION = "1.1.0"
+GEO_METADATA_KEY = "geo"  # parquet footer key
+GEO_DELTA_PROPERTY = "daft.geo"  # delta table-configuration key
+
+def build_geo_metadata(schema: Schema, crs: str | None = None, only_columns: list[str] | None = None) -> str | None:
+    geom = DataType.geometry()
+    cols = [f.name for f in schema if f.dtype == geom and (only_columns is None or f.name in only_columns)]
+    if not cols:
+        return None
+    col_meta = {"encoding": "WKB", "geometry_types": []}
+    if crs is not None:
+        col_meta["crs"] = crs
+    return json.dumps({
+        "version": _GEOPARQUET_VERSION,
+        "primary_column": cols[0],
+        "columns": {name: dict(col_meta) for name in cols},
+    })
+
+def detect_geo_columns(geo_json: str, schema: Schema) -> list[str]:
+    try:
+        meta = json.loads(geo_json)
+        columns = meta["columns"]
+    except (ValueError, KeyError, TypeError):
+        return []
+    binary_like = {DataType.binary(), DataType.geometry()}
+    names = {f.name: f.dtype for f in schema}
+    return [
+        name for name, c in columns.items()
+        if isinstance(c, dict) and str(c.get("encoding", "")).upper() == "WKB"
+        and names.get(name) in binary_like
+    ]
+```
+(Confirm `Schema` is iterable yielding fields with `.name`/`.dtype`, and `DataType.geometry()`/`.binary()` equality — both used in Task 3's tests. Adjust the iteration/accessors to the actual `daft.schema.Schema` API.)
+
+- [ ] **Step 4: Persist `daft.geo` on write**
+
+In the Delta write path (`daft/dataframe/dataframe.py` `write_deltalake` ~line 1782, where `configuration`/`custom_metadata` are assembled, and/or `daft/io/delta_lake/delta_lake_write.py`), before the write, build the geo JSON from the Daft schema and add it to the table configuration:
+```python
+from daft.io._geoparquet import build_geo_metadata, GEO_DELTA_PROPERTY
+geo = build_geo_metadata(self.schema())
 if geo is not None:
-    configuration = {**(configuration or {}), "daft.geo": geo}
+    configuration = {**(configuration or {}), GEO_DELTA_PROPERTY: geo}
 ```
 Pass this `configuration` into the existing table-create/commit call (`create_table_with_add_actions(..., configuration=...)`). Geometry already writes as `LargeBinary` (no data change). Confirm delta-rs persists `configuration` as table properties on create AND that overwrite refreshes it; for append to an existing table, the property persists from creation (set it only at create/overwrite if append-time update is unsupported — see the spec risk).
 
-- [ ] **Step 4: Re-type on read**
+- [ ] **Step 5: Re-type on read**
 
-In the Delta read path (`daft/io/delta_lake/_deltalake.py`, where the Daft schema is constructed from the Delta table), read the table `configuration` (delta-rs `DeltaTable.metadata().configuration`), and if `daft.geo` is present, call `detect_geo_columns_py(geo_json, schema._schema)` and cast those columns to `DataType.geometry()` in the resulting plan (apply a projection `col(name).cast(DataType.geometry())`, or set the scan schema's field types to Geometry so the binary WKB is wrapped). Use whichever mechanism matches how the Delta scan builds its schema; the cast from Binary(WKB)→Geometry must be zero-copy (logical re-wrap).
+In the Delta read path (`daft/io/delta_lake/_deltalake.py`, where the Daft schema is constructed from the Delta table), read the table `configuration` (delta-rs `DeltaTable.metadata().configuration`), and if `GEO_DELTA_PROPERTY` (`daft.geo`) is present, call `detect_geo_columns(geo_json, schema)` (from `daft.io._geoparquet`) and cast those columns to `DataType.geometry()` in the resulting plan (apply a projection `col(name).cast(DataType.geometry())`, or set the scan schema's field types to Geometry so the binary WKB is wrapped). Use whichever mechanism matches how the Delta scan builds its schema; the cast from Binary(WKB)→Geometry must be zero-copy (logical re-wrap).
 
-- [ ] **Step 5: Run test, verify pass**
+- [ ] **Step 6: Run test, verify pass**
 
 Run: `make build && DAFT_RUNNER=native make test EXTRA_ARGS="-v -k deltalake_geo_roundtrip tests/io/"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add daft/dataframe/dataframe.py daft/io/delta_lake/ tests/io/
+git add daft/io/_geoparquet.py daft/dataframe/dataframe.py daft/io/delta_lake/ tests/io/
 git commit -m "feat(geoparquet): round-trip geometry through Delta via daft.geo table property"
 ```
 
@@ -457,6 +486,20 @@ def test_plain_parquet_unaffected(tmp_path):
     daft.from_pydict({"a": [1, 2]}).write_parquet(str(tmp_path))
     df = daft.read_parquet(str(tmp_path))
     assert df.schema()["a"].dtype == daft.DataType.int64()
+
+def test_python_helper_matches_rust_geo_json(tmp_path):
+    # The Python Delta helper must emit the SAME "geo" JSON the Rust parquet writer emits,
+    # so a GeoParquet→Delta→read round-trip stays consistent.
+    import json, pyarrow.parquet as pq
+    from daft.io._geoparquet import build_geo_metadata
+    from daft.functions import st_geomfromtext
+    df = daft.from_pydict({"id": [1], "w": ["POINT(1 2)"]}).select(
+        daft.col("id"), st_geomfromtext(daft.col("w")).alias("geom")
+    )
+    df.write_parquet(str(tmp_path))
+    rust_geo = json.loads(pq.read_metadata(next(tmp_path.rglob("*.parquet"))).metadata[b"geo"])
+    py_geo = json.loads(build_geo_metadata(df.schema()))
+    assert py_geo == rust_geo  # version, primary_column, columns{geom:{encoding:WKB,...}}
 ```
 (Confirm pyarrow's `replace_schema_metadata` puts the `"geo"` key in the Parquet footer kv-metadata that Daft reads; if pyarrow nests it under the arrow schema instead of the file kv-metadata, write the kv via `pq.write_table(..., store_schema=...)` or set it through `ParquetWriter` metadata so it lands in the file-level `key_value_metadata`. The goal: the `"geo"` key is in the footer kv-metadata Daft reads at `metadata.rs:249`.)
 
@@ -485,7 +528,8 @@ git commit -m "test(geoparquet): foreign-file read fixture + docs; full suite"
 
 ## Self-review notes
 
-- **Spec coverage:** shared module → Task 1; read auto-detect + `geometry` option + re-type → Task 3; write auto-emit + crs/geometry_columns → Task 2; Delta round-trip (`daft.geo` persist + read re-type) → Task 4; foreign-file robustness + WKB-only + plain-parquet-unaffected + docs → Task 5; error handling (lenient detect) → Task 1 (`detect` returns empty on bad input) + Task 3/4 (apply only when present). All spec items mapped.
+- **Spec coverage:** shared Rust module → Task 1; Python mirror helper → Task 4; read auto-detect + `geometry` option + re-type → Task 3; write auto-emit + crs/geometry_columns → Task 2; Delta round-trip (`daft.geo` persist + read re-type) → Task 4; foreign-file robustness + WKB-only + plain-parquet-unaffected + Python↔Rust JSON consistency + docs → Task 5; error handling (lenient detect) → Task 1/Task 4 (`detect` returns empty on bad input) + Task 3/4 (apply only when present). All spec items mapped.
+- **No PyO3:** per the decision to drop the binding, the Rust module serves the Parquet paths (Rust→Rust) and a pure-Python mirror (`daft/io/_geoparquet.py`) serves the Delta path; the Task 5 consistency test (`test_python_helper_matches_rust_geo_json`) guards against the two JSON shapes drifting.
 - **Flagged confirmation points (external/unfamiliar APIs, not placeholders for our logic):** (a) the arrow-rs `WriterProperties` kv-metadata append mechanism (Task 2 Step 3 — mirror the existing post-build `add_encoded_arrow_schema_to_metadata`); (b) crate dependency edge `daft-writers → daft-parquet` for the geo module, with a documented fallback to relocate the module if it cycles (Task 2 Step 3); (c) `Series::from_arrow` wrapping Binary→Geometry without copy, else cast (Tasks 3/4); (d) delta-rs `configuration` persistence on create/overwrite/append (Task 4 Step 3, matches a spec risk); (e) pyarrow footer-metadata placement for the foreign fixture (Task 5 Step 1). Each names the concrete thing to verify and a fallback.
 - **Type/name consistency:** `build_geo_metadata`/`detect_geo_columns` (+ `_py` bindings), `GEO_METADATA_KEY = "geo"`, the `daft.geo` Delta property key, and the `geometry`/`crs`/`geometry_columns` option names are used consistently across tasks.
 - **DRY:** one geo-metadata module backs Parquet read, Parquet write, and both Delta directions via the PyO3 binding — no duplicated JSON logic.
