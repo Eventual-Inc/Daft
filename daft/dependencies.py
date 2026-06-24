@@ -6,8 +6,9 @@ from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
     import av
-    import confluent_kafka
+    import confluent_kafka  # ty:ignore[unresolved-import]  # pyright: ignore[reportMissingImports]
     import fsspec
+    import h5py
     import librosa
     import numpy as np
     import pandas as pd
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
     import pyarrow.parquet as pq
     import requests
     import soundfile as sf
-    import tensorflow as tf
+    import tensorflow as tf  # ty:ignore[unresolved-import]    # pyright: ignore[reportMissingImports]
     import torch
     import torchvision
 else:
@@ -42,6 +43,7 @@ else:
     pil_image = LazyImport("PIL.Image")
     pq = LazyImport("pyarrow.parquet")
     sf = LazyImport("soundfile")
+    h5py = LazyImport("h5py")
     requests = LazyImport("requests")
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
@@ -54,6 +56,7 @@ __all__ = [
     "confluent_kafka",
     "flight",
     "fsspec",
+    "h5py",
     "librosa",
     "np",
     "pa",

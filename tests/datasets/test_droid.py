@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 import daft
 from daft import DataType, MediaType
+from daft.datasets.droid import camera_frames, trajectory
 from daft.expressions import col
-
-pytestmark = pytest.mark.integration()
+from daft.functions import hdf5_file, video_file
 
 DROID_RAW_GCS_PREFIX = "gs://gresearch/robotics/droid_raw"
 
@@ -16,6 +19,137 @@ def droid_raw_df():
     return daft.datasets.droid.raw()
 
 
+def _write_local_episode(root: Path, missing_videos: set[str] | None = None) -> Path:
+    missing_videos = set() if missing_videos is None else missing_videos
+    episode_dir = root / "1.0.1" / "LAB" / "success" / "2023-11-07" / "Tue_Nov__7_19:29:35_2023"
+    mp4_dir = episode_dir / "recordings" / "MP4"
+    mp4_dir.mkdir(parents=True)
+    (episode_dir / "trajectory.h5").write_bytes(b"")
+
+    camera_serials = {
+        "wrist": "13263313",
+        "ext1": "23804457",
+        "ext2": "28834630",
+    }
+    for camera, serial in camera_serials.items():
+        if camera not in missing_videos:
+            (mp4_dir / f"{serial}.mp4").write_bytes(b"")
+
+    metadata = {
+        "uuid": "LAB+user-1+2023-11-07-19h-29m-35s",
+        "lab": "LAB",
+        "user": "Daft Tester",
+        "user_id": "user-1",
+        "date": "2023-11-07",
+        "timestamp": "2023-11-07-19h-29m-35s",
+        "hdf5_path": "trajectory.h5",
+        "building": "Test Building",
+        "scene_id": 8288363487,
+        "success": True,
+        "robot_serial": "panda-295341-1325132",
+        "r2d2_version": "1.3",
+        "current_task": "Move object to a new position",
+        "trajectory_length": 435,
+        "wrist_cam_serial": camera_serials["wrist"],
+        "ext1_cam_serial": camera_serials["ext1"],
+        "ext2_cam_serial": camera_serials["ext2"],
+        "wrist_cam_extrinsics": [0.37, -0.12, 0.4, 2.91, -0.11, 1.69],
+        "ext1_cam_extrinsics": [-0.17, -0.22, 0.17, -1.4, 0.27, -1.54],
+        "ext2_cam_extrinsics": [-0.06, 0.48, 0.3, -1.63, -0.0, -2.35],
+        "wrist_svo_path": "recordings/SVO/wrist.svo",
+        "wrist_mp4_path": f"recordings/MP4/{camera_serials['wrist']}.mp4",
+        "ext1_svo_path": "recordings/SVO/ext1.svo",
+        "ext1_mp4_path": f"recordings/MP4/{camera_serials['ext1']}.mp4",
+        "ext2_svo_path": "recordings/SVO/ext2.svo",
+        "ext2_mp4_path": f"recordings/MP4/{camera_serials['ext2']}.mp4",
+        "left_mp4_path": "recordings/MP4/left.mp4",
+        "right_mp4_path": "recordings/MP4/right.mp4",
+    }
+    (episode_dir / "metadata_2023-11-07-19h-29m-35s.json").write_text(json.dumps(metadata), encoding="utf-8")
+    return episode_dir
+
+
+def _daft_file_uri(path: Path) -> str:
+    return f"file://{path}"
+
+
+def test_droid_raw_local_schema_order_and_file_columns(tmp_path) -> None:
+    episode_dir = _write_local_episode(tmp_path)
+    df = daft.datasets.droid.raw(str(tmp_path))
+
+    assert [field.name for field in df.schema()] == [
+        "uuid",
+        "lab",
+        "date",
+        "timestamp",
+        "scene_id",
+        "trajectory_length",
+        "current_task",
+        "success",
+        "episode_dir",
+        "user",
+        "user_id",
+        "building",
+        "robot_serial",
+        "r2d2_version",
+        "trajectory",
+        "wrist_cam_serial",
+        "wrist_cam_extrinsics",
+        "wrist_cam_video",
+        "ext1_cam_serial",
+        "ext1_cam_extrinsics",
+        "ext1_cam_video",
+        "ext2_cam_serial",
+        "ext2_cam_extrinsics",
+        "ext2_cam_video",
+    ]
+
+    schema = {field.name: field.dtype for field in df.schema()}
+    assert schema["trajectory"] == DataType.file(MediaType.hdf5())
+    assert schema["wrist_cam_video"] == DataType.file(MediaType.video())
+    assert schema["ext1_cam_video"] == DataType.file(MediaType.video())
+    assert schema["ext2_cam_video"] == DataType.file(MediaType.video())
+
+    result = (
+        df.select(
+            "uuid",
+            "episode_dir",
+            col("trajectory").file_path().alias("trajectory_path"),
+            col("wrist_cam_video").file_path().alias("wrist_cam_video_path"),
+            col("ext1_cam_video").file_path().alias("ext1_cam_video_path"),
+            col("ext2_cam_video").file_path().alias("ext2_cam_video_path"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert result["uuid"] == ["LAB+user-1+2023-11-07-19h-29m-35s"]
+    assert result["episode_dir"] == [_daft_file_uri(episode_dir)]
+    assert result["trajectory_path"] == [_daft_file_uri(episode_dir / "trajectory.h5")]
+    assert result["wrist_cam_video_path"] == [_daft_file_uri(episode_dir / "recordings" / "MP4" / "13263313.mp4")]
+    assert result["ext1_cam_video_path"] == [_daft_file_uri(episode_dir / "recordings" / "MP4" / "23804457.mp4")]
+    assert result["ext2_cam_video_path"] == [_daft_file_uri(episode_dir / "recordings" / "MP4" / "28834630.mp4")]
+
+
+def test_droid_raw_sets_missing_camera_recordings_to_null(tmp_path) -> None:
+    episode_dir = _write_local_episode(tmp_path, missing_videos={"ext1"})
+    result = (
+        daft.datasets.droid.raw(str(tmp_path))
+        .select(
+            col("wrist_cam_video").file_path().alias("wrist_cam_video_path"),
+            col("ext1_cam_video").file_path().alias("ext1_cam_video_path"),
+            col("ext2_cam_video").file_path().alias("ext2_cam_video_path"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert result["wrist_cam_video_path"] == [_daft_file_uri(episode_dir / "recordings" / "MP4" / "13263313.mp4")]
+    assert result["ext1_cam_video_path"] == [None]
+    assert result["ext2_cam_video_path"] == [_daft_file_uri(episode_dir / "recordings" / "MP4" / "28834630.mp4")]
+
+
+@pytest.mark.integration()
 def test_droid_discovers_episodes_and_metadata(droid_raw_df) -> None:
     result = droid_raw_df.select("uuid", "building", "success").limit(1).to_pydict()
 
@@ -25,6 +159,7 @@ def test_droid_discovers_episodes_and_metadata(droid_raw_df) -> None:
     assert isinstance(result["success"][0], bool)
 
 
+@pytest.mark.integration()
 def test_droid_unnests_metadata_columns(droid_raw_df) -> None:
     schema = {field.name: field.dtype for field in droid_raw_df.schema()}
     assert "building" in schema
@@ -34,23 +169,30 @@ def test_droid_unnests_metadata_columns(droid_raw_df) -> None:
     assert schema["success"] == DataType.bool
 
 
+@pytest.mark.integration()
 def test_droid_adds_trajectory_and_video_file_columns(droid_raw_df) -> None:
     schema = {field.name: field.dtype for field in droid_raw_df.schema()}
-    assert schema["trajectory"] == DataType.file()
-    assert schema["wrist_video"] == DataType.file(MediaType.video())
-    assert schema["ext1_video"] == DataType.file(MediaType.video())
-    assert schema["ext2_video"] == DataType.file(MediaType.video())
+    assert schema["trajectory"] == DataType.file(MediaType.hdf5())
+    assert schema["wrist_cam_video"] == DataType.file(MediaType.video())
+    assert schema["ext1_cam_video"] == DataType.file(MediaType.video())
+    assert schema["ext2_cam_video"] == DataType.file(MediaType.video())
 
     result = (
-        droid_raw_df.select(
+        droid_raw_df.where(
+            col("trajectory").not_null()
+            & col("wrist_cam_video").not_null()
+            & col("ext1_cam_video").not_null()
+            & col("ext2_cam_video").not_null()
+        )
+        .select(
             "episode_dir",
             "wrist_cam_serial",
             "ext1_cam_serial",
             "ext2_cam_serial",
             col("trajectory").file_path().alias("trajectory_path"),
-            col("wrist_video").file_path().alias("wrist_video_path"),
-            col("ext1_video").file_path().alias("ext1_video_path"),
-            col("ext2_video").file_path().alias("ext2_video_path"),
+            col("wrist_cam_video").file_path().alias("wrist_cam_video_path"),
+            col("ext1_cam_video").file_path().alias("ext1_cam_video_path"),
+            col("ext2_cam_video").file_path().alias("ext2_cam_video_path"),
         )
         .limit(1)
         .to_pydict()
@@ -62,6 +204,207 @@ def test_droid_adds_trajectory_and_video_file_columns(droid_raw_df) -> None:
     trajectory_path = result["trajectory_path"][0]
     assert trajectory_path == f"{episode_dir}/trajectory.h5"
 
-    assert result["wrist_video_path"][0] == f"{episode_dir}/{result['wrist_cam_serial'][0]}.mp4"
-    assert result["ext1_video_path"][0] == f"{episode_dir}/{result['ext1_cam_serial'][0]}.mp4"
-    assert result["ext2_video_path"][0] == f"{episode_dir}/{result['ext2_cam_serial'][0]}.mp4"
+    assert result["wrist_cam_video_path"][0] == (f"{episode_dir}/recordings/MP4/{result['wrist_cam_serial'][0]}.mp4")
+    assert result["ext1_cam_video_path"][0] == (f"{episode_dir}/recordings/MP4/{result['ext1_cam_serial'][0]}.mp4")
+    assert result["ext2_cam_video_path"][0] == (f"{episode_dir}/recordings/MP4/{result['ext2_cam_serial'][0]}.mp4")
+
+
+def _as_list(value):
+    return value.tolist() if hasattr(value, "tolist") else value
+
+
+@pytest.fixture
+def sample_episodes_df(tmp_path):
+    h5py = pytest.importorskip("h5py")
+
+    joint_position = [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0], [6.0, 7.0, 8.0], [9.0, 10.0, 11.0]]
+    gripper_position = [0.1, 0.2, 0.3, 0.4]
+    robot_joint_positions = [
+        [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0],
+        [14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0],
+        [21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0],
+    ]
+
+    path = tmp_path / "trajectory.h5"
+    with h5py.File(path, "w") as f:
+        f.create_dataset("action/joint_position", data=joint_position)
+        f.create_dataset("action/gripper_position", data=gripper_position)
+        observation = f.create_group("observation")
+        robot_state = observation.create_group("robot_state")
+        robot_state.create_dataset("joint_positions", data=robot_joint_positions)
+
+    episodes = daft.from_pydict({"uuid": ["episode-1"], "path": [str(path)], "trajectory_length": [4]})
+    return episodes.select(
+        "uuid",
+        "trajectory_length",
+        hdf5_file(daft.col("path")).alias("trajectory"),
+    )
+
+
+def test_trajectory_reads_default_fields(sample_episodes_df) -> None:
+    result = trajectory(sample_episodes_df).collect().to_pydict()
+
+    assert _as_list(result["joint_position"][0]) == [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+        [6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0],
+    ]
+    assert _as_list(result["gripper_position"][0]) == [0.1, 0.2, 0.3, 0.4]
+    assert _as_list(result["robot_joint_positions"][0]) == [
+        [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0],
+        [14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0],
+        [21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0],
+    ]
+
+
+def test_trajectory_reads_registry_fields(sample_episodes_df) -> None:
+    result = trajectory(
+        sample_episodes_df,
+        fields=["joint_position", "gripper_position"],
+    ).collect().to_pydict()
+
+    assert _as_list(result["joint_position"][0]) == [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+        [6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0],
+    ]
+    assert _as_list(result["gripper_position"][0]) == [0.1, 0.2, 0.3, 0.4]
+
+
+def test_trajectory_projects_available_base_columns(sample_episodes_df) -> None:
+    result = trajectory(sample_episodes_df, fields=["gripper_position"])
+
+    assert [field.name for field in result.schema()] == [
+        "uuid",
+        "trajectory_length",
+        "trajectory",
+        "gripper_position",
+    ]
+
+
+def test_trajectory_uses_curated_raw_column_order(sample_episodes_df) -> None:
+    episodes = sample_episodes_df.with_columns(
+        {
+            "scene_id": daft.lit(1),
+            "robot_serial": daft.lit("robot-1"),
+            "r2d2_version": daft.lit("1.0"),
+            "current_task": daft.lit("pick up the object"),
+            "success": daft.lit(True),
+            "wrist_cam_video": video_file(daft.lit("/tmp/wrist.mp4")),
+            "wrist_cam_extrinsics": daft.lit([0.0, 1.0, 2.0]),
+            "ext1_cam_video": video_file(daft.lit("/tmp/ext1.mp4")),
+            "ext1_cam_extrinsics": daft.lit([3.0, 4.0, 5.0]),
+            "ext2_cam_video": video_file(daft.lit("/tmp/ext2.mp4")),
+            "ext2_cam_extrinsics": daft.lit([6.0, 7.0, 8.0]),
+            "unused": daft.lit("drop me"),
+        }
+    )
+
+    result = trajectory(episodes, fields=["gripper_position"])
+
+    assert [field.name for field in result.schema()] == [
+        "uuid",
+        "scene_id",
+        "robot_serial",
+        "r2d2_version",
+        "current_task",
+        "success",
+        "trajectory_length",
+        "trajectory",
+        "wrist_cam_video",
+        "wrist_cam_extrinsics",
+        "ext1_cam_video",
+        "ext1_cam_extrinsics",
+        "ext2_cam_video",
+        "ext2_cam_extrinsics",
+        "gripper_position",
+    ]
+
+
+def test_trajectory_reads_full_hdf5_paths(sample_episodes_df) -> None:
+    result = trajectory(
+        sample_episodes_df,
+        fields=["action/joint_position"],
+    ).collect().to_pydict()
+
+    assert _as_list(result["action_joint_position"][0]) == [
+        [0.0, 1.0, 2.0],
+        [3.0, 4.0, 5.0],
+        [6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0],
+    ]
+
+
+def test_trajectory_requires_trajectory_column() -> None:
+    episodes = daft.from_pydict({"uuid": ["episode-1"]})
+    with pytest.raises(ValueError, match="trajectory"):
+        trajectory(episodes, fields=["joint_position"])
+
+
+def test_trajectory_rejects_unknown_field(sample_episodes_df) -> None:
+    with pytest.raises(ValueError, match="Unknown trajectory field"):
+        trajectory(sample_episodes_df, fields=["not_a_real_field"])
+
+
+def test_trajectory_rejects_empty_fields(sample_episodes_df) -> None:
+    with pytest.raises(ValueError, match="fields must contain at least one"):
+        trajectory(sample_episodes_df, fields=[])
+
+
+@pytest.fixture
+def sample_camera_episodes_df(sample_episodes_df):
+    pytest.importorskip("av")
+    return sample_episodes_df.with_columns(
+        {
+            "wrist_cam_video": video_file(daft.lit("/tmp/wrist.mp4")),
+            "ext1_cam_video": video_file(daft.lit("/tmp/ext1.mp4")),
+            "ext2_cam_video": video_file(daft.lit("/tmp/ext2.mp4")),
+        }
+    )
+
+
+def test_camera_frames_defaults_to_all_cameras(sample_camera_episodes_df) -> None:
+    result = camera_frames(sample_camera_episodes_df, width=64, height=48)
+    schema = {field.name for field in result.schema()}
+
+    assert "wrist_cam_frames" in schema
+    assert "ext1_cam_frames" in schema
+    assert "ext2_cam_frames" in schema
+
+
+def test_camera_frames_accepts_single_camera_string(sample_camera_episodes_df) -> None:
+    result = camera_frames(sample_camera_episodes_df, cameras="wrist", sample_interval_seconds=1.0)
+    schema = {field.name for field in result.schema()}
+
+    assert "wrist_cam_frames" in schema
+    assert "ext1_cam_frames" not in schema
+    assert "ext2_cam_frames" not in schema
+
+
+def test_camera_frames_accepts_camera_list(sample_camera_episodes_df) -> None:
+    result = camera_frames(sample_camera_episodes_df, cameras=["wrist", "ext2"])
+    schema = {field.name for field in result.schema()}
+
+    assert "wrist_cam_frames" in schema
+    assert "ext1_cam_frames" not in schema
+    assert "ext2_cam_frames" in schema
+
+
+def test_camera_frames_rejects_empty_camera_list(sample_camera_episodes_df) -> None:
+    with pytest.raises(ValueError, match="cameras must contain at least one"):
+        camera_frames(sample_camera_episodes_df, cameras=[])
+
+
+def test_camera_frames_rejects_unknown_camera(sample_camera_episodes_df) -> None:
+    with pytest.raises(ValueError, match="Unknown camera"):
+        camera_frames(sample_camera_episodes_df, cameras=["wrist", "overhead"])
+
+
+def test_camera_frames_requires_requested_camera_columns(sample_episodes_df) -> None:
+    pytest.importorskip("av")
+    with pytest.raises(ValueError, match="Missing columns"):
+        camera_frames(sample_episodes_df, cameras="wrist")

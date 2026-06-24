@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
-    import PIL
+    from daft.dependencies import np, pil_image
 
 
 class VideoMetadata(TypedDict):
@@ -23,7 +23,7 @@ class VideoFrameData(TypedDict):
     frame_dts: int | None
     frame_duration: int | None
     is_key_frame: bool
-    data: PIL.Image.Image
+    data: pil_image.Image
 
 
 class AudioMetadata(TypedDict):
@@ -39,3 +39,20 @@ class ImageMetadata(TypedDict):
     height: int | None
     format: str | None
     mode: str | None
+
+
+class Hdf5Metadata(TypedDict):
+    shape: tuple[int, ...]
+    dtype: np.dtype
+    chunks: tuple[int, ...] | None
+    compression: str | None
+    compression_opts: Any
+
+
+class Hdf5ObjectMetadata(TypedDict):
+    h5path: str
+    kind: Literal["dataset", "group"]
+    shape: list[int]
+    dtype: str
+    chunks: list[int]
+    compression: str
