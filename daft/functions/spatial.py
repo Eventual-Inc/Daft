@@ -484,3 +484,19 @@ def st_geohash(geom: Expression, precision: int = 5) -> Expression:
         >>> df.select(st_geohash(df["geom"], precision=6))  # doctest: +SKIP
     """
     return Expression._call_builtin_scalar_fn("st_geohash", geom, precision)
+
+
+# ── Bounding box ─────────────────────────────────────────────────────────────
+
+
+def st_bbox(geom: Expression) -> Expression:
+    """Returns the geometry's bounding box as a struct ``{min_x, min_y, max_x, max_y}`` (Float64).
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Struct column with Float64 fields ``min_x``, ``min_y``, ``max_x``, ``max_y``.
+        Returns null for null or empty geometries.
+    """
+    return Expression._call_builtin_scalar_fn("st_bbox", geom)
