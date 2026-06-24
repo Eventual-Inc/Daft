@@ -3473,6 +3473,7 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
+ "tempfile",
  "tokio",
  "tonic",
 ]
