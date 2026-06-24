@@ -10,7 +10,7 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
-use geo::Geometry;
+use geo::{Geometry, MultiPolygon};
 use wkb::wkb_to_geom;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -57,6 +57,20 @@ pub fn read_f64_arg_expr(
                 "{fn_name}: {name} must be a numeric literal"
             ))
         })
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared overlay operation helper
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Convert a Geometry to a MultiPolygon if it is a Polygon or MultiPolygon.
+/// Returns None for non-polygon geometries.
+pub(crate) fn as_multipolygon(g: &Geometry) -> Option<MultiPolygon> {
+    match g {
+        Geometry::Polygon(p) => Some(MultiPolygon(vec![p.clone()])),
+        Geometry::MultiPolygon(mp) => Some(mp.clone()),
+        _ => None,
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

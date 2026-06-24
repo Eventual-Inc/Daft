@@ -387,21 +387,27 @@ def test_overlay_non_polygon_yields_null():
 
 
 def test_overlay_sql_parity():
-    """SQL overlay results match Python for union and intersection."""
-    from daft.functions import st_union, st_intersection
+    """SQL overlay results match Python for union, intersection, difference, and symdifference."""
+    from daft.functions import st_union, st_intersection, st_difference, st_symdifference
     a_wkt = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
     b_wkt = "POLYGON((1 1,3 1,3 3,1 3,1 1))"
     df = daft.from_pydict({"a": [a_wkt], "b": [b_wkt]})  # noqa: F841
     py = daft.from_pydict({"a": [a_wkt], "b": [b_wkt]}).select(
         st_area(st_union(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("u"),
         st_area(st_intersection(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("i"),
+        st_area(st_difference(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("d"),
+        st_area(st_symdifference(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b")))).alias("sd"),
     ).to_pydict()
     sql = daft.sql(
         "SELECT st_area(st_union(st_geomfromtext(a), st_geomfromtext(b))) AS u, "
-        "st_area(st_intersection(st_geomfromtext(a), st_geomfromtext(b))) AS i FROM df"
+        "st_area(st_intersection(st_geomfromtext(a), st_geomfromtext(b))) AS i, "
+        "st_area(st_difference(st_geomfromtext(a), st_geomfromtext(b))) AS d, "
+        "st_area(st_symdifference(st_geomfromtext(a), st_geomfromtext(b))) AS sd FROM df"
     ).to_pydict()
     assert abs(py["u"][0] - sql["u"][0]) < 1e-6, f"union parity: py={py['u'][0]} sql={sql['u'][0]}"
     assert abs(py["i"][0] - sql["i"][0]) < 1e-6, f"intersection parity: py={py['i'][0]} sql={sql['i'][0]}"
+    assert abs(py["d"][0] - sql["d"][0]) < 1e-6, f"difference parity: py={py['d'][0]} sql={sql['d'][0]}"
+    assert abs(py["sd"][0] - sql["sd"][0]) < 1e-6, f"symdifference parity: py={py['sd'][0]} sql={sql['sd'][0]}"
 
 
 def test_st_isvalid_sql_parity():

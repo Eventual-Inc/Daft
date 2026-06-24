@@ -7,18 +7,10 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
-use geo::{BooleanOps, Geometry, MultiPolygon};
+use geo::{BooleanOps, Geometry};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{binary_geom_to_geom, validate_geometry_field};
-
-fn as_multipolygon(g: &Geometry) -> Option<MultiPolygon> {
-    match g {
-        Geometry::Polygon(p) => Some(MultiPolygon(vec![p.clone()])),
-        Geometry::MultiPolygon(mp) => Some(mp.clone()),
-        _ => None,
-    }
-}
+use crate::utils::{as_multipolygon, binary_geom_to_geom, validate_geometry_field};
 
 fn op_difference(a: &Geometry, b: &Geometry) -> Option<Geometry> {
     let (amp, bmp) = (as_multipolygon(a)?, as_multipolygon(b)?);
