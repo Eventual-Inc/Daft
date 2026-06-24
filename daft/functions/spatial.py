@@ -387,11 +387,16 @@ def st_geojsonfromgeom(geom: Expression) -> Expression:
 
 
 def st_buffer(geom: Expression, distance: float) -> Expression:
-    """Return a geometry expanded by the given distance.
+    """Return a geometry that is the given distance from the input geometry (planar Cartesian).
 
-    For Point geometries this returns a circular polygon approximation.
-    For other types this returns the bounding-box envelope expanded by
-    ``distance`` in each direction.
+    - **Point**: returns a 64-vertex circular polygon approximation (radius = distance).
+    - **Polygon / MultiPolygon**: computes a real planar offset via straight-skeleton;
+      falls back to bounding-box envelope expansion if the offset returns an empty result.
+    - **LineString and all other types**: falls back to expanding the bounding-box envelope
+      by ``distance`` in each direction (geo-buffer 0.2 has no line-buffering support).
+
+    All buffer operations are planar (Cartesian). For geodesic buffers, project your
+    coordinates to a local metric CRS before calling this function.
 
     Args:
         geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).

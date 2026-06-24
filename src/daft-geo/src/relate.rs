@@ -15,18 +15,26 @@ pub(crate) enum RelatePred {
 }
 
 /// Evaluate a DE-9IM predicate between two geometries. Correct for all geometry-type pairs.
+///
+/// Wrapped in `catch_unwind` so that a panic on degenerate input (e.g. a self-intersecting
+/// ring triggering a bug in the `geo` relate implementation) yields `false` rather than
+/// unwinding the compute thread — consistent with the catch_unwind convention used by
+/// buffer, BooleanOps, convexhull, and simplify in this crate.
 pub(crate) fn relate_pred(a: &Geometry, b: &Geometry, pred: RelatePred) -> bool {
-    let m = a.relate(b); // geo 0.33: Geometry: Relate -> IntersectionMatrix
-    match pred {
-        RelatePred::Intersects => m.is_intersects(),
-        RelatePred::Contains => m.is_contains(),
-        RelatePred::Within => m.is_within(),
-        RelatePred::Touches => m.is_touches(),
-        RelatePred::Crosses => m.is_crosses(),
-        RelatePred::Overlaps => m.is_overlaps(),
-        RelatePred::Disjoint => m.is_disjoint(),
-        RelatePred::Equals => m.is_equal_topo(),
-    }
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let m = a.relate(b); // geo 0.33: Geometry: Relate -> IntersectionMatrix
+        match pred {
+            RelatePred::Intersects => m.is_intersects(),
+            RelatePred::Contains => m.is_contains(),
+            RelatePred::Within => m.is_within(),
+            RelatePred::Touches => m.is_touches(),
+            RelatePred::Crosses => m.is_crosses(),
+            RelatePred::Overlaps => m.is_overlaps(),
+            RelatePred::Disjoint => m.is_disjoint(),
+            RelatePred::Equals => m.is_equal_topo(),
+        }
+    }))
+    .unwrap_or(false)
 }
 
 #[cfg(test)]

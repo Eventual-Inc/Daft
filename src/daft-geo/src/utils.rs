@@ -31,6 +31,12 @@ pub fn read_f64_arg(
         // Cast to Float64 and extract the scalar
         let casted = s.cast(&DataType::Float64)?;
         let arr = casted.f64()?;
+        if arr.get(0).is_none() && arr.len() == 1 {
+            // The value is present but null (e.g. lit(None))
+            return Err(DaftError::ValueError(format!(
+                "{fn_name}: {name} must not be null"
+            )));
+        }
         if let Some(v) = arr.get(0) {
             return Ok(v);
         }
