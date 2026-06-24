@@ -105,7 +105,17 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
-from .file_ import file, file_path, file_size, file_exists, video_file, audio_file, image_file, guess_mime_type
+from .file_ import (
+    file,
+    file_path,
+    file_size,
+    file_exists,
+    video_file,
+    audio_file,
+    image_file,
+    hdf5_file,
+    guess_mime_type,
+)
 
 from .image import (
     resize,
@@ -295,6 +305,7 @@ from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes, video_frames
+from .hdf5 import hdf5_keys, hdf5_read, hdf5_read_many, hdf5_visit
 from .window import (
     row_number,
     rank,
@@ -426,6 +437,11 @@ __all__ = [
     "hamming_distance",
     "hamming_distance_str",
     "hash",
+    "hdf5_file",
+    "hdf5_keys",
+    "hdf5_read",
+    "hdf5_read_many",
+    "hdf5_visit",
     "hour",
     "hypot",
     "ilike",

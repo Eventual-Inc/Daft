@@ -38,6 +38,7 @@ deltalake = ["deltalake >= 1.5.0,< 1.7.0"]
 gcp = []
 google = ["google-genai<2.7.0", "numpy<2.4.0", "pillow==12.2.0"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
+hdf5 = ["h5py==3.16.0", "numpy<2.4.0"]
 hudi = ["pyarrow >= 16.0.0,<25.0.0"]
 huggingface = ["huggingface-hub<1.17.0", "datasets<4.9.0"]
 iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
@@ -147,6 +148,7 @@ dev = [
   "google-genai==2.6.0",
   # AV
   "av==17.0.1",
+  "h5py==3.16.0",
   "soundfile==0.13.1",
   "librosa==0.11.0",
   # Clickhouse
