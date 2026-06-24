@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{binary_geom_to_f64, validate_geometry_field, read_bool_arg, read_bool_arg_expr};
 
-fn geom_distance(a: &Geometry, b: &Geometry) -> f64 {
+pub(crate) fn geom_distance(a: &Geometry, b: &Geometry) -> f64 {
     let euclidean = Euclidean;
     match (a, b) {
         (Geometry::Point(pa), Geometry::Point(pb)) => euclidean.distance(pa, pb),

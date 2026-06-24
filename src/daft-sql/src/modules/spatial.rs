@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -47,6 +47,7 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_envelope", SQLSpatialUnary(Arc::new(StEnvelope)));
         parent.add_fn("st_convexhull", SQLSpatialUnary(Arc::new(StConvexHull)));
         parent.add_fn("st_simplify", SQLStSimplify);
+        parent.add_fn("st_dwithin", SQLStDwithin);
         parent.add_fn("st_geohash", SQLStGeohash);
         parent.add_fn("st_astext", SQLSpatialUnary(Arc::new(StAsText)));
         parent.add_fn("st_geomfromtext", SQLSpatialUnary(Arc::new(StGeomFromText)));
@@ -186,6 +187,43 @@ impl SQLFunction for SQLStSimplify {
 
     fn docstrings(&self, _alias: &str) -> String {
         "Simplifies a geometry using Ramer–Douglas–Peucker with the given tolerance.".to_string()
+    }
+}
+
+// ── st_dwithin(geom, geom, distance) ─────────────────────────────────────────
+pub struct SQLStDwithin;
+
+impl SQLFunction for SQLStDwithin {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 3 {
+            invalid_operation_err!("st_dwithin expects 3 arguments (geom, geom, distance), got {}", inputs.len());
+        }
+        let a = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let b = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let distance_expr = planner.plan_function_arg(&inputs[2])?.into_inner();
+        let _ = distance_expr
+            .as_literal()
+            .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
+            .ok_or_else(|| crate::error::PlannerError::invalid_operation(
+                "st_dwithin: distance must be a numeric literal",
+            ))?;
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(StDwithin)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                daft_dsl::functions::FunctionArg::unnamed(a),
+                daft_dsl::functions::FunctionArg::unnamed(b),
+                daft_dsl::functions::FunctionArg::unnamed(distance_expr),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns true if the planar distance between two geometries is <= distance.".to_string()
     }
 }
 

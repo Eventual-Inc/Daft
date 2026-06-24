@@ -749,3 +749,25 @@ def test_st_covers_and_covered_by():
     assert df["cov"][0] is True
     assert df["cby"][0] is True
     assert df["con"][0] is False  # boundary point is covered but NOT contained
+
+
+def test_st_dwithin_filter():
+    import daft
+    from daft.functions import st_dwithin, st_point
+
+    df = daft.from_pydict({"id": [1, 2, 3], "x": [0.0, 3.0, 10.0], "y": [0.0, 4.0, 10.0]}).select(
+        daft.col("id"),
+        st_point(daft.col("x"), daft.col("y")).alias("g"),
+    )
+    origin = daft.from_pydict({"ox": [0.0], "oy": [0.0]}).select(
+        st_point(daft.col("ox"), daft.col("oy")).alias("o")
+    )
+    # distance from origin: id1=0, id2=5, id3=~14.14
+    out = (
+        df.join(origin, how="cross")
+        .where(st_dwithin(daft.col("g"), daft.col("o"), 5.0))
+        .select("id")
+        .sort("id")
+        .to_pydict()
+    )
+    assert out["id"] == [1, 2]  # id3 is beyond distance 5

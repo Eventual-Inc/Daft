@@ -198,6 +198,14 @@ def st_distance(geom_a: Expression, geom_b: Expression, use_spheroid: bool = Fal
     return Expression._call_builtin_scalar_fn("st_distance", geom_a, geom_b)
 
 
+def st_dwithin(geom_a: Expression, geom_b: Expression, distance: float) -> Expression:
+    """Returns true if the planar distance between two geometries is <= ``distance`` (coordinate units).
+
+    ``distance`` must be a numeric literal.
+    """
+    return Expression._call_builtin_scalar_fn("st_dwithin", geom_a, geom_b, distance)
+
+
 def st_geomfromtext(wkt: Expression) -> Expression:
     """Parse a Well-Known Text (WKT) string and return a WKB geometry.
 
