@@ -158,7 +158,7 @@ from daft.io import (
     read_mcap,
 )
 from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
-from daft.sql import sql, sql_expr
+from daft.sql.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
