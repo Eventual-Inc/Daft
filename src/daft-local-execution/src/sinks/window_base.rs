@@ -119,6 +119,7 @@ impl SpillableBuckets for WindowBuckets<'_> {
         let st = self.inner_states[p].as_mut().unwrap();
         let batches = std::mem::take(&mut st.partitions);
         st.bytes = 0;
+        debug_assert!(!batches.is_empty(), "window bucket selected with bytes>0 but no resident data (counter drift)");
         if batches.is_empty() {
             return Ok(true);
         }

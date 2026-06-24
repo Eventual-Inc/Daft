@@ -1,4 +1,15 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Display,
+    num::NonZeroUsize,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+static DEPRECATION_WARNED: AtomicBool = AtomicBool::new(false);
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -459,10 +470,12 @@ fn build_spill_config(
     if let Some(n) = opt_out
         && n > 0
     {
-        tracing::warn!(
-            "Per-operator spill threshold ({n} bytes) is deprecated; using shared spill pool with \
-             this value as a cap. Prefer `spill_pool_bytes`."
-        );
+        if !DEPRECATION_WARNED.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                "Per-operator spill threshold ({n} bytes) is deprecated; using shared spill pool with \
+                 this value as a cap. Prefer `spill_pool_bytes`."
+            );
+        }
         sc.cap_bytes = Some(n);
     }
     Some(sc)

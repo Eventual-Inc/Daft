@@ -137,8 +137,9 @@ impl BlockingSink for SortSink {
                 async move {
                     let mut state = state;
 
-                    state.buffer_bytes += input.size_bytes();
-                    let added = input.size_bytes() as u64;
+                    let input_bytes = input.size_bytes();
+                    state.buffer_bytes += input_bytes;
+                    let added = input_bytes as u64;
                     state.buffer.push(input);
 
                     if let Some(sc) = &params.spill_config {

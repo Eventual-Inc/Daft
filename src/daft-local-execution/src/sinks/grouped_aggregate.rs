@@ -330,6 +330,7 @@ impl SpillableBuckets for AggBuckets<'_> {
                         .agg(&self.params.partial_agg_exprs, &self.params.group_by)?,
                 );
             }
+            debug_assert!(!partials.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
             if partials.is_empty() {
                 return Ok(true);
             }
@@ -340,6 +341,7 @@ impl SpillableBuckets for AggBuckets<'_> {
             st.unaggregated_size = 0;
             st.unagg_bytes = 0;
             st.partial_bytes = 0;
+            debug_assert!(!unagg.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
             if unagg.is_empty() {
                 return Ok(true);
             }

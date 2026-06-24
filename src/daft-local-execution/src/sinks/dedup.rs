@@ -124,6 +124,7 @@ impl SpillableBuckets for DedupBuckets<'_> {
         // Compact this bucket to a single deduped MicroPartition before spilling.
         let pieces = std::mem::take(&mut st.partially_deduped);
         st.bytes = 0;
+        debug_assert!(!pieces.is_empty(), "dedup bucket selected with bytes>0 but no resident data (counter drift)");
         if pieces.is_empty() {
             return Ok(true);
         }
@@ -384,6 +385,25 @@ mod tests {
             50,
             "Expected exactly 50 distinct rows, got {}",
             result.len()
+        );
+
+        // Membership assertion: the exact distinct set must be 0..50.
+        let mut actual_values: Vec<i32> = result
+            .record_batches()
+            .iter()
+            .flat_map(|rb| {
+                rb.get_column(0)
+                    .i32()
+                    .expect("column must be Int32")
+                    .values()
+                    .to_vec()
+            })
+            .collect();
+        actual_values.sort_unstable();
+        let expected_values: Vec<i32> = (0..50).collect();
+        assert_eq!(
+            actual_values, expected_values,
+            "Result must contain exactly the values 0..50"
         );
     }
 }

@@ -295,8 +295,12 @@ mod tests {
         assert_eq!(caches.len(), 4);
         let total: usize = caches.iter().map(|c| c.num_rows).sum();
         assert_eq!(total, 42);
+        // Per-partition row-count assertions.
+        assert_eq!(caches[0].num_rows, 10);
         // Empty partition still produces a (zero-row) cache entry.
         assert_eq!(caches[1].num_rows, 0);
+        assert_eq!(caches[2].num_rows, 25);
+        assert_eq!(caches[3].num_rows, 7);
         Ok(())
     }
 }

@@ -183,13 +183,6 @@ impl MemoryManager {
         }
     }
 
-    /// Total memory budget (bytes) the engine is allowed to use, from `DAFT_MEMORY_LIMIT` or
-    /// system memory. Used to auto-derive spill thresholds for blocking sinks.
-    #[allow(dead_code)]
-    pub fn total_bytes(&self) -> u64 {
-        self.total_bytes
-    }
-
     /// Current configured size of the resident spill pool (bytes).
     pub fn spill_pool_bytes(&self) -> u64 {
         self.state.lock().unwrap().spill_pool_bytes
@@ -220,11 +213,12 @@ impl MemoryManager {
     /// Try to charge `bytes` to the spill pool. Non-blocking; returns false if the pool is full.
     fn try_take_spill(&self, bytes: u64) -> bool {
         let mut state = self.state.lock().unwrap();
-        if state.spill_used_bytes + bytes <= state.spill_pool_bytes {
-            state.spill_used_bytes += bytes;
-            true
-        } else {
-            false
+        match state.spill_used_bytes.checked_add(bytes) {
+            Some(sum) if sum <= state.spill_pool_bytes => {
+                state.spill_used_bytes = sum;
+                true
+            }
+            _ => false,
         }
     }
 
