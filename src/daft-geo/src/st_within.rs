@@ -1,21 +1,10 @@
 use common_error::DaftResult;
 use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
 use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
-use geo::{Contains, Geometry};
+use geo::Geometry;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{binary_geom_to_bool, validate_geometry_field};
-
-fn geom_within(a: &Geometry, b: &Geometry) -> bool {
-    // A is within B iff B contains A
-    match (b, a) {
-        (Geometry::Polygon(poly), Geometry::Point(pt)) => poly.contains(pt),
-        (Geometry::Polygon(poly), Geometry::LineString(ls)) => poly.contains(ls),
-        (Geometry::Polygon(poly), Geometry::Polygon(inner)) => poly.contains(inner),
-        (Geometry::MultiPolygon(mp), Geometry::Point(pt)) => mp.contains(pt),
-        _ => false,
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StWithin;
@@ -25,7 +14,8 @@ impl ScalarUDF for StWithin {
     fn name(&self) -> &'static str { "st_within" }
 
     fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
-        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(), geom_within)
+        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(),
+            |a: &Geometry, b: &Geometry| crate::relate::relate_pred(a, b, crate::relate::RelatePred::Within))
     }
 
     fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {

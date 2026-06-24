@@ -3,6 +3,7 @@ use daft_dsl::functions::FunctionModule;
 pub mod great_circle_distance;
 pub mod h3_index;
 pub mod mbr;
+pub(crate) mod relate;
 pub mod st_area;
 pub mod st_astext;
 pub mod st_buffer;

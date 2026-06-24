@@ -1,25 +1,10 @@
 use common_error::DaftResult;
 use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
 use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
-use geo::{Geometry, Intersects};
+use geo::Geometry;
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{binary_geom_to_bool, validate_geometry_field};
-
-fn geom_intersects(a: &Geometry, b: &Geometry) -> bool {
-    match (a, b) {
-        (Geometry::Point(pa), Geometry::Point(pb)) => pa.intersects(pb),
-        (Geometry::Point(p), Geometry::Polygon(poly)) => p.intersects(poly),
-        (Geometry::Polygon(poly), Geometry::Point(p)) => poly.intersects(p),
-        (Geometry::Polygon(a), Geometry::Polygon(b)) => a.intersects(b),
-        (Geometry::LineString(a), Geometry::LineString(b)) => a.intersects(b),
-        (Geometry::LineString(ls), Geometry::Polygon(p)) => ls.intersects(p),
-        (Geometry::Polygon(p), Geometry::LineString(ls)) => p.intersects(ls),
-        (Geometry::MultiPolygon(mp), Geometry::Point(pt)) => mp.intersects(pt),
-        (Geometry::MultiPolygon(mp), Geometry::Polygon(p)) => mp.intersects(p),
-        _ => false,
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StIntersects;
@@ -29,7 +14,8 @@ impl ScalarUDF for StIntersects {
     fn name(&self) -> &'static str { "st_intersects" }
 
     fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
-        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(), geom_intersects)
+        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(),
+            |a: &Geometry, b: &Geometry| crate::relate::relate_pred(a, b, crate::relate::RelatePred::Intersects))
     }
 
     fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
