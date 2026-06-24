@@ -187,3 +187,28 @@ def test_great_circle_distance_sql_smoke() -> None:
         "SELECT great_circle_distance(0.0, 0.0, 0.0, 1.0) AS distance",
     ).to_pydict()["distance"]
     assert actual[0] == pytest.approx(111194.92664455873, rel=1e-6)
+
+
+# ── Spatial predicate tests ──────────────────────────────────────────────────
+
+from daft.functions import st_touches, st_disjoint, st_equals, st_geomfromtext  # noqa: E402
+
+
+def test_st_disjoint_and_touches():
+    # two unit squares sharing an edge → touch, not disjoint
+    a = "POLYGON((0 0,1 0,1 1,0 1,0 0))"
+    b = "POLYGON((1 0,2 0,2 1,1 1,1 0))"
+    df = daft.from_pydict({"a": [a], "b": [b]}).select(
+        st_touches(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("t"),
+        st_disjoint(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("b"))).alias("d"),
+    ).to_pydict()
+    assert df["t"] == [True]
+    assert df["d"] == [False]
+
+
+def test_st_equals():
+    a = "POINT(1 2)"
+    df = daft.from_pydict({"a": [a]}).select(
+        st_equals(st_geomfromtext(daft.col("a")), st_geomfromtext(daft.col("a"))).alias("e"),
+    ).to_pydict()
+    assert df["e"] == [True]

@@ -3,7 +3,6 @@ use geo::relate::Relate;
 
 /// The DE-9IM spatial predicate to evaluate.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) enum RelatePred {
     Intersects,
     Contains,

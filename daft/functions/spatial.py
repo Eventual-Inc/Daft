@@ -179,6 +179,36 @@ def st_distance(geom_a: Expression, geom_b: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_distance", geom_a, geom_b)
 
 
+def st_geomfromtext(wkt: Expression) -> Expression:
+    """Parse a Well-Known Text (WKT) string and return a WKB geometry."""
+    return Expression._call_builtin_scalar_fn("st_geomfromtext", wkt)
+
+
+def st_touches(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return true where A and B share a boundary but their interiors do not intersect."""
+    return Expression._call_builtin_scalar_fn("st_touches", geom_a, geom_b)
+
+
+def st_crosses(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return true where A and B cross."""
+    return Expression._call_builtin_scalar_fn("st_crosses", geom_a, geom_b)
+
+
+def st_overlaps(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return true where A and B overlap (same dimension, partial intersection)."""
+    return Expression._call_builtin_scalar_fn("st_overlaps", geom_a, geom_b)
+
+
+def st_disjoint(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return true where A and B share no points."""
+    return Expression._call_builtin_scalar_fn("st_disjoint", geom_a, geom_b)
+
+
+def st_equals(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Return true where A and B are topologically equal."""
+    return Expression._call_builtin_scalar_fn("st_equals", geom_a, geom_b)
+
+
 # ── Geometry-producing functions ────────────────────────────────────────────
 
 
