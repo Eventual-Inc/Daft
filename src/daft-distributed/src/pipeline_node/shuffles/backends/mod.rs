@@ -123,7 +123,7 @@ impl ShuffleBackend {
     /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
     /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
     /// and then applies `wrap_plan` on top. The partition refs are attached to
-    /// the task via the backend-appropriate AP I (`with_psets` /
+    /// the task via the backend-appropriate API (`with_psets` /
     /// `with_flight_shuffle_reads`).
     pub(crate) fn build_refs_task_builder<F>(
         &self,
