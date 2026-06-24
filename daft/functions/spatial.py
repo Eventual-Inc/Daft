@@ -306,6 +306,61 @@ def st_symdifference(geom_a: Expression, geom_b: Expression) -> Expression:
 # ── Geometry-producing functions ────────────────────────────────────────────
 
 
+def st_envelope(geom: Expression) -> Expression:
+    """Return the minimum bounding rectangle of a geometry as a Polygon.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Geometry column containing the bounding-box polygon. Returns null for
+        null or unparseable inputs, or for geometries with no extent.
+    """
+    return Expression._call_builtin_scalar_fn("st_envelope", geom)
+
+
+def st_convexhull(geom: Expression) -> Expression:
+    """Return the convex hull of a geometry as a Polygon.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Geometry column containing the convex hull polygon. Returns null for
+        null or unparseable inputs.
+    """
+    return Expression._call_builtin_scalar_fn("st_convexhull", geom)
+
+
+def st_simplify(geom: Expression, tolerance: float) -> Expression:
+    """Simplify a geometry using the Ramer–Douglas–Peucker algorithm.
+
+    Applies to LineString, MultiLineString, Polygon, and MultiPolygon.
+    Other geometry types (Point, MultiPoint, etc.) are returned unchanged.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+        tolerance: Simplification tolerance in the same units as the geometry's
+            coordinate system. Larger values produce coarser simplification.
+
+    Returns:
+        Geometry column with simplified geometries.
+    """
+    return Expression._call_builtin_scalar_fn("st_simplify", geom, tolerance)
+
+
+def st_astext(geom: Expression) -> Expression:
+    """Return the Well-Known Text (WKT) representation of a geometry.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Utf8 column with WKT strings.
+    """
+    return Expression._call_builtin_scalar_fn("st_astext", geom)
+
+
 def st_buffer(geom: Expression, distance: float) -> Expression:
     """Return a geometry expanded by the given distance.
 

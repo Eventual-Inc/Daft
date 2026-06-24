@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StCrosses, StDifference, StDisjoint, StDistance, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StOverlaps, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCrosses, StDifference, StDisjoint, StDistance, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StOverlaps, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -40,6 +40,9 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_difference", SQLSpatialBinary(Arc::new(StDifference)));
         parent.add_fn("st_symdifference", SQLSpatialBinary(Arc::new(StSymDifference)));
         parent.add_fn("st_buffer", SQLStBuffer);
+        parent.add_fn("st_envelope", SQLSpatialUnary(Arc::new(StEnvelope)));
+        parent.add_fn("st_convexhull", SQLSpatialUnary(Arc::new(StConvexHull)));
+        parent.add_fn("st_simplify", SQLStSimplify);
         parent.add_fn("st_geohash", SQLStGeohash);
         parent.add_fn("st_astext", SQLSpatialUnary(Arc::new(StAsText)));
         parent.add_fn("st_geomfromtext", SQLSpatialUnary(Arc::new(StGeomFromText)));
@@ -141,6 +144,44 @@ impl SQLFunction for SQLStBuffer {
 
     fn docstrings(&self, _alias: &str) -> String {
         "Returns a geometry expanded by the given distance (planar Cartesian).".to_string()
+    }
+}
+
+// ── st_simplify(geom, tolerance) ────────────────────────────────────────────
+
+pub struct SQLStSimplify;
+
+impl SQLFunction for SQLStSimplify {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("st_simplify expects 2 arguments (geom, tolerance), got {}", inputs.len());
+        }
+        let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let tolerance_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        // Validate that tolerance is a numeric literal at plan time
+        let _ = tolerance_expr
+            .as_literal()
+            .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
+            .ok_or_else(|| crate::error::PlannerError::invalid_operation(
+                "st_simplify: tolerance must be a numeric literal",
+            ))?;
+        // Pass tolerance as a trailing positional arg so StSimplify (unit struct) can read it
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(StSimplify)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                daft_dsl::functions::FunctionArg::unnamed(geom),
+                daft_dsl::functions::FunctionArg::unnamed(tolerance_expr),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Simplifies a geometry using Ramer–Douglas–Peucker with the given tolerance.".to_string()
     }
 }
 

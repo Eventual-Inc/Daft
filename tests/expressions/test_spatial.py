@@ -410,6 +410,84 @@ def test_overlay_sql_parity():
     assert abs(py["sd"][0] - sql["sd"][0]) < 1e-6, f"symdifference parity: py={py['sd'][0]} sql={sql['sd'][0]}"
 
 
+# ── st_envelope / st_convexhull / st_simplify tests ─────────────────────────
+
+
+def test_envelope_is_bbox():
+    """st_envelope of a linestring should be a polygon containing 'POLYGON'."""
+    from daft.functions import st_envelope, st_astext
+    g = "LINESTRING(0 0, 2 3, 1 1)"
+    df = daft.from_pydict({"g": [g]}).select(
+        st_astext(st_envelope(st_geomfromtext(daft.col("g")))).alias("e")
+    ).to_pydict()
+    assert "POLYGON" in df["e"][0].upper()
+
+
+def test_envelope_sql_parity():
+    """SQL st_envelope should return a polygon matching Python."""
+    from daft.functions import st_envelope, st_astext
+    df = daft.from_pydict({"g": ["LINESTRING(0 0, 2 3, 1 1)"]})
+    py_result = df.select(
+        st_astext(st_envelope(st_geomfromtext(daft.col("g")))).alias("e")
+    ).to_pydict()
+    sql_result = daft.sql("SELECT st_astext(st_envelope(st_geomfromtext(g))) AS e FROM df").to_pydict()
+    assert "POLYGON" in py_result["e"][0].upper()
+    assert py_result["e"][0] == sql_result["e"][0]
+
+
+def test_convexhull_triangle():
+    """Convex hull of a concave set of points should be the outer triangle."""
+    from daft.functions import st_convexhull, st_astext, st_geometrytype
+    # A set of 4 points where one is inside the triangle of the other 3
+    g = "MULTIPOINT(0 0, 4 0, 2 3, 2 1)"
+    df = daft.from_pydict({"g": [g]}).select(
+        st_geometrytype(st_convexhull(st_geomfromtext(daft.col("g")))).alias("t"),
+        st_astext(st_convexhull(st_geomfromtext(daft.col("g")))).alias("wkt"),
+    ).to_pydict()
+    assert df["t"][0] == "Polygon"
+    # Hull should be a triangle: (0 0), (4 0), (2 3) — inner point (2,1) excluded
+    assert "2 1" not in df["wkt"][0]
+
+
+def test_convexhull_sql_parity():
+    """SQL st_convexhull should match Python."""
+    from daft.functions import st_convexhull, st_astext
+    df = daft.from_pydict({"g": ["MULTIPOINT(0 0, 4 0, 2 3, 2 1)"]})
+    py_result = df.select(
+        st_astext(st_convexhull(st_geomfromtext(daft.col("g")))).alias("h")
+    ).to_pydict()
+    sql_result = daft.sql("SELECT st_astext(st_convexhull(st_geomfromtext(g))) AS h FROM df").to_pydict()
+    assert py_result["h"][0] == sql_result["h"][0]
+
+
+def test_simplify_reduces_vertices():
+    """st_simplify with large tolerance should reduce a near-collinear linestring."""
+    from daft.functions import st_simplify, st_astext
+    # A linestring with a near-collinear middle point: (0,0)→(1,0.01)→(2,0) - small deviation
+    g = "LINESTRING(0 0, 1 0.01, 2 0)"
+    df = daft.from_pydict({"g": [g]}).select(
+        st_astext(st_simplify(st_geomfromtext(daft.col("g")), 0.1)).alias("s")
+    ).to_pydict()
+    # With tolerance=0.1, the middle point (deviation 0.01) should be removed
+    simplified = df["s"][0]
+    assert simplified is not None
+    # Result should be just the endpoints: LINESTRING(0 0, 2 0)
+    assert "1 0.01" not in simplified
+
+
+def test_simplify_sql_parity():
+    """SQL st_simplify should match Python result."""
+    from daft.functions import st_simplify, st_astext
+    df = daft.from_pydict({"g": ["LINESTRING(0 0, 1 0.01, 2 0)"]})
+    py_result = df.select(
+        st_astext(st_simplify(st_geomfromtext(daft.col("g")), 0.1)).alias("s")
+    ).to_pydict()
+    sql_result = daft.sql(
+        "SELECT st_astext(st_simplify(st_geomfromtext(g), 0.1)) AS s FROM df"
+    ).to_pydict()
+    assert py_result["s"][0] == sql_result["s"][0]
+
+
 def test_st_isvalid_sql_parity():
     """SQL st_isvalid should match Python result for both valid and invalid geometries."""
     df = daft.from_pydict({
