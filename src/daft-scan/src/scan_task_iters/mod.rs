@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 mod split_jsonl;
 
@@ -6,6 +6,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_parquet::{RowGroupList, read::read_parquet_metadata};
+use daft_stats::TableMetadata;
 use indexmap::IndexMap;
 
 use crate::{
@@ -254,6 +255,10 @@ fn split_by_row_groups(
                         let mut curr_row_groups: RowGroupList = IndexMap::new();
                         let mut curr_size_bytes: usize = 0;
                         let mut curr_num_rows: usize = 0;
+                        // Per-column uncompressed sizes for the row groups in this split, so the
+                        // resulting ScanTask carries an accurate (projection-aware) size estimate
+                        // instead of falling back to the schema heuristic / inflation factor.
+                        let mut curr_column_sizes: BTreeMap<String, u64> = BTreeMap::new();
 
                         let all_row_groups: Vec<_> = file_metadata.row_groups().collect();
                         let last_original_index = all_row_groups.last().map(|(i, _)| *i);
@@ -261,6 +266,9 @@ fn split_by_row_groups(
                             curr_row_group_indices.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
                             curr_num_rows += rg.num_rows();
+                            for (name, bytes) in rg.column_uncompressed_sizes() {
+                                *curr_column_sizes.entry(name).or_insert(0) += bytes;
+                            }
                             curr_row_groups.insert(i, rg);
 
                             if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
@@ -282,9 +290,14 @@ fn split_by_row_groups(
                                     unreachable!("Parquet file format should only be used with ScanSourceKind::File");
                                 }
 
-                                if let Some(metadata) = &mut new_source.metadata {
-                                    metadata.length = curr_num_rows;
-                                }
+                                // Attach the exact row count and per-column uncompressed sizes
+                                // for this split (we read the footer above, so this is accurate
+                                // for every file, not just the first one in the scan).
+                                let column_sizes = std::mem::take(&mut curr_column_sizes);
+                                new_source.metadata = Some(TableMetadata {
+                                    length: curr_num_rows,
+                                    column_sizes: (!column_sizes.is_empty()).then_some(column_sizes),
+                                });
 
                                 // Reset accumulators
                                 curr_row_groups = IndexMap::new();
