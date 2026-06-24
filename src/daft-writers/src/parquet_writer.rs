@@ -73,6 +73,10 @@ fn native_parquet_writer_properties(
     // Inject geo metadata before build so add_encoded_arrow_schema_to_metadata can append ARROW:schema
     if let Some(geo) = geo_metadata {
         let kv = KeyValue::new("geo".to_string(), geo.to_string());
+        // NOTE: set_key_value_metadata REPLACES the builder's KV list. This is safe today
+        // because nothing else sets builder-time KV here, and ARROW:schema is appended
+        // post-build by add_encoded_arrow_schema_to_metadata (which pushes, not replaces).
+        // If another builder-time KV is ever added, merge instead of replace.
         builder = builder.set_key_value_metadata(Some(vec![kv]));
     }
     let mut props = builder.build();
