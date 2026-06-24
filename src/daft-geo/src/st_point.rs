@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -31,11 +31,24 @@ impl ScalarUDF for StPoint {
         let y_series = inputs.required(1)?.cast(&DataType::Float64)?;
         let x_arr = x_series.f64()?;
         let y_arr = y_series.f64()?;
-        let len = x_arr.len();
+        let x_len = x_arr.len();
+        let y_len = y_arr.len();
 
-        let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
-        for i in 0..len {
-            let wkb = match (x_arr.get(i), y_arr.get(i)) {
+        // Scalar broadcast: either side can be length-1 and is broadcast to the other's length.
+        // Any other mismatch is an error.
+        if x_len != y_len && x_len != 1 && y_len != 1 {
+            return Err(DaftError::ValueError(format!(
+                "st_point: x and y must have the same length or be scalar; got {} and {}",
+                x_len, y_len
+            )));
+        }
+        let n = x_len.max(y_len);
+
+        let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(n);
+        for i in 0..n {
+            let x_val = if x_len == 1 { x_arr.get(0) } else { x_arr.get(i) };
+            let y_val = if y_len == 1 { y_arr.get(0) } else { y_arr.get(i) };
+            let wkb = match (x_val, y_val) {
                 (Some(x), Some(y)) => {
                     let geom = Geometry::Point(Point::new(x, y));
                     geom_to_wkb(&geom).ok()

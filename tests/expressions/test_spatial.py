@@ -329,6 +329,25 @@ def test_st_point_sql():
     assert result["py"] == [4.0]
 
 
+def test_st_point_scalar_broadcast():
+    from daft import lit
+    from daft.functions import st_point, st_x, st_y
+    # column x, literal y
+    df = daft.from_pydict({"x": [1.0, 2.0, 3.0]}).select(
+        st_x(st_point(daft.col("x"), lit(9.0))).alias("px"),
+        st_y(st_point(daft.col("x"), lit(9.0))).alias("py"),
+    ).to_pydict()
+    assert df["px"] == [1.0, 2.0, 3.0]
+    assert df["py"] == [9.0, 9.0, 9.0]
+    # literal x, column y
+    df2 = daft.from_pydict({"y": [10.0, 20.0, 30.0]}).select(
+        st_x(st_point(lit(5.0), daft.col("y"))).alias("px"),
+        st_y(st_point(lit(5.0), daft.col("y"))).alias("py"),
+    ).to_pydict()
+    assert df2["px"] == [5.0, 5.0, 5.0]
+    assert df2["py"] == [10.0, 20.0, 30.0]
+
+
 def test_st_makeline_basic():
     from daft.functions import st_makeline, st_geomfromtext, st_astext, st_length
     df = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(1 1)"]}).select(
