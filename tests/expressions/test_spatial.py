@@ -7,7 +7,7 @@ import pytest
 
 import daft
 import daft.functions
-from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext, st_distance, st_buffer, st_area, st_isvalid
+from daft.functions import st_touches, st_disjoint, st_equals, st_crosses, st_overlaps, st_geomfromtext, st_distance, st_buffer, st_area, st_isvalid, st_envelope
 
 
 def _great_circle_distance(
@@ -415,12 +415,17 @@ def test_overlay_sql_parity():
 
 def test_envelope_is_bbox():
     """st_envelope of a linestring should be a polygon containing 'POLYGON'."""
-    from daft.functions import st_envelope, st_astext
+    from daft.functions import st_astext
     g = "LINESTRING(0 0, 2 3, 1 1)"
     df = daft.from_pydict({"g": [g]}).select(
         st_astext(st_envelope(st_geomfromtext(daft.col("g")))).alias("e")
     ).to_pydict()
     assert "POLYGON" in df["e"][0].upper()
+    # Verify envelope has correct extent: input spans (0,0) to (2,3), so area = 2 * 3 = 6.0
+    area = daft.from_pydict({"g": [g]}).select(
+        st_area(st_envelope(st_geomfromtext(daft.col("g")))).alias("a")
+    ).to_pydict()
+    assert abs(area["a"][0] - 6.0) < 1e-9
 
 
 def test_envelope_sql_parity():

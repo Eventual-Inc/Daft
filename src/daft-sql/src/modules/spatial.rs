@@ -167,7 +167,7 @@ impl SQLFunction for SQLStSimplify {
             .as_literal()
             .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
             .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                "st_simplify: tolerance must be a numeric literal",
+                "st_simplify: tolerance must be a numeric literal (column references are not supported here)",
             ))?;
         // Pass tolerance as a trailing positional arg so StSimplify (unit struct) can read it
         Ok(BuiltinScalarFn {
