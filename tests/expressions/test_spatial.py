@@ -593,3 +593,30 @@ def test_st_isvalid_sql_parity():
     ).to_pydict()
     assert py_result["v"] == [True, False]
     assert sql_result["v"] == [True, False]
+
+
+def test_geojson_roundtrip():
+    """Test GeoJSON round-trip: parse GeoJSON to geometry and back to GeoJSON."""
+    from daft.functions import st_geomfromgeojson, st_geojsonfromgeom
+    # A simple GeoJSON point
+    geojson_point = '{"type":"Point","coordinates":[1,2]}'
+    df = daft.from_pydict({"g": [geojson_point]}).select(
+        st_geojsonfromgeom(st_geomfromgeojson(daft.col("g"))).alias("out")
+    ).to_pydict()
+    # Result should be valid GeoJSON with Point type
+    result = df["out"][0]
+    assert result is not None
+    assert "Point" in result
+    assert "1" in result and "2" in result
+
+
+def test_geojson_to_wkt():
+    """Test that st_geomfromgeojson parses GeoJSON and st_astext returns WKT."""
+    from daft.functions import st_geomfromgeojson, st_astext
+    geojson_point = '{"type":"Point","coordinates":[1,2]}'
+    df = daft.from_pydict({"g": [geojson_point]}).select(
+        st_astext(st_geomfromgeojson(daft.col("g"))).alias("out")
+    ).to_pydict()
+    result = df["out"][0]
+    assert result is not None
+    assert result.upper().startswith("POINT")

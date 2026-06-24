@@ -212,6 +212,19 @@ def st_geomfromtext(wkt: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_geomfromtext", wkt)
 
 
+def st_geomfromgeojson(geojson: Expression) -> Expression:
+    """Parse a GeoJSON geometry or feature string and return a WKB geometry.
+
+    Args:
+        geojson: A Utf8 column of GeoJSON strings (e.g. ``'{"type":"Point","coordinates":[1,2]}'``).
+
+    Returns:
+        Geometry (WKB) column. Returns null for rows where the input is null
+        or the GeoJSON string cannot be parsed as a valid geometry or feature.
+    """
+    return Expression._call_builtin_scalar_fn("st_geomfromgeojson", geojson)
+
+
 def st_touches(geom_a: Expression, geom_b: Expression) -> Expression:
     """Return true where A and B share a boundary but their interiors do not intersect."""
     return Expression._call_builtin_scalar_fn("st_touches", geom_a, geom_b)
@@ -359,6 +372,18 @@ def st_astext(geom: Expression) -> Expression:
         Utf8 column with WKT strings.
     """
     return Expression._call_builtin_scalar_fn("st_astext", geom)
+
+
+def st_geojsonfromgeom(geom: Expression) -> Expression:
+    """Return the GeoJSON representation of a geometry.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Utf8 column with GeoJSON strings.
+    """
+    return Expression._call_builtin_scalar_fn("st_geojsonfromgeom", geom)
 
 
 def st_buffer(geom: Expression, distance: float) -> Expression:
