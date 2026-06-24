@@ -153,8 +153,9 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_compression: Option<String>,
     pub enable_multi_glob_path_tasks: bool,
-    /// If set, hash join build side partitions that exceed this many bytes will be spilled to
-    /// `flight_shuffle_dirs`. Enables grace-hash-join spill-to-disk. Default `None` (disabled).
+    /// Spill threshold (bytes) for the hash join build side's grace-hash-join spill-to-disk,
+    /// spilled to `flight_shuffle_dirs`. `None` auto-derives from the engine memory budget
+    /// (spilling is on by default). `Some(0)` disables spilling (pure in-memory build).
     pub hash_join_spill_threshold_bytes: Option<usize>,
     /// Spill threshold (bytes) for the Sort blocking sink's external merge sort, spilled to
     /// `flight_shuffle_dirs`. `None` auto-derives a threshold from the engine memory budget
