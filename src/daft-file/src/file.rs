@@ -408,10 +408,17 @@ const OGG_MAGIC: &[u8] = &[0x4F, 0x67, 0x67, 0x53]; // Ogg Vorbis
 const HTML_MAGIC_1: &[u8] = &[0x3C, 0x21, 0x44, 0x4F, 0x43, 0x54, 0x59, 0x50, 0x45]; // <!DOCTYPE
 const HTML_MAGIC_2: &[u8] = &[0x3C, 0x68, 0x74, 0x6D, 0x6C]; // <html
 const HTML_MAGIC_3: &[u8] = &[0x3C, 0x48, 0x54, 0x4D, 0x4C]; // <HTML
+const HDF5_MAGIC: &[u8] = b"\x89HDF\r\n\x1a\n";
+pub(crate) const HDF5_MIME: &str = "application/vnd.hdfgroup.hdf5";
+const MIME_SNIFF_BYTES: usize = 4 * 1024 + HDF5_MAGIC.len();
 
 fn guess_mimetype_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let path = url.path();
+    let lower_path = path.to_ascii_lowercase();
+    if lower_path.ends_with(".h5") || lower_path.ends_with(".hdf5") {
+        return Some(HDF5_MIME.to_string());
+    }
     let mime = mime_guess::from_path(path).first()?;
     Some(mime.to_string())
 }
@@ -419,7 +426,7 @@ fn guess_mimetype_from_url(url: &str) -> Option<String> {
 pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
     reader: &mut R,
 ) -> std::io::Result<Option<String>> {
-    let mut buffer = [0; 16]; // Extended for more formats
+    let mut buffer = [0; MIME_SNIFF_BYTES];
     let original_pos = reader.stream_position()?;
 
     reader.seek(SeekFrom::Start(0))?;
@@ -463,6 +470,8 @@ pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
         || starts_with(&buffer, HTML_MAGIC_3)
     {
         Some("text/html")
+    } else if has_hdf5_signature(&buffer[..bytes_read]) {
+        Some(HDF5_MIME)
     } else {
         None
     };
@@ -472,6 +481,23 @@ pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
 
 fn starts_with(buffer: &[u8], pattern: &[u8]) -> bool {
     buffer.len() >= pattern.len() && buffer[..pattern.len()] == pattern[..]
+}
+
+fn has_hdf5_signature(buffer: &[u8]) -> bool {
+    // IANA's HDF5 media type registration cites the HDF Group File Format
+    // Specification and gives the HDF5 superblock signature as:
+    // hex 89 48 44 46 0D 0A 1A 0A / C string \211HDF\r\n\032\n.
+    // The signature may appear at offset 0, 512, 1024, 2048, ... to allow a
+    // user block. See:
+    // https://www.iana.org/assignments/media-types/application/vnd.hdfgroup.hdf5
+    let mut offset = 0;
+    while offset + HDF5_MAGIC.len() <= buffer.len() {
+        if starts_with(&buffer[offset..], HDF5_MAGIC) {
+            return true;
+        }
+        offset = if offset == 0 { 512 } else { offset * 2 };
+    }
+    false
 }
 
 #[cfg(test)]
@@ -495,6 +521,8 @@ mod tests {
             ("https://example.com/movie.mov", Some("video/quicktime")),
             ("https://example.com/music.flac", Some("audio/flac")),
             ("https://example.com/sound.aac", Some("audio/aac")),
+            ("https://example.com/data.h5", Some(HDF5_MIME)),
+            ("https://example.com/data.hdf5", Some(HDF5_MIME)),
             ("https://example.com/noextension", None),
             ("https://example.com/unknown.abcde", None),
         ];
@@ -573,6 +601,23 @@ mod tests {
         let mut reader = Cursor::new(data);
         let result = guess_mimetype_from_content(&mut reader).unwrap();
         assert_eq!(result.as_deref(), Some("video/mpeg"));
+    }
+
+    #[test]
+    fn test_guess_mimetype_from_reader_hdf5() {
+        let data = b"\x89HDF\r\n\x1a\n\x00\x00\x00\x00";
+        let mut reader = Cursor::new(data);
+        let result = guess_mimetype_from_content(&mut reader).unwrap();
+        assert_eq!(result.as_deref(), Some(HDF5_MIME));
+    }
+
+    #[test]
+    fn test_guess_mimetype_from_reader_hdf5_user_block() {
+        let mut data = vec![0; 512 + HDF5_MAGIC.len()];
+        data[512..512 + HDF5_MAGIC.len()].copy_from_slice(HDF5_MAGIC);
+        let mut reader = Cursor::new(data);
+        let result = guess_mimetype_from_content(&mut reader).unwrap();
+        assert_eq!(result.as_deref(), Some(HDF5_MIME));
     }
 
     #[test]

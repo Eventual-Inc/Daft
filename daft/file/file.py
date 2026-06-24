@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
     from daft.file.audio import AudioFile
+    from daft.file.hdf5 import Hdf5File
     from daft.file.image import ImageFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
@@ -207,25 +208,23 @@ class File:
 
     def is_video(self) -> bool:
         mimetype = self.mime_type()
-        if mimetype.startswith("video/"):
-            return True
-        return False
+        return mimetype.startswith("video/")
 
     def is_audio(self) -> bool:
         mimetype = self.mime_type()
-        if mimetype.startswith("audio/"):
-            return True
-        return False
+        return mimetype.startswith("audio/")
 
     def is_image(self) -> bool:
         mimetype = self.mime_type()
-        if mimetype.startswith("image/"):
-            return True
-        return False
+        return mimetype.startswith("image/")
+
+    def is_hdf5(self) -> bool:
+        mimetype = self.mime_type()
+        return mimetype == "application/vnd.hdfgroup.hdf5"
 
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
-        if not av.module_available():
+        if not av.module_available():  # ty:ignore[unresolved-attribute]
             raise ImportError("The 'av' module is required to convert files to video.")
         # this is purposely inside the function, and after the `av` check
         # because using VideoFile means that the user has `av` installed
@@ -241,7 +240,7 @@ class File:
 
     def as_audio(self) -> AudioFile:
         """Convert to AudioFile if this file contains audio data."""
-        if not sf.module_available():
+        if not sf.module_available():  # ty: ignore[unresolved-attribute]
             raise ImportError(
                 "The 'soundfile' module is required to convert files to audio. "
                 "Please install it with: pip install 'daft[audio]'"
@@ -260,7 +259,7 @@ class File:
 
     def as_image(self) -> ImageFile:
         """Convert to ImageFile if this file contains image data."""
-        if not pil_image.module_available():
+        if not pil_image.module_available():  # ty:ignore[unresolved-attribute]
             raise ImportError(
                 "The 'pillow' module is required to convert files to images. "
                 "Please install it with: pip install 'daft[image]'"
@@ -271,6 +270,24 @@ class File:
             raise ValueError(f"File {self} is not an image file")
 
         cls = ImageFile.__new__(ImageFile)
+        cls._inner = self._inner
+
+        return cls
+
+    def as_hdf5(self) -> Hdf5File:
+        """Convert to Hdf5File if this file contains HDF5 data."""
+        from daft.dependencies import h5py
+
+        if not h5py.module_available():  # ty:ignore[unresolved-attribute]
+            raise ImportError(
+                "The 'h5py' module is required to convert files to HDF5. Please install it with: pip install 'h5py'"
+            )
+        from daft.file.hdf5 import Hdf5File
+
+        if not self.is_hdf5():
+            raise ValueError(f"File {self} is not an HDF5 file")
+
+        cls = Hdf5File.__new__(Hdf5File)
         cls._inner = self._inner
 
         return cls

@@ -1,18 +1,21 @@
 use common_error::DaftError;
 use daft_core::{
     datatypes::FileArray,
-    file::{FileReference, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
+    file::{
+        FileReference, MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeUnknown,
+        MediaTypeVideo,
+    },
     series::IntoSeries,
     with_match_file_types,
 };
-use daft_dsl::functions::{AsyncScalarUDF, UnaryArg, prelude::*};
+use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    file::{BUFFER_SIZE_SNIFF, DaftFile},
-    meta::file_exists,
+    file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME},
+    meta::file_exists_blocking,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -43,9 +46,8 @@ impl ScalarUDF for File {
             DataType::File(MediaType::Unknown) => input,
             DataType::File(MediaType::Video)
             | DataType::File(MediaType::Audio)
-            | DataType::File(MediaType::Image) => {
-                input.cast(&DataType::File(MediaType::Unknown))?
-            }
+            | DataType::File(MediaType::Image)
+            | DataType::File(MediaType::Hdf5) => input.cast(&DataType::File(MediaType::Unknown))?,
             DataType::Utf8 => FileArray::<MediaTypeUnknown>::new_from_reference_array(
                 input.name(),
                 input.utf8()?,
@@ -351,6 +353,98 @@ impl ScalarUDF for ImageFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Hdf5File;
+#[derive(FunctionArgs)]
+struct Hdf5FileArgs<T> {
+    input: T,
+    verify: bool,
+    #[arg(optional)]
+    io_config: Option<IOConfig>,
+}
+
+#[typetag::serde]
+impl ScalarUDF for Hdf5File {
+    fn name(&self) -> &'static str {
+        "hdf5_file"
+    }
+
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let Hdf5FileArgs {
+            input,
+            verify,
+            io_config,
+        } = args.try_into()?;
+
+        fn verify_file(file_ref: FileReference) -> DaftResult<FileReference> {
+            let mut daft_file =
+                DaftFile::load_blocking(file_ref.clone(), false, Some(BUFFER_SIZE_SNIFF))?;
+
+            let mime_type = daft_file.guess_mime_type();
+            match mime_type {
+                Some(mime_type) if mime_type == HDF5_MIME => Ok(file_ref),
+                Some(mime_type) => Err(DaftError::ValueError(format!(
+                    "Invalid HDF5 file: {:?}",
+                    mime_type
+                ))),
+                None => Err(DaftError::ValueError("Invalid HDF5 file".to_string())),
+            }
+        }
+        Ok(match input.data_type() {
+            DataType::File(MediaType::Hdf5) => input,
+            DataType::File(MediaType::Unknown) => {
+                let casted = input.cast(&DataType::File(MediaType::Hdf5))?;
+                let files = casted.file::<MediaTypeHdf5>()?.clone();
+
+                if verify {
+                    for file in files.into_iter().flatten() {
+                        verify_file(file)?;
+                    }
+                }
+                files.into_series()
+            }
+            DataType::Utf8 => {
+                let utf8 = input.utf8()?;
+                let data = utf8.into_iter().map(|data| {
+                    data.map(|data| {
+                        let file_ref = FileReference::new(
+                            MediaType::Hdf5,
+                            data.to_string(),
+                            io_config.clone(),
+                        );
+                        if verify {
+                            verify_file(file_ref)
+                        } else {
+                            Ok(file_ref)
+                        }
+                    })
+                    .transpose()
+                });
+                FileArray::<MediaTypeHdf5>::new_from_file_references(input.name(), data)?
+                    .into_series()
+            }
+            _ => {
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported data type for 'hdf5_file' function: {}. Expected String",
+                    input.data_type()
+                )));
+            }
+        })
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let Hdf5FileArgs { input, .. } = args.try_into()?;
+
+        let input = input.to_field(schema)?;
+
+        Ok(Field::new(input.name, DataType::File(MediaType::Hdf5)))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FilePath;
 
 #[typetag::serde]
@@ -438,13 +532,12 @@ impl ScalarUDF for Size {
 pub struct FileExists;
 
 #[typetag::serde]
-#[async_trait::async_trait]
-impl AsyncScalarUDF for FileExists {
+impl ScalarUDF for FileExists {
     fn name(&self) -> &'static str {
         "file_exists"
     }
 
-    async fn call(
+    fn call(
         &self,
         args: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
@@ -454,13 +547,13 @@ impl AsyncScalarUDF for FileExists {
         with_match_file_types!(input.data_type(), |$P| {
             let s = input.file::<$P>()?;
 
-            let out = futures::future::try_join_all(s.into_iter().map(|f| async {
+            let out = s.into_iter().map(|f| {
                 if let Some(f) = f {
-                    file_exists(f).await.map(Some)
+                    file_exists_blocking(f).map(Some)
                 } else {
                     Ok(None)
                 }
-            })).await?;
+            }).collect::<DaftResult<Vec<_>>>()?;
 
             Ok(daft_core::prelude::BooleanArray::from_iter(s.name(), out.into_iter()).into_series())
         })
