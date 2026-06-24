@@ -250,6 +250,16 @@ def st_equals(geom_a: Expression, geom_b: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_equals", geom_a, geom_b)
 
 
+def st_covers(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Returns true if geometry A covers geometry B (no point of B is outside A; boundary included)."""
+    return Expression._call_builtin_scalar_fn("st_covers", geom_a, geom_b)
+
+
+def st_covered_by(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Returns true if geometry A is covered by geometry B (no point of A is outside B; boundary included)."""
+    return Expression._call_builtin_scalar_fn("st_covered_by", geom_a, geom_b)
+
+
 # ── Overlay (set-operation) functions ──────────────────────────────────────
 
 

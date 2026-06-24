@@ -12,6 +12,8 @@ pub(crate) enum RelatePred {
     Overlaps,
     Disjoint,
     Equals,
+    Covers,
+    CoveredBy,
 }
 
 /// Evaluate a DE-9IM predicate between two geometries. Correct for all geometry-type pairs.
@@ -32,6 +34,8 @@ pub(crate) fn relate_pred(a: &Geometry, b: &Geometry, pred: RelatePred) -> bool 
             RelatePred::Overlaps => m.is_overlaps(),
             RelatePred::Disjoint => m.is_disjoint(),
             RelatePred::Equals => m.is_equal_topo(),
+            RelatePred::Covers => m.is_covers(),
+            RelatePred::CoveredBy => m.is_coveredby(),
         }
     }))
     .unwrap_or(false)
@@ -79,5 +83,18 @@ mod tests {
             Coord { x: -1.0, y: 1.0 }, Coord { x: 3.0, y: 1.0 },
         ]));
         assert!(relate_pred(&poly, &line, RelatePred::Intersects));
+    }
+
+    #[test]
+    fn test_covers_and_covered_by() {
+        let poly = square(); // (0,0)-(2,2)
+        // Boundary point: contained-by-covers but NOT contains (interior only).
+        let boundary = Geometry::Point(Point::new(0.0, 1.0));
+        assert!(relate_pred(&poly, &boundary, RelatePred::Covers));
+        assert!(relate_pred(&boundary, &poly, RelatePred::CoveredBy));
+        assert!(!relate_pred(&poly, &boundary, RelatePred::Contains)); // interior-only
+        // A far point is neither covered nor covering.
+        let far = Geometry::Point(Point::new(100.0, 100.0));
+        assert!(!relate_pred(&poly, &far, RelatePred::Covers));
     }
 }

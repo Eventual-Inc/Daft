@@ -733,3 +733,19 @@ def test_python_sql_parity():
     assert py_ctor["py_coord"] == sql_ctor["py_coord"], (
         f"constructor parity y: py={py_ctor['py_coord']} sql={sql_ctor['py_coord']}"
     )
+
+
+def test_st_covers_and_covered_by():
+    import daft
+    from daft.functions import st_covers, st_covered_by, st_contains, st_geomfromtext
+
+    poly = "POLYGON((0 0,2 0,2 2,0 2,0 0))"
+    boundary_pt = "POINT(0 1)"  # on the edge: covered but not contained
+    df = daft.from_pydict({"poly": [poly], "pt": [boundary_pt]}).select(
+        st_covers(st_geomfromtext(daft.col("poly")), st_geomfromtext(daft.col("pt"))).alias("cov"),
+        st_covered_by(st_geomfromtext(daft.col("pt")), st_geomfromtext(daft.col("poly"))).alias("cby"),
+        st_contains(st_geomfromtext(daft.col("poly")), st_geomfromtext(daft.col("pt"))).alias("con"),
+    ).to_pydict()
+    assert df["cov"][0] is True
+    assert df["cby"][0] is True
+    assert df["con"][0] is False  # boundary point is covered but NOT contained
