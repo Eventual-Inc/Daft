@@ -73,7 +73,6 @@ use crate::{
         glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
         shuffle_read::ShuffleReadSource, source::SourceNode,
     },
-    spill::SpillConfig,
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
@@ -457,6 +456,36 @@ fn auto_spill_threshold(explicit: Option<usize>, divisor: usize) -> Option<usize
     }
 }
 
+/// Build the optional `SpillConfig` for one operator. Applies the global pool size from config to
+/// the shared memory manager, honours the per-operator opt-out (`Some(0)` → disabled) and the
+/// deprecated positive-value cap.
+fn build_spill_config(
+    opt_out: Option<usize>,
+    cfg: &DaftExecutionConfig,
+) -> Option<crate::spill::SpillConfig> {
+    if matches!(opt_out, Some(0)) {
+        return None; // operator opted out
+    }
+    let manager = crate::resource_manager::get_or_init_memory_manager();
+    if let Some(n) = cfg.spill_pool_bytes
+        && n > 0
+    {
+        manager.set_spill_pool_bytes(n as u64);
+    }
+    let pool = manager.spill_pool_bytes() as usize;
+    let mut sc = crate::spill::SpillConfig::new(pool, cfg.flight_shuffle_dirs.clone());
+    if let Some(n) = opt_out
+        && n > 0
+    {
+        tracing::warn!(
+            "Per-operator spill threshold ({n} bytes) is deprecated; using shared spill pool with \
+             this value as a cap. Prefer `spill_pool_bytes`."
+        );
+        sc.cap_bytes = Some(n);
+    }
+    Some(sc)
+}
+
 fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
@@ -545,8 +574,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
-                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
             let window_partition_only_sink = WindowPartitionOnlySink::new(
                 aggregations,
                 aliases,
@@ -579,8 +607,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
-                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
             let window_partition_and_order_by_sink = WindowPartitionAndOrderBySink::new(
                 functions,
                 aliases,
@@ -618,8 +645,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = auto_spill_threshold(cfg.window_spill_threshold_bytes, 1)
-                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
                 functions,
                 *min_periods,
@@ -982,8 +1008,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             // Total spill budget for the operator; split across hash buckets inside the sink.
-            let spill_config = auto_spill_threshold(cfg.agg_spill_threshold_bytes, 1)
-                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let spill_config = build_spill_config(cfg.agg_spill_threshold_bytes, cfg);
             let agg_sink =
                 GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg, spill_config)
                     .with_context(|_| PipelineCreationSnafu {
@@ -1084,8 +1109,7 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             // Sort runs in a single state, so the whole budget is for one buffer.
-            let spill_config = auto_spill_threshold(cfg.sort_spill_threshold_bytes, 1)
-                .map(|t| SpillConfig::new(t, cfg.flight_shuffle_dirs.clone()));
+            let spill_config = build_spill_config(cfg.sort_spill_threshold_bytes, cfg);
             let sort_sink = SortSink::new(
                 sort_by.clone(),
                 descending.clone(),
@@ -1302,9 +1326,7 @@ fn physical_plan_to_pipeline(
                     true
                 };
 
-                let spill_config = cfg.hash_join_spill_threshold_bytes.map(|threshold| {
-                    SpillConfig::new(threshold, cfg.flight_shuffle_dirs.clone())
-                });
+                let spill_config = build_spill_config(cfg.hash_join_spill_threshold_bytes, cfg);
                 let hash_join_op = HashJoinOperator::new(
                     key_schema,
                     build_on.clone(),
@@ -1759,8 +1781,8 @@ fn physical_plan_to_pipeline(
                     let (shuffle_server, shuffle_address) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
-                    let spill_threshold =
-                        auto_spill_threshold(cfg.repartition_spill_threshold_bytes, 1);
+                    let spill_config = build_spill_config(cfg.repartition_spill_threshold_bytes, cfg);
+                    let spill_threshold = spill_config.as_ref().map(|sc| sc.threshold_bytes);
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         schema.clone(),

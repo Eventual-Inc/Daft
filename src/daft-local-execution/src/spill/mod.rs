@@ -25,27 +25,35 @@ use daft_recordbatch::RecordBatch;
 /// Configuration for spill-to-disk.
 #[derive(Clone, Debug)]
 pub(crate) struct SpillConfig {
-    /// If accumulated in-memory bytes exceed this threshold, data is spilled to disk. For the hash
-    /// join the threshold is shared across all hash partitions (`threshold / N` per partition).
+    /// DEPRECATED (removed once all operators use the pool): legacy per-operator budget.
     pub threshold_bytes: usize,
     /// Directories to create spill files in (round-robined per bucket/run).
     pub spill_dirs: Vec<String>,
+    /// Shared spill pool size; used only to size `partition_count` and finalize recursion budgets.
+    pub pool_bytes: usize,
+    /// Optional deprecated per-operator cap (bytes) on this operator's resident reservation.
+    pub cap_bytes: Option<usize>,
 }
 
 impl SpillConfig {
-    pub fn new(threshold_bytes: usize, spill_dirs: Vec<String>) -> Self {
+    pub fn new(pool_bytes: usize, spill_dirs: Vec<String>) -> Self {
         Self {
-            threshold_bytes,
+            threshold_bytes: pool_bytes,
             spill_dirs,
+            pool_bytes,
+            cap_bytes: None,
         }
     }
 
-    /// Number of hash partitions for the join build side: `max(2, ceil(threshold / 256 MiB))`,
-    /// capped at 256.
+    /// The per-operator cap as `u64`, if any.
+    pub fn cap(&self) -> Option<u64> {
+        self.cap_bytes.map(|c| c as u64)
+    }
+
+    /// Number of hash partitions for the join build side: `max(2, ceil(pool / 256 MiB))`, capped 256.
     pub fn partition_count(&self) -> usize {
         const TARGET_BYTES_PER_PARTITION: usize = 256 * 1024 * 1024; // 256 MiB
-        let n =
-            (self.threshold_bytes + TARGET_BYTES_PER_PARTITION - 1) / TARGET_BYTES_PER_PARTITION;
+        let n = self.pool_bytes.div_ceil(TARGET_BYTES_PER_PARTITION);
         n.max(2).min(256)
     }
 }
@@ -298,4 +306,29 @@ fn read_ipc_file(path: &Path) -> DaftResult<Vec<RecordBatch>> {
         batches.push(RecordBatch::from_arrow(schema.clone(), arrays)?);
     }
     Ok(batches)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_partition_count_from_pool_bytes() {
+        // 1 GiB pool / 256 MiB target = 4 partitions.
+        let sc = SpillConfig {
+            threshold_bytes: 0,
+            spill_dirs: vec!["/tmp".to_string()],
+            pool_bytes: 1024 * 1024 * 1024,
+            cap_bytes: None,
+        };
+        assert_eq!(sc.partition_count(), 4);
+        // Tiny pool floors at 2.
+        let sc2 = SpillConfig {
+            threshold_bytes: 0,
+            spill_dirs: vec!["/tmp".to_string()],
+            pool_bytes: 1,
+            cap_bytes: None,
+        };
+        assert_eq!(sc2.partition_count(), 2);
+    }
 }
