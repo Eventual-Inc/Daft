@@ -336,7 +336,7 @@ mod tests {
                     .build()
                     .unwrap(),
                 ColumnChunkMetaData::builder(descr.column(1))
-                    .set_num_values(64)
+                    .set_num_values(65) // not a multiple of 8 -> exercises div_ceil rounding
                     .build()
                     .unwrap(),
                 // BYTE_ARRAY: byte count isn't derivable from num_values, so fall back to
@@ -357,8 +357,8 @@ mod tests {
 
         // INT64 uses num_values * 8, NOT the tiny encoded size.
         assert_eq!(sizes["ids"], 100 * 8);
-        // BOOLEAN is 1 bit per value.
-        assert_eq!(sizes["flag"], 64 / 8);
+        // BOOLEAN is 1 bit per value, rounded up to whole bytes (65 bits -> 9 bytes).
+        assert_eq!(sizes["flag"], 9);
         // BYTE_ARRAY falls back to the uncompressed size.
         assert_eq!(sizes["name"], 777);
     }
