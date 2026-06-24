@@ -48,6 +48,9 @@ impl std::str::FromStr for StringEncoding {
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
     pub string_encoding: StringEncoding,
+    /// When true (default), WKB columns declared in the GeoParquet `"geo"` footer metadata
+    /// are automatically re-typed from `Binary` to `Geometry` on read.
+    pub geometry: bool,
 }
 
 impl ParquetSchemaInferenceOptions {
@@ -57,6 +60,7 @@ impl ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds),
             string_encoding: StringEncoding::Utf8,
+            geometry: true,
         }
     }
 
@@ -69,6 +73,7 @@ impl ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
             string_encoding: string_encoding.parse()?,
+            geometry: true,
         })
     }
 }
@@ -78,6 +83,7 @@ impl Default for ParquetSchemaInferenceOptions {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             string_encoding: StringEncoding::Utf8,
+            geometry: true,
         }
     }
 }

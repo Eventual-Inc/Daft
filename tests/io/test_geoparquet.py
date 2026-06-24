@@ -3,7 +3,7 @@ import json
 import pyarrow.parquet as pq
 
 import daft
-from daft.functions import st_point
+from daft.functions import st_point, st_x
 
 
 def _geo_df():
@@ -30,3 +30,23 @@ def test_write_parquet_no_geo_metadata_for_non_geometry(tmp_path):
     assert files
     meta = pq.read_metadata(files[0]).metadata  # bytes-keyed footer kv-metadata (or None)
     assert meta is None or b"geo" not in meta
+
+
+def test_geoparquet_roundtrip(tmp_path):
+    """GeoParquet round-trip: write Geometry, read back as Geometry and verify st_x values."""
+    _geo_df().write_parquet(str(tmp_path))
+    df = daft.read_parquet(str(tmp_path))
+    assert df.schema()["geom"].dtype == daft.DataType.geometry(), (
+        f"Expected Geometry dtype, got {df.schema()['geom'].dtype}"
+    )
+    out = df.select(st_x(daft.col("geom")).alias("px")).sort("px").to_pydict()
+    assert out["px"] == [1.0, 3.0]
+
+
+def test_geometry_false_keeps_binary(tmp_path):
+    """geometry=False suppresses geo re-typing; WKB column stays as Binary."""
+    _geo_df().write_parquet(str(tmp_path))
+    df = daft.read_parquet(str(tmp_path), geometry=False)
+    assert df.schema()["geom"].dtype == daft.DataType.binary(), (
+        f"Expected Binary dtype, got {df.schema()['geom'].dtype}"
+    )

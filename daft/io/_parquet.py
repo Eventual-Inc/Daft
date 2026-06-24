@@ -31,6 +31,7 @@ def read_parquet(
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: str | TimeUnit | None = None,
     ignore_corrupt_files: bool = False,
+    geometry: bool = True,
     _multithreaded_io: bool | None = None,
     _chunk_size: int | None = None,  # A hidden parameter for testing purposes.
     checkpoint: "CheckpointConfig | None" = None,
@@ -51,6 +52,9 @@ def read_parquet(
             collection. Only genuine format errors (bad magic bytes, truncated footer, corrupt
             row-group data) are ignored; network errors and permission errors are still raised.
             Defaults to False.
+        geometry: If True (default), WKB columns declared in GeoParquet ``"geo"`` footer metadata
+            are automatically re-typed from ``Binary`` to ``Geometry`` on read.  Set to False to
+            suppress geo detection and keep the raw ``Binary`` dtype.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
@@ -105,6 +109,7 @@ def read_parquet(
             row_groups=row_groups,
             chunk_size=_chunk_size,
             ignore_corrupt_files=ignore_corrupt_files,
+            geometry=geometry,
         )
     )
     storage_config = StorageConfig(multithreaded_io, io_config)

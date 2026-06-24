@@ -26,7 +26,30 @@ pub fn infer_schema_from_daft_metadata(
         options.string_encoding == read::StringEncoding::Raw,
     )
     .map_err(|e| common_error::DaftError::External(e.into()))?;
-    daft_core::prelude::Schema::try_from(&arrow_schema)
+    let mut schema = daft_core::prelude::Schema::try_from(&arrow_schema)?;
+    if options.geometry {
+        if let Some(geo_json) = metadata.geo_metadata() {
+            let geo_cols = geo_metadata::detect_geo_columns(&geo_json, &schema);
+            if !geo_cols.is_empty() {
+                let new_fields: Vec<daft_core::prelude::Field> = schema
+                    .fields()
+                    .iter()
+                    .map(|f| {
+                        if geo_cols.contains(&f.name.to_string()) {
+                            daft_core::prelude::Field::new(
+                                f.name.as_ref(),
+                                daft_core::prelude::DataType::Geometry,
+                            )
+                        } else {
+                            f.clone()
+                        }
+                    })
+                    .collect();
+                schema = daft_core::prelude::Schema::new(new_fields);
+            }
+        }
+    }
+    Ok(schema)
 }
 
 /// Errors raised while reading parquet files.
