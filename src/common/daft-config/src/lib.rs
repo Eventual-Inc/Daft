@@ -174,6 +174,10 @@ pub struct DaftExecutionConfig {
     /// and causes OOM for large inputs. `None` auto-derives ~30 % of the engine memory budget
     /// (spilling on by default). `Some(0)` disables spilling (legacy, pure in-memory behaviour).
     pub repartition_spill_threshold_bytes: Option<usize>,
+    /// Total size (bytes) of the shared spill pool that all spill-capable operators draw from.
+    /// `None` derives `max(64 MiB, 0.3 × (DAFT_MEMORY_LIMIT or system RAM))`. Env override:
+    /// `DAFT_SPILL_POOL_BYTES`.
+    pub spill_pool_bytes: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -226,6 +230,7 @@ impl Default for DaftExecutionConfig {
             agg_spill_threshold_bytes: None,
             window_spill_threshold_bytes: None,
             repartition_spill_threshold_bytes: None,
+            spill_pool_bytes: None,
         }
     }
 }
@@ -246,6 +251,7 @@ impl DaftExecutionConfig {
     const ENV_DAFT_AGG_SPILL_THRESHOLD: &'static str = "DAFT_AGG_SPILL_THRESHOLD";
     const ENV_DAFT_WINDOW_SPILL_THRESHOLD: &'static str = "DAFT_WINDOW_SPILL_THRESHOLD";
     const ENV_DAFT_REPARTITION_SPILL_THRESHOLD: &'static str = "DAFT_REPARTITION_SPILL_THRESHOLD";
+    const ENV_DAFT_SPILL_POOL_BYTES: &'static str = "DAFT_SPILL_POOL_BYTES";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -350,6 +356,14 @@ impl DaftExecutionConfig {
                 cfg.repartition_spill_threshold_bytes = Some(parsed);
             } else {
                 eprintln!("Invalid DAFT_REPARTITION_SPILL_THRESHOLD value: {val}, ignoring");
+            }
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_SPILL_POOL_BYTES) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                cfg.spill_pool_bytes = Some(parsed);
+            } else {
+                eprintln!("Invalid DAFT_SPILL_POOL_BYTES value: {val}, ignoring");
             }
         }
 
@@ -498,6 +512,12 @@ mod tests {
                 std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING);
             }
         }
+    }
+
+    #[test]
+    fn test_spill_pool_bytes_defaults_none() {
+        let cfg = DaftExecutionConfig::default();
+        assert_eq!(cfg.spill_pool_bytes, None);
     }
 
     #[test]
