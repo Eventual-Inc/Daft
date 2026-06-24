@@ -20,7 +20,6 @@ indexmap = {workspace = true}
 parquet = {workspace = true, features = ["async", "experimental"]}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
-serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}

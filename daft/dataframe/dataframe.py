@@ -2109,7 +2109,6 @@ class DataFrame:
                 )
             table.update_incremental()
 
-
         with_operations = from_pydict(
             {
                 "operation": pa.array(operations, type=pa.string()),
