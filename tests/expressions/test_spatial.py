@@ -677,6 +677,7 @@ def test_python_sql_parity():
         "SELECT st_area(st_union(st_geomfromtext(a), st_geomfromtext(b))) AS u FROM base_overlay"
     ).to_pydict()
     assert abs(py_overlay["u"][0] - 7.0) < 1e-6, f"overlay py area: {py_overlay['u'][0]}"
+    assert abs(sql_overlay["u"][0] - 7.0) < 1e-6, f"overlay sql area: {sql_overlay['u'][0]}"
     assert abs(py_overlay["u"][0] - sql_overlay["u"][0]) < 1e-6, (
         f"overlay parity: py={py_overlay['u'][0]} sql={sql_overlay['u'][0]}"
     )
@@ -709,6 +710,8 @@ def test_python_sql_parity():
     ).to_pydict()
     assert py_proc["s"][0] is not None, "simplify py returned null"
     assert "1 0.01" not in py_proc["s"][0], f"simplify py did not reduce: {py_proc['s'][0]}"
+    assert sql_proc["s"][0] is not None, "simplify sql returned null"
+    assert "1 0.01" not in sql_proc["s"][0], f"simplify sql did not reduce: {sql_proc['s'][0]}"
     assert py_proc["s"][0] == sql_proc["s"][0], (
         f"processing parity: py={py_proc['s'][0]} sql={sql_proc['s'][0]}"
     )
